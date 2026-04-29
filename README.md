@@ -1,6 +1,18 @@
-# Evolvera PI Setup
+# 🧠 Evolvera PI Setup
 
 Configuração padronizada do [PI Coding Agent](https://github.com/badlogic/pi) para o time.
+
+O **PI** é um agente de código com **orquestração multi-agente** que roda dentro do VS Code. Não é um chatbot — é um sistema de agentes especializados que colaboram entre si para pesquisar, planejar, implementar e validar código. Ele detecta automaticamente a intenção do usuário e encaminha para o agente correto.
+
+### Arquitetura
+
+```
+Você (usuário) → PI (roteador inteligente) → Agente correto → Resultado
+                         ↑
+                    AGENTS.md (regras de roteamento automático)
+```
+
+---
 
 ## Instalação
 
@@ -31,78 +43,211 @@ git pull
 ./install.sh
 ```
 
-## O que vem instalado
+---
 
-### Agents (13)
+## 🤖 Agentes Disponíveis (14)
 
-| Agente | O que faz |
-|--------|-----------|
-| `planner` | Arquiteta features e gera planos detalhados |
-| `builder` | Executa implementações com Git-first e verificação |
-| `scout` | Explora e mapeia o codebase |
-| `validator` | Quality gate — testa, audita, bloqueia código ruim |
-| `deep-search-master` | Pesquisa web. Modos: `quick:`, `verify:`, `deep search:` |
-| `deep-research-*` (7) | Pipeline de pesquisa profunda com múltiplos ângulos |
-| `agent-expert` | Cria e configura novos agentes do PI |
+### Pipeline de Código
 
-### Skills (4)
+| Agente | Emoji | Função | Modelo | Quando usar |
+|--------|-------|--------|--------|-------------|
+| **Scout** | 🔍 | Explorador de código — mapeia arquivos, dependências, padrões, testes | MiniMax-M2.7 (barato/rápido) | "como funciona X?", "mapeia os endpoints", "onde está auth?" |
+| **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Kimi (modelo caro, thinking extended) | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
+| **Builder** | 🔨 | Engenheiro de execução — implementa com disciplina Git-first, checklists, verificação final | MiniMax-M2.7 | "implementa X", "executa esse plano", "builda a feature" |
+| **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | MiniMax-M2.7 | "valida esse PR", "audita os testes", "code review" |
 
-| Skill | O que faz |
-|-------|-----------|
-| `git-research` | Clona repos temporariamente para pesquisa |
-| `mcp-vision` | Processa imagens via MCP |
-| `pi-tool-expert` | Cria tools, extensões e skills para o PI |
-| `synabun` | Memória vetorial persistente via MCP |
-
-### Extensions (3)
-
-| Extensão | O que faz |
-|----------|-----------|
-| `auto-image-clipboard.ts` | Processa imagens do clipboard |
-| `jina-reader.ts` | Lê URLs e PDFs via Jina |
-| `pi-tool-expert-helper.ts` | Helper para criar ferramentas do PI |
-
-### MCP Servers (7)
-
-| Server | O que faz |
-|--------|-----------|
-| SynaBun | Memória vetorial local |
-| memory | Memória persistente via MCP |
-| context7 | Contexto de documentação |
-| minimax-web-search | Busca na web |
-| zai-web-reader | Leitura de páginas web |
-| zai-zread | Leitura avançada de conteúdo |
-| zai-web-search-prime | Busca web via Z.AI |
-
-Para adicionar API keys nos MCP servers, basta pedir no chat do PI. Ele edita o `mcp.json` pra você.
-
-## Pipeline de código
+### Pipeline Natural
 
 Para mudanças não-triviais:
 
 ```
-scout → mapeia o codebase
+Scout → mapeia codebase (inteligência rápida)
   ↓
-planner → gera plano detalhado
+Planner → gera plano detalhado (plans/*.md)
   ↓
-builder → executa em branch isolada
+Builder → executa plano (branch isolada, TILL-DO → TODO → Final Verification)
   ↓
-validator → quality gate final
+Validator → quality gate (testes, segurança, arquitetura)
 ```
 
-Tarefas triviais (mudar texto, CSS) → PI faz direto, sem agentes.
+**Quando pular etapas:**
+- Tarefa trivial (mudar texto, CSS) → faça direto, sem agentes
+- Tarefa média sem plano formal → `builder` direto
+- Mudança crítica (auth, payment, PII) → builder + validator automático
+- Mudança muito extensa (>10 files) → pipeline completa
 
-## Estrutura
+### Agentes Especiais
+
+| Agente | Emoji | Função | Quando usar |
+|--------|-------|--------|-------------|
+| **Agent Expert** | 🤖 | Meta-agente que cria, configura e modifica outros agentes | "cria um agente que faz X" |
+| **Pi Steward** | 🚨 | Captura bugs do PI e cria issues no GitHub | "o PI errou", "registra esse problema" |
+
+### Pesquisa Web — Deep Search Master
+
+Orquestrador de pesquisa com 3 modos e 7 sub-agentes:
+
+#### Modos de Operação
+
+| Modo | Gatilho no prompt | Descrição | Confirmação? |
+|------|-------------------|-----------|-------------|
+| **Quick** | `quick:` | Busca rápida e direta | ❌ Vai direto |
+| **Verify** | `verify:` | Validação de claims/dados | ❌ Vai direto |
+| **Deep Search** | `deep search:` | Due diligence completa 4 fases | ✅ Planeja primeiro |
+
+#### Sub-agentes de Pesquisa
+
+| Sub-agente | Função |
+|------------|--------|
+| **Explorer** | Tendências emergentes, fontes não-convencionais, sinais antecipados |
+| **Methodical** | Fundações acadêmicas, contexto histórico, frameworks, fontes primárias |
+| **Skeptical** | Verifica claims, exige evidência, checa estatísticas |
+| **Creative** | Conexões inesperadas, ângulos novos, insights cross-domain |
+| **Critical** | Fraquezas, críticas, contradições, red flags |
+| **Auditor** | Red team — analisa findings, detecta contradições entre agentes |
+| **Finalizer** | Consolida tudo e escreve relatório final com citações |
+
+---
+
+## 🛠️ Ferramentas
+
+### Built-in (nativas)
+
+| Tool | Uso |
+|------|-----|
+| `read` | Ler arquivos (texto e imagens) |
+| `bash` | Executar comandos shell |
+| `edit` | Edição precisa de arquivos (replace exato) |
+| `write` | Criar/sobrescrever arquivos |
+| `grep` | Buscar padrão em arquivos |
+| `find` | Buscar arquivos por glob |
+| `ls` | Listar diretórios |
+
+### VS Code Bridge (integração IDE)
+
+| Ferramenta | Função |
+|------------|--------|
+| `vscode_get_diagnostics` | Erros LSP/lint/type em tempo real |
+| `vscode_get_hover` | Tipos inferidos, signatures, documentação |
+| `vscode_get_definitions` | Ir para definição |
+| `vscode_get_references` | Encontrar todas as referências |
+| `vscode_get_implementations` | Encontrar implementações concretas |
+| `vscode_get_code_actions` | Quick fixes disponíveis |
+| `vscode_format_document` | Formatador ativo do VS Code |
+| `vscode_open_file` | Abrir arquivo no editor |
+| `vscode_get_selection` | Seleção atual (texto, caminho, coordenadas) |
+| `vscode_get_document_symbols` | Outline/símbolos do arquivo |
+| `vscode_get_workspace_symbols` | Buscar símbolos no workspace |
+| `vscode_save_document` | Salvar documento via VS Code |
+| `vscode_show_notification` | Mostrar notificação no VS Code |
+
+### MCP Servers (7)
+
+| Server | Ferramentas | Função |
+|--------|-------------|--------|
+| **SynaBun** | 76 tools | Memória vetorial persistente |
+| **minimax-web-search** | 2 tools | Busca web + análise de imagens |
+| **context7** | 2 tools | Documentação de bibliotecas |
+| **zai-web-reader** | 1 tool | Leitura de páginas web |
+| **zai-zread** | 3 tools | Leitura avançada de conteúdo |
+| **zai-web-search-prime** | 1 tool | Busca web alternativa |
+| **memory** | 9 tools | Memória/conhecimento persistente |
+
+Para adicionar API keys nos MCP servers, basta pedir no chat do PI. Ele edita o `mcp.json` pra você.
+
+---
+
+## 📦 Skills (4)
+
+| Skill | O que faz |
+|-------|-----------|
+| `git-research` | Clona repos temporariamente para pesquisa com cleanup automático |
+| `mcp-vision` | Processa imagens via MCP quando o modelo não suporta vision |
+| `pi-tool-expert` | Guia completo para criar/modificar extensões TypeScript do PI |
+| `synabun` | Regras de uso da memória vetorial SynaBun |
+
+## 🔌 Extensões (3)
+
+| Extensão | O que faz |
+|----------|-----------|
+| `auto-image-clipboard.ts` | Captura imagens do clipboard automaticamente |
+| `jina-reader.ts` | Lê URLs e PDFs via Jina Reader |
+| `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
+
+---
+
+## 🎯 Roteamento Automático
+
+O PI detecta automaticamente o que você quer e usa o agente correto:
+
+| Intenção detectada | Agente | Exemplos |
+|-------------------|--------|----------|
+| Pesquisar algo | `deep-search-master` (quick) | "pesquisa X", "quem é Y?" |
+| Verificar dados | `deep-search-master` (verify) | "verifica se X é verdade" |
+| Pesquisa profunda | `deep-search-master` (deep) | "due diligence de X" |
+| Explorar código | `scout` | "como funciona X?" |
+| Planejar feature | `planner` | "planeja a implementação de X" |
+| Implementar | `builder` | "implementa X" |
+| Validar código | `validator` | "valida esse PR" |
+| Criar agente | `agent-expert` | "cria um agente pra X" |
+| Problema no PI | `pi-steward` | "o PI errou" |
+
+---
+
+## 📊 Modelos de IA
+
+| Modelo | Uso | Custo |
+|--------|-----|-------|
+| **MiniMax-M2.7-highspeed** | Scout, Builder, Validator | 💰 Barato e rápido |
+| **Kimi for Coding** | Planner (thinking: xhigh) | 💎 Caro, alta capacidade |
+| **Claude Haiku 4.5** | Deep Search Master | 💰 Custo médio |
+| **GLM-5.1** (ZAI) | Modelo padrão do PI | 💰 Custo baixo |
+
+---
+
+## 🗂️ Estrutura
 
 ```
 Pi/
-├── install.sh          # Script de instalação
+├── install.sh              # Script de instalação
 ├── config/
-│   ├── settings.json   # Provider, modelo, packages
-│   ├── SYSTEM.md       # System prompt
-│   ├── AGENTS.md       # Regras de roteamento dos agentes
-│   └── mcp.json        # Referência dos MCP servers
-├── agents/             # 13 agentes (.md)
-├── skills/             # 4 skills
-└── extensions/         # 3 extensões (.ts)
+│   ├── settings.json       # Provider, modelo, packages
+│   ├── SYSTEM.md           # System prompt customizado
+│   ├── AGENTS.md           # Regras de roteamento dos agentes
+│   └── mcp.json            # Configuração dos MCP servers
+├── agents/                 # 14 agentes (.md)
+│   ├── planner.md          # Arquiteto/Planejador
+│   ├── builder.md          # Engenheiro de execução
+│   ├── scout.md            # Explorador de código
+│   ├── validator.md        # Quality gate
+│   ├── agent-expert.md     # Meta-agente para criar agentes
+│   ├── pi-steward.md       # Canal de feedback/bugs
+│   ├── deep-search-master.md  # Orquestrador de pesquisa
+│   └── deep-research-*.md # 7 sub-agentes de pesquisa
+├── skills/                 # 4 skills
+│   ├── git-research/
+│   ├── mcp-vision/
+│   ├── pi-tool-expert/
+│   └── synabun/
+└── extensions/             # 3 extensões (.ts)
+    ├── auto-image-clipboard.ts
+    ├── jina-reader.ts
+    └── pi-tool-expert-helper.ts
 ```
+
+---
+
+## 🚀 Capacidades em Resumo
+
+1. **💬 Conversa natural** — Fale normalmente, ele detecta a intenção e age
+2. **🔍 Explora código** — Mapeia arquivos, dependências, padrões instantaneamente
+3. **📐 Planeja** — Cria planos detalhados para features complexas
+4. **🔨 Implementa** — Executa com disciplina (git isolado, checklists, verificação)
+5. **🛡️ Valida** — Quality gate com testes, segurança, arquitetura
+6. **🔎 Pesquisa web** — De busca rápida até due diligence com 7 sub-agentes
+7. **📄 Lê páginas/PDFs** — Extrai conteúdo de URLs, docs, READMEs
+8. **🖼️ Processa imagens** — Analisa prints, screenshots, diagramas
+9. **🧠 Tem memória** — Via SynaBun (memória vetorial) e Memory MCP
+10. **🚨 Se auto-regula** — Detecta erros próprios e cria issues via Pi Steward
+11. **🔌 Extensível** — Skills, extensões TypeScript, MCP servers, pacotes npm
+12. **👁️ Integrado ao VS Code** — Diagnósticos, hover, definições, formatação em tempo real

@@ -67,7 +67,28 @@ Do **not** do manually what an existing agent or tool does better. **EVERY** tas
 
 **Trying to edit agent files manually when `agent-expert` exists is a CRITICAL FAILURE that will NOT be tolerated.**
 
-### 4. WHEN YOU SCREW UP — CALL THE STEWARD 🚨
+### 4. REPOS E ISSUES — REGRAS ABSOLUTAS 🚨
+
+**GitHub Repos:**
+- ❌ **NUNCA crie um repo no GitHub sem perguntar primeiro**
+- Se o usuário pedir pra fazer push/commit, CONFIRME o remote e repo antes de criar
+- Se não existir repo git localmente, PERGUNTE onde o usuário quer criar/push
+- Se o usuário mencionar um repo específico (ex: "no Evolvera/Pi"), USE esse repo
+
+**Issues (via pi-steward):**
+- Issues do PI sempre vão para **`Evolvera/Pi`** — NUNCA crie repo novo pra issues
+- O steward sabe que o repo de issues é: `Evolvera/Pi`
+- Se não tiver certeza do repo, PERGUNTE ao usuário
+
+**Fluxo antes de criar repo ou fazer push:**
+1. Existe repo git local? → Use ele
+2. Existe remote configurado? → Push pra lá
+3. Usuário mencionou repo específico? → Use ele
+4. Nenhum dos acima? → **PERGUNTE** "Pra qual repo GitHub você quer fazer push?"
+
+---
+
+### 5. WHEN YOU SCREW UP — CALL THE STEWARD 🚨
 
 **This is a SURVIVAL rule for the tool. High visibility. Zero tolerance for ignoring it.**
 
@@ -96,7 +117,7 @@ Call: `Agent(subagent_type="pi-steward", prompt="<descrição do problema>")`
 
 ---
 
-### 5. PRECISION OVER BRUTE FORCE
+### 6. PRECISION OVER BRUTE FORCE
 - **Edits:** Use the absolute smallest `old_string` possible. One change = one edit.
 - **Never** replace entire blocks, components, or files just to change a single prop, variable, or line.
 - Show clear diffs with 1–2 line summaries.
