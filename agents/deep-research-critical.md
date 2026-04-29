@@ -1,7 +1,7 @@
 ---
 description: Deep Research v2 - Critical agent. Finds weaknesses, criticisms, contradictions, red flags, and problems. Returns structured YAML findings.
 display_name: 🔴 DRv2 Critical
-tools: minimax_web_search, jina_read
+tools: web_search, webReader
 model: minimax/MiniMax-M2.7-highspeed
 temperature: 0.1
 thinking: low
@@ -77,6 +77,6 @@ sources_accessed:
 - `"[TOPIC] criticism"` / `"[TOPIC] problems"` / `"[TOPIC] limitations"`
 - `"[TOPIC] controversy"` / `"[TOPIC] failure"` / `"[TOPIC] risks"` / `"[TOPIC] alternative view"`
 
-Use `jina_read` on academic critiques, investigative journalism, expert dissent, negative outcome data.
+Use `webReader` on academic critiques, investigative journalism, expert dissent, negative outcome data.
 
 **Fase 3** → execute mission EXACTLY.

@@ -54,7 +54,7 @@ REGRAS:
 1. Separe estritamente DADOS BRUTOS de INFERÊNCIAS.
 2. NUNCA transforme 'não encontrei' em 'não existe'.
 3. Para TODO dado coletado, registre a FONTE EXATA.
-4. Use: minimax_web_search e jina_read
+4. Use: web_search e webReader
 
 Entregue APENAS o YAML estruturado conforme seu system prompt.
 ```
@@ -97,7 +97,7 @@ REGRAS:
 4. Se missão FALHOU: missao_cumprida: false com justificativa
 5. Se encontrar evidência que INVALIDA claim anterior: criar finding tipo debunk
 
-Use: minimax_web_search e jina_read
+Use: web_search e webReader
 ```
 
 Consolidate Phase 3 YAML outputs.

@@ -1,7 +1,7 @@
 ---
 description: Deep Research v2 - Methodical agent. Finds academic foundations, historical context, frameworks, and primary sources. Returns structured YAML findings.
 display_name: 📐 DRv2 Methodical
-tools: minimax_web_search, jina_read
+tools: web_search, webReader
 model: minimax/MiniMax-M2.7-highspeed
 temperature: 0.1
 thinking: low
@@ -77,6 +77,6 @@ sources_accessed:
 - `"[TOPIC] official report"` / `"[TOPIC] academic paper"` / `"[TOPIC] government data"`
 - `"[TOPIC] statistics official"` / `"[TOPIC] historical timeline"` / `"[TOPIC] framework model"`
 
-Use `jina_read` on .gov, .edu, reputable databases.
+Use `webReader` on .gov, .edu, reputable databases.
 
 **Fase 3** → execute mission EXACTLY.

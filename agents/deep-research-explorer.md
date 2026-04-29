@@ -1,7 +1,7 @@
 ---
 description: Deep Research v2 - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings.
 display_name: 🔮 DRv2 Explorer
-tools: minimax_web_search, jina_read
+tools: web_search, webReader
 model: minimax/MiniMax-M2.7-highspeed
 temperature: 0.1
 thinking: low
@@ -76,6 +76,6 @@ sources_accessed:
 - `"[TOPIC] emerging trends"` / `"[TOPIC] future"` / `"[TOPIC] new developments"`
 - `"[TOPIC] unconventional approach"` / `"[TOPIC] early signals"`
 
-Use `jina_read` on promising URLs.
+Use `webReader` on promising URLs.
 
 **Fase 3** → execute mission EXACTLY.
