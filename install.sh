@@ -8,6 +8,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,112 +17,226 @@ PI_DIR="$HOME/.pi/agent"
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
+step()  { echo -e "\n${CYAN}── $1 ──${NC}"; }
 
-# ── Check PI is installed ─────────────────────
+# ──────────────────────────────────────────────
+# Step 1: Instalar PI
+# ──────────────────────────────────────────────
+step "Verificando PI"
+
 if ! command -v pi &>/dev/null; then
     warn "PI não encontrado. Instalando..."
-    npm install -g @mariozechner/pi-coding-agent || error "Falha ao instalar PI"
-    info "PI instalado"
+    npm install -g @mariozechner/pi-coding-agent || error "Falha ao instalar PI. Precisa de Node.js 20+."
+    info "PI instalado: $(pi --version 2>/dev/null || echo 'ok')"
+else
+    info "PI já instalado"
 fi
 
-# ── Create directories ────────────────────────
-mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research}
+# ──────────────────────────────────────────────
+# Step 2: Criar diretórios
+# ──────────────────────────────────────────────
+step "Preparando diretórios"
 
-# ── Copy base config ──────────────────────────
+mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin}
+
+# ──────────────────────────────────────────────
+# Step 3: Copiar configuração
+# ──────────────────────────────────────────────
+step "Instalando configuração"
+
 for f in settings.json SYSTEM.md AGENTS.md; do
     if [ -f "$SCRIPT_DIR/config/$f" ]; then
         cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f"
-        info "Config: $f"
+        info "$f"
     fi
 done
 
-# ── Copy agents (overwrite = padronizado) ─────
-cp "$SCRIPT_DIR"/agents/*.md "$PI_DIR/agents/"
-info "Agents: $(ls "$SCRIPT_DIR"/agents/*.md | wc -l | tr -d ' ') arquivos"
+# ──────────────────────────────────────────────
+# Step 4: Copiar agents, skills, extensions
+# ──────────────────────────────────────────────
+cp "$SCRIPT_DIR"/agents/*.md "$PI_DIR/agents/" 2>/dev/null && info "$(ls "$SCRIPT_DIR"/agents/*.md 2>/dev/null | wc -l | tr -d ' ') agentes copiados"
 
-# ── Copy skills ───────────────────────────────
 for skill_dir in "$SCRIPT_DIR"/skills/*/; do
+    [ -d "$skill_dir" ] || continue
     skill_name="$(basename "$skill_dir")"
     mkdir -p "$PI_DIR/skills/$skill_name"
     cp -r "$skill_dir"* "$PI_DIR/skills/$skill_name/"
     info "Skill: $skill_name"
 done
 
-# ── Copy extensions ───────────────────────────
 if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
-    info "Extensions: $(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') arquivos"
+    info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões copiadas"
 fi
 
-# ── MCP config: merge com existente, preserva keys ─
-MCP_TEMPLATE="$SCRIPT_DIR/config/mcp.json"
+# ──────────────────────────────────────────────
+# Step 5: API Keys para o modelo (auth.json)
+# ──────────────────────────────────────────────
+step "API Keys — Modelo de IA"
+
+AUTH_FILE="$PI_DIR/auth.json"
+NEED_AUTH=false
+
+# Verifica se já tem auth.json com as keys necessárias
+if [ -f "$AUTH_FILE" ]; then
+    HAS_ZAI=$(grep -c '"zai"' "$AUTH_FILE" 2>/dev/null || echo "0")
+    HAS_KIMI=$(grep -c '"kimi-coding"' "$AUTH_FILE" 2>/dev/null || echo "0")
+    HAS_MINIMAX=$(grep -c '"minimax"' "$AUTH_FILE" 2>/dev/null || echo "0")
+
+    if [ "$HAS_ZAI" -gt 0 ] && [ "$HAS_MINIMAX" -gt 0 ]; then
+        info "auth.json já configurado (pulando)"
+        SKIP_AUTH=true
+    else
+        NEED_AUTH=true
+    fi
+else
+    NEED_AUTH=true
+fi
+
+if [ "$NEED_AUTH" = true ]; then
+    echo ""
+    echo "  O PI precisa de API keys para funcionar."
+    echo "  Estas keys vão para ~/.pi/agent/auth.json (não são commitadas)."
+    echo ""
+    echo "  Onde conseguir:"
+    echo "    ZAI:     https://z.ai  → Settings → API Keys"
+    echo "    Minimax: https://minimax.io → Dashboard → API Keys"
+    echo "    Kimi:    https://platform.moonshot.cn → API Keys"
+    echo ""
+
+    read -p "  ZAI API Key (obrigatório): " ZAI_KEY
+    read -p "  Minimax API Key (obrigatório): " MINIMAX_KEY
+    read -p "  Kimi API Key (opcional, Enter para pular): " KIMI_KEY
+
+    if [ -z "$ZAI_KEY" ] || [ -z "$MINIMAX_KEY" ]; then
+        error "ZAI e Minimax são obrigatórios. Rode ./install.sh de novo."
+    fi
+
+    # Monta auth.json
+    cat > "$AUTH_FILE" << AUTHJSON
+{
+  "zai": {
+    "type": "api_key",
+    "key": "$ZAI_KEY"
+  },
+  "minimax": {
+    "type": "api_key",
+    "key": "$MINIMAX_KEY"
+  }$([ -n "$KIMI_KEY" ] && echo ",
+  \"kimi-coding\": {
+    \"type\": \"api_key\",
+    \"key\": \"$KIMI_KEY\"
+  }")
+}
+AUTHJSON
+    chmod 600 "$AUTH_FILE"
+    info "auth.json criado"
+fi
+
+# ──────────────────────────────────────────────
+# Step 6: MCP config
+# ──────────────────────────────────────────────
+step "Configurando MCP Servers"
+
 MCP_USER="$PI_DIR/mcp.json"
 
+# Descobre synabun path
+SYNABUN_PATH="$(npm root -g 2>/dev/null)/synabun/mcp-server/run.mjs"
+
 if [ ! -f "$MCP_USER" ]; then
-    # Primeira instalação — pede keys interativamente
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Configuração de API Keys"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    # Lê keys do auth.json que acabou de criar ou que já existia
+    ZAI_MCP=$(python3 -c "import json; print(json.load(open('$AUTH_FILE'))['zai']['key'])" 2>/dev/null || echo "")
+    MINIMAX_MCP=$(python3 -c "import json; print(json.load(open('$AUTH_FILE'))['minimax']['key'])" 2>/dev/null || echo "")
 
-    read -p "Minimax API Key (ou Enter para pular): " MINIMAX_KEY
-    read -p "Z.AI API Key (ou Enter para pular): " ZAI_KEY
-
-    # SynaBun path
-    SYNABUN_PATH=$(npm list -g synabun 2>/dev/null | grep synabun | awk '{print $2}' || echo "")
-    if [ -z "$SYNABUN_PATH" ]; then
-        SYNABUN_PATH="$(npm root -g)/synabun/mcp-server/run.mjs"
-    fi
-
-    # Gera mcp.json com keys reais
-    sed \
-        -e "s|{{SYNABUN_PATH}}|$SYNABUN_PATH|g" \
-        -e "s|{{MINIMAX_API_KEY}}|$MINIMAX_KEY|g" \
-        -e "s|{{ZAI_API_KEY}}|$ZAI_KEY|g" \
-        "$MCP_TEMPLATE" > "$MCP_USER"
-
-    info "mcp.json criado com suas keys"
-else
-    # Já existe — merge servers novos, preserva keys existentes
-    warn "mcp.json já existe — preservando suas API keys"
-
-    # Detecta synabun path se não estiver configurado
-    if ! grep -q "synabun" "$MCP_USER" 2>/dev/null; then
-        SYNABUN_PATH="$(npm root -g)/synabun/mcp-server/run.mjs"
-        # Adiciona SynaBun ao mcp existente
-        python3 -c "
-import json
-with open('$MCP_USER') as f: cfg = json.load(f)
-cfg.setdefault('mcpServers', {})
-cfg['mcpServers']['SynaBun'] = {
-    'command': 'node',
-    'args': ['$SYNABUN_PATH'],
-    'lifecycle': 'keep-alive',
-    'exposeResources': False
+    cat > "$MCP_USER" << MCPCONF
+{
+  "mcpServers": {
+    "SynaBun": {
+      "command": "node",
+      "args": ["$SYNABUN_PATH"],
+      "lifecycle": "keep-alive",
+      "exposeResources": false
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "lifecycle": "keep-alive"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "lifecycle": "lazy"
+    },
+    "minimax-web-search": {
+      "command": "uvx",
+      "args": ["minimax-coding-plan-mcp", "-y"],
+      "env": {
+        "MINIMAX_API_KEY": "$MINIMAX_MCP",
+        "MINIMAX_API_HOST": "https://api.minimax.io"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-web-reader": {
+      "url": "https://api.z.ai/api/mcp/web_reader/mcp",
+      "headers": {
+        "Authorization": "Bearer $ZAI_MCP"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-zread": {
+      "url": "https://api.z.ai/api/mcp/zread/mcp",
+      "headers": {
+        "Authorization": "Bearer $ZAI_MCP"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-web-search-prime": {
+      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+      "headers": {
+        "Authorization": "Bearer $ZAI_MCP"
+      },
+      "lifecycle": "eager"
+    }
+  }
 }
-with open('$MCP_USER', 'w') as f: json.dump(cfg, f, indent=2)
-" 2>/dev/null || warn "Não consegui adicionar SynaBun automaticamente"
-    fi
-    info "mcp.json preservado"
+MCPCONF
+    info "mcp.json criado (keys copiadas do auth.json)"
+else
+    warn "mcp.json já existe — preservado"
+    info "Para resetar: rm ~/.pi/agent/mcp.json && ./install.sh"
 fi
 
-# ── Install deps ──────────────────────────────
+# ──────────────────────────────────────────────
+# Step 7: Instalar deps dos MCPs
+# ──────────────────────────────────────────────
+step "Instalando dependências"
+
 # SynaBun
-if ! npm list -g synabun &>/dev/null; then
+if ! npm list -g synabun &>/dev/null 2>&1; then
     warn "Instalando SynaBun..."
-    npm install -g synabun || warn "Falha ao instalar SynaBun (instale manualmente)"
+    npm install -g synabun 2>/dev/null || warn "Falha ao instalar SynaBun — instale manualmente: npm i -g synabun"
+else
+    info "SynaBun já instalado"
 fi
 
-# ── Done ──────────────────────────────────────
+# uvx (necessário para Minimax MCP)
+if ! command -v uvx &>/dev/null; then
+    warn "uvx não encontrado. Instale com: pip install uvx"
+    warn "O MCP minimax-web-search não vai funcionar sem ele."
+else
+    info "uvx disponível"
+fi
+
+# ──────────────────────────────────────────────
+# Done
+# ──────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "  ${GREEN}Evolvera PI Setup completo!${NC}"
+echo -e "  ${GREEN}Setup completo!${NC}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "  Configs:   $PI_DIR"
-echo "  Agents:    $(ls "$PI_DIR/agents/"*.md | wc -l | tr -d ' ') agentes"
-echo "  Skills:    $(ls "$PI_DIR/skills/" | wc -l | tr -d ' ') skills"
+echo "  Agora é só abrir um terminal e digitar:  pi"
 echo ""
-echo "  Para atualizar: git pull && ./install.sh"
-echo "  Para resetar MCP: rm $PI_DIR/mcp.json && ./install.sh"
+echo "  Modelo padrão: zai/glm-5.1 (configurado em settings.json)"
+echo "  Para trocar modelo: digite /model dentro do PI"
 echo ""

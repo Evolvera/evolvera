@@ -2,18 +2,65 @@
 
 Configuração padronizada do [PI Coding Agent](https://github.com/badlogic/pi) para o time.
 
-## Instalação
+## Primeira instalação
+
+### Pré-requisitos
+
+- **Node.js 20+** — `node --version`
+- **npm** — vem com Node
+- **uvx** — `pip install uvx` (necessário para busca web)
+- **python3** — para o install script fazer merge de configs
+- **Acesso** a este repo (privado da org)
+
+### Passo a passo
 
 ```bash
-# 1. Clone o repo
+# 1. Clone
 git clone git@github.com:Evolvera/Pi.git
 cd Pi
 
-# 2. Rode o install
+# 2. Instala tudo
 ./install.sh
 ```
 
-O script pergunta as API keys na primeira vez. Nas vezes seguintes ele preserva suas keys.
+O install.sh vai:
+
+1. Instalar o PI se não tiver
+2. Copiar agents, skills, extensions e configs para `~/.pi/agent/`
+3. Pedir suas **API keys** interativamente (só na primeira vez)
+4. Configurar os MCP servers com suas keys
+5. Instalar dependências (SynaBun, etc.)
+
+### API Keys que você precisa
+
+Cadastre-se e gere uma key em cada serviço:
+
+| Serviço | Onde conseguir | Obrigatório? |
+|---------|---------------|-------------|
+| **Z.AI** | https://z.ai → Settings → API Keys | Sim |
+| **Minimax** | https://minimax.io → Dashboard → API Keys | Sim |
+| **Kimi** | https://platform.moonshot.cn → API Keys | Não (usado pelo planner) |
+
+As keys ficam em `~/.pi/agent/auth.json` — **nunca** são commitadas.
+
+### Modelo padrão
+
+O setup usa **zai/glm-5.1** como modelo padrão. Para trocar:
+
+```bash
+# Dentro do PI, digite:
+/model
+```
+
+Para trocar o padrão para todos, edite `config/settings.json` e commite.
+
+### Depois de instalar
+
+Abra um terminal e digite:
+
+```
+pi
+```
 
 ## Atualizar
 
@@ -23,25 +70,27 @@ git pull
 ./install.sh
 ```
 
-## Pré-requisitos
+O script preserva suas API keys. Não sobrescreve `auth.json` nem `mcp.json` existentes.
 
-- Node.js 20+
-- npm
-- uvx (para Minimax MCP) — `pip install uvx`
-- Acesso ao repo (privado)
+Para forçar reconfiguração das keys:
 
-## O que é instalado
+```bash
+rm ~/.pi/agent/auth.json ~/.pi/agent/mcp.json
+./install.sh
+```
+
+## O que vem instalado
 
 ### Agents (13)
 
 | Agente | O que faz |
 |--------|-----------|
-| `planner` | Arquiteta features, gera planos detalhados em `plans/*.md` |
-| `builder` | Executa implementações com Git-first, checklists, verificação final |
-| `scout` | Explora e mapeia o codebase rápido (modelo barato) |
+| `planner` | Arquiteta features e gera planos detalhados |
+| `builder` | Executa implementações com Git-first e verificação |
+| `scout` | Explora e mapeia o codebase |
 | `validator` | Quality gate — testa, audita, bloqueia código ruim |
 | `deep-search-master` | Pesquisa web. Modos: `quick:`, `verify:`, `deep search:` |
-| `deep-research-*` (7 agentes) | Pipeline de pesquisa profunda (auditor, creative, critical, explorer, finalizer, methodical, skeptical) |
+| `deep-research-*` (7) | Pipeline de pesquisa profunda com múltiplos ângulos |
 | `agent-expert` | Cria e configura novos agentes do PI |
 
 ### Skills (4)
@@ -63,34 +112,19 @@ git pull
 
 ### MCP Servers (7)
 
-| Server | O que faz |
-|--------|-----------|
-| SynaBun | Memória vetorial local |
-| memory | Memória persistente via MCP |
-| context7 | Contexto de documentação |
-| minimax-web-search | Busca na web |
-| zai-web-reader | Leitura de páginas web |
-| zai-zread | Leitura avançada de conteúdo |
-| zai-web-search-prime | Busca web via Z.AI |
+| Server | O que faz | Precisa de key? |
+|--------|-----------|----------------|
+| SynaBun | Memória vetorial local | Não |
+| memory | Memória persistente via MCP | Não |
+| context7 | Contexto de documentação | Não |
+| minimax-web-search | Busca na web | Sim (Minimax) |
+| zai-web-reader | Leitura de páginas web | Sim (Z.AI) |
+| zai-zread | Leitura avançada de conteúdo | Sim (Z.AI) |
+| zai-web-search-prime | Busca web via Z.AI | Sim (Z.AI) |
 
-## Estrutura
+## Pipeline de código
 
-```
-Pi/
-├── install.sh          # Script de instalação
-├── config/
-│   ├── settings.json   # Provider padrão, modelo, packages
-│   ├── SYSTEM.md       # System prompt
-│   ├── AGENTS.md       # Regras de roteamento dos agentes
-│   └── mcp.json        # MCP servers (template, sem keys reais)
-├── agents/             # 13 agentes (.md)
-├── skills/             # 4 skills
-└── extensions/         # 3 extensões (.ts)
-```
-
-## Pipeline de Código
-
-Para mudanças não-triviais, o PI segue esta pipeline automaticamente:
+Para mudanças não-triviais, o PI segue esta pipeline:
 
 ```
 scout → mapeia o codebase
@@ -104,19 +138,31 @@ validator → quality gate final
 
 Tarefas triviais (mudar texto, CSS) → PI faz direto, sem agentes.
 
-## API Keys
+## Estrutura do repo
 
-As keys ficam em `~/.pi/agent/mcp.json` e não são commitadas.
-
-Para trocar uma key, edite o arquivo diretamente:
-
-```bash
-nano ~/.pi/agent/mcp.json
+```
+Pi/
+├── install.sh              # Script de instalação
+├── config/
+│   ├── settings.json       # Provider, modelo, packages
+│   ├── SYSTEM.md           # System prompt
+│   ├── AGENTS.md           # Regras de roteamento dos agentes
+│   └── mcp.json            # Template dos MCP servers
+├── agents/                 # 13 agentes (.md)
+├── skills/                 # 4 skills
+└── extensions/             # 3 extensões (.ts)
 ```
 
-Para resetar tudo e configurar de novo:
+## Estrutura no disco do usuário
 
-```bash
-rm ~/.pi/agent/mcp.json
-./install.sh
+```
+~/.pi/agent/
+├── auth.json       # API keys (NÃO commitado)
+├── mcp.json        # MCP servers com keys reais (NÃO commitado)
+├── settings.json   # Config do PI
+├── SYSTEM.md       # System prompt
+├── AGENTS.md       # Regras de roteamento
+├── agents/         # 13 agentes
+├── skills/         # 4 skills
+└── extensions/     # 3 extensões
 ```
