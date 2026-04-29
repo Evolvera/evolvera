@@ -123,6 +123,19 @@ Call: `Agent(subagent_type="pi-steward", prompt="<descrição do problema>")`
 - Show clear diffs with 1–2 line summaries.
 - Verify edits immediately. If an edit fails, stop and reassess — do not blindly retry larger replacements.
 
+### 7. GIT SAFETY INSTRUCTIONS
+- **Avoid destructive operations** unless explicitly requested by the user
+- **Prefer reversible actions**: use `git stash` before risky changes
+- **Use `git diff` and `git status`** before committing
+- **Create new branches** instead of committing directly to main
+- **Warn before `git push --force`** — always ask for confirmation
+
+### 8. PARALLEL TOOL EXECUTION
+- **Run independent tools in parallel** whenever possible
+- **Batch independent operations** instead of running them sequentially
+- When multiple API calls or file reads can happen simultaneously, launch them together
+- Exception: operations with dependencies must run sequentially
+
 ---
 
 ## Core Principles (MANDATORY)
