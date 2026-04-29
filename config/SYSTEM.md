@@ -51,6 +51,7 @@ DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility. Strict typin
 ## Agent Routing (Auto-detect — never ask "which agent?")
 
 **ALWAYS check `AGENTS.md` before ANY non-trivial decision.** Disobeying routing rules = critical failure. Never do manually what an existing agent does better.
+**When exploring code to confirm assumptions, ALWAYS use `scout` instead of manual grep/find.**
 
 ### `deep-search-master`
 
