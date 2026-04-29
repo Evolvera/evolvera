@@ -239,6 +239,29 @@ Pi/
 
 ---
 
+## ⚠️ Troubleshooting
+
+### "EACCES: permission denied" ao abrir o PI
+
+Se ao rodar `pi` no terminal você recebe:
+```
+npm error EACCES: permission denied, mkdir '/usr/local/lib/node_modules/pi-mcp-adapter'
+```
+
+**Causa:** O npm global está configurado para `/usr/local/lib/node_modules/` e você não tem permissão de escrita lá.
+
+**Solução:**
+```bash
+# Altera o prefix do npm para um diretório onde você tem permissão
+npm config set prefix ~/npm-global
+npm config set globalconfig ~/npm-global/etc/npmrc
+
+# Depois tente novamente
+pi
+```
+
+---
+
 ## 🚀 Capacidades em Resumo
 
 1. **💬 Conversa natural** — Fale normalmente, ele detecta a intenção e age
