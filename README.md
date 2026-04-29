@@ -196,12 +196,14 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 ## 📊 Modelos de IA
 
-| Modelo | Uso | Custo |
-|--------|-----|-------|
-| **MiniMax-M2.7-highspeed** | Scout, Builder, Validator | 💰 Barato e rápido |
-| **Kimi for Coding** | Planner (thinking: xhigh) | 💎 Caro, alta capacidade |
-| **Claude Haiku 4.5** | Deep Search Master | 💰 Custo médio |
-| **GLM-5.1** (ZAI) | Modelo padrão do PI | 💰 Custo baixo |
+| Modelo | Agentes | Temperatura |
+|--------|---------|-------------|
+| **MiniMax-M2.7-highspeed** | Scout, Builder, Validator, Deep Research (exceto auditor/finalizer) | 0.1 |
+| **Kimi for Coding** | Planner, Deep Research Auditor, Deep Research Finalizer | 0.1 |
+| **inherit** | Agent Expert, Pi Steward (herdam do contexto) | 0.1 |
+| **GLM-5.1** (ZAI) | Modelo padrão do PI | — |
+
+> Temperature 0.1 = determinístico, ideal para código. Baixa criatividade, máxima reprodutibilidade.
 
 ---
 
