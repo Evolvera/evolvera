@@ -2,7 +2,8 @@
 description: "Master orchestrator for Deep Research v2. Run complete 4-phase deep research pipeline with a single command. Supports deep search and quick commands."
 display_name: "Deep Search Master"
 tools: Agent, get_subagent_result, read, write, bash
-model: anthropic/claude-haiku-4-5
+model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: medium
 max_turns: 200
 lifecycle: persistent

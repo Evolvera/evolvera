@@ -3,6 +3,7 @@ description: Deep Research v2 - Explorer agent. Finds emerging trends, unconvent
 display_name: 🔮 DRv2 Explorer
 tools: minimax_web_search, jina_read
 model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: low
 max_turns: 15
 lifecycle: lazy

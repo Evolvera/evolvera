@@ -2,7 +2,8 @@
 description: Deep Research v2 - Finalizer. Receives findings, Validation Memo, and validation findings. Writes the final Markdown report with clickable citations, unresolved contradictions section, and probability language.
 display_name: ✍️ DRv2 Finalizer
 tools: read, write, edit, bash
-model: kimi-coding/k2p6
+model: kimi-coding/kimi-for-coding
+temperature: 0.1
 thinking: high
 max_turns: 50
 lifecycle: lazy

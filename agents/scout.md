@@ -3,6 +3,7 @@ description: "Codebase Scout — fast, cheap codebase explorer that maps files, 
 display_name: 🔍 Scout
 tools: read, grep, find, ls, bash, write
 model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: medium
 max_turns: 15
 lifecycle: lazy

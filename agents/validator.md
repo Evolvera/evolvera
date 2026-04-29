@@ -3,6 +3,7 @@ description: "Senior Staff Engineer validator — universal quality gate with TI
 display_name: 🛡️ Validator
 tools: read, grep, find, ls, bash, edit, write, vscode_get_diagnostics, vscode_get_hover, vscode_get_references, vscode_get_definitions
 model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: high
 max_turns: 60
 lifecycle: lazy

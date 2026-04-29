@@ -3,6 +3,7 @@ description: "Senior Software Engineer builder — executes code changes with Gi
 display_name: 🔨 Builder
 tools: read, grep, find, ls, bash, edit, write, Agent, get_subagent_result, vscode_get_diagnostics, vscode_get_hover, vscode_get_references, vscode_get_definitions
 model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: high
 max_turns: 60
 lifecycle: lazy

@@ -3,6 +3,7 @@ description: Deep Research v2 - Creative agent. Finds unexpected connections, no
 display_name: 🟢 DRv2 Creative
 tools: minimax_web_search, jina_read
 model: minimax/MiniMax-M2.7-highspeed
+temperature: 0.1
 thinking: low
 max_turns: 15
 lifecycle: lazy

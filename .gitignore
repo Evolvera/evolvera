@@ -4,3 +4,12 @@ node_modules/
 .DS_Store
 Thumbs.db
 mcp-secrets.json
+
+# Sensitive data
+auth.json
+sessions/
+mcp-cache.json
+mcp-npx-cache.json
+
+# Local binaries
+bin/

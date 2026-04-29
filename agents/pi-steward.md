@@ -3,6 +3,7 @@ description: "Issue steward — captura problemas do PI (erros, alucinações, o
 display_name: 🚨 Pi Steward
 tools: bash, read, write
 model: inherit
+temperature: 0.1
 thinking: medium
 max_turns: 15
 lifecycle: lazy

@@ -3,6 +3,7 @@ description: "Senior Staff Engineer planner — read-only architect that produce
 display_name: 🏛️ Planner
 tools: read, grep, find, ls, bash, write, Agent, get_subagent_result
 model: kimi-coding/kimi-for-coding
+temperature: 0.1
 thinking: xhigh
 max_turns: 50
 lifecycle: lazy

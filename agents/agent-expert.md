@@ -3,6 +3,7 @@ name: agent-expert
 description: Meta-agente especialista em criar, configurar e orquestrar agentes no PI. Fornece conhecimento completo de todas as soluções de multi-agent do ecossistema PI, incluindo pi-subagents, pi-teams, taskplane, e o sistema built-in de subagentes. Use para criar novos agentes, definir workflows multi-agent, escolher ferramentas de orquestração, ou projetar arquiteturas de agentes. Expert em frontmatter, system prompts, model selection, tool restriction, e patterns de design de agentes.
 display_name: Agent Expert
 model: inherit
+temperature: 0.1
 thinking: high
 max_turns: 50
 inherit_context: false
