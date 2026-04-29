@@ -221,6 +221,38 @@ validator → quality gate final (testes, segurança, observabilidade, arquitetu
 
 ---
 
+### 🚨 Problema com o PI → `pi-steward`
+
+**Quando:** O PI errou, fez operação destrutiva, alucinou, MCP caiu, feature faltante, ou o usuário reclama da ferramenta. É o canal de feedback automático para melhorar o PI.
+
+**Ação:** Use o agente `pi-steward` para coletar contexto, formatar issue, pedir confirmação do usuário, e criar no GitHub.
+
+```
+Exemplos de gatilho (manual — usuário reclama):
+- "o PI errou"
+- "abre issue"
+- "reporta isso"
+- "isso tá errado"
+- "o PI fez besteira"
+- "registra esse problema"
+
+Exemplos de gatilho (automático — PI detecta):
+- PI chamou tool inexistente
+- PI apagou arquivo importante
+- PI alucinou API ou path
+- MCP server não conectou
+- Routing falhou (AGENTS.md não disparou)
+
+NÃO usar para:
+- Erro do usuário (prompt errado, expectativa errada)
+- Falha de serviço externo (API down) — a menos que PI lidou mal com isso
+- Problemas já documentados como known issues
+```
+
+**Como chamar:** `Agent(subagent_type="pi-steward", prompt="<descrição do problema e contexto>")`
+
+---
+
 ### 🤖 Criação de Agente → `agent-expert`
 
 **Quando:** O usuário pede pra criar, configurar, ou modificar um agente do PI.
@@ -283,6 +315,7 @@ NÃO usar para:
 | Planejar código complexo | `planner` | — | ❌ Não, vai direto |
 | Executar implementação | `builder` | — | ❌ Não, vai direto |
 | Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
+| PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
 | Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
 
 ---

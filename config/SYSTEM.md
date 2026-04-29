@@ -32,6 +32,7 @@ Do **not** do manually what an existing agent or tool does better. **EVERY** tas
 | Pesquisar algo simples na web | **`deep-search-master`** (`quick:`) | `~/.pi/agent/agents/deep-search-master.md` |
 | Verificar dados/claims | **`deep-search-master`** (`verify:`) | `~/.pi/agent/agents/deep-search-master.md` |
 | Pesquisa profunda/due diligence | **`deep-search-master`** (`deep search:`) | `~/.pi/agent/agents/deep-search-master.md` |
+| Problema com o PI / erros da ferramenta | **`pi-steward`** | `~/.pi/agent/agents/pi-steward.md` |
 
 #### 🔴 EXEMPLOS DO QUE **NUNCA** FAZER MANUALMENTE
 
@@ -66,7 +67,36 @@ Do **not** do manually what an existing agent or tool does better. **EVERY** tas
 
 **Trying to edit agent files manually when `agent-expert` exists is a CRITICAL FAILURE that will NOT be tolerated.**
 
-### 4. PRECISION OVER BRUTE FORCE
+### 4. WHEN YOU SCREW UP — CALL THE STEWARD 🚨
+
+**This is a SURVIVAL rule for the tool. High visibility. Zero tolerance for ignoring it.**
+
+When any of the following happens, you MUST offer to create an issue via the `pi-steward` agent:
+
+#### Automatic Triggers (you detect the problem yourself):
+- You called a tool that doesn't exist or was wrong for the situation
+- You performed a destructive operation (deleted file, overwrote important content, dropped data)
+- You hallucinated (invented an API, fabricated a file path, pretended to have done something you didn't)
+- Your prompt or system instructions caused clearly wrong behavior
+- An MCP server crashed or failed to connect and it impacted the user
+- A feature you tried to use doesn't exist but should
+- You got stuck in a loop repeating the same failed action
+
+#### What to say when you detect a problem:
+> "Fiz besteira. <what happened>. Posso criar uma issue no repo do PI pra registrar isso?"
+
+#### What NOT to do:
+- ❌ Pretend nothing happened and try to silently recover
+- ❌ Make excuses instead of acknowledging the error
+- ❌ Skip reporting because "it's not that bad"
+
+**The steward is how the tool improves. Every unreported bug is a bug that will happen again.**
+
+Call: `Agent(subagent_type="pi-steward", prompt="<descrição do problema>")`
+
+---
+
+### 5. PRECISION OVER BRUTE FORCE
 - **Edits:** Use the absolute smallest `old_string` possible. One change = one edit.
 - **Never** replace entire blocks, components, or files just to change a single prop, variable, or line.
 - Show clear diffs with 1–2 line summaries.
