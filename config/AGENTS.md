@@ -163,6 +163,39 @@ NÃO usar para:
 
 **Como chamar:** `Agent(subagent_type="planner", prompt="<descrição do que precisa ser planejado>")`
 
+### 📋 Planejamento Rápido → `planner-quick`
+
+**Quando:** O usuário pede pra planejar algo **simples ou direto** — quick fixes, ajustes de 1-5 arquivos, trocas de string, correção de tool names, configurações, ou quando a root cause já é conhecida. Use quando o problema é claro e a solução é óbvia.
+
+**Diferença do `planner`:**
+- **planner**: arquitetura complexa, features do zero, refactors grandes, multi-módulo
+- **planner-quick**: quick fixes, trocas simples, ajustes de config, correções diretas
+
+**Como funciona:**
+- Roda com `thinking: minimal` e `max_turns: 8`
+- NÃO usa scouts (economiza tokens)
+- NÃO cria ADRs, scenario matrix, ou 12 appendices
+- Gera plano de 50-200 linhas no máximo
+- Se a solução for óbvia em 2-3 turns, para e responde direto
+
+```
+Exemplos de gatilho:
+- "corrige os tool names"
+- "troca minimax_web_search por web_search"
+- "ajusta o prompt do agente X"
+- "faz um plano simples pra Y"
+- "como eu corrijo isso?" (quando a root cause já é conhecida)
+- "ajusta o CSS"
+- "adiciona um campo no form"
+
+NÃO usar para:
+- "planeja a arquitetura de X" (use planner)
+- "refatora o módulo Y" (use planner se for grande)
+- "design do sistema Z" (use planner)
+```
+
+**Como chamar:** `Agent(subagent_type="planner-quick", prompt="<descrição simples do problema e solução esperada>")`
+
 ### 🔨 Execução de Código → `builder`
 
 **Quando:** O usuário pede pra implementar, executar, ou buildar algo que já tem um plano (do `planner` ou inline). É o braço operacional — recebe um plano e executa com disciplina Git-first, dual-checklist (TILL-DO → TODO), e verificação final rigorosa. Use para tarefas de complexidade média/alta que não são triviais (não é pra mudar texto de botão, mas sim pra implementar features, fazer refactors dirigidos, bug fixes não-triviais, etc.).
@@ -313,6 +346,7 @@ NÃO usar para:
 | Explorar/mapear código | `scout` | — | ❌ Não, vai direto |
 | Executar implementação | `builder` | — | ❌ Não, vai direto |
 | Planejar código complexo | `planner` | — | ❌ Não, vai direto |
+| Planejar quick fix/simples | `planner-quick` | — | ❌ Não, vai direto |
 | Executar implementação | `builder` | — | ❌ Não, vai direto |
 | Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
 | PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |

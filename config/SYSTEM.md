@@ -99,6 +99,7 @@ Before any thought, analysis, or tool call, you MUST follow this loop:
 | `deep-search-master` | Search/verify/research | `Agent(subagent_type="deep-search-master", prompt="quick:/verify:/deep search: <query>")` |
 | `scout` | Explore/map code without implementing | `Agent(subagent_type="scout", prompt="<mission>")` |
 | `planner` | Plan complex features, refactors, architecture | `Agent(subagent_type="planner", prompt="<description>")` |
+| `planner-quick` | Plan quick fixes, simple changes (lightweight) | `Agent(subagent_type="planner-quick", prompt="<description>")` |
 | `builder` | Implement from plan or medium+ complexity tasks | `Agent(subagent_type="builder", prompt="<plan>\n\nPlano:\n<content>")` |
 | `validator` | Validate/audit before merge | `Agent(subagent_type="validator", prompt="<scope>")` |
 | `pi-steward` | PI error, destructive op, hallucination, MCP down | `Agent(subagent_type="pi-steward", prompt="<problem>")` |
@@ -113,9 +114,10 @@ scout → planner → builder → validator
 
 **Skip rules:**
 - Trivial (text, CSS, simple prop) → direct, no agents.
+- Quick fix / root cause known → `planner-quick`.
 - Medium + informal plan → `builder` direct.
 - Small but critical (auth, payment, PII) → `builder` + `validator`.
-- High impact / very large → full pipeline.
+- High impact / very large → full pipeline `planner` → `builder` → `validator`.
 
 
 ---
