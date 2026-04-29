@@ -1,0 +1,297 @@
+# PI Coding Agent - Context for All Agents
+
+## Tool Usage Guidelines
+
+### Reading Web Pages & PDFs
+**Use `jina_read` for any URL content extraction:**
+- Documentation pages
+- PDFs
+- GitHub READMEs and files
+- API documentation
+
+```bash
+# When to use jina_read:
+- User asks to "read this page" or "fetch content"
+- Need full documentation, not just search snippets
+- Reading PDF files
+```
+
+### Git Repositories
+**Use `bash` with `git clone`:**
+- Clone repositories for code analysis
+- Fetch specific branches or commits
+
+```bash
+# Example:
+git clone --depth 1 https://github.com/user/repo.git
+```
+
+### Search
+**Use `minimax-web-search` for finding URLs:**
+- Web searches
+- Finding documentation
+- Discovering resources
+
+---
+
+## Workflow: Research → Read → Analyze
+
+1. **Search** → `minimax-web-search` to find relevant URLs
+2. **Read** → `jina_read` to extract full content from URLs
+3. **Clone** → `git clone` for code repositories
+4. **Analyze** → Use read/grep/find on local content
+
+---
+
+## Agent Routing — Quando Usar Cada Agente
+
+Estas regras definem qual agente usar com base na intenção do usuário na conversa natural.
+NÃO pergunte "qual agente deseja usar?" — detecte automaticamente e aja.
+
+### 🔍 Pesquisa Simples → `deep-search-master` (modo quick)
+
+**Quando:** O usuário pede pra pesquisar algo, saber um fato, buscar informações, "me busca...", "qual é...", "cadê o...", ou qualquer pergunta factual que exija busca na web.
+
+**Ação:** Use o agente `deep-search-master` com prompt prefixado `quick:`.
+
+```
+Exemplos de gatilho:
+- "pesquisa pra mim sobre X"
+- "quem é fulano?"
+- "qual o endereço da empresa X?"
+- "busca o CNPJ de X"
+- "me acha informações sobre X"
+```
+
+**Como chamar:** `Agent(subagent_type="deep-search-master", prompt="quick: <pergunta>")`
+
+### ✅ Verificação de Dados → `deep-search-master` (modo verify)
+
+**Quando:** O usuário pede pra verificar, checar, confirmar, validar a veracidade de dados, informações, conhecimento ou claims que ele ou terceiros fizeram.
+
+**Ação:** Use o agente `deep-search-master` com prompt prefixado `verify:`.
+
+```
+Exemplos de gatilho:
+- "verifica se isso é verdade"
+- "confirma esses dados"
+- "esse CNPJ tá certo?"
+- "verifica a veracidade de X"
+- "checa se essa informação procede"
+- "essa claim tá correta?"
+```
+
+**Como chamar:** `Agent(subagent_type="deep-search-master", prompt="verify: <dados/claims>")`
+
+### 🏋️ Pesquisa Profunda → `deep-search-master` (modo full)
+
+**Quando:** O usuário pede explicitamente uma **pesquisa profunda**, due diligence, análise aprofundada, ou investigação completa.
+
+**Ação:** NÃO chame o agente direto. Siga este fluxo:
+
+1. **Gere um plano** simples do que será pesquisado (tópico, escopo, ângulos)
+2. **Apresente o plano ao usuário** e pergunte: "É isso? Quer adicionar ou alterar algo?"
+3. **Aguarde confirmação** do usuário
+4. **Somente após confirmação**, chame: `Agent(subagent_type="deep-search-master", prompt="deep search: <tema confirmado>")`
+
+```
+Exemplos de gatilho:
+- "faz uma pesquisa profunda sobre X"
+- "due diligence de X"
+- "investiga a fundo X"
+- "quero uma análise completa de X"
+- "deep search X"
+- "pesquisa profunda sobre X"
+```
+
+### 🔍 Exploração de Código → `scout`
+
+**Quando:** O usuário pede pra mapear, explorar, entender como algo funciona no código — mas SEM planejar ou implementar. Use quando ele quer inteligência sobre o codebase antes de tomar decisões.
+
+**Ação:** Use o agente `scout` para mapear rapidamente o codebase e retornar um relatório estruturado.
+
+```
+Exemplos de gatilho:
+- "mapeia como funciona o sistema de auth"
+- "explora a camada de dados"
+- "encontra todos os endpoints da API"
+- "mostra o fluxo de autenticação"
+- "ache os testes de autenticação"
+
+NÃO usar para:
+- "implementa X" (isso é planner)
+- "corrige esse bug" (faça direto)
+- "refatora Y" (planner se for grande)
+```
+
+**Como chamar:** `Agent(subagent_type="scout", prompt="<missão de exploração>")`
+
+**Modelo:** `minimax/MiniMax-M2.7-highspeed` — barato e rápido. Ideal pra explorar arquivos, grep, read, etc.
+
+---
+
+### 📐 Planejamento de Código → `planner`
+
+**Quando:** O usuário pede pra planejar ou arquitetar algo mais complexo no código — features novas do zero, refactors grandes, mudanças arquiteturais, design de sistema, bug complexo depois que a raiz foi encontrada. NÃO usar para mudanças simples e cotidianas.
+
+**Como funciona (orquestração automática):**
+1. O planner roda no `kimi` (modelo caro, thinking: xhigh)
+2. Na Phase 1 (Context Discovery), o planner **decompõe a tarefa** em 2-4 missões de exploração
+3. Lança **scouts em paralelo** (modelo barato — `minimax/MiniMax-M2.7-highspeed`) pra mapear o codebase
+4. Coleta os resultados e faz a **análise profunda** com o kimi
+5. Gera o plano detalhado em `plans/YYYY-MM-DD-*.md`
+
+**Isso economiza tokens** — a exploração custa ~10 turns de modelo barato em vez de 20-30 turns do modelo caro.
+
+```
+Exemplos de gatilho:
+- "planeja a implementação de X"
+- "como eu implemento X?"
+- "desenha a arquitetura de X"
+- "refatora o módulo X" (quando complexo)
+- "cria o design do sistema X"
+- "encontramos a raiz do bug, e agora?"
+- "preciso mudar isso pra um sistema novo do zero"
+
+NÃO usar para:
+- "muda o texto do botão"
+- "corrige esse bug simples"
+- "adiciona um campo no form"
+- "ajusta o CSS"
+- "faz scout do código" (use scout direto)
+```
+
+**Como chamar:** `Agent(subagent_type="planner", prompt="<descrição do que precisa ser planejado>")`
+
+### 🔨 Execução de Código → `builder`
+
+**Quando:** O usuário pede pra implementar, executar, ou buildar algo que já tem um plano (do `planner` ou inline). É o braço operacional — recebe um plano e executa com disciplina Git-first, dual-checklist (TILL-DO → TODO), e verificação final rigorosa. Use para tarefas de complexidade média/alta que não são triviais (não é pra mudar texto de botão, mas sim pra implementar features, fazer refactors dirigidos, bug fixes não-triviais, etc.).
+
+**Pipeline natural**: `planner` gera plano → `builder` executa o plano. Mas também pode ser invocado direto pelo usuário para executar mudanças a partir de um plano informal.
+
+**Como funciona:**
+1. **Git Step 0** — cria branch isolada `agent/<timestamp>-<desc>`, anota base commit
+2. **TILL-DO.md** — sanity gates que BLOQUEIAM execução até 100% ✅
+3. **TODO.md** — steps atômicos, one-change-one-verification
+4. **Execução** — edit precision, import hygiene, test-first
+5. **Final Verification** — syntax, types, imports, tests, edge cases, secrets, git diff
+6. **Cleanup** — apaga checklists, branch pronta para review
+
+```
+Exemplos de gatilho:
+- "implementa o plano de X" (plano já existe)
+- "executa esse plano do planner"
+- "builda a feature X seguindo esse plano"
+- "implementa X" (tarefa média/complexa, sem trivialidade)
+- "faz o refactor de Y seguindo o plano"
+
+NÃO usar para:
+- "muda o texto do botão" (trivial, faça direto)
+- "ajusta o CSS" (trivial)
+- "explora o código" (use scout)
+- "planeja X" (use planner)
+- "pesquisa X" (use deep-search-master)
+```
+
+**Como chamar:** `Agent(subagent_type="builder", prompt="<plano ou descrição da tarefa>\n\nPlano:\n<conteúdo do plano>")`
+
+---
+
+## Pipeline Completa de Código
+
+A pipeline natural para mudanças de código não-triviais:
+
+```
+scout → mapeia codebase (inteligência)
+  ↓
+planner → gera plano detalhado (plans/*.md)
+  ↓
+builder → executa plano (branch isolada, TILL-DO → TODO → Final Verification)
+  ↓
+validator → quality gate final (testes, segurança, observabilidade, arquitetura)
+```
+
+**Quando pular etapas:**
+- Tarefa trivial (mudar texto, CSS, prop simples) → faça direto, sem agentes
+- Tarefa média com plano informal → `builder` direto (sem planner)
+- Mudança pequena mas que toca área crítica (auth, payment, PII) → `builder` + `validator`
+- Mudança de alto impacto ou muito extensa → pipeline completa `planner` → `builder` → `validator`
+
+**Validator automático após builder:** Se o builder executou mudanças de alto impacto (security, data flow, external APIs, critical paths), ou mudanças muito extensas (>10 files), invoque o `validator` automaticamente após o builder completar. Não pergunte — faça.
+
+---
+
+### 🤖 Criação de Agente → `agent-expert`
+
+**Quando:** O usuário pede pra criar, configurar, ou modificar um agente do PI.
+
+**Ação:** NÃO chame o agente direto. Siga este fluxo:
+
+1. **Gere um plano simples** do agente proposto (nome, propósito, tools, comportamento)
+2. **Apresente ao usuário** e pergunte: "É isso? Quer ajustar algo?"
+3. **Aguarde confirmação** do usuário
+4. **Somente após confirmação**, chame: `Agent(subagent_type="agent-expert", prompt="<detalhes do agente confirmado>")`
+
+```
+Exemplos de gatilho:
+- "cria um agente que faz X"
+- "quero um agente pra Y"
+- "configura um agente de Z"
+- "modifica o agente X"
+```
+
+---
+
+### 🛡️ Validação de Código → `validator`
+
+**Quando:** O usuário pede pra validar, auditar, ou revisar qualidade de código antes de merge. Use quando ele quer um quality gate completo — testes, observabilidade, segurança, arquitetura. O validator pode gerar testes faltantes e BLOQUEIA código ruim independentemente da fonte.
+
+**Ação:** Use o agente `validator` com o escopo da validação (branch, PR, diff, arquivos específicos).
+
+```
+Exemplos de gatilho:
+- "valida esse PR"
+- "roda o validator na branch X"
+- "faz code review desse diff"
+- "audita os testes dessa feature"
+- "valida a qualidade desse código"
+- "verifica cobertura de testes"
+- "auditoria de segurança no código"
+
+NÃO usar para:
+- "muda o texto do botão" (trivial)
+- "explora o código" (use scout)
+- "implementa X" (use builder)
+- "pesquisa X" (use deep-search-master)
+```
+
+**Como chamar:** `Agent(subagent_type="validator", prompt="<escopo da validação: branch, PR, diff, arquivos>")`
+
+**Modelo:** `minimax/MiniMax-M2.7-highspeed` — rápido e barato. Ferramentas: read-only + write para testes + VSCode diagnostics.
+
+---
+
+## Resumo Rápido de Roteamento
+
+| Intenção do Usuário | Agente | Prefixo | Pede Confirmação? |
+|---------------------|--------|---------|-------------------|
+| Pesquisar algo simples | `deep-search-master` | `quick:` | ❌ Não, vai direto |
+| Verificar dados/claims | `deep-search-master` | `verify:` | ❌ Não, vai direto |
+| Pesquisa profunda | `deep-search-master` | `deep search:` | ✅ Sim, planeja primeiro |
+| Explorar/mapear código | `scout` | — | ❌ Não, vai direto |
+| Executar implementação | `builder` | — | ❌ Não, vai direto |
+| Planejar código complexo | `planner` | — | ❌ Não, vai direto |
+| Executar implementação | `builder` | — | ❌ Não, vai direto |
+| Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
+| Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
+
+---
+
+## Available Tools
+
+| Tool | Purpose | Example |
+|------|---------|---------|
+| `minimax-web-search` | Search web | `minimax_web_search({ query: "..." })` |
+| `jina_read` | Read URL content | `jina_read({ url: "..." })` |
+| `bash` | Execute commands | Git operations |
+| `read` | Read local files | Code analysis |

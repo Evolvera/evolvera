@@ -1,0 +1,12 @@
+{
+  "lastChangelogVersion": "0.70.6",
+  "followUpMode": "one-at-a-time",
+  "defaultProvider": "zai",
+  "defaultModel": "glm-5.1",
+  "defaultThinkingLevel": "high",
+  "packages": [
+    "npm:pi-mcp-adapter",
+    "npm:@tintinweb/pi-subagents"
+  ],
+  "hideThinkingBlock": false
+}

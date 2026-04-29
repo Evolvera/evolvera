@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "SynaBun": {
+      "command": "node",
+      "args": ["{{SYNABUN_PATH}}"],
+      "lifecycle": "keep-alive",
+      "exposeResources": false
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "lifecycle": "keep-alive"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "lifecycle": "lazy"
+    },
+    "minimax-web-search": {
+      "command": "uvx",
+      "args": ["minimax-coding-plan-mcp", "-y"],
+      "env": {
+        "MINIMAX_API_KEY": "{{MINIMAX_API_KEY}}",
+        "MINIMAX_API_HOST": "https://api.minimax.io"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-web-reader": {
+      "url": "https://api.z.ai/api/mcp/web_reader/mcp",
+      "headers": {
+        "Authorization": "Bearer {{ZAI_API_KEY}}"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-zread": {
+      "url": "https://api.z.ai/api/mcp/zread/mcp",
+      "headers": {
+        "Authorization": "Bearer {{ZAI_API_KEY}}"
+      },
+      "lifecycle": "eager"
+    },
+    "zai-web-search-prime": {
+      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+      "headers": {
+        "Authorization": "Bearer {{ZAI_API_KEY}}"
+      },
+      "lifecycle": "eager"
+    }
+  }
+}
