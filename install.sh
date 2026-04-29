@@ -79,6 +79,26 @@ if [ ! -f "$PI_DIR/mcp.json" ]; then
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
       "lifecycle": "lazy"
+    },
+    "minimax-web-search": {
+      "command": "npx",
+      "args": ["-y", "minimax-web-search"],
+      "lifecycle": "lazy"
+    },
+    "zai-web-reader": {
+      "command": "npx",
+      "args": ["-y", "zai-web-reader"],
+      "lifecycle": "lazy"
+    },
+    "zai-zread": {
+      "command": "npx",
+      "args": ["-y", "zai-zread"],
+      "lifecycle": "lazy"
+    },
+    "zai-web-search-prime": {
+      "command": "npx",
+      "args": ["-y", "zai-web-search-prime"],
+      "lifecycle": "lazy"
     }
   }
 }
