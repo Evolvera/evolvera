@@ -1,107 +1,96 @@
 ---
 name: project-memory
-description: Gerencia memória persistente e organizada por projeto usando SynaBun. Inclui scan inicial, campos estruturados (setup, bugs, architecture) e recuperação automática de contexto entre sessões.
+description: "Memória persistente por projeto via arquivos markdown em .pi/memory/. Auto-scan, resumo contextual, busca e edição. Ativa automaticamente em todo projeto."
 ---
 
 # Project Memory Skill
 
 ## Overview
 
-Esta skill gerencia memória persistente e organizada por projeto usando o SynaBun MCP. Cada projeto recebe um namespace isolado (`project-memory/{project_name}`) com subcategorias estruturadas. O resumo (`_summary`) é carregado automaticamente no início de cada sessão, garantindo contexto contínuo.
+Memória de projeto persistente usando arquivos `.md` em `{cwd}/.pi/memory/`. Sem dependências externas. Funciona offline.
 
-## Fluxo Completo
+## Arquivos de Memória
 
-1. **Início de Sessão**: Carrega `_summary` do projeto via recall
-2. **Se não existe**: Executa Scan Inicial (cria categorias + estrutura)
-3. **Durante a sessão**: Salva descobertas, bugs, decisões via `remember`
-4. **Após mudanças significativas**: Regenera `_summary`
-5. **Sob demanda**: Recall em categorias específicas quando necessário
+| Arquivo | Descrição |
+|---------|-----------|
+| `_summary.md` | Resumo compacto (max ~10k tokens), injetado automaticamente pela extension no início de cada sessão |
+| `setup.md` | Como rodar, buildar, testar, deploy. Scripts, dependências, runtime. |
+| `bugs.md` | Bugs conhecidos com status [ATIVO]/[RESOLVIDO]. Workarounds e fixes. |
+| `architecture.md` | Padrão de projeto, estrutura de dirs, fluxos de dados (mermaid), endpoints. |
+| `env.md` | Variáveis de ambiente obrigatórias e opcionais. Secrets como [REDACTED]. |
+| `api-external.md` | APIs de terceiros, rate limits, quirks. |
+| `decisions.md` | Decisões técnicas. Decisão + alternativas + motivo. |
 
-## Categorias Válidas (filhos de `project-memory/{project_name}`)
+## Operações
 
-| Categoria | Descrição | Importância Típica |
-|-----------|-----------|-------------------|
-| `_summary` | Síntese viva do projeto (~10k tokens) | 10 |
-| `setup` | Como rodar, buildar, testar, deployar | 5-7 |
-| `bugs` | Bugs conhecidos, workarounds, fixes | 6-8 |
-| `architecture` | Estrutura, fluxos, padrões, decisões | 7-9 |
-| `env` | Variáveis de ambiente, configs | 5-7 |
-| `api-external` | APIs de terceiros, rate limits | 5-7 |
-| `decisions` | Decisões técnicas, ADRs implícitos | 8-9 |
+### SAVE — Adicionar nova informação
 
-## Regras de Estrutura
+1. Determine qual arquivo `.md` é o correto
+2. Use `read` para ler o arquivo atual
+3. Use `edit` para ADICIONAR a nova seção no final do arquivo
+4. Formato: `## Título da Entrada` + bullets com detalhes + data
+5. **REGENERE `_summary.md`** (veja Regeneração)
 
-- **NUNCA** salvar diretamente em `project-memory/{project_name}` (pai)
-- **SEMPRE** usar uma subcategoria filha
-- **_summary** é único e deve ser regenerado após qualquer mudança nas categorias filhas
+### EDIT — Atualizar informação existente
 
-## Scan Inicial (quando `_summary` não existe)
+1. Use `read` para ler o arquivo atual
+2. Use `edit` para ATUALIZAR a seção específica
+3. **REGENERE `_summary.md`** (veja Regeneração)
 
-Quando `project-memory/{project_name}/_summary` não é encontrado:
+### DELETE — Remover informação obsoleta
 
-1. Criar categorias via `mcp_SynaBun_category_create`:
-   - `project-memory/{project_name}/setup`
-   - `project-memory/{project_name}/bugs`
-   - `project-memory/{project_name}/architecture`
-   - `project-memory/{project_name}/env`
-   - `project-memory/{project_name}/api-external`
-   - `project-memory/{project_name}/decisions`
-   - `project-memory/{project_name}/_summary`
+1. Use `read` para ler o arquivo atual
+2. Use `edit` para REMOVER a seção obsoleta
+3. **REGENERE `_summary.md`** (veja Regeneração)
 
-2. Ler arquivos do projeto:
-   - `package.json` / `pyproject.toml` / `Cargo.toml` / `go.mod`
-   - `README.md`, `CONTRIBUTING.md`
-   - `tsconfig.json` / `pyproject.toml` / `rust-toolchain.toml`
-   - `.env.example` / `.env.template`
-   - Estrutura de diretórios (nível 1-2)
+## Scan Inicial
 
-3. Para cada achado relevante, salvar via `mcp_SynaBun_remember` na categoria apropriada com `importance` 5-7
+Se `.pi/memory/` não existe:
 
-4. Gerar `_summary` usando `templates/summary-template.md`
+1. Crie o diretório: `mkdir -p .pi/memory/`
+2. Copie os templates como base: `cp ~/.pi/agent/skills/project-memory/templates/*.md .pi/memory/`
+3. Leia configs do projeto:
+   - `package.json` (ou `pyproject.toml`, `Cargo.toml`, `go.mod`)
+   - `README.md`
+   - `tsconfig.json` ou equivalente
+   - `.env.example` se existir
+   - `Makefile`, `docker-compose.yml` se existirem
+   - Estrutura de diretórios: `find . -maxdepth 2 -type f | head -50`
+4. Use `write` para popular cada arquivo `.md` com as descobertas
+5. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens)
+6. Mostre ao usuário o resumo do scan realizado
 
-5. Salvar `_summary` via `mcp_SynaBun_remember` com `importance: 10`
+## Busca
 
-## Regeneração do `_summary`
+- `grep -n "termo" .pi/memory/*.md` para buscar em todos os arquivos
+- `read` para ler arquivo específico
 
-Após qualquer `mcp_SynaBun_remember` ou `mcp_SynaBun_reflect` que altere memórias do projeto:
+## Quando Salvar Automaticamente
 
-1. Fazer `mcp_SynaBun_recall` com query geral em TODAS as categorias filhas (exceto `_summary`)
-2. Sintetizar novo resumo unificado (máx ~10k tokens)
-3. Salvar via `mcp_SynaBun_remember` em `project-memory/{project_name}/_summary`
+- Bug fix concluído → `bugs.md`
+- Nova feature que altera arquitetura → `architecture.md`
+- Mudança em scripts/config → `setup.md`
+- Decisão técnica tomada → `decisions.md`
+- Descoberta de quirk de API → `api-external.md`
+- Mudança em variáveis de ambiente → `env.md`
 
-## Recall Sob Demanda
+## Quando NÃO Salvar
 
-Execute `mcp_SynaBun_recall` com query específica nas categorias relevantes quando:
+- Q&A simples
+- Leitura sem achados
+- Correção de typos (apenas se afectar significado)
 
-- Propor mudanças arquiteturais
-- Debugar bugs complexos
-- Adicionar features que possam conflitar com decisões passadas
-- Usuário disser "busca na memória sobre X" ou "lembra de algo sobre Y"
+## Regeneração do `_summary.md`
 
-## Checklist de Salvar Automaticamente
+Após QUALQUER operação de SAVE, EDIT ou DELETE:
 
-Salvar via `mcp_SynaBun_remember` quando:
+1. Use `read` para ler TODOS os arquivos `.md` em `.pi/memory/` (exceto `_summary.md`)
+2. Sintetize um NOVO resumo unificado (max ~10k tokens, seja denso com bullets)
+3. Use `write` para sobrescrever `.pi/memory/_summary.md` com o novo resumo
 
-- [ ] Bug descoberto ou workaround implementado
-- [ ] Decisão técnica tomada (framework, padrão, abordagem)
-- [ ] Configuração importante encontrada/modificada
-- [ ] Endpoint ou API externa integrada
-- [ ] Estrutura de diretórios alterada
-- [ ] Problema recorrente identificado
-- [ ] Setup/build/test commands descobertos
+## Tools Utilizadas
 
-Salvar manualmente quando:
-
-- [ ] Usuário solicitar explicitamente
-- [ ] Informação crítica sobre o projeto obtida via pesquisa
-- [ ] Decisão arquitetural significativa documentada
-
-## Formato de Memória
-
-Cada entrada nas categorias de detalhe (exceto `_summary`):
-- **Máximo**: 400 tokens
-- **Campos obrigatórios**:
-  - `related_files`: array de caminhos relativos
-  - `tags`: 3-5 strings
-  - `importance`: número 1-10
-  - `content`: texto denso com bullet points
+- `read` — ler arquivos `.md` existentes
+- `write` — criar/sobrescrever arquivos `.md`
+- `edit` — adicionar, atualizar ou remover seções em `.md`
+- `bash` — `grep`, `mkdir`, `cp`, `find` para operações de filesystem
