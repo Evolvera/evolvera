@@ -49,21 +49,23 @@ Se `.pi/memory/` não existe:
 
 1. Crie o diretório: `mkdir -p .pi/memory/`
 2. Copie os templates como base: `cp ~/.pi/agent/skills/project-memory/templates/*.md .pi/memory/`
-3. Leia configs do projeto:
-   - `package.json` (ou `pyproject.toml`, `Cargo.toml`, `go.mod`)
-   - `README.md`
-   - `tsconfig.json` ou equivalente
-   - `.env.example` se existir
-   - `Makefile`, `docker-compose.yml` se existirem
-   - Estrutura de diretórios: `find . -maxdepth 2 -type f | head -50`
-4. Use `write` para popular cada arquivo `.md` com as descobertas
+3. **Use o Agent scout** para mapear o projeto (modelo barato MiniMax M2.7):
+   ```
+   Agent(subagent_type="scout", prompt="Mapeie este projeto completo. Retorne relatório estruturado com: 1) Setup/infra 2) Architecture 3) Env & Config 4) APIs externas 5) Bugs/code smells 6) Decisões técnicas")
+   ```
+4. Com o resultado do scout, use `write` para popular cada arquivo `.md`
 5. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens)
 6. Mostre ao usuário o resumo do scan realizado
 
 ## Busca
 
+**Na memória (.md):**
 - `grep -n "termo" .pi/memory/*.md` para buscar em todos os arquivos
 - `read` para ler arquivo específico
+
+**No codebase (busca profunda):**
+- Use o Agent scout para explorar o código quando precisar de detalhes que a memória não cobre
+- Se a busca revelar info relevante, SAVE na memória
 
 ## Quando Salvar Automaticamente
 
@@ -94,3 +96,4 @@ Após QUALQUER operação de SAVE, EDIT ou DELETE:
 - `write` — criar/sobrescrever arquivos `.md`
 - `edit` — adicionar, atualizar ou remover seções em `.md`
 - `bash` — `grep`, `mkdir`, `cp`, `find` para operações de filesystem
+- `Agent scout` — mapear codebase durante scan inicial e buscas profundas (modelo barato MiniMax M2.7)

@@ -1,12 +1,6 @@
 {
   "mcpServers": {
-    "SynaBun": {
-      "command": "node",
-      "args": ["/Users/j.henrique/npm-global/lib/node_modules/synabun/mcp-server/run.mjs"],
-      "lifecycle": "keep-alive",
-      "exposeResources": false
-    },
-    "memory": {
+"memory": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-memory"],
       "lifecycle": "keep-alive"
