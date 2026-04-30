@@ -83,11 +83,18 @@ if [ ! -f "$PI_DIR/mcp.json" ]; then
     "minimax-web-search": {
       "command": "npx",
       "args": ["-y", "@ameno/pi-minimax-mcp"],
+      "env": {
+        "MINIMAX_API_KEY": "YOUR_MINIMAX_API_KEY"
+      },
       "lifecycle": "lazy"
     },
     "zai-mcp": {
       "command": "npx",
       "args": ["-y", "@z_ai/mcp-server"],
+      "env": {
+        "Z_AI_API_KEY": "YOUR_ZAI_API_KEY",
+        "Z_AI_MODE": "ZAI"
+      },
       "lifecycle": "lazy"
     }
   }
