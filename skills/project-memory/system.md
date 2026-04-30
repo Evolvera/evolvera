@@ -12,12 +12,54 @@ Se o conteúdo injetado disser que NÃO existe memória → execute o SCAN INICI
 Se .pi/memory/ não existe no projeto atual:
 1. Crie o diretório: use `bash` com `mkdir -p .pi/memory/`
 2. Copie os templates como base: use `bash` com `cp ~/.pi/agent/skills/project-memory/templates/*.md .pi/memory/`
-3. **Use o Agent scout** (modelo barato) para mapear o projeto. Chame com:
-   ```
-   Agent(subagent_type="scout", prompt="Mapeie este projeto completo. Retorne um relatório estruturado com: 1) Setup/infra (runtime, package manager, scripts, deps chave, como rodar/buildar/testar) 2) Architecture (padrão de projeto, estrutura de dirs com 2 níveis, fluxos de dados, endpoints/APIs) 3) Env & Config (variáveis de ambiente de .env.example ou configs) 4) APIs externas consumidas 5) Bugs ou code smells conhecidos 6) Decisões técnicas visíveis no código")
-   ```
-   O scout é mais rápido e barato — ele faz todas as leituras com modelo MiniMax.
-4. Com o resultado do scout, use `write` para popular cada arquivo .md em .pi/memory/
+3. **Use o Agent scout** para um scan PROFUNDO e COMPLETO do projeto. O scout é barato (MiniMax M2.7), então mande ele vasculhar TUDO. Use EXATAMENTE este prompt:
+
+```
+FAÇA UM SCAN PROFUNDO E COMPLETO DESTE PROJETO. Não pare na superfície — vasculhe tudo.
+
+## Missão 1: SETUP & INFRA
+- Leia package.json (ou pyproject.toml, Cargo.toml, go.mod, etc.) — scripts, deps, devDeps, engines
+- Leia README.md inteiro
+- Procure Makefile, docker-compose.yml, Dockerfile, .env.example, tsconfig.json, vite.config, webpack.config, etc.
+- Liste TODOS os comandos disponíveis (npm scripts, make targets, etc.)
+- Runtime e versões obrigatórias
+
+## Missão 2: ARCHITECTURE
+- Mapeie estrutura de diretórios COMPLETA (pelo menos 3 níveis)
+- Identifique o padrão arquitetural (MVC, hexagonal, Clean Arch, modular, etc.)
+- Para cada diretório principal, diga o que contém e a responsabilidade
+- Identifique TODOS os endpoints/APIs internas (rotas, controllers, handlers)
+- Mapeie fluxos de dados críticos (entrada → processamento → saída)
+- Identifique models/schemas/entities principais
+- Procure por diagramas mermaid ou documentação de arquitetura existente
+- Middleware, interceptors, guards, pipes, etc.
+
+## Missão 3: ENV & CONFIG
+- Liste TODAS as variáveis de ambiente encontradas (procure em .env.example, .env.local, config files, código que usa process.env)
+- Identifique quais são obrigatórias vs opcionais
+- Secrets como [REDACTED]
+
+## Missão 4: APIs EXTERNAS
+- Procure por chamadas HTTP (axios, fetch, got, http client, SDKs)
+- Identifique TODAS as APIs de terceiros consumidas
+- Rate limits, autenticação, quirks conhecidos
+
+## Missão 5: BUGS & CODE SMELLS
+- Procure por TODO, FIXME, HACK, XXX nos comentários
+- Procure por try/catch vazios ou silenciosos
+- Procure por código morto (exports não usados)
+- Identifique code smells evidentes
+
+## Missão 6: DECISÕES TÉCNICAS
+- Identifique frameworks/libs escolhidos e versões
+- Procure por comentários que expliquem decisões (WHY, NOTE, REASON)
+- Identifique padrões de código (linting, formatting, commit hooks)
+- Tests: framework, onde ficam, cobertura visível
+
+RETORNE TUDO de forma estruturada, separado por seção. Quanto mais detalhe, melhor.
+```
+
+4. Com o resultado do scout, use `write` para popular cada arquivo .md em .pi/memory/ com TODA a info coletada
 5. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens)
 6. Mostre ao usuário o resumo do scan realizado
 
