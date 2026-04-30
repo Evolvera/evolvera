@@ -10,6 +10,8 @@ auth.json
 sessions/
 mcp-cache.json
 mcp-npx-cache.json
+mcp.json
+extensions/
 
 # Local binaries
 bin/
