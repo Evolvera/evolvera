@@ -12,14 +12,12 @@ Se o conteúdo injetado disser que NÃO existe memória → execute o SCAN INICI
 Se .pi/memory/ não existe no projeto atual:
 1. Crie o diretório: use `bash` com `mkdir -p .pi/memory/`
 2. Copie os templates como base: use `bash` com `cp ~/.pi/agent/skills/project-memory/templates/*.md .pi/memory/`
-3. Leia os arquivos-fonte do projeto:
-   - `package.json` (ou `pyproject.toml`, `Cargo.toml`, `go.mod`)
-   - `README.md`
-   - `tsconfig.json` ou equivalente
-   - `.env.example` se existir
-   - `Makefile`, `docker-compose.yml` se existirem
-   - Estrutura de diretórios: `bash` com `find . -maxdepth 2 -type f | head -50`
-4. Use `write` para popular cada arquivo .md com as descobertas
+3. **Use o Agent scout** (modelo barato) para mapear o projeto. Chame com:
+   ```
+   Agent(subagent_type="scout", prompt="Mapeie este projeto completo. Retorne um relatório estruturado com: 1) Setup/infra (runtime, package manager, scripts, deps chave, como rodar/buildar/testar) 2) Architecture (padrão de projeto, estrutura de dirs com 2 níveis, fluxos de dados, endpoints/APIs) 3) Env & Config (variáveis de ambiente de .env.example ou configs) 4) APIs externas consumidas 5) Bugs ou code smells conhecidos 6) Decisões técnicas visíveis no código")
+   ```
+   O scout é mais rápido e barato — ele faz todas as leituras com modelo MiniMax.
+4. Com o resultado do scout, use `write` para popular cada arquivo .md em .pi/memory/
 5. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens)
 6. Mostre ao usuário o resumo do scan realizado
 
@@ -66,9 +64,20 @@ Após QUALQUER operação de SAVE (Regra 3), EDIT (Regra 4) ou DELETE (Regra 5):
 
 ## REGRA 7 — BUSCA NA MEMÓRIA
 Durante a sessão, quando precisar de detalhes que não estão no resumo:
+
+**Busca rápida** (na memória .md):
 1. Use `bash` com `grep -n "termo" .pi/memory/*.md` para buscar em todos os arquivos
 2. Ou use `read` para ler um arquivo .md específico inteiro
-3. Use ANTES de decisões arquiteturais, debugging complexo, ou quando o usuário pedir "busca na memória sobre X"
+
+**Busca profunda** (no codebase):
+3. Use o Agent scout para explorar o código-fonte quando precisar de detalhes que a memória não cobre:
+   ```
+   Agent(subagent_type="scout", prompt="Busque no projeto: {descrição do que precisa}")
+   ```
+   O scout é barato (MiniMax M2.7) e retorna resultados estruturados.
+4. Se a busca revelar info relevante pro projeto, SAVE na memória (Regra 3).
+
+Use busca ANTES de decisões arquiteturais, debugging complexo, ou quando o usuário pedir "busca na memória sobre X"
 
 ## REGRA 8 — CHECKLIST OBRIGATÓRIO (antes de enviar resposta)
 Execute mentalmente antes de CADA resposta:
