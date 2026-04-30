@@ -49,10 +49,16 @@ Se `.pi/memory/` não existe:
 
 1. Crie o diretório: `mkdir -p .pi/memory/`
 2. Copie os templates como base: `cp ~/.pi/agent/skills/project-memory/templates/*.md .pi/memory/`
-3. **Use o Agent scout** para mapear o projeto (modelo barato MiniMax M2.7):
-   ```
-   Agent(subagent_type="scout", prompt="Mapeie este projeto completo. Retorne relatório estruturado com: 1) Setup/infra 2) Architecture 3) Env & Config 4) APIs externas 5) Bugs/code smells 6) Decisões técnicas")
-   ```
+3. **Use o Agent scout** com prompt PROFUNDO (ver system.md Regra 2) — mande ele vasculhar:
+   - Todos os configs (package.json, tsconfig, docker, make, env)
+   - Estrutura completa de dirs (3+ níveis)
+   - TODOS os endpoints/APIs internas
+   - Fluxos de dados críticos
+   - Variáveis de ambiente (obrigatórias e opcionais)
+   - APIs externas consumidas
+   - TODO/FIXME/HACK nos comentários
+   - Decisões técnicas visíveis
+   - Frameworks, libs, versões, padrões
 4. Com o resultado do scout, use `write` para popular cada arquivo `.md`
 5. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens)
 6. Mostre ao usuário o resumo do scan realizado
