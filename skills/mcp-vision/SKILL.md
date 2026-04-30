@@ -1,6 +1,6 @@
 ---
 name: mcp-vision
-description: Processa imagens coladas pelo usuário quando o modelo não suporta vision. Use SEMPRE que o usuário colar uma imagem, anexar uma imagem, ou quando aparecer "image omitted" ou "model does not support images" no contexto. Analisa imagens via MCP minimax_web_search_understand_image.
+description: Processa imagens coladas pelo usuário. Use SEMPRE que o usuário colar uma imagem, anexar uma imagem, ou quando aparecer "image omitted" ou "model does not support images" no contexto. Analisa imagens via tool understand_image.
 ---
 
 # MCP Vision Skill
@@ -10,12 +10,12 @@ description: Processa imagens coladas pelo usuário quando o modelo não suporta
 ATIVAR automaticamente quando:
 - Usuário cola uma imagem (Ctrl+V, drag & drop)
 - Aparece `(image omitted: model does not support images)` no contexto
-- Usuário diz "o que você vê?" ou pede para analisar algo visual
+- Usuário diz "o que você vê?", "analisa essa imagem", ou pede para analisar algo visual
 - Qualquer referência a imagem, screenshot, foto, print
 
 ## Como funciona
 
-O modelo atual **não suporta imagens nativamente**. Mas o usuário pode colar imagens que ficam salvas em arquivos temporários. Esta skill instrui como processá-las via MCP.
+O modelo atual **não suporta imagens nativamente**. Mas o usuário pode colar imagens que ficam salvas em arquivos temporários. Esta skill usa a tool `understand_image` para processá-las.
 
 ## Passo a passo
 
@@ -24,62 +24,62 @@ O modelo atual **não suporta imagens nativamente**. Mas o usuário pode colar i
 Quando o usuário cola uma imagem, o Pi salva em arquivos temporários. Procure o(s) arquivo(s) mais recente(s):
 
 ```bash
-ls -lt /var/folders/*/T/pi-clipboard-*.png 2>/dev/null | head -5
+find /var/folders -name "pi-clipboard-*.png" -mmin -2 2>/dev/null | head -5
 ```
 
-Ou:
-```bash
-find /var/folders -name "pi-clipboard-*.png" -mmin -5 2>/dev/null | head -5
+### 2. Analisar com understand_image
+
+Para CADA imagem encontrada, chame a tool `understand_image`:
+
 ```
-
-### 2. Analisar via MCP
-
-Para CADA imagem encontrada, chamar o MCP:
-
-```javascript
-mcp({
-  server: "minimax-web-search",
-  tool: "minimax_web_search_understand_image",
-  args: JSON.stringify({
-    prompt: "Descreva esta imagem em detalhes. Inclua texto visível, objetos, cores, layout, expressões, e qualquer contexto relevante.",
-    image_source: "<caminho_da_imagem>"
-  })
+understand_image({
+  prompt: "Descreva esta imagem em detalhes. Inclua texto visível, objetos, cores, layout, expressões, e qualquer contexto relevante.",
+  image_url: "/caminho/da/imagem.png"
 })
 ```
 
-**IMPORTANTE:** O `image_source` aceita caminho local (sem `@`). Se o caminho começar com `@`, remova o `@`.
+**image_url** aceita:
+- Caminhos locais: `/var/folders/.../pi-clipboard-xxx.png`
+- URLs HTTP/HTTPS: `https://exemplo.com/imagem.png`
+- O prefixo `@` é removido automaticamente se presente
 
 ### 3. Responder ao usuário
 
-Use a descrição retornada pelo MCP para responder o que o usuário perguntou sobre a imagem.
+Use a descrição retornada pela tool para responder o que o usuário perguntou sobre a imagem.
 
-## Exemplo completo
+## Exemplos de uso
 
-Usuário cola imagem e pergunta "o que vc ve?"
-
-1. Procuro imagens recentes:
-```bash
-find /var/folders -name "pi-clipboard-*.png" -mmin -2 2>/dev/null | head -1
+### Bug/Issue em screenshot
 ```
-→ `/var/folders/.../T/pi-clipboard-abc123.png`
-
-2. Analiso via MCP:
-```javascript
-mcp({
-  server: "minimax-web-search",
-  tool: "minimax_web_search_understand_image",
-  args: JSON.stringify({
-    prompt: "Descreva esta imagem em detalhes",
-    image_source: "/var/folders/.../T/pi-clipboard-abc123.png"
-  })
+understand_image({
+  prompt: "O que está errado nesta tela? Identifique todos os problemas visuais ou de UI.",
+  image_url: "/var/folders/.../pi-clipboard-abc.png"
 })
 ```
 
-3. Respondo com a descrição obtida.
+### Descrever o que vê
+```
+understand_image({
+  prompt: "Descreva o que você vê nesta imagem em detalhes.",
+  image_url: "/var/folders/.../pi-clipboard-abc.png"
+})
+```
 
-## Notas
+### Extrair texto (OCR)
+```
+understand_image({
+  prompt: "Extraia todo o texto visível nesta imagem.",
+  image_url: "/var/folders/.../pi-clipboard-abc.png"
+})
+```
 
-- Formatos suportados: PNG, JPG, JPEG, WEBP, GIF
-- Imagens do clipboard geralmente ficam em `/var/folders/*/T/pi-clipboard-*.png`
-- Sempre procure o arquivo MAIS RECENTE (use `-mmin -5` ou `-mmin -2`)
+## Formatos suportados
+
+- PNG, JPG, JPEG, WebP
+
+## Dicas
+
+- Sempre procure a imagem MAIS RECENTE (`-mmin -2`)
 - Se encontrar múltiplas imagens, analise TODAS
+- Seja específico no prompt sobre o que quer saber
+- Para screenshots de erro, pergunte qual o erro e onde está
