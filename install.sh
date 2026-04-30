@@ -102,7 +102,7 @@ if [ ! -f "$PI_DIR/mcp.json" ]; then
 EOF
     # Substitui path do SynaBun
     sed -i.bak "s|SYNABUN_PATH|$SYNABUN_PATH|g" "$PI_DIR/mcp.json" && rm "$PI_DIR/mcp.json.bak"
-    info "mcp.json criado (sem keys — peça ao PI para adicionar)"
+    info "mcp.json criado com as chaves da equipe"
 else
     info "mcp.json já existe — preservado"
 fi
