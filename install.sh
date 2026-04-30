@@ -82,22 +82,12 @@ if [ ! -f "$PI_DIR/mcp.json" ]; then
     },
     "minimax-web-search": {
       "command": "npx",
-      "args": ["-y", "minimax-web-search"],
+      "args": ["-y", "@ameno/pi-minimax-mcp"],
       "lifecycle": "lazy"
     },
-    "zai-web-reader": {
+    "zai-mcp": {
       "command": "npx",
-      "args": ["-y", "zai-web-reader"],
-      "lifecycle": "lazy"
-    },
-    "zai-zread": {
-      "command": "npx",
-      "args": ["-y", "zai-zread"],
-      "lifecycle": "lazy"
-    },
-    "zai-web-search-prime": {
-      "command": "npx",
-      "args": ["-y", "zai-web-search-prime"],
+      "args": ["-y", "@z_ai/mcp-server"],
       "lifecycle": "lazy"
     }
   }
