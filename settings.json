@@ -1,12 +1,13 @@
 {
   "lastChangelogVersion": "0.70.6",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "kimi-coding",
-  "defaultModel": "kimi-for-coding",
+  "defaultProvider": "minimax",
+  "defaultModel": "MiniMax-M2.7-highspeed",
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:pi-mcp-adapter",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:@imsus/pi-extension-minimax-coding-plan-mcp"
   ],
   "hideThinkingBlock": false
 }
