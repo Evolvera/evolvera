@@ -239,37 +239,6 @@ Pi/
 
 ---
 
-## 🔑 API Keys dos MCP Servers
-
-Após a instalação, é preciso adicionar as API keys nos servers que exigem autenticação:
-
-### MiniMax (web search + image understanding)
-```bash
-# Opção 1: Arquivo de config (~/.pi/agent/extensions/minimax-mcp.json)
-{
-  "apiKey": "YOUR_MINIMAX_API_KEY"
-}
-
-# Opção 2: Via env var no mcp.json
-"minimax-web-search": {
-  "env": { "MINIMAX_API_KEY": "YOUR_KEY" }
-}
-```
-
-### Z.AI (vision + tools)
-```json
-"zai-mcp": {
-  "env": {
-    "Z_AI_API_KEY": "YOUR_ZAI_API_KEY",
-    "Z_AI_MODE": "ZAI"
-  }
-}
-```
-
-Depois de adicionar as keys, **reinicie o PI** para conectar os servers.
-
----
-
 ## ⚠️ Troubleshooting
 
 ### "EACCES: permission denied" ao abrir o PI

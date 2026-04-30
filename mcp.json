@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "SynaBun": {
+      "command": "node",
+      "args": ["/Users/j.henrique/npm-global/lib/node_modules/synabun/mcp-server/run.mjs"],
+      "lifecycle": "keep-alive",
+      "exposeResources": false
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "lifecycle": "keep-alive"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "lifecycle": "lazy"
+    },
+    "minimax-web-search": {
+      "command": "npx",
+      "args": ["-y", "@ameno/pi-minimax-mcp"],
+      "env": {
+        "MINIMAX_API_KEY": "sk-cp-BHBRHdqDdrT-MPucjuT3hXCeQfM-Vyt2rvrFQ4IhcHmFdXit4_N8rpWlFZYIpsqLOacJ2MBqVPKAq3wRrcYAhBt2Kh4uh5vJ8jcb3WFPeddiXtgOP2QliZs"
+      },
+      "lifecycle": "lazy"
+    },
+    "zai-mcp": {
+      "command": "npx",
+      "args": ["-y", "@z_ai/mcp-server"],
+      "env": {
+        "Z_AI_API_KEY": "831e40e972324c5d91b20a24fc073524.15dViOViq2Bm6nYt",
+        "Z_AI_MODE": "ZAI"
+      },
+      "lifecycle": "lazy"
+    }
+  }
+}

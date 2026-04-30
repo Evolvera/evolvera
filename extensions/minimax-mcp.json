@@ -1,0 +1,9 @@
+{
+  "apiKey": "sk-cp-BHBRHdqDdrT-MPucjuT3hXCeQfM-Vyt2rvrFQ4IhcHmFdXit4_N8rpWlFZYIpsqLOacJ2MBqVPKAq3wRrcYAhBt2Kh4uh5vJ8jcb3WFPeddiXtgOP2QliZs",
+  "apiHost": "https://api.minimax.io",
+  "basePath": "/tmp/minimax-output",
+  "resourceMode": "url",
+  "timeoutMs": 60000,
+  "maxBytes": 51200,
+  "maxLines": 2000
+}
