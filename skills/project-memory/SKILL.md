@@ -87,8 +87,28 @@ Retorne tudo estruturado em seções com bullets detalhados.
 ```
 
 4. Aguarde os 3 scouts terminarem (`get_subagent_result` com `wait: true`)
-5. Use `write` para popular cada arquivo `.md` em `.pi/memory/` com TODA a info coletada
-6. Gere o `_summary.md` sintetizando todos os campos (max ~10k tokens, seja denso)
+5. **Delegue para o builder** popular os arquivos com todo o resultado:
+   ```
+   Agent(subagent_type="builder", prompt=""
+   Popule a memória do projeto em .pi/memory/ com os dados do scan:
+
+   === DADOS DO SCOUT A (Setup & Infra) ===
+   {cole aqui o resultado do Scout A}
+
+   === DADOS DO SCOUT B (Architecture & APIs) ===
+   {cole aqui o resultado do Scout B}
+
+   === DADOS DO SCOUT C (Env, Bugs & Decisões) ===
+   {cole aqui o resultado do Scout C}
+
+   Para cada arquivo em .pi/memory/ (setup.md, bugs.md, architecture.md, env.md, api-external.md, decisions.md):
+   1. Use write para popular com os dados relevantes do scan
+   2. Mantenha o formato: ## Título + bullets + data
+   Depois, leia todos os .md (exceto _summary.md), sintetize um resumo (max ~10k tokens, bullets densos)
+   e sobrescreva .pi/memory/_summary.md com write.
+   "")
+   ```
+6. O builder popula TODOS os .md E gera o `_summary.md` em uma única chamada
 7. Mostre ao usuário o resumo do scan realizado
 
 ---
@@ -96,11 +116,23 @@ Retorne tudo estruturado em seções com bullets detalhados.
 ## REGRA 3 — SAVE (adicionar nova informação)
 
 Quando descobrir algo novo durante o trabalho:
-1. Determine qual arquivo `.md` é o correto
-2. Use `read` para ler o arquivo atual
-3. Use `edit` para ADICIONAR a nova seção no final do arquivo
-4. Formato: `## Título da Entrada` + bullets com detalhes + data
-5. REGENERE `_summary.md` (veja Regra 6)
+1. Determine qual arquivo `.md` é o correto e monte o conteúdo da nova entrada
+2. **Delegue para o builder** executar a gravação:
+   ```
+   Agent(subagent_type="builder", prompt=""
+   Adicione a seguinte entrada no final do arquivo .pi/memory/{campo}.md:
+
+   ## {Título da Entrada}
+   - **Data**: {YYYY-MM-DD}
+   - {detalhes}
+   - **Arquivos relacionados**: {paths}
+
+   Após adicionar, leia TODOS os arquivos .md em .pi/memory/ (exceto _summary.md),
+   sintetize um resumo unificado (max ~10k tokens, bullets densos)
+   e sobrescreva .pi/memory/_summary.md com o write.
+   "")
+   ```
+3. O builder faz a gravação E regenera o `_summary.md` em uma única chamada
 
 **Quando salvar automaticamente:**
 - Bug fix concluído → `bugs.md`
@@ -115,34 +147,64 @@ Quando descobrir algo novo durante o trabalho:
 ## REGRA 4 — EDIT (atualizar informação existente)
 
 Quando algo mudar que afeta memória já salva:
-1. Use `read` para ler o arquivo `.md` relevante
-2. Use `edit` para ATUALIZAR a seção específica
-3. Exemplos de quando editar:
-   - Bug foi resolvido → atualiza status para [RESOLVIDO] em `bugs.md`
-   - Arquitetura mudou → atualiza seção em `architecture.md`
-   - Decisão foi revertida → atualiza em `decisions.md`
-   - Setup mudou (novo script, nova dep) → atualiza `setup.md`
-4. REGENERE `_summary.md` (veja Regra 6)
+1. Determine qual arquivo `.md` e qual seção precisa ser atualizada
+2. **Delegue para o builder** executar a edição:
+   ```
+   Agent(subagent_type="builder", prompt=""
+   Edite o arquivo .pi/memory/{campo}.md:
+   - Encontre a seção '## {Título da Entrada}'
+   - {descreva exatamente o que mudar}
+
+   Após editar, leia TODOS os arquivos .md em .pi/memory/ (exceto _summary.md),
+   sintetize um resumo unificado (max ~10k tokens, bullets densos)
+   e sobrescreva .pi/memory/_summary.md com o write.
+   "")
+   ```
+3. O builder faz a edição E regenera o `_summary.md` em uma única chamada
+
+Exemplos de quando editar:
+- Bug foi resolvido → atualiza status para [RESOLVIDO] em `bugs.md`
+- Arquitetura mudou → atualiza seção em `architecture.md`
+- Decisão foi revertida → atualiza em `decisions.md`
+- Setup mudou (novo script, nova dep) → atualiza `setup.md`
 
 ---
 
 ## REGRA 5 — DELETE (remover informação obsoleta)
 
 Quando memória não é mais relevante:
-1. Use `read` para ler o arquivo `.md` relevante
-2. Use `edit` para REMOVER a seção obsoleta
-3. REGENERE `_summary.md` (veja Regra 6)
+1. Determine qual arquivo `.md` e qual seção precisa ser removida
+2. **Delegue para o builder** executar a remoção:
+   ```
+   Agent(subagent_type="builder", prompt=""
+   Remova a seção '## {Título da Entrada}' do arquivo .pi/memory/{campo}.md.
+
+   Após remover, leia TODOS os arquivos .md em .pi/memory/ (exceto _summary.md),
+   sintetize um resumo unificado (max ~10k tokens, bullets densos)
+   e sobrescreva .pi/memory/_summary.md com o write.
+   "")
+   ```
+3. O builder faz a remoção E regenera o `_summary.md` em uma única chamada
 
 ---
 
-## REGRA 6 — REGENERAÇÃO DO `_summary.md` (OBRIGATÓRIO)
+## REGRA 6 — REGENERAÇÃO DO `_summary.md` (AUTOMÁTICA VIA BUILDER)
 
-Após QUALQUER operação de SAVE (Regra 3), EDIT (Regra 4) ou DELETE (Regra 5):
-1. Use `read` para ler TODOS os arquivos `.md` em `.pi/memory/` (exceto `_summary.md`)
-2. Sintetize um NOVO resumo unificado (max ~10k tokens, seja denso com bullets)
-3. Use `write` para sobrescrever `.pi/memory/_summary.md` com o novo resumo
-4. NÃO re-injete na sessão atual — a sessão já tem contexto da conversa
-5. A próxima sessão que abrir vai pegar o resumo atualizado automaticamente
+A regeneração do `_summary.md` é SEMPRE feita pelo builder junto com a operação de SAVE/EDIT/DELETE.
+O modelo principal NÃO precisa regenerar manualmente — basta delegar para o builder
+que ele já faz a operação + regeneração em uma única chamada.
+
+Se por algum motivo precisar regenerar isoladamente:
+```
+Agent(subagent_type="builder", prompt=""
+Leia TODOS os arquivos .md em .pi/memory/ (exceto _summary.md),
+sintetize um resumo unificado (max ~10k tokens, bullets densos)
+e sobrescreva .pi/memory/_summary.md com o write.
+"")
+```
+
+- NÃO re-injete na sessão atual — a sessão já tem contexto da conversa
+- A próxima sessão que abrir vai pegar o resumo atualizado automaticamente via extension
 
 ---
 
@@ -169,9 +231,8 @@ Use busca ANTES de decisões arquiteturais, debugging complexo, ou quando o usu�
 Execute mentalmente antes de CADA resposta:
 ```
 [ ] Eu executei alguma ação que gerou ou alterou conhecimento do projeto?
-[ ] Se sim, eu salvei/editei o arquivo .md correto em .pi/memory/?
-[ ] Se salvei/editei/apaguei, eu regenerei _summary.md?
-[ ] Se não regenerei, PARE TUDO e execute a regeneração AGORA.
+[ ] Se sim, eu deleguei para o builder salvar/editar o arquivo .md + regenerar _summary.md?
+[ ] Se não deleguei, PARE TUDO e chame o builder AGORA.
 ```
 
 ---
