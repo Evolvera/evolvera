@@ -210,6 +210,33 @@ NÃO usar para:
 5. **Final Verification** — syntax, types, imports, tests, edge cases, secrets, git diff
 6. **Cleanup** — apaga checklists, branch pronta para review
 
+### ⚠️ IMPORTANTE: Builder roda em branch/worktree isolado
+
+O builder **sempre** executa suas mudanças numa branch separada, NÃO no diretório de trabalho principal. Isso é proposital — protege o código de mudanças quebradas.
+
+**O que isso significa pra você (agente principal):**
+- Quando o builder terminar, as mudanças estão numa **branch separada**, não nos arquivos do diretório atual
+- **NUNCA** assuma que os arquivos foram modificados no diretório de trabalho
+- **SEMPRE** após o builder completar:
+  1. Pegue o resultado com `get_subagent_result({ agent_id: "...", verbose: true })`
+  2. Identifique qual **branch** o builder criou
+  3. Faça `git merge <branch-do-builder>` pra trazer as mudanças pro diretório de trabalho
+  4. Só DEPOIS do merge faça build/test/commit/push
+
+**Fluxo correto:**
+```
+builder completa → get_subagent_result(verbose: true)
+  → identificar branch criada pelo builder
+  → git checkout main && git merge <builder-branch>
+  → build/test/commit/push
+```
+
+**Fluxo ERRADO (não fazer):**
+```
+builder completa → assumir que arquivos foram modificados
+  → tentar commit/build direto → SURPRESA: nada mudou
+```
+
 ```
 Exemplos de gatilho:
 - "implementa o plano de X" (plano já existe)
@@ -336,6 +363,55 @@ NÃO usar para:
 
 ---
 
+### 🎨 Construção de Website → Chain: `website-designer` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
+
+**Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
+
+**Ação:** Orquestrar a chain completa de 6 passos (4 agentes, 2 usados 2x):
+1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md
+2. `builder` — Implementa o plano em branch isolada (Git-first)
+3. `validator` — Quality gate pós-build (compilação, tipos, estrutura)
+4. `website-polisher` — Audit UI/UX e gera POLISH_PLAN.md (READ-ONLY, não edita código)
+5. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
+6. `validator` — Quality gate final (testes, acessibilidade, segurança)
+
+```
+Exemplos de gatilho:
+- "cria um site para minha clínica"
+- "builda uma landing page para meu SaaS"
+- "faz um site institucional com blog"
+- "preciso de um e-commerce"
+- "quero um site de portfólio"
+- "/website-brief MeuProjeto"
+- "builda um website"
+- "cria uma landing page"
+```
+
+**NÃO usar para:**
+- Ajustes simples em site existente (use `builder` direto)
+- Apenas design sem implementação (use `website-designer` isolado)
+- Apenas review de site existente (use `website-polisher` ou `validator` isolados)
+- Hospedagem/deploy (fora do escopo dos agentes)
+
+**Como funciona a chain:**
+```
+website-designer (gera DESIGN_PLAN.md)
+    ↓
+builder [pré-existente] (implementa em branch agent/<timestamp>-website)
+    ↓
+validator [pré-existente] (quality gate pós-build → REVIEW.md)
+    ↓
+website-polisher (gera POLISH_PLAN.md — READ-ONLY)
+    ↓
+builder [pré-existente] (aplica correções visuais)
+    ↓
+validator [pré-existente] (quality gate final → REVIEW.md final)
+```
+
+**Nota:** O agente designer NÃO escreve código. Ele escreve apenas DESIGN_PLAN.md. O builder lê este arquivo e executa. O polisher NÃO edita código — apenas lê e gera POLISH_PLAN.md com instruções detalhadas (file, old_string, new_string) para o builder executar.
+
+---
+
 ## Resumo Rápido de Roteamento
 
 | Intenção do Usuário | Agente | Prefixo | Pede Confirmação? |
@@ -351,6 +427,7 @@ NÃO usar para:
 | Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
 | PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
 | Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
+| Construção de Website | `website-designer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ❌ Não, vai direto |
 
 ---
 

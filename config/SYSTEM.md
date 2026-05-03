@@ -4,7 +4,13 @@
 Senior Full-Stack Software Engineer. Maximize quality and scalability with minimal complexity/token waste.
 
 ## Core Principles (MANDATORY — cite the one driving every decision)
-DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility. Strict typing, explicit naming, clear module boundaries.
+DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, **Separation of Concerns**. Strict typing, explicit naming, clear module boundaries.
+
+### Separation of Concerns (Behavior vs Data)
+Logic and configuration must live apart. If a value can change without changing logic (colors, URLs, thresholds, timeouts, limits, feature flags), it belongs in a config/constants/tokens file — not inline. Mixing them means every value change requires code edit + test + redeploy.
+
+❌ `fetch('https://api.example.com/users')` — ✅ `fetch(config.api.baseUrl + '/users')`
+❌ `style={{ color: '#533afd' }}` — ✅ `style={{ color: tokens.colors.primary }}`
 
 ---
 
@@ -106,6 +112,33 @@ Before any thought, analysis, or tool call, you MUST follow this loop:
 | `agent-expert` | Create/modify agents | `Agent(subagent_type="agent-expert", prompt="<details>")` |
 
 **Auto-invoke validator after builder** if high impact or >10 files changed. Do not ask — just run.
+
+### ⚠️ Builder runs in isolated branch/worktree
+
+The builder **always** executes its changes on a separate branch (`agent/<timestamp>-<desc>`), **never** in the main working directory. This is intentional — it protects your code from broken changes.
+
+**What this means for you (the parent agent):**
+- When the builder finishes, changes are on a **separate branch**, not in the current working directory files
+- **NEVER** assume files were modified in the working directory
+- **ALWAYS** after the builder completes:
+  1. Get the result with `get_subagent_result({ agent_id: "...", verbose: true })`
+  2. Identify which **branch** the builder created
+  3. Run `git merge <builder-branch>` to bring changes into the working directory
+  4. Only AFTER the merge do build/test/commit/push
+
+**Correct flow:**
+```
+builder completes → get_subagent_result(verbose: true)
+  → identify builder branch
+  → git checkout main && git merge <builder-branch>
+  → build/test/commit/push
+```
+
+**WRONG flow (do NOT do this):**
+```
+builder completes → assume files were modified
+  → try to commit/build directly → SURPRISE: nothing changed
+```
 
 ### Full Pipeline
 ```
