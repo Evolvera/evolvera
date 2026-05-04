@@ -45,7 +45,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (14)
+## 🤖 Agentes Disponíveis (16)
 
 ### Pipeline de Código
 
@@ -55,6 +55,8 @@ git pull
 | **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Kimi (modelo caro, thinking extended) | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
 | **Builder** | 🔨 | Engenheiro de execução — implementa com disciplina Git-first, checklists, verificação final | MiniMax-M2.7 | "implementa X", "executa esse plano", "builda a feature" |
 | **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | MiniMax-M2.7 | "valida esse PR", "audita os testes", "code review" |
+| **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | MiniMax-M2.7 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
+| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | MiniMax-M2.7 | "polish esse site", "refina o design", "melhora a UX" |
 
 ### Pipeline Natural
 
@@ -76,12 +78,37 @@ Validator → quality gate (testes, segurança, arquitetura)
 - Mudança crítica (auth, payment, PII) → builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
 
+### Website Building Chain
+
+Fluxo completo para criar sites profissionais com referência em marcas reais:
+
+```
+website-designer → builder → validator → website-polisher → builder → validator
+```
+
+**Passos:**
+1. **website-designer** — Analisa briefing, referencia design systems reais (Stripe, Linear, Apple, Vercel, Figma, etc.) e gera `DESIGN_PLAN.md`
+2. **builder** — Implementa o design (branch isolada, TILL-DO → TODO → Final Verification)
+3. **validator** — Quality gate (compilação, tipos, estrutura)
+4. **website-polisher** — Audit UI/UX completo, gera `POLISH_PLAN.md` com correções detalhadas
+5. **builder** — Aplica correções do polish
+6. **validator** — Quality gate final
+
+**Como usar:**
+```
+"cria um site para minha clínica"
+"builda uma landing page para meu SaaS"
+"faz um site institucional com blog"
+"/website-brief MeuProjeto  ← preenche briefing e dispara chain
+```
+
 ### Agentes Especiais
 
 | Agente | Emoji | Função | Quando usar |
 |--------|-------|--------|-------------|
 | **Agent Expert** | 🤖 | Meta-agente que cria, configura e modifica outros agentes | "cria um agente que faz X" |
 | **Pi Steward** | 🚨 | Captura bugs do PI e cria issues no GitHub | "o PI errou", "registra esse problema" |
+| **Planner Quick** | ⚡ | Planner leve para quick fixes e tarefas simples (1-5 arquivos, trocas de string) | "corrige os tool names", "troca X por Y" |
 
 ### Pesquisa Web — Deep Search Master
 
@@ -157,7 +184,7 @@ Para adicionar API keys nos MCP servers, basta pedir no chat do PI. Ele edita o 
 
 ---
 
-## 📦 Skills (4)
+## 📦 Skills (5)
 
 | Skill | O que faz |
 |-------|-----------|
@@ -165,6 +192,7 @@ Para adicionar API keys nos MCP servers, basta pedir no chat do PI. Ele edita o 
 | `mcp-vision` | Processa imagens via MCP quando o modelo não suporta vision |
 | `pi-tool-expert` | Guia completo para criar/modificar extensões TypeScript do PI |
 | `synabun` | Regras de uso da memória vetorial SynaBun |
+| `design-catalog` | Catálogo de 73 design systems reais (Stripe, Linear, Apple, Vercel, Figma, etc.) com tokens, cores, tipografia e padrões visuais para referência em website design |
 
 ## 🔌 Extensões (3)
 
@@ -187,8 +215,11 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 | Pesquisa profunda | `deep-search-master` (deep) | "due diligence de X" |
 | Explorar código | `scout` | "como funciona X?" |
 | Planejar feature | `planner` | "planeja a implementação de X" |
+| Planejar quick fix | `planner-quick` | "corrige X", "troca Y por Z" |
 | Implementar | `builder` | "implementa X" |
 | Validar código | `validator` | "valida esse PR" |
+| Criar site/landing | `website-designer` | "cria um site para X", "builda landing page" |
+| Polir/refinar site | `website-polisher` | "polish esse site", "refina o design" |
 | Criar agente | `agent-expert` | "cria um agente pra X" |
 | Problema no PI | `pi-steward` | "o PI errou" |
 
@@ -217,20 +248,24 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 14 agentes (.md)
+├── agents/                 # 16 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
+│   ├── planner-quick.md    # Planner leve para quick fixes
 │   ├── builder.md          # Engenheiro de execução
 │   ├── scout.md            # Explorador de código
 │   ├── validator.md        # Quality gate
+│   ├── website-designer.md # Designer de websites
+│   ├── website-polisher.md # UI/UX polish
 │   ├── agent-expert.md     # Meta-agente para criar agentes
 │   ├── pi-steward.md       # Canal de feedback/bugs
 │   ├── deep-search-master.md  # Orquestrador de pesquisa
 │   └── deep-research-*.md # 7 sub-agentes de pesquisa
-├── skills/                 # 4 skills
+├── skills/                 # 5 skills
 │   ├── git-research/
 │   ├── mcp-vision/
 │   ├── pi-tool-expert/
-│   └── synabun/
+│   ├── synabun/
+│   └── design-catalog/     # 73 design systems reais
 └── extensions/             # 3 extensões (.ts)
     ├── auto-image-clipboard.ts
     ├── jina-reader.ts
