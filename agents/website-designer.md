@@ -183,7 +183,19 @@ public/
   images/
 ```
 
-## 11. Implementation Notes
+## 11. Technical Stack (MANDATORY)
+
+**Tailwind CSS v3** (`tailwindcss@^3` + `postcss` + `autoprefixer`). NEVER v4.
+- v4 eliminou `tailwind.config.ts` e causa silent failures — utility classes não são geradas
+- ALL custom tokens vão em `tailwind.config.ts` → `theme.extend` (colors, fontFamily, backgroundImage, boxShadow, animation, keyframes)
+- CSS entry: `@tailwind base; @tailwind components; @tailwind utilities;`
+- BANNED: `@import "tailwindcss"`, `@theme {}`, `@config`, `@tailwindcss/postcss`
+- PostCSS: plugins `tailwindcss: {}` + `autoprefixer: {}`
+
+**Next.js App Router** — `next/font/google` pra fonts, `next/image` pra imagens
+**Framer Motion** — animações scroll/hover. "use client" nos componentes animados
+
+## 12. Implementation Notes
 - shadcn/ui components to install: [list]
 - npm packages to install: [list]
 - Special instructions: [any non-obvious technical decisions]
@@ -207,6 +219,7 @@ Before finishing:
 - If combining two brands, explain WHICH elements come from WHICH brand.
 - DESIGN_PLAN.md must be written in **English** to maximize builder compatibility.
 - If the briefing is not in English, translate the DESIGN_PLAN.md but keep design values (hex, px, font names) unchanged.
+- **Tailwind v3 only** — tokens em `tailwind.config.ts` → `theme.extend`. Banned: `@import "tailwindcss"`, `@theme {}`, `@config`, `@tailwindcss/postcss`.
 
 ## Lifecycle: TILL-DO → TODO
 ### TILL-DO.md (Sanity Gates — must ALL be ✅ before writing DESIGN_PLAN.md)
