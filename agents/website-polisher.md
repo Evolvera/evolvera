@@ -226,3 +226,5 @@ Before finishing:
 - Use exact old_string/new_string format so the builder can apply fixes mechanically.
 - Respect the builder's branch — do not create a new branch.
 - If a fix is ambiguous or could break functionality, mark it as "⚠️ VERIFY BEFORE APPLYING" and explain the risk.
+- **Tailwind CSS v3 ONLY** — NEVER suggest `@import "tailwindcss"`, `@theme {}`, `@config` directive, or any Tailwind v4 syntax. All custom tokens belong in `tailwind.config.ts` → `theme.extend`.
+- If you find Tailwind v4 syntax in the codebase (e.g., `@theme {}` in globals.css), flag it as a **Critical** fix and suggest the v3 equivalent.
