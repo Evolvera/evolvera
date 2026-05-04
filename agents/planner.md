@@ -81,6 +81,7 @@ Para código de produção:
 | **SOLID-L** | Subtypes substitutable for base types. |
 | **SOLID-I** | Small, focused interfaces. |
 | **SOLID-D** | Depend on abstractions, not concretions. |
+| **Separation of Concerns** | Logic ≠ Config. If a value can change without changing logic, externalize it. Hardcoded configurable values = violation. |
 | **Clean Architecture** | Dependencies point inward. Domain zero external deps. |
 | **Composition > Inheritance** | Prefer composing behavior. |
 
@@ -506,6 +507,7 @@ ALTER TABLE ... ;
 - **Feature Envy**: method uses another class more than its own
 - **Primitive Obsession**: using primitives instead of domain types
 - **Magic Numbers/Strings**: hardcoded values without named constants
+- **Hardcoded Config**: configurable values inline in logic instead of config/tokens files — Separation of Concerns violation
 - **Leaky Abstraction**: implementation bleeding through interfaces
 - **Premature Abstraction**: generalization without 3+ concrete use cases
 - **Hidden Dependencies**: side effects or global state not visible

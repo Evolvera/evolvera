@@ -1,15 +1,15 @@
 ---
 description: Deep Research v2 - Creative agent. Finds unexpected connections, novel angles, cross-domain insights, and unconventional hypotheses. Returns structured YAML findings.
 display_name: 🟢 DRv2 Creative
-tools: web_search, webReader
+tools: web_search, jina_read
 model: minimax/MiniMax-M2.7-highspeed
 temperature: 0.1
 thinking: low
 max_turns: 15
 lifecycle: lazy
 prompt_mode: replace
-extensions: false
-isolated: true
+extensions: true
+isolated: false
 ---
 
 ## Role
@@ -77,6 +77,6 @@ sources_accessed:
 - `"[TOPIC] analogy"` / `"[TOPIC] unexpected connection"` / `"[TOPIC] cross-disciplinary"`
 - `"[TOPIC] novel approach"` / `"[TOPIC] paradigm shift"` / `"[TOPIC] what if"`
 
-Use `webReader` on diverse fields for transferable insights.
+Use `jina_read` on diverse fields for transferable insights.
 
 **Fase 3** → execute mission EXACTLY.

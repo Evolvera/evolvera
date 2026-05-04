@@ -1,0 +1,2806 @@
+{
+  "brands": [
+    {
+      "slug": "airbnb",
+      "name": "Airbnb",
+      "category": "consumer",
+      "vibe": [
+        "warm",
+        "friendly",
+        "premium",
+        "human",
+        "inviting"
+      ],
+      "colors": [
+        "#FF385C",
+        "#FF5A5F",
+        "#00A699",
+        "#484848",
+        "#FFFFFF"
+      ],
+      "typography": [
+        "Airbnb Cereal",
+        "Circular"
+      ],
+      "use_cases": [
+        "marketplace",
+        "consumer",
+        "travel",
+        "booking",
+        "social"
+      ],
+      "design_file": "designs/airbnb/DESIGN.md",
+      "keywords": [
+        "warm",
+        "pink",
+        "red",
+        "rounded",
+        "friendly",
+        "travel",
+        "marketplace",
+        "human"
+      ]
+    },
+    {
+      "slug": "airtable",
+      "name": "Airtable",
+      "category": "productivity",
+      "vibe": [
+        "playful",
+        "colorful",
+        "flexible",
+        "modern",
+        "productive"
+      ],
+      "colors": [
+        "#18B5E0",
+        "#F8A800",
+        "#E43D84",
+        "#36B37E",
+        "#34495E"
+      ],
+      "typography": [
+        "Graphik",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "database",
+        "no-code",
+        "B2B"
+      ],
+      "design_file": "designs/airtable/DESIGN.md",
+      "keywords": [
+        "colorful",
+        "playful",
+        "grid",
+        "database",
+        "flexible",
+        "tabs",
+        "rounded"
+      ]
+    },
+    {
+      "slug": "apple",
+      "name": "Apple",
+      "category": "enterprise",
+      "vibe": [
+        "minimal",
+        "premium",
+        "bold",
+        "luxurious",
+        "clean"
+      ],
+      "colors": [
+        "#0071E3",
+        "#1D1D1F",
+        "#F5F5F7",
+        "#86868B",
+        "#000000"
+      ],
+      "typography": [
+        "SF Pro Display",
+        "SF Pro Text",
+        "New York"
+      ],
+      "use_cases": [
+        "ecommerce",
+        "enterprise",
+        "consumer",
+        "hardware",
+        "software"
+      ],
+      "design_file": "designs/apple/DESIGN.md",
+      "keywords": [
+        "minimal",
+        "white",
+        "bold typography",
+        "product",
+        "luxury",
+        "clean",
+        "large type"
+      ]
+    },
+    {
+      "slug": "binance",
+      "name": "Binance",
+      "category": "fintech",
+      "vibe": [
+        "bold",
+        "technical",
+        "crypto",
+        "modern",
+        "trustworthy"
+      ],
+      "colors": [
+        "#F0B90B",
+        "#1E2026",
+        "#2B2D31",
+        "#181A20",
+        "#000000"
+      ],
+      "typography": [
+        "DIN Alternate",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "crypto",
+        "exchange",
+        "trading",
+        "B2C"
+      ],
+      "design_file": "designs/binance/DESIGN.md",
+      "keywords": [
+        "yellow",
+        "gold",
+        "dark",
+        "crypto",
+        "trading",
+        "financial",
+        "bold"
+      ]
+    },
+    {
+      "slug": "bmw",
+      "name": "BMW",
+      "category": "automotive",
+      "vibe": [
+        "luxurious",
+        "precise",
+        "premium",
+        "dynamic",
+        "sophisticated"
+      ],
+      "colors": [
+        "#1C69D4",
+        "#26282C",
+        "#E2E2E2",
+        "#000000",
+        "#FFFFFF"
+      ],
+      "typography": [
+        "BMW Type",
+        "DIN",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "automotive",
+        "enterprise",
+        "luxury",
+        "B2C"
+      ],
+      "design_file": "designs/bmw/DESIGN.md",
+      "keywords": [
+        "blue",
+        "precision",
+        "luxury",
+        "automotive",
+        "premium",
+        "dynamic"
+      ]
+    },
+    {
+      "slug": "bmw-m",
+      "name": "BMW M",
+      "category": "automotive",
+      "vibe": [
+        "aggressive",
+        "performance",
+        "racing",
+        "bold",
+        "dark"
+      ],
+      "colors": [
+        "#1C69D4",
+        "#CC0000",
+        "#000000",
+        "#FFFFFF",
+        "#333333"
+      ],
+      "typography": [
+        "BMW M Type",
+        "DIN",
+        "Arial Black"
+      ],
+      "use_cases": [
+        "automotive",
+        "performance",
+        "racing",
+        "B2C"
+      ],
+      "design_file": "designs/bmw-m/DESIGN.md",
+      "keywords": [
+        "blue",
+        "red",
+        "racing",
+        "performance",
+        "aggressive",
+        "M stripes"
+      ]
+    },
+    {
+      "slug": "bugatti",
+      "name": "Bugatti",
+      "category": "automotive",
+      "vibe": [
+        "ultra-luxury",
+        "extreme",
+        "elegant",
+        "iconic",
+        "prestigious"
+      ],
+      "colors": [
+        "#003399",
+        "#FFCC00",
+        "#000000",
+        "#FFFFFF",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Gotham",
+        "Bodoni",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "automotive",
+        "luxury",
+        "hypercar",
+        "B2C"
+      ],
+      "design_file": "designs/bugatti/DESIGN.md",
+      "keywords": [
+        "blue",
+        "yellow",
+        "luxury",
+        "hypercar",
+        "elegant",
+        "prestigious",
+        "iconic"
+      ]
+    },
+    {
+      "slug": "cal",
+      "name": "Cal.com",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "clean",
+        "productive",
+        "modern",
+        "functional"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#EAEAEA",
+        "#666666",
+        "#0066FF"
+      ],
+      "typography": [
+        "Inter",
+        "Cal Sans",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "developer tools",
+        "scheduling",
+        "B2B"
+      ],
+      "design_file": "designs/cal/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "minimal",
+        "calendar",
+        "scheduling",
+        "clean",
+        "functional"
+      ]
+    },
+    {
+      "slug": "claude",
+      "name": "Claude (Anthropic)",
+      "category": "developer-tools",
+      "vibe": [
+        "intelligent",
+        "calm",
+        "warm",
+        "trustworthy",
+        "minimal"
+      ],
+      "colors": [
+        "#CC785C",
+        "#1A1A1A",
+        "#FAFAF9",
+        "#666666",
+        "#E5E5E3"
+      ],
+      "typography": [
+        "Soehne",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "SaaS",
+        "B2B",
+        "consumer"
+      ],
+      "design_file": "designs/claude/DESIGN.md",
+      "keywords": [
+        "orange",
+        "warm",
+        "calm",
+        "AI",
+        "trustworthy",
+        "minimal",
+        "chat"
+      ]
+    },
+    {
+      "slug": "clay",
+      "name": "Clay",
+      "category": "saas",
+      "vibe": [
+        "playful",
+        "gradient",
+        "modern",
+        "vibrant",
+        "premium"
+      ],
+      "colors": [
+        "#3B82F6",
+        "#8B5CF6",
+        "#EC4899",
+        "#F59E0B",
+        "#10B981"
+      ],
+      "typography": [
+        "Inter",
+        "Clash Display",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "enrichment",
+        "sales",
+        "B2B",
+        "CRM"
+      ],
+      "design_file": "designs/clay/DESIGN.md",
+      "keywords": [
+        "gradient",
+        "purple",
+        "playful",
+        "multicolor",
+        "vibrant",
+        "enrichment"
+      ]
+    },
+    {
+      "slug": "clickhouse",
+      "name": "ClickHouse",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "database",
+        "minimal",
+        "dark",
+        "precise"
+      ],
+      "colors": [
+        "#FFCC00",
+        "#1A1A1A",
+        "#FFFFFF",
+        "#666666",
+        "#333333"
+      ],
+      "typography": [
+        "JetBrains Mono",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "database",
+        "B2B",
+        "infrastructure"
+      ],
+      "design_file": "designs/clickhouse/DESIGN.md",
+      "keywords": [
+        "yellow",
+        "database",
+        "dark",
+        "technical",
+        "monospace",
+        "developer"
+      ]
+    },
+    {
+      "slug": "cohere",
+      "name": "Cohere",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "AI",
+        "modern",
+        "clean",
+        "trustworthy"
+      ],
+      "colors": [
+        "#E63B7A",
+        "#0D0D0D",
+        "#FFFFFF",
+        "#333333",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "Space Grotesk",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "SaaS",
+        "B2B",
+        "NLP"
+      ],
+      "design_file": "designs/cohere/DESIGN.md",
+      "keywords": [
+        "pink",
+        "AI",
+        "dark",
+        "technical",
+        "modern",
+        "developer"
+      ]
+    },
+    {
+      "slug": "coinbase",
+      "name": "Coinbase",
+      "category": "fintech",
+      "vibe": [
+        "clean",
+        "trustworthy",
+        "modern",
+        "financial",
+        "accessible"
+      ],
+      "colors": [
+        "#0052FF",
+        "#0A0A0A",
+        "#FFFFFF",
+        "#767676",
+        "#F3F3F3"
+      ],
+      "typography": [
+        "Coinbase Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "crypto",
+        "exchange",
+        "B2C",
+        "B2B"
+      ],
+      "design_file": "designs/coinbase/DESIGN.md",
+      "keywords": [
+        "blue",
+        "black",
+        "crypto",
+        "clean",
+        "financial",
+        "trustworthy"
+      ]
+    },
+    {
+      "slug": "composio",
+      "name": "Composio",
+      "category": "developer-tools",
+      "vibe": [
+        "modern",
+        "technical",
+        "developer",
+        "dark",
+        "precise"
+      ],
+      "colors": [
+        "#7C3AED",
+        "#18181B",
+        "#FFFFFF",
+        "#A78BFA",
+        "#27272A"
+      ],
+      "typography": [
+        "Inter",
+        "Space Grotesk",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "AI",
+        "SaaS",
+        "B2B",
+        "automation"
+      ],
+      "design_file": "designs/composio/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "developer",
+        "AI",
+        "technical",
+        "automation"
+      ]
+    },
+    {
+      "slug": "cursor",
+      "name": "Cursor",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "developer",
+        "precise",
+        "modern"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#666666",
+        "#007AFF"
+      ],
+      "typography": [
+        "Inter",
+        "JetBrains Mono",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "IDE",
+        "AI",
+        "B2B",
+        "software"
+      ],
+      "design_file": "designs/cursor/DESIGN.md",
+      "keywords": [
+        "dark",
+        "minimal",
+        "IDE",
+        "developer",
+        "black",
+        "precise"
+      ]
+    },
+    {
+      "slug": "elevenlabs",
+      "name": "ElevenLabs",
+      "category": "developer-tools",
+      "vibe": [
+        "tech",
+        "AI",
+        "clean",
+        "modern",
+        "professional"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#9CA3AF",
+        "#3B82F6",
+        "#1F2937"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "SaaS",
+        "developer tools",
+        "B2B",
+        "audio"
+      ],
+      "design_file": "designs/elevenlabs/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "AI",
+        "audio",
+        "clean",
+        "technical"
+      ]
+    },
+    {
+      "slug": "expo",
+      "name": "Expo",
+      "category": "developer-tools",
+      "vibe": [
+        "playful",
+        "developer",
+        "modern",
+        "approachable",
+        "fun"
+      ],
+      "colors": [
+        "#000020",
+        "#FFFFFF",
+        "#D4D4FC",
+        "#6C47FF",
+        "#F7F7FF"
+      ],
+      "typography": [
+        "Space Grotesk",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "mobile",
+        "SaaS",
+        "B2D"
+      ],
+      "design_file": "designs/expo/DESIGN.md",
+      "keywords": [
+        "purple",
+        "playful",
+        "mobile",
+        "developer",
+        "React Native",
+        "approachable"
+      ]
+    },
+    {
+      "slug": "ferrari",
+      "name": "Ferrari",
+      "category": "automotive",
+      "vibe": [
+        "ultra-luxury",
+        "racing",
+        "iconic",
+        "passionate",
+        "red"
+      ],
+      "colors": [
+        "#FF2800",
+        "#000000",
+        "#FFFFFF",
+        "#DC0000",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Ferrari Font",
+        "Helvetica Neue",
+        "Arial"
+      ],
+      "use_cases": [
+        "automotive",
+        "luxury",
+        "racing",
+        "B2C"
+      ],
+      "design_file": "designs/ferrari/DESIGN.md",
+      "keywords": [
+        "red",
+        "racing",
+        "luxury",
+        "prancing horse",
+        "iconic",
+        "passionate"
+      ]
+    },
+    {
+      "slug": "figma",
+      "name": "Figma",
+      "category": "creative",
+      "vibe": [
+        "minimal",
+        "functional",
+        "creative",
+        "dark",
+        "precise"
+      ],
+      "colors": [
+        "#A259FF",
+        "#1E1E1E",
+        "#FFFFFF",
+        "#E8761B",
+        "#0ACF83"
+      ],
+      "typography": [
+        "Inter",
+        "Figma Sans",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "creative",
+        "design tools",
+        "B2B",
+        "productivity"
+      ],
+      "design_file": "designs/figma/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "minimal",
+        "creative",
+        "design",
+        "functional"
+      ]
+    },
+    {
+      "slug": "framer",
+      "name": "Framer",
+      "category": "creative",
+      "vibe": [
+        "modern",
+        "creative",
+        "sophisticated",
+        "premium",
+        "dynamic"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#F5F5F5",
+        "#666666",
+        "#0070F3"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "creative",
+        "website builder",
+        "B2B",
+        "no-code"
+      ],
+      "design_file": "designs/framer/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "minimal",
+        "creative",
+        "website builder",
+        "modern"
+      ]
+    },
+    {
+      "slug": "hashicorp",
+      "name": "HashiCorp",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "infrastructure",
+        "dark",
+        "professional",
+        "precise"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#60DEA9",
+        "#1A1A1A",
+        "#333333"
+      ],
+      "typography": [
+        "JetBrains Mono",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "infrastructure",
+        "B2B",
+        "cloud",
+        "DevOps"
+      ],
+      "design_file": "designs/hashicorp/DESIGN.md",
+      "keywords": [
+        "black",
+        "green",
+        "infrastructure",
+        "DevOps",
+        "technical",
+        "dark"
+      ]
+    },
+    {
+      "slug": "ibm",
+      "name": "IBM",
+      "category": "enterprise",
+      "vibe": [
+        "corporate",
+        "technical",
+        "clean",
+        "trustworthy",
+        "professional"
+      ],
+      "colors": [
+        "#006699",
+        "#0F62FE",
+        "#161616",
+        "#FFFFFF",
+        "#393939"
+      ],
+      "typography": [
+        "IBM Plex Sans",
+        "IBM Plex Mono"
+      ],
+      "use_cases": [
+        "enterprise",
+        "B2B",
+        "SaaS",
+        "technical",
+        "software"
+      ],
+      "design_file": "designs/ibm/DESIGN.md",
+      "keywords": [
+        "blue",
+        "corporate",
+        "technical",
+        "enterprise",
+        "clean",
+        "professional"
+      ]
+    },
+    {
+      "slug": "intercom",
+      "name": "Intercom",
+      "category": "saas",
+      "vibe": [
+        "friendly",
+        "approachable",
+        "modern",
+        "warm",
+        "conversational"
+      ],
+      "colors": [
+        "#1F8DED",
+        "#1F2D3D",
+        "#FFFFFF",
+        "#F7F8FA",
+        "#3F3F46"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "customer support",
+        "B2B",
+        "productivity"
+      ],
+      "design_file": "designs/intercom/DESIGN.md",
+      "keywords": [
+        "blue",
+        "friendly",
+        "chat",
+        "support",
+        "warm",
+        "conversational"
+      ]
+    },
+    {
+      "slug": "kraken",
+      "name": "Kraken",
+      "category": "fintech",
+      "vibe": [
+        "crypto",
+        "bold",
+        "technical",
+        "trustworthy",
+        "dark"
+      ],
+      "colors": [
+        "#5741D9",
+        "#000000",
+        "#FFFFFF",
+        "#C2C2C2",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "crypto",
+        "exchange",
+        "B2C",
+        "B2B"
+      ],
+      "design_file": "designs/kraken/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "crypto",
+        "trading",
+        "bold",
+        "financial"
+      ]
+    },
+    {
+      "slug": "lamborghini",
+      "name": "Lamborghini",
+      "category": "automotive",
+      "vibe": [
+        "aggressive",
+        "luxury",
+        "bold",
+        "iconic",
+        "racing"
+      ],
+      "colors": [
+        "#000000",
+        "#FFCC00",
+        "#FFFFFF",
+        "#1A1A1A",
+        "#D4AF37"
+      ],
+      "typography": [
+        "Lamborghini Sans",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "automotive",
+        "luxury",
+        "racing",
+        "B2C"
+      ],
+      "design_file": "designs/lamborghini/DESIGN.md",
+      "keywords": [
+        "black",
+        "yellow",
+        "luxury",
+        "aggressive",
+        "racing",
+        "iconic"
+      ]
+    },
+    {
+      "slug": "linear.app",
+      "name": "Linear",
+      "category": "productivity",
+      "vibe": [
+        "minimal",
+        "precise",
+        "dark",
+        "premium",
+        "fast"
+      ],
+      "colors": [
+        "#5E6AD2",
+        "#0F111A",
+        "#F7F8F8",
+        "#8A8F98",
+        "#2D2F37"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro Display"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "developer tools",
+        "B2B"
+      ],
+      "design_file": "designs/linear.app/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "minimal",
+        "precision",
+        "fast",
+        "productivity"
+      ]
+    },
+    {
+      "slug": "lovable",
+      "name": "Lovable",
+      "category": "developer-tools",
+      "vibe": [
+        "friendly",
+        "AI",
+        "modern",
+        "approachable",
+        "vibrant"
+      ],
+      "colors": [
+        "#F97316",
+        "#1D1D1F",
+        "#FFFFFF",
+        "#FDBA74",
+        "#FFF7ED"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "AI",
+        "developer tools",
+        "B2D",
+        "no-code"
+      ],
+      "design_file": "designs/lovable/DESIGN.md",
+      "keywords": [
+        "orange",
+        "friendly",
+        "AI",
+        "modern",
+        "developer",
+        "no-code"
+      ]
+    },
+    {
+      "slug": "mastercard",
+      "name": "Mastercard",
+      "category": "fintech",
+      "vibe": [
+        "bold",
+        "trustworthy",
+        "red",
+        "premium",
+        "corporate"
+      ],
+      "colors": [
+        "#EB001B",
+        "#F79E1B",
+        "#000000",
+        "#FFFFFF",
+        "#FF0000"
+      ],
+      "typography": [
+        "Mastercard font",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "payments",
+        "enterprise",
+        "B2B",
+        "B2C"
+      ],
+      "design_file": "designs/mastercard/DESIGN.md",
+      "keywords": [
+        "red",
+        "orange",
+        "yellow",
+        "payments",
+        "trustworthy",
+        "bold"
+      ]
+    },
+    {
+      "slug": "meta",
+      "name": "Meta",
+      "category": "social",
+      "vibe": [
+        "social",
+        "blue",
+        "clean",
+        "friendly",
+        "modern"
+      ],
+      "colors": [
+        "#0081FB",
+        "#0866FF",
+        "#1C2B33",
+        "#FFFFFF",
+        "#E7F3FF"
+      ],
+      "typography": [
+        "Meta Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "social",
+        "SaaS",
+        "consumer",
+        "B2C"
+      ],
+      "design_file": "designs/meta/DESIGN.md",
+      "keywords": [
+        "blue",
+        "social",
+        "clean",
+        "friendly",
+        "modern",
+        "consumer"
+      ]
+    },
+    {
+      "slug": "minimax",
+      "name": "MiniMax",
+      "category": "developer-tools",
+      "vibe": [
+        "AI",
+        "modern",
+        "clean",
+        "technical",
+        "professional"
+      ],
+      "colors": [
+        "#6B5CFF",
+        "#000000",
+        "#FFFFFF",
+        "#A5A5A5",
+        "#1A1A2E"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "SaaS",
+        "B2B"
+      ],
+      "design_file": "designs/minimax/DESIGN.md",
+      "keywords": [
+        "purple",
+        "AI",
+        "dark",
+        "technical",
+        "modern",
+        "developer"
+      ]
+    },
+    {
+      "slug": "mintlify",
+      "name": "Mintlify",
+      "category": "developer-tools",
+      "vibe": [
+        "clean",
+        "minimal",
+        "documentation",
+        "developer",
+        "modern"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#10B981",
+        "#6366F1",
+        "#F3F4F6"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "SaaS",
+        "documentation",
+        "B2D"
+      ],
+      "design_file": "designs/mintlify/DESIGN.md",
+      "keywords": [
+        "black",
+        "green",
+        "minimal",
+        "documentation",
+        "clean",
+        "developer"
+      ]
+    },
+    {
+      "slug": "miro",
+      "name": "Miro",
+      "category": "productivity",
+      "vibe": [
+        "playful",
+        "creative",
+        "collaborative",
+        "colorful",
+        "dynamic"
+      ],
+      "colors": [
+        "#FFD02F",
+        "#050038",
+        "#FFFFFF",
+        "#4262FF",
+        "#8763FF"
+      ],
+      "typography": [
+        "Miro Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "creative",
+        "collaboration",
+        "B2B"
+      ],
+      "design_file": "designs/miro/DESIGN.md",
+      "keywords": [
+        "yellow",
+        "blue",
+        "playful",
+        "collaboration",
+        "canvas",
+        "creative"
+      ]
+    },
+    {
+      "slug": "mistral.ai",
+      "name": "Mistral AI",
+      "category": "developer-tools",
+      "vibe": [
+        "AI",
+        "minimal",
+        "clean",
+        "precise",
+        "professional"
+      ],
+      "colors": [
+        "#EB6220",
+        "#000000",
+        "#FFFFFF",
+        "#A3A3A3",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "SaaS",
+        "B2B"
+      ],
+      "design_file": "designs/mistral.ai/DESIGN.md",
+      "keywords": [
+        "orange",
+        "black",
+        "AI",
+        "minimal",
+        "professional",
+        "technical"
+      ]
+    },
+    {
+      "slug": "mongodb",
+      "name": "MongoDB",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "green",
+        "modern",
+        "developer",
+        "database"
+      ],
+      "colors": [
+        "#00684A",
+        "#001E2B",
+        "#FFFFFF",
+        "#00ED64",
+        "#14342B"
+      ],
+      "typography": [
+        "MongoDB Font",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "database",
+        "B2B",
+        "SaaS"
+      ],
+      "design_file": "designs/mongodb/DESIGN.md",
+      "keywords": [
+        "green",
+        "dark",
+        "database",
+        "developer",
+        "technical",
+        "modern"
+      ]
+    },
+    {
+      "slug": "nike",
+      "name": "Nike",
+      "category": "ecommerce",
+      "vibe": [
+        "bold",
+        "athletic",
+        "premium",
+        "minimal",
+        "energetic"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#F5F5F5",
+        "#111111",
+        "#BCBCBC"
+      ],
+      "typography": [
+        "Futura",
+        "Nike Font",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "ecommerce",
+        "consumer",
+        "B2C",
+        "athletic"
+      ],
+      "design_file": "designs/nike/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "bold",
+        "minimal",
+        "athletic",
+        "premium"
+      ]
+    },
+    {
+      "slug": "notion",
+      "name": "Notion",
+      "category": "productivity",
+      "vibe": [
+        "minimal",
+        "warm",
+        "clean",
+        "productive",
+        "approachable"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#F7F6F3",
+        "#787774",
+        "#E3E2E0"
+      ],
+      "typography": [
+        "Inter",
+        "Noto Sans",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "B2C",
+        "B2B",
+        "notes"
+      ],
+      "design_file": "designs/notion/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "warm",
+        "minimal",
+        "productivity",
+        "clean",
+        "notes"
+      ]
+    },
+    {
+      "slug": "nvidia",
+      "name": "NVIDIA",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "green",
+        "dark",
+        "precise",
+        "premium"
+      ],
+      "colors": [
+        "#76B900",
+        "#000000",
+        "#FFFFFF",
+        "#1A1A1A",
+        "#2D2D2D"
+      ],
+      "typography": [
+        "NVIDIA Font",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "enterprise",
+        "B2B",
+        "hardware",
+        "AI"
+      ],
+      "design_file": "designs/nvidia/DESIGN.md",
+      "keywords": [
+        "green",
+        "dark",
+        "technical",
+        "developer",
+        "AI",
+        "hardware"
+      ]
+    },
+    {
+      "slug": "ollama",
+      "name": "Ollama",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "developer",
+        "technical",
+        "local-AI"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#666666",
+        "#10A37F"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "AI",
+        "B2D",
+        "local-AI"
+      ],
+      "design_file": "designs/ollama/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "minimal",
+        "local-AI",
+        "developer",
+        "terminal"
+      ]
+    },
+    {
+      "slug": "opencode.ai",
+      "name": "OpenCode AI",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "developer",
+        "modern",
+        "technical"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#6366F1",
+        "#A5A5A5",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "AI",
+        "B2D"
+      ],
+      "design_file": "designs/opencode.ai/DESIGN.md",
+      "keywords": [
+        "black",
+        "purple",
+        "dark",
+        "developer",
+        "AI",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "pinterest",
+      "name": "Pinterest",
+      "category": "social",
+      "vibe": [
+        "visual",
+        "red",
+        "creative",
+        "warm",
+        "playful"
+      ],
+      "colors": [
+        "#E60023",
+        "#000000",
+        "#FFFFFF",
+        "#FF4500",
+        "#F5F5F5"
+      ],
+      "typography": [
+        "Pinterest Sans",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "social",
+        "ecommerce",
+        "consumer",
+        "B2C",
+        "visual"
+      ],
+      "design_file": "designs/pinterest/DESIGN.md",
+      "keywords": [
+        "red",
+        "visual",
+        "creative",
+        "social",
+        "warm",
+        "masonry"
+      ]
+    },
+    {
+      "slug": "playstation",
+      "name": "PlayStation",
+      "category": "consumer",
+      "vibe": [
+        "gaming",
+        "bold",
+        "dark",
+        "dynamic",
+        "premium"
+      ],
+      "colors": [
+        "#003087",
+        "#000000",
+        "#FFFFFF",
+        "#0070D1",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Sony PS Font",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "consumer",
+        "gaming",
+        "B2C",
+        "entertainment"
+      ],
+      "design_file": "designs/playstation/DESIGN.md",
+      "keywords": [
+        "blue",
+        "dark",
+        "gaming",
+        "bold",
+        "dynamic",
+        "entertainment"
+      ]
+    },
+    {
+      "slug": "posthog",
+      "name": "PostHog",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "developer",
+        "product-analytics",
+        "precise"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#1D4AFF",
+        "#F9BD3D",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "SaaS",
+        "product analytics",
+        "B2B"
+      ],
+      "design_file": "designs/posthog/DESIGN.md",
+      "keywords": [
+        "dark",
+        "minimal",
+        "analytics",
+        "developer",
+        "product",
+        "blue"
+      ]
+    },
+    {
+      "slug": "raycast",
+      "name": "Raycast",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "macOS",
+        "fast",
+        "precise"
+      ],
+      "colors": [
+        "#FF6363",
+        "#1C1C1E",
+        "#FFFFFF",
+        "#636366",
+        "#2C2C2E"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "productivity",
+        "macOS",
+        "B2D"
+      ],
+      "design_file": "designs/raycast/DESIGN.md",
+      "keywords": [
+        "red",
+        "dark",
+        "minimal",
+        "macOS",
+        "fast",
+        "productivity"
+      ]
+    },
+    {
+      "slug": "renault",
+      "name": "Renault",
+      "category": "automotive",
+      "vibe": [
+        "modern",
+        "friendly",
+        "innovative",
+        "corporate",
+        "clean"
+      ],
+      "colors": [
+        "#FFD700",
+        "#000000",
+        "#FFFFFF",
+        "#FFED00",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Renault Sans",
+        "Helvetica Neue"
+      ],
+      "use_cases": [
+        "automotive",
+        "B2C",
+        "enterprise"
+      ],
+      "design_file": "designs/renault/DESIGN.md",
+      "keywords": [
+        "yellow",
+        "black",
+        "modern",
+        "automotive",
+        "friendly",
+        "clean"
+      ]
+    },
+    {
+      "slug": "replicate",
+      "name": "Replicate",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "developer",
+        "AI",
+        "technical",
+        "minimal"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#6366F1",
+        "#A78BFA"
+      ],
+      "typography": [
+        "Inter",
+        "JetBrains Mono",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "AI",
+        "B2D",
+        "inference"
+      ],
+      "design_file": "designs/replicate/DESIGN.md",
+      "keywords": [
+        "black",
+        "purple",
+        "dark",
+        "AI",
+        "developer",
+        "inference"
+      ]
+    },
+    {
+      "slug": "resend",
+      "name": "Resend",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "email",
+        "developer",
+        "clean"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#666666",
+        "#A78BFA"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "email",
+        "SaaS",
+        "B2B",
+        "B2D"
+      ],
+      "design_file": "designs/resend/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "minimal",
+        "email",
+        "developer",
+        "clean"
+      ]
+    },
+    {
+      "slug": "revolut",
+      "name": "Revolut",
+      "category": "fintech",
+      "vibe": [
+        "modern",
+        "clean",
+        "fintech",
+        "black",
+        "premium"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#0F111A",
+        "#EC1C24",
+        "#F5F5F5"
+      ],
+      "typography": [
+        "Revolut Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "B2C",
+        "B2B",
+        "banking",
+        "payments"
+      ],
+      "design_file": "designs/revolut/DESIGN.md",
+      "keywords": [
+        "black",
+        "minimal",
+        "fintech",
+        "banking",
+        "clean",
+        "modern"
+      ]
+    },
+    {
+      "slug": "runwayml",
+      "name": "Runway",
+      "category": "creative",
+      "vibe": [
+        "creative",
+        "AI",
+        "dark",
+        "premium",
+        "cinematic"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#6C47FF",
+        "#1A1A1A",
+        "#A78BFA"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "creative",
+        "AI",
+        "SaaS",
+        "B2B",
+        "video"
+      ],
+      "design_file": "designs/runwayml/DESIGN.md",
+      "keywords": [
+        "black",
+        "purple",
+        "dark",
+        "AI",
+        "creative",
+        "video",
+        "cinematic"
+      ]
+    },
+    {
+      "slug": "sanity",
+      "name": "Sanity",
+      "category": "developer-tools",
+      "vibe": [
+        "clean",
+        "developer",
+        "CMS",
+        "modern",
+        "approachable"
+      ],
+      "colors": [
+        "#F03A47",
+        "#1A1A1A",
+        "#FFFFFF",
+        "#E3E2E0",
+        "#000000"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "CMS",
+        "SaaS",
+        "B2B",
+        "headless CMS"
+      ],
+      "design_file": "designs/sanity/DESIGN.md",
+      "keywords": [
+        "red",
+        "dark",
+        "CMS",
+        "developer",
+        "clean",
+        "headless"
+      ]
+    },
+    {
+      "slug": "sentry",
+      "name": "Sentry",
+      "category": "developer-tools",
+      "vibe": [
+        "technical",
+        "developer",
+        "dark",
+        "precise",
+        "error-tracking"
+      ],
+      "colors": [
+        "#362D59",
+        "#FFFFFF",
+        "#FF7733",
+        "#1A1A2E",
+        "#6C5CE7"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "SaaS",
+        "monitoring",
+        "B2B"
+      ],
+      "design_file": "designs/sentry/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "developer",
+        "error tracking",
+        "monitoring",
+        "technical"
+      ]
+    },
+    {
+      "slug": "shopify",
+      "name": "Shopify",
+      "category": "ecommerce",
+      "vibe": [
+        "green",
+        "clean",
+        "friendly",
+        "modern",
+        "confident"
+      ],
+      "colors": [
+        "#95BF47",
+        "#5E8C31",
+        "#000000",
+        "#FFFFFF",
+        "#FBF7EE"
+      ],
+      "typography": [
+        "Shopify Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "ecommerce",
+        "SaaS",
+        "B2B",
+        "B2C",
+        "online store"
+      ],
+      "design_file": "designs/shopify/DESIGN.md",
+      "keywords": [
+        "green",
+        "clean",
+        "ecommerce",
+        "friendly",
+        "modern",
+        "online store"
+      ]
+    },
+    {
+      "slug": "slack",
+      "name": "Slack",
+      "category": "social",
+      "vibe": [
+        "colorful",
+        "friendly",
+        "social",
+        "collaborative",
+        "playful"
+      ],
+      "colors": [
+        "#4A154B",
+        "#36C5F0",
+        "#2EB67D",
+        "#ECB22E",
+        "#E01E5A"
+      ],
+      "typography": [
+        "Slack Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "social",
+        "SaaS",
+        "B2B",
+        "productivity",
+        "messaging"
+      ],
+      "design_file": "designs/slack/DESIGN.md",
+      "keywords": [
+        "purple",
+        "colorful",
+        "collaboration",
+        "messaging",
+        "friendly",
+        "social"
+      ]
+    },
+    {
+      "slug": "spacex",
+      "name": "SpaceX",
+      "category": "enterprise",
+      "vibe": [
+        "space",
+        "bold",
+        "dark",
+        "technical",
+        "futuristic"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#005288",
+        "#1A1A1A",
+        "#F2F2F2"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "enterprise",
+        "B2B",
+        "aerospace",
+        "B2C"
+      ],
+      "design_file": "designs/spacex/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "space",
+        "bold",
+        "technical",
+        "futuristic"
+      ]
+    },
+    {
+      "slug": "spotify",
+      "name": "Spotify",
+      "category": "consumer",
+      "vibe": [
+        "dark",
+        "green",
+        "vibrant",
+        "energetic",
+        "social"
+      ],
+      "colors": [
+        "#1DB954",
+        "#000000",
+        "#FFFFFF",
+        "#1ED760",
+        "#121212"
+      ],
+      "typography": [
+        "Spotify Circular",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "consumer",
+        "B2C",
+        "music",
+        "social",
+        "streaming"
+      ],
+      "design_file": "designs/spotify/DESIGN.md",
+      "keywords": [
+        "green",
+        "dark",
+        "music",
+        "vibrant",
+        "social",
+        "streaming"
+      ]
+    },
+    {
+      "slug": "starbucks",
+      "name": "Starbucks",
+      "category": "consumer",
+      "vibe": [
+        "green",
+        "warm",
+        "premium",
+        "approachable",
+        "bold"
+      ],
+      "colors": [
+        "#00704A",
+        "#000000",
+        "#FFFFFF",
+        "#1E3932",
+        "#C4A77D"
+      ],
+      "typography": [
+        "Sodo Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "consumer",
+        "B2C",
+        "ecommerce",
+        "brand"
+      ],
+      "design_file": "designs/starbucks/DESIGN.md",
+      "keywords": [
+        "green",
+        "warm",
+        "coffee",
+        "premium",
+        "approachable",
+        "brand"
+      ]
+    },
+    {
+      "slug": "stripe",
+      "name": "Stripe",
+      "category": "fintech",
+      "vibe": [
+        "premium",
+        "technical",
+        "trustworthy",
+        "minimal",
+        "elegant"
+      ],
+      "colors": [
+        "#533AFD",
+        "#061B31",
+        "#FFFFFF",
+        "#EA2261",
+        "#F96BEE"
+      ],
+      "typography": [
+        "sohne-var",
+        "SF Pro Display",
+        "SourceCodePro"
+      ],
+      "use_cases": [
+        "fintech",
+        "SaaS",
+        "payments",
+        "B2B",
+        "developer tools"
+      ],
+      "design_file": "designs/stripe/DESIGN.md",
+      "keywords": [
+        "purple",
+        "gradient",
+        "fintech",
+        "developer",
+        "elegant",
+        "lightweight"
+      ]
+    },
+    {
+      "slug": "supabase",
+      "name": "Supabase",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "developer",
+        "green",
+        "modern",
+        "minimal"
+      ],
+      "colors": [
+        "#3ECF8E",
+        "#000000",
+        "#FFFFFF",
+        "#1A1A1A",
+        "#222222"
+      ],
+      "typography": [
+        "Inter",
+        "JetBrains Mono",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "database",
+        "BaaS",
+        "B2D",
+        "SaaS"
+      ],
+      "design_file": "designs/supabase/DESIGN.md",
+      "keywords": [
+        "green",
+        "dark",
+        "database",
+        "developer",
+        "modern",
+        "Firebase alternative"
+      ]
+    },
+    {
+      "slug": "superhuman",
+      "name": "Superhuman",
+      "category": "productivity",
+      "vibe": [
+        "minimal",
+        "premium",
+        "fast",
+        "red",
+        "focused"
+      ],
+      "colors": [
+        "#FF2D55",
+        "#000000",
+        "#FFFFFF",
+        "#1A1A1A",
+        "#F5F5F7"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "email",
+        "B2C",
+        "premium"
+      ],
+      "design_file": "designs/superhuman/DESIGN.md",
+      "keywords": [
+        "red",
+        "minimal",
+        "email",
+        "premium",
+        "fast",
+        "focused"
+      ]
+    },
+    {
+      "slug": "tesla",
+      "name": "Tesla",
+      "category": "automotive",
+      "vibe": [
+        "minimal",
+        "premium",
+        "clean",
+        "futuristic",
+        "bold"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#E4E4E4",
+        "#1A1A1A",
+        "#171717"
+      ],
+      "typography": [
+        "Tesla Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "automotive",
+        "B2C",
+        "enterprise",
+        "energy"
+      ],
+      "design_file": "designs/tesla/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "minimal",
+        "futuristic",
+        "clean",
+        "premium"
+      ]
+    },
+    {
+      "slug": "theverge",
+      "name": "The Verge",
+      "category": "media",
+      "vibe": [
+        "editorial",
+        "bold",
+        "modern",
+        "journalistic",
+        "clean"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#E5E2DD",
+        "#FF3B30",
+        "#1D1D1F"
+      ],
+      "typography": [
+        "Verge Font",
+        "Inter",
+        "Iowan Old Style"
+      ],
+      "use_cases": [
+        "media",
+        "news",
+        "consumer",
+        "B2C"
+      ],
+      "design_file": "designs/theverge/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "editorial",
+        "news",
+        "bold",
+        "journalistic"
+      ]
+    },
+    {
+      "slug": "together.ai",
+      "name": "Together AI",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "developer",
+        "AI",
+        "technical",
+        "modern"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#7C3AED",
+        "#A78BFA",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "B2D",
+        "SaaS"
+      ],
+      "design_file": "designs/together.ai/DESIGN.md",
+      "keywords": [
+        "purple",
+        "dark",
+        "AI",
+        "developer",
+        "technical",
+        "modern"
+      ]
+    },
+    {
+      "slug": "uber",
+      "name": "Uber",
+      "category": "consumer",
+      "vibe": [
+        "minimal",
+        "black",
+        "clean",
+        "modern",
+        "functional"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#0000F0",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Uber Move",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "consumer",
+        "B2C",
+        "SaaS",
+        "mobility"
+      ],
+      "design_file": "designs/uber/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "minimal",
+        "mobility",
+        "clean",
+        "functional"
+      ]
+    },
+    {
+      "slug": "vercel",
+      "name": "Vercel",
+      "category": "developer-tools",
+      "vibe": [
+        "minimal",
+        "dark",
+        "developer",
+        "precise",
+        "premium"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#666666",
+        "#1D1D1F"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "SaaS",
+        "B2D",
+        "hosting"
+      ],
+      "design_file": "designs/vercel/DESIGN.md",
+      "keywords": [
+        "black",
+        "white",
+        "dark",
+        "developer",
+        "hosting",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "vodafone",
+      "name": "Vodafone",
+      "category": "enterprise",
+      "vibe": [
+        "red",
+        "bold",
+        "corporate",
+        "modern",
+        "confident"
+      ],
+      "colors": [
+        "#E60000",
+        "#000000",
+        "#FFFFFF",
+        "#1A1A1A",
+        "#F5F5F5"
+      ],
+      "typography": [
+        "Vodafone Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "enterprise",
+        "telecom",
+        "B2C",
+        "B2B"
+      ],
+      "design_file": "designs/vodafone/DESIGN.md",
+      "keywords": [
+        "red",
+        "black",
+        "corporate",
+        "bold",
+        "telecom",
+        "modern"
+      ]
+    },
+    {
+      "slug": "voltagent",
+      "name": "Voltagent",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "AI",
+        "developer",
+        "minimal",
+        "technical"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#F59E0B",
+        "#1A1A1A",
+        "#333333"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "AI",
+        "B2D",
+        "automation"
+      ],
+      "design_file": "designs/voltagent/DESIGN.md",
+      "keywords": [
+        "black",
+        "yellow",
+        "dark",
+        "AI",
+        "developer",
+        "automation"
+      ]
+    },
+    {
+      "slug": "warp",
+      "name": "Warp",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "terminal",
+        "macOS",
+        "minimal",
+        "fast"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#333333",
+        "#636366",
+        "#1C1C1E"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "developer tools",
+        "terminal",
+        "macOS",
+        "B2D"
+      ],
+      "design_file": "designs/warp/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "terminal",
+        "macOS",
+        "minimal",
+        "fast"
+      ]
+    },
+    {
+      "slug": "webflow",
+      "name": "Webflow",
+      "category": "creative",
+      "vibe": [
+        "creative",
+        "clean",
+        "modern",
+        "professional",
+        "dark"
+      ],
+      "colors": [
+        "#146EF5",
+        "#0D1117",
+        "#FFFFFF",
+        "#1D2939",
+        "#C1272D"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "creative",
+        "website builder",
+        "B2B",
+        "no-code"
+      ],
+      "design_file": "designs/webflow/DESIGN.md",
+      "keywords": [
+        "blue",
+        "dark",
+        "creative",
+        "website builder",
+        "no-code",
+        "clean"
+      ]
+    },
+    {
+      "slug": "wired",
+      "name": "Wired",
+      "category": "media",
+      "vibe": [
+        "editorial",
+        "bold",
+        "modern",
+        "journalistic",
+        "premium"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#FF0000",
+        "#F5F5F5",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Wired Font",
+        "Inter",
+        "Georgia"
+      ],
+      "use_cases": [
+        "media",
+        "news",
+        "consumer",
+        "B2C"
+      ],
+      "design_file": "designs/wired/DESIGN.md",
+      "keywords": [
+        "black",
+        "red",
+        "editorial",
+        "news",
+        "bold",
+        "journalistic"
+      ]
+    },
+    {
+      "slug": "wise",
+      "name": "Wise (ex-TransferWise)",
+      "category": "fintech",
+      "vibe": [
+        "blue",
+        "clean",
+        "trustworthy",
+        "modern",
+        "friendly"
+      ],
+      "colors": [
+        "#009B77",
+        "#000000",
+        "#FFFFFF",
+        "#85C1AE",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Wise Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "fintech",
+        "payments",
+        "B2C",
+        "B2B",
+        "international"
+      ],
+      "design_file": "designs/wise/DESIGN.md",
+      "keywords": [
+        "green",
+        "teal",
+        "clean",
+        "financial",
+        "trustworthy",
+        "modern"
+      ]
+    },
+    {
+      "slug": "x.ai",
+      "name": "xAI",
+      "category": "developer-tools",
+      "vibe": [
+        "dark",
+        "AI",
+        "bold",
+        "minimal",
+        "futuristic"
+      ],
+      "colors": [
+        "#000000",
+        "#FFFFFF",
+        "#666666",
+        "#333333",
+        "#F97316"
+      ],
+      "typography": [
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "AI",
+        "developer tools",
+        "B2C",
+        "B2B"
+      ],
+      "design_file": "designs/x.ai/DESIGN.md",
+      "keywords": [
+        "black",
+        "dark",
+        "AI",
+        "bold",
+        "futuristic",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "zapier",
+      "name": "Zapier",
+      "category": "productivity",
+      "vibe": [
+        "friendly",
+        "orange",
+        "automation",
+        "clean",
+        "modern"
+      ],
+      "colors": [
+        "#FF4A00",
+        "#000000",
+        "#FFFFFF",
+        "#F7F7F7",
+        "#1A1A1A"
+      ],
+      "typography": [
+        "Zapier Sans",
+        "Inter",
+        "SF Pro"
+      ],
+      "use_cases": [
+        "SaaS",
+        "productivity",
+        "automation",
+        "B2B",
+        "no-code"
+      ],
+      "design_file": "designs/zapier/DESIGN.md",
+      "keywords": [
+        "orange",
+        "black",
+        "automation",
+        "friendly",
+        "clean",
+        "no-code"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "total_brands": 71,
+    "source": "getdesign.md",
+    "generated_at": "2026-04-30",
+    "categories": [
+      "fintech",
+      "saas",
+      "ecommerce",
+      "social",
+      "productivity",
+      "developer-tools",
+      "creative",
+      "automotive",
+      "enterprise",
+      "media",
+      "consumer"
+    ]
+  }
+}

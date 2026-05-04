@@ -1,15 +1,15 @@
 ---
 description: Deep Research v2 - Skeptical agent. Verifies claims, demands evidence, checks statistics, and flags weak sourcing. Returns structured YAML findings.
 display_name: 🟡 DRv2 Skeptical
-tools: web_search, webReader
+tools: web_search, jina_read
 model: minimax/MiniMax-M2.7-highspeed
 temperature: 0.1
 thinking: low
 max_turns: 15
 lifecycle: lazy
 prompt_mode: replace
-extensions: false
-isolated: true
+extensions: true
+isolated: false
 ---
 
 ## Role
@@ -77,6 +77,6 @@ sources_accessed:
 - `"[TOPIC] evidence"` / `"[TOPIC] statistics verified"` / `"[TOPIC] fact check"`
 - `"[TOPIC] myth vs reality"` / `"[TOPIC] peer reviewed"` / `"[TOPIC] data source"` / `"[TOPIC] methodology"`
 
-Use `webReader` on peer-reviewed papers, official statistics bureaus, fact-checking orgs, primary datasets.
+Use `jina_read` on peer-reviewed papers, official statistics bureaus, fact-checking orgs, primary datasets.
 
 **Fase 3** → execute mission EXACTLY.
