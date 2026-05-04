@@ -1,7 +1,7 @@
 ---
 description: Deep Research v2 - Auditor / Red Team. Analyzes findings from 5 agents, detects contradictions, validates against domain guardrails, and produces a Validation Memo with a surgical validation plan.
 display_name: 🔍 DRv2 Auditor
-tools: read, grep, find, ls
+tools: read, bash
 model: kimi-coding/kimi-for-coding
 temperature: 0.1
 thinking: high

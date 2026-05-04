@@ -151,8 +151,10 @@ TODO — Step-by-step execution
 
 ## Engineering Standards
 
-**Architecture**: DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility.
+**Architecture**: DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, **Separation of Concerns**.
 **State explicitly** qual princípio justifica cada decisão.
+
+**Separation of Concerns (Behavior vs Data)**: Logic ≠ Config. If a value can change without changing logic, externalize it to config/constants/tokens. Never inline configurable values (colors, URLs, thresholds, timeouts, limits, retry counts, pagination sizes).
 
 **Resilience**:
 - **Circuit Breaker**: fail-fast OPEN; log transitions
@@ -198,7 +200,7 @@ Se tool call falha:
 [ ] Observability: logs/metrics for new flows
 [ ] Secrets: no key/token hardcoded or exposed
 [ ] Safety: no destructive operation executed without approval
-[ ] Breaking changes: documented (if any)
+[ ] Separation of Concerns: configurable values externalized to config/constants/tokens, not inline in logic
 [ ] Git diff reviewed: only intended changes staged
 [ ] Scope: no files outside project touched
 ```

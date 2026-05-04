@@ -1,85 +1,92 @@
 ---
 name: mcp-vision
-description: Processa imagens coladas pelo usuário. Use SEMPRE que o usuário colar uma imagem, anexar uma imagem, ou quando aparecer "image omitted" ou "model does not support images" no contexto. Analisa imagens via tool understand_image.
+description: Processa imagens coladas pelo usuário. ATIVAR SEMPRE ao ver "image omitted" ou "model does not support images" no contexto. Usa understand_image para analisar.
 ---
 
 # MCP Vision Skill
 
-## Quando usar
+## REGRAS DE ATIVAÇÃO (OBRIGATÓRIO)
 
-ATIVAR automaticamente quando:
-- Usuário cola uma imagem (Ctrl+V, drag & drop)
-- Aparece `(image omitted: model does not support images)` no contexto
-- Usuário diz "o que você vê?", "analisa essa imagem", ou pede para analisar algo visual
-- Qualquer referência a imagem, screenshot, foto, print
+**ATIVAR IMEDIATAMENTE quando aparecer:**
+- `(image omitted: model does not support images)` no contexto
+- `(image omitted)` no contexto
+- Usuário colou/anexou imagem
+- Usuário diz "analisa essa imagem", "o que você vê", "olha isso"
 
-## Como funciona
+**NUNCA ignore esses sinais.** Não peça permissão, não explique — apenas faça.
 
-O modelo atual **não suporta imagens nativamente**. Mas o usuário pode colar imagens que ficam salvas em arquivos temporários. Esta skill usa a tool `understand_image` para processá-las.
+---
 
 ## Passo a passo
 
-### 1. Procurar imagens do clipboard
+### 1. Buscar imagem do clipboard
 
-Quando o usuário cola uma imagem, o Pi salva em arquivos temporários. Procure o(s) arquivo(s) mais recente(s):
+Executar SEMPRE neste ordem:
 
 ```bash
+# Primeiro: buscar imagens muito recentes (últimos 2 min)
 find /var/folders -name "pi-clipboard-*.png" -mmin -2 2>/dev/null | head -5
+
+# Se não encontrar: buscar imagens recentes (últimos 10 min)
+find /var/folders -name "pi-clipboard-*.png" -mmin -10 2>/dev/null | head -5
+
+# Se ainda não encontrar: buscar qualquer imagem clipboard
+find /var/folders -name "pi-clipboard-*.png" 2>/dev/null | head -5
 ```
 
-### 2. Analisar com understand_image
+**Prioridade:** `.png` > `.jpg` > `.jpeg` > `.webp`
 
-Para CADA imagem encontrada, chame a tool `understand_image`:
+### 2. Analisar TODAS as imagens encontradas
+
+Para cada imagem, chamar `understand_image`:
 
 ```
 understand_image({
-  prompt: "Descreva esta imagem em detalhes. Inclua texto visível, objetos, cores, layout, expressões, e qualquer contexto relevante.",
+  prompt: "Descreva esta imagem em detalhes. Inclua todo texto visível, layout, cores de elementos, e contexto do que está sendo mostrado. Seja muito específico.",
   image_url: "/caminho/da/imagem.png"
 })
 ```
 
-**image_url** aceita:
-- Caminhos locais: `/var/folders/.../pi-clipboard-xxx.png`
-- URLs HTTP/HTTPS: `https://exemplo.com/imagem.png`
-- O prefixo `@` é removido automaticamente se presente
-
 ### 3. Responder ao usuário
 
-Use a descrição retornada pela tool para responder o que o usuário perguntou sobre a imagem.
+Usar a descrição para responder diretamente o que ele perguntou.
 
-## Exemplos de uso
+---
 
-### Bug/Issue em screenshot
-```
-understand_image({
-  prompt: "O que está errado nesta tela? Identifique todos os problemas visuais ou de UI.",
-  image_url: "/var/folders/.../pi-clipboard-abc.png"
-})
-```
+## Prompts otimizados por situação
 
-### Descrever o que vê
-```
-understand_image({
-  prompt: "Descreva o que você vê nesta imagem em detalhes.",
-  image_url: "/var/folders/.../pi-clipboard-abc.png"
-})
-```
+| Situação | Prompt |
+|----------|--------|
+| Geral | `"Descreva esta imagem em detalhes. Inclua todo texto visível, layout, cores, e contexto."` |
+| Bug/Erro | `"O que está errado nesta tela? Identifique todos os problemas visuais, erros, ou anomalias."` |
+| OCR/Texto | `"Extraia todo texto visível nesta imagem, exatamente como aparece."` |
+| UI/Interface | `"Descreva os elementos de interface, campos, botões, e o propósito desta tela."` |
+| Código/Error | `"Identifique mensagens de erro, stack traces, ou código visível nesta imagem."` |
 
-### Extrair texto (OCR)
-```
-understand_image({
-  prompt: "Extraia todo o texto visível nesta imagem.",
-  image_url: "/var/folders/.../pi-clipboard-abc.png"
-})
-```
-
-## Formatos suportados
-
-- PNG, JPG, JPEG, WebP
+---
 
 ## Dicas
 
-- Sempre procure a imagem MAIS RECENTE (`-mmin -2`)
-- Se encontrar múltiplas imagens, analise TODAS
-- Seja específico no prompt sobre o que quer saber
-- Para screenshots de erro, pergunte qual o erro e onde está
+1. **Sempre busque a imagem** quando ver gatilho — não pergunte se deve fazer
+2. **Se encontrar múltiplas imagens**, analise todas
+3. **Se não encontrar imagem**, informe o usuário e peça que cole novamente
+4. **image_url aceita:** caminhos locais (`/var/folders/...`), URLs HTTP, e prefixo `@` é removido automaticamente
+5. **Formatos:** PNG, JPG, JPEG, WebP
+
+---
+
+## Exemplo de resposta ideal
+
+```
+Vi a imagem! Isso é a tela de "Realizar Saque" do app iEvo. 
+Os campos são:
+- Nome Completo
+- Valor do Saque
+- Banco
+- Chave Pix / Tipo de Chave
+- Agência / Dígito
+- Conta / Dígito
+- Tipo de Conta
+
+O que você precisa fazer nessa tela?
+```
