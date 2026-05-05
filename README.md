@@ -29,6 +29,29 @@ pi
 /login
 ```
 
+### Windows
+
+```powershell
+# 1. Clone o repositório
+git clone git@github.com:Evolvera/Pi.git
+cd Pi
+
+# 2. Se necessário, habilite execução de scripts
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+# 3. Execute o instalador
+.\install.ps1
+
+# 4. Faça login no modelo de IA
+pi
+/login
+```
+
+**Nota**: Se o PowerShell bloquear o script, use:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
 O `/login` pede a API key e salva automaticamente. Pronto, já pode usar.
 
 ### VS Code
