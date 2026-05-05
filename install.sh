@@ -58,59 +58,15 @@ fi
 # ── MCP (só cria se não existe) ──────────────
 step "MCP Servers"
 
-SYNABUN_PATH="$(npm root -g 2>/dev/null)/synabun/mcp-server/run.mjs"
-
 if [ ! -f "$PI_DIR/mcp.json" ]; then
-    cat > "$PI_DIR/mcp.json" << 'EOF'
-{
-  "mcpServers": {
-    "SynaBun": {
-      "command": "node",
-      "args": ["SYNABUN_PATH"],
-      "lifecycle": "keep-alive",
-      "exposeResources": false
-    },
-    "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "lifecycle": "keep-alive"
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
-      "lifecycle": "lazy"
-    },
-    "minimax-web-search": {
-      "command": "npx",
-      "args": ["-y", "@ameno/pi-minimax-mcp"],
-      "env": {
-        "MINIMAX_API_KEY": "YOUR_MINIMAX_API_KEY"
-      },
-      "lifecycle": "lazy"
-    },
-    "zai-mcp": {
-      "command": "npx",
-      "args": ["-y", "@z_ai/mcp-server"],
-      "env": {
-        "Z_AI_API_KEY": "YOUR_ZAI_API_KEY",
-        "Z_AI_MODE": "ZAI"
-      },
-      "lifecycle": "lazy"
-    }
-  }
-}
-EOF
-    # Substitui path do SynaBun
-    sed -i.bak "s|SYNABUN_PATH|$SYNABUN_PATH|g" "$PI_DIR/mcp.json" && rm "$PI_DIR/mcp.json.bak"
-    info "mcp.json criado com as chaves da equipe"
+    if [ -f "$SCRIPT_DIR/config/mcp.json" ]; then
+        cp "$SCRIPT_DIR/config/mcp.json" "$PI_DIR/mcp.json"
+        info "mcp.json copiado de config/"
+    else
+        info "config/mcp.json nao encontrado - pulando"
+    fi
 else
-    info "mcp.json já existe — preservado"
-fi
-
-# ── SynaBun ───────────────────────────────────
-if ! npm list -g synabun &>/dev/null 2>&1; then
-    echo -e "${YELLOW}[!]${NC} Instalando SynaBun..."
-    npm install -g synabun 2>/dev/null || true
+    info "mcp.json ja existe - preservado"
 fi
 
 # ── Subagents (Agent tool) ────────────────────

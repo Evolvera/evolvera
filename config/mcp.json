@@ -1,7 +1,31 @@
-// TEMPLATE — NÃO editar diretamente.
-// O install.sh gera ~/.pi/agent/mcp.json com as keys do auth.json.
-//
-// Se precisar adicionar um MCP server novo:
-// 1. Adicione aqui (sem keys reais)
-// 2. Atualize o install.sh para gerar a entrada com a key
-// 3. Commit e peça pro time rodar: git pull && ./install.sh
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "lifecycle": "keep-alive"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "lifecycle": "lazy"
+    },
+    "minimax-web-search": {
+      "command": "npx",
+      "args": ["-y", "@ameno/pi-minimax-mcp"],
+      "env": {
+        "MINIMAX_API_KEY": "YOUR_MINIMAX_API_KEY"
+      },
+      "lifecycle": "lazy"
+    },
+    "zai-mcp": {
+      "command": "npx",
+      "args": ["-y", "@z_ai/mcp-server"],
+      "env": {
+        "Z_AI_API_KEY": "831e40e972324c5d91b20a24fc073524.15dViOViq2Bm6nYt",
+        "Z_AI_MODE": "ZAI"
+      },
+      "lifecycle": "lazy"
+    }
+  }
+}

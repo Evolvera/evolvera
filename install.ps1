@@ -84,55 +84,17 @@ if ($extensions) {
 Step "MCP Servers"
 
 $mcpPath = Join-Path $PI_DIR "mcp.json"
+$mcpSrc = Join-Path $SCRIPT_DIR "config\mcp.json"
 
 if (-not (Test-Path $mcpPath)) {
-    $npmRoot = npm root -g 2>$null
-    $synabunPath = Join-Path $npmRoot "synabun\mcp-server\run.mjs"
-
-    $mcpContent = @{
-        mcpServers = @{
-            SynaBun = @{
-                command = "node"
-                args = @($synabunPath)
-                lifecycle = "keep-alive"
-                exposeResources = $false
-            }
-            memory = @{
-                command = "npx"
-                args = @("-y", "@modelcontextprotocol/server-memory")
-                lifecycle = "keep-alive"
-            }
-            context7 = @{
-                command = "npx"
-                args = @("-y", "@upstash/context7-mcp@latest")
-                lifecycle = "lazy"
-            }
-            "minimax-web-search" = @{
-                command = "npx"
-                args = @("-y", "@ameno/pi-minimax-mcp")
-                env = @{ MINIMAX_API_KEY = "YOUR_MINIMAX_API_KEY" }
-                lifecycle = "lazy"
-            }
-            "zai-mcp" = @{
-                command = "npx"
-                args = @("-y", "@z_ai/mcp-server")
-                env = @{ Z_AI_API_KEY = "YOUR_ZAI_API_KEY"; Z_AI_MODE = "ZAI" }
-                lifecycle = "lazy"
-            }
-        }
+    if (Test-Path $mcpSrc) {
+        Copy-Item $mcpSrc $mcpPath -Force
+        Info "mcp.json copiado de config/"
+    } else {
+        Info "config/mcp.json nao encontrado - pulando"
     }
-    $mcpJson = $mcpContent | ConvertTo-Json -Depth 10
-    [System.IO.File]::WriteAllText($mcpPath, $mcpJson)
-    Info "mcp.json criado"
 } else {
     Info "mcp.json ja existe - preservado"
-}
-
-# -- SynaBun ----------------------------------------------
-$synabunCheck = npm list -g synabun 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Warn "Instalando SynaBun..."
-    npm install -g synabun 2>$null
 }
 
 # -- Packages ---------------------------------------------
