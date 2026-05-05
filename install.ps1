@@ -102,15 +102,14 @@ Step "Instalando packages"
 
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if ($piCmd) {
-    Info "Instalando pi-subagents..."
-    & pi install npm:@tintinweb/pi-subagents 2>$null
-    if ($LASTEXITCODE -eq 0) { Info "pi-subagents instalado" }
-    else { Info "pi-subagents: ja instalado ou pulado" }
-
-    Info "Instalando pi-mcp-adapter..."
+    Info "pi-mcp-adapter..."
     & pi install npm:pi-mcp-adapter 2>$null
-    if ($LASTEXITCODE -eq 0) { Info "pi-mcp-adapter instalado" }
-    else { Info "pi-mcp-adapter: ja instalado ou pulado" }
+
+    Info "pi-subagents..."
+    & pi install npm:@tintinweb/pi-subagents 2>$null
+
+    Info "minimax-web-search..."
+    & pi install npm:@imsus/pi-extension-minimax-coding-plan-mcp 2>$null
 }
 
 # -- Done -------------------------------------------------
