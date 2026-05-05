@@ -121,7 +121,8 @@ if (-not (Test-Path $mcpPath)) {
             }
         }
     }
-    $mcpContent | ConvertTo-Json -Depth 10 | Out-File -FilePath $mcpPath -Encoding UTF8
+    $mcpJson = $mcpContent | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($mcpPath, $mcpJson)
     Info "mcp.json criado"
 } else {
     Info "mcp.json ja existe - preservado"
