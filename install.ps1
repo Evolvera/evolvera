@@ -90,54 +90,51 @@ if (-not (Test-Path $mcpPath)) {
     # Get SynaBun path
     $npmRoot = npm root -g 2>$null
     $synabunPath = Join-Path $npmRoot "synabun\mcp-server\run.mjs"
+    # Escape backslashes for JSON
+    $synabunJsonPath = $synabunPath -replace '\\', '\\\\'
 
-    $mcpJson = @"
-{
-  "mcpServers": {
-    "SynaBun": {
-      "command": "node",
-      "args": ["$synabunPath"],
-      "lifecycle": "keep-alive",
-      "exposeResources": false
-    },
-    "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "lifecycle": "keep-alive"
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
-      "lifecycle": "lazy"
-    },
-    "minimax-web-search": {
-      "command": "npx",
-      "args": ["-y", "@ameno/pi-minimax-mcp"],
-      "env": {
-        "MINIMAX_API_KEY": "YOUR_MINIMAX_API_KEY"
-      },
-      "lifecycle": "lazy"
-    },
-    "zai-mcp": {
-      "command": "npx",
-      "args": ["-y", "@z_ai/mcp-server"],
-      "env": {
-        "Z_AI_API_KEY": "YOUR_ZAI_API_KEY",
-        "Z_AI_MODE": "ZAI"
-      },
-      "lifecycle": "lazy"
+    # Build mcp.json using Hashtable to avoid here-string issues
+    $mcpContent = @{
+        mcpServers = @{
+            SynaBun = @{
+                command = "node"
+                args = @($synabunPath)
+                lifecycle = "keep-alive"
+                exposeResources = $false
+            }
+            memory = @{
+                command = "npx"
+                args = @("-y", "@modelcontextprotocol/server-memory")
+                lifecycle = "keep-alive"
+            }
+            context7 = @{
+                command = "npx"
+                args = @("-y", "@upstash/context7-mcp@latest")
+                lifecycle = "lazy"
+            }
+            "minimax-web-search" = @{
+                command = "npx"
+                args = @("-y", "@ameno/pi-minimax-mcp")
+                env = @{ MINIMAX_API_KEY = "YOUR_MINIMAX_API_KEY" }
+                lifecycle = "lazy"
+            }
+            "zai-mcp" = @{
+                command = "npx"
+                args = @("-y", "@z_ai/mcp-server")
+                env = @{ Z_AI_API_KEY = "YOUR_ZAI_API_KEY"; Z_AI_MODE = "ZAI" }
+                lifecycle = "lazy"
+            }
+        }
     }
-  }
-}
-"@
-    $mcpJson | Out-File -FilePath $mcpPath -Encoding UTF8
+    $mcpContent | ConvertTo-Json -Depth 10 | Out-File -FilePath $mcpPath -Encoding UTF8
     Info "mcp.json criado"
 } else {
-    Info "mcp.json já existe — preservado"
+    Info "mcp.json já existe - preservado"
 }
 
 # ── SynaBun ───────────────────────────────────
-if (-not (npm list -g synabun -depth=0 -json 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue)) {
+$synabunCheck = npm list -g synabun 2>$null
+if ($LASTEXITCODE -ne 0) {
     Warn "Instalando SynaBun..."
     npm install -g synabun 2>$null
 }
