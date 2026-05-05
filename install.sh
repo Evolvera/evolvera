@@ -113,6 +113,12 @@ if ! npm list -g synabun &>/dev/null 2>&1; then
     npm install -g synabun 2>/dev/null || true
 fi
 
+# ── Subagents (Agent tool) ────────────────────
+step "Subagents (Agent tool)"
+if command -v pi &>/dev/null; then
+    pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents instalado" || info "pi-subagents: já instalado ou pulado"
+fi
+
 # ── Done ──────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
