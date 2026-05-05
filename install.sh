@@ -69,10 +69,12 @@ else
     info "mcp.json ja existe - preservado"
 fi
 
-# ── Subagents (Agent tool) ────────────────────
-step "Subagents (Agent tool)"
+# ── PI Packages ─────────────────────────────
+step "PI Packages"
 if command -v pi &>/dev/null; then
-    pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents instalado" || info "pi-subagents: já instalado ou pulado"
+    pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
+    pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
+    pi install npm:@imsus/pi-extension-minimax-coding-plan-mcp 2>/dev/null && info "minimax-web-search" || true
 fi
 
 # ── Done ──────────────────────────────────────
