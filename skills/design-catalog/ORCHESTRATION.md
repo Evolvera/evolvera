@@ -10,8 +10,9 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 | File | Created By | Read By | Purpose |
 |------|-----------|---------|---------|
-| `DESIGN_PLAN.md` | `website-designer` | `seo-content-writer`, `builder`, `website-polisher` | Detailed design + implementation plan |
-| `CONTENT_PLAN.md` | `seo-content-writer` | `builder`, `website-polisher`, `validator` | All website copy, meta tags, microcopy, alt text, schema markup |
+| `DESIGN_PLAN.md` | `website-designer` | `seo-content-writer`, `planner`, `builder`, `website-polisher` | Detailed design + UX strategy + SEO guidance |
+| `CONTENT_PLAN.md` | `seo-content-writer` | `planner`, `builder`, `website-polisher`, `validator` | All website copy, meta tags, microcopy, alt text, schema markup |
+| Planner Phase Plan | `planner` | `builder` | Implementation phase instructions passed as prompt context by PI principal |
 | `POLISH_PLAN.md` | `website-polisher` (READ-ONLY) | `builder`, `validator` | UI/UX polish instructions (file, old_string, new_string per fix) |
 | `REVIEW.md` | `validator` | user, PI principal | Quality gate verdict (PASS/CONDITIONAL/REJECT) |
 | `TILL-DO.md` | builder, polisher, seo-content-writer | themselves | Pre-flight sanity gates |
@@ -39,12 +40,12 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 │  Output: DESIGN_PLAN.md in project root                                │
 │  Tools: read, grep, find, ls, bash, write                             │
 │  Lifecycle: TILL-DO → TODO → Write DESIGN_PLAN.md → Cleanup           │
-│  Note: Visual design only — content fields marked as placeholders      │
+│  Note: Visual + UX strategy — no technical stack or implementation     │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  seo-content-writer [NEW]                                               │
+│  seo-content-writer                                                     │
 │  Input: DESIGN_PLAN.md + User briefing                                 │
 │  Output: CONTENT_PLAN.md in project root                               │
 │  Tools: read, grep, find, ls, bash, write                             │
@@ -54,8 +55,16 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
                                  │ (after human ✅)
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
+│  planner [PRE-EXISTENT]                                                 │
+│  Input: DESIGN_PLAN.md + CONTENT_PLAN.md + /skill:website-stack       │
+│  Output: Phase plan (passed as prompt context to builder)              │
+│  Rule: Loads website-stack skill for technical context                 │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │ [prompt context]
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
 │  builder [PRE-EXISTENT]                                                 │
-│  Input: DESIGN_PLAN.md + CONTENT_PLAN.md + briefing                    │
+│  Input: DESIGN_PLAN.md + CONTENT_PLAN.md + planner phase plan + briefing│
 │  Output: Code in branch agent/<timestamp>-website-<slug>               │
 │  Tools: read, grep, find, ls, bash, write, edit, bash (git)            │
 │  Lifecycle: TILL-DO → TODO → Implement → Final Verification → Cleanup   │
@@ -112,24 +121,66 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 6. **Branch isolation**: The builder creates an isolated branch. The polisher operates on that branch without creating a new one.
 
+7. **Planner loads website-stack skill**: The planner MUST load `/skill:website-stack` before producing the phase plan to ensure technical accuracy.
+
 ## Context Passing
 
 The PI principal passes context between agents by:
 
 1. **Designer → SEO Content Writer**: Pass the path to `DESIGN_PLAN.md` and the briefing text
-2. **SEO Content Writer → Builder** (after approval): Pass the path to `CONTENT_PLAN.md`, `DESIGN_PLAN.md`, and the briefing text
-3. **Builder → Validator**: Pass the branch name, path to `DESIGN_PLAN.md`, and path to `CONTENT_PLAN.md`
-4. **Validator → Polisher**: Pass the branch name, path to `DESIGN_PLAN.md`, path to `CONTENT_PLAN.md`, and the validator's verdict
-5. **Polisher → Builder**: Pass the path to `POLISH_PLAN.md`
-6. **Builder → Validator**: Pass the branch name and path to `POLISH_PLAN.md`
+2. **SEO Content Writer → Planner** (after approval): Pass the paths to `CONTENT_PLAN.md`, `DESIGN_PLAN.md`, and the instruction to load `/skill:website-stack`
+3. **Planner → Builder**: Pass the planner's phase plan as inline prompt context
+4. **Builder → Validator**: Pass the branch name, path to `DESIGN_PLAN.md`, and path to `CONTENT_PLAN.md`
+5. **Validator → Polisher**: Pass the branch name, path to `DESIGN_PLAN.md`, path to `CONTENT_PLAN.md`, and the validator's verdict
+6. **Polisher → Builder**: Pass the path to `POLISH_PLAN.md`
+7. **Builder → Validator**: Pass the branch name and path to `POLISH_PLAN.md`
+
+### Planner-Specific Context Passing
+
+The `planner` is invoked by the PI principal after human approval of `CONTENT_PLAN.md`.
+
+**Prompt format for planner invocation:**
+```
+Agent(subagent_type="planner", prompt=
+"You are planning the implementation of a website.\n\n"
+"Read these two artifacts from the project root:\n"
+"1. DESIGN_PLAN.md — visual design specification\n"
+"2. CONTENT_PLAN.md — all website copy and SEO metadata\n\n"
+"Load the website-stack skill for technical context: /skill:website-stack\n\n"
+"Produce a phase-based implementation plan covering:\n"
+"- Phase 0: Project scaffolding (Next.js init, Tailwind v3, shadcn/ui, Framer Motion setup)\n"
+"- Phase 1: Global layout (root layout, fonts, metadata, globals.css, tailwind.config.ts)\n"
+"- Phase 2: Shared components (Navbar, Footer, Container, ui primitives)\n"
+"- Phase 3: Page sections per page (Hero, Features, etc.)\n"
+"- Phase 4: Interactions, animations, responsive polish\n"
+"- Phase 5: SEO finalization (meta tags, schema markup, alt text, sitemap)\n\n"
+"Return the plan as structured markdown. Do NOT write code.")
+```
+
+**Prompt format for builder invocation (including planner output):**
+```
+Agent(subagent_type="builder", prompt=
+"Implement the website according to these artifacts and plan.\n\n"
+"ARTIFACTS (read from project root):\n"
+"- DESIGN_PLAN.md\n"
+"- CONTENT_PLAN.md\n\n"
+"IMPLEMENTATION PLAN (follow this order and these phases):\n"
+"<paste planner output here>\n\n"
+"Rules:\n"
+"- Follow the implementation plan phases in order.\n"
+"- Use DESIGN_PLAN.md for visual specs and CONTENT_PLAN.md for all copy.\n"
+"- If the plan conflicts with an artifact, prefer the artifact and note the discrepancy.\n")
+```
 
 ## Builder Content Contract
 
-When the builder receives both `DESIGN_PLAN.md` and `CONTENT_PLAN.md`:
-- The builder reads `DESIGN_PLAN.md` for **visual design**, layout, components, and technical stack
+When the builder receives `DESIGN_PLAN.md`, `CONTENT_PLAN.md`, and the planner's phase plan:
+- The builder reads `DESIGN_PLAN.md` for **visual design**, layout, components, hierarchy, and accessibility specs
 - The builder reads `CONTENT_PLAN.md` for **ALL textual content** (headlines, body copy, CTAs, meta tags, microcopy, alt text, schema markup)
+- The builder follows the **planner's phase plan** for implementation order (scaffolding → layout → sections → interactions → SEO)
 - The builder **MUST prioritize** `CONTENT_PLAN.md` copy over any generated placeholders
-- If `CONTENT_PLAN.md` is **missing**, the builder falls back to current behavior (generic placeholders or self-generated copy) — this ensures backward compatibility with existing projects
+- If `CONTENT_PLAN.md` is **missing**, the builder falls back to current behavior (generic placeholders or self-generated copy)
+- If the planner's phase plan is **missing**, the builder self-organizes using standard Next.js scaffolding order
 - The builder **MUST respect** the language specified in `CONTENT_PLAN.md`'s Project Context section
 
 ## Human Approval Gate
@@ -155,6 +206,7 @@ The `seo-content-writer` is the **ONLY agent** in the website chain with a **man
 | Validator REJECT | Builder fixes issues; re-run validator |
 | Polisher exceeds max_turns | Prioritize: Critical (a11y, states) → High → Medium; document pending |
 | Builder fails to apply polish | Builder skips unapplyable fixes and reports |
+| Planner fails to generate plan | PI principal falls back to passing artifacts directly to builder with generic step-by-step instruction |
 
 ## Design Catalog Dependency
 
