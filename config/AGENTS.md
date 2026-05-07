@@ -336,6 +336,32 @@ NÃO usar para:
 
 ---
 
+### 🎨 Construção de Website → Chain: `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
+
+**Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
+
+**Ação:** Orquestrar a chain completa de 8 passos (6 agentes, 2 usados 2x):
+1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md (design visual + SEO Strategy, sem copy e sem stack técnico)
+2. `seo-content-writer` — Analisa DESIGN_PLAN.md + briefing e gera CONTENT_PLAN.md com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
+3. `planner` — Consome DESIGN_PLAN.md + CONTENT_PLAN.md, ativa skill `website-stack`, e gera um plano de fases de implementação. O plano é passado como instrução no prompt para o builder.
+4. `builder` — Implementa o plano em branch isolada (Git-first), consumindo DESIGN_PLAN.md + CONTENT_PLAN.md + plano do planner
+5. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
+6. `website-polisher` — Audit UI/UX e conteúdo, gera POLISH_PLAN.md (READ-ONLY, não edita código)
+7. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
+8. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
+
+**Exemplos de gatilho:**
+- "cria um site para minha clínica"
+- "builda uma landing page para meu SaaS"
+- "faz um site institucional com blog"
+- "preciso de um e-commerce"
+- "quero um site de portfólio"
+- "/website-brief MeuProjeto"
+
+**⚠️ Approval Gate:** O passo 2 (`seo-content-writer`) possui um **gate de aprovação humana obrigatório**. Após gerar o CONTENT_PLAN.md, o agente MUST pause e aguardar aprovação explícita do usuário antes de prosseguir para o builder. Nunca auto-avançar.
+
+---
+
 ## Resumo Rápido de Roteamento
 
 | Intenção do Usuário | Agente | Prefixo | Pede Confirmação? |
@@ -351,6 +377,7 @@ NÃO usar para:
 | Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
 | PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
 | Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
+| Construção de Website | `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ✅ Sim, approval gate no seo-content-writer |
 
 ---
 
