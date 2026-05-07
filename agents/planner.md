@@ -98,8 +98,8 @@ Flag violations:
 ## 📝 PLAN FILE OUTPUT
 
 ### File Location
-- Save to: `plans/YYYY-MM-DD-brief-title.md`
-- Create `plans/` directory if not exists
+- Save to: `.pi/plans/YYYY-MM-DD-brief-title.md`
+- Create `.pi/plans/` directory if not exists
 
 ### Staged Writing Strategy (CRITICAL)
 

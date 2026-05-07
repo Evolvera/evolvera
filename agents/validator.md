@@ -29,7 +29,7 @@ skills: true
 
 ## State Reset (MANDATORY)
 
-Check por stale `TILL-DO.md`, `TODO.md`, ou `REVIEW.md` de runs anteriores. Se presente e task for NEW, deletar imediatamente. Confirmar: "State reset. Starting fresh validation."
+Check por stale `.pi/validate/TILL-DO.md`, `.pi/validate/TODO.md`, `.pi/validate/REVIEW.md`, `.pi/validate/FIX_REQUIRED.md`, ou arquivos legados na raiz (`TILL-DO.md`, `TODO.md`, `REVIEW.md`, `FIX_REQUIRED.md`) de runs anteriores. Se presente e task for NEW, deletar imediatamente. Confirmar: "State reset. Starting fresh validation."
 
 ---
 
@@ -37,7 +37,7 @@ Check por stale `TILL-DO.md`, `TODO.md`, ou `REVIEW.md` de runs anteriores. Se p
 
 ### TILL-DO.md (Pre-Validation / Quick Search Barriers)
 
-Criado no início. Contém **barriers que BLOCK** review se falharem.
+Criado em `.pi/validate/TILL-DO.md` no início. Contém **barriers que BLOCK** review se falharem.
 
 ```
 TILL-DO — Execute ONLY after all ✅
@@ -56,16 +56,16 @@ TILL-DO — Execute ONLY after all ✅
 
 **Regra**: Se ANY Quick Search Barrier encontrar match, STOP. NÃO criar TODO.md.
 - Documentar finding como `🚫 BARRIER BLOCK: <pattern found> in <file>`
-- Reportar: "Validation blocked by Quick Search Barrier. See TILL-DO.md."
+- Reportar: "Validation blocked by Quick Search Barrier. See `.pi/validate/TILL-DO.md`."
 - Só proceed se barriers limpos (✅) ou user explicitamente override com justificativa.
 
-**Delete TILL-DO.md** only after 100% ✅.
+**Delete `.pi/validate/TILL-DO.md`** only after 100% ✅.
 
 ---
 
 ### TODO.md (Validation Execution)
 
-Criado ONLY após TILL-DO.md 100% ✅.
+Criado em `.pi/validate/TODO.md` ONLY após `.pi/validate/TILL-DO.md` 100% ✅.
 
 ```
 TODO — Step-by-step validation
@@ -84,7 +84,7 @@ TODO — Step-by-step validation
   1. Document and abort (if critical)
   2. Continue only se issue isolada e não afetará remaining steps
 
-**Delete TODO.md** only after final verdict delivered.
+**Delete `.pi/validate/TODO.md`** only after final verdict delivered.
 
 ---
 
@@ -229,7 +229,7 @@ Se tests estão MISSING para código novo/modificado:
 
 ## Review Output Format
 
-Criar `REVIEW.md` ao lado de TODO.md. Para cada issue:
+Criar `.pi/validate/REVIEW.md`. Para cada issue:
 
 ```markdown
 ### [SEVERITY] <Short Description>
@@ -263,19 +263,19 @@ Se **criou ou editou tests**, documentar sob:
 
 ### PASS
 All checklists ✅. Tests pass, coverage >=80%, observability complete.
-**Action**: Delete TILL-DO.md + TODO.md + REVIEW.md. Inform: "Validation passed. Ready for merge."
+**Action**: Delete `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md` + `.pi/validate/REVIEW.md`. Inform: "Validation passed. Ready for merge."
 
 ### CONDITIONAL
 Medium/Low issues remain.
-**Action**: List conditions. Keep REVIEW.md until resolved. Delete TILL-DO.md + TODO.md.
+**Action**: List conditions. Keep `.pi/validate/REVIEW.md` until resolved. Delete `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md`.
 
 ### REJECT
 Critical/High found.
 **Action**:
-1. Do NOT delete TILL-DO.md, TODO.md, or REVIEW.md
-2. Create `FIX_REQUIRED.md` com lista priorizada de fixes
+1. Do NOT delete `.pi/validate/TILL-DO.md`, `.pi/validate/TODO.md`, or `.pi/validate/REVIEW.md`
+2. Create `.pi/validate/FIX_REQUIRED.md` com lista priorizada de fixes
 3. Se tests criados mas código de produção quebrado, notar: "Tests added but production logic needs fix"
-4. Inform: "Validation rejected. See TILL-DO.md, TODO.md, REVIEW.md, and FIX_REQUIRED.md."
+4. Inform: "Validation rejected. See `.pi/validate/TILL-DO.md`, `.pi/validate/TODO.md`, `.pi/validate/REVIEW.md`, and `.pi/validate/FIX_REQUIRED.md`."
 
 ---
 
@@ -294,13 +294,13 @@ Critical/High found.
 
 ## Output Format
 
-1. **State Reset**: Delete stale TILL-DO.md + TODO.md + REVIEW.md if present
-2. **TILL-DO.md**: Create, fill, run Quick Search Barriers. 100% ✅ before TODO.md
+1. **State Reset**: Delete stale `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md` + `.pi/validate/REVIEW.md` if present
+2. **`.pi/validate/TILL-DO.md`**: Create, fill, run Quick Search Barriers. 100% ✅ before `.pi/validate/TODO.md`
 3. **Barriers**: grep for secrets, dangerous patterns, conflicts, stubs. Stop if found
-4. **TODO.md**: Create with validation steps. Execute one by one
+4. **`.pi/validate/TODO.md`**: Create with validation steps. Execute one by one
 5. **Test Audit**: Coverage, quality, execution, generation
 6. **Observability Audit**: Logs, metrics, tracing, traceability
 7. **Architecture/Security/GIT**: Complete checklists
-8. **REVIEW.md**: Issue catalog with severity
+8. **`.pi/validate/REVIEW.md`**: Issue catalog with severity
 9. **Final Verdict**: PASS / CONDITIONAL / REJECT
-10. **Cleanup**: Delete TILL-DO.md + TODO.md (+ REVIEW.md on PASS); keep all on REJECT
+10. **Cleanup**: Delete `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md` (+ `.pi/validate/REVIEW.md` on PASS); keep all on REJECT
