@@ -363,18 +363,19 @@ NÃO usar para:
 
 ---
 
-### 🎨 Construção de Website → Chain: `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
+### 🎨 Construção de Website → Chain: `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
 
 **Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
 
-**Ação:** Orquestrar a chain completa de 7 passos (5 agentes, 2 usados 2x):
-1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md (design visual, sem copy)
+**Ação:** Orquestrar a chain completa de 8 passos (6 agentes, 2 usados 2x):
+1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md (design visual + SEO Strategy, sem copy e sem stack técnico)
 2. `seo-content-writer` — Analisa DESIGN_PLAN.md + briefing e gera CONTENT_PLAN.md com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
-3. `builder` — Implementa o plano em branch isolada (Git-first), consumindo DESIGN_PLAN.md + CONTENT_PLAN.md
-4. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
-5. `website-polisher` — Audit UI/UX e conteúdo, gera POLISH_PLAN.md (READ-ONLY, não edita código)
-6. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
-7. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
+3. `planner` — Consome DESIGN_PLAN.md + CONTENT_PLAN.md, ativa skill `website-stack`, e gera um plano de fases de implementação. O plano é passado como instrução no prompt para o builder.
+4. `builder` — Implementa o plano em branch isolada (Git-first), consumindo DESIGN_PLAN.md + CONTENT_PLAN.md + plano do planner
+5. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
+6. `website-polisher` — Audit UI/UX e conteúdo, gera POLISH_PLAN.md (READ-ONLY, não edita código)
+7. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
+8. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
 
 ```
 Exemplos de gatilho:
@@ -396,11 +397,13 @@ Exemplos de gatilho:
 
 **Como funciona a chain:**
 ```
-website-designer (gera DESIGN_PLAN.md — visual only)
+website-designer (gera DESIGN_PLAN.md — visual + SEO Strategy)
     ↓
 seo-content-writer (gera CONTENT_PLAN.md — ALL copy)
     ↓ [human approval required]
-builder [pré-existente] (implementa em branch agent/<timestamp>-website)
+planner (consome DESIGN_PLAN.md + CONTENT_PLAN.md, ativa /skill:website-stack, gera plano de fases)
+    ↓ [planner plan passed as prompt context]
+builder [pré-existente] (implementa em branch agent/<timestamp>-website, usando DESIGN_PLAN.md + CONTENT_PLAN.md + planner plan)
     ↓
 validator [pré-existente] (quality gate pós-build → REVIEW.md)
     ↓
@@ -438,7 +441,7 @@ validator [pré-existente] (quality gate final → REVIEW.md final)
 | PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
 | Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
 | Geração de conteúdo SEO/copy | `seo-content-writer` | — | ✅ Sim, pausa obrigatória para aprovação |
-| Construção de Website | `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ✅ Sim,approval gate no seo-content-writer |
+| Construção de Website | `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ✅ Sim, approval gate no seo-content-writer |
 
 ---
 
