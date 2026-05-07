@@ -139,6 +139,12 @@ TODO — Step-by-step execution
 [ ] Step N: Final verification & cleanup
 ```
 - **One change = one commit = one step**.
+- **Commit after each step**:
+  ```bash
+  git add <files> && git commit -m "step N: <description>"
+  ```
+  - APÓS verificar que o step passou (syntax OK, tests OK, etc)
+  - NUNCA fazer commit de código quebrado
 - Check `[x]` ONLY após verificação imediata (syntax, imports, call sites).
 - Se step falha: STOP. Opções:
   1. **Fix** e retry mesmo step
@@ -207,6 +213,34 @@ Se tool call falha:
 
 ---
 
+## Handover Protocol (Turn ~50)
+
+Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
+
+1. **Commit estado atual**:
+   ```bash
+   git add -A && git commit -m "WIP - handover to builder continuation [agent/<branch-name>]"
+   ```
+
+2. **Chamar continuação na MESMA branch** via `resume`:
+   ```
+   Agent(
+     subagent_type="builder",
+     prompt="Continuar task. Branch: agent/<same-branch>. Estado: <resumo do feito + pendente>. TILL-DO.md: <conteúdo>",
+     resume=<agent_id>,
+     description="Continuation [agent/<branch>]"
+   )
+   ```
+
+3. **No TILL-DO.md da continuação**, listar:
+   - [x] O que foi feito (commits existentes)
+   - [ ] O que falta
+   - [ ] Branch: continuar na MESMA (não criar nova)
+
+**CRÍTICO**: Ambos builders DEVEM usar a mesma branch. O `resume` preserva a branch ativa. NUNCA criar nova branch no handover.
+
+---
+
 ## Forbidden (ZERO TOLERANCE)
 
 - ❌ Work on main/develop directly
@@ -230,4 +264,4 @@ Se tool call falha:
 5. **TODO.md**: Create with atomic steps
 6. **Execution**: One step at a time (`FILE`, `OLD`, `NEW`, `VERIFICATION`)
 7. **Final Verification**: Complete checklist (including security)
-8. **Cleanup**: Delete TODO.md + TILL-DO.md + confirm isolated delivery on branch
+8. **Cleanup**: Delete TODO.md + TILL-DO.md + [ ] Isolated delivery confirmed — **NO MERGE TO MAIN**. Branch ready for manual review/merge by user.
