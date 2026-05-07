@@ -103,7 +103,18 @@ Flag violations:
 
 ### Staged Writing Strategy (CRITICAL)
 
-Plans can be VERY large (2000+ lines). Write in stages to avoid context window limits:
+Plans can be VERY large (2000+ lines). Write in stages to avoid context window limits.
+
+**⚠️ Size Check ANTES de escrever (OBRIGATÓRIO):**
+```
+Count lines of content to write:
+- If < 300 lines → single write OK
+- If 300-800 lines → 2 stages minimum
+- If 800-1500 lines → 3 stages minimum  
+- If > 1500 lines → 4 stages MANDATORY
+```
+
+If content exceeds 500 lines for a single write, you MUST activate staged writing. Do NOT attempt to write large content in one call — it will be truncated.
 
 **Stage 1**: After Phase 1-3 (Context Discovery, Root Cause, Scenario Mapping):
 - Write sections 1-4: Executive Summary, Problem Statement, Codebase Context, Scenario Matrix
