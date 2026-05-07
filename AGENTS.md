@@ -139,7 +139,7 @@ NÃO usar para:
 2. Na Phase 1 (Context Discovery), o planner **decompõe a tarefa** em 2-4 missões de exploração
 3. Lança **scouts em paralelo** (modelo barato — `minimax/MiniMax-M2.7-highspeed`) pra mapear o codebase
 4. Coleta os resultados e faz a **análise profunda** com o kimi
-5. Gera o plano detalhado em `plans/YYYY-MM-DD-*.md`
+5. Gera o plano detalhado em `.pi/plans/YYYY-MM-DD-*.md`
 
 **Isso economiza tokens** — a exploração custa ~10 turns de modelo barato em vez de 20-30 turns do modelo caro.
 
@@ -204,8 +204,8 @@ NÃO usar para:
 
 **Como funciona:**
 1. **Git Step 0** — cria branch isolada `agent/<timestamp>-<desc>`, anota base commit
-2. **TILL-DO.md** — sanity gates que BLOQUEIAM execução até 100% ✅
-3. **TODO.md** — steps atômicos, one-change-one-verification
+2. **`.pi/build/TILL-DO.md`** — sanity gates que BLOQUEIAM execução até 100% ✅
+3. **`.pi/build/TODO.md`** — steps atômicos, one-change-one-verification
 4. **Execução** — edit precision, import hygiene, test-first
 5. **Final Verification** — syntax, types, imports, tests, edge cases, secrets, git diff
 6. **Cleanup** — apaga checklists, branch pronta para review
@@ -264,7 +264,7 @@ A pipeline natural para mudanças de código não-triviais:
 ```
 scout → mapeia codebase (inteligência)
   ↓
-planner → gera plano detalhado (plans/*.md)
+planner → gera plano detalhado (`.pi/plans/*.md`)
   ↓
 builder → executa plano (branch isolada, TILL-DO → TODO → Final Verification)
   ↓
@@ -368,13 +368,13 @@ NÃO usar para:
 **Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
 
 **Ação:** Orquestrar a chain completa de 8 passos (6 agentes, 2 usados 2x):
-1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md (design visual + SEO Strategy, sem copy e sem stack técnico)
-2. `seo-content-writer` — Analisa DESIGN_PLAN.md + briefing e gera CONTENT_PLAN.md com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
-3. `planner` — Consome DESIGN_PLAN.md + CONTENT_PLAN.md, ativa skill `website-stack`, e gera um plano de fases de implementação. O plano é passado como instrução no prompt para o builder.
-4. `builder` — Implementa o plano em branch isolada (Git-first), consumindo DESIGN_PLAN.md + CONTENT_PLAN.md + plano do planner
+1. `website-designer` — Analisa briefing e gera `.pi/plans/DESIGN_PLAN.md` (design visual + SEO Strategy, sem copy e sem stack técnico)
+2. `seo-content-writer` — Analisa `.pi/plans/DESIGN_PLAN.md` + briefing e gera `.pi/plans/CONTENT_PLAN.md` com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
+3. `planner` — Consome `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`, ativa skill `website-stack`, e gera um plano de fases de implementação. O plano é passado como instrução no prompt para o builder.
+4. `builder` — Implementa o plano em branch isolada (Git-first), consumindo `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + plano do planner
 5. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
-6. `website-polisher` — Audit UI/UX e conteúdo, gera POLISH_PLAN.md (READ-ONLY, não edita código)
-7. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
+6. `website-polisher` — Audit UI/UX e conteúdo, gera `.pi/plans/POLISH_PLAN.md` (READ-ONLY, não edita código)
+7. `builder` — Aplica correções do `.pi/plans/POLISH_PLAN.md` na mesma branch
 8. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
 
 ```
@@ -397,29 +397,29 @@ Exemplos de gatilho:
 
 **Como funciona a chain:**
 ```
-website-designer (gera DESIGN_PLAN.md — visual + SEO Strategy)
+website-designer (gera `.pi/plans/DESIGN_PLAN.md` — visual + SEO Strategy)
     ↓
-seo-content-writer (gera CONTENT_PLAN.md — ALL copy)
+seo-content-writer (gera `.pi/plans/CONTENT_PLAN.md` — ALL copy)
     ↓ [human approval required]
-planner (consome DESIGN_PLAN.md + CONTENT_PLAN.md, ativa /skill:website-stack, gera plano de fases)
+planner (consome `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`, ativa /skill:website-stack, gera plano de fases)
     ↓ [planner plan passed as prompt context]
-builder [pré-existente] (implementa em branch agent/<timestamp>-website, usando DESIGN_PLAN.md + CONTENT_PLAN.md + planner plan)
+builder [pré-existente] (implementa em branch agent/<timestamp>-website, usando `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + planner plan)
     ↓
-validator [pré-existente] (quality gate pós-build → REVIEW.md)
+validator [pré-existente] (quality gate pós-build → `.pi/validate/REVIEW.md`)
     ↓
-website-polisher (gera POLISH_PLAN.md — READ-ONLY)
+website-polisher (gera `.pi/plans/POLISH_PLAN.md` — READ-ONLY)
     ↓
 builder [pré-existente] (aplica correções visuais)
     ↓
-validator [pré-existente] (quality gate final → REVIEW.md final)
+validator [pré-existente] (quality gate final → `.pi/validate/REVIEW.md` final)
 ```
 
-**Nota:** O agente designer NÃO escreve código nem copy — ele escreve apenas DESIGN_PLAN.md com placeholders `[SEO Content Writer — purpose: ...]`. O `seo-content-writer` é responsável por toda a copy final. O builder lê ambos os arquivos e implementa. O polisher NÃO edita código — apenas lê e gera POLISH_PLAN.md com instruções detalhadas (file, old_string, new_string) para o builder executar.
+**Nota:** O agente designer NÃO escreve código nem copy — ele escreve apenas `.pi/plans/DESIGN_PLAN.md` com placeholders `[SEO Content Writer — purpose: ...]`. O `seo-content-writer` é responsável por toda a copy final. O builder lê ambos os arquivos e implementa. O polisher NÃO edita código — apenas lê e gera `.pi/plans/POLISH_PLAN.md` com instruções detalhadas (file, old_string, new_string) para o builder executar.
 
-**⚠️ Approval Gate:** O passo 2 (`seo-content-writer`) possui um **gate de aprovação humana obrigatório**. Após gerar o CONTENT_PLAN.md, o agente MUST pause e aguardar aprovação explícita do usuário antes de prosseguir para o builder. Nunca auto-avançar.
+**⚠️ Approval Gate:** O passo 2 (`seo-content-writer`) possui um **gate de aprovação humana obrigatório**. Após gerar o `.pi/plans/CONTENT_PLAN.md`, o agente MUST pause e aguardar aprovação explícita do usuário antes de prosseguir para o builder. Nunca auto-avançar.
 
 **Quando usar `seo-content-writer` isoladamente:**
-- Quando o usuário já tem um DESIGN_PLAN.md e só precisa da copy
+- Quando o usuário já tem um `.pi/plans/DESIGN_PLAN.md` e só precisa da copy
 - Para regerar ou revisar copy de uma página existente
 - Para criar copy adicional para páginas adicionadas a um projeto existente
 

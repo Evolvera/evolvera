@@ -34,8 +34,8 @@ Agent(subagent_type="scout", prompt="<focused recon mission>", description="Reco
 
 ## State Reset (MANDATORY)
 
-1. Verificar se `TILL-DO.md` ou `TODO.md` existe de runs anteriores
-2. Se existir e task for NEW, **deletar imediatamente**
+1. Verificar se `.pi/build/TILL-DO.md`, `.pi/build/TODO.md`, ou arquivos legados `TILL-DO.md` / `TODO.md` na raiz existem de runs anteriores
+2. Se existir e task for NEW, **deletar imediatamente** (tanto em `.pi/build/` quanto na raiz)
 3. Confirmar: "State reset. Starting fresh task."
 
 ---
@@ -52,7 +52,7 @@ Antes de criar arquivo ou tocar código:
    ```
    [ ] Branch criada e checkada
    [ ] Working directory limpa (git status)
-   [ ] Base commit hash anotado (escrever no TILL-DO.md)
+   [ ] Base commit hash anotado (escrever no `.pi/build/TILL-DO.md`)
    ```
 
 **Rollback**: `git checkout <base-commit>` ou deletar branch. Main intocada até verificação final.
@@ -90,7 +90,7 @@ ALTERNATIVE: <propor abordagem não-destrutiva>
 - **Scan proativo**: se criando arquivos, verificar que não contém secrets hardcoded.
 
 ### 4. Network & Scope Containment
-- **Sem HTTP requests** para endpoints não-project sem justificativa no TILL-DO.md
+- **Sem HTTP requests** para endpoints não-project sem justificativa no `.pi/build/TILL-DO.md`
 - **Não instalar** deps de fontes não-oficiais
 - **Scope boundary**: não ler/escrever fora do project root
 - **Não executar** código baixado sem inspeção manual
@@ -106,7 +106,7 @@ ALTERNATIVE: <propor abordagem não-destrutiva>
 
 ### TILL-DO.md (Pre-Execution / Sanity Gates)
 
-Criado após Step 0. Contém gates que **BLOCK** execução.
+Criado em `.pi/build/TILL-DO.md` após Step 0. Contém gates que **BLOCK** execução.
 
 ```
 TILL-DO — Execute ONLY after all ✅
@@ -123,13 +123,13 @@ TILL-DO — Execute ONLY after all ✅
 ```
 **Regra**: Se qualquer item for ❌, NÃO criar TODO.md. Voltar e resolver.
 
-**Delete TILL-DO.md** only after 100% ✅.
+**Delete `.pi/build/TILL-DO.md`** only after 100% ✅.
 
 ---
 
 ### TODO.md (Execution / Atomic Steps)
 
-Criado ONLY após TILL-DO.md 100% ✅.
+Criado em `.pi/build/TODO.md` ONLY após `.pi/build/TILL-DO.md` 100% ✅.
 
 ```
 TODO — Step-by-step execution
@@ -151,7 +151,7 @@ TODO — Step-by-step execution
   2. **Rollback** para base commit se fix unclear
   3. **Abort** e reportar se destrutivo ou incerto
 
-**Delete TODO.md** only after final verification passes.
+**Delete `.pi/build/TODO.md`** only after final verification passes.
 
 ---
 
@@ -195,7 +195,7 @@ Se tool call falha:
 
 ---
 
-## Final Verification (MANDATORY antes de deletar TODO.md)
+## Final Verification (MANDATORY antes de deletar `.pi/build/TODO.md`)
 
 ```
 [ ] Syntax: zero parse errors
@@ -226,13 +226,13 @@ Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
    ```
    Agent(
      subagent_type="builder",
-     prompt="Continuar task. Branch: agent/<same-branch>. Estado: <resumo do feito + pendente>. TILL-DO.md: <conteúdo>",
+     prompt="Continuar task. Branch: agent/<same-branch>. Estado: <resumo do feito + pendente>. `.pi/build/TILL-DO.md`: <conteúdo>",
      resume=<agent_id>,
      description="Continuation [agent/<branch>]"
    )
    ```
 
-3. **No TILL-DO.md da continuação**, listar:
+3. **No `.pi/build/TILL-DO.md` da continuação**, listar:
    - [x] O que foi feito (commits existentes)
    - [ ] O que falta
    - [ ] Branch: continuar na MESMA (não criar nova)
@@ -259,9 +259,9 @@ Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
 
 1. **State Reset**: Confirm fresh start, delete stale TILL-DO/TODO if present
 2. **Git Step 0**: Branch created, base commit noted
-3. **TILL-DO.md**: Create, fill, 100% ✅ before proceeding (including safety gates)
+3. **`.pi/build/TILL-DO.md`**: Create, fill, 100% ✅ before proceeding (including safety gates)
 4. **Analysis**: Root cause + scenarios + impact + rollback path + safety assessment
-5. **TODO.md**: Create with atomic steps
+5. **`.pi/build/TODO.md`**: Create with atomic steps
 6. **Execution**: One step at a time (`FILE`, `OLD`, `NEW`, `VERIFICATION`)
 7. **Final Verification**: Complete checklist (including security)
-8. **Cleanup**: Delete TODO.md + TILL-DO.md + [ ] Isolated delivery confirmed — **NO MERGE TO MAIN**. Branch ready for manual review/merge by user.
+8. **Cleanup**: Delete `.pi/build/TODO.md` + `.pi/build/TILL-DO.md` + [ ] Isolated delivery confirmed — **NO MERGE TO MAIN**. Branch ready for manual review/merge by user.

@@ -8,6 +8,12 @@ description: "Memória persistente por projeto via arquivos markdown em .pi/memo
 ## LOCALIZAÇÃO
 Toda memória de projeto fica em: `{cwd}/.pi/memory/`
 
+> **Nota**: A pasta `.pi/` na raiz do projeto é o diretório padronizado para **todos** os artefatos dos agentes:
+> - `.pi/plans/` — planos persistentes (planner, designer, content-writer, polisher)
+> - `.pi/build/` — checklists temporários de execução (TILL-DO.md, TODO.md)
+> - `.pi/validate/` — artefatos de validação (REVIEW.md, FIX_REQUIRED.md)
+> - `.pi/memory/` — memória persistente do projeto (este skill)
+
 | Arquivo | Descrição |
 |---------|-----------|
 | `_summary.md` | Resumo compacto (max ~10k tokens). Injetado AUTOMATICAMENTE pela extension no início de cada sessão via hook before_agent_start. |
