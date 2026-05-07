@@ -146,3 +146,37 @@ This includes:
 | bold | Nike, Apple, Ferrari, Lamborghini, Pinterest, Wired |
 | luxury | Apple, Tesla, Bugatti, Ferrari, BMW, Rolex-style brands |
 | friendly | Intercom, Airtable, Slack, Zapier, Calendly |
+
+## Website Content Generation
+
+The website construction chain has a **clear separation of concerns** between visual design and content:
+
+### Responsibility Split
+
+| Responsibility | Agent | Output |
+|---------------|-------|--------|
+| Visual design (colors, typography, layout, components) | `website-designer` | `DESIGN_PLAN.md` |
+| All website copy (headlines, body, CTAs, microcopy, meta tags, alt text, schema) | `seo-content-writer` | `CONTENT_PLAN.md` |
+| Implementation (code) | `builder` | Reads both `DESIGN_PLAN.md` + `CONTENT_PLAN.md` |
+| UI/UX polish | `website-polisher` | Reads both plans + code |
+| Quality verification | `validator` | Reads all artifacts |
+
+### How It Works
+
+1. **Designer** produces `DESIGN_PLAN.md` with content fields marked as placeholders: `[SEO Content Writer — purpose: primary value proposition]`
+2. **SEO Content Writer** reads `DESIGN_PLAN.md`, generates all copy in `CONTENT_PLAN.md`, and pauses for human approval
+3. **Builder** reads both plans and implements the full website with correct copy
+4. **Polisher** audits both design and content for consistency
+5. **Validator** verifies implementation matches both plans
+
+### When to Use Each Agent
+
+| Use Case | Agent(s) |
+|----------|----------|
+| New website from scratch | Full chain: `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` |
+| Design only (no implementation) | `website-designer` only |
+| Content only (DESIGN_PLAN.md already exists) | `seo-content-writer` only |
+| Implement from existing plans | `builder` only |
+| Polish existing website | `website-polisher` only |
+| Validate implementation | `validator` only |
+| Regenerate/revise copy | `seo-content-writer` only (after design is approved) |

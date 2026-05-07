@@ -363,17 +363,18 @@ NÃO usar para:
 
 ---
 
-### 🎨 Construção de Website → Chain: `website-designer` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
+### 🎨 Construção de Website → Chain: `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
 
 **Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
 
-**Ação:** Orquestrar a chain completa de 6 passos (4 agentes, 2 usados 2x):
-1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md
-2. `builder` — Implementa o plano em branch isolada (Git-first)
-3. `validator` — Quality gate pós-build (compilação, tipos, estrutura)
-4. `website-polisher` — Audit UI/UX e gera POLISH_PLAN.md (READ-ONLY, não edita código)
-5. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
-6. `validator` — Quality gate final (testes, acessibilidade, segurança)
+**Ação:** Orquestrar a chain completa de 7 passos (5 agentes, 2 usados 2x):
+1. `website-designer` — Analisa briefing e gera DESIGN_PLAN.md (design visual, sem copy)
+2. `seo-content-writer` — Analisa DESIGN_PLAN.md + briefing e gera CONTENT_PLAN.md com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
+3. `builder` — Implementa o plano em branch isolada (Git-first), consumindo DESIGN_PLAN.md + CONTENT_PLAN.md
+4. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
+5. `website-polisher` — Audit UI/UX e conteúdo, gera POLISH_PLAN.md (READ-ONLY, não edita código)
+6. `builder` — Aplica correções do POLISH_PLAN.md na mesma branch
+7. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
 
 ```
 Exemplos de gatilho:
@@ -395,8 +396,10 @@ Exemplos de gatilho:
 
 **Como funciona a chain:**
 ```
-website-designer (gera DESIGN_PLAN.md)
+website-designer (gera DESIGN_PLAN.md — visual only)
     ↓
+seo-content-writer (gera CONTENT_PLAN.md — ALL copy)
+    ↓ [human approval required]
 builder [pré-existente] (implementa em branch agent/<timestamp>-website)
     ↓
 validator [pré-existente] (quality gate pós-build → REVIEW.md)
@@ -408,7 +411,14 @@ builder [pré-existente] (aplica correções visuais)
 validator [pré-existente] (quality gate final → REVIEW.md final)
 ```
 
-**Nota:** O agente designer NÃO escreve código. Ele escreve apenas DESIGN_PLAN.md. O builder lê este arquivo e executa. O polisher NÃO edita código — apenas lê e gera POLISH_PLAN.md com instruções detalhadas (file, old_string, new_string) para o builder executar.
+**Nota:** O agente designer NÃO escreve código nem copy — ele escreve apenas DESIGN_PLAN.md com placeholders `[SEO Content Writer — purpose: ...]`. O `seo-content-writer` é responsável por toda a copy final. O builder lê ambos os arquivos e implementa. O polisher NÃO edita código — apenas lê e gera POLISH_PLAN.md com instruções detalhadas (file, old_string, new_string) para o builder executar.
+
+**⚠️ Approval Gate:** O passo 2 (`seo-content-writer`) possui um **gate de aprovação humana obrigatório**. Após gerar o CONTENT_PLAN.md, o agente MUST pause e aguardar aprovação explícita do usuário antes de prosseguir para o builder. Nunca auto-avançar.
+
+**Quando usar `seo-content-writer` isoladamente:**
+- Quando o usuário já tem um DESIGN_PLAN.md e só precisa da copy
+- Para regerar ou revisar copy de uma página existente
+- Para criar copy adicional para páginas adicionadas a um projeto existente
 
 ---
 
@@ -427,7 +437,8 @@ validator [pré-existente] (quality gate final → REVIEW.md final)
 | Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
 | PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
 | Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
-| Construção de Website | `website-designer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ❌ Não, vai direto |
+| Geração de conteúdo SEO/copy | `seo-content-writer` | — | ✅ Sim, pausa obrigatória para aprovação |
+| Construção de Website | `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ✅ Sim,approval gate no seo-content-writer |
 
 ---
 
