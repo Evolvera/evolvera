@@ -1,83 +1,83 @@
-## Builder TODO — Phase N: [Phase Name]
+# Builder TODO — Task {NN}
 
-**⚠️ IMPORTANTE**: Execute apenas esta fase. Não avance para próxima.
-
-### Phase N: [Nome da Fase]
-
-- [ ] **Step 1**: [Descrição do step]
-  - FILE: `caminho/arquivo.tsx`
-  - OLD: [descrição ou link para código existente]
-  - NEW: [descrição do que criar/modificar]
-  - VERIFICATION: [como verificar que funcionou]
-
-- [ ] **Step 2**: [Descrição do step]
-  - FILE: `caminho/arquivo.tsx`
-  - OLD: [descrição]
-  - NEW: [descrição]
-  - VERIFICATION: [como verificar]
-
-- [ ] **Step N**: [Último step da fase]
-  - FILE: `caminho/arquivo.tsx`
-  - OLD: [descrição]
-  - NEW: [descrição]
-  - VERIFICATION: [como verificar]
-
-### Phase Completion
-
-- [ ] Todos os steps commits feitos: `git log --oneline`
-- [ ] Tests passing (se houver)
-- [ ] Build passing (se aplicável)
-- [ ] Phase N delivery confirmed
-
-### 🔄 HANDOVER BLOCK (OUTPUT THIS AT END OF PHASE)
-
-```markdown
-## 🔄 Phase N Handover
-
-**Phase**: N — [Phase Name]
-**Branch**: `agent/<timestamp>-<desc>`
-**Status**: PHASE_COMPLETE
-**Commits**: [N commits on branch]
-
-### What was done:
-- [ ] Step 1: [description] → committed
-- [ ] Step 2: [description] → committed
-- ...
-
-### What remains:
-- [ ] Phase N+1: [next phase name]
-- [ ] Phase N+2: [next phase name]
-
-### Current branch state:
-- Branch: `agent/<timestamp>-<desc>`
-- Last commit: [hash] — [message]
-- Files modified: [count]
-
-### Next builder call:
-```
-Agent(subagent_type="builder", prompt="Continue from Phase N+1. Branch: agent/<timestamp>-<desc>. Base commit: [hash].")
-```
-
-[ ] Phase N delivery confirmed — AWAITING NEXT BUILDER
-```
+**Task**: `TASKS/task_{NN}_{agent}.md`
+**Started**: [ISO timestamp]
+**Last Updated**: [ISO timestamp]
+**Tool Call Budget**: ~25 calls remaining: ~20
 
 ---
 
-## ⚠️ CHECKLIST ANTI-ALUCINAÇÃO
+## Progress
 
-Antes de fazer handover, verifique:
+| Metric | Value |
+|--------|-------|
+| Total Steps | [N] |
+| Completed | [N] |
+| Remaining | [N] |
+| Progress | [X%] |
 
-- [ ] Todo código implementado foi VERIFICADO (não假设, não "deveria funcionar")
-- [ ] Nenhum console.log ou debug leftover
-- [ ] Nenhum TODO/FIXME esquecido no código
-- [ ] Nenhuma credential ou secret hardcoded
-- [ ] Import statements corretos
-- [ ] Nenhum arquivo não utilizado criado
+---
 
-## Próximas Fases (PARA REFERÊNCIA — NÃO EXECUTAR AGORA)
+## Pending Steps
 
-- [ ] Phase N+1: [Nome]
-- [ ] Phase N+2: [Nome]
-- [ ] Phase N+3: [Nome]
+1. [ ] **Step 1**: [Specific action from task's TODO Template]
+   - **Files**: [list]
+   - **Expected Result**: [what should change]
+   - **Started**: [time]
+   - **Completed**: [time]
 
-**HANDOVER NOW — DO NOT CONTINUE TO NEXT PHASE**
+2. [ ] **Step 2**: [Specific action from task's TODO Template]
+   - **Files**: [list]
+   - **Expected Result**: [what should change]
+   - **Started**: [time]
+   - **Completed**: [time]
+
+3. [ ] **Step 3**: [Specific action from task's TODO Template]
+   - **Files**: [list]
+   - **Expected Result**: [what should change]
+   - **Started**: [time]
+   - **Completed**: [time]
+
+4. [ ] **Step N**: [Specific action from task's TODO Template]
+   - **Files**: [list]
+   - **Expected Result**: [what should change]
+   - **Started**: [time]
+   - **Completed**: [time]
+
+---
+
+## Completed Steps
+
+*(None yet — will be populated as steps complete)*
+
+1. ✅ **Step X**: [Completed step name]
+   - **Completed**: [ISO timestamp]
+   - **Files Modified**: [list]
+
+---
+
+## Current Status
+
+| Field | Value |
+|-------|-------|
+| **Status** | pending | in_progress | complete | partial | blocked |
+| **Current Step** | Step N |
+| **Next Action** | [Specific next action] |
+| **Files Modified** | [count] |
+| **Files Created** | [count] |
+| **Files Read** | [count] |
+
+---
+
+## Checkpoint (for resume)
+
+If interrupted, resume from:
+
+**Last Completed**: Step [N] — [step name]
+**Next To Do**: Step [N+1] — [step name]
+
+---
+
+## Notes
+
+[Any notes during execution — unexpected findings, alternative approaches tried, etc.]

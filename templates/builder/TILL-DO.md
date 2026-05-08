@@ -1,33 +1,78 @@
-## Builder TILL-DO Gates
+# Builder TILL-DO — Task {NN}
 
-- [ ] PROPÓSITO DEFINIDO: Frase clara do que implementar
-- [ ] FILE STRUCTURE MAPEADA: Estrutura de diretórios do projeto identificada
-- [ ] ESCOPO DEFINIDO: Quais fases serão executadas (neste builder run)
-- [ ] HANDOVER AFTER EACH PHASE UNDERSTOOD: Entendido que este builder FAZ APENAS UMA FASE e entrega ao próximo
-- [ ] BRANCH CRIADA: `git checkout -b agent/<timestamp>-<desc>` feito
-- [ ] BASE COMMIT ANOTADO: Hash do commit base salvo
-- [ ] ROLLBACK DEFINIDO: Como voltar atrás se algo falhar
-
-⚠️ **GATE BLOQUEANTE**: Não começar implementação até TODOS os gates 100% ✅
+**Task**: `TASKS/task_{NN}_{agent}.md`
+**Started**: [ISO timestamp]
+**Builder Version**: v1
 
 ---
 
-## ⚠️ REGRA CRÍTICA: HANDOVER AFTER EACH PHASE
+## ⚠️ Gates (ALL MUST PASS BEFORE IMPLEMENTATION)
 
-Este builder FAZ **APENAS UMA FASE** por execution. Após completar a fase atual:
+**RULE**: Do NOT modify any files until ALL gates below are validated with evidence.
 
-1. Commit: `git add -A && git commit -m "feat: Phase N complete — [desc]"`
-2. Output: HANDOVER BLOCK no final
-3. **PARAR** — não iniciar próxima fase
-4. Aguardar que o agente pai chame novo builder para próxima fase
+---
 
-**NUNCA FAÇA:**
-- ❌ Múltiplas fases em um builder run
-- ❌ "Vou fazer rapidão as próximas fases também"
-- ❌ Continuar para fase seguinte sem entregar
+## Gate 1: Prerequisite Files Exist
 
-**SEMPRE FAÇA:**
-- ✅ Complete a fase atual
-- ✅ Commit o resultado
-- ✅ Output HANDOVER BLOCK
-- ✅ Signal completion
+- [ ] **PREREQUISITE FILE EXISTS**: `path/to/file.ts`
+  - **Evidence**: [ls or read result]
+  
+- [ ] **PREREQUISITE FILE EXISTS**: `path/to/other.ts`
+  - **Evidence**: [ls or read result]
+
+---
+
+## Gate 2: Success Criteria Understood
+
+By starting implementation, I confirm I understand ALL success criteria:
+
+- [ ] **CRITERION 1**: [Verbatim from task's Success Criteria section]
+- [ ] **CRITERION 2**: [Verbatim from task's Success Criteria section]
+- [ ] **CRITERION 3**: [Verbatim from task's Success Criteria section]
+
+---
+
+## Gate 3: Scope Defined
+
+I will ONLY modify these files (no others):
+
+### Files to CREATE
+- `src/components/New.tsx` — [description]
+
+### Files to MODIFY
+- `src/app/Existing.tsx` — [description]
+
+### Files to READ (no modification)
+- `src/app/layout.tsx` — [reason]
+
+---
+
+## Gate 4: No Blockers Identified
+
+- [ ] **No missing dependencies**: All imports exist or will be created in this task
+- [ ] **No conflicting files**: None of my modifications overlap with other parallel tasks
+- [ ] **Environment ready**: [Any environment checks]
+
+---
+
+## Gate Validation Summary
+
+| Gate | Status | Evidence |
+|------|--------|----------|
+| 1. Prerequisite Files | ✅ / ❌ | [N files verified] |
+| 2. Success Criteria | ✅ / ❌ | [N criteria confirmed] |
+| 3. Scope Defined | ✅ / ❌ | [N files in scope] |
+| 4. No Blockers | ✅ / ❌ | [Any blockers?] |
+
+**If ALL Gates ✅**: Proceed to create `.pi/build/TODO.md`
+
+**If ANY Gate ❌**: STOP. Write HANDOVER with `status: BLOCKED` and include:
+- Which gate failed
+- Why it failed
+- Suggested resolution
+
+---
+
+## Notes
+
+[Any builder notes during gate validation]
