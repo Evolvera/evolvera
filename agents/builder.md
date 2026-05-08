@@ -138,10 +138,42 @@ TODO — Step-by-step execution
 ...
 [ ] Step N: Final verification & cleanup
 ```
-- **One change = one commit = one step**.
-- **Commit after each step**:
+
+**⚠️ ATTENTION: UPDATE TODO AFTER EACH STEP — NEVER WAIT UNTIL END**
+
+The TODO.md is a LIVE document. You MUST update it after EVERY step:
+
+```bash
+# After completing Step 1:
+1. Edit .pi/build/TODO.md → change [ ] to [x] for Step 1
+2. Write the change: git add .pi/build/TODO.md && git commit -m "step 1: todo updated"
+3. ONLY THEN start Step 2
+```
+
+**Execution Flow (repeat for each step):**
+
+1. **Execute step**: Make the code change
+2. **Verify immediately**: Run syntax check, linter, or test
+3. **Update TODO**: Change `[ ] Step N` to `[x] Step N` in `.pi/build/TODO.md`
+4. **Commit**: `git add <files> .pi/build/TODO.md && git commit -m "step N: <description>"`
+5. **Verify commit**: `git log --oneline -1`确认
+6. **Continue**: Proceed to next step
+
+**Common mistake to AVOID:**
+- ❌ "I'll update the TODO at the end"
+- ❌ "TODO is just for planning, I remember what I did"
+- ❌ Skipping TODO update because "the work is done anyway"
+
+**DO THIS INSTEAD:**
+- ✅ Update TODO.md AS SOON AS step is verified
+- ✅ Commit TODO.md update alongside code changes
+- ✅ Think of TODO as your execution progress tracker
+
+**One change = one commit = one step**.
+
+**Commit after each step**:
   ```bash
-  git add <files> && git commit -m "step N: <description>"
+  git add <files> .pi/build/TODO.md && git commit -m "step N: <description>"
   ```
   - APÓS verificar que o step passou (syntax OK, tests OK, etc)
   - NUNCA fazer commit de código quebrado
@@ -213,20 +245,112 @@ Se tool call falha:
 
 ---
 
-## Handover Protocol (Turn ~50)
+## ⚠️ MAX TURNS HANDLING — CRITICAL (DO NOT DELETE CHECKPOINT FILES)
+
+**Quando atingir ~50 turns (10 antes do limite de 60), fazer WIP HANDOVER:
+
+### Step 1: PRESERVE checkpoint files (DO NOT DELETE)
+```bash
+# COPIAR conteúdo atual para o commit WIP
+cp .pi/build/TILL-DO.md /tmp/BUILDER_TILL-DO_BACKUP.md
+cp .pi/build/TODO.md /tmp/BUILDER_TODO_BACKUP.md
+```
+
+### Step 2: Commit WIP with checkpoint files INCLUDED
+```bash
+git add .pi/build/TILL-DO.md .pi/build/TODO.md
+git commit -m "WIP - builder max turns handover [agent/<branch-name>]"
+```
+
+### Step 3: Output WIP HANDOVER BLOCK
+
+```markdown
+## ⚠️ WIP Handover — Max Turns Reached
+
+**Branch**: `agent/<timestamp>-<desc>`
+**Status**: WIP — NOT COMPLETE
+**Reason**: Max turns limit approaching (~50/60)
+
+### Files Preserved (NOT DELETED):
+- `.pi/build/TILL-DO.md` — ✅ PRESERVED in git
+- `.pi/build/TODO.md` — ✅ PRESERVED in git
+
+### What was done:
+- [ ] Step X: [description] → committed
+- [ ] Step Y: [description] → committed
+- [ ] Partial Step Z: [description] → NOT committed (incomplete)
+
+### Current TILL-DO state:
+```markdown
+$(cat .pi/build/TILL-DO.md)
+```
+
+### Current TODO state:
+```markdown
+$(cat .pi/build/TODO.md)
+```
+
+### What remains:
+- [ ] Complete Step Z (partial)
+- [ ] Phase N remaining steps
+- [ ] Phase N+1: [next phase name]
+- [ ] Phase N+2: [next phase name]
+
+### Current branch state:
+- Branch: `agent/<timestamp>-<desc>`
+- Last commit: [hash] — WIP: builder max turns handover
+- Files modified: [count]
+- Checkpoint files: PRESERVED in git commit
+
+### Next builder call:
+```
+Agent(
+  subagent_type="builder", 
+  prompt="Continue from WIP state. Branch: agent/<timestamp>-<desc>. 
+Last commit: [hash] (WIP handover). 
+Checkpoint files are in git at that commit. 
+Do: git checkout [hash] -- .pi/build/TILL-DO.md .pi/build/TODO.md to restore.
+Continue from where this builder left off.",
+  resume=<optional>,
+  description="Continue WIP [agent/<branch>]"
+)
+```
+
+[ ] WIP delivery confirmed — CHECKPOINT FILES PRESERVED IN GIT
+```
+
+### Step 4: DO NOT DELETE checkpoint files
+
+**CRÍTICO**: 
+- ❌ NÃO delete `.pi/build/TILL-DO.md` 
+- ❌ NÃO delete `.pi/build/TODO.md`
+- ✅ Os arquivos JÁ ESTÃO no git commit WIP
+- ✅ O próximo builder pode restaurá-los com `git checkout <hash> -- .pi/build/`
+
+### Step 5: Stop execution
+- Parar imediatamente após outputar WIP HANDOVER BLOCK
+- Não fazer cleanup normal
+- Aguardar que parent chame novo builder com resume
+
+---
+
+## Handover Protocol (Turn ~50 - Continuation)
 
 Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
 
-1. **Commit estado atual**:
+1. **Commit estado atual** com checkpoint files:
    ```bash
-   git add -A && git commit -m "WIP - handover to builder continuation [agent/<branch-name>]"
+   git add -A && git commit -m "WIP - builder continuation [agent/<branch-name>]"
    ```
 
 2. **Chamar continuação na MESMA branch** via `resume`:
    ```
    Agent(
      subagent_type="builder",
-     prompt="Continuar task. Branch: agent/<same-branch>. Estado: <resumo do feito + pendente>. `.pi/build/TILL-DO.md`: <conteúdo>",
+     prompt="Continuar task. Branch: agent/<same-branch>. Estado: <resumo do feito + pendente>. 
+`.pi/build/TILL-DO.md`: <conteúdo>. 
+`.pi/build/TODO.md`: <conteúdo>.
+Restore with: git checkout <hash> -- .pi/build/TILL-DO.md .pi/build/TODO.md",
      resume=<agent_id>,
      description="Continuation [agent/<branch>]"
    )
@@ -237,7 +361,11 @@ Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
    - [ ] O que falta
    - [ ] Branch: continuar na MESMA (não criar nova)
 
-**CRÍTICO**: Ambos builders DEVEM usar a mesma branch. O `resume` preserva a branch ativa. NUNCA criar nova branch no handover.
+**CRÍTICO**: 
+- Checkpoint files DEVEM estar no git commit
+- O `resume` preserva a branch ativa
+- NUNCA criar nova branch no handover
+- NUNCA deletar checkpoint files ao fazer handover
 
 ---
 
