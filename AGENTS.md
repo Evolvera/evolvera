@@ -62,8 +62,8 @@ You are the top-level orchestrator. Your job is **NOT** to implement code direct
 │       ├── task_02_builder.md
 │       └── task_NN_builder.md
 ├── build/
-│   ├── TILL-DO.md          # Builder pre-flight gates
-│   ├── TODO.md            # Builder execution steps
+│   ├── TILL-DO_01.md      # Builder pre-flight gates (suffixed by task_id)
+│   ├── TODO_01.md         # Builder execution steps (suffixed by task_id)
 │   ├── HANDOVER_01.md     # Builder completion report
 │   └── HANDOVER_NN.md
 └── agents/
@@ -205,9 +205,9 @@ See `.pi/agents/builder.md` for full specification.
 
 Key responsibilities:
 - Reads ONLY its assigned task file
-- Generates TILL-DO.md for pre-flight validation
-- Generates TODO.md for execution tracking
-- Writes HANDOVER.md on completion
+- Generates TILL-DO_{task_id}.md for pre-flight validation (e.g., TILL-DO_01.md)
+- Generates TODO_{task_id}.md for execution tracking (e.g., TODO_01.md)
+- Writes HANDOVER_{task_id}.md on completion
 - Never reads PLAN_FULL.md unless task explicitly references it
 
 ### Planner Agent
