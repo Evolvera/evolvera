@@ -222,6 +222,26 @@ Key responsibilities:
 - Writes SCHEDULE_{session}.md (DAG + execution contract)
 - Never includes dependencies in task files
 
+### ⚠️ CRITICAL: Validate Against Existing Codebase
+
+**Planner MUST verify that generated code references exist in the project:**
+
+1. **CSS classes → Check tailwind.config.ts / globals.css**
+   - Before using `text-gray-mid`, verify it's defined in config
+   - Before using `bg-hero`, verify it exists in theme.extend
+   - If class doesn't exist → either add to config OR use standard Tailwind
+
+2. **Components → Check if already exist**
+   - Don't generate Button.tsx if shadcn/ui already has Button
+   - Don't duplicate existing utilities
+
+3. **Imports → Verify paths are correct**
+   - Check that `@/components/...` paths resolve to real files
+
+**Failure to validate = invalid plans that builders will execute incorrectly.**
+
+If scout report doesn't include config validation, **spawn a quick scout** to verify critical references before generating TASKS.
+
 ### Scout Agent
 See `examples/extensions/subagent/agents/scout.md` for full specification.
 
