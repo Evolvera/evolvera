@@ -262,6 +262,91 @@ Se a task não estiver completa no turn ~50 (10 antes do limite de 60):
 3. **`.pi/build/TILL-DO.md`**: Create, fill, 100% ✅ before proceeding (including safety gates)
 4. **Analysis**: Root cause + scenarios + impact + rollback path + safety assessment
 5. **`.pi/build/TODO.md`**: Create with atomic steps
-6. **Execution**: One step at a time (`FILE`, `OLD`, `NEW`, `VERIFICATION`)
+6. **Execution**: One phase at a time — **HANDOVER AFTER EACH PHASE** (see below)
 7. **Final Verification**: Complete checklist (including security)
 8. **Cleanup**: Delete `.pi/build/TODO.md` + `.pi/build/TILL-DO.md` + [ ] Isolated delivery confirmed — **NO MERGE TO MAIN**. Branch ready for manual review/merge by user.
+
+## ⚠️ HANDOVER AFTER EACH PHASE — CRITICAL RULE
+
+**NUNCA execute multiple phases in one builder run.** After completing a phase:
+
+1. **Commit the phase**: `git add -A && git commit -m "feat: Phase N complete — [description]"`
+2. **Update TILL-DO gates**: Mark current phase as ✅ COMPLETE
+3. **Signal handover**: Output the HANDOVER BLOCK (see below)
+4. **STOP**: Do NOT start next phase. Wait for parent to call another builder.
+
+### HANDOVER BLOCK (output at end of each phase)
+
+```markdown
+## 🔄 Phase N Handover
+
+**Phase**: N — [Phase Name]
+**Branch**: `agent/<timestamp>-<desc>`
+**Status**: PHASE_COMPLETE | PHASE_PARTIAL
+**Commits**: [N commits on branch]
+
+### What was done:
+- [ ] Step X: [description] → committed
+- [ ] Step Y: [description] → committed
+
+### What remains:
+- [ ] Phase N+1: [next phase name]
+- [ ] Phase N+2: [next phase name]
+- ...
+
+### Current branch state:
+- Branch: `agent/<timestamp>-<desc>`
+- Last commit: [hash] — [message]
+- Files modified: [count]
+
+### Next builder call:
+```
+Agent(subagent_type="builder", prompt="Continue from Phase N+1. Branch: agent/<timestamp>-<desc>. Base commit: [hash].", resume=<optional>)
+```
+
+[ ] Phase N delivery confirmed — AWAITING NEXT BUILDER
+```
+
+### Example: Phase 3 Handover
+
+```markdown
+## 🔄 Phase 3 Handover
+
+**Phase**: 3 — UI Components
+**Branch**: `agent/1746723600-website-layout`
+**Status**: PHASE_COMPLETE
+**Commits**: 7 commits on branch
+
+### What was done:
+- [ ] Step 7: Button variants GDAQ → committed
+- [ ] Step 8: BrandCard created → committed
+- [ ] Step 9: ProductCard created → committed
+- [ ] Step 10: FeatureCard created → committed
+- [ ] Step 11: StatCard created → committed
+- [ ] Step 12: Breadcrumb created → committed
+- [ ] Step 13: FormField wrapper → committed
+
+### What remains:
+- [ ] Phase 4: Seções Reutilizáveis
+- [ ] Phase 5: Modais
+- [ ] Phase 6: Composição de Páginas
+- [ ] Phase 7: Polish
+- [ ] Phase 8: Build Final
+
+### Current branch state:
+- Branch: `agent/1746723600-website-layout`
+- Last commit: a3f2b1c — feat: Phase 3 complete — UI components (7 steps)
+- Files modified: 18
+
+### Next builder call:
+```
+Agent(subagent_type="builder", prompt="Continue from Phase 4. Branch: agent/1746723600-website-layout. Base commit: a3f2b1c.")
+```
+
+[ ] Phase 3 delivery confirmed — AWAITING NEXT BUILDER
+```
+
+**Parent agent MUST:**
+1. Collect result via `get_subagent_result({ agent_id: "...", verbose: true })`
+2. Call NEW builder for next phase with branch name and base commit
+3. Do NOT expect current builder to continue automatically
