@@ -2782,13 +2782,98 @@
         "clean",
         "no-code"
       ]
+    },
+    {
+      "slug": "aws",
+      "name": "Amazon Web Services (AWS)",
+      "category": "enterprise",
+      "vibe": [
+        "utilitarian",
+        "functional",
+        "professional",
+        "trustworthy",
+        "developer-focused"
+      ],
+      "colors": [
+        "#e47911",
+        "#232f3e",
+        "#0972d3",
+        "#ffffff",
+        "#333333"
+      ],
+      "typography": [
+        "Amazon Ember",
+        "Helvetica Neue",
+        "Arial"
+      ],
+      "use_cases": [
+        "cloud",
+        "enterprise",
+        "saas",
+        "developer-tools",
+        "infrastructure"
+      ],
+      "design_file": "designs/aws/DESIGN.md",
+      "keywords": [
+        "orange",
+        "navy",
+        "cloud",
+        "enterprise",
+        "aws",
+        "amazon",
+        "utilitarian",
+        "functional",
+        "professional"
+      ]
+    },
+    {
+      "slug": "arcelormittal",
+      "name": "ArcelorMittal Brasil",
+      "category": "industry",
+      "vibe": [
+        "industrial",
+        "bold",
+        "strong",
+        "corporate",
+        "authoritative"
+      ],
+      "colors": [
+        "#FF3700",
+        "#0070C0",
+        "#942184",
+        "#151515",
+        "#2A2A2A"
+      ],
+      "typography": [
+        "Gilroy",
+        "Arial",
+        "Helvetica"
+      ],
+      "use_cases": [
+        "industry",
+        "steel",
+        "manufacturing",
+        "corporate",
+        "b2b"
+      ],
+      "design_file": "designs/arcelormittal/DESIGN.md",
+      "keywords": [
+        "red",
+        "orange",
+        "industrial",
+        "steel",
+        "manufacturing",
+        "bold",
+        "corporate",
+        "brazil"
+      ]
     }
   ],
   "metadata": {
     "version": "1.0",
-    "total_brands": 71,
+    "total_brands": 73,
     "source": "getdesign.md",
-    "generated_at": "2026-04-30",
+    "generated_at": "2026-05-08",
     "categories": [
       "fintech",
       "saas",
@@ -2800,7 +2885,8 @@
       "automotive",
       "enterprise",
       "media",
-      "consumer"
+      "consumer",
+      "industry"
     ]
   }
 }
