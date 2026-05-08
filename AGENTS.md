@@ -217,24 +217,26 @@ O builder **sempre** executa suas mudanças numa branch separada, NÃO no diret�
 **O que isso significa pra você (agente principal):**
 - Quando o builder terminar, as mudanças estão numa **branch separada**, não nos arquivos do diretório atual
 - **NUNCA** assuma que os arquivos foram modificados no diretório de trabalho
+- **NUNCA faça merge automático** após o builder completar
 - **SEMPRE** após o builder completar:
   1. Pegue o resultado com `get_subagent_result({ agent_id: "...", verbose: true })`
-  2. Identifique qual **branch** o builder criou
-  3. Faça `git merge <branch-do-builder>` pra trazer as mudanças pro diretório de trabalho
-  4. Só DEPOIS do merge faça build/test/commit/push
+  2. Identifique qual **branch** o builder criou (procure `agent/<timestamp>-<desc>` no output)
+  3. **REPORTE ao usuário**: "Branch `agent/<branch>` pronta para review. Merge manual após aprovação."
+  4. **NÃO faça git merge** — código não deve ser mergeado automaticamente
 
 **Fluxo correto:**
 ```
 builder completa → get_subagent_result(verbose: true)
-  → identificar branch criada pelo builder
-  → git checkout main && git merge <builder-branch>
-  → build/test/commit/push
+  → identificar branch: agent/<timestamp>-<desc>
+  → REPORTAR: "Branch agent/<branch> pronta para review. Merge manual após aprovação."
+  → NÃO FAZER GIT MERGE AUTOMÁTICO
 ```
+
+**O merge SÓ deve ser feito por humano** após review do código na branch isolada.
 
 **Fluxo ERRADO (não fazer):**
 ```
-builder completa → assumir que arquivos foram modificados
-  → tentar commit/build direto → SURPRESA: nada mudou
+builder completa → fazer git merge automático → código não revisado foi mergeado
 ```
 
 ```
