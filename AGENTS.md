@@ -222,25 +222,24 @@ Key responsibilities:
 - Writes SCHEDULE_{session}.md (DAG + execution contract)
 - Never includes dependencies in task files
 
-### ⚠️ CRITICAL: Validate Against Existing Codebase
+### ⚠️ CRITICAL: Code Consistency with Existing Codebase
 
-**Planner MUST verify that generated code references exist in the project:**
+**Planner MUST ensure generated code is CONSISTENT with what already exists.**
 
-1. **CSS classes → Check tailwind.config.ts / globals.css**
-   - Before using `text-gray-mid`, verify it's defined in config
-   - Before using `bg-hero`, verify it exists in theme.extend
-   - If class doesn't exist → either add to config OR use standard Tailwind
+Before generating TASKS, planner MUST verify via scout:
 
-2. **Components → Check if already exist**
-   - Don't generate Button.tsx if shadcn/ui already has Button
-   - Don't duplicate existing utilities
+1. **Existing patterns** — naming conventions, folder structure, import styles
+2. **Existing configs** — CSS classes, theme tokens, component APIs
+3. **Existing components** — don't duplicate, extend instead
+4. **Existing conventions** — file naming, exports, types
 
-3. **Imports → Verify paths are correct**
-   - Check that `@/components/...` paths resolve to real files
+**Examples:**
+- If project uses `clsx` for conditional classes → use it, don't use `classnames`
+- If project uses `cn()` utility → use it, don't inline class merging
+- If project has `lib/utils.ts` → put utils there, not in `utils/`
+- If project uses specific component patterns → follow them
 
-**Failure to validate = invalid plans that builders will execute incorrectly.**
-
-If scout report doesn't include config validation, **spawn a quick scout** to verify critical references before generating TASKS.
+**Rule:** Scout report is the source of truth. Generate code that matches, not contradicts.
 
 ### Scout Agent
 See `examples/extensions/subagent/agents/scout.md` for full specification.
