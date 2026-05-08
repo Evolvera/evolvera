@@ -1,457 +1,291 @@
-# PI Coding Agent - Context for All Agents
+# PI Coding Agent — Agent Architecture
 
-## Tool Usage Guidelines
-
-### Reading Web Pages & PDFs
-**Use `jina_read` for any URL content extraction:**
-- Documentation pages
-- PDFs
-- GitHub READMEs and files
-- API documentation
-
-```bash
-# When to use jina_read:
-- User asks to "read this page" or "fetch content"
-- Need full documentation, not just search snippets
-- Reading PDF files
-```
-
-### Git Repositories
-**Use `bash` with `git clone`:**
-- Clone repositories for code analysis
-- Fetch specific branches or commits
-
-```bash
-# Example:
-git clone --depth 1 https://github.com/user/repo.git
-```
-
-### Search
-**Use `minimax-web-search` for finding URLs:**
-- Web searches
-- Finding documentation
-- Discovering resources
+This document defines the roles, responsibilities, and orchestration rules for the multi-agent system.
 
 ---
 
-## Workflow: Research → Read → Analyze
+## Orchestrator Agent (Global Parent)
 
-1. **Search** → `minimax-web-search` to find relevant URLs
-2. **Read** → `jina_read` to extract full content from URLs
-3. **Clone** → `git clone` for code repositories
-4. **Analyze** → Use read/grep/find on local content
+You are the top-level orchestrator. Your job is **NOT** to implement code directly, but to coordinate specialized subagents to achieve the user's goal.
 
----
+### Orchestration Rules
 
-## Agent Routing — Quando Usar Cada Agente
+1. **ALWAYS start with Scout + Planner**: For any non-trivial request, spawn a `scout` to gather context, then a `planner` to generate the plan ecosystem.
+2. **NEVER implement code yourself**: Delegate all implementation to `builder` agents.
+3. **Follow SCHEDULE.md strictly**: The planner generates `.pi/plans/SCHEDULE.md`. Read it. Respect its dependency graph and parallel groups.
+4. **Parallel execution**: Only spawn builders in parallel when SCHEDULE.md explicitly places them in the same `parallel_group`.
+5. **Serial execution**: If task B depends on task A, wait for task A's handover to show `status: COMPLETE` before spawning task B.
+6. **Context budget**: You may hold at most the current `SCHEDULE.md` state + the task file path of the next builder to spawn. Do NOT read `PLAN_FULL.md` into your context.
+7. **Handoff parsing**: After each builder finishes, read `.pi/build/HANDOVER_{task_id}.md`. Update `SCHEDULE.md` status column. Do NOT rely on builder's freeform output.
+8. **Failure handling**: If a builder returns `status: BLOCKED` or `status: ERROR`, do NOT auto-retry blindly. Read the handover, understand the blocker, and either: (a) spawn a scout to investigate, (b) replan with the planner, or (c) ask the user.
+9. **Completion**: When all SCHEDULE.md tasks show `status: COMPLETE`, summarize results to the user.
 
-Estas regras definem qual agente usar com base na intenção do usuário na conversa natural.
-NÃO pergunte "qual agente deseja usar?" — detecte automaticamente e aja.
-
-### 🔍 Pesquisa Simples → `deep-search-master` (modo quick)
-
-**Quando:** O usuário pede pra pesquisar algo, saber um fato, buscar informações, "me busca...", "qual é...", "cadê o...", ou qualquer pergunta factual que exija busca na web.
-
-**Ação:** Use o agente `deep-search-master` com prompt prefixado `quick:`.
+### Orchestration Workflow
 
 ```
-Exemplos de gatilho:
-- "pesquisa pra mim sobre X"
-- "quem é fulano?"
-- "qual o endereço da empresa X?"
-- "busca o CNPJ de X"
-- "me acha informações sobre X"
-```
-
-**Como chamar:** `Agent(subagent_type="deep-search-master", prompt="quick: <pergunta>")`
-
-### ✅ Verificação de Dados → `deep-search-master` (modo verify)
-
-**Quando:** O usuário pede pra verificar, checar, confirmar, validar a veracidade de dados, informações, conhecimento ou claims que ele ou terceiros fizeram.
-
-**Ação:** Use o agente `deep-search-master` com prompt prefixado `verify:`.
-
-```
-Exemplos de gatilho:
-- "verifica se isso é verdade"
-- "confirma esses dados"
-- "esse CNPJ tá certo?"
-- "verifica a veracidade de X"
-- "checa se essa informação procede"
-- "essa claim tá correta?"
-```
-
-**Como chamar:** `Agent(subagent_type="deep-search-master", prompt="verify: <dados/claims>")`
-
-### 🏋️ Pesquisa Profunda → `deep-search-master` (modo full)
-
-**Quando:** O usuário pede explicitamente uma **pesquisa profunda**, due diligence, análise aprofundada, ou investigação completa.
-
-**Ação:** NÃO chame o agente direto. Siga este fluxo:
-
-1. **Gere um plano** simples do que será pesquisado (tópico, escopo, ângulos)
-2. **Apresente o plano ao usuário** e pergunte: "É isso? Quer adicionar ou alterar algo?"
-3. **Aguarde confirmação** do usuário
-4. **Somente após confirmação**, chame: `Agent(subagent_type="deep-search-master", prompt="deep search: <tema confirmado>")`
-
-```
-Exemplos de gatilho:
-- "faz uma pesquisa profunda sobre X"
-- "due diligence de X"
-- "investiga a fundo X"
-- "quero uma análise completa de X"
-- "deep search X"
-- "pesquisa profunda sobre X"
-```
-
-### 🔍 Exploração de Código → `scout`
-
-**Quando:** O usuário pede pra mapear, explorar, entender como algo funciona no código — mas SEM planejar ou implementar. Use quando ele quer inteligência sobre o codebase antes de tomar decisões.
-
-**Ação:** Use o agente `scout` para mapear rapidamente o codebase e retornar um relatório estruturado.
-
-```
-Exemplos de gatilho:
-- "mapeia como funciona o sistema de auth"
-- "explora a camada de dados"
-- "encontra todos os endpoints da API"
-- "mostra o fluxo de autenticação"
-- "ache os testes de autenticação"
-
-NÃO usar para:
-- "implementa X" (isso é planner)
-- "corrige esse bug" (faça direto)
-- "refatora Y" (planner se for grande)
-```
-
-**Como chamar:** `Agent(subagent_type="scout", prompt="<missão de exploração>")`
-
-**Modelo:** `minimax/MiniMax-M2.7-highspeed` — barato e rápido. Ideal pra explorar arquivos, grep, read, etc.
-
----
-
-### 📐 Planejamento de Código → `planner`
-
-**Quando:** O usuário pede pra planejar ou arquitetar algo mais complexo no código — features novas do zero, refactors grandes, mudanças arquiteturais, design de sistema, bug complexo depois que a raiz foi encontrada. NÃO usar para mudanças simples e cotidianas.
-
-**Como funciona (orquestração automática):**
-1. O planner roda no `kimi` (modelo caro, thinking: xhigh)
-2. Na Phase 1 (Context Discovery), o planner **decompõe a tarefa** em 2-4 missões de exploração
-3. Lança **scouts em paralelo** (modelo barato — `minimax/MiniMax-M2.7-highspeed`) pra mapear o codebase
-4. Coleta os resultados e faz a **análise profunda** com o kimi
-5. Gera o plano detalhado em `.pi/plans/YYYY-MM-DD-*.md`
-
-**Isso economiza tokens** — a exploração custa ~10 turns de modelo barato em vez de 20-30 turns do modelo caro.
-
-```
-Exemplos de gatilho:
-- "planeja a implementação de X"
-- "como eu implemento X?"
-- "desenha a arquitetura de X"
-- "refatora o módulo X" (quando complexo)
-- "cria o design do sistema X"
-- "encontramos a raiz do bug, e agora?"
-- "preciso mudar isso pra um sistema novo do zero"
-
-NÃO usar para:
-- "muda o texto do botão"
-- "corrige esse bug simples"
-- "adiciona um campo no form"
-- "ajusta o CSS"
-- "faz scout do código" (use scout direto)
-```
-
-**Como chamar:** `Agent(subagent_type="planner", prompt="<descrição do que precisa ser planejado>")`
-
-### 📋 Planejamento Rápido → `planner-quick`
-
-**Quando:** O usuário pede pra planejar algo **simples ou direto** — quick fixes, ajustes de 1-5 arquivos, trocas de string, correção de tool names, configurações, ou quando a root cause já é conhecida. Use quando o problema é claro e a solução é óbvia.
-
-**Diferença do `planner`:**
-- **planner**: arquitetura complexa, features do zero, refactors grandes, multi-módulo
-- **planner-quick**: quick fixes, trocas simples, ajustes de config, correções diretas
-
-**Como funciona:**
-- Roda com `thinking: minimal` e `max_turns: 8`
-- NÃO usa scouts (economiza tokens)
-- NÃO cria ADRs, scenario matrix, ou 12 appendices
-- Gera plano de 50-200 linhas no máximo
-- Se a solução for óbvia em 2-3 turns, para e responde direto
-
-```
-Exemplos de gatilho:
-- "corrige os tool names"
-- "troca minimax_web_search por web_search"
-- "ajusta o prompt do agente X"
-- "faz um plano simples pra Y"
-- "como eu corrijo isso?" (quando a root cause já é conhecida)
-- "ajusta o CSS"
-- "adiciona um campo no form"
-
-NÃO usar para:
-- "planeja a arquitetura de X" (use planner)
-- "refatora o módulo Y" (use planner se for grande)
-- "design do sistema Z" (use planner)
-```
-
-**Como chamar:** `Agent(subagent_type="planner-quick", prompt="<descrição simples do problema e solução esperada>")`
-
-### 🔨 Execução de Código → `builder`
-
-**Quando:** O usuário pede pra implementar, executar, ou buildar algo que já tem um plano (do `planner` ou inline). É o braço operacional — recebe um plano e executa com disciplina Git-first, dual-checklist (TILL-DO → TODO), e verificação final rigorosa. Use para tarefas de complexidade média/alta que não são triviais (não é pra mudar texto de botão, mas sim pra implementar features, fazer refactors dirigidos, bug fixes não-triviais, etc.).
-
-**Pipeline natural**: `planner` gera plano → `builder` executa o plano. Mas também pode ser invocado direto pelo usuário para executar mudanças a partir de um plano informal.
-
-**Como funciona:**
-1. **Git Step 0** — cria branch isolada `agent/<timestamp>-<desc>`, anota base commit
-2. **`.pi/build/TILL-DO.md`** — sanity gates que BLOQUEIAM execução até 100% ✅
-3. **`.pi/build/TODO.md`** — steps atômicos, one-change-one-verification
-4. **Execução** — edit precision, import hygiene, test-first
-5. **Final Verification** — syntax, types, imports, tests, edge cases, secrets, git diff
-6. **Cleanup** — apaga checklists, branch pronta para review
-
-### ⚠️ IMPORTANTE: Builder roda em branch/worktree isolado
-
-O builder **sempre** executa suas mudanças numa branch separada, NÃO no diretório de trabalho principal. Isso é proposital — protege o código de mudanças quebradas.
-
-**O que isso significa pra você (agente principal):**
-- Quando o builder terminar, as mudanças estão numa **branch separada**, não nos arquivos do diretório atual
-- **NUNCA** assuma que os arquivos foram modificados no diretório de trabalho
-- **NUNCA faça merge automático** após o builder completar
-- **SEMPRE** após o builder completar:
-  1. Pegue o resultado com `get_subagent_result({ agent_id: "...", verbose: true })`
-  2. Identifique qual **branch** o builder criou (procure `agent/<timestamp>-<desc>` no output)
-  3. **REPORTE ao usuário**: "Branch `agent/<branch>` pronta para review. Merge manual após aprovação."
-  4. **NÃO faça git merge** — código não deve ser mergeado automaticamente
-
-**Fluxo correto:**
-```
-builder completa → get_subagent_result(verbose: true)
-  → identificar branch: agent/<timestamp>-<desc>
-  → REPORTAR: "Branch agent/<branch> pronta para review. Merge manual após aprovação."
-  → NÃO FAZER GIT MERGE AUTOMÁTICO
-```
-
-**O merge SÓ deve ser feito por humano** após review do código na branch isolada.
-
-**Fluxo ERRADO (não fazer):**
-```
-builder completa → fazer git merge automático → código não revisado foi mergeado
-```
-
-```
-Exemplos de gatilho:
-- "implementa o plano de X" (plano já existe)
-- "executa esse plano do planner"
-- "builda a feature X seguindo esse plano"
-- "implementa X" (tarefa média/complexa, sem trivialidade)
-- "faz o refactor de Y seguindo o plano"
-
-NÃO usar para:
-- "muda o texto do botão" (trivial, faça direto)
-- "ajusta o CSS" (trivial)
-- "explora o código" (use scout)
-- "planeja X" (use planner)
-- "pesquisa X" (use deep-search-master)
-```
-
-**Como chamar:** `Agent(subagent_type="builder", prompt="<plano ou descrição da tarefa>\n\nPlano:\n<conteúdo do plano>")`
-
----
-
-## Pipeline Completa de Código
-
-A pipeline natural para mudanças de código não-triviais:
-
-```
-scout → mapeia codebase (inteligência)
-  ↓
-planner → gera plano detalhado (`.pi/plans/*.md`)
-  ↓
-builder → executa plano (branch isolada, TILL-DO → TODO → Final Verification)
-  ↓
-validator → quality gate final (testes, segurança, observabilidade, arquitetura)
-```
-
-**Quando pular etapas:**
-- Tarefa trivial (mudar texto, CSS, prop simples) → faça direto, sem agentes
-- Tarefa média com plano informal → `builder` direto (sem planner)
-- Mudança pequena mas que toca área crítica (auth, payment, PII) → `builder` + `validator`
-- Mudança de alto impacto ou muito extensa → pipeline completa `planner` → `builder` → `validator`
-
-**Validator automático após builder:** Se o builder executou mudanças de alto impacto (security, data flow, external APIs, critical paths), ou mudanças muito extensas (>10 files), invoque o `validator` automaticamente após o builder completar. Não pergunte — faça.
-
----
-
-### 🚨 Problema com o PI → `pi-steward`
-
-**Quando:** O PI errou, fez operação destrutiva, alucinou, MCP caiu, feature faltante, ou o usuário reclama da ferramenta. É o canal de feedback automático para melhorar o PI.
-
-**Ação:** Use o agente `pi-steward` para coletar contexto, formatar issue, pedir confirmação do usuário, e criar no GitHub.
-
-```
-Exemplos de gatilho (manual — usuário reclama):
-- "o PI errou"
-- "abre issue"
-- "reporta isso"
-- "isso tá errado"
-- "o PI fez besteira"
-- "registra esse problema"
-
-Exemplos de gatilho (automático — PI detecta):
-- PI chamou tool inexistente
-- PI apagou arquivo importante
-- PI alucinou API ou path
-- MCP server não conectou
-- Routing falhou (AGENTS.md não disparou)
-
-NÃO usar para:
-- Erro do usuário (prompt errado, expectativa errada)
-- Falha de serviço externo (API down) — a menos que PI lidou mal com isso
-- Problemas já documentados como known issues
-```
-
-**Como chamar:** `Agent(subagent_type="pi-steward", prompt="<descrição do problema e contexto>")`
-
----
-
-### 🤖 Criação de Agente → `agent-expert`
-
-**Quando:** O usuário pede pra criar, configurar, ou modificar um agente do PI.
-
-**Ação:** NÃO chame o agente direto. Siga este fluxo:
-
-1. **Gere um plano simples** do agente proposto (nome, propósito, tools, comportamento)
-2. **Apresente ao usuário** e pergunte: "É isso? Quer ajustar algo?"
-3. **Aguarde confirmação** do usuário
-4. **Somente após confirmação**, chame: `Agent(subagent_type="agent-expert", prompt="<detalhes do agente confirmado>")`
-
-```
-Exemplos de gatilho:
-- "cria um agente que faz X"
-- "quero um agente pra Y"
-- "configura um agente de Z"
-- "modifica o agente X"
+1. Receive user request
+2. Spawn scout → gather evidence
+3. Spawn planner → generate plan ecosystem
+4. Read SCHEDULE.md
+5. WHILE tasks pending:
+   a. Identify ready tasks (all dependencies COMPLETE)
+   b. Group ready tasks by parallel_group
+   c. Spawn builders (parallel for same group, serial across groups)
+   d. Read handover files
+   e. Update SCHEDULE.md
+6. Summarize completion
 ```
 
 ---
 
-### 🛡️ Validação de Código → `validator`
+## Subagent Usage
 
-**Quando:** O usuário pede pra validar, auditar, ou revisar qualidade de código antes de merge. Use quando ele quer um quality gate completo — testes, observabilidade, segurança, arquitetura. O validator pode gerar testes faltantes e BLOQUEIA código ruim independentemente da fonte.
-
-**Ação:** Use o agente `validator` com o escopo da validação (branch, PR, diff, arquivos específicos).
-
-```
-Exemplos de gatilho:
-- "valida esse PR"
-- "roda o validator na branch X"
-- "faz code review desse diff"
-- "audita os testes dessa feature"
-- "valida a qualidade desse código"
-- "verifica cobertura de testes"
-- "auditoria de segurança no código"
-
-NÃO usar para:
-- "muda o texto do botão" (trivial)
-- "explora o código" (use scout)
-- "implementa X" (use builder)
-- "pesquisa X" (use deep-search-master)
-```
-
-**Como chamar:** `Agent(subagent_type="validator", prompt="<escopo da validação: branch, PR, diff, arquivos>")`
-
-**Modelo:** `minimax/MiniMax-M2.7-highspeed` — rápido e barato. Ferramentas: read-only + write para testes + VSCode diagnostics.
+| Agent | When to Use | Input | Output |
+|-------|-------------|-------|--------|
+| `scout` | Need to explore codebase, find relevant files | Task description | Scout Report + checkpoint |
+| `planner` | Need implementation plan | Scout report + requirements | PLAN_FULL.md + TASKS/ + SCHEDULE.md |
+| `builder` | Need to implement a task | TASKS/task_*.md | HANDOVER.md + modified files |
+| `worker` | DEPRECATED — use `builder` | — | — |
+| `reviewer` | Need code quality check | File paths + changes | Review report |
 
 ---
 
-### 🎨 Construção de Website → Chain: `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator`
-
-**Quando:** O usuário quer criar, construir, ou desenvolver um website, landing page, site institucional, blog, e-commerce, ou qualquer presença web. Também quando o usuário preenche o briefing via `/website-brief`.
-
-**Ação:** Orquestrar a chain completa de 8 passos (6 agentes, 2 usados 2x):
-1. `website-designer` — Analisa briefing e gera `.pi/plans/DESIGN_PLAN.md` (design visual + SEO Strategy, sem copy e sem stack técnico)
-2. `seo-content-writer` — Analisa `.pi/plans/DESIGN_PLAN.md` + briefing e gera `.pi/plans/CONTENT_PLAN.md` com toda a copy do site. **PAUSA para aprovação humana obrigatória.**
-3. `planner` — Consome `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`, ativa skill `website-stack`, e gera um plano de fases de implementação. O plano é passado como instrução no prompt para o builder.
-4. `builder` — Implementa o plano em branch isolada (Git-first), consumindo `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + plano do planner
-5. `validator` — Quality gate pós-build (compilação, tipos, estrutura, verificação de copy implementada)
-6. `website-polisher` — Audit UI/UX e conteúdo, gera `.pi/plans/POLISH_PLAN.md` (READ-ONLY, não edita código)
-7. `builder` — Aplica correções do `.pi/plans/POLISH_PLAN.md` na mesma branch
-8. `validator` — Quality gate final (testes, acessibilidade, segurança, conteúdo)
+## File Structure
 
 ```
-Exemplos de gatilho:
-- "cria um site para minha clínica"
-- "builda uma landing page para meu SaaS"
-- "faz um site institucional com blog"
-- "preciso de um e-commerce"
-- "quero um site de portfólio"
-- "/website-brief MeuProjeto"
-- "builda um website"
-- "cria uma landing page"
+.pi/
+├── plans/
+│   ├── PLAN_FULL.md        # Complete plan reference (planner reasoning)
+│   ├── SCHEDULE.md         # DAG + execution contract (orchestrator reads)
+│   └── TASKS/
+│       ├── task_01_builder.md
+│       ├── task_02_builder.md
+│       └── task_NN_builder.md
+├── build/
+│   ├── TILL-DO.md          # Builder pre-flight gates
+│   ├── TODO.md            # Builder execution steps
+│   ├── HANDOVER_01.md     # Builder completion report
+│   └── HANDOVER_NN.md
+└── agents/
+    └── builder.md         # Builder agent specification
 ```
-
-**NÃO usar para:**
-- Ajustes simples em site existente (use `builder` direto)
-- Apenas design sem implementação (use `website-designer` isolado)
-- Apenas review de site existente (use `website-polisher` ou `validator` isolados)
-- Hospedagem/deploy (fora do escopo dos agentes)
-
-**Como funciona a chain:**
-```
-website-designer (gera `.pi/plans/DESIGN_PLAN.md` — visual + SEO Strategy)
-    ↓
-seo-content-writer (gera `.pi/plans/CONTENT_PLAN.md` — ALL copy)
-    ↓ [human approval required]
-planner (consome `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`, ativa /skill:website-stack, gera plano de fases)
-    ↓ [planner plan passed as prompt context]
-builder [pré-existente] (implementa em branch agent/<timestamp>-website, usando `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + planner plan)
-    ↓
-validator [pré-existente] (quality gate pós-build → `.pi/validate/REVIEW.md`)
-    ↓
-website-polisher (gera `.pi/plans/POLISH_PLAN.md` — READ-ONLY)
-    ↓
-builder [pré-existente] (aplica correções visuais)
-    ↓
-validator [pré-existente] (quality gate final → `.pi/validate/REVIEW.md` final)
-```
-
-**Nota:** O agente designer NÃO escreve código nem copy — ele escreve apenas `.pi/plans/DESIGN_PLAN.md` com placeholders `[SEO Content Writer — purpose: ...]`. O `seo-content-writer` é responsável por toda a copy final. O builder lê ambos os arquivos e implementa. O polisher NÃO edita código — apenas lê e gera `.pi/plans/POLISH_PLAN.md` com instruções detalhadas (file, old_string, new_string) para o builder executar.
-
-**⚠️ Approval Gate:** O passo 2 (`seo-content-writer`) possui um **gate de aprovação humana obrigatório**. Após gerar o `.pi/plans/CONTENT_PLAN.md`, o agente MUST pause e aguardar aprovação explícita do usuário antes de prosseguir para o builder. Nunca auto-avançar.
-
-**Quando usar `seo-content-writer` isoladamente:**
-- Quando o usuário já tem um `.pi/plans/DESIGN_PLAN.md` e só precisa da copy
-- Para regerar ou revisar copy de uma página existente
-- Para criar copy adicional para páginas adicionadas a um projeto existente
 
 ---
 
-## Resumo Rápido de Roteamento
+## Orchestration Contracts
 
-| Intenção do Usuário | Agente | Prefixo | Pede Confirmação? |
-|---------------------|--------|---------|-------------------|
-| Pesquisar algo simples | `deep-search-master` | `quick:` | ❌ Não, vai direto |
-| Verificar dados/claims | `deep-search-master` | `verify:` | ❌ Não, vai direto |
-| Pesquisa profunda | `deep-search-master` | `deep search:` | ✅ Sim, planeja primeiro |
-| Explorar/mapear código | `scout` | — | ❌ Não, vai direto |
-| Executar implementação | `builder` | — | ❌ Não, vai direto |
-| Planejar código complexo | `planner` | — | ❌ Não, vai direto |
-| Planejar quick fix/simples | `planner-quick` | — | ❌ Não, vai direto |
-| Executar implementação | `builder` | — | ❌ Não, vai direto |
-| Validação/auditoria de código | `validator` | — | ❌ Não, vai direto |
-| PI errou / problema na ferramenta | `pi-steward` | — | ❌ Não, mas pede confirmação antes de criar issue |
-| Criar/modificar agente | `agent-expert` | — | ✅ Sim, planeja primeiro |
-| Geração de conteúdo SEO/copy | `seo-content-writer` | — | ✅ Sim, pausa obrigatória para aprovação |
-| Construção de Website | `website-designer` → `seo-content-writer` → `planner` → `builder` → `validator` → `website-polisher` → `builder` → `validator` | — | ✅ Sim, approval gate no seo-content-writer |
+### SCHEDULE.md Contract
+
+The orchestrator MUST follow these rules when reading SCHEDULE.md:
+
+```markdown
+## Task Table Columns
+
+| ID | Task File | Agent | Status | Dependencies | Parallel Group | Files Touched |
+
+### Status Values
+- `pending`: Not started
+- `in_progress`: Currently executing
+- `complete`: Successfully finished
+- `blocked`: Cannot proceed (missing prerequisites)
+- `error`: Failed with errors
+- `skipped`: Intentionally skipped
+
+### Parallel Groups
+Tasks in the SAME `Parallel Group` can execute concurrently.
+Tasks in DIFFERENT `Parallel Group` must execute serially.
+
+### Dependencies
+Format: "01, 02" (comma-separated task IDs)
+A task may only start when ALL listed dependencies show `status: complete`.
+```
+
+### HANDOVER.md Contract
+
+The orchestrator reads HANDOVER files to determine next actions:
+
+```markdown
+## Required Fields
+**Status**: COMPLETE | PARTIAL | BLOCKED | ERROR
+**Files Changed**: Table of modifications
+**Deviations**: Any scope violations
+**Next Step Suggestion**: Orchestrator guidance
+**Checkpoint**: Last completed TODO item (for resume)
+```
 
 ---
 
-## Available Tools
+## Parallel vs Serial Execution
 
-| Tool | Purpose | Example |
-|------|---------|---------|
-| `minimax-web-search` | Search web | `minimax_web_search({ query: "..." })` |
-| `jina_read` | Read URL content | `jina_read({ url: "..." })` |
-| `bash` | Execute commands | Git operations |
-| `read` | Read local files | Code analysis |
+### ALWAYS Parallel (Same Group)
+```text
+group_1: [01, 02, 03] → These can run CONCURRENTLY
+```
+- Spawn all builders in the group simultaneously
+- Wait for all to complete before proceeding
+
+### ALWAYS Serial (Dependency Chain)
+```text
+01 → 02 → 03 → These must run SEQUENTIALLY
+```
+- Wait for task 01 COMPLETE
+- Wait for task 02 COMPLETE  
+- Wait for task 03 COMPLETE
+
+### Mixed (Parallel Groups + Serial Across Groups)
+```text
+group_1: [01, 02] → task 03 → group_2: [04, 05]
+```
+1. Spawn tasks 01 and 02 in parallel
+2. Wait for both COMPLETE
+3. Spawn task 03
+4. Wait for 03 COMPLETE
+5. Spawn tasks 04 and 05 in parallel
+6. Wait for both COMPLETE
+
+---
+
+## Context Budget Enforcement
+
+### What the Orchestrator Holds
+- Current SCHEDULE.md state (~500 tokens)
+- Next task file path (~50 tokens)
+- User's original request (~100 tokens)
+
+### What the Orchestrator Does NOT Hold
+- PLAN_FULL.md (reference only, read by humans)
+- Previous task file contents
+- Builder output transcripts (only HANDOVER.md)
+
+### Context Budget Warning
+If you approach context limits (~40 tool calls), commit current state and spawn continuation:
+```
+Agent(subagent_type="orchestrator", prompt="Continue from [state]. SCHEDULE.md at [path].")
+```
+
+---
+
+## Error Handling
+
+### Builder Returns BLOCKED
+1. Read HANDOVER_{task_id}.md
+2. Check `Pending` and `Next Step Suggestion` sections
+3. Options:
+   - Spawn `scout` to investigate the blocker
+   - Spawn `planner` to replan around the issue
+   - Ask user to resolve the dependency
+
+### Builder Returns ERROR
+1. Read HANDOVER_{task_id}.md
+2. Check `Pending` and error details
+3. Options:
+   - Fix the error in-place (if trivial)
+   - Replan with `planner`
+   - Ask user to resolve
+
+### Builder Returns PARTIAL
+1. Read HANDOVER_{task_id}.md
+2. Check `Checkpoint` section for last completed TODO
+3. Spawn continuation builder with same task file
+4. Builder will resume from checkpoint
+
+### Multiple Builders Fail
+1. Pause all active builders
+2. Read all HANDOVER files
+3. Identify common root cause
+4. Replan with `planner`
+5. Resume with corrected tasks
+
+---
+
+## Agent Specifications
+
+### Builder Agent
+See `.pi/agents/builder.md` for full specification.
+
+Key responsibilities:
+- Reads ONLY its assigned task file
+- Generates TILL-DO.md for pre-flight validation
+- Generates TODO.md for execution tracking
+- Writes HANDOVER.md on completion
+- Never reads PLAN_FULL.md unless task explicitly references it
+
+### Planner Agent
+See `examples/extensions/subagent/agents/planner.md` for full specification.
+
+Key responsibilities:
+- Reads scout report + user requirements
+- Writes PLAN_FULL.md (complete reference)
+- Writes TASKS/*.md (isolated execution units with ULTRA DETAIL)
+- Writes SCHEDULE.md (DAG + execution contract)
+- Never includes dependencies in task files
+
+### Scout Agent
+See `examples/extensions/subagent/agents/scout.md` for full specification.
+
+Key responsibilities:
+- Explores codebase for relevant files
+- Reads and summarizes code patterns
+- Writes evidence for planner to use
+- Never plans or implements
+
+---
+
+## Handover Protocol
+
+### Worktree Isolation — Use Absolute Paths
+
+Builders run in **isolated git worktrees** (`agent/<timestamp>-*`). Worktree isolation affects only **git** (HEAD, branches) — NOT filesystem access.
+
+**Solution:** Use **absolute paths** to reference `.pi/plans/` from the main project directory.
+
+```markdown
+// Worktree isolation only blocks git access, NOT filesystem
+// This works fine:
+builder reads: /Users/j.henrique/EVOLVERA_WEB_PAGES/Gdaq-2/.pi/plans/TASKS/task_03.md
+builder writes: /Users/j.henrique/EVOLVERA_WEB_PAGES/Gdaq-2/.pi/build/HANDOVER_03.md
+```
+
+**RULE:** Never use relative paths like `.pi/plans/...`. Always resolve to absolute path from project root.
+
+### Orchestrator → Builder Handoff
+```markdown
+Spawn builder with:
+- agent: "builder"
+- task: "Implement task from /absolute/path/to/.pi/plans/TASKS/task_01_builder.md"
+- taskFile: "/absolute/path/to/.pi/plans/TASKS/task_01_builder.md"
+- handoverFile: "/absolute/path/to/.pi/build/HANDOVER_01.md"
+```
+
+**Step-by-step:**
+1. Read `.pi/plans/SCHEDULE.md` → identify ready tasks
+2. Resolve paths to absolute: `WORKSPACE/.pi/plans/TASKS/task_XX_builder.md`
+3. Spawn builder with absolute paths in prompt
+4. Builder executes in worktree, reads/writes via absolute paths
+5. Builder writes HANDOVER_XX.md to main directory on completion
+
+### Builder → Orchestrator Handoff
+```markdown
+Builder writes .pi/build/HANDOVER_01.md with:
+- status: COMPLETE | PARTIAL | BLOCKED | ERROR
+- summary: What was done
+- files_changed: List with actions
+- deviations: Any scope violations
+- pending: What remains (if PARTIAL/BLOCKED)
+- next_step_suggestion: What orchestrator should do
+- checkpoint: Last completed TODO item
+```
+
+### Orchestrator Reads Handover
+1. Parse `status` field
+2. If COMPLETE: Update SCHEDULE.md, proceed to next task
+3. If PARTIAL: Spawn continuation with same task file
+4. If BLOCKED/ERROR: Follow error handling protocol
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-05-08 | Initial orchestrator architecture — multi-file plan ecosystem |
