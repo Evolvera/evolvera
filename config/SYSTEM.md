@@ -120,24 +120,26 @@ The builder **always** executes its changes on a separate branch (`agent/<timest
 **What this means for you (the parent agent):**
 - When the builder finishes, changes are on a **separate branch**, not in the current working directory files
 - **NEVER** assume files were modified in the working directory
+- **NEVER do automatic merge** after builder completes
 - **ALWAYS** after the builder completes:
   1. Get the result with `get_subagent_result({ agent_id: "...", verbose: true })`
-  2. Identify which **branch** the builder created
-  3. Run `git merge <builder-branch>` to bring changes into the working directory
-  4. Only AFTER the merge do build/test/commit/push
+  2. Identify which **branch** the builder created (look for `agent/<timestamp>-<desc>` in output)
+  3. **REPORT to user**: "Branch `agent/<branch>` ready for review. Manual merge after approval."
+  4. **DO NOT run git merge** — code must not be merged automatically
 
 **Correct flow:**
 ```
 builder completes → get_subagent_result(verbose: true)
-  → identify builder branch
-  → git checkout main && git merge <builder-branch>
-  → build/test/commit/push
+  → identify branch: agent/<timestamp>-<desc>
+  → REPORT: "Branch agent/<branch> ready for review. Manual merge after approval."
+  → DO NOT GIT MERGE AUTOMATICALLY
 ```
+
+**Merge ONLY after human review of the isolated branch.**
 
 **WRONG flow (do NOT do this):**
 ```
-builder completes → assume files were modified
-  → try to commit/build directly → SURPRISE: nothing changed
+builder completes → run git merge automatically → unreviewed code merged
 ```
 
 ### Full Pipeline
