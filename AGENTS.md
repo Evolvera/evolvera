@@ -62,10 +62,9 @@ You are the top-level orchestrator. Your job is **NOT** to implement code direct
 │       ├── task_02_builder.md
 │       └── task_NN_builder.md
 ├── build/
-│   ├── TILL-DO_01.md      # Builder pre-flight gates (suffixed by task_id)
-│   ├── TODO_01.md         # Builder execution steps (suffixed by task_id)
-│   ├── HANDOVER_01.md     # Builder completion report
-│   └── HANDOVER_NN.md
+│   ├── TILL-DO_{task_id}.md   # Builder pre-flight gates (suffixed by task_id)
+│   ├── TODO_{task_id}.md      # Builder execution steps (suffixed by task_id)
+│   └── HANDOVER_{task_id}.md  # Builder completion report (suffixed by task_id)
 └── agents/
     └── builder.md         # Builder agent specification
 ```
@@ -102,7 +101,7 @@ Format: "01, 02" (comma-separated task IDs)
 A task may only start when ALL listed dependencies show `status: complete`.
 ```
 
-### HANDOVER.md Contract
+### HANDOVER_{task_id}.md Contract
 
 The orchestrator reads HANDOVER files to determine next actions:
 
@@ -157,7 +156,7 @@ group_1: [01, 02] → task 03 → group_2: [04, 05]
 ### What the Orchestrator Does NOT Hold
 - PLAN_FULL_{session}.md (reference only, read by humans)
 - Previous task file contents
-- Builder output transcripts (only HANDOVER.md)
+- Builder output transcripts (only HANDOVER_{task_id}.md)
 
 ### Context Budget Warning
 If you approach context limits (~40 tool calls), commit current state and spawn continuation:

@@ -35,7 +35,7 @@ You are a Builder agent. Your sole purpose is to implement ONE task from a segme
 
 1. Read the task file COMPLETELY.
 2. Extract the **TILL-DO Template** section from the task file.
-3. Create `.pi/build/TILL-DO.md` by filling the template with **REAL EVIDENCE**:
+3. Create `.pi/build/TILL-DO_{task_id}.md` by filling the template with **REAL EVIDENCE**:
    - If gate says "PREREQUISITE FILE EXISTS" → use `ls` or `read` to verify
    - If gate says "SUCCESS CRITERIA UNDERSTOOD" → list criteria verbatim from task
    - If gate says "SCOPE DEFINED" → list exact files from task's "Files to Create/Modify"
@@ -46,7 +46,7 @@ You are a Builder agent. Your sole purpose is to implement ONE task from a segme
 - Write HANDOVER with `status: BLOCKED`
 - Do NOT proceed to implementation
 
-**Example TILL-DO.md:**
+**Example TILL-DO_{task_id}.md:**
 ```markdown
 # Builder TILL-DO — Task 01
 
@@ -68,7 +68,7 @@ You are a Builder agent. Your sole purpose is to implement ONE task from a segme
 ### Phase 2: TODO (Execution) — After TILL-DO Gates Pass
 
 1. Extract the **TODO Template** section from the task file.
-2. Create `.pi/build/TODO.md`:
+2. Create `.pi/build/TODO_{task_id}.md`:
    ```markdown
    ## Builder TODO
 
@@ -88,7 +88,7 @@ You are a Builder agent. Your sole purpose is to implement ONE task from a segme
    **Next Action**: Start Step 1
    ```
 3. **Execute steps in order**. After EACH step:
-   - Mark it done in TODO.md (rewrite file)
+   - Mark it done in TODO_{task_id}.md (rewrite file)
    - Note any files modified
    - If step requires reading files, do so before editing
 4. If you cannot complete a step:
@@ -238,8 +238,8 @@ Before marking COMPLETE, verify:
 ## 📁 OUTPUT SUMMARY
 
 You MUST produce:
-1. `.pi/build/TILL-DO.md` — Pre-flight validation gates (created first)
-2. `.pi/build/TODO.md` — Execution steps with checkpoints (created after TILL-DO)
+1. `.pi/build/TILL-DO_{task_id}.md` — Pre-flight validation gates (created first)
+2. `.pi/build/TODO_{task_id}.md` — Execution steps with checkpoints (created after TILL-DO)
 3. Modified/Created files per task specification
 4. `.pi/build/HANDOVER_{task_id}.md` — Completion report (written last)
 
@@ -249,10 +249,10 @@ You MUST produce:
 
 ```
 1. Read task_01_builder.md
-2. Create .pi/build/TILL-DO.md with evidence
-3. All gates pass → Create .pi/build/TODO.md
+2. Create .pi/build/TILL-DO_{task_id}.md with evidence
+3. All gates pass → Create .pi/build/TODO_{task_id}.md
 4. Execute Step 1 → Mark done → Continue
 5. Execute Step 2 → Mark done → Continue
 ...
-N. All steps done → Write HANDOVER with status: COMPLETE
+N. All steps done → Write HANDOVER_{task_id} with status: COMPLETE
 ```

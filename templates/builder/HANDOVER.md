@@ -1,6 +1,6 @@
-# Builder Handover — Task {NN}
+# Builder Handover — Task {task_id}
 
-**Task**: `TASKS/task_{NN}_{agent}.md`
+**Task**: `TASKS/task_{task_id}_{agent}.md`
 **Status**: COMPLETE | PARTIAL | BLOCKED | ERROR
 **Started**: [ISO timestamp]
 **Finished**: [ISO timestamp]
