@@ -1,6 +1,6 @@
-# Builder TODO — Task {NN}
+# Builder TODO — Task {task_id}
 
-**Task**: `TASKS/task_{NN}_{agent}.md`
+**Task**: `TASKS/task_{task_id}_{agent}.md`
 **Started**: [ISO timestamp]
 **Last Updated**: [ISO timestamp]
 **Tool Call Budget**: ~25 calls remaining: ~20

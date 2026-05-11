@@ -1,6 +1,6 @@
-# Builder TILL-DO — Task {NN}
+# Builder TILL-DO — Task {task_id}
 
-**Task**: `TASKS/task_{NN}_{agent}.md`
+**Task**: `TASKS/task_{task_id}_{agent}.md`
 **Started**: [ISO timestamp]
 **Builder Version**: v1
 
@@ -64,9 +64,9 @@ I will ONLY modify these files (no others):
 | 3. Scope Defined | ✅ / ❌ | [N files in scope] |
 | 4. No Blockers | ✅ / ❌ | [Any blockers?] |
 
-**If ALL Gates ✅**: Proceed to create `.pi/build/TODO.md`
+**If ALL Gates ✅**: Proceed to create `.pi/build/TODO_{task_id}.md`
 
-**If ANY Gate ❌**: STOP. Write HANDOVER with `status: BLOCKED` and include:
+**If ANY Gate ❌**: STOP. Write HANDOVER_{task_id} with `status: BLOCKED` and include:
 - Which gate failed
 - Why it failed
 - Suggested resolution
