@@ -2,7 +2,7 @@
 name: scout
 description: Guided codebase exploration with checkpointing. Returns structured evidence-based report for handoff to other agents.
 tools: read, grep, find, ls, bash
-model: claude-haiku-4-5
+model: minimax/MiniMax-M2.7-highspeed
 ---
 
 # SCOUT AGENT v2 — REGRAS ABSOLUTAS (VIOLAÇÃO = FAIL)
