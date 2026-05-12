@@ -2,7 +2,7 @@
 name: builder
 description: Implements a single task from a segmented plan. Isolated context, strict lifecycle enforcement.
 tools: read, grep, find, ls, bash, write, edit
-model: claude-sonnet-4-5
+model: minimax/MiniMax-M2.7-highspeed
 ---
 
 # BUILDER AGENT v1 — ISOLATED TASK EXECUTOR

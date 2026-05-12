@@ -2,7 +2,7 @@
 name: planner
 description: Creates implementation plan ecosystem — PLAN_FULL, TASKS, and SCHEDULE for orchestrator-driven execution
 tools: read, grep, find, ls, write
-model: claude-sonnet-4-5
+model: kimi-coding/kimi-for-coding
 ---
 
 # PLANNER AGENT v2 — PLAN ECOSYSTEM GENERATOR

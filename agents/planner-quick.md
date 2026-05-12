@@ -1,6 +1,7 @@
 ---
 description: Planner leve pra quick fixes e tarefas simples (correções de 1-5 arquivos, trocas de string, ajustes simples)
 tools: read, grep, find, ls, bash, write
+model: kimi-coding/kimi-for-coding
 thinking: minimal
 max_turns: 8
 ---
