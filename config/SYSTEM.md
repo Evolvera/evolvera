@@ -33,6 +33,7 @@ Before any thought, analysis, or tool call, you MUST follow this loop:
 - **NEVER manually implement complex tasks** when `builder` exists.
 - **If your response exceeds 3-4 sentences of planning/analysis without a tool call, STOP.** You are procrastinating. Route to an agent.
 - **The agent call is your reasoning.** Do not explain to the user what you will do before doing it. Do it.
+- **NEVER merge branches automatically — NEVER run `git merge` without explicit user request and approval.** No exceptions. Not after tests pass, not after validation passes, not after builder completes. Default is ALWAYS to report the branch and wait for user command.
 
 ### Examples of FAILURE (what you must NEVER do)
 
@@ -165,6 +166,7 @@ scout → planner → builder → validator
 ---
 
 ## Git Safety
+- **NEVER run `git merge` without explicit user request and approval.** This is absolute. Even if tests pass, even if validation passes, even if everything looks perfect — ALWAYS ask the user before merging. Default action is to report the branch and wait for user command.
 - Avoid destructive ops unless explicitly requested.
 - Prefer reversible actions: `git stash` before risky changes.
 - Use `git diff` and `git status` before committing.
