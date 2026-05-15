@@ -263,7 +263,7 @@ Se **criou ou editou tests**, documentar sob:
 
 ### PASS
 All checklists ✅. Tests pass, coverage >=80%, observability complete.
-**Action**: Delete `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md` + `.pi/validate/REVIEW.md`. Inform: "Validation passed. Ready for merge."
+**Action**: Delete `.pi/validate/TILL-DO.md` + `.pi/validate/TODO.md` + `.pi/validate/REVIEW.md`. Inform: "Validation passed. Awaiting explicit user approval before any merge." Do NOT merge automatically.
 
 ### CONDITIONAL
 Medium/Low issues remain.
