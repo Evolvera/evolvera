@@ -1,0 +1,208 @@
+{
+  "session_id": "E728759D-8572-4C39-8CE2-F0FCCF08C419",
+  "created_at": "2026-05-17T14:00:00.000Z",
+  "updated_at": "2026-05-17T14:30:00.000Z",
+  "purpose": "Mapear completamente como a extensão de subagentes funciona no PI Coding Agent (Agent tool, registro de agentes, orquestração, prompt building, checkpoint/handover, built-in vs custom)",
+  "file_structure": {
+    "root": ["agents/", "extensions/", "bin/", "prompts/", "skills/", "templates/", ".scout/"],
+    "entry_points": ["extensions/", "npm:@tintinweb/pi-subagents"],
+    "agent_definitions": ["agents/*.md", ".pi/agents/*.md"],
+    "subagent_extension_source": "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/"
+  },
+  "scope": {
+    "relevant_paths": ["extensions/", "agents/", "bin/", ".pi/", "skills/", "npm:@tintinweb/pi-subagents/src/"],
+    "irrelevant_paths": ["node_modules", "dist", ".git"]
+  },
+  "terminology": ["Agent tool", "subagent", "spawn", "worktree", "background", "harness", "agent .md files", "TILL-DO", "TODO", "checkpoint", "HANDOVER"],
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-17T14:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": [
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/index.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/types.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/agent-runner.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/worktree.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/prompts.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/custom-agents.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/agent-manager.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/memory.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/default-agents.ts",
+      "/Users/j.henrique/npm-global/lib/node_modules/@tintinweb/pi-subagents/src/skill-loader.ts",
+      "/Users/j.henrique/.pi/agent/agents/scout.md",
+      "/Users/j.henrique/.pi/agent/agents/builder.md",
+      "/Users/j.henrique/.pi/agent/extensions/project-memory.ts"
+    ], "timestamp": "2026-05-17T14:30:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": [], "timestamp": "" },
+    "phase_3": { "status": "complete", "findings": [
+      {
+        "id": "finding-001",
+        "type": "file",
+        "path": "@tintinweb/pi-subagents/src/index.ts",
+        "lines": "1-50",
+        "evidence": "pi.registerTool(defineTool({ name: \"Agent\", ... execute: async (toolCallId, params, signal, onUpdate, ctx) => { ... } }))",
+        "relevance": "Main entry point - Agent tool registration"
+      },
+      {
+        "id": "finding-002",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/agent-runner.ts",
+        "lines": "100-180",
+        "evidence": "export async function runAgent(ctx, type, prompt, options): Promise<RunResult>",
+        "relevance": "Core execution engine - creates sessions and runs agents"
+      },
+      {
+        "id": "finding-003",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/worktree.ts",
+        "lines": "40-80",
+        "evidence": "export function createWorktree(cwd: string, agentId: string): WorktreeInfo | undefined { ... execFileSync(\"git\", [\"worktree\", \"add\", \"--detach\", worktreePath, \"HEAD\"], ...) }",
+        "relevance": "Git worktree isolation implementation"
+      },
+      {
+        "id": "finding-004",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/prompts.ts",
+        "lines": "20-60",
+        "evidence": "export function buildAgentPrompt(config, cwd, env, parentSystemPrompt?, extras?): string { if (config.promptMode === \"append\") { ... } return replaceHeader + config.systemPrompt + extrasSuffix; }",
+        "relevance": "System prompt builder from agent config"
+      },
+      {
+        "id": "finding-005",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/custom-agents.ts",
+        "lines": "20-50",
+        "evidence": "export function loadCustomAgents(cwd: string): Map<string, AgentConfig> { const globalDir = join(getAgentDir(), \"agents\"); const projectDir = join(cwd, \".pi\", \"agents\"); loadFromDir(globalDir, agents, \"global\"); loadFromDir(projectDir, agents, \"project\"); }",
+        "relevance": "Loads custom agents from .md files in project and global dirs"
+      },
+      {
+        "id": "finding-006",
+        "type": "class",
+        "path": "@tintinweb/pi-subagents/src/agent-manager.ts",
+        "lines": "60-150",
+        "evidence": "export class AgentManager { spawn(...): string { ... if (options.isBackground && !options.bypassQueue && this.runningBackground >= this.maxConcurrent) { this.queue.push({ id, args }); return id; } this.startAgent(id, record, args); ... } }",
+        "relevance": "Background execution orchestration with concurrency queue"
+      },
+      {
+        "id": "finding-007",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/memory.ts",
+        "lines": "60-100",
+        "evidence": "export function buildMemoryBlock(agentName, scope, cwd): string { const memoryDir = resolveMemoryDir(agentName, scope, cwd); ensureMemoryDir(memoryDir); const existingMemory = readMemoryIndex(memoryDir); ... }",
+        "relevance": "Persistent agent memory implementation"
+      },
+      {
+        "id": "finding-008",
+        "type": "config",
+        "path": "@tintinweb/pi-subagents/src/default-agents.ts",
+        "lines": "1-80",
+        "evidence": "export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([ [\"general-purpose\", {...}], [\"Explore\", {...}], [\"Plan\", {...}] ]);",
+        "relevance": "Built-in default agent configurations"
+      },
+      {
+        "id": "finding-009",
+        "type": "convention",
+        "path": "/Users/j.henrique/.pi/agent/agents/scout.md",
+        "lines": "1-50",
+        "evidence": "TILL-DO/TODO/Checkpoint são CONVENÇÃO implementada nos prompts dos agentes, não código da extensão. Scout cria .scout/{session-id}.json para tracking.",
+        "relevance": "TILL-DO/TODO/Checkpoint mechanism is convention, not code"
+      },
+      {
+        "id": "finding-010",
+        "type": "function",
+        "path": "@tintinweb/pi-subagents/src/skill-loader.ts",
+        "lines": "20-50",
+        "evidence": "export function preloadSkills(skillNames: string[], cwd: string): PreloadedSkill[] { for (const name of skillNames) { const content = findAndReadSkill(name, cwd); if (content !== undefined) results.push({ name, content }); } }",
+        "relevance": "Skill preloading from .pi/skills/ directories"
+      }
+    ], "timestamp": "2026-05-17T14:30:00.000Z" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "file",
+      "path": "@tintinweb/pi-subagents/src/index.ts",
+      "lines": "1-50",
+      "evidence": "pi.registerTool(defineTool({ name: \"Agent\", ... execute: async (toolCallId, params, signal, onUpdate, ctx) => { ... } }))",
+      "relevance": "Main entry point - Agent tool registration"
+    },
+    {
+      "id": "finding-002",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/agent-runner.ts",
+      "lines": "100-180",
+      "evidence": "export async function runAgent(ctx, type, prompt, options): Promise<RunResult>",
+      "relevance": "Core execution engine - creates sessions and runs agents"
+    },
+    {
+      "id": "finding-003",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/worktree.ts",
+      "lines": "40-80",
+      "evidence": "export function createWorktree(cwd: string, agentId: string): WorktreeInfo | undefined { ... execFileSync(\"git\", [\"worktree\", \"add\", \"--detach\", worktreePath, \"HEAD\"], ...) }",
+      "relevance": "Git worktree isolation implementation"
+    },
+    {
+      "id": "finding-004",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/prompts.ts",
+      "lines": "20-60",
+      "evidence": "export function buildAgentPrompt(config, cwd, env, parentSystemPrompt?, extras?): string { if (config.promptMode === \"append\") { ... } return replaceHeader + config.systemPrompt + extrasSuffix; }",
+      "relevance": "System prompt builder from agent config"
+    },
+    {
+      "id": "finding-005",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/custom-agents.ts",
+      "lines": "20-50",
+      "evidence": "export function loadCustomAgents(cwd: string): Map<string, AgentConfig> { const globalDir = join(getAgentDir(), \"agents\"); const projectDir = join(cwd, \".pi\", \"agents\"); loadFromDir(globalDir, agents, \"global\"); loadFromDir(projectDir, agents, \"project\"); }",
+      "relevance": "Loads custom agents from .md files in project and global dirs"
+    },
+    {
+      "id": "finding-006",
+      "type": "class",
+      "path": "@tintinweb/pi-subagents/src/agent-manager.ts",
+      "lines": "60-150",
+      "evidence": "export class AgentManager { spawn(...): string { ... if (options.isBackground && !options.bypassQueue && this.runningBackground >= this.maxConcurrent) { this.queue.push({ id, args }); return id; } this.startAgent(id, record, args); ... } }",
+      "relevance": "Background execution orchestration with concurrency queue"
+    },
+    {
+      "id": "finding-007",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/memory.ts",
+      "lines": "60-100",
+      "evidence": "export function buildMemoryBlock(agentName, scope, cwd): string { const memoryDir = resolveMemoryDir(agentName, scope, cwd); ensureMemoryDir(memoryDir); const existingMemory = readMemoryIndex(memoryDir); ... }",
+      "relevance": "Persistent agent memory implementation"
+    },
+    {
+      "id": "finding-008",
+      "type": "config",
+      "path": "@tintinweb/pi-subagents/src/default-agents.ts",
+      "lines": "1-80",
+      "evidence": "export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([ [\"general-purpose\", {...}], [\"Explore\", {...}], [\"Plan\", {...}] ]);",
+      "relevance": "Built-in default agent configurations"
+    },
+    {
+      "id": "finding-009",
+      "type": "convention",
+      "path": "/Users/j.henrique/.pi/agent/agents/scout.md",
+      "lines": "1-50",
+      "evidence": "TILL-DO/TODO/Checkpoint são CONVENÇÃO implementada nos prompts dos agentes, não código da extensão. Scout cria .scout/{session-id}.json para tracking.",
+      "relevance": "TILL-DO/TODO/Checkpoint mechanism is convention, not code"
+    },
+    {
+      "id": "finding-010",
+      "type": "function",
+      "path": "@tintinweb/pi-subagents/src/skill-loader.ts",
+      "lines": "20-50",
+      "evidence": "export function preloadSkills(skillNames: string[], cwd: string): PreloadedSkill[] { for (const name of skillNames) { const content = findAndReadSkill(name, cwd); if (content !== undefined) results.push({ name, content }); } }",
+      "relevance": "Skill preloading from .pi/skills/ directories"
+    }
+  ],
+  "pending": [],
+  "gaps": [],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}

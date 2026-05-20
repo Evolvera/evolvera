@@ -20,14 +20,16 @@ Logic and configuration must live apart. If a value can change without changing 
 
 When investigating ANY bug, error, or unexpected behavior:
 
-1. **NEVER guess** — guessing is a sign of missing telemetry. Add logs first.
-2. **Add structured logs at the SOURCE** — frontend, backend, bridge, store — wherever the data flows.
+1. **NEVER guess** — guessing is a sign of missing observability. Add telemetry first.
+2. **Cover all 3 pillars**: Logs (structured events) + Metrics (RED) + Traces (trace_id propagation).
 3. **Frontend = hardest to debug** — if debugging UI, the agent MUST either:
    - Add structured `console.log` with `JSON.stringify(obj, null, 2)` (never raw objects)
    - Or pipe frontend logs to the backend via an IPC/telemetry channel
    - Or use a dedicated debug overlay / logger component
-4. **Log what matters**: event type, message IDs, state snapshots before/after, content lengths, timestamps, thread/chat IDs.
-5. **If you find yourself thinking "I think it's..." or "maybe it's..." → STOP. Add more logs.**
+4. **Log what matters**: event type, IDs, state before/after, content lengths, timestamps.
+5. **Add Metrics when relevant**: new endpoint = Rate + Errors + Duration.
+6. **Add Health checks**: every service needs `/health` and `/ready`.
+7. **If you find yourself thinking "I think it's..." or "maybe it's..." → STOP. Add observability.**
 
 **Rule: Difficulty in root-cause analysis = insufficient observability. Fix the observability before fixing the bug.**
 

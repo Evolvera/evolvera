@@ -250,35 +250,36 @@ group_1: [01, 02]  →  task 03  →  done
 
 ## 🎯 ULTRA DETAIL REQUIREMENTS
 
-### OBSERVABILITY FIRST — Mandatory in Every Plan
+### OBSERVABILITY FIRST — All 3 Pillars + Health Checks
 
-**Before writing any implementation plan, ask: "Where will I need logs to debug this?"**
+**Before writing any implementation plan, ask: "Where will I need telemetry to debug this?"**
 
 Every task that touches data flow, state mutation, IPC, network, or async operations MUST include:
 
-1. **Frontend tasks**:
-   - Structured `console.log` with `[prefix]` tag (e.g., `[useMessages]`, `[bridge]`)
-   - Log EVERY handoff point: event received, state updated, IPC sent, response received
-   - Log content lengths, IDs, timestamps — never raw objects (use `JSON.stringify(..., null, 2)`)
-   - If frontend→backend IPC: plan a telemetry/log-forwarding channel
+1. **Logs** (structured events):
+   - Frontend: `console.log('[prefix] action:', JSON.stringify(data, null, 2))` — NEVER raw objects
+   - Backend: `{ timestamp, level, message, service, trace_id, ... }`
+   - Every handoff point: event received → state updated → IPC sent → response received
 
-2. **Backend tasks**:
-   - Structured JSON logs: `{ timestamp, level, message, service, trace_id, ... }`
-   - Log at every boundary: request in, response out, DB query, external call
-   - RED pattern metrics if new endpoints: Rate, Errors, Duration
+2. **Metrics** (RED pattern — every new endpoint/service):
+   | Metric | What | How |
+   |--------|------|-----|
+   | Rate | requests/sec or throughput | counter |
+   | Errors | 4xx/5xx rate, failure count | counter |
+   | Duration | p50, p95, p99 latency | histogram |
 
-3. **Data flow logging** (mandatory at every handoff):
-   - Source → Destination: what data moved, what ID, what timestamp
-   - Success / failure at each step
-   - State before → state after for mutations
+3. **Traces** (correlation IDs across all boundaries):
+   - `trace_id` generated at entry, propagated via headers/context
+   - `span_id` for nested ops: DB query, HTTP call, async job
+   - OpenTelemetry or equivalent config
 
-4. **Traceability**:
-   - `trace_id`/`span_id` propagated across all boundaries
-   - Every async operation logged with correlation ID
+4. **Health checks** (every service):
+   - `/health` — is the service alive?
+   - `/ready` — is it ready to serve traffic?
 
-**If difficulty in root-cause analysis is possible → add logging plan. If unsure → add more logging.**
+5. **Error tracking**: Sentry or equivalent for unhandled exceptions
 
-Rule: **Plans without observability specs = incomplete plans.** Do not finalize a plan without an "Observability" subsection in every task.
+**Rule: Plans without observability specs = incomplete. Every task touching data flow needs an Observability subsection.**
 
 ### For Frontend/UI Tasks (>90% of detail here)
 

@@ -1,0 +1,184 @@
+{
+  "session_id": "86AB1952-C147-4EC0-AC9C-1C9324F054B1",
+  "created_at": "2026-05-15T00:00:00.000Z",
+  "updated_at": "2026-05-15T00:00:00.000Z",
+  "purpose": "Understand PI's AI provider/model management, auth, plans/subscriptions",
+  "file_structure": {
+    "pi_core_path": "/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent",
+    "agent_config_path": "/Users/j.henrique/.pi/agent",
+    "global_config_path": "/Users/j.henrique/.pi",
+    "key_files": [
+      "dist/core/model-registry.js",
+      "dist/core/auth-storage.js",
+      "dist/core/settings-manager.js",
+      "dist/providers/register-builtins.js",
+      "dist/env-api-keys.js",
+      "dist/oauth/index.js",
+      "dist/api-registry.js"
+    ]
+  },
+  "scope": {
+    "relevant_paths": [
+      "@mariozechner/pi-coding-agent/dist/**/*.js",
+      "@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai/dist/**/*.js",
+      "~/.pi/agent/**"
+    ],
+    "irrelevant_paths": [
+      "node_modules (except pi packages)",
+      "templates",
+      "examples",
+      "docs"
+    ]
+  },
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-15T00:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": [
+      "package.json",
+      "dist/core/index.js",
+      "dist/core/model-registry.js",
+      "dist/core/auth-storage.js",
+      "dist/core/settings-manager.js",
+      "dist/providers/register-builtins.js",
+      "dist/env-api-keys.js",
+      "dist/oauth/index.js",
+      "dist/api-registry.js",
+      "dist/models.js",
+      "dist/models.generated.js",
+      "dist/provider-display-names.js",
+      "dist/extensions/loader.js",
+      "dist/extensions/types.js",
+      "dist/config.js",
+      "cli/args.js",
+      "modes/interactive/interactive-mode.js"
+    ], "timestamp": "2026-05-15T00:30:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": [], "timestamp": "" },
+    "phase_3": { "status": "complete", "files_explored": [], "timestamp": "" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "file",
+      "path": "@mariozechner/pi-ai/dist/models.generated.js",
+      "lines": "1-16796",
+      "evidence": "export const MODELS = { 'amazon-bedrock': {...}, 'anthropic': {...}, 'openai': {...}, ... }",
+      "relevance": "Contains all built-in model definitions with provider mapping, costs, capabilities"
+    },
+    {
+      "id": "finding-002",
+      "type": "class",
+      "path": "dist/core/model-registry.js",
+      "lines": "234-260",
+      "evidence": "export class ModelRegistry { authStorage; modelsJsonPath; models = []; providerRequestConfigs = new Map(); ... }",
+      "relevance": "Core model registry that manages built-in and custom models"
+    },
+    {
+      "id": "finding-003",
+      "type": "function",
+      "path": "@mariozechner/pi-ai/dist/models.js",
+      "lines": "10-30",
+      "evidence": "const modelRegistry = new Map();\nfor (const [provider, models] of Object.entries(MODELS)) {\n  const providerModels = new Map();\n  for (const [id, model] of Object.entries(models)) {\n    providerModels.set(id, model);\n  }\n  modelRegistry.set(provider, providerModels);\n}\nexport function getProviders() { return Array.from(modelRegistry.keys()); }\nexport function getModels(provider) { ... }",
+      "relevance": "Provider → Model mapping implemented via Map structure"
+    },
+    {
+      "id": "finding-004",
+      "type": "class",
+      "path": "dist/core/auth-storage.js",
+      "lines": "1-100",
+      "evidence": "export class AuthStorage { storage; data = {}; runtimeOverrides = new Map(); ... async getApiKey(providerId, options) { ... } }",
+      "relevance": "Credential storage with OAuth support, file locking, token refresh"
+    },
+    {
+      "id": "finding-005",
+      "type": "function",
+      "path": "dist/core/auth-storage.js",
+      "lines": "379-430",
+      "evidence": "async getApiKey(providerId, options) {\n  // Priority: 1. Runtime override, 2. API key from auth.json, 3. OAuth token (auto-refreshed), 4. Environment variable, 5. Fallback resolver\n}",
+      "relevance": "Key resolution priority chain"
+    },
+    {
+      "id": "finding-006",
+      "type": "file",
+      "path": "@mariozechner/pi-ai/dist/env-api-keys.js",
+      "lines": "1-200",
+      "evidence": "const envMap = { openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY', google: 'GEMINI_API_KEY', ... };\nexport function getEnvApiKey(provider) { ... }",
+      "relevance": "Environment variable API key mapping for all providers"
+    },
+    {
+      "id": "finding-007",
+      "type": "function",
+      "path": "dist/providers/register-builtins.js",
+      "lines": "170-210",
+      "evidence": "export function registerBuiltInApiProviders() {\n  registerApiProvider({ api: 'anthropic-messages', stream: streamAnthropic, ... });\n  registerApiProvider({ api: 'openai-completions', ... });\n  registerApiProvider({ api: 'google-generative-ai', ... });\n  ...",
+      "relevance": "Built-in API provider registration (Anthropic, OpenAI, Google, Azure, Mistral, etc.)"
+    },
+    {
+      "id": "finding-008",
+      "type": "file",
+      "path": "@mariozechner/pi-ai/dist/oauth/index.js",
+      "lines": "1-100",
+      "evidence": "const BUILT_IN_OAUTH_PROVIDERS = [ anthropicOAuthProvider, githubCopilotOAuthProvider, openaiCodexOAuthProvider ];\nconst oauthProviderRegistry = new Map(...);\nexport function registerOAuthProvider(provider) { oauthProviderRegistry.set(provider.id, provider); }",
+      "relevance": "OAuth provider registry for Anthropic (Claude Pro/Max), GitHub Copilot, OpenAI Codex"
+    },
+    {
+      "id": "finding-009",
+      "type": "file",
+      "path": "dist/core/provider-display-names.js",
+      "lines": "1-50",
+      "evidence": "export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {\n  anthropic: 'Anthropic',\n  'amazon-bedrock': 'Amazon Bedrock',\n  'google': 'Google Gemini',\n  openai: 'OpenAI',\n  ...\n}",
+      "relevance": "Human-readable names for all 30+ built-in providers"
+    },
+    {
+      "id": "finding-010",
+      "type": "config",
+      "path": "~/.pi/agent/auth.json",
+      "lines": "1-30",
+      "evidence": "{\n  'minimax': { 'type': 'api_key', 'key': '...' },\n  'zai': { 'type': 'api_key', 'key': '...' }\n}",
+      "relevance": "User credential storage format (JSON with provider → api_key mapping)"
+    },
+    {
+      "id": "finding-011",
+      "type": "class",
+      "path": "dist/core/settings-manager.js",
+      "lines": "100-200",
+      "evidence": "export class SettingsManager { ... getDefaultProvider() { return this.settings.defaultProvider; } setDefaultModelAndProvider(provider, modelId) { ... } }",
+      "relevance": "Settings management including default provider/model selection"
+    },
+    {
+      "id": "finding-012",
+      "type": "function",
+      "path": "dist/core/extensions/loader.js",
+      "lines": "120-140",
+      "evidence": "registerProvider: (name, config, extensionPath) => { runtime.pendingProviderRegistrations.push({ name, config, extensionPath }); }",
+      "relevance": "Extensions can register custom providers via extension API"
+    },
+    {
+      "id": "finding-013",
+      "type": "pattern",
+      "path": "modes/interactive/interactive-mode.js",
+      "lines": "85-100",
+      "evidence": "const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING = 'Anthropic subscription auth is active...';\nfunction isAnthropicSubscriptionAuthKey(apiKey) { return typeof apiKey === 'string' && apiKey.startsWith('sk-ant-oat'); }",
+      "relevance": "Special handling for Anthropic subscription (Claude Pro/Max) - sk-ant-oat prefix"
+    },
+    {
+      "id": "finding-014",
+      "type": "schema",
+      "path": "dist/core/model-registry.js",
+      "lines": "94-150",
+      "evidence": "const ModelDefinitionSchema = Type.Object({ id, name, api, baseUrl, reasoning, thinkingLevelMap, input, cost, contextWindow, maxTokens, headers, compat });\nconst ProviderConfigSchema = Type.Object({ name, baseUrl, apiKey, api, headers, compat, authHeader, models, modelOverrides });\nconst ModelsConfigSchema = Type.Object({ providers: Type.Record(Type.String(), ProviderConfigSchema) });",
+      "relevance": "JSON schema for models.json configuration file"
+    }
+  ],
+  "pending": [
+    "Plans/subscriptions: No built-in plan system found. Subscription handling is provider-specific (e.g., Anthropic's sk-ant-oat prefix for Pro/Max subscriptions)."
+  ],
+  "gaps": [
+    "No unified plan/subscription management - each provider handles its own billing",
+    "Plan management may be in third-party extensions (e.g., minimax-coding-plan-mcp)"
+  ],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}

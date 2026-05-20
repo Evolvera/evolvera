@@ -1,0 +1,86 @@
+{
+  "session_id": "8A5E73B8-DE1E-44CE-BEE0-F2CA9DBA5C45",
+  "created_at": "2026-05-15T00:00:00.000Z",
+  "updated_at": "2026-05-15T00:30:00.000Z",
+  "purpose": "Understand PI coding agent's MCP gateway — server connections, tool routing, tool ecosystem management",
+  "file_structure": {
+    "root": [".git", ".pi", "agents", "bin", "config", "extensions", "helpers", "mcp-cache.json", "mcp-npx-cache.json", "mcp.json", "prompts", "research", "sessions", "skills", "templates"],
+    "mcp_modules": ["/Users/j.henrique/npm-global/lib/node_modules/@imsus/", "pi-mcp-adapter/"]
+  },
+  "scope": {
+    "relevant_paths": ["mcp.json", "mcp-cache.json", "@imsus/", "pi-mcp-adapter/", "extensions/", "skills/", "bin/", "research/"],
+    "irrelevant_paths": ["node_modules (except @imsus)", ".git/"]
+  },
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-15T00:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": ["mcp.json", "mcp-cache.json", "pi-mcp-adapter/index.ts", "pi-mcp-adapter/config.ts", "pi-mcp-adapter/init.ts", "pi-mcp-adapter/proxy-modes.ts", "@imsus/pi-extension-minimax-coding-plan-mcp/extensions/index.ts"], "timestamp": "2026-05-15T00:15:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": [], "timestamp": "" },
+    "phase_3": { "status": "complete", "files_explored": [], "timestamp": "" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "config",
+      "path": "/Users/j.henrique/.pi/agent/mcp.json",
+      "lines": "1-30",
+      "evidence": "{\n  \"mcpServers\": {\n    \"memory\": { \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-memory\"], \"lifecycle\": \"keep-alive\" },\n    \"context7\": { \"command\": \"npx\", \"args\": [\"-y\", \"@upstash/context7-mcp@latest\"], \"lifecycle\": \"lazy\" },\n    \"zai-mcp\": { \"command\": \"npx\", \"args\": [\"-y\", \"@z_ai/mcp-server\"], \"env\": { \"Z_AI_API_KEY\": \"...\", \"Z_AI_MODE\": \"ZAI\" }, \"lifecycle\": \"lazy\" }\n  }\n}",
+      "relevance": "MCP server configuration file defining connections to external MCP servers"
+    },
+    {
+      "id": "finding-002",
+      "type": "architecture",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/pi-mcp-adapter/index.ts",
+      "lines": "1-80",
+      "evidence": "export default function mcpAdapter(pi: ExtensionAPI) {\n  let state: McpExtensionState | null = null;\n  let initPromise: Promise<McpExtensionState> | null = null;\n  ...\n  pi.registerTool({ name: 'mcp', label: 'MCP', description: buildProxyDescription(...), ... });\n  pi.registerCommand('mcp', { ... });\n  pi.registerCommand('mcp-auth', { ... });\n  ...\n}",
+      "relevance": "Main entry point for pi-mcp-adapter - registers the mcp() tool and commands"
+    },
+    {
+      "id": "finding-003",
+      "type": "config-loading",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/pi-mcp-adapter/config.ts",
+      "lines": "1-150",
+      "evidence": "export function loadMcpConfig(overridePath?: string): McpConfig {\n  let config: McpConfig = { mcpServers: {} };\n  for (const source of getConfigSources(overridePath)) {\n    const loaded = readValidatedConfig(source.readPath, ...);\n    if (!loaded) continue;\n    config = mergeConfigs(config, expandImports(loaded));\n  }\n  return config;\n}",
+      "relevance": "Multi-source config loading from various MCP config locations"
+    },
+    {
+      "id": "finding-004",
+      "type": "server-manager",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/pi-mcp-adapter/init.ts",
+      "lines": "1-120",
+      "evidence": "export async function initializeMcp(pi: ExtensionAPI, ctx: ExtensionContext): Promise<McpExtensionState> {\n  const config = loadMcpConfig(configPath);\n  const manager = new McpServerManager();\n  const lifecycle = new McpLifecycleManager(manager);\n  ...\n  for (const [name, definition] of serverEntries) {\n    lifecycle.registerServer(name, definition, idleOverride);\n  }\n}",
+      "relevance": "Server initialization and lifecycle management"
+    },
+    {
+      "id": "finding-005",
+      "type": "tool-routing",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/pi-mcp-adapter/proxy-modes.ts",
+      "lines": "400-550",
+      "evidence": "export async function executeCall(state, toolName, args?, serverOverride?, getPiTools?): Promise<ProxyToolResult> {\n  // Find server by name or prefix\n  if (!serverName && !toolMeta && prefixMode !== 'none') {\n    const candidates = Object.keys(state.config.mcpServers)\n      .map(name => ({ name, prefix: getServerPrefix(name, prefixMode) }))\n      .filter(c => c.prefix && toolName.startsWith(c.prefix + '_'));\n  }\n  // Execute tool call\n  const resultPromise = connection.client.callTool({\n    name: toolMeta.originalName, arguments: args ?? {}, _meta: uiSession?.requestMeta\n  });\n}",
+      "relevance": "Tool routing logic - finds server by prefix or name, then calls tool"
+    },
+    {
+      "id": "finding-006",
+      "type": "extension-api",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts",
+      "lines": "300-400",
+      "evidence": "export interface ExtensionAPI {\n  on(event: string, handler: ExtensionHandler): void;\n  registerTool(tool: ToolDefinition): void;\n  registerCommand(name: string, options: RegisteredCommand): void;\n  registerShortcut(shortcut: KeyId, options: {...}): void;\n  registerFlag(name: string, options: {...}): void;\n  getAllTools(): ToolInfo[];\n  setActiveTools(toolNames: string[]): void;\n  registerProvider(name: string, config: ProviderConfig): void;\n}",
+      "relevance": "Extension API for registering tools and commands"
+    },
+    {
+      "id": "finding-007",
+      "type": "tool-registry",
+      "path": "/Users/j.henrique/npm-global/lib/node_modules/@imsus/pi-extension-minimax-coding-plan-mcp/extensions/index.ts",
+      "lines": "1-50",
+      "evidence": "export default function (pi: ExtensionAPI) {\n  pi.registerTool({\n    name: 'web_search',\n    label: 'Web Search',\n    description: 'Search the web for information based on a query...',\n    parameters: Type.Object({ query: Type.String(...) }),\n    async execute(toolCallId, params, signal, onUpdate, ctx) {\n      const response = await fetch(`${config.apiHost}/v1/coding_plan/search`, {...});\n      ...\n    }\n  });\n}",
+      "relevance": "Example of extension registering custom tools via ExtensionAPI"
+    }
+  ],
+  "pending": [],
+  "gaps": [],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}
