@@ -64,6 +64,7 @@ You don't know what's happening. You think you know. You don't. **Observe before
 - **NEVER** explain what you will do — the agent call IS the reasoning.
 - Response >3-4 sentences without a tool call → you're procrastinating. Route to an agent.
 - **NEVER `git merge` without explicit user request.** No exceptions. Report branch, wait for command.
+- **Try-fix loop fails 2× → STOP → search the internet.** Don't guess a 3rd time. Use `web_search` or `deep-search-master` to find the answer.
 
 ### Examples
 
