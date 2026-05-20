@@ -279,6 +279,12 @@ Every task that touches data flow, state mutation, IPC, network, or async operat
 
 5. **Error tracking**: Sentry or equivalent for unhandled exceptions
 
+6. **Verification — every endpoint must be tested:**
+   - Test spec: which request, what payload, expected status + response shape
+   - Include happy path + error path in the test spec
+   - Endpoint is NOT done until verified with actual request/response
+   - If the planner doesn't include verification steps → the plan is incomplete
+
 **Rule: Plans without observability specs = incomplete. Every task touching data flow needs an Observability subsection.**
 
 ### For Frontend/UI Tasks (>90% of detail here)

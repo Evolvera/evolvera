@@ -29,7 +29,11 @@ When investigating ANY bug, error, or unexpected behavior:
 4. **Log what matters**: event type, IDs, state before/after, content lengths, timestamps.
 5. **Add Metrics when relevant**: new endpoint = Rate + Errors + Duration.
 6. **Add Health checks**: every service needs `/health` and `/ready`.
-7. **If you find yourself thinking "I think it's..." or "maybe it's..." → STOP. Add observability.**
+7. **Every endpoint / feature = VERIFY IT.** Make the request. Check the response. If you didn't test it, it's not done.
+   - API: curl or httpie — verify status, shape, fields
+   - UI: render it, trigger the state, check the output
+   - Error path: send bad input, verify error response
+8. **If you find yourself thinking "I think it's..." or "maybe it's..." → STOP. Add observability.**
 
 **Rule: Difficulty in root-cause analysis = insufficient observability. Fix the observability before fixing the bug.**
 

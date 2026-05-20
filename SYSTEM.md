@@ -20,7 +20,15 @@ If root-cause analysis is painful, you lack observability. **Never guess — ins
 - Alerting / SLO thresholds on critical metrics
 - Audit trail / event sourcing for stateful mutations
 
-**Rule: If it's hard to debug, you missed a pillar. Fix observability before fixing the bug.**
+**Verification — every endpoint MUST be tested:**
+- **Never consider an endpoint done until you hit it and verified the response.**
+- Make the request (curl, httpie, Postman, or code).
+- Verify: status code, response shape, field values, headers.
+- If it's an API: test happy path + at least 1 error path.
+- If it's a UI component: verify it renders, state changes work, edge cases show correct behavior.
+- If you can't verify it, the feature is incomplete — not done.
+
+**Rule: If it's hard to debug, you missed a pillar. If you didn't test it, it's not done.**
 
 ### Separation of Concerns (Behavior vs Data)
 Logic and configuration must live apart. If a value can change without changing logic (colors, URLs, thresholds, timeouts, limits, feature flags), it belongs in a config/constants/tokens file — not inline. Mixing them means every value change requires code edit + test + redeploy.
