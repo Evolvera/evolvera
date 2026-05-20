@@ -176,9 +176,16 @@ Apply all pillars that apply:
 - **Health checks**: add `/health` and `/ready` endpoints if service doesn't have them.
 - **Error tracking**: ensure unhandled exceptions are captured (Sentry or equivalent).
 
+**VERIFICATION — mandatory before marking done:**
+- **Every endpoint = hit it, verify response.** Never mark done without testing.
+- Happy path: correct status, correct response shape, correct field values.
+- Error path: bad input → correct error status + error body.
+- If the task creates a new API endpoint: the builder MUST test it before declaring complete.
+- If the task creates a UI component: verify it renders and state changes work.
+
 **If stuck**: add a log before the stuck point to see what data is actually flowing.
 
-Rule: **If debugging this later would be hard → add observability now.**
+Rule: **If debugging this later would be hard → add observability now. If you didn't test it → it's not done.**
 
 ### Before Any Edit
 - **READ the file first** (if it exists)
