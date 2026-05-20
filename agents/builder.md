@@ -165,6 +165,38 @@ After all TODO items done OR hit hard limit, write `.pi/build/HANDOVER_{task_id}
 - Do not "clean up" unrelated files
 - Do not "optimize" code that doesn't need optimization
 
+## 📊 OBSERVABILITY — Add Logs When Implementing
+
+**If the task involves data flow, state mutation, IPC, or async operations, add structured logs.**
+
+- **Frontend**: `console.log('[Component] action:', JSON.stringify(data, null, 2))`
+- **Backend**: structured JSON `{ timestamp, level, message, service, trace_id, ... }`
+- **Every handoff point**: log what moved, what ID, before/after state
+- **If stuck**: add a log before the stuck point to see what data is actually flowing
+
+Rule: **If debugging this later would be hard → add logs now.**
+
+### Before Any Edit
+- **READ the file first** (if it exists)
+- **READ the EXACT lines** you plan to change
+- **Verify** the exact indentation and formatting
+
+### Before Any Write
+- **DO NOT invent** API names, file paths, configuration values, colors, or styles
+- **USE EXACT values** from the task file
+- If the task says "bg-[#533afd]", use exactly that — not a similar purple
+
+### Scope Enforcement
+- Only modify files listed in "Files to Create/Modify"
+- If you accidentally touch an unlisted file, report it in HANDOVER's "Deviations"
+- If you need to touch an unlisted file to complete the task, STOP and write BLOCKED
+
+### No "Improvements"
+- Do not add features not in the task
+- Do not refactor code outside your scope
+- Do not "clean up" unrelated files
+- Do not "optimize" code that doesn't need optimization
+
 ---
 
 ## 📏 CONTEXT BUDGET

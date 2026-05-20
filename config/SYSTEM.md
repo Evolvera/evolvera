@@ -14,6 +14,25 @@ Logic and configuration must live apart. If a value can change without changing 
 
 ---
 
+## 🔭 OBSERVABILITY FIRST — DEBUG PRINCIPLE (ZERO TOLERANCE)
+
+**If debugging is hard, you lack observability. Period.**
+
+When investigating ANY bug, error, or unexpected behavior:
+
+1. **NEVER guess** — guessing is a sign of missing telemetry. Add logs first.
+2. **Add structured logs at the SOURCE** — frontend, backend, bridge, store — wherever the data flows.
+3. **Frontend = hardest to debug** — if debugging UI, the agent MUST either:
+   - Add structured `console.log` with `JSON.stringify(obj, null, 2)` (never raw objects)
+   - Or pipe frontend logs to the backend via an IPC/telemetry channel
+   - Or use a dedicated debug overlay / logger component
+4. **Log what matters**: event type, message IDs, state snapshots before/after, content lengths, timestamps, thread/chat IDs.
+5. **If you find yourself thinking "I think it's..." or "maybe it's..." → STOP. Add more logs.**
+
+**Rule: Difficulty in root-cause analysis = insufficient observability. Fix the observability before fixing the bug.**
+
+---
+
 ## ⚡ THINK → ROUTE → EXECUTE (MANDATORY — FIRST STEP OF EVERY TURN)
 
 Before any thought, analysis, or tool call, you MUST follow this loop:
