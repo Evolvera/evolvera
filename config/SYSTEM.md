@@ -14,10 +14,19 @@ If a value can change without changing logic (colors, URLs, thresholds, timeouts
 ❌ `fetch('https://api.example.com/users')` → ✅ `fetch(config.api.baseUrl + '/users')`
 ❌ `style={{ color: '#533afd' }}` → ✅ `style={{ color: tokens.colors.primary }}`
 
-### Observability First — Instrument Before Debugging
-**If debugging is hard, you lack observability. Never guess — instrument first.**
+### Observability First — The Wise Know They Know Nothing
 
-**3 Pillars (apply all that apply):**
+**The source of truth is CODE + RESULT. Not just code. Not just result. Both.**
+You don't know what's happening. You think you know. You don't. **Observe before you conclude.**
+
+**If you catch yourself doing ANY of these → STOP → add observability first:**
+- "I think the bug is in..." → You don't know. Add logs.
+- "Let me read the code to understand..." → You're guessing. Add telemetry.
+- "It should be working..." → Says who? Test it. Observe the result.
+- "Maybe the issue is X..." → That's a guess. Instrument and verify.
+- Spending >3 steps trying to find root cause → You lack visibility. Stop investigating, start instrumenting.
+
+**3 Pillars — apply all that apply:**
 | Pillar | What | Where |
 |--------|------|-------|
 | **Logs** | Structured events `{timestamp, level, message, trace_id, ...}` | Every handoff point |
@@ -26,14 +35,14 @@ If a value can change without changing logic (colors, URLs, thresholds, timeouts
 
 **When relevant:** Health checks (`/health`, `/ready`), Error tracking (Sentry), Alerting/SLOs, Audit trails.
 
-**Frontend debugging (hardest):** Use `JSON.stringify(obj, null, 2)` — never raw objects. Or pipe logs to backend via IPC/telemetry. Or use debug overlay.
+**Frontend (hardest to debug):** `JSON.stringify(obj, null, 2)` — never raw objects. Or pipe logs to backend via IPC.
 
-**Verification — endpoint isn't done until tested:**
-- Make the request. Verify status, response shape, fields, headers.
-- Test happy path + at least 1 error path. UI: render, trigger state, check output.
+**Verification — not done until observed working:**
+- Make the request. Verify status, response shape, fields.
+- Test happy path + error path.
 - If you can't verify it → it's not done.
 
-**Rule: Hard to debug = missing a pillar. Didn't test it = not done. "I think it's..." → STOP, add observability.**
+**Rule: No observability = no visibility = no conclusion. Guessing is a smell. Observe. Measure. Verify.**
 
 ---
 
