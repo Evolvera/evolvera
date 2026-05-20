@@ -165,16 +165,20 @@ After all TODO items done OR hit hard limit, write `.pi/build/HANDOVER_{task_id}
 - Do not "clean up" unrelated files
 - Do not "optimize" code that doesn't need optimization
 
-## 📊 OBSERVABILITY — Add Logs When Implementing
+## 📊 OBSERVABILITY — Add Telemetry When Implementing
 
-**If the task involves data flow, state mutation, IPC, or async operations, add structured logs.**
+**If the task involves data flow, state mutation, IPC, or async operations, add observability.**
 
-- **Frontend**: `console.log('[Component] action:', JSON.stringify(data, null, 2))`
-- **Backend**: structured JSON `{ timestamp, level, message, service, trace_id, ... }`
-- **Every handoff point**: log what moved, what ID, before/after state
-- **If stuck**: add a log before the stuck point to see what data is actually flowing
+Apply all pillars that apply:
+- **Logs**: structured events at every handoff point. Frontend: `JSON.stringify(obj, null, 2)`. Backend: `{timestamp, level, message, trace_id}`.
+- **Metrics**: NEW endpoint = RED (Rate + Errors + Duration). Every service boundary emits metrics.
+- **Traces**: `trace_id` propagated across every async boundary. `span_id` for nested ops.
+- **Health checks**: add `/health` and `/ready` endpoints if service doesn't have them.
+- **Error tracking**: ensure unhandled exceptions are captured (Sentry or equivalent).
 
-Rule: **If debugging this later would be hard → add logs now.**
+**If stuck**: add a log before the stuck point to see what data is actually flowing.
+
+Rule: **If debugging this later would be hard → add observability now.**
 
 ### Before Any Edit
 - **READ the file first** (if it exists)

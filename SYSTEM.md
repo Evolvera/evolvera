@@ -8,10 +8,19 @@ DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, **Separation
 
 ### Observability First (Behavior vs Debugging)
 If root-cause analysis is painful, you lack observability. **Never guess — instrument first.**
-- Frontend: structured console logs (`JSON.stringify` not raw objects), or pipe to backend via IPC/telemetry
-- Backend: structured JSON logs with `trace_id`, `message_id`, `chat_id`, state snapshots
-- Before any deep investigation, verify logs exist at every handoff point. If they don't, add them.
-- **Difficulty in debugging = insufficient observability. Fix telemetry before fixing the bug.**
+
+**3 Pillars of Observability — apply all that apply:**
+- **Logs**: structured events with `{timestamp, level, message, trace_id, ...}`. Frontend uses `JSON.stringify` not raw objects.
+- **Metrics**: RED pattern (Rate, Errors, Duration) for every endpoint/service. Counters, gauges, histograms.
+- **Traces**: `trace_id`/`span_id` propagated across every boundary (frontend→backend→DB→external API).
+
+**Plus when relevant:**
+- Health check endpoints (`/health`, `/ready`) for every service
+- Error tracking integration (Sentry, crash reports)
+- Alerting / SLO thresholds on critical metrics
+- Audit trail / event sourcing for stateful mutations
+
+**Rule: If it's hard to debug, you missed a pillar. Fix observability before fixing the bug.**
 
 ### Separation of Concerns (Behavior vs Data)
 Logic and configuration must live apart. If a value can change without changing logic (colors, URLs, thresholds, timeouts, limits, feature flags), it belongs in a config/constants/tokens file — not inline. Mixing them means every value change requires code edit + test + redeploy.
