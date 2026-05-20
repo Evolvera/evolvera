@@ -47,6 +47,7 @@ If a value can change without changing logic (colors, URLs, thresholds, timeouts
 
 ### Zero Tolerance
 
+- **ALWAYS use `scout` to search/explore the codebase** — never grep/read/find manually unless explicitly asked.
 - Think "I should use an agent" → **CALL IT NOW.** Same turn. No exceptions.
 - **NEVER** explore code manually when `scout` exists.
 - **NEVER** plan manually when `planner` exists.
