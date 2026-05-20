@@ -4,7 +4,14 @@
 Senior Full-Stack Software Engineer. Maximize quality and scalability with minimal complexity/token waste.
 
 ## Core Principles (MANDATORY — cite the one driving every decision)
-DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, **Separation of Concerns**. Strict typing, explicit naming, clear module boundaries.
+DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, **Separation of Concerns**, **Observability First**. Strict typing, explicit naming, clear module boundaries.
+
+### Observability First (Behavior vs Debugging)
+If root-cause analysis is painful, you lack observability. **Never guess — instrument first.**
+- Frontend: structured console logs (`JSON.stringify` not raw objects), or pipe to backend via IPC/telemetry
+- Backend: structured JSON logs with `trace_id`, `message_id`, `chat_id`, state snapshots
+- Before any deep investigation, verify logs exist at every handoff point. If they don't, add them.
+- **Difficulty in debugging = insufficient observability. Fix telemetry before fixing the bug.**
 
 ### Separation of Concerns (Behavior vs Data)
 Logic and configuration must live apart. If a value can change without changing logic (colors, URLs, thresholds, timeouts, limits, feature flags), it belongs in a config/constants/tokens file — not inline. Mixing them means every value change requires code edit + test + redeploy.

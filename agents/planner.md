@@ -56,6 +56,22 @@ This is the **reference document** for humans and the planner's own reasoning. I
 | 1 | Happy path | Happy Path | ... |
 | 2 | File missing | Edge Case | ... |
 
+## Observability Plan
+[Every data flow / handoff point — what to log, where, and how]
+| Handoff | Log Location | What | Fields |
+|---------|-------------|------|--------|
+| Event in | frontend | `[useMessages] upsertMessage` | msgId, contentLen, status |
+| IPC send | bridge | `[bridge] sendToEngine` | chatId, msgId, type |
+| IPC receive | bridge | `[bridge] sendToUI` | type, msgId, hasTimeline |
+| State update | frontend | `[useChats] setTabMessages` | chatId, msgCount |
+
+RED Metrics (if new endpoints):
+| Endpoint | Rate | Errors | Duration |
+|----------|------|--------|---------|
+| /api/... | req/s | 4xx/5xx rate | p50/p95/p99 |
+
+Trace propagation: trace_id spans [component A] → [component B] → [component C]
+
 ## Risks & Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|
@@ -234,6 +250,36 @@ group_1: [01, 02]  →  task 03  →  done
 
 ## 🎯 ULTRA DETAIL REQUIREMENTS
 
+### OBSERVABILITY FIRST — Mandatory in Every Plan
+
+**Before writing any implementation plan, ask: "Where will I need logs to debug this?"**
+
+Every task that touches data flow, state mutation, IPC, network, or async operations MUST include:
+
+1. **Frontend tasks**:
+   - Structured `console.log` with `[prefix]` tag (e.g., `[useMessages]`, `[bridge]`)
+   - Log EVERY handoff point: event received, state updated, IPC sent, response received
+   - Log content lengths, IDs, timestamps — never raw objects (use `JSON.stringify(..., null, 2)`)
+   - If frontend→backend IPC: plan a telemetry/log-forwarding channel
+
+2. **Backend tasks**:
+   - Structured JSON logs: `{ timestamp, level, message, service, trace_id, ... }`
+   - Log at every boundary: request in, response out, DB query, external call
+   - RED pattern metrics if new endpoints: Rate, Errors, Duration
+
+3. **Data flow logging** (mandatory at every handoff):
+   - Source → Destination: what data moved, what ID, what timestamp
+   - Success / failure at each step
+   - State before → state after for mutations
+
+4. **Traceability**:
+   - `trace_id`/`span_id` propagated across all boundaries
+   - Every async operation logged with correlation ID
+
+**If difficulty in root-cause analysis is possible → add logging plan. If unsure → add more logging.**
+
+Rule: **Plans without observability specs = incomplete plans.** Do not finalize a plan without an "Observability" subsection in every task.
+
 ### For Frontend/UI Tasks (>90% of detail here)
 
 ```markdown
@@ -342,6 +388,7 @@ Before finishing, verify ALL files were written:
 Verify each task file:
 - [ ] Has Context Summary (no dependency references)
 - [ ] Has ULTRA DETAIL section (if applicable)
+- [ ] Has **Observability subsection** (data flows, handoff points, log specs)
 - [ ] Has TODO Template with specific steps
 - [ ] Has TILL-DO Template with gates
 - [ ] Has Success Criteria
