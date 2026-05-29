@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.73.1",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "minimax",
-  "defaultModel": "MiniMax-M2.7-highspeed",
+  "defaultProvider": "kimi-coding",
+  "defaultModel": "kimi-for-coding",
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:pi-mcp-adapter",

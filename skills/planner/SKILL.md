@@ -1,0 +1,205 @@
+---
+name: planner
+description: Use the planner agent to create detailed implementation plans for complex multi-file features, bug fixes, or refactors. ALWAYS do a pre-plan first to understand user needs perfectly before activating the planner — it runs for minutes and is expensive to restart.
+---
+
+# Planner Skill — Implementation Plan Generator
+
+> **⏱️ PLANNER IS EXPENSIVE**: The planner agent runs for **minutes** on a heavy model. A wrong or vague prompt wastes time and money. **ALWAYS do a pre-plan first** — understand the user perfectly before activating planner.
+
+## Workflow: Pre-Plan → Review → Plan → Execute
+
+```
+User Request
+    │
+    ▼
+┌─────────────┐
+│  PRE-PLAN   │ ← YOU (main model) do this. Fast, cheap, no agent.
+│  (2-5 min)  │   Ask clarifying questions. Map scope. Decide path.
+└──────┬──────┘
+       │
+       ├── Simple? (single file, <20 lines, no architecture) ──→ Direct builder
+       │
+       └── Complex? (multi-file, architecture, unknowns) ──→ Continue
+              │
+              ▼
+       ┌─────────────┐
+       │ USER REVIEW │ ← Show pre-plan summary. Ask: "Correct? Missing anything?"
+       │  (1 min)    │   Get explicit approval before proceeding.
+       └──────┬──────┘
+              │ Approved?
+         ┌────┴────┐
+         │   YES   │  NO → Revise pre-plan, ask more questions
+         ▼
+    ┌─────────────┐
+    │   PLANNER   │ ← NOW activate planner agent with crystal-clear prompt
+    │  (minutes)  │   Include pre-plan summary + all context
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────┐
+    │ USER REVIEW │ ← Show PLAN_FULL.md summary. Ask: "Approve this plan?"
+    │  (1 min)    │   Get explicit approval before spawning builders.
+    └──────┬──────┘
+           │ Approved?
+      ┌────┴────┐
+      │  YES    │  NO → Revise plan with planner or adjust manually
+      ▼
+   ┌────────────┐
+   │  BUILDERS  │ ← Execute tasks from SCHEDULE.md
+   └────────────┘
+```
+
+---
+
+## Phase 1: PRE-PLAN (You Do This — No Agent)
+
+### Goal
+Understand the user's request deeply enough to either:
+1. **Execute directly** (simple → builder or direct implementation)
+2. **Feed a perfect prompt to the planner** (complex → planner agent)
+
+### Pre-Plan Checklist
+
+Before activating ANY agent, answer these:
+
+| Question | Why It Matters |
+|----------|----------------|
+| **What exactly** should change? | Vague requests = bad plans. "Fix auth" ❌ → "JWT expiry should be 1h not 24h" ✅ |
+| **Which files** are involved? | Even a guess helps. "Probably src/auth/" is better than nothing. |
+| **What's the current behavior?** | Planner needs to know the starting point. |
+| **What's the desired behavior?** | The "after" state must be crystal clear. |
+| **Any constraints?** | Backward compat? Feature flag? DB migration? |
+| **How to verify it works?** | Test plan, manual steps, expected output. |
+| **What could go wrong?** | Edge cases, breaking changes, rollback needs. |
+
+### Pre-Plan Output Format
+
+Write a brief summary (5-15 lines) to show the user:
+
+```markdown
+## Pre-Plan Summary
+
+**Goal**: [One sentence — what we're doing]
+**Scope**: [In scope] / [Out of scope]
+**Affected Areas**: [Files/modules likely touched]
+**Approach**: [High-level strategy]
+**Complexity**: [Low | Medium | High | Critical]
+**Path**: [Direct execution | Planner → Builders]
+**Open Questions**: [Anything still unclear — ask user now]
+```
+
+### Decision: Direct vs Planner
+
+| If... | Then... |
+|-------|---------|
+| Single file, <20 lines, no architecture impact | **Direct** — Use `read`/`edit` yourself or spawn builder directly |
+| 2-5 files, straightforward changes, clear scope | **Direct** — Spawn builder with a detailed prompt |
+| >5 files, architecture decisions, unclear scope, multiple scenarios | **Planner** — Do full pre-plan, get user approval, then activate planner |
+| Refactor, new feature, cross-cutting concern | **Planner** — Always |
+
+---
+
+## Phase 2: USER REVIEW (Mandatory)
+
+**NEVER skip this.** Before activating planner (or executing directly), show the user:
+
+```
+Here's what I understood:
+
+**Goal**: Add OAuth 2.0 login with Google and GitHub
+**Scope**: Backend API + frontend login buttons. NOT account linking.
+**Files**: src/auth/, src/api/oauth.ts, src/components/Login.tsx
+**Approach**: Add OAuth callback endpoints, create user if new, generate JWT
+**Complexity**: Medium
+
+❓ Is this correct? Anything missing or wrong?
+```
+
+**Wait for explicit approval.** "Looks good" / "Yes" / "Go ahead" — not silence.
+
+---
+
+## Phase 3: ACTIVATE PLANNER (Only After Approval)
+
+### When to Use Planner Agent
+
+Activate `Agent(subagent_type="planner")` ONLY when:
+- Pre-plan is approved by user
+- Complexity is Medium+ or involves multiple files
+- Architecture decisions are needed
+- You need the full plan ecosystem (PLAN_FULL.md + TASKS/ + SCHEDULE.md)
+
+### How to Invoke
+
+```
+Agent({
+  subagent_type: "planner",
+  description: "Plan [brief title]",
+  prompt: "PRE-PLAN SUMMARY (user-approved):\n\n[Copy the approved pre-plan here]\n\nADDITIONAL CONTEXT:\n[Scout results if available]\n[User clarifications]\n[Tech stack details]\n\nGenerate a complete plan ecosystem in .pi/plans/"
+})
+```
+
+**The prompt MUST include:**
+- ✅ The approved pre-plan summary
+- ✅ Scout results (if you ran scouts)
+- ✅ Any user clarifications
+- ✅ Tech stack / constraints
+- ✅ Out of scope (what NOT to do)
+
+### Planner Output
+
+Planner generates:
+
+```
+.pi/plans/
+├── PLAN_FULL.md          # Complete reference
+├── SCHEDULE.md           # DAG + execution rules
+└── TASKS/
+    ├── task_01_builder.md
+    ├── task_02_builder.md
+    └── ...
+```
+
+---
+
+## Phase 4: PLAN REVIEW (Mandatory Before Builders)
+
+After planner finishes, **review with user BEFORE spawning builders**:
+
+```
+Plan generated. Here's the summary:
+
+**Tasks**: 5 tasks across 3 parallel groups
+**Estimated files touched**: 8 files
+**Critical path**: Group 1 (Auth setup) → Group 2 (UI + API) → Group 3 (Tests)
+**Risks**: DB migration needed, breaking change to login API
+
+❓ Approve this plan? I can also adjust specific tasks if needed.
+```
+
+**Wait for approval.** Only then spawn builders per SCHEDULE.md.
+
+---
+
+## Anti-Patterns (NEVER Do This)
+
+| ❌ Wrong | ✅ Right |
+|----------|----------|
+| User says "fix auth" → immediately spawn planner | Ask: "What specifically about auth? Login error? Token expiry? Password reset?" |
+| Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
+| Run planner without scout context | Send scouts first if codebase is unfamiliar |
+| Vague planner prompt: "plan auth fix" | Specific prompt: "JWT refresh fails after 1h. Need sliding refresh. Affecting src/auth/session.ts" |
+| Skip user review to save time | User review saves MORE time by catching misalignment early |
+
+---
+
+## Summary
+
+| Phase | Who | Cost | User Review? |
+|-------|-----|------|--------------|
+| **Pre-Plan** | You (main model) | Cheap / seconds | Show summary, ask approval |
+| **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
+| **Execute** | Builder agents | Medium | Execute approved plan |
+
+**Rule: Two user reviews minimum — one after pre-plan, one after plan.**
