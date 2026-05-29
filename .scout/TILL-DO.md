@@ -1,10 +1,10 @@
-## Scout TILL-DO Gates — Extensão de Subagentes
+## Scout TILL-DO Gates
 
-- [ ] PROPÓSITO DEFINIDO: Mapear completamente a extensão de subagentes do PI (Agent tool, registro de agentes, orquestração, prompt building, checkpoint/handover, built-in vs custom)
-- [ ] FILE STRUCTURE MAPEADA: agents/, extensions/, .pi/agents/
-- [ ] ESCOPO DEFINIDO: relevant=extensions/*.ts, agents/*.md, bin/; irrelevant=node_modules, dist
-- [ ] TERMINOLOGIA IDENTIFICADA: Agent tool, subagent, spawn, worktree, background, harness, .md agent files
-- [ ] MODO LEITURA CONFIRMADO: Scout READ-ONLY, NO OPINIONS, NO CREATION (exceto checkpoint)
-- [ ] CHECKPOINT FILE INICIADO: E728759D-8572-4C39-8CE2-F0FCCF08C419.json
+- [x] PROPÓSITO DEFINIDO: Descobrir como /compact escolhe modelo e como configurar para MiniMax-M2.7-highspeed
+- [x] FILE STRUCTURE MAPEADA: Estrutura identificada em /Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/
+- [x] ESCOPO DEFINIDO: relevant=src/, package.json, settings schema; irrelevant=node_modules internos
+- [x] TERMINOLOGIA IDENTIFICADA: compact, summarize, model, smallModel, fastModel, haiku
+- [x] MODO LEITURA CONFIRMADO: Entendido que scout NÃO modifica, NÃO cria, NÃO opiniona
+- [x] CHECKPOINT FILE INICIADO: .scout/2207A47F-29A8-493E-8C98-73DEBA970858.json criado
 
 ⚠️ GATE BLOQUEANTE: Não começar exploração até TODOS os gates 100% ✅

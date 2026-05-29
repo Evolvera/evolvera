@@ -1,0 +1,131 @@
+{
+  "session_id": "ECDA113F-C69E-4900-9931-EC79D59DC196",
+  "created_at": "2026-05-29T00:00:00.000Z",
+  "updated_at": "2026-05-29T00:00:00.000Z",
+  "purpose": "Explorar estrutura completa de skills no PI e projeto do usuário para converter agents em skills",
+  "file_structure": {
+    "skills_global": ["design-catalog", "design-extractor", "git-research", "mcp-vision", "pi-tool-expert", "project-memory", "website-stack"],
+    "agents_global": ["agent-expert", "builder", "deep-research-*-auditor/creative/critical/explorer/finalizer/methodical/skeptical", "pi-steward", "planner", "planner-quick", "scout", "seo-content-writer", "validator", "website-designer", "website-polisher"]
+  },
+  "scope": {
+    "relevant_paths": ["~/.pi/agent/skills/", "~/.pi/agent/agents/", "~/workspace/empresa/Pi/"],
+    "irrelevant_paths": ["node_modules", "dist"]
+  },
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-29T00:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": ["skills/design-catalog/SKILL.md", "skills/project-memory/SKILL.md", "skills/pi-tool-expert/SKILL.md", "skills/website-stack/SKILL.md", "skills/mcp-vision/SKILL.md", "docs/skills.md", "docs/extensions.md"], "timestamp": "2026-05-29T00:00:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": ["agents/planner.md", "agents/scout.md", "agents/builder.md", "agents/agent-expert.md", "skills/pi-tool-expert/references/api-reference.md", "skills/pi-tool-expert/references/validation-checklist.md"], "timestamp": "2026-05-29T00:00:00.000Z" },
+    "phase_3": { "status": "complete", "files_explored": [], "timestamp": "2026-05-29T00:00:00.000Z" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "skill_structure",
+      "path": "~/.pi/agent/skills/<name>/SKILL.md",
+      "lines": "1-20",
+      "evidence": "---\nname: <skill-name>\ndescription: What this skill does and when to use it. Be specific.\n---\n\n# Skill Title\n\n## Setup\n[setup instructions]\n\n## Usage\n[usage instructions]",
+      "relevance": "Estrutura padrão de uma skill com frontmatter YAML obrigatório"
+    },
+    {
+      "id": "finding-002",
+      "type": "agent_structure",
+      "path": "~/.pi/agent/agents/<name>.md",
+      "lines": "1-15",
+      "evidence": "---\nname: planner\ndescription: Creates implementation plan ecosystem\ntools: read, grep, find, ls, write\nmodel: kimi-coding/kimi-for-coding\n---\n\n# PLANNER AGENT v2",
+      "relevance": "Estrutura padrão de um agent com frontmatter YAML (name, description, tools, model, thinking, max_turns)"
+    },
+    {
+      "id": "finding-003",
+      "type": "skill_activation",
+      "path": "docs/skills.md",
+      "lines": "1-50",
+      "evidence": "Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.\n\nPi implements the [Agent Skills standard](https://agentskills.io/specification)",
+      "relevance": "Skills são carregadas on-demand via /skill:name ou quando descrição match com tarefa"
+    },
+    {
+      "id": "finding-004",
+      "type": "skill_locations",
+      "path": "docs/skills.md",
+      "lines": "30-80",
+      "evidence": "Pi loads skills from:\n- Global:\n  - ~/.pi/agent/skills/\n  - ~/.agents/skills/\n- Project:\n  - .pi/skills/\n  - .agents/skills/",
+      "relevance": "Skills podem ser globais (user-level) ou project-level"
+    },
+    {
+      "id": "finding-005",
+      "type": "agent_invocation",
+      "path": "agents/agent-expert.md",
+      "lines": "1-30",
+      "evidence": "| **Skill** | Instruções markdown carregadas on-demand | Workflow especializado, conhecimento de domínio |\n| **Agente** | Entidade com system prompt, tools, e modelo próprios | Tarefa isolada, paralelização, especialização |\n| **Extensão** | Código TypeScript que modifica comportamento do PI | Tools customizadas, eventos, UI, comandos |",
+      "relevance": "Regra fundamental: Skills instruem, Agentes executam, Extensões estendem"
+    },
+    {
+      "id": "finding-006",
+      "type": "agent_tools",
+      "path": "agents/planner.md",
+      "lines": "1-10",
+      "evidence": "tools: read, grep, find, ls, write",
+      "relevance": "Agents têm tools restritas definidas no frontmatter"
+    },
+    {
+      "id": "finding-007",
+      "type": "agent_subagent_invocation",
+      "path": "skills/pi-tool-expert/SKILL.md",
+      "lines": "100-120",
+      "evidence": "Agent(subagent_type=\"scout\", run_in_background=true, prompt=\"...\")\nAgent(subagent_type=\"builder\", prompt=\"...\")",
+      "relevance": "Agents são invocados via tool Agent() com subagent_type especificando o agent"
+    },
+    {
+      "id": "finding-008",
+      "type": "scout_agent_rules",
+      "path": "agents/scout.md",
+      "lines": "1-30",
+      "evidence": "## ⚠️ REGRAS DE COMPORTAMENTO\n\n1. **READ-ONLY**: Você NÃO modifica, NÃO cria, NÃO edita nenhum arquivo do repo. Apenas LÊ.\n2. **NO OPINIONS**: Você NÃO dá opinião, NÃO sugere melhorias, NÃO recomenda mudanças. Apenas RELATA o que encontra.\n3. **NO ASSUMPTIONS**: Se você não encontrou evidência concreta, diga \"NÃO ENCONTRADO\" ou \"PENDENTE\". Nunca invente.",
+      "relevance": "Scout agent tem regras estritas de read-only, no opinions, no assumptions"
+    },
+    {
+      "id": "finding-009",
+      "type": "builder_agent_rules",
+      "path": "agents/builder.md",
+      "lines": "1-30",
+      "evidence": "## ⚠️ CRITICAL RULES\n\n1. **CONTEXT ISOLATION**: You receive ONLY your task file (.pi/plans/TASKS/task_*.md). Do NOT ask for the full plan.\n2. **NO PLANNING**: The task file contains your instructions. Do NOT re-plan, re-architect, or suggest alternatives.\n3. **NO OPINIONS**: Do not add \"improvements\" not specified.",
+      "relevance": "Builder agent tem regras de context isolation, no planning, no opinions"
+    },
+    {
+      "id": "finding-010",
+      "type": "planner_output",
+      "path": "agents/planner.md",
+      "lines": "30-80",
+      "evidence": "## 📁 OUTPUT FILES (Write to `.pi/plans/`)\n\n### 1. PLAN_FULL.md — Complete Plan Reference\n### 2. TASKS/task_{NN}_{agent}.md — Builder Input (ONE per task)\n### 3. SCHEDULE.md — Orchestrator Contract (ONLY file with DAG)",
+      "relevance": "Planner gera ecosistema de 3 arquivos: PLAN_FULL, TASKS, SCHEDULE"
+    },
+    {
+      "id": "finding-011",
+      "type": "skill_frontmatter_validation",
+      "path": "skills/pi-tool-expert/references/validation-checklist.md",
+      "lines": "1-40",
+      "evidence": "## Skill Validation\n\n### Frontmatter\n- [ ] YAML no início: `---\nname: ...\ndescription: ...\n---`\n- [ ] `name` corresponde ao diretório pai\n- [ ] `name`: lowercase, hyphens, max 64 chars\n- [ ] `description`: max 1024 chars, específica\n- [ ] Sem campos inválidos",
+      "relevance": "Validação rigorosa de frontmatter para skills"
+    },
+    {
+      "id": "finding-012",
+      "type": "workspace_not_found",
+      "path": "~/workspace/empresa/Pi",
+      "lines": "N/A",
+      "evidence": "Path not found: /Users/j.henrique/workspace/empresa/Pi",
+      "relevance": "Projeto do usuário não existe no caminho especificado"
+    }
+  ],
+  "pending": [
+    "Verificar se existem agents no projeto (não encontrado)",
+    "Verificar AGENTS.md no projeto (não encontrado)"
+  ],
+  "gaps": [
+    "Workspace ~/workspace/empresa/Pi não existe - missão parcialmente incompletude quanto a projeto do usuário"
+  ],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}

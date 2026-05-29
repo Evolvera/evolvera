@@ -50,29 +50,45 @@ You don't know what's happening. You think you know. You don't. **Observe before
 
 ```
 1. THINK: What is the user asking? What type of task?
-2. ROUTE: Check AGENTS.md — which agent handles this?
+   └── BEFORE acting: check available skills. Does a skill match this task?
+       ├── YES → load the skill FIRST (`/skill:name` or `read` SKILL.md), THEN act.
+       └── NO → proceed with built-in tools.
+2. ROUTE: Load relevant skill, then call the right agent.
 3. EXECUTE: Call that agent NOW. Do NOT do it manually.
 ```
 
+> **🧠 SKILLS FIRST RULE**: Before EVERY action — read, write, edit, bash, or agent call — pause and ask: "Is there a skill for this?" If yes, load the skill content and follow its instructions. Skills contain specialized workflows that override generic behavior.
+
 ### Zero Tolerance
 
-- **ALWAYS use `scout` to search/explore the codebase** — never grep/read/find manually unless explicitly asked.
 - Think "I should use an agent" → **CALL IT NOW.** Same turn. No exceptions.
-- **NEVER** explore code manually when `scout` exists.
-- **NEVER** plan manually when `planner` exists.
-- **NEVER** implement manually when `builder` exists.
 - **NEVER** explain what you will do — the agent call IS the reasoning.
 - Response >3-4 sentences without a tool call → you're procrastinating. Route to an agent.
-- **NEVER `git merge` without explicit user request.** No exceptions. Report branch, wait for command.
 - **Try-fix loop fails 2× → STOP → search the internet.** Don't guess a 3rd time. Use `web_search` or `deep-search-master` to find the answer.
 
-### Examples
+### Skills Available (load on-demand with `/skill:name`)
 
-| ❌ FAILURE | ✅ SUCCESS |
-|-----------|----------|
-| "Vou ler os arquivos primeiro..." | `Agent(subagent_type="scout", prompt="...")` |
-| "I should use a builder..." | Stop thinking. Call the builder NOW. |
-| "Let me grep the codebase..." | `Agent(subagent_type="scout", prompt="...")` |
+| Skill | Use When | Why |
+|-------|----------|-----|
+| `scout` | Need to explore/find/understand code | Cheap, fast, parallelizable exploration |
+| `planner` | Complex multi-file feature/fix/refactor | Expensive — always pre-plan first, get user approval |
+| `builder` | Implement focused code changes | Fast, atomic tasks, parallelize when possible |
+| `project-memory` | Project context, setup, architecture, bugs | Persistent memory across sessions — auto-scans and saves |
+
+**Load the skill before using the agent.** Example: `/skill:scout` then `Agent(subagent_type="scout", ...)`.
+
+### Agent Pipeline
+
+```
+scout → planner → builder → validator
+```
+
+- **scout** first if codebase is unfamiliar or broad exploration needed
+- **planner** next if architecture/planning needed (pre-plan → user approval → planner)
+- **builder** to execute tasks (split small, parallelize, follow SCHEDULE.md if planner-driven)
+- **validator** after builder for high-impact or >10 files changed
+
+**Skip rules:** Trivial → direct. Small focused change → direct builder. Critical (auth, payment) → builder + validator. High impact → full pipeline.
 
 ---
 
@@ -107,40 +123,13 @@ You don't know what's happening. You think you know. You don't. **Observe before
 
 ---
 
-## Agent Routing (auto-detect — never ask)
-
-| Agent | When | Call |
-|-------|------|------|
-| `deep-search-master` | Search/verify/research | `prompt="quick:/verify:/deep search: <query>"` |
-| `scout` | Explore/map code (no implementation) | `prompt="<mission>"` |
-| `planner` | Complex features, refactors, architecture | `prompt="<description>"` |
-| `planner-quick` | Quick fixes, simple changes | `prompt="<description>"` |
-| `builder` | Implement from plan or medium+ tasks | `prompt="<plan>"` |
-| `validator` | Validate/audit before merge | `prompt="<scope>"` |
-| `pi-steward` | PI error, hallucination, MCP down | `prompt="<problem>"` |
-| `agent-expert` | Create/modify agents | `prompt="<details>"` |
-
-**Auto-invoke `validator` after `builder`** if high impact or >10 files changed.
-
-### Pipeline
-```
-scout → planner → builder → validator
-```
-
-**Skip rules:** Trivial → direct. Quick fix → `planner-quick`. Medium + plan → `builder` direct. Critical (auth, payment) → `builder` + `validator`. High impact → full pipeline.
-
-### Builder = Isolated Branch
-Builder runs on `agent/<timestamp>-<desc>` branch. After builder completes: get result → report branch → wait for user merge. **NEVER auto-merge.**
-
----
-
 ## Parallel Execution
 Independent tools → parallel. Batch independent ops. Dependencies → sequential.
 
 ---
 
 ## Git Safety
-- **NEVER `git merge` without explicit user approval.** Always report branch and wait.
+- **NEVER `git merge` without explicit user request.** Always report branch and wait.
 - Prefer reversible actions (`git stash` before risk).
 - `git diff` + `git status` before committing.
 - New branches, not main.

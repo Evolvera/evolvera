@@ -1,0 +1,101 @@
+{
+  "session_id": "32EDAB72-6F07-4033-A45A-E4F6462A8064",
+  "created_at": "2026-05-24T00:00:00.000Z",
+  "updated_at": "2026-05-24T00:30:00.000Z",
+  "purpose": "Compare PI coding agent vs Evolvera: thinkingLevel, model selection, API requests handling",
+  "file_structure": {
+    "pi_agent_path": "/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent",
+    "pi_dist_path": "/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/dist",
+    "evolvera_engine_path": "/Users/j.henrique/EVOLVERA/evolvera/packages/engine/src"
+  },
+  "key_findings": {
+    "pi_thinking_level_settings": {
+      "defaultThinkingLevel": "high",
+      "stored_in": "~/.pi/agent/settings.json"
+    },
+    "pi_session_messages_source": "PI's own session files (~/.pi/agent/sessions/) - buildSessionContext() rebuilds messages from JSONL entries",
+    "pi_no_previousMessages_seed": "PI NEVER seeds from external source - uses its own session storage",
+    "evolvera_thinking_level": "Hardcoded to 'medium' when creating AgentHarness (pi-backbone-agent.ts line ~575)",
+    "evolvera_previousMessages_seed": "Evolvera seeds PI session from ChatStore ONLY if session is empty (not restored from disk)"
+  },
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-24T00:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": ["dist/sdk.js", "dist/agent-session.js", "dist/session-manager.js", "pi-backbone-agent.ts", "index.ts"], "timestamp": "2026-05-24T00:15:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": [], "timestamp": "2026-05-24T00:25:00.000Z" },
+    "phase_3": { "status": "complete", "files_explored": [], "timestamp": "2026-05-24T00:30:00.000Z" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "config",
+      "path": "~/.pi/agent/settings.json",
+      "lines": "1-15",
+      "evidence": "{\n  \"defaultThinkingLevel\": \"high\",\n  \"defaultProvider\": \"zai\",\n  \"defaultModel\": \"glm-5.1\"\n}",
+      "relevance": "PI stores user's preferred thinking level in settings.json"
+    },
+    {
+      "id": "finding-002",
+      "type": "function",
+      "path": "dist/core/sdk.js",
+      "lines": "133-149",
+      "evidence": "let thinkingLevel = options.thinkingLevel;\nif (thinkingLevel === undefined && hasExistingSession) {\n    thinkingLevel = hasThinkingEntry\n        ? existingSession.thinkingLevel\n        : (settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL);\n}\nif (thinkingLevel === undefined) {\n    thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;\n}",
+      "relevance": "PI restores thinking level from session storage OR falls back to settings"
+    },
+    {
+      "id": "finding-003",
+      "type": "function",
+      "path": "dist/core/sdk.js",
+      "lines": "100-101",
+      "evidence": "const existingSession = sessionManager.buildSessionContext();\nconst hasExistingSession = existingSession.messages.length > 0;",
+      "relevance": "PI checks its own session storage for existing messages"
+    },
+    {
+      "id": "finding-004",
+      "type": "function",
+      "path": "dist/core/sdk.js",
+      "lines": "249-250",
+      "evidence": "agent.state.messages = existingSession.messages;",
+      "relevance": "PI restores messages from its own session storage"
+    },
+    {
+      "id": "finding-005",
+      "type": "function",
+      "path": "dist/core/session-manager.js",
+      "lines": "112-206",
+      "evidence": "export function buildSessionContext(entries, leafId, byId) {\n    // ... builds messages from session entries (JSONL)\n    return { messages, thinkingLevel, model };\n}",
+      "relevance": "PI rebuilds session context from JSONL entries stored in session files"
+    },
+    {
+      "id": "finding-006",
+      "type": "code",
+      "path": "packages/engine/src/pi/pi-backbone-agent.ts",
+      "lines": "573-577",
+      "evidence": "const harness = new AgentHarness({\n    env,\n    session,\n    tools: allTools,\n    model,\n    systemPrompt,\n    thinkingLevel: 'medium' as ThinkingLevel,  // HARDCODED\n    getApiKeyAndHeaders,\n});",
+      "relevance": "Evolvera hardcodes thinkingLevel to 'medium' when creating AgentHarness"
+    },
+    {
+      "id": "finding-007",
+      "type": "code",
+      "path": "packages/engine/src/pi/pi-backbone-agent.ts",
+      "lines": "483-515",
+      "evidence": "if (!sessionRestored && previousMessages && previousMessages.length > 0) {\n    // Seed from previousMessages\n    for (const msg of previousMessages) {\n        await session.appendMessage(msg as any);\n    }\n}",
+      "relevance": "Evolvera seeds PI session from ChatStore ONLY if session was NOT restored from disk"
+    },
+    {
+      "id": "finding-008",
+      "type": "code",
+      "path": "packages/engine/src/index.ts",
+      "lines": "452-454",
+      "evidence": "const previousMessages = (context as any)?.previousMessages as EvolveraMessage[] | undefined;\nif (previousMessages && previousMessages.length > 0 && agent.getMemory().getMessages().length === 0) {\n    agent.getMemory().addMessages(previousMessages);",
+      "relevance": "Evolvera also pre-loads agent memory with ChatStore history"
+    }
+  ],
+  "pending": [],
+  "gaps": [],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}

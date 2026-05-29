@@ -1,0 +1,71 @@
+{
+  "session_id": "2207A47F-29A8-493E-8C98-73DEBA970858",
+  "created_at": "2026-05-20T00:00:00.000Z",
+  "updated_at": "2026-05-20T00:30:00.000Z",
+  "purpose": "Descobrir como /compact escolhe modelo e como configurar para MiniMax-M2.7-highspeed",
+  "file_structure": {
+    "package_path": "/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/",
+    "compaction_impl": "dist/core/compaction/",
+    "agent_session": "dist/core/agent-session.js"
+  },
+  "scope": {
+    "relevant_paths": ["dist/core/compaction/", "dist/core/agent-session.js", "dist/core/settings-manager.js", "examples/extensions/custom-compaction.ts"],
+    "irrelevant_paths": ["node_modules/**"]
+  },
+  "phases": {
+    "phase_0_gates": { "status": "complete", "timestamp": "2026-05-20T00:00:00.000Z" },
+    "phase_1": { "status": "complete", "files_explored": ["dist/core/compaction/compaction.js", "dist/core/agent-session.js", "dist/core/settings-manager.js", "examples/extensions/custom-compaction.ts", "docs/compaction.md"], "timestamp": "2026-05-20T00:15:00.000Z" },
+    "phase_2": { "status": "complete", "files_explored": [], "timestamp": "2026-05-20T00:25:00.000Z" },
+    "phase_3": { "status": "complete", "files_explored": [], "timestamp": "2026-05-20T00:30:00.000Z" }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "type": "function",
+      "path": "dist/core/agent-session.js",
+      "lines": "1245-1297",
+      "evidence": "async compact(customInstructions) {\n    // ...\n    const result = await compact(preparation, this.model, apiKey, headers, customInstructions, this._compactionAbortController.signal, this.thinkingLevel);",
+      "relevance": "CONFIRMA: /compact usa this.model (modelo atual da sessao) - NAO ha modelo separado para compactacao"
+    },
+    {
+      "id": "finding-002",
+      "type": "function",
+      "path": "dist/core/compaction/compaction.js",
+      "lines": "557-601",
+      "evidence": "export async function compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel) {\n    const { firstKeptEntryId, messagesToSummarize, turnPrefixMessages, isSplitTurn, tokensBefore, previousSummary, fileOps, settings, } = preparation;\n    // Generate summaries...",
+      "relevance": "Funcao compact() recebe model como parametro - usa o modelo passado"
+    },
+    {
+      "id": "finding-003",
+      "type": "config",
+      "path": "dist/core/settings-manager.js",
+      "lines": "468-473",
+      "evidence": "getCompactionSettings() {\n    return {\n        enabled: this.getCompactionEnabled(),\n        reserveTokens: this.getCompactionReserveTokens(),\n        keepRecentTokens: this.getCompactionKeepRecentTokens(),\n    };",
+      "relevance": "Settings de compaction: enabled, reserveTokens, keepRecentTokens - NAO existe compactModel ou similar"
+    },
+    {
+      "id": "finding-004",
+      "type": "example",
+      "path": "examples/extensions/custom-compaction.ts",
+      "lines": "1-120",
+      "evidence": "pi.on(\"session_before_compact\", async (event, ctx) => {\n    // Use Gemini Flash for summarization (cheaper/faster than most conversation models)\n    const model = ctx.modelRegistry.find(\"google\", \"gemini-2.5-flash\");",
+      "relevance": "UNICO jeito de usar modelo diferente para compactacao: via extensao session_before_compact hook"
+    },
+    {
+      "id": "finding-005",
+      "type": "settings",
+      "path": "/Users/j.henrique/.pi/agent/settings.json",
+      "lines": "1-15",
+      "evidence": "{\n  \"lastChangelogVersion\": \"0.73.1\",\n  \"followUpMode\": \"one-at-a-time\",\n  \"defaultProvider\": \"kimi-coding\",\n  \"defaultModel\": \"kimi-for-coding\",\n  \"defaultThinkingLevel\": \"high\",",
+      "relevance": "Settings atuais - NAO ha compactModel configurado"
+    }
+  ],
+  "pending": [],
+  "gaps": [],
+  "verification": {
+    "read_only_confirmed": true,
+    "no_opinions_confirmed": true,
+    "no_creation_confirmed": true,
+    "purpose_aligned": true
+  }
+}
