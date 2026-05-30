@@ -8,7 +8,7 @@
  * Memory location: {cwd}/.pi/memory/_summary.md
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
