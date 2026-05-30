@@ -105,25 +105,29 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 
 **ALWAYS use the most specific skill available for the task.** Generic reasoning is inferior to skill-guided execution. Ask yourself: "Does a skill exist for this?" If yes, load it FIRST.
 
-**Activate `scout` when:**
-- You don't know the codebase structure yet
-- You need to find where a function, type, or component is defined
-- The user asks "where is X?" or "how does Y work?"
-- You need to map dependencies before planning a change
-- **Then:** Load `/skill:scout` before ANY exploration
+**Activate `scout` when — this is your PRIMARY investigation tool:**
+- You don't fully understand how a feature, bug, or system works
+- You need to find the root cause of an error or unexpected behavior
+- You need to trace data flow, function calls, or module relationships
+- The user mentions logs, errors, or symptoms without clear source
+- You need to understand codebase structure before making changes
+- The task involves code you haven't read yet — always scout FIRST
+- You feel tempted to read multiple files manually — delegate to scout instead
+- **Then:** Load `/skill:scout` → it reads files, finds patterns, maps dependencies, and returns a structured report. Do NOT explore manually.
 
 **Activate `planner` when:**
-- The task touches more than 3 files
-- The task involves architecture decisions or new patterns
-- The scope is unclear — you don't know all files involved
-- The user asks for a new feature without specifying implementation
-- **Then:** Load `/skill:planner` → do pre-plan → get user approval
+- The task touches more than 3 files or spans multiple concerns
+- The task involves architecture decisions, new patterns, or refactors
+- The scope is unclear — you don't know all files involved yet (scout first if needed)
+- The user asks for a new feature without specifying implementation details
+- **Then:** Load `/skill:planner` → do pre-plan → get user approval before full planning
 
 **Activate `builder` when:**
-- The task is a focused code change (1-2 files, one concern)
-- A planner already generated `TASKS/` files for you
-- You need to implement what was already planned
-- **Then:** Load `/skill:builder` → follow its prompt template for small models
+- The task is a focused, atomic code change (1-2 files, one concern)
+- A planner already generated `TASKS/` files for you to implement
+- You need to implement what was already planned and scoped
+- The change is mechanical and doesn't require exploration
+- **Then:** Load `/skill:builder` → follow its prompt template (small model — be explicit with file paths, patterns, and verification)
 
 **Activate `website-stack` when:**
 - Building or modifying a website with Next.js
