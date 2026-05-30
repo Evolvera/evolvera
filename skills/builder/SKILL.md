@@ -111,6 +111,16 @@ Agent({ subagent_type: "builder", run_in_background: true, description: "Update 
 get_subagent_result({ agent_id: "...", wait: true })
 ```
 
+### When to NOT Use a Builder At All
+
+If the change is truly trivial, just use `edit` directly. Don't spawn a builder for:
+- Renaming a single variable (<5 lines)
+- Changing a hardcoded string or number
+- Fixing a typo in a comment
+- Adding one import line
+
+> **Rule**: If you can describe the change in one `edit` block, do it yourself. Save builder cycles for multi-step logic.
+
 ### Task Size Guidelines
 
 | Metric | Good Task | Bad Task |
@@ -123,95 +133,75 @@ get_subagent_result({ agent_id: "...", wait: true })
 
 **Rule of thumb**: If you can't describe the task in 5 words, it's too big. Split it.
 
-### Direct Builder Prompt Template (⚠️ CRITICAL — Model is Small)
+### Direct Builder Prompt Template (Model-Smart Context)
 
-> **The builder runs on a small, fast model (e.g. minimax/M2.7). It does NOT infer context. It does NOT "figure things out". It executes exactly what you tell it. Be explicit. Be verbose. Be pedantic.**
+> **The builder runs on a small, fast model. It CAN read files and execute tools — but it CANNOT infer project conventions or "just figure it out". Give it the right files to read, the right constraints, and clear instructions.**
 
-**Your prompt must include ALL of these sections:**
+The builder is autonomous — it has `read`, `edit`, `write`, `bash`. **You do NOT need to paste file contents into the prompt.** Tell it WHICH files to read and WHAT to do.
+
+**Prompt structure:**
 
 ```
 MISSION:
 [One sentence — what to do. Be atomic: ONE component, ONE endpoint, ONE fix.]
 
-CONTEXT (READ-ONLY — do NOT modify these):
-[Provide the EXACT content of any file the builder needs to read to understand the task.
- For modelos pequenos: paste the relevant function, the type definitions, the existing tests.
- If the file is >100 lines, paste ONLY the relevant section with line numbers.]
-
-Example:
---- FILE: src/utils/validators.ts (lines 1-30) ---
-export function isEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
---- END FILE ---
+READ THESE FILES FIRST (do NOT modify yet):
+- `path/to/file.ts` — Contains the function/component to change.
+- `path/to/types.ts` — Contains relevant type definitions.
+- `path/to/file.test.ts` — Existing tests (read to understand expectations).
 
 TARGET FILES (ONLY these may be modified):
 - `path/to/file.ts` — [CREATE | MODIFY | DELETE]
-  REASON: [Why this file? What is its role?]
-  EXACT CHANGE: [Describe the change in words AND provide the code diff.]
+  WHAT: [Describe what to change in plain English]
+  HOW: [If the change is mechanical, describe it. If logic is complex, provide the algorithm.]
   
-  Use this format for each change:
-  OLD:
-  ```
-  [paste the exact lines to be replaced]
-  ```
-  NEW:
-  ```
-  [paste the exact replacement lines]
-  ```
-
 - `path/to/other.ts` — [MODIFY]
-  REASON: [...]
-  EXACT CHANGE:
-  OLD:
-  ```
-  [...]
-  ```
-  NEW:
-  ```
-  [...]
-  ```
+  WHAT: [...]
 
-PATTERNS TO FOLLOW (mandatory):
-[Describe naming conventions, import styles, error handling patterns, or any project-specific rules.]
-- Use `snake_case` for file names.
-- Import `logger` from `@/lib/logger`, not console.log.
-- All new functions must have JSDoc.
-- etc.
+PATTERNS TO FOLLOW:
+- Naming: [e.g. "use camelCase for variables"]
+- Imports: [e.g. "import logger from '@/lib/logger', never console.log"]
+- Error handling: [e.g. "all async functions must use try/catch"]
+- Types: [e.g. "use Zod for validation, not manual checks"]
 
-VERIFICATION STEPS (execute these in order):
-1. [Step 1: e.g. "Run `grep -n 'functionName' src/file.ts` to confirm the change exists"]
-2. [Step 2: e.g. "Run `npm test -- file.test.ts` and confirm 0 failures"]
-3. [Step 3: e.g. "Check that no TypeScript errors exist with `npx tsc --noEmit`"]
+VERIFICATION:
+After making changes, confirm with:
+1. [e.g. "Run `npm test -- file.test.ts`"]
+2. [e.g. "Run `npx tsc --noEmit` to check types"]
+3. [e.g. "Run `grep -n 'newFunction' path/to/file.ts` to confirm it exists"]
 
-DO NOT — ABSOLUTE FORBIDDEN:
+DO NOT:
 ❌ Do NOT modify any file not listed in TARGET FILES.
 ❌ Do NOT reformat, lint, or refactor unrelated code.
-❌ Do NOT add new dependencies without explicit permission.
-❌ Do NOT change function signatures of existing public APIs unless instructed.
-❌ Do NOT leave TODO comments or placeholder code.
-❌ Do NOT skip the VERIFICATION STEPS.
+❌ Do NOT add new dependencies.
+❌ Do NOT skip VERIFICATION.
 
-OUT OF SCOPE (ignore completely):
-[List anything the builder might be tempted to touch but shouldn't]
-- Do NOT update documentation in /docs/
-- Do NOT add tests unless explicitly asked
-- Do NOT change the database schema
+OUT OF SCOPE:
+[List anything adjacent the builder might be tempted to touch]
 ```
 
-### Prompt Quality Checklist (Before Sending to Builder)
+### Giving Context Without Pasting Code
+
+The builder reads files with `read`. You don't paste content. But you DO need to tell it **what to look for**:
+
+| ❌ Bad (no context) | ✅ Good (directed context) |
+|---------------------|---------------------------|
+| "Fix the auth bug" | "In `src/auth/session.ts`, the `validateToken()` function returns `null` on expired tokens but the caller in `src/middleware/auth.ts` expects `false`. Change the return to `false` and update the test in `src/auth/session.test.ts`." |
+| "Add a new endpoint" | "Create `POST /api/users` in `src/routes/users.ts`. Read `src/routes/users.ts` first to follow the existing pattern (Zod validation → handler → error wrapper). Use the existing `createUser` service from `src/services/user.ts`." |
+| "Update the UI" | "In `src/components/Navbar.tsx`, add a 'Dashboard' link between 'Home' and 'Settings' in the nav array (line ~45). Read the file first to see the current array structure." |
+
+### Prompt Quality Checklist
 
 | Check | Question | If NO → Fix before sending |
 |-------|----------|---------------------------|
 | ✅ Atomic | Does the mission fit in one sentence? | Split into smaller tasks |
-| ✅ Context | Did I paste the relevant file contents? | Read the file and paste the section |
-| ✅ Exact | Are old/new code blocks provided? | Find the exact string with `grep -n` |
-| ✅ Bounded | Are target files explicitly listed? | Add a FILES section |
-| ✅ Patterns | Did I specify naming/import conventions? | Add a PATTERNS section |
-| ✅ Verifiable | Are there 2-3 concrete verification steps? | Add verification commands |
+| ✅ Readable | Did I list files to READ before modifying? | Add a READ THESE FILES section |
+| ✅ Bounded | Are target files explicitly listed? | Add a TARGET FILES section |
+| ✅ Patterns | Did I specify conventions the builder must follow? | Add a PATTERNS section |
+| ✅ Verifiable | Are there 2-3 concrete verification commands? | Add verification steps |
 | ✅ Scoped | Is there a DO NOT / OUT OF SCOPE section? | Add one |
 
-**If any checkbox is missing, the builder will likely fail or produce incorrect code.**
+**If more than 2 checkboxes are missing, consider doing the edit yourself.**
 
 ---
 
