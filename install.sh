@@ -32,7 +32,7 @@ mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin}
 # ── Configs ───────────────────────────────────
 step "Instalando configuração"
 
-for f in settings.json SYSTEM.md AGENTS.md; do
+for f in settings.json SYSTEM.md; do
     [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
 done
 
