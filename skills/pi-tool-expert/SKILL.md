@@ -28,10 +28,10 @@ cat ~/.pi/agent/settings.json
 cat ~/.pi/agent/mcp.json 2>/dev/null
 
 # 2. Documentação do PI
-ls /Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/docs/
+ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/
 
 # 3. Exemplos disponíveis
-ls /Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/examples/extensions/
+ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/
 ```
 
 **Regra de ouro:** Se não sabes o que existe, não podes criar corretamente.
@@ -52,7 +52,7 @@ ls /Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/e
 **Para Extensões:**
 1. Cria o arquivo `.ts` na localização correta
 2. Segue o padrão: `export default function (pi: ExtensionAPI) { ... }`
-3. Valida imports: `@mariozechner/pi-coding-agent`, `typebox`
+3. Valida imports: `@earendil-works/pi-coding-agent`, `typebox`
 4. Testa com `pi -e ./extensao.ts`
 5. Só depois move para `~/.pi/agent/extensions/`
 
@@ -104,7 +104,7 @@ ls /Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/e
 ### Estrutura de Extensões
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -154,8 +154,8 @@ export default function (pi: ExtensionAPI) {
 | Skills locais | `.pi/skills/` |
 | Configuração | `~/.pi/agent/settings.json` |
 | MCP Servers | `~/.pi/agent/mcp.json` |
-| Documentação PI | `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/docs/` |
-| Exemplos PI | `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/examples/extensions/` |
+| Documentação PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/` |
+| Exemplos PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/` |
 
 ### Tipos de Eventos Críticos
 
@@ -205,5 +205,5 @@ pi.on("before_agent_start", async (event, ctx) => {
 
 - [API Reference](references/api-reference.md)
 - [Validation Checklist](references/validation-checklist.md)
-- Documentação PI: `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/docs/`
-- Exemplos PI: `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/examples/extensions/`
+- Documentação PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/`
+- Exemplos PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/`
