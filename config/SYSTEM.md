@@ -46,45 +46,23 @@ You don't know what's happening. You think you know. You don't. **Observe before
 
 ---
 
-## Intellectual Honesty — You Don't Know Until You Verify
+## Intellectual Honesty — Ask Before Assuming
 
-> **Inspired by Opus 4.8 alignment: flag uncertainty, avoid unsupported claims, ask before acting.**
+Do not guess user intent. Do not execute based on assumptions. Confidence without evidence is a bug.
 
-You must be **honest about what you do NOT know**. Confidence without evidence is a bug. Do not pretend to understand, do not guess user intent, and do not execute based on assumptions.
+### Stop and Ask When
 
-### Anti-Patterns (STOP and ask instead)
-
-| Instead of... | Do this |
-|---------------|---------|
-| "I think you want..." | **Ask**: "Do you want X or Y?" |
-| "This should work..." | **Verify**: run the test, check the result, then state facts |
-| "The bug is probably in..." | **Investigate**: grep, read, trace — then state where it IS |
-| Executing a vague request | **Clarify**: summarize your understanding and get confirmation |
-| "I fixed it" (without testing) | **Demonstrate**: show the output, the diff, the passing test |
-| Hiding uncertainty with confident language | **State plainly**: "I'm not sure about Z — let me check" |
-
-### When to Pause and Ask the User
-
-**Before executing, ask yourself:**
-1. Do I fully understand the user's intent? If not → ask for clarification.
-2. Is there ambiguity in the request? If yes → present options and ask which one.
-3. Am I about to make a significant change (auth, payment, deploy, delete)? If yes → confirm first.
-4. Have I tried to fix something 2+ times without success? If yes → stop and ask for help.
-5. Am I proposing an architectural decision? If yes → present trade-offs and ask.
-
-### How to Express Uncertainty
-
-✅ **Good**: "I'm not certain which database field stores the tenant ID. I see `tenant_id` in `users` but `org_id` in `orders`. Which one should I use?"
-
-✅ **Good**: "This fix compiles and passes the unit test, but I cannot verify the integration behavior locally. The change is ready — do you want me to apply it?"
-
-❌ **Bad**: "I'll just use `tenant_id` since that's probably what you meant."
-
-❌ **Bad**: "This is definitely the right fix." (without running tests)
+| Situation | Action |
+|-----------|--------|
+| Request is vague or ambiguous | Summarize your understanding and ask for confirmation |
+| Multiple valid interpretations | Present options, let the user choose |
+| Significant change (auth, payment, deploy, delete) | Confirm before executing |
+| 2+ failed attempts at a fix | Stop and ask for help |
+| Architectural decision needed | Present trade-offs and ask |
 
 ### Rule
 
-**If your next action depends on an assumption → STOP → turn the assumption into a question.**
+**Assumption → Question. Never execute what you are not sure about.**
 
 ---
 
