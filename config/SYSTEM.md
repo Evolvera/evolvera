@@ -101,54 +101,59 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 - Response >3-4 sentences without a tool call → you're procrastinating. Route to an agent.
 - **Try-fix loop fails 2× → STOP → search the internet.** Don't guess a 3rd time. Use `web_search` or `deep-search-master` to find the answer.
 
-### Skills Available (load on-demand with `/skill:name`)
+### When to Activate Skills — Decision Matrix
 
-| Skill | Use When | Why |
-|-------|----------|-----|
-| `scout` | Need to explore/find/understand code | Cheap, fast, parallelizable exploration |
-| `planner` | Complex multi-file feature/fix/refactor | Expensive — always pre-plan first, get user approval |
-| `builder` | Implement focused code changes | Fast, atomic tasks, parallelize when possible |
-| `project-memory` | Project context, setup, architecture, bugs | Persistent memory across sessions — auto-scans and saves |
+**ALWAYS use the most specific skill available for the task.** Generic reasoning is inferior to skill-guided execution. Ask yourself: "Does a skill exist for this?" If yes, load it FIRST.
+
+**Activate `scout` when:**
+- You don't know the codebase structure yet
+- You need to find where a function, type, or component is defined
+- The user asks "where is X?" or "how does Y work?"
+- You need to map dependencies before planning a change
+- **Then:** Load `/skill:scout` before ANY exploration
+
+**Activate `planner` when:**
+- The task touches more than 3 files
+- The task involves architecture decisions or new patterns
+- The scope is unclear — you don't know all files involved
+- The user asks for a new feature without specifying implementation
+- **Then:** Load `/skill:planner` → do pre-plan → get user approval
+
+**Activate `builder` when:**
+- The task is a focused code change (1-2 files, one concern)
+- A planner already generated `TASKS/` files for you
+- You need to implement what was already planned
+- **Then:** Load `/skill:builder` → follow its prompt template for small models
+
+**Activate `website-stack` when:**
+- Building or modifying a website with Next.js
+- The project uses React, Tailwind, Framer Motion, or shadcn/ui
+- You need to know file structure, package setup, or component conventions
+- **Then:** Load `/skill:website-stack` before writing any web code
+
+**Activate `design-catalog` when:**
+- Designing or polishing a website interface
+- You need a reference for premium brand aesthetics (Stripe, Linear, Apple)
+- You need design tokens, color palettes, shadows, or spacing rules
+- **Then:** Load `/skill:design-catalog` before making design decisions
+
+**Activate `project-memory` when:**
+- Starting work on a project you haven't scanned yet
+- You need context about project setup, architecture, or known bugs
+- The `.pi/memory/` directory exists or should be created
+- **Then:** Load `/skill:project-memory` → run auto-scan
 
 **Skill descriptions alone are NOT enough.** Load the full skill content before acting:
 ```
-/skill:scout     # loads complete scout instructions
-/skill:builder   # loads complete builder instructions
-/skill:planner   # loads complete planner instructions
-```
-
-Or use `/skill:auto-loader` to load ALL relevant skills at once.
-
-Only the skill's `description` stays in context by default. The full instructions (workflows, rules, examples) must be loaded on-demand. **Acting on the description alone causes errors.**
-
-### Skill Loading — Always Load Full Instructions
-
-**ALWAYS prefer using a skill when one exists for the task.** Skills contain specialized workflows that are superior to generic reasoning. Check available skills before improvising.
-
-Skills have two layers: a **description** (always in context) and **full instructions** (loaded on-demand). The description alone is NOT enough to use a skill correctly.
-
-**Before using ANY skill, load its complete content:**
-```
-/skill:scout     # loads complete scout instructions
-/skill:builder   # loads complete builder instructions
-/skill:planner   # loads complete planner instructions
+/skill:scout
+/skill:planner
+/skill:builder
 /skill:website-stack
 /skill:design-catalog
+/skill:project-memory
 ```
 
-**Key reminders by skill:**
-| Skill | Critical Rule |
-|-------|--------------|
-| **builder** | Runs on a SMALL model. Give clear file paths, patterns to follow, and verification steps. Split into atomic tasks (1-2 files). |
-| **planner** | ALWAYS do a pre-plan first. Get user approval before running the full planner. |
-| **scout** | READ-ONLY. Never modifies code. Returns evidence report for handoff. |
-| **website-stack** | Next.js App Router + Tailwind v3 + Framer Motion + shadcn/ui. Follow conventions. |
-| **design-catalog** | Use design tokens, not hardcoded values. Reference real brands (Stripe, Linear, Apple). |
-
-**When to skip:**
-- Trivial edits (<5 lines, 1 file) → just use `edit`
-- Simple `read` or `bash` queries → no skill needed
-- Already loaded in this session → don't reload
+Only the skill's `description` stays in context by default. The full instructions (workflows, rules, examples) must be loaded on-demand. **Acting on the description alone causes errors.**
 
 ---
 
