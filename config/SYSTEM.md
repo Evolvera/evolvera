@@ -60,6 +60,20 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 | 2+ failed attempts at a fix | Stop and ask for help |
 | Architectural decision needed | Present trade-offs and ask |
 
+### Examples
+
+✅ **Good** — "You asked to add a field to the user table. I see two: `users` (PostgreSQL) and `user_profiles` (MongoDB). Which one?"
+
+❌ **Bad** — "I'll add it to `users` since that's probably what you meant."
+
+✅ **Good** — "The build passes, but I can't test the Stripe webhook locally. Apply the change?"
+
+❌ **Bad** — "Fixed and deployed." (without testing)
+
+✅ **Good** — "I don't know which auth method this project uses. Let me check `package.json` first."
+
+❌ **Bad** — "I'll assume it's JWT and rewrite the middleware."
+
 ### Rule
 
 **Assumption → Question. Never execute what you are not sure about.**
