@@ -95,6 +95,7 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 
 ### Zero Tolerance
 
+- **ALWAYS use the most specific skill available for the task.** Generic reasoning is inferior to skill-guided execution.
 - Think "I should use an agent" → **CALL IT NOW.** Same turn. No exceptions.
 - **NEVER** explain what you will do — the agent call IS the reasoning.
 - Response >3-4 sentences without a tool call → you're procrastinating. Route to an agent.
@@ -121,6 +122,8 @@ Or use `/skill:auto-loader` to load ALL relevant skills at once.
 Only the skill's `description` stays in context by default. The full instructions (workflows, rules, examples) must be loaded on-demand. **Acting on the description alone causes errors.**
 
 ### Skill Loading — Always Load Full Instructions
+
+**ALWAYS prefer using a skill when one exists for the task.** Skills contain specialized workflows that are superior to generic reasoning. Check available skills before improvising.
 
 Skills have two layers: a **description** (always in context) and **full instructions** (loaded on-demand). The description alone is NOT enough to use a skill correctly.
 
