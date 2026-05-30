@@ -123,28 +123,95 @@ get_subagent_result({ agent_id: "...", wait: true })
 
 **Rule of thumb**: If you can't describe the task in 5 words, it's too big. Split it.
 
-### Direct Builder Prompt Template
+### Direct Builder Prompt Template (⚠️ CRITICAL — Model is Small)
+
+> **The builder runs on a small, fast model (e.g. minimax/M2.7). It does NOT infer context. It does NOT "figure things out". It executes exactly what you tell it. Be explicit. Be verbose. Be pedantic.**
+
+**Your prompt must include ALL of these sections:**
 
 ```
-MISSION: [One sentence — what to do]
+MISSION:
+[One sentence — what to do. Be atomic: ONE component, ONE endpoint, ONE fix.]
 
-FILES:
-- `path/to/file.ts` — [CREATE | MODIFY | DELETE] — [specific change]
-- `path/to/other.ts` — [MODIFY] — [specific change]
+CONTEXT (READ-ONLY — do NOT modify these):
+[Provide the EXACT content of any file the builder needs to read to understand the task.
+ For modelos pequenos: paste the relevant function, the type definitions, the existing tests.
+ If the file is >100 lines, paste ONLY the relevant section with line numbers.]
 
-DETAILS:
-[Exact changes needed]
-[Line numbers if known]
-[Expected behavior after change]
+Example:
+--- FILE: src/utils/validators.ts (lines 1-30) ---
+export function isEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+--- END FILE ---
 
-VERIFICATION:
-[How to confirm it works]
-[Tests to run, if any]
+TARGET FILES (ONLY these may be modified):
+- `path/to/file.ts` — [CREATE | MODIFY | DELETE]
+  REASON: [Why this file? What is its role?]
+  EXACT CHANGE: [Describe the change in words AND provide the code diff.]
+  
+  Use this format for each change:
+  OLD:
+  ```
+  [paste the exact lines to be replaced]
+  ```
+  NEW:
+  ```
+  [paste the exact replacement lines]
+  ```
 
-DO NOT:
-[What NOT to change]
-[Out of scope]
+- `path/to/other.ts` — [MODIFY]
+  REASON: [...]
+  EXACT CHANGE:
+  OLD:
+  ```
+  [...]
+  ```
+  NEW:
+  ```
+  [...]
+  ```
+
+PATTERNS TO FOLLOW (mandatory):
+[Describe naming conventions, import styles, error handling patterns, or any project-specific rules.]
+- Use `snake_case` for file names.
+- Import `logger` from `@/lib/logger`, not console.log.
+- All new functions must have JSDoc.
+- etc.
+
+VERIFICATION STEPS (execute these in order):
+1. [Step 1: e.g. "Run `grep -n 'functionName' src/file.ts` to confirm the change exists"]
+2. [Step 2: e.g. "Run `npm test -- file.test.ts` and confirm 0 failures"]
+3. [Step 3: e.g. "Check that no TypeScript errors exist with `npx tsc --noEmit`"]
+
+DO NOT — ABSOLUTE FORBIDDEN:
+❌ Do NOT modify any file not listed in TARGET FILES.
+❌ Do NOT reformat, lint, or refactor unrelated code.
+❌ Do NOT add new dependencies without explicit permission.
+❌ Do NOT change function signatures of existing public APIs unless instructed.
+❌ Do NOT leave TODO comments or placeholder code.
+❌ Do NOT skip the VERIFICATION STEPS.
+
+OUT OF SCOPE (ignore completely):
+[List anything the builder might be tempted to touch but shouldn't]
+- Do NOT update documentation in /docs/
+- Do NOT add tests unless explicitly asked
+- Do NOT change the database schema
 ```
+
+### Prompt Quality Checklist (Before Sending to Builder)
+
+| Check | Question | If NO → Fix before sending |
+|-------|----------|---------------------------|
+| ✅ Atomic | Does the mission fit in one sentence? | Split into smaller tasks |
+| ✅ Context | Did I paste the relevant file contents? | Read the file and paste the section |
+| ✅ Exact | Are old/new code blocks provided? | Find the exact string with `grep -n` |
+| ✅ Bounded | Are target files explicitly listed? | Add a FILES section |
+| ✅ Patterns | Did I specify naming/import conventions? | Add a PATTERNS section |
+| ✅ Verifiable | Are there 2-3 concrete verification steps? | Add verification commands |
+| ✅ Scoped | Is there a DO NOT / OUT OF SCOPE section? | Add one |
+
+**If any checkbox is missing, the builder will likely fail or produce incorrect code.**
 
 ---
 
