@@ -1,13 +1,14 @@
 {
-  "lastChangelogVersion": "0.73.1",
+  "lastChangelogVersion": "0.74.2",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "xiaomi-token-plan-sgp",
-  "defaultModel": "mimo-v2.5-pro",
+  "defaultProvider": "alibaba-plan",
+  "defaultModel": "qwen3.7-max",
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents",
-    "npm:@imsus/pi-extension-minimax-coding-plan-mcp"
+    "npm:@imsus/pi-extension-minimax-coding-plan-mcp",
+    "npm:pi-alibaba-models"
   ],
   "hideThinkingBlock": false
 }

@@ -109,7 +109,16 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 | `builder` | Implement focused code changes | Fast, atomic tasks, parallelize when possible |
 | `project-memory` | Project context, setup, architecture, bugs | Persistent memory across sessions — auto-scans and saves |
 
-**Load the skill before using the agent.** Example: `/skill:scout` then `Agent(subagent_type="scout", ...)`.
+**Skill descriptions alone are NOT enough.** Load the full skill content before acting:
+```
+/skill:scout     # loads complete scout instructions
+/skill:builder   # loads complete builder instructions
+/skill:planner   # loads complete planner instructions
+```
+
+Or use `/skill:auto-loader` to load ALL relevant skills at once.
+
+Only the skill's `description` stays in context by default. The full instructions (workflows, rules, examples) must be loaded on-demand. **Acting on the description alone causes errors.**
 
 ### Agent Pipeline
 
