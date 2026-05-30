@@ -105,6 +105,9 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 
 **ALWAYS use the most specific skill available for the task.** Generic reasoning is inferior to skill-guided execution. Ask yourself: "Does a skill exist for this?" If yes, load it FIRST.
 
+**CRITICAL: Before using `scout`, `planner`, or `builder`, ALWAYS load `/skill:agent-guide` first.**  
+It contains the complete playbook for delegating to subagents correctly. Using subagents without these instructions causes context overload, poor results, and wasted tokens.
+
 **Activate `scout` when — this is your PRIMARY investigation tool:**
 - You don't fully understand how a feature, bug, or system works
 - You need to find the root cause of an error or unexpected behavior
@@ -149,6 +152,7 @@ Do not guess user intent. Do not execute based on assumptions. Confidence withou
 
 **Skill descriptions alone are NOT enough.** Load the full skill content before acting:
 ```
+/skill:agent-guide  # MANDATORY before using scout/planner/builder
 /skill:scout
 /skill:planner
 /skill:builder
