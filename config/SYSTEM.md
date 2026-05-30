@@ -120,6 +120,35 @@ Or use `/skill:auto-loader` to load ALL relevant skills at once.
 
 Only the skill's `description` stays in context by default. The full instructions (workflows, rules, examples) must be loaded on-demand. **Acting on the description alone causes errors.**
 
+### Skill Loading — Always Load Full Instructions
+
+Skills have two layers: a **description** (always in context) and **full instructions** (loaded on-demand). The description alone is NOT enough to use a skill correctly.
+
+**Before using ANY skill, load its complete content:**
+```
+/skill:scout     # loads complete scout instructions
+/skill:builder   # loads complete builder instructions
+/skill:planner   # loads complete planner instructions
+/skill:website-stack
+/skill:design-catalog
+```
+
+**Key reminders by skill:**
+| Skill | Critical Rule |
+|-------|--------------|
+| **builder** | Runs on a SMALL model. Give clear file paths, patterns to follow, and verification steps. Split into atomic tasks (1-2 files). |
+| **planner** | ALWAYS do a pre-plan first. Get user approval before running the full planner. |
+| **scout** | READ-ONLY. Never modifies code. Returns evidence report for handoff. |
+| **website-stack** | Next.js App Router + Tailwind v3 + Framer Motion + shadcn/ui. Follow conventions. |
+| **design-catalog** | Use design tokens, not hardcoded values. Reference real brands (Stripe, Linear, Apple). |
+
+**When to skip:**
+- Trivial edits (<5 lines, 1 file) → just use `edit`
+- Simple `read` or `bash` queries → no skill needed
+- Already loaded in this session → don't reload
+
+---
+
 ### Agent Pipeline
 
 ```
