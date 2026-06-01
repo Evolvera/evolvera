@@ -3,7 +3,7 @@ name: seo-content-writer
 description: "Senior SEO Content Strategist and Conversion Copywriter. Analyzes `.pi/plans/DESIGN_PLAN.md` and user briefing to produce `.pi/plans/CONTENT_PLAN.md` with optimized website copy, microcopy, meta tags, and schema markup. Requires mandatory human approval before proceeding to build phase."
 display_name: ✍️ SEO Content Writer
 tools: read, grep, find, ls, bash, write
-model: kimi-coding/kimi-for-coding
+model: alibaba-plan/qwen3.7-max
 temperature: 0.3
 thinking: xhigh
 max_turns: 40
