@@ -81,9 +81,38 @@ Scout agents follow these absolute rules:
 
 Scout returns a structured report with:
 - **Files Found**: Table of relevant files with paths and descriptions
+- **Dependency Graph**: ALL imports and module relationships discovered
 - **Evidence**: Verbatim quotes from code
 - **Gaps**: What's missing or pending
 - **Recommendations**: What to explore next (not opinions, just next steps)
+
+### Dependency Graph (MANDATORY when exploring code)
+
+Whenever the scout reads files and finds imports, exports, or module relationships, it MUST build and return a dependency graph:
+
+```json
+{
+  "dependencyGraph": {
+    "nodes": [
+      {"id": "src/auth/login.ts", "type": "entry|utility|route|component|service|model|config|test"},
+      {"id": "src/auth/jwt.ts", "type": "utility"},
+      {"id": "src/api/users.ts", "type": "route"}
+    ],
+    "edges": [
+      {"from": "src/auth/login.ts", "to": "src/auth/jwt.ts", "type": "import|export|extends|implements|calls"},
+      {"from": "src/api/users.ts", "to": "src/auth/jwt.ts", "type": "import"}
+    ]
+  }
+}
+```
+
+**Rules:**
+- Add EVERY import/export relationship found
+- Include external dependencies (npm packages) as nodes with type `external`
+- Include the JSON block at the end of the report
+- If no relationships found, return empty arrays: `"nodes": [], "edges": []`
+- Use relative file paths as node IDs
+- Group related files by directory when possible
 
 ## Integration Pattern
 
