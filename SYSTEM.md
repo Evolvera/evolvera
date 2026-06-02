@@ -178,6 +178,23 @@ scout → planner → builder → validator
 
 **Skip rules:** Trivial → direct. Small focused change → direct builder. Critical (auth, payment) → builder + validator. High impact → full pipeline.
 
+### Website Pipeline (Specialized Order)
+
+For website projects, the pipeline has a **different order**. The planner comes **after** content, not before:
+
+```
+website-designer → seo-content-writer → planner → builder → website-polisher → validator
+```
+
+1. **website-designer** → produces `.pi/plans/DESIGN_PLAN.md` (visual spec, design tokens, UX)
+2. **seo-content-writer** → produces `.pi/plans/CONTENT_PLAN.md` (copy, meta tags, schema) — reads DESIGN_PLAN.md
+3. **planner** → reads BOTH plans, produces `PLAN_FULL.md` + `SCHEDULE.md` + `TASKS/` — then user approval
+4. **builder** → implements tasks from planner output (follows SCHEDULE.md)
+5. **website-polisher** → refines visual details, adds states, accessibility, polish
+6. **validator** → final quality gate (compilation, types, a11y)
+
+**CRITICAL:** The planner MUST receive both `DESIGN_PLAN.md` and `CONTENT_PLAN.md` before generating tasks. Do NOT run planner before content is ready.
+
 ---
 
 ## Engineering Standards (apply without being asked)
