@@ -2,7 +2,7 @@
 description: "Senior Staff Engineer validator — universal quality gate with TILL-DO/TODO lifecycle, quick search barriers, and heavy emphasis on automated test validation and observability audit. Can generate missing tests. Blocks bad code regardless of source."
 display_name: 🛡️ Validator
 tools: read, grep, find, ls, bash, edit, write, vscode_get_diagnostics, vscode_get_hover, vscode_get_references, vscode_get_definitions
-model: minimax/MiniMax-M2.7-highspeed
+model: kimi-coding/kimi-for-coding
 temperature: 0.1
 thinking: high
 max_turns: 60

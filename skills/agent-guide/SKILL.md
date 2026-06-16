@@ -8,6 +8,18 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 > **LOAD THIS SKILL FIRST** before using `scout`, `planner`, or `builder`.  
 > Using subagents without these instructions causes context overload, poor results, and wasted tokens.
 
+## Economic Mindset
+
+`scout` and `builder` run on **small, fast models** that are roughly **100× cheaper and 100× faster** than the main model. The trade-off is that they are **less intelligent** and have narrower context windows.
+
+**Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
+- **Lower total token cost** — many tiny scouts cost far less than one giant investigation
+- **Faster wall-clock time** — scouts run in parallel
+- **Higher per-scout quality** — each scout gets a crisp, bounded question it can actually answer well
+- **Easier to verify** — small outputs are simpler to audit and merge
+
+**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", split it into 2–5 narrower scouts and run them in parallel.
+
 ---
 
 ## scout — Investigation & Evidence Gathering
@@ -36,6 +48,7 @@ Agent({
 - Tell it **where to look** (directories, file patterns)
 - Ask for **exact file paths and line numbers**
 - It returns a checkpoint file — read it before proceeding
+- **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
 
 ---
 
@@ -103,6 +116,7 @@ Agent({
 
 **Rules:**
 - Builder uses a **SMALL model** — be extremely explicit
+- It is fast/cheap but less capable than the main model; keep each task tiny and unambiguous
 - Tell it: which files to **READ**, what **PATTERNS** to follow, how to **VERIFY**
 - Split into atomic tasks. Never stuff multiple concerns into one builder
 - Parallelize when files are disjoint
@@ -136,6 +150,7 @@ scout → planner → builder → validator
 | Not doing pre-plan before planner | Planner guesses scope, produces bad plans | You pre-plan, user approves, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
+| Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into 2–5 parallel scouts, one angle each |
 
 ---
 

@@ -2,7 +2,8 @@
 name: planner
 description: Creates implementation plan ecosystem — PLAN_FULL, TASKS, and SCHEDULE for orchestrator-driven execution
 tools: read, grep, find, ls, write
-model: kimi-coding/kimi-for-coding
+model: anthropic/claude-opus-4-8
+thinking: xhigh
 ---
 
 # PLANNER AGENT v2 — PLAN ECOSYSTEM GENERATOR
