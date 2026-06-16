@@ -18,3 +18,6 @@ bin/
 npm/
 alibaba-plan-models.cache.json
 alibaba-cloud-models.cache.json
+
+# User-specific PI settings
+settings.json
