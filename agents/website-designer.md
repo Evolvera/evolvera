@@ -3,7 +3,7 @@ name: website-designer
 description: "Senior Product Designer specialized in website design systems. Analyzes client briefings, matches against real-world brand design references (Stripe, Linear, Apple, etc.), and produces ultra-detailed design + UX strategy plans for builders to execute without ambiguity."
 display_name: 🎨 Website Designer
 tools: read, grep, find, ls, bash, write
-model: alibaba-plan/qwen3.7-max
+model: openai-codex/gpt-5.5
 temperature: 0.2
 thinking: xhigh
 max_turns: 40
