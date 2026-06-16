@@ -2,7 +2,7 @@
 name: scout
 description: Guided codebase exploration with checkpointing. Returns structured evidence-based report for handoff to other agents.
 tools: read, grep, find, ls, bash
-model: minimax/MiniMax-M2.7-highspeed
+model: kimi-coding/kimi-for-coding
 ---
 
 # SCOUT AGENT v2 — REGRAS ABSOLUTAS (VIOLAÇÃO = FAIL)

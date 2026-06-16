@@ -1,0 +1,44 @@
+{
+  "providers": {
+    "minimax": {
+      "models": [
+        {
+          "id": "MiniMax-M3",
+          "name": "MiniMax M3",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.06,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    },
+    "xiaomi": {
+      "models": [
+        {
+          "id": "mimo-v2.5-pro-ultraspeed",
+          "name": "MiMo V2.5 Pro UltraSpeed",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "cost": {
+            "input": 0.9,
+            "output": 3.6,
+            "cacheRead": 0.18,
+            "cacheWrite": 0
+          },
+          "compat": {
+            "requiresReasoningContentOnAssistantMessages": true,
+            "thinkingFormat": "deepseek"
+          }
+        }
+      ]
+    }
+  }
+}

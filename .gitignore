@@ -13,3 +13,8 @@ mcp-npx-cache.json
 
 # Local binaries
 bin/
+
+# PI package installs & caches
+npm/
+alibaba-plan-models.cache.json
+alibaba-cloud-models.cache.json
