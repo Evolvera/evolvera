@@ -5,11 +5,11 @@ description: Use the scout agent for codebase exploration, file discovery, and e
 
 # Scout Skill — Codebase Exploration Agent
 
-> **⚡ EFFICIENCY FIRST**: Scout runs on a **fast, cheap delegated model**. It is usually the most cost-effective choice for exploration, but it is less capable than the main model. Whenever the mission touches multiple areas, **split into parallel scouts** — do NOT explore sequentially.
+> **⚡ EFFICIENCY FIRST**: Scout has two delegated variants. Use `scout-highspeed` for most fast bounded exploration; use `scout` when you need the older checkpoint-heavy Kimi workflow or lower hallucination risk. Whenever the mission touches multiple areas, **split into parallel scouts** — do NOT explore sequentially.
 
 ## When to Use
 
-Invoke `Agent(subagent_type="scout")` in these situations:
+Invoke `Agent(subagent_type="scout-highspeed")` or `Agent(subagent_type="scout")` in these situations:
 
 | Situation | Why Scout |
 |-----------|-----------|
@@ -19,6 +19,15 @@ Invoke `Agent(subagent_type="scout")` in these situations:
 | **Gather context before planning** | Before calling planner, send scout to explore relevant areas |
 | **Debug — find root cause** | "Where is this error thrown?" "What code path leads here?" |
 | **Verify patterns** | "Does this project use clsx or classnames?" "Is there a cn() utility?" |
+
+## Agent Choice
+
+| Agent | Use When | Avoid When |
+|---|---|---|
+| `scout-highspeed` | fast bounded file discovery, call/dependency maps, backend/infra/tests/config, algorithms/math/physics-heavy code understanding | frontend visual/design critique, broad unsupported factual research, whole-repo audits, exhaustive/stateful investigations, 6–8+ independent retrieval threads |
+| `scout` | you need older checkpoint artifacts, lower hallucination risk, exhaustive coverage, or stronger large-context coherence | latency-sensitive parallel scans |
+
+Default to `scout-highspeed` for bounded repo exploration. Use multiple highspeed scouts in parallel for independent angles. Switch to `scout` when one report must hold broad state across many areas.
 
 ## When NOT to Use
 
@@ -35,9 +44,9 @@ Invoke `Agent(subagent_type="scout")` in these situations:
 
 ```
 // Launch ALL in parallel — no waiting between them
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find entry points", prompt: "..." })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Map data models", prompt: "..." })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Check tests", prompt: "..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find entry points", prompt: "..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Map data models", prompt: "..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Check tests", prompt: "..." })
 
 // While scouts run, the main model should keep working:
 // - read obvious high-signal files
@@ -57,7 +66,7 @@ Use a single scout ONLY when the scope is genuinely narrow (1 concern, 1 area):
 
 ```
 Agent({
-  subagent_type: "scout",
+  subagent_type: "scout-highspeed",
   description: "[3-5 words]",
   prompt: "MISSION: [clear objective]\n\nFOCUS ON:\n- [aspect 1]\n- [aspect 2]\n\nAREA: [root paths]\n\nReturn a complete scout report with file paths, key findings, and evidence."
 })
@@ -67,11 +76,11 @@ Agent({
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `subagent_type` | ✅ | Always `"scout"` |
+| `subagent_type` | ✅ | `"scout-highspeed"` for fast default, `"scout"` for checkpoint/Kimi workflow |
 | `description` | ✅ | Short 3-5 word summary |
 | `prompt` | ✅ | Detailed mission with FOCUS ON and AREA |
 | `run_in_background` | ✅ **Always `true` for parallel** | `true` when launching multiple scouts |
-| `max_turns` | Optional | Default unlimited. Use 20-30 for quick scouts |
+| `max_turns` | Optional | Default unlimited. Use 20-30 for quick scouts; keep highspeed scouts short to reduce context drift |
 
 ## Scout Behavior Rules
 
@@ -94,11 +103,13 @@ Scout returns a structured report with:
 
 ### Retrieval Budget
 
-Scout should retrieve enough evidence to answer its bounded mission, then stop. Continue searching only when:
+Scout should retrieve enough evidence to answer its bounded mission, then stop. For `scout-highspeed`, prefer 5-12 tool calls and return `PARTIAL` rather than overextending. Continue searching only when:
 - the current evidence does not answer the scout's assigned question;
 - a required file, symbol, parameter, owner, date, ID, or source is missing;
 - the mission asks for exhaustive coverage or dependency/call graph mapping;
 - the report would otherwise contain an important unsupported claim.
+
+If a highspeed scout mission grows into a large-codebase audit, 6–8+ independent retrieval threads, or a stateful exhaustive investigation, split it into multiple scouts or route to `scout`.
 
 Do not keep searching to improve phrasing or collect nonessential examples. Absence of evidence is not evidence of absence unless the searched scope is appropriate and stated.
 
@@ -162,7 +173,7 @@ User Request
 ### Example 1: Find auth implementation
 ```
 Agent({
-  subagent_type: "scout",
+  subagent_type: "scout-highspeed",
   description: "Find auth logic",
   prompt: "MISSION: Find all authentication-related code in this project.\n\nFOCUS ON:\n- Login/register endpoints\n- JWT/token handling\n- Middleware or guards\n- User model/schema\n\nAREA: src/\n\nReturn file paths, key functions, and how auth flows work."
 })
@@ -171,7 +182,7 @@ Agent({
 ### Example 2: Map before planning
 ```
 Agent({
-  subagent_type: "scout",
+  subagent_type: "scout-highspeed",
   description: "Map payment flow",
   prompt: "MISSION: Map the complete payment processing flow.\n\nFOCUS ON:\n- API endpoints that handle payments\n- Database models for transactions\n- External service integrations (Stripe, etc.)\n- Error handling and retry logic\n\nAREA: src/payments/, src/api/, prisma/schema.prisma\n\nReturn a flow map with file references."
 })
@@ -180,9 +191,9 @@ Agent({
 ### Example 3: Parallel scouts for large refactor
 ```
 // Launch 3 scouts in parallel
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find exports", prompt: "MISSION: List all exports from src/utils/. What functions, types, constants are exported? Who imports them?" })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find tests", prompt: "MISSION: Find all test files for src/utils/. What testing framework? What coverage?" })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find usage", prompt: "MISSION: Find all files that import from src/utils/. Map internal and external consumers." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find exports", prompt: "MISSION: List all exports from src/utils/. What functions, types, constants are exported? Who imports them?" })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find tests", prompt: "MISSION: Find all test files for src/utils/. What testing framework? What coverage?" })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find usage", prompt: "MISSION: Find all files that import from src/utils/. Map internal and external consumers." })
 
 // Collect and consolidate
 get_subagent_result({ agent_id: "...", wait: true })

@@ -10,7 +10,12 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 
 ## Economic Mindset
 
-`scout` and `builder` run on **small, fast models** that are roughly **100× cheaper and 100× faster** than the main model. The trade-off is that they are **less intelligent** and have narrower context windows.
+`scout` and `builder` run on delegated models. There are now two speed tiers:
+
+| Tier | Agents | Model | Best For | Avoid |
+|---|---|---|---|---|
+| Default | `scout`, `builder` | Kimi for Coding | cautious implementation, lower hallucination risk, normal delegated work | latency-sensitive batches |
+| Highspeed | `scout-highspeed`, `builder-highspeed` | GPT-5.3 Codex Spark | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, algorithms, physics/math/logic-heavy tasks | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts cost far less than one giant investigation
@@ -37,17 +42,20 @@ Read-only exploration. It reads files, greps, finds patterns, maps dependencies,
 **How to use:**
 ```
 Agent({
-  subagent_type: "scout",
+  subagent_type: "scout-highspeed",
   description: "Investigate auth bug",
   prompt: "Find why JWT validation fails for admin users. Check src/auth/, src/middleware/, and any recent commits. Return exact file paths, line numbers, and the root cause."
 })
 ```
 
 **Rules:**
-- Give scout a **clear question**, not vague tasks
-- Tell it **where to look** (directories, file patterns)
-- Ask for **exact file paths and line numbers**
-- It returns a checkpoint file — read it before proceeding
+- Use `scout-highspeed` by default for quick bounded exploration, algorithms, backend, infra, tests, config, and math-heavy code understanding.
+- Split highspeed scout work when it crosses ~6–8 independent retrieval threads or starts becoming a whole-repo audit.
+- Use `scout` when lower hallucination risk, exhaustive coverage, large-context coherence, or existing scout checkpoint artifacts matter more than speed.
+- Do not use highspeed scouts for frontend design critique or visual polish; use website/design agents instead.
+- Give scout a **clear question**, not vague tasks.
+- Tell it **where to look** (directories, file patterns).
+- Ask for **exact file paths and line numbers**.
 - **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
 - **Do useful parent work while scouts run**: read high-signal files, grep exact symbols, inspect tests/config/logs, and build hypotheses to validate against scout reports.
 
@@ -102,7 +110,7 @@ Implements atomic code changes. Runs on a small, fast model. Good for 1-2 files,
 ```
 # Direct mode (no planner)
 Agent({
-  subagent_type: "builder",
+  subagent_type: "builder-highspeed",
   description: "Fix null check",
   prompt: "In src/utils/parser.ts line 47, add null check. Read the file first. Then: change `return user.name.toUpperCase()` to `return user?.name?.toUpperCase() ?? ''`. Run tests to verify."
 })
@@ -116,11 +124,14 @@ Agent({
 ```
 
 **Rules:**
-- Builder uses a **SMALL model** — be extremely explicit
-- It is fast/cheap but less capable than the main model; keep each task tiny and unambiguous
-- Tell it: which files to **READ**, what **PATTERNS** to follow, how to **VERIFY**
-- Split into atomic tasks. Never stuff multiple concerns into one builder
-- Parallelize when files are disjoint
+- Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than Kimi. Fast hallucinations can look correct.
+- Use `builder-highspeed` for single-file/module-local edits, rapid prototypes, utility generation, CSS tweaks, React component adjustments, layout experiments with existing design constraints, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors.
+- Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
+- Use `builder` for more cautious delegated implementation where hallucination risk matters more than latency, especially multi-file integration, long checklists, structured/exhaustive workflows, or sensitive behavior.
+- Avoid `builder-highspeed` for final frontend polish, brand/design decisions, or vague UI requests; use website pipeline or Kimi builder with exact design instructions.
+- Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
+- Split into atomic tasks. Never stuff multiple concerns into one builder.
+- Parallelize when files are disjoint.
 
 ---
 
@@ -132,12 +143,12 @@ scout → planner → builder → validator
 
 1. **scout** first if you don't understand the code
 2. **planner** next if architecture is needed (after your pre-plan + user approval)
-3. **builder** to execute planned tasks
+3. **builder-highspeed/builder** to execute planned tasks according to the planner's `Agent` column
 4. **validator** after builder for high-impact or >10 files changed
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → direct builder (skip scout/planner)
+- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when caution matters
 - Critical (auth, payment) → builder + validator
 
 ---
@@ -150,6 +161,8 @@ scout → planner → builder → validator
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
 | Not doing pre-plan before planner | Planner guesses scope, produces bad plans | You pre-plan, user approves, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
+| Letting Spark infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use Kimi builder |
+| Using Spark for long checklists | Context drift after several steps | Split tasks or route to Kimi builder |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
 | Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into 2–5 parallel scouts, one angle each |
 
@@ -162,4 +175,5 @@ scout → planner → builder → validator
 - [ ] Do I know which files are involved? If not → scout
 - [ ] Is this >3 files or architectural? If yes → planner (after pre-plan)
 - [ ] Is this 1-2 files, well-defined? If yes → builder
+- [ ] Did I choose default vs highspeed based on task fit?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?
