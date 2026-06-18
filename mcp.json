@@ -1,23 +1,19 @@
 {
   "mcpServers": {
-"memory": {
+    "memory": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
       "lifecycle": "keep-alive"
     },
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp@latest"],
-      "lifecycle": "lazy"
-    },
-    
-    "zai-mcp": {
-      "command": "npx",
-      "args": ["-y", "@z_ai/mcp-server"],
-      "env": {
-        "Z_AI_API_KEY": "831e40e972324c5d91b20a24fc073524.15dViOViq2Bm6nYt",
-        "Z_AI_MODE": "ZAI"
-      },
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ],
       "lifecycle": "lazy"
     }
   }

@@ -74,7 +74,7 @@ step "PI Packages"
 if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
-    pi install npm:@imsus/pi-extension-minimax-coding-plan-mcp 2>/dev/null && info "minimax-web-search" || true
+    pi install npm:pi-provider-kimi-code 2>/dev/null && info "pi-provider-kimi-code" || true
 fi
 
 # ── Done ──────────────────────────────────────

@@ -74,12 +74,12 @@ git pull
 
 | Agente | Emoji | Função | Modelo | Quando usar |
 |--------|-------|--------|--------|-------------|
-| **Scout** | 🔍 | Explorador de código — mapeia arquivos, dependências, padrões, testes | MiniMax-M2.7 (barato/rápido) | "como funciona X?", "mapeia os endpoints", "onde está auth?" |
-| **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Kimi (modelo caro, thinking extended) | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
-| **Builder** | 🔨 | Engenheiro de execução — implementa com disciplina Git-first, checklists, verificação final | MiniMax-M2.7 | "implementa X", "executa esse plano", "builda a feature" |
-| **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | MiniMax-M2.7 | "valida esse PR", "audita os testes", "code review" |
-| **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | MiniMax-M2.7 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
-| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | MiniMax-M2.7 | "polish esse site", "refina o design", "melhora a UX" |
+| **Scout** | 🔍 | Explorador de código — mapeia arquivos, dependências, padrões, testes | Kimi for Coding | "como funciona X?", "mapeia os endpoints", "onde está auth?" |
+| **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
+| **Builder** | 🔨 | Engenheiro de execução — implementa com disciplina Git-first, checklists, verificação final | Kimi for Coding | "implementa X", "executa esse plano", "builda a feature" |
+| **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | Kimi for Coding | "valida esse PR", "audita os testes", "code review" |
+| **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | GPT-5.5 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
+| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | Kimi for Coding | "polish esse site", "refina o design", "melhora a UX" |
 
 ### Pipeline Natural
 
@@ -133,29 +133,9 @@ website-designer → builder → validator → website-polisher → builder → 
 | **Pi Steward** | 🚨 | Captura bugs do PI e cria issues no GitHub | "o PI errou", "registra esse problema" |
 | **Planner Quick** | ⚡ | Planner leve para quick fixes e tarefas simples (1-5 arquivos, trocas de string) | "corrige os tool names", "troca X por Y" |
 
-### Pesquisa Web — Deep Search Master
+### Pesquisa Web
 
-Orquestrador de pesquisa com 3 modos e 7 sub-agentes:
-
-#### Modos de Operação
-
-| Modo | Gatilho no prompt | Descrição | Confirmação? |
-|------|-------------------|-----------|-------------|
-| **Quick** | `quick:` | Busca rápida e direta | ❌ Vai direto |
-| **Verify** | `verify:` | Validação de claims/dados | ❌ Vai direto |
-| **Deep Search** | `deep search:` | Due diligence completa 4 fases | ✅ Planeja primeiro |
-
-#### Sub-agentes de Pesquisa
-
-| Sub-agente | Função |
-|------------|--------|
-| **Explorer** | Tendências emergentes, fontes não-convencionais, sinais antecipados |
-| **Methodical** | Fundações acadêmicas, contexto histórico, frameworks, fontes primárias |
-| **Skeptical** | Verifica claims, exige evidência, checa estatísticas |
-| **Creative** | Conexões inesperadas, ângulos novos, insights cross-domain |
-| **Critical** | Fraquezas, críticas, contradições, red flags |
-| **Auditor** | Red team — analisa findings, detecta contradições entre agentes |
-| **Finalizer** | Consolida tudo e escreve relatório final com citações |
+Pesquisa web ampla usa as ferramentas Kimi/Moonshot expostas pelo `pi-provider-kimi-code`: `moonshot_search` para descoberta e `moonshot_fetch` para ler páginas. URLs/PDFs fornecidos também podem ser lidos com `jina_read`.
 
 ---
 
@@ -191,31 +171,32 @@ Orquestrador de pesquisa com 3 modos e 7 sub-agentes:
 | `vscode_save_document` | Salvar documento via VS Code |
 | `vscode_show_notification` | Mostrar notificação no VS Code |
 
-### MCP Servers (7)
+### MCP Servers (2)
 
 | Server | Ferramentas | Função |
 |--------|-------------|--------|
-| **SynaBun** | 76 tools | Memória vetorial persistente |
-| **minimax-web-search** | 2 tools | Busca web + análise de imagens |
 | **context7** | 2 tools | Documentação de bibliotecas |
-| **zai-web-reader** | 1 tool | Leitura de páginas web |
-| **zai-zread** | 3 tools | Leitura avançada de conteúdo |
-| **zai-web-search-prime** | 1 tool | Busca web alternativa |
 | **memory** | 9 tools | Memória/conhecimento persistente |
 
-Para adicionar API keys nos MCP servers, basta pedir no chat do PI. Ele edita o `mcp.json` pra você.
+Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/URLs fornecidas com `jina_read` ou adicione um novo provedor MCP de busca.
 
 ---
 
-## 📦 Skills (5)
+## 📦 Skills
 
 | Skill | O que faz |
 |-------|-----------|
+| `agent-guide` | Guia de delegação para scout/planner/builder |
+| `builder` | Workflow para implementar mudanças focadas |
+| `design-catalog` | Catálogo de design systems reais para referência visual |
+| `design-extractor` | Extrai design system a partir de URL usando `jina_read` |
 | `git-research` | Clona repos temporariamente para pesquisa com cleanup automático |
-| `mcp-vision` | Processa imagens via MCP quando o modelo não suporta vision |
-| `pi-tool-expert` | Guia completo para criar/modificar extensões TypeScript do PI |
-| `synabun` | Regras de uso da memória vetorial SynaBun |
-| `design-catalog` | Catálogo de 73 design systems reais (Stripe, Linear, Apple, Vercel, Figma, etc.) com tokens, cores, tipografia e padrões visuais para referência em website design |
+| `pi-tool-expert` | Guia completo para criar/modificar extensões, tools e MCP |
+| `planner` | Workflow para planejamento multi-file |
+| `project-memory` | Memória persistente por projeto |
+| `scout` | Exploração read-only do codebase |
+| `website-pipeline` | Orquestração design → conteúdo → plano → build |
+| `website-stack` | Convenções de stack para websites |
 
 ## 🔌 Extensões (3)
 
@@ -233,9 +214,8 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 | Intenção detectada | Agente | Exemplos |
 |-------------------|--------|----------|
-| Pesquisar algo | `deep-search-master` (quick) | "pesquisa X", "quem é Y?" |
-| Verificar dados | `deep-search-master` (verify) | "verifica se X é verdade" |
-| Pesquisa profunda | `deep-search-master` (deep) | "due diligence de X" |
+| Ler/analisar URL fornecida | `moonshot_fetch` / `jina_read` | "lê essa página", "resume esse PDF" |
+| Pesquisa web ampla | `moonshot_search` | "pesquisa X", "quem é Y?" |
 | Explorar código | `scout` | "como funciona X?" |
 | Planejar feature | `planner` | "planeja a implementação de X" |
 | Planejar quick fix | `planner-quick` | "corrige X", "troca Y por Z" |
@@ -252,10 +232,10 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 | Modelo | Agentes | Temperatura |
 |--------|---------|-------------|
-| **MiniMax-M2.7-highspeed** | Scout, Builder, Validator, Deep Research (exceto auditor/finalizer) | 0.1 |
-| **Kimi for Coding** | Planner, Deep Research Auditor, Deep Research Finalizer | 0.1 |
+| **GPT-5.5** | Modelo padrão local e agentes de website/copy | xhigh |
+| **Kimi for Coding** | Scout, Builder, Validator, Deep Research Auditor/Finalizer | 0.1 |
+| **Claude Opus** | Planner | xhigh |
 | **inherit** | Agent Expert, Pi Steward (herdam do contexto) | 0.1 |
-| **GLM-5.1** (ZAI) | Modelo padrão do PI | — |
 
 > Temperature 0.1 = determinístico, ideal para código. Baixa criatividade, máxima reprodutibilidade.
 
@@ -282,13 +262,19 @@ Pi/
 │   ├── agent-expert.md     # Meta-agente para criar agentes
 │   ├── pi-steward.md       # Canal de feedback/bugs
 │   ├── deep-search-master.md  # Orquestrador de pesquisa
-│   └── deep-research-*.md # 7 sub-agentes de pesquisa
-├── skills/                 # 5 skills
+│   └── deep-research-*.md # Sub-agentes de pesquisa
+├── skills/                 # skills globais
+│   ├── agent-guide/
+│   ├── builder/
+│   ├── design-catalog/
+│   ├── design-extractor/
 │   ├── git-research/
-│   ├── mcp-vision/
 │   ├── pi-tool-expert/
-│   ├── synabun/
-│   └── design-catalog/     # 73 design systems reais
+│   ├── planner/
+│   ├── project-memory/
+│   ├── scout/
+│   ├── website-pipeline/
+│   └── website-stack/
 └── extensions/             # 3 extensões (.ts)
     ├── auto-image-clipboard.ts
     ├── jina-reader.ts

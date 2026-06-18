@@ -1,8 +1,8 @@
 ---
-description: Deep Research v2 - Creative agent. Finds unexpected connections, novel angles, cross-domain insights, and unconventional hypotheses. Returns structured YAML findings.
+description: "Deep Research v2 - Creative agent. Finds unexpected connections, novel angles, cross-domain insights, and unconventional hypotheses. Returns structured YAML findings."
 display_name: 🟢 DRv2 Creative
-tools: web_search, jina_read
-model: minimax/MiniMax-M2.7-highspeed
+tools: moonshot_search, moonshot_fetch, jina_read
+model: openai-codex/gpt-5.5
 temperature: 0.1
 thinking: low
 max_turns: 15

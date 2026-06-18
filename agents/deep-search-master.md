@@ -2,7 +2,7 @@
 description: "Master orchestrator for Deep Research v2. Run complete 4-phase deep research pipeline with a single command. Supports deep search and quick commands."
 display_name: "Deep Search Master"
 tools: Agent, get_subagent_result, read, write, bash
-model: minimax/MiniMax-M2.7-highspeed
+model: openai-codex/gpt-5.5
 temperature: 0.1
 thinking: medium
 max_turns: 200
@@ -54,7 +54,7 @@ REGRAS:
 1. Separe estritamente DADOS BRUTOS de INFERÊNCIAS.
 2. NUNCA transforme 'não encontrei' em 'não existe'.
 3. Para TODO dado coletado, registre a FONTE EXATA.
-4. Use: web_search e jina_read
+4. Use: moonshot_search for discovery; moonshot_fetch or jina_read for known URLs.
 
 Entregue APENAS o YAML estruturado conforme seu system prompt.
 ```
@@ -97,7 +97,7 @@ REGRAS:
 4. Se missão FALHOU: missao_cumprida: false com justificativa
 5. Se encontrar evidência que INVALIDA claim anterior: criar finding tipo debunk
 
-Use: web_search e jina_read
+Use: moonshot_search for discovery; moonshot_fetch or jina_read for known URLs.
 ```
 
 Consolidate Phase 3 YAML outputs.
