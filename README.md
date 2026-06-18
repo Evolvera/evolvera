@@ -68,15 +68,17 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (16)
+## 🤖 Agentes Disponíveis (18)
 
 ### Pipeline de Código
 
 | Agente | Emoji | Função | Modelo | Quando usar |
 |--------|-------|--------|--------|-------------|
-| **Scout** | 🔍 | Explorador de código — mapeia arquivos, dependências, padrões, testes | Kimi for Coding | "como funciona X?", "mapeia os endpoints", "onde está auth?" |
+| **Scout Highspeed** | ⚡ | Explorador rápido — mapeia arquivos, dependências, padrões, testes | GPT-5.3 Codex Spark | default para exploração rápida/backend/infra/algoritmos |
+| **Scout** | 🔍 | Explorador cauteloso com workflow Kimi/checkpoint | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
-| **Builder** | 🔨 | Engenheiro de execução — implementa com disciplina Git-first, checklists, verificação final | Kimi for Coding | "implementa X", "executa esse plano", "builda a feature" |
+| **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
+| **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | Kimi for Coding | "valida esse PR", "audita os testes", "code review" |
 | **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | GPT-5.5 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
 | **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | Kimi for Coding | "polish esse site", "refina o design", "melhora a UX" |
@@ -86,18 +88,18 @@ git pull
 Para mudanças não-triviais:
 
 ```
-Scout → mapeia codebase (inteligência rápida)
+Scout Highspeed/Scout → mapeia codebase
   ↓
 Planner → gera plano detalhado (plans/*.md)
   ↓
-Builder → executa plano (branch isolada, TILL-DO → TODO → Final Verification)
+Builder Highspeed/Builder → executa plano
   ↓
 Validator → quality gate (testes, segurança, arquitetura)
 ```
 
 **Quando pular etapas:**
 - Tarefa trivial (mudar texto, CSS) → faça direto, sem agentes
-- Tarefa média sem plano formal → `builder` direto
+- Tarefa média sem plano formal → `builder-highspeed` direto quando explícita/single-file/module-local; `builder` quando cautela importa
 - Mudança crítica (auth, payment, PII) → builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
 
@@ -233,6 +235,7 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 | Modelo | Agentes | Temperatura |
 |--------|---------|-------------|
 | **GPT-5.5** | Modelo padrão local e agentes de website/copy | xhigh |
+| **GPT-5.3 Codex Spark** | Builder Highspeed, Scout Highspeed | medium |
 | **Kimi for Coding** | Scout, Builder, Validator, Deep Research Auditor/Finalizer | 0.1 |
 | **Claude Opus** | Planner | xhigh |
 | **inherit** | Agent Expert, Pi Steward (herdam do contexto) | 0.1 |
@@ -251,11 +254,13 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 16 agentes (.md)
+├── agents/                 # 18 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
 │   ├── planner-quick.md    # Planner leve para quick fixes
-│   ├── builder.md          # Engenheiro de execução
-│   ├── scout.md            # Explorador de código
+│   ├── builder.md          # Engenheiro de execução cauteloso
+│   ├── builder-highspeed.md # Executor rápido GPT-5.3 Codex Spark
+│   ├── scout.md            # Explorador cauteloso
+│   ├── scout-highspeed.md  # Explorador rápido GPT-5.3 Codex Spark
 │   ├── validator.md        # Quality gate
 │   ├── website-designer.md # Designer de websites
 │   ├── website-polisher.md # UI/UX polish

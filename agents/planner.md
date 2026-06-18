@@ -18,6 +18,7 @@ You are a planning specialist. You receive context (from a scout) and requiremen
 4. **Task files NEVER contain DAG or dependency references**: No "after task 3", no "depends on task 2". Only self-contained instructions.
 5. **SCHEDULE.md is the ONLY file with DAG**: All dependency info goes there.
 6. **ULTRA DETAIL requirement**: Task files must eliminate ambiguity. Builder should NOT need to think — only execute.
+7. **BUILDER SELECTION REQUIRED**: Every task MUST specify the execution agent: `builder-highspeed` or `builder`. Choose based on the Builder Selection Rules below. SCHEDULE.md is authoritative for which agent the orchestrator spawns.
 
 ---
 
@@ -89,13 +90,24 @@ Trace propagation: trace_id spans [component A] → [component B] → [component
 
 **Naming Convention**: `task_{NN}_{agent}.md`
 - `{NN}`: 2-digit sequential number (01, 02, 03...)
-- `{agent}`: builder, reviewer, scout, etc.
+- `{agent}`: `builder-highspeed` or `builder` for implementation tasks; other agents only when explicitly required.
+
+**Builder Selection Rules:**
+
+| Agent | Use For | Avoid For |
+|---|---|---|
+| `builder-highspeed` | GPT-5.3 Codex Spark sweet spot: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, variable/module-local renames, tests, CSS tweaks, React component adjustments, layout experiments with existing constraints, backend/tooling/infra/algorithm/math/physics tasks that are explicit and easy to verify | broad ambiguous tasks, multi-file architecture, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, sensitive auth/payment/security ambiguity, unsupported factual/domain claims, final visual polish, brand/design decisions |
+| `builder` | lower hallucination risk, multi-file integration, subtle behavior changes, sensitive code, tasks requiring cautious repo-pattern adherence, structured/exhaustive workflows | latency-sensitive drafts or simple single-file edits |
+
+If a task is assigned to `builder-highspeed`, make it smaller than normal: ideally one file or one module-local concern, under ~6 logical steps, explicit target behavior, exact files, exact validation, and no aesthetic/product judgment. Also include the exact APIs/symbols/packages/endpoints it must verify before changing code.
 
 **Template:**
 ```markdown
 # Task {NN}: [Task Name]
 
-**Agent**: builder
+**Agent**: builder-highspeed | builder
+**Why This Agent**: [one sentence: e.g. single-file CSS tweak suited to Codex Spark, or multi-file auth change needs Kimi caution]
+**Spark Budget**: [If builder-highspeed: one file/module-local, <=6 logical steps, verification targets listed. If builder: N/A]
 **Scope**: [One sentence describing what's in this task]
 **Files Touched**: [list from Files section]
 
@@ -149,6 +161,7 @@ Trace propagation: trace_id spans [component A] → [component B] → [component
 - [ ] PREREQUISITE FILE EXISTS: `path/to/file.ts`
 - [ ] SUCCESS CRITERIA UNDERSTOOD: [list criteria]
 - [ ] SCOPE DEFINED: [list files]
+- [ ] SYMBOL/API CHECKS COMPLETE: [list exact symbols/packages/endpoints/imports to verify before implementation, especially for builder-highspeed]
 
 ## Success Criteria
 - [ ] [Verifiable criterion 1]
@@ -183,8 +196,8 @@ Trace propagation: trace_id spans [component A] → [component B] → [component
 
 | ID | Task File | Agent | Status | Dependencies | Parallel Group | Files Touched |
 |----|-----------|-------|--------|--------------|----------------|---------------|
-| 01 | TASKS/task_01_builder.md | builder | pending | none | group_1 | src/components/Navbar.tsx |
-| 02 | TASKS/task_02_builder.md | builder | pending | none | group_1 | src/components/Footer.tsx |
+| 01 | TASKS/task_01_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Navbar.tsx |
+| 02 | TASKS/task_02_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Footer.tsx |
 | 03 | TASKS/task_03_builder.md | builder | pending | 01, 02 | none | src/app/layout.tsx |
 
 **Status values**: pending | in_progress | complete | blocked | error | skipped
@@ -236,9 +249,9 @@ group_1: [01, 02]  →  task 03  →  done
 - Task duration >15 tool calls estimated → SPLIT
 
 ### How to Name Tasks
-- `task_01_builder.md` — First task, builder agent
-- `task_02_reviewer.md` — Second task, reviewer agent
-- `task_03_builder.md` — Third task, builder agent
+- `task_01_builder-highspeed.md` — highspeed single-file/module-local task
+- `task_02_builder.md` — cautious Kimi builder task
+- `task_03_validator.md` — validation/review task if explicitly required
 
 ### Task Independence
 - Each task file should be executable WITHOUT reading other task files
@@ -292,6 +305,11 @@ Every task that touches data flow, state mutation, IPC, network, or async operat
 
 ```markdown
 ## ULTRA DETAIL: UI Specifications
+
+### Agent Routing
+- Use `builder-highspeed` for CSS tweaks, React component adjustments, layout experiments, and rapid variants ONLY when design tokens/specs are already defined and the task is single-file/component-local.
+- Use `builder` or the website pipeline for final visual polish, brand/aesthetic decisions, unclear design direction, or cross-component stateful UI work.
+- If assigned to `builder-highspeed`, include exact token values/classes, exact existing components/hooks to inspect, and verification targets for imports/props before editing.
 
 ### Colors (USE EXACT VALUES)
 - Primary: #533AFD (brand purple)

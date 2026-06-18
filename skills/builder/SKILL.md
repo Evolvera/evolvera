@@ -5,7 +5,7 @@ description: Use the builder agent to implement focused code changes. Builder ru
 
 # Builder Skill — Focused Code Execution
 
-Builder is a fast delegated implementation agent. It is cheaper and faster than the main model, but less good at inferring hidden context. Use it when the task is small, bounded, and verifiable.
+Builder is a delegated implementation agent. Use either the default Kimi `builder` or GPT-5.3 Codex Spark `builder-highspeed` based on task fit. Both need small, bounded, verifiable prompts.
 
 ## Goal
 
@@ -18,6 +18,15 @@ Success means:
 - relevant validation is run or a clear blocker is reported;
 - the result includes what changed, validation result, and any unresolved risk.
 
+## Agent Choice
+
+| Agent | Use When | Avoid When |
+|---|---|---|
+| `builder-highspeed` | Codex Spark sweet spot: single-file edits, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing design constraints, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, final visual polish or brand/design decisions |
+| `builder` | lower hallucination risk matters; task needs more caution; existing workflow expects Kimi behavior; task has multiple files or subtle integration risk | large latency-sensitive batches |
+
+Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone than Kimi/Codex-style senior agents. Its failure mode is fast, plausible-looking wrong output. Default to it only when the task is explicit, bounded, and easy to verify — ideally a single-file or module-local edit. Use `builder` when correctness risk outweighs speed.
+
 ## When to Use Builder
 
 Use builder for:
@@ -25,6 +34,24 @@ Use builder for:
 - 1–2 files with one concern;
 - planner-generated task files;
 - mechanical changes with clear target behavior.
+
+For `builder-highspeed`, prefer even smaller slices:
+- one file or one module-local concern;
+- explicit target behavior;
+- obvious validation;
+- under ~6 logical implementation steps;
+- no large context retention or exhaustive workflow;
+- no need for aesthetic/product judgment.
+
+### Spark Risk Guardrails
+
+When using `builder-highspeed`, prompts must include tighter steering because Spark drifts sooner and hallucinates routine details more often:
+
+- **Verify symbols before use**: instruct it to grep/read existing APIs, package names, endpoints, function parameters, imports, and config keys before relying on them.
+- **No phantom dependencies**: do not let it add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
+- **Short workflows only**: avoid if the task needs 6–8+ ordered steps, broad repo context, or stateful checklist execution.
+- **Simple outputs**: avoid requiring complex structured output from Spark unless absolutely necessary; use concise reports.
+- **Switch to Kimi**: use `builder` for multi-file integration, auth/payment/security, subtle behavior, migrations, broad refactors, or anything where a wrong-looking-right answer is expensive.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -48,12 +75,14 @@ Example:
 
 ```ts
 Agent({
-  subagent_type: "builder",
+  subagent_type: "builder-highspeed",
   run_in_background: true,
-  description: "Task 01 navbar",
-  prompt: "Implement task from /ABSOLUTE/PATH/.pi/plans/TASKS/task_01_builder.md. Follow its scope and verification exactly."
+  description: "Task 01 CSS tweak",
+  prompt: "Implement task from /ABSOLUTE/PATH/.pi/plans/TASKS/task_01_builder-highspeed.md. Follow its scope and verification exactly."
 })
 ```
+
+Planner-generated schedules may mix `builder-highspeed` and `builder`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header.
 
 ## Direct Mode Prompt
 
@@ -79,6 +108,7 @@ TARGET FILES
 
 CONSTRAINTS
 - Follow existing patterns in [file/dir]
+- Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
 - Do not touch files outside TARGET FILES unless blocked and reported
 
@@ -116,6 +146,7 @@ Before spawning builder, verify:
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Validation command/check is included.
 - [ ] Task is small enough for a delegated model.
+- [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, and every API/package/symbol can be verified.
 
 If more than two boxes are missing, do more prep or implement directly.
 
@@ -133,7 +164,7 @@ After builder finishes:
 
 ```ts
 Agent({
-  subagent_type: "builder",
+  subagent_type: "builder-highspeed",
   description: "Fix null parser",
   prompt: `
 GOAL
@@ -163,8 +194,8 @@ Do not refactor unrelated parser code.
 ### Two independent tasks
 
 ```ts
-Agent({ subagent_type: "builder", run_in_background: true, description: "Email validator", prompt: "...TARGET FILES: src/validators/email.ts..." })
-Agent({ subagent_type: "builder", run_in_background: true, description: "Phone validator", prompt: "...TARGET FILES: src/validators/phone.ts..." })
+Agent({ subagent_type: "builder-highspeed", run_in_background: true, description: "Email validator", prompt: "...TARGET FILES: src/validators/email.ts..." })
+Agent({ subagent_type: "builder-highspeed", run_in_background: true, description: "Phone validator", prompt: "...TARGET FILES: src/validators/phone.ts..." })
 ```
 
 ## Anti-Patterns
@@ -175,4 +206,6 @@ Agent({ subagent_type: "builder", run_in_background: true, description: "Phone v
 | One builder for UI + API + DB | Split by concern and dependencies |
 | No validation command | Include targeted test or explain why none exists |
 | Broad refactor request | Use planner first |
+| Spark asked to execute a long checklist | Split into small tasks or use `builder` |
+| Spark allowed to infer APIs/packages | Require grep/package verification before implementation |
 | Trusting builder summary only | Check diff and diagnostics |

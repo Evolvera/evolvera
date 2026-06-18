@@ -160,6 +160,7 @@ Agent({
 - ✅ Tech stack / constraints
 - ✅ Validation commands/checks
 - ✅ Stop conditions and missing-evidence behavior
+- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed` vs `builder` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md` or `task_02_builder.md`).
 
 ### Planner Output
 
@@ -168,12 +169,18 @@ Planner generates:
 ```
 .pi/plans/
 ├── PLAN_FULL.md          # Complete reference
-├── SCHEDULE.md           # DAG + execution rules
+├── SCHEDULE.md           # DAG + execution rules + Agent column
 └── TASKS/
-    ├── task_01_builder.md
-    ├── task_02_builder.md
+    ├── task_01_builder-highspeed.md  # Spark sweet spot task
+    ├── task_02_builder.md            # cautious Kimi task
     └── ...
 ```
+
+Planner must use the Builder Skill routing:
+- `builder-highspeed`: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, explicit backend/tooling/tests/algorithm/math/physics tasks.
+- `builder`: lower hallucination risk, multi-file integration, subtle behavior changes, long or exhaustive checklists, structured/stateful workflows, sensitive auth/payment/security code, final visual polish, brand/design decisions, ambiguous tasks.
+
+For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. Each task file must include `**Agent**`, `**Why This Agent**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
 
 Implementation plans MUST include:
 - requirements and where each is addressed
@@ -223,6 +230,6 @@ Plan generated. Here's the summary:
 |-------|-----|------|--------------|
 | **Pre-Plan** | You (main model) | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
-| **Execute** | Builder agents | Medium | Execute approved plan |
+| **Execute** | Builder agents (`builder-highspeed` or `builder` per SCHEDULE) | Medium | Execute approved plan |
 
 **Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**
