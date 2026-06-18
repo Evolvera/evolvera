@@ -1,11 +1,11 @@
 ---
 name: planner
-description: Use the planner agent to create detailed implementation plans for complex multi-file features, bug fixes, or refactors. ALWAYS do a pre-plan first to understand user needs perfectly before activating the planner — it runs for minutes and is expensive to restart.
+description: Use the planner agent to create detailed implementation plans for complex multi-file features, bug fixes, or refactors. Do a lightweight pre-plan before activating planner so scope, success criteria, constraints, and validation are clear.
 ---
 
 # Planner Skill — Implementation Plan Generator
 
-> **⏱️ PLANNER IS EXPENSIVE**: The planner agent runs for **minutes** on a heavy model. A wrong or vague prompt wastes time and money. **ALWAYS do a pre-plan first** — understand the user perfectly before activating planner.
+> **⏱️ PLANNER IS EXPENSIVE**: The planner agent runs for **minutes** on a heavy model. A wrong or vague prompt wastes time and money. Do a lightweight pre-plan first — clarify outcome, success criteria, constraints, and validation before activating planner.
 
 ## Workflow: Pre-Plan → Review → Plan → Execute
 
@@ -57,7 +57,9 @@ User Request
 ### Goal
 Understand the user's request deeply enough to either:
 1. **Execute directly** (simple → builder or direct implementation)
-2. **Feed a perfect prompt to the planner** (complex → planner agent)
+2. **Feed an outcome-first prompt to the planner** (complex → planner agent)
+
+The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then let the planner choose an efficient implementation path.
 
 ### Pre-Plan Checklist
 
@@ -71,6 +73,10 @@ Before activating ANY agent, answer these:
 | **What's the desired behavior?** | The "after" state must be crystal clear. |
 | **Any constraints?** | Backward compat? Feature flag? DB migration? |
 | **How to verify it works?** | Test plan, manual steps, expected output. |
+| **What does success mean?** | Concrete acceptance criteria; what must be true before calling it done. |
+| **What constraints matter?** | Policy, compatibility, performance, security, UX, migration, rollout. |
+| **What evidence/context is available?** | Scout reports, files read, logs, docs, user constraints. |
+| **When should we stop or ask?** | Stop when core request can be solved; ask only for missing info that materially changes the plan. |
 | **What could go wrong?** | Edge cases, breaking changes, rollback needs. |
 
 ### Pre-Plan Output Format
@@ -83,10 +89,15 @@ Write a brief summary (5-15 lines) to show the user:
 **Goal**: [One sentence — what we're doing]
 **Scope**: [In scope] / [Out of scope]
 **Affected Areas**: [Files/modules likely touched]
-**Approach**: [High-level strategy]
+**Success Criteria**: [Concrete done conditions / acceptance checks]
+**Constraints**: [Compatibility, security, performance, UX, rollout, etc.]
+**Available Context**: [Files/scout results/logs/docs already known]
+**Approach**: [High-level strategy, not a rigid step list]
+**Validation**: [Commands/checks/manual verification]
+**Stop / Ask Rules**: [When to proceed, stop, or ask for missing info]
 **Complexity**: [Low | Medium | High | Critical]
 **Path**: [Direct execution | Planner → Builders]
-**Open Questions**: [Anything still unclear — ask user now]
+**Open Questions**: [Only questions that materially affect the plan]
 ```
 
 ### Decision: Direct vs Planner
@@ -100,9 +111,9 @@ Write a brief summary (5-15 lines) to show the user:
 
 ---
 
-## Phase 2: USER REVIEW (Mandatory)
+## Phase 2: USER REVIEW
 
-**NEVER skip this.** Before activating planner (or executing directly), show the user:
+Show a concise pre-plan review before activating planner unless the user has already approved an equivalent scope explicitly in the current conversation. Ask only questions that materially affect the plan.
 
 ```
 Here's what I understood:
@@ -116,7 +127,7 @@ Here's what I understood:
 ❓ Is this correct? Anything missing or wrong?
 ```
 
-**Wait for explicit approval.** "Looks good" / "Yes" / "Go ahead" — not silence.
+Wait for explicit approval when scope, architecture, cost, or risk is non-trivial. "Looks good" / "Yes" / "Go ahead" counts as approval; silence does not.
 
 ---
 
@@ -142,10 +153,13 @@ Agent({
 
 **The prompt MUST include:**
 - ✅ The approved pre-plan summary
-- ✅ Scout results (if you ran scouts)
+- ✅ Outcome and success criteria
+- ✅ Constraints and out-of-scope boundaries
+- ✅ Available context/evidence: scout results, files read, logs, docs
 - ✅ Any user clarifications
 - ✅ Tech stack / constraints
-- ✅ Out of scope (what NOT to do)
+- ✅ Validation commands/checks
+- ✅ Stop conditions and missing-evidence behavior
 
 ### Planner Output
 
@@ -160,6 +174,15 @@ Planner generates:
     ├── task_02_builder.md
     └── ...
 ```
+
+Implementation plans MUST include:
+- requirements and where each is addressed
+- named resources, files, APIs, or systems involved
+- state transitions or data flow where relevant
+- validation commands or checks
+- failure behavior
+- privacy and security considerations
+- open questions that materially affect implementation
 
 ---
 
@@ -182,7 +205,7 @@ Plan generated. Here's the summary:
 
 ---
 
-## Anti-Patterns (NEVER Do This)
+## Anti-Patterns
 
 | ❌ Wrong | ✅ Right |
 |----------|----------|
@@ -190,7 +213,7 @@ Plan generated. Here's the summary:
 | Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
 | Run planner without scout context | Send scouts first if codebase is unfamiliar |
 | Vague planner prompt: "plan auth fix" | Specific prompt: "JWT refresh fails after 1h. Need sliding refresh. Affecting src/auth/session.ts" |
-| Skip user review to save time | User review saves MORE time by catching misalignment early |
+| Skip user review when scope is uncertain or costly | A short review catches misalignment early |
 
 ---
 
@@ -202,4 +225,4 @@ Plan generated. Here's the summary:
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
 | **Execute** | Builder agents | Medium | Execute approved plan |
 
-**Rule: Two user reviews minimum — one after pre-plan, one after plan.**
+**Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**

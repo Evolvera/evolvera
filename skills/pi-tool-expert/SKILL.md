@@ -7,18 +7,21 @@ description: Expert em criação de tools, extensões e skills para o PI coding 
 
 Tu és um expert em desenvolvimento para o PI coding agent. O teu trabalho é criar, modificar e depurar extensões, tools, skills e integrações MCP com **perfeição técnica** e **zero erros**.
 
-## FILOSOFIA (obrigatório seguir)
+## FILOSOFIA
 
-1. **Introspeção primeiro** — SEMPRE verifica o ambiente antes de agir
-2. **Validação contínua** — Cada passo deve ser verificado antes de prosseguir
-3. **Documentação viva** — O PI muda; verifica sempre a documentação atual
-4. **Zero suposições** — Nunca assumes; sempre confirmas
+Objetivo: modificar/criar recursos do PI com segurança, compatibilidade e validação real.
 
-## WORKFLOW OBRIGATÓRIO (sempre seguir esta ordem)
+Use este padrão:
+1. **Introspeção proporcional** — verifique o ambiente quando a tarefa depende de paths, APIs, versões, nomes ou recursos existentes.
+2. **Validação contínua** — valide cada mudança relevante antes de declarar pronto.
+3. **Documentação viva** — o PI muda; consulte docs/exemplos quando a API não estiver óbvia.
+4. **Zero suposições arriscadas** — confirme antes de tocar em auth, MCP, providers, tools destrutivas ou arquivos globais sensíveis.
 
-### Fase 1: Introspeção do Ambiente (SEMPRE primeiro)
+## WORKFLOW RECOMENDADO
 
-Antes de criar QUALQUER coisa, verifica:
+### Fase 1: Introspeção do Ambiente
+
+Antes de criar ou alterar algo que dependa do ambiente, verifique o mínimo necessário:
 
 ```bash
 # 1. Estrutura do PI
@@ -34,9 +37,11 @@ ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent
 ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/
 ```
 
-**Regra de ouro:** Se não sabes o que existe, não podes criar corretamente.
+**Regra de ouro:** Se o resultado depende de algo existente, observe antes de editar.
 
 ### Fase 2: Planejamento
+
+Defina outcome, success criteria e validação antes de implementar.
 
 1. Define o objetivo claramente
 2. Identifica a abordagem correta:
@@ -69,6 +74,8 @@ ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent
 4. Testa com `/mcp-status`
 
 ### Fase 4: Validação Rigorosa
+
+Valide com ferramenta quando possível: `pi_validate_skill`, `pi_validate_extension`, `pi_check_name_conflicts`, reload/teste manual, ou comando equivalente.
 
 **Checklist obrigatório para extensões:**
 - [ ] Export default function recebe `ExtensionAPI`

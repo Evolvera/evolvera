@@ -5,7 +5,7 @@ description: Use the scout agent for codebase exploration, file discovery, and e
 
 # Scout Skill — Codebase Exploration Agent
 
-> **⚡ EFFICIENCY FIRST**: Scout runs on a **fast, cheap model** (minimax/M2.7). It is ALWAYS the most cost-effective choice for exploration. Whenever the mission touches multiple areas, **split into parallel scouts** — do NOT explore sequentially.
+> **⚡ EFFICIENCY FIRST**: Scout runs on a **fast, cheap delegated model**. It is usually the most cost-effective choice for exploration, but it is less capable than the main model. Whenever the mission touches multiple areas, **split into parallel scouts** — do NOT explore sequentially.
 
 ## When to Use
 
@@ -39,7 +39,13 @@ Agent({ subagent_type: "scout", run_in_background: true, description: "Find entr
 Agent({ subagent_type: "scout", run_in_background: true, description: "Map data models", prompt: "..." })
 Agent({ subagent_type: "scout", run_in_background: true, description: "Check tests", prompt: "..." })
 
-// Collect results after ALL are launched
+// While scouts run, the main model should keep working:
+// - read obvious high-signal files
+// - run targeted grep/find commands
+// - inspect tests/logs/configs
+// - form hypotheses to validate against scout reports
+
+// Collect results after useful local work or when needed
 get_subagent_result({ agent_id: "[id1]", wait: true })
 get_subagent_result({ agent_id: "[id2]", wait: true })
 get_subagent_result({ agent_id: "[id3]", wait: true })
@@ -81,14 +87,24 @@ Scout agents follow these absolute rules:
 
 Scout returns a structured report with:
 - **Files Found**: Table of relevant files with paths and descriptions
-- **Dependency Graph**: ALL imports and module relationships discovered
-- **Evidence**: Verbatim quotes from code
+- **Evidence**: Verbatim quotes from code or command output
 - **Gaps**: What's missing or pending
-- **Recommendations**: What to explore next (not opinions, just next steps)
+- **Next Retrieval**: The smallest useful next search/read, if evidence is incomplete
+- **Dependency Graph**: include when the mission is about architecture, call flow, imports, exports, or module relationships
 
-### Dependency Graph (MANDATORY when exploring code)
+### Retrieval Budget
 
-Whenever the scout reads files and finds imports, exports, or module relationships, it MUST build and return a dependency graph:
+Scout should retrieve enough evidence to answer its bounded mission, then stop. Continue searching only when:
+- the current evidence does not answer the scout's assigned question;
+- a required file, symbol, parameter, owner, date, ID, or source is missing;
+- the mission asks for exhaustive coverage or dependency/call graph mapping;
+- the report would otherwise contain an important unsupported claim.
+
+Do not keep searching to improve phrasing or collect nonessential examples. Absence of evidence is not evidence of absence unless the searched scope is appropriate and stated.
+
+### Dependency Graph (conditional)
+
+When the mission requires architecture/dependency/call-flow evidence, or when imports/exports are central to the answer, build and return a dependency graph:
 
 ```json
 {
@@ -107,12 +123,12 @@ Whenever the scout reads files and finds imports, exports, or module relationshi
 ```
 
 **Rules:**
-- Add EVERY import/export relationship found
-- Include external dependencies (npm packages) as nodes with type `external`
+- Add every relevant import/export/call relationship found within the assigned scope
+- Include external dependencies as nodes with type `external` when they matter to the mission
 - Include the JSON block at the end of the report
-- If no relationships found, return empty arrays: `"nodes": [], "edges": []`
+- If graphing was requested but no relationships were found, return empty arrays: `"nodes": [], "edges": []`
 - Use relative file paths as node IDs
-- Group related files by directory when possible
+- Do not build a graph for simple file-finding or single-symbol lookup unless it improves the answer
 
 ## Integration Pattern
 
@@ -127,7 +143,9 @@ User Request
             │
             └── Complex mission (2+ concerns) ──→ Parallel scouts (2-4)
                     │
-                    └── Collect results ──→ Hand to planner/builder
+                    ├── Main model continues direct inspection while scouts run
+                    │
+                    └── Collect + reconcile results ──→ Hand to planner/builder
 ```
 
 ### Parallel Decomposition Guide
