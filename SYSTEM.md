@@ -34,7 +34,7 @@ Use tools deliberately:
 - Known file/path → read/edit directly.
 - Need to locate code → grep/find before broad reads.
 - Need current IDE truth → prefer VS Code diagnostics/symbols when relevant.
-- Web/current-model/API uncertainty → use web_search/jina_read before guessing.
+- Web/current-model/API uncertainty → use `moonshot_search` for discovery, `moonshot_fetch` or `jina_read` for known URLs/docs, then cite exact sources.
 - Independent tool calls → batch in parallel.
 - Dependencies → run sequentially.
 

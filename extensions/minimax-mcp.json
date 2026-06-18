@@ -1,9 +1,0 @@
-{
-  "apiKey": "REDACTED_MINIMAX_API_KEY",
-  "apiHost": "https://api.minimax.io",
-  "basePath": "/tmp/minimax-output",
-  "resourceMode": "url",
-  "timeoutMs": 60000,
-  "maxBytes": 51200,
-  "maxLines": 2000
-}

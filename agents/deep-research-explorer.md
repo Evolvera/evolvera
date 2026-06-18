@@ -1,8 +1,8 @@
 ---
-description: Deep Research v2 - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings.
+description: "Deep Research v2 - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings."
 display_name: 🔮 DRv2 Explorer
-tools: web_search, jina_read
-model: minimax/MiniMax-M2.7-highspeed
+tools: moonshot_search, moonshot_fetch, jina_read
+model: openai-codex/gpt-5.5
 temperature: 0.1
 thinking: low
 max_turns: 15

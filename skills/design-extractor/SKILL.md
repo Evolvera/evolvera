@@ -6,7 +6,7 @@ tools:
   - bash
   - write
   - read
-model: minimax/MiniMax-M2.7-highspeed
+model: openai-codex/gpt-5.5
 temperature: 0.2
 thinking: low
 max_turns: 20
@@ -151,7 +151,7 @@ Use the `scripts/update-index.sh` script or manual jq:
 
 ## Notes
 
-- Use `minimax/MiniMax-M2.7-highspeed` for fast extraction
+- Use the configured default model for extraction
 - Keep `thinking: low` — extraction is deterministic
 - Always read `EXTRACTION_GUIDE.md` for detailed token mapping
 - The design-catalog lives at: `~/.pi/agent/skills/design-catalog/`

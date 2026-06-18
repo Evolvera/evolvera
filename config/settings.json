@@ -6,7 +6,8 @@
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:pi-mcp-adapter",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:pi-provider-kimi-code"
   ],
   "hideThinkingBlock": false
 }

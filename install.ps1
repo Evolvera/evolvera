@@ -108,8 +108,9 @@ if ($piCmd) {
     Info "pi-subagents..."
     & pi install npm:@tintinweb/pi-subagents 2>$null
 
-    Info "minimax-web-search..."
-    & pi install npm:@imsus/pi-extension-minimax-coding-plan-mcp 2>$null
+    Info "pi-provider-kimi-code..."
+    & pi install npm:pi-provider-kimi-code 2>$null
+
 }
 
 # -- Done -------------------------------------------------
