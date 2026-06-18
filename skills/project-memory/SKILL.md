@@ -93,7 +93,7 @@ Retorne tudo estruturado em seções com bullets detalhados.
 ```
 
 4. Aguarde os 3 scouts terminarem (`get_subagent_result` com `wait: true`)
-5. **Delegue para o builder** popular os arquivos com todo o resultado:
+5. Popule os arquivos de memória. Para scan grande, prefira delegar ao builder; para ajustes pequenos, o modelo principal pode editar diretamente com `write`/`edit`:
    ```
    Agent(subagent_type="builder", prompt=""
    Popule a memória do projeto em .pi/memory/ com os dados do scan:
@@ -114,7 +114,7 @@ Retorne tudo estruturado em seções com bullets detalhados.
    e sobrescreva .pi/memory/_summary.md com write.
    "")
    ```
-6. O builder popula TODOS os .md E gera o `_summary.md` em uma única chamada
+6. Gere/atualize `_summary.md` com resumo compacto (max ~10k tokens) após popular os arquivos
 7. Mostre ao usuário o resumo do scan realizado
 
 ---
@@ -123,7 +123,7 @@ Retorne tudo estruturado em seções com bullets detalhados.
 
 Quando descobrir algo novo durante o trabalho:
 1. Determine qual arquivo `.md` é o correto e monte o conteúdo da nova entrada
-2. **Delegue para o builder** executar a gravação:
+2. Para entrada pequena, edite diretamente. Para entrada grande/múltiplos arquivos, delegue para builder:
    ```
    Agent(subagent_type="builder", prompt=""
    Adicione a seguinte entrada no final do arquivo .pi/memory/{campo}.md:
@@ -138,7 +138,7 @@ Quando descobrir algo novo durante o trabalho:
    e sobrescreva .pi/memory/_summary.md com o write.
    "")
    ```
-3. O builder faz a gravação E regenera o `_summary.md` em uma única chamada
+3. Regere `_summary.md` após a gravação. Se usar builder, peça para ele gravar e regenerar em uma única chamada.
 
 **Quando salvar automaticamente:**
 - Bug fix concluído → `bugs.md`
@@ -154,7 +154,7 @@ Quando descobrir algo novo durante o trabalho:
 
 Quando algo mudar que afeta memória já salva:
 1. Determine qual arquivo `.md` e qual seção precisa ser atualizada
-2. **Delegue para o builder** executar a edição:
+2. Para edição pequena, edite diretamente. Para edição grande/múltiplos arquivos, delegue para builder:
    ```
    Agent(subagent_type="builder", prompt=""
    Edite o arquivo .pi/memory/{campo}.md:
@@ -166,7 +166,7 @@ Quando algo mudar que afeta memória já salva:
    e sobrescreva .pi/memory/_summary.md com o write.
    "")
    ```
-3. O builder faz a edição E regenera o `_summary.md` em uma única chamada
+3. Regere `_summary.md` após a edição. Se usar builder, peça para ele editar e regenerar em uma única chamada.
 
 Exemplos de quando editar:
 - Bug foi resolvido → atualiza status para [RESOLVIDO] em `bugs.md`
@@ -180,7 +180,7 @@ Exemplos de quando editar:
 
 Quando memória não é mais relevante:
 1. Determine qual arquivo `.md` e qual seção precisa ser removida
-2. **Delegue para o builder** executar a remoção:
+2. Para remoção pequena, edite diretamente. Para remoção grande/múltiplos arquivos, delegue para builder:
    ```
    Agent(subagent_type="builder", prompt=""
    Remova a seção '## {Título da Entrada}' do arquivo .pi/memory/{campo}.md.
@@ -190,15 +190,13 @@ Quando memória não é mais relevante:
    e sobrescreva .pi/memory/_summary.md com o write.
    "")
    ```
-3. O builder faz a remoção E regenera o `_summary.md` em uma única chamada
+3. Regere `_summary.md` após a remoção. Se usar builder, peça para ele remover e regenerar em uma única chamada.
 
 ---
 
-## REGRA 6 — REGENERAÇÃO DO `_summary.md` (AUTOMÁTICA VIA BUILDER)
+## REGRA 6 — REGENERAÇÃO DO `_summary.md`
 
-A regeneração do `_summary.md` é SEMPRE feita pelo builder junto com a operação de SAVE/EDIT/DELETE.
-O modelo principal NÃO precisa regenerar manualmente — basta delegar para o builder
-que ele já faz a operação + regeneração em uma única chamada.
+Regere `_summary.md` sempre que a memória persistente mudar. O modelo principal pode fazer isso diretamente para mudanças pequenas; use builder quando a atualização exigir sintetizar muitos arquivos ou grandes blocos de scout output.
 
 Se por algum motivo precisar regenerar isoladamente:
 ```
@@ -225,7 +223,7 @@ e sobrescreva .pi/memory/_summary.md com o write.
    ```
    Agent(subagent_type="scout", prompt="Busque no projeto: {descrição detalhada do que precisa}")
    ```
-   O scout é barato (MiniMax M2.7) e retorna resultados estruturados.
+   O scout é barato/rápido e retorna resultados estruturados.
 4. Se a busca revelar info relevante, SAVE na memória (Regra 3).
 
 Use busca ANTES de decisões arquiteturais, debugging complexo, ou quando o usuário pedir "busca na memória sobre X".
@@ -237,8 +235,8 @@ Use busca ANTES de decisões arquiteturais, debugging complexo, ou quando o usu�
 Execute mentalmente antes de CADA resposta:
 ```
 [ ] Eu executei alguma ação que gerou ou alterou conhecimento do projeto?
-[ ] Se sim, eu deleguei para o builder salvar/editar o arquivo .md + regenerar _summary.md?
-[ ] Se não deleguei, PARE TUDO e chame o builder AGORA.
+[ ] Se sim, eu salvei/editei o arquivo .md correto e regenerei _summary.md?
+[ ] Se a mudança era grande, eu considerei delegar para builder?
 ```
 
 ---

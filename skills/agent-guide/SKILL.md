@@ -18,7 +18,7 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 - **Higher per-scout quality** — each scout gets a crisp, bounded question it can actually answer well
 - **Easier to verify** — small outputs are simpler to audit and merge
 
-**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", split it into 2–5 narrower scouts and run them in parallel.
+**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", split it into 2–5 narrower scouts and run them in parallel. While they run, the main model should keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -49,6 +49,7 @@ Agent({
 - Ask for **exact file paths and line numbers**
 - It returns a checkpoint file — read it before proceeding
 - **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
+- **Do useful parent work while scouts run**: read high-signal files, grep exact symbols, inspect tests/config/logs, and build hypotheses to validate against scout reports.
 
 ---
 
@@ -81,7 +82,7 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 ```
 
 **Rules:**
-- **ALWAYS do pre-plan first yourself** — get user approval before running planner
+- Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial
 - Planner is **expensive** — don't run it for trivial tasks
 - Read `SCHEDULE.md` and `TASKS/` before spawning builders
 
