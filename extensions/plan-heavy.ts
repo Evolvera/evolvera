@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const execFileAsync = promisify(execFile);
 
@@ -408,5 +409,95 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     },
   });
 
-  console.log("[plan-heavy] Extension loaded: /plan-heavy command enabled");
+  // Agent-callable tools (same deterministic logic as the slash command).
+  // These let the orchestrating agent run the harness directly instead of
+  // depending on a human typing the slash command.
+  pi.registerTool({
+    name: "plan_heavy_handoff",
+    label: "Plan Heavy: Handoff",
+    description:
+      "Deterministically collect repo state (branch, recent commits, git status, existing .pi/plans, dirty files, shared-file hazards) and create a planner-heavy handoff. " +
+      "Creates .pi/plans/<slug>/HANDOFF.md and PLAN_HEAVY_PROMPT.md and returns the plan dir + the prompt to launch the planner-heavy subagent. Use before planning high-risk/long-horizon work.",
+    promptSnippet: "Use plan_heavy_handoff to start the /plan-heavy harness from the agent (no slash command needed).",
+    parameters: Type.Object({
+      goal: Type.String({ description: "Approved goal/scope for the heavy plan." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      try {
+        const { planDir, prompt } = await createHandoff(ctx.cwd, params.goal);
+        const relativePlanDir = relative(ctx.cwd, planDir);
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Plan-heavy handoff created at \`${relativePlanDir}\`.\n\n` +
+                `Next: launch the \`planner-heavy\` subagent with this prompt, then call plan_heavy_validate.\n\n` +
+                `--- PLANNER-HEAVY PROMPT ---\n${prompt}`,
+            },
+          ],
+          details: { planDir: relativePlanDir },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: "text", text: `plan_heavy_handoff failed: ${message}` }], isError: true, details: { error: message } };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "plan_heavy_envelope",
+    label: "Plan Heavy: Envelope",
+    description:
+      "Create an execution envelope for one planner-heavy task. Captures current git status, target files, line counts, patch boundaries, preservation markers, snapshot dir, and checkpoint rules. " +
+      "Pass both the task file and this envelope to the builder before execution.",
+    promptSnippet: "Use plan_heavy_envelope before spawning a builder for a /plan-heavy task.",
+    parameters: Type.Object({
+      planDir: Type.String({ description: "Plan directory (absolute or relative to cwd)." }),
+      task: Type.String({ description: "Task id (e.g. 01), task file name, or TASKS/ path." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const planDir = params.planDir.startsWith("/") ? params.planDir : join(ctx.cwd, params.planDir);
+      if (!existsSync(planDir) || !statSync(planDir).isDirectory()) {
+        return { content: [{ type: "text", text: `Plan directory not found: ${params.planDir}` }], isError: true, details: { error: "missing_plan_dir" } };
+      }
+      try {
+        const envelope = await createExecutionEnvelope(ctx.cwd, planDir, params.task);
+        return {
+          content: [
+            { type: "text", text: `Execution envelope created: \`${relative(ctx.cwd, envelope.path)}\`\n\n${envelope.content}` },
+          ],
+          details: { envelopePath: relative(ctx.cwd, envelope.path) },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: "text", text: `plan_heavy_envelope failed: ${message}` }], isError: true, details: { error: message } };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "plan_heavy_validate",
+    label: "Plan Heavy: Validate",
+    description:
+      "Validate a generated plan ecosystem (HANDOFF/PLAN_FULL/SCHEDULE/TASKS) for checkpoint commits, recovery snapshots, shared-file hazards, agent routing, patch boundaries, preservation markers, and required task gates. Writes PLAN_HEAVY_VALIDATION.md and returns PASS/BLOCKED.",
+    promptSnippet: "Use plan_heavy_validate after planner-heavy writes the plan and before spawning builders.",
+    parameters: Type.Object({
+      planDir: Type.String({ description: "Plan directory (absolute or relative to cwd)." }),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const planDir = params.planDir.startsWith("/") ? params.planDir : join(ctx.cwd, params.planDir);
+      if (!existsSync(planDir) || !statSync(planDir).isDirectory()) {
+        return { content: [{ type: "text", text: `Plan directory not found: ${params.planDir}` }], isError: true, details: { error: "missing_plan_dir" } };
+      }
+      const result = validatePlan(planDir);
+      return {
+        content: [{ type: "text", text: result.report }],
+        isError: !result.ok,
+        details: { ok: result.ok },
+      };
+    },
+  });
+
+  console.log("[plan-heavy] Extension loaded: /plan-heavy command + plan_heavy_* tools enabled");
 }
