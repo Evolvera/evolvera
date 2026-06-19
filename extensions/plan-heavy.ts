@@ -307,6 +307,15 @@ ${schedule.slice(0, 8000) || "SCHEDULE.md not found"}
   return { path: envelopePath, content };
 }
 
+// Tolerant field/section detection: matches a label as a heading (`## Label`),
+// bold (`**Label**`, `**Label:**`, `**Label**:`), or list field (`- **Label:**`),
+// case-insensitive, so valid formatting variants are not rejected.
+function hasLabel(content: string, label: string): boolean {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s-]+");
+  const re = new RegExp(`(^|\\n)\\s*(?:[-*>]\\s*)?(?:#{1,6}\\s*)?(?:\\*\\*)?\\s*${esc}\\s*:?\\s*(?:\\*\\*)?\\s*:?`, "i");
+  return re.test(content);
+}
+
 function validatePlan(planDir: string): { ok: boolean; report: string } {
   const required = ["HANDOFF.md", "PLAN_FULL.md", "SCHEDULE.md"];
   const missing = required.filter((f) => !existsSync(join(planDir, f)));
@@ -322,16 +331,17 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
   if (!/builder-heavy/i.test(schedule + tasks.map(readMaybe).join("\n"))) {
     findings.push("WARN: no builder-heavy task found; acceptable only if plan has no high-risk bounded work");
   }
-  if (!/Shared File Hazards/i.test(plan)) findings.push("BLOCKER: PLAN_FULL.md missing Shared File Hazards section");
+  if (!hasLabel(plan, "Shared File Hazards")) findings.push("BLOCKER: PLAN_FULL.md missing Shared File Hazards section");
   if (!/dirty/i.test(plan + schedule)) findings.push("WARN: dirty-file handling not mentioned in plan/schedule");
 
+  const requiredLabels = ["Agent", "Why This Agent", "Preservation Contract", "Recovery Requirement", "Patch Boundaries", "Preservation Markers", "TILL-DO", "Success Criteria"];
   for (const task of tasks) {
     const content = readMaybe(task);
     const name = relative(planDir, task);
-    for (const needle of ["**Agent**", "**Why This Agent**", "**Preservation Contract**", "**Recovery Requirement**", "## Patch Boundaries", "## Preservation Markers", "## TILL-DO", "## Success Criteria"]) {
-      if (!content.includes(needle)) findings.push(`BLOCKER: ${name} missing ${needle}`);
+    for (const label of requiredLabels) {
+      if (!hasLabel(content, label)) findings.push(`BLOCKER: ${name} missing "${label}" field/section`);
     }
-    if (/builder-heavy/i.test(content) && !/Heavy Fit/i.test(content)) findings.push(`BLOCKER: ${name} builder-heavy task missing Heavy Fit`);
+    if (/builder-heavy/i.test(content) && !hasLabel(content, "Heavy Fit")) findings.push(`BLOCKER: ${name} builder-heavy task missing Heavy Fit`);
   }
 
   const blockers = findings.filter((f) => f.startsWith("BLOCKER"));
