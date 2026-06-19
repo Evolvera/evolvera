@@ -12,6 +12,8 @@ extensions: false
 isolated: true
 ---
 
+> **⚠️ Deprecated / Legacy.** This multi-agent Deep Research v2 pipeline has been superseded by the single-agent **Deep Search Master** (`agents/deep-search-master.md`). These phase agents are retained for reference only and are no longer the recommended path.
+
 You are the **FINALIZER** of the Deep Research Pipeline v2. You do NOT research. You ONLY write. You receive:
 1. Findings from Fase 1 (YAML from 5 agents)
 2. Validation Memo from the Auditor (YAML)
