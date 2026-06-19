@@ -197,6 +197,115 @@ function listTaskFiles(planDir: string): string[] {
   return readdirSync(tasksDir).filter((f) => f.endsWith(".md")).map((f) => join(tasksDir, f));
 }
 
+function extractSection(markdown: string, heading: string): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = markdown.match(new RegExp(`(^|\\n)## ${escaped}\\n([\\s\\S]*?)(?=\\n## |$)`, "i"));
+  return match?.[2]?.trim() ?? "";
+}
+
+function parseTargetFiles(taskContent: string): string[] {
+  const section = extractSection(taskContent, "Files to Create/Modify");
+  return section
+    .split("\n")
+    .map((line) => line.match(/`([^`]+)`/)?.[1])
+    .filter((value): value is string => Boolean(value));
+}
+
+function findTaskFile(planDir: string, ref: string): string | null {
+  const tasks = listTaskFiles(planDir);
+  if (!ref) return null;
+  const direct = ref.startsWith("/") ? ref : join(planDir, ref);
+  if (existsSync(direct)) return direct;
+  const normalized = ref.replace(/^task_/, "").replace(/^0+/, "");
+  return (
+    tasks.find((task) => relative(join(planDir, "TASKS"), task) === ref) ??
+    tasks.find((task) => task.endsWith(ref)) ??
+    tasks.find((task) => new RegExp(`task_0*${normalized}[_-]`).test(task)) ??
+    null
+  );
+}
+
+async function createExecutionEnvelope(cwd: string, planDir: string, taskRef: string): Promise<{ path: string; content: string }> {
+  const taskPath = findTaskFile(planDir, taskRef);
+  if (!taskPath) throw new Error(`Task not found in ${planDir}: ${taskRef}`);
+
+  const taskContent = readMaybe(taskPath);
+  const handoff = readMaybe(join(planDir, "HANDOFF.md"));
+  const schedule = readMaybe(join(planDir, "SCHEDULE.md"));
+  const status = await run(cwd, "git status --short 2>/dev/null || true");
+  const branch = await run(cwd, "git branch --show-current 2>/dev/null || true");
+  const log = await run(cwd, "git log --oneline -5 2>/dev/null || true");
+  const targetFiles = parseTargetFiles(taskContent);
+  const taskBase = relative(join(planDir, "TASKS"), taskPath).replace(/\.md$/, "");
+  const envelopePath = join(planDir, "EXECUTION_ENVELOPES", `${taskBase}_EXECUTION_ENVELOPE.md`);
+  const snapshotDir = join(".pi", "recovery", taskBase, "before");
+
+  const lineCounts: string[] = [];
+  for (const file of targetFiles) {
+    const abs = join(cwd, file);
+    if (!existsSync(abs)) continue;
+    const count = await fileLineCount(cwd, file);
+    lineCounts.push(`- \`${file}\`: ${count ?? "unknown"} lines`);
+  }
+
+  const content = `# Execution Envelope — ${taskBase}
+
+Generated: ${new Date().toISOString()}
+Plan Directory: \`${relative(cwd, planDir)}\`
+Task File: \`${relative(cwd, taskPath)}\`
+
+## Runtime Repo State
+- Branch: ${branch.stdout || "UNKNOWN"}
+- Recent commits:
+\`\`\`text
+${log.stdout || "NONE"}
+\`\`\`
+- Git status before task:
+\`\`\`text
+${status.stdout || "CLEAN"}
+\`\`\`
+
+## Task Target Files
+${targetFiles.length ? targetFiles.map((f) => `- \`${f}\``).join("\n") : "- TO VERIFY: no target files parsed from task"}
+
+## Current Target File Line Counts
+${lineCounts.length ? lineCounts.join("\n") : "- None / new files only / not found"}
+
+## Recovery Snapshot Directory
+\`${snapshotDir}\`
+
+## Patch Boundaries From Task
+${extractSection(taskContent, "Patch Boundaries") || "TO VERIFY: task missing Patch Boundaries; builder must block or request repair before editing."}
+
+## Preservation Markers From Task
+${extractSection(taskContent, "Preservation Markers") || "TO VERIFY: task missing Preservation Markers; builder must block or request repair before editing."}
+
+## Dirty File Rules
+- Stage/commit only files listed in this task plus relevant \`.pi/build\` and \`.pi/recovery\` artifacts.
+- Do not stage pre-existing dirty files from the status block unless the task explicitly owns them.
+- If a target file has pre-existing unrelated dirty hunks, use anchored edits and selective staging.
+
+## Validation / Checkpoint Rules
+- Run the task validation from the task file.
+- Run preservation marker commands before and after editing.
+- Review focused diff for target files only.
+- If complete, orchestrator creates one selective checkpoint commit and records it in SCHEDULE.md.
+
+## Handoff Excerpt
+\`\`\`markdown
+${handoff.slice(0, 8000) || "HANDOFF.md not found"}
+\`\`\`
+
+## Schedule Excerpt
+\`\`\`markdown
+${schedule.slice(0, 8000) || "SCHEDULE.md not found"}
+\`\`\`
+`;
+
+  writeText(envelopePath, content);
+  return { path: envelopePath, content };
+}
+
 function validatePlan(planDir: string): { ok: boolean; report: string } {
   const required = ["HANDOFF.md", "PLAN_FULL.md", "SCHEDULE.md"];
   const missing = required.filter((f) => !existsSync(join(planDir, f)));
@@ -218,7 +327,7 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
   for (const task of tasks) {
     const content = readMaybe(task);
     const name = relative(planDir, task);
-    for (const needle of ["**Agent**", "**Why This Agent**", "**Preservation Contract**", "**Recovery Requirement**", "## TILL-DO", "## Success Criteria"]) {
+    for (const needle of ["**Agent**", "**Why This Agent**", "**Preservation Contract**", "**Recovery Requirement**", "## Patch Boundaries", "## Preservation Markers", "## TILL-DO", "## Success Criteria"]) {
       if (!content.includes(needle)) findings.push(`BLOCKER: ${name} missing ${needle}`);
     }
     if (/builder-heavy/i.test(content) && !/Heavy Fit/i.test(content)) findings.push(`BLOCKER: ${name} builder-heavy task missing Heavy Fit`);
@@ -244,11 +353,34 @@ ${tasks.length ? tasks.map((t) => `- \`${relative(planDir, t)}\``).join("\n") : 
 
 export default function planHeavyExtension(pi: ExtensionAPI) {
   pi.registerCommand("plan-heavy", {
-    description: "Create/validate a harness-grounded heavy plan. Usage: /plan-heavy <goal> or /plan-heavy validate <plan-dir>",
+    description: "Create/validate/envelope a harness-grounded heavy plan. Usage: /plan-heavy <goal>, /plan-heavy validate <plan-dir>, /plan-heavy envelope <plan-dir> <task-id|task-file>",
     handler: async (args, ctx) => {
       const raw = normalizeArgs(args);
       if (!raw) {
-        ctx.ui.notify("Usage: /plan-heavy <goal> or /plan-heavy validate <plan-dir>", "warning");
+        ctx.ui.notify("Usage: /plan-heavy <goal>, /plan-heavy validate <plan-dir>, or /plan-heavy envelope <plan-dir> <task-id|task-file>", "warning");
+        return;
+      }
+
+      if (raw.startsWith("envelope ")) {
+        const rest = raw.slice("envelope ".length).trim();
+        const [planPath, taskRef] = rest.split(/\s+/, 2);
+        if (!planPath || !taskRef) {
+          ctx.ui.notify("Usage: /plan-heavy envelope <plan-dir> <task-id|task-file>", "warning");
+          return;
+        }
+        const planDir = planPath.startsWith("/") ? planPath : join(ctx.cwd, planPath);
+        if (!existsSync(planDir) || !statSync(planDir).isDirectory()) {
+          ctx.ui.notify(`Plan directory not found: ${planPath}`, "error");
+          return;
+        }
+        try {
+          const envelope = await createExecutionEnvelope(ctx.cwd, planDir, taskRef);
+          ctx.ui.notify(`Execution envelope created: ${relative(ctx.cwd, envelope.path)}`, "info");
+          ctx.ui.setEditorText(envelope.content);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`Envelope failed: ${message}`, "error");
+        }
         return;
       }
 

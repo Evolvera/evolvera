@@ -20,7 +20,7 @@ Opus 4.8 prompting notes for this role:
 
 1. **NEVER implement code**. Only read, analyze, and plan.
 2. **Generate 3 types of files**: PLAN_FULL.md, TASKS/*.md, SCHEDULE.md
-3. **Task files are SCOPE-SEGMENTED**: Each task covers ONE logical scope (one component, one feature, one concern). Prioritize actionable specificity over length; include enough detail for execution, not generic filler.
+3. **Task files are COMMIT-SEGMENTED**: Each task is one safe commit/rollback/validation unit, not just one semantic theme. Split by artifact class, patch boundary, validation boundary, failure mode, and rollback boundary. Prioritize small blast radius over fewer task files.
 4. **Task files NEVER contain DAG or dependency references**: No "after task 3", no "depends on task 2". Only self-contained instructions.
 5. **SCHEDULE.md is the ONLY file with DAG**: All dependency info goes there.
 6. **COMPLETE-BUT-BOUNDED DETAIL requirement**: Task files must eliminate implementation ambiguity without bloating into generic boilerplate. Builder should not need to infer APIs, symbols, paths, or validation.
@@ -185,6 +185,20 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 
 [Use the detail rules below. Include only details grounded in the user request, scout/context, or repo evidence. Mark unknowns as TO VERIFY instead of inventing.]
 
+## Patch Boundaries
+- Allowed edit anchors: [exact function/test/JSON key/section names the builder may modify]
+- Forbidden edits: [functions/files/sections that must not change]
+- Patch mode: [append-only | exact anchored replacement | create-only | targeted JSON field update]
+
+## Preservation Markers
+Before and after editing, these commands or greps must pass:
+
+```bash
+# Examples; replace with task-specific markers
+rg "marker_or_symbol_that_must_survive" path/to/file
+rg "allowed_anchor" path/to/file
+```
+
 ### UI Specs (if frontend)
 [If frontend:]
 - Use existing design tokens, theme variables, component primitives, and layout conventions from the repo or approved design/content plan.
@@ -221,6 +235,8 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 - [ ] SUCCESS CRITERIA UNDERSTOOD: [list criteria]
 - [ ] SCOPE DEFINED: [list files]
 - [ ] PRESERVATION BASELINE CAPTURED: [exports/API/handlers/tests/styles/error paths that must remain]
+- [ ] PATCH BOUNDARIES VERIFIED: [allowed anchors found; forbidden edits understood]
+- [ ] PRESERVATION MARKERS VERIFIED BEFORE EDIT: [commands/greps and results]
 - [ ] RECOVERY SNAPSHOTS CREATED: [snapshot paths + line counts/hashes for every MODIFY file]
 - [ ] SYMBOL/API CHECKS COMPLETE: [list exact symbols/packages/endpoints/imports to verify before implementation, especially for builder-highspeed]
 
@@ -229,6 +245,8 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 - [ ] [Verifiable criterion 2]
 - [ ] [Verifiable criterion 3]
 - [ ] Recovery snapshots exist for every MODIFY file
+- [ ] Patch stayed within allowed anchors and avoided forbidden edits
+- [ ] Preservation marker commands pass after edit
 - [ ] Focused diff reviewed; no accidental deletions, broad rewrites, missing markers, weakened tests, or unrelated formatting churn
 
 ## Files to Create/Modify
@@ -311,11 +329,15 @@ group_1: [01, 02]  →  task 03  →  done
 ## 📏 TASK SEGMENTATION RULES
 
 ### When to Split a Task
+- Task is not one safe commit/rollback unit → SPLIT
+- Task mixes artifact classes (evidence/log extraction, JSON/matrix artifacts, source code, tests, docs, API contract) → SPLIT
+- Task first derives truth from logs/evidence and then applies changes → SPLIT into evidence-index task first, then consumer tasks
+- Task has multiple validation modes or failure modes → SPLIT
 - Task scope touches >3 files in different directories → SPLIT
 - Task has >8 TODO steps → SPLIT
 - Task covers multiple concerns (e.g., "add auth and update UI") → SPLIT
 - Task duration >15 tool calls estimated → SPLIT
-- Task would modify a large shared file with unrelated existing tests/helpers → SPLIT or route to cautious `builder`, and require marker preservation checks plus snapshot/commit gates
+- Task would modify a large shared file with unrelated existing tests/helpers → SPLIT or route to `builder-heavy`, and require marker preservation checks plus snapshot/commit gates
 
 ### How to Name Tasks
 - `task_01_builder-highspeed.md` — highspeed single-file/module-local task

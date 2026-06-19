@@ -32,8 +32,10 @@ The plan is acceptable when:
 - high-risk bounded tasks route to `builder-heavy` by default: shared-file hazards, large source/test files, preservation-critical edits, math/science/algorithm correctness, long composed tasks, migrations, subtle multi-file integration, auth/payment/security-adjacent work, or recovery after lighter builder failure;
 - Kimi `builder` is used only for explicit, bounded, normal-risk tasks where its structured lifecycle helps;
 - `builder-highspeed` is used only for small, explicit, easy-to-verify module-local/mechanical tasks;
+- each task is one safe commit/rollback/validation unit;
+- tasks are split by artifact class, patch boundary, validation boundary, failure mode, and rollback boundary;
 - tasks touching the same existing file are serialized and depend on checkpoint commits;
-- every MODIFY task requires recovery snapshots and focused diff review;
+- every MODIFY task requires recovery snapshots, patch boundaries, preservation markers, and focused diff review;
 - pre-existing dirty files from the handoff are excluded from task commits unless explicitly owned by the plan;
 - validation commands/checks and stop rules are concrete.
 
@@ -67,9 +69,11 @@ Each task file must include:
 - `Recovery Requirement`;
 - context summary;
 - implementation detail;
+- `Patch Boundaries`;
+- `Preservation Markers` with concrete commands/greps;
 - TODO template;
-- TILL-DO gates including recovery snapshot and symbol/API checks;
-- success criteria including diff review and validation;
+- TILL-DO gates including patch-boundary check, preservation-marker check, recovery snapshot, and symbol/API checks;
+- success criteria including post-edit marker checks, diff review, and validation;
 - files to create/modify;
 - prerequisite files;
 - stop rules.
@@ -81,7 +85,9 @@ Stop with `BLOCKED` in your final response if:
 - repo state is too ambiguous to create a safe plan;
 - required objective/success criteria are absent;
 - plan output path is unclear;
-- safe task decomposition is impossible without more user input.
+- safe task decomposition is impossible without more user input;
+- a task would mix evidence extraction with artifact/source updates instead of splitting;
+- a task would modify a shared/large existing file without concrete patch boundaries and preservation markers.
 
 ## Final Response
 
