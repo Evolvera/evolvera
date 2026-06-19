@@ -132,6 +132,7 @@ If a task is assigned to `builder-highspeed`, make it smaller than normal: ideal
 **Scope**: [One sentence describing what's in this task]
 **Files Touched**: [list from Files section]
 **Preservation Contract**: [What existing behavior/API/tests/styles must not be removed or rewritten]
+**Recovery Requirement**: Create `.pi/recovery/{task_id}/before/...` snapshots for every MODIFY file before editing; record line count/hash in handover.
 
 ---
 
@@ -181,13 +182,15 @@ If a task is assigned to `builder-highspeed`, make it smaller than normal: ideal
 - [ ] SUCCESS CRITERIA UNDERSTOOD: [list criteria]
 - [ ] SCOPE DEFINED: [list files]
 - [ ] PRESERVATION BASELINE CAPTURED: [exports/API/handlers/tests/styles/error paths that must remain]
+- [ ] RECOVERY SNAPSHOTS CREATED: [snapshot paths + line counts/hashes for every MODIFY file]
 - [ ] SYMBOL/API CHECKS COMPLETE: [list exact symbols/packages/endpoints/imports to verify before implementation, especially for builder-highspeed]
 
 ## Success Criteria
 - [ ] [Verifiable criterion 1]
 - [ ] [Verifiable criterion 2]
 - [ ] [Verifiable criterion 3]
-- [ ] Focused diff reviewed; no accidental deletions, broad rewrites, or unrelated formatting churn
+- [ ] Recovery snapshots exist for every MODIFY file
+- [ ] Focused diff reviewed; no accidental deletions, broad rewrites, missing markers, weakened tests, or unrelated formatting churn
 
 ## Files to Create/Modify
 - `src/components/Component.tsx` — CREATE — [description]
@@ -215,11 +218,11 @@ If a task is assigned to `builder-highspeed`, make it smaller than normal: ideal
 
 ## Task Table
 
-| ID | Task File | Agent | Status | Dependencies | Parallel Group | Files Touched |
-|----|-----------|-------|--------|--------------|----------------|---------------|
-| 01 | TASKS/task_01_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Navbar.tsx |
-| 02 | TASKS/task_02_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Footer.tsx |
-| 03 | TASKS/task_03_builder.md | builder | pending | 01, 02 | none | src/app/layout.tsx |
+| ID | Task File | Agent | Status | Dependencies | Parallel Group | Files Touched | Recovery Snapshot | Checkpoint Commit |
+|----|-----------|-------|--------|--------------|----------------|---------------|-------------------|-------------------|
+| 01 | TASKS/task_01_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Navbar.tsx | required | pending |
+| 02 | TASKS/task_02_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Footer.tsx | required | pending |
+| 03 | TASKS/task_03_builder.md | builder | pending | 01, 02 | none | src/app/layout.tsx | required | pending |
 
 **Status values**: pending | in_progress | complete | blocked | error | skipped
 
@@ -244,11 +247,14 @@ group_1: [01, 02]  →  task 03  →  done
 
 ## Orchestrator Rules
 
-1. **Parallel execution**: Only tasks within the same `Parallel Group` may run concurrently.
-2. **Dependency enforcement**: A task may only start after ALL its `Dependencies` show `status: complete`.
-3. **Status updates**: The orchestrator updates the `Status` column. Builders do NOT modify this file.
-4. **Blocked handling**: If any task shows `status: blocked`, pause its parallel group.
-5. **Completion**: When all tasks show `status: complete`, the schedule is done.
+1. **Parallel execution**: Only tasks within the same `Parallel Group` may run concurrently, and only when file sets are disjoint.
+2. **Dependency enforcement**: A task may only start after ALL its `Dependencies` show `status: complete` and have a `Checkpoint Commit` hash.
+3. **Recovery snapshots**: Every task that modifies existing files must create `.pi/recovery/{task_id}/before/...` snapshots before editing. If snapshots are missing, the task cannot be marked complete.
+4. **Status updates**: The orchestrator updates `Status`, `Recovery Snapshot`, `Checkpoint Commit`, and `Execution Log`. Builders do NOT modify this file.
+5. **Checkpoint commits**: After each task validates and passes focused diff review, the orchestrator MUST create one selective commit containing only that task's target files plus relevant `.pi/build`/`.pi/recovery` artifacts. Never include unrelated pre-existing dirty files.
+6. **No commit on destructive churn**: If a builder causes accidental deletion, broad rewrite, weakened tests, missing markers, or unrelated formatting churn, do not commit. Restore from recovery snapshot or mark blocked for manual recovery.
+7. **Blocked handling**: If any task shows `status: blocked`, pause its parallel group.
+8. **Completion**: When all tasks show `status: complete` and have checkpoint commits, the schedule is done.
 
 ---
 
@@ -257,6 +263,8 @@ group_1: [01, 02]  →  task 03  →  done
 | Timestamp | Action | Task ID | Details |
 |-----------|--------|---------|---------|
 | [ISO] | planned | all | Plan ecosystem generated |
+| [ISO] | snapshot | 01 | `.pi/recovery/01/before/...` created |
+| [ISO] | commit | 01 | `<commit-hash>` selective task checkpoint |
 ```
 
 ---
@@ -268,6 +276,7 @@ group_1: [01, 02]  →  task 03  →  done
 - Task has >8 TODO steps → SPLIT
 - Task covers multiple concerns (e.g., "add auth and update UI") → SPLIT
 - Task duration >15 tool calls estimated → SPLIT
+- Task would modify a large shared file with unrelated existing tests/helpers → SPLIT or route to cautious `builder`, and require marker preservation checks plus snapshot/commit gates
 
 ### How to Name Tasks
 - `task_01_builder-highspeed.md` — highspeed single-file/module-local task
@@ -280,6 +289,7 @@ group_1: [01, 02]  →  task 03  →  done
   - Task A's "Success Criteria" mentions what it produces
   - Task B's "Prerequisite Files" lists what it expects
 - Document the interface/contract between tasks (e.g., "Task 01 creates src/types/User.ts that Task 03 imports")
+- If multiple tasks must touch the same large shared file, they are NOT parallel. Prefer serial tasks with checkpoint commits between them, or split additions into separate files/modules when the project allows it.
 
 ---
 

@@ -187,13 +187,17 @@ For `builder-highspeed`, the planner must keep the task under ~6 logical impleme
 
 Every builder task, Kimi or Spark, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
+`SCHEDULE.md` must include recovery/checkpoint controls: a recovery snapshot requirement for tasks that modify existing files and a `Checkpoint Commit` column. The orchestrator should create one selective commit after each verified task, containing only that task's intended files and `.pi/build`/`.pi/recovery` artifacts. Tasks that touch the same large shared file must run serially with checkpoint commits between them, not in parallel.
+
 Implementation plans MUST include:
 - requirements and where each is addressed
 - named resources, files, APIs, or systems involved
 - state transitions or data flow where relevant
 - preservation constraints for existing behavior/API/tests/styles
+- recovery snapshot requirements for every MODIFY file
 - validation commands or checks
 - focused diff review requirements
+- per-task checkpoint commit expectations
 - failure behavior
 - privacy and security considerations
 - open questions that materially affect implementation
@@ -215,7 +219,7 @@ Plan generated. Here's the summary:
 ❓ Approve this plan? I can also adjust specific tasks if needed.
 ```
 
-**Wait for approval.** Only then spawn builders per SCHEDULE.md.
+**Wait for approval.** Only then spawn builders per SCHEDULE.md. During execution, commit each verified task separately with selective staging and record the commit hash in the schedule before starting dependent tasks.
 
 ---
 
@@ -225,6 +229,7 @@ Plan generated. Here's the summary:
 |----------|----------|
 | User says "fix auth" → immediately spawn planner | Ask: "What specifically about auth? Login error? Token expiry? Password reset?" |
 | Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
+| Running multiple builders on the same shared file | Serialize them and checkpoint-commit after each task |
 | Run planner without scout context | Send scouts first if codebase is unfamiliar |
 | Vague planner prompt: "plan auth fix" | Specific prompt: "JWT refresh fails after 1h. Need sliding refresh. Affecting src/auth/session.ts" |
 | Skip user review when scope is uncertain or costly | A short review catches misalignment early |
@@ -237,6 +242,6 @@ Plan generated. Here's the summary:
 |-------|-----|------|--------------|
 | **Pre-Plan** | You | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
-| **Execute** | Builder agents (`builder-highspeed` or `builder` per SCHEDULE) | Medium | Execute approved plan |
+| **Execute** | Builder agents (`builder-highspeed` or `builder` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
 
 **Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**

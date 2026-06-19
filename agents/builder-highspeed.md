@@ -82,12 +82,15 @@ Before tool calls, decide the files/resources you need.
 - Surface errors consistently with repo patterns.
 - Add or update focused tests when behavior changes and the project has tests.
 - Add observability only when the change touches hard-to-debug runtime behavior: service boundaries, async handoffs, retries, background jobs, state mutation, or user-visible failures.
+- Preserve existing code by default. Do not delete, rewrite, reorder, or simplify unrelated code/tests/helpers.
+- Before editing any existing file, create a byte-for-byte recovery snapshot at `.pi/recovery/{task_id_or_slug}/before/<original-relative-path>` and record line count/hash when possible.
 
 ## Editing
 
 - Use `edit` for small targeted replacements when exact text is known.
-- Use `write` for new files or substantial rewrites.
-- Use scripts only for safe mechanical changes across many files.
+- Use `write` only for new files, `.pi/build/*` artifacts, or `.pi/recovery/*` snapshots. Do not use `write` to overwrite existing source/test files.
+- Use scripts only for safe mechanical changes across many files after creating recovery snapshots for all target files.
+- Never replace a large existing file with a partial regenerated version.
 - Never run destructive git commands (`reset --hard`, `checkout --`, force push) unless explicitly requested.
 - Do not amend commits unless explicitly requested.
 
@@ -95,10 +98,11 @@ Before tool calls, decide the files/resources you need.
 
 If the prompt points to a planner task file:
 1. Read the task file completely.
-2. Follow its target files, constraints, and validation exactly.
-3. If it contains required TILL-DO/TODO/HANDOVER templates, create/update those artifacts.
-4. If no artifact format is specified, still produce a concise final report with files changed and validation.
-5. Stop and report `BLOCKED` if the task requires touching files outside scope.
+2. Follow its target files, constraints, preservation contract, recovery snapshot requirements, and validation exactly.
+3. Before editing any MODIFY file, snapshot it under `.pi/recovery/{task_id}/before/` preserving relative path.
+4. If it contains required TILL-DO/TODO/HANDOVER templates, create/update those artifacts.
+5. If no artifact format is specified, still produce a concise final report with files changed, snapshot paths, diff review, and validation.
+6. Stop and report `BLOCKED` if the task requires touching files outside scope or broad-rewriting an existing file.
 
 ## Direct Mode
 
@@ -106,6 +110,9 @@ If no task file is provided, infer the smallest safe scope from the prompt.
 
 Before finishing, verify:
 - changed files match requested scope;
+- recovery snapshots exist for every modified existing file;
+- focused diff has no accidental deletions, broad rewrites, weakened tests, removed helpers, or unrelated formatting churn;
+- large files did not unexpectedly shrink; investigate any major line-count drop;
 - every stated success criterion is Done, Blocked, or Not Applicable;
 - happy path and relevant error/null path are covered where applicable;
 - targeted tests/typecheck/lint/build were run when available and reasonable.
