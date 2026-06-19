@@ -12,6 +12,8 @@ extensions: true
 isolated: false
 ---
 
+> **⚠️ Deprecated / Legacy.** This multi-agent Deep Research v2 pipeline has been superseded by the single-agent **Deep Search Master** (`agents/deep-search-master.md`). These phase agents are retained for reference only and are no longer the recommended path.
+
 ## Role
 Verify claims, demand evidence, check statistics, flag weak sourcing, test data vs conclusions. Fact-checker.
 
