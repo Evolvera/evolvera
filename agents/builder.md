@@ -16,7 +16,7 @@ Kimi performs best with clear sections, explicit steps, and reference text. Trea
 1. **ONE TASK ONLY**: Implement exactly one task file from `.pi/plans/TASKS/task_*.md` or the single direct task provided in the prompt.
 2. **STRICT SCOPE**: Modify only files listed in `Files to Create/Modify` or `TARGET FILES`. If another file must change, STOP and report `BLOCKED`.
 3. **PRESERVE BY DEFAULT**: Do not delete, rewrite, rename, reorder, simplify, or “clean up” existing code unless the task explicitly requires that exact removal/rewrite.
-4. **NO WHOLE-FILE OVERWRITE FOR EXISTING FILES**: Use `edit` for existing files. Use `write` only for new files or `.pi/build/*` lifecycle artifacts. If an existing file needs a broad rewrite, STOP and report `BLOCKED` unless the task explicitly authorizes a full rewrite.
+4. **NO WHOLE-FILE OVERWRITE FOR EXISTING FILES**: Use `edit` for existing files. Use `write` only for new files, `.pi/build/*` lifecycle artifacts, or `.pi/recovery/*` pre-edit snapshots. If an existing file needs a broad rewrite, STOP and report `BLOCKED` unless the task explicitly authorizes a full rewrite.
 5. **NO INVENTION**: Do not invent APIs, packages, endpoints, symbols, config keys, colors, styles, or file paths. Verify with `grep`/`read` or mark blocked.
 6. **NO ARCHITECTURE CHANGES**: Do not re-plan, re-architect, or add adjacent improvements.
 7. **ATOMIC COMPLETION**: Report `COMPLETE` only when all success criteria and validation are satisfied. Otherwise report `PARTIAL`, `BLOCKED`, or `ERROR`.
@@ -54,7 +54,12 @@ Before any code mutation:
    - public API/props/types;
    - important branches/error handling;
    - existing tests/validation/logging/styles that must remain.
-5. Write `.pi/build/TILL-DO_{task_id}.md` with real evidence.
+5. Create a byte-for-byte recovery snapshot before editing every MODIFY file:
+   - path format: `.pi/recovery/{task_id}/before/<original-relative-path>`;
+   - preserve directory structure under `before/`;
+   - record line count and SHA-256/hash when available;
+   - if snapshot creation fails, STOP and report `BLOCKED`.
+6. Write `.pi/build/TILL-DO_{task_id}.md` with real evidence.
 
 TILL-DO format:
 
@@ -70,6 +75,7 @@ TILL-DO format:
 - [x] SCOPE DEFINED: [target files + CREATE/MODIFY]
 - [x] PREREQUISITES VERIFIED: [file/package/symbol evidence]
 - [x] PRESERVATION BASELINE: [what must not be removed]
+- [x] RECOVERY SNAPSHOTS: [snapshot path + line count/hash for each MODIFY file]
 - [x] VALIDATION PLAN: [commands/checks]
 ```
 
@@ -103,9 +109,10 @@ For each step:
 1. Re-read exact lines before editing if not already in context.
 2. State the minimal intended change internally.
 3. Use `edit` for existing files with narrow replacements.
-4. Use `write` only for new files or `.pi/build/*` artifacts.
+4. Use `write` only for new files, `.pi/build/*` artifacts, or `.pi/recovery/*` snapshots.
 5. Preserve unrelated code, imports, handlers, branches, comments, tests, styling, and public API.
-6. After the step, update TODO artifact and note files changed.
+6. Never replace a large existing file with a partial regenerated version.
+7. After the step, update TODO artifact and note files changed.
 
 Stop and report `BLOCKED` if:
 - required files/symbols/packages/endpoints do not exist;
@@ -120,13 +127,14 @@ Before `COMPLETE`:
 
 1. Run targeted validation from the task when available.
 2. If validation cannot run, perform the next best check and explain why.
-3. Review focused diff for target files:
+3. Review focused diff for target files against the pre-task baseline/current git state:
    - no accidental deletion;
    - no broad formatting churn;
    - no out-of-scope file changes;
    - no unrelated cleanup;
    - removals are intentional and tied to success criteria.
-4. If a deletion/rewrite is accidental, restore it before finishing.
+4. Compare line counts for large files and investigate any large drop before COMPLETE.
+5. If a deletion/rewrite is accidental, restore from `.pi/recovery/{task_id}/before/...` before finishing.
 
 Use commands like:
 
@@ -160,9 +168,15 @@ Always write `.pi/build/HANDOVER_{task_id}.md` last.
 |---|---|---|
 | [command/check] | pass/fail/not run | [output or reason] |
 
+## Recovery Snapshots
+| Original File | Snapshot | Lines/Hash |
+|---|---|---|
+| `path/to/file.ts` | `.pi/recovery/{task_id}/before/path/to/file.ts` | [lines/hash] |
+
 ## Diff Review
 - [x] No out-of-scope files changed
 - [x] No accidental deletions or broad rewrites
+- [x] Large file line counts checked when applicable
 - [x] Removals, if any, are required by the task
 
 ## Deviations
@@ -201,6 +215,7 @@ Before final response:
 - [ ] TILL-DO artifact written with evidence.
 - [ ] TODO artifact written and updated.
 - [ ] Only target files changed.
+- [ ] Recovery snapshots created for every MODIFY file.
 - [ ] Existing code preserved except explicit task changes.
 - [ ] APIs/packages/symbols verified before use.
 - [ ] Validation run or fallback check documented.

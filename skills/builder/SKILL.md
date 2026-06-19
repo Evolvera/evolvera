@@ -69,9 +69,12 @@ Use when `.pi/plans/` exists.
 
 1. Read `.pi/plans/SCHEDULE.md`.
 2. Select tasks with dependencies satisfied.
-3. Run tasks in the same parallel group concurrently only if files do not overlap.
-4. Run dependent groups serially.
-5. After each builder, read the handover/status artifact if produced and update orchestration state.
+3. Before spawning a builder, ensure the task prompt requires pre-edit recovery snapshots for every MODIFY file.
+4. Run tasks in the same parallel group concurrently only if files do not overlap and selective checkpoint commits remain safe.
+5. Run dependent groups serially.
+6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
+7. If the task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
+8. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
 Example:
 
@@ -84,7 +87,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-highspeed` and `builder`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header.
+Planner-generated schedules may mix `builder-highspeed` and `builder`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task.
 
 ## Direct Mode Prompt
 
@@ -119,8 +122,11 @@ CONSTRAINTS
 VALIDATION
 Run:
 - [targeted test/typecheck/lint/build command]
-Also review focused diff for accidental deletions or broad rewrites.
+Also review focused diff for accidental deletions or broad rewrites and verify recovery snapshots exist for MODIFY files.
 If validation cannot run, explain why and provide the next best check.
+
+CHECKPOINT
+After successful validation, orchestrator will commit only TARGET FILES plus relevant `.pi/build`/`.pi/recovery` artifacts for this task.
 
 STOP RULES
 - Stop and report BLOCKED if required files are missing, tests cannot be run for environment reasons, or the requested change conflicts with existing behavior.
@@ -150,8 +156,10 @@ Before spawning builder, verify:
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Preservation constraints are explicit: what must not be removed/rewritten.
+- [ ] Pre-edit recovery snapshots are required for every MODIFY file.
 - [ ] Validation command/check is included.
 - [ ] Diff review is required before COMPLETE.
+- [ ] Checkpoint commit expectation is clear for planner-driven tasks.
 - [ ] Task is small enough for a delegated model.
 - [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, and every API/package/symbol can be verified.
 
@@ -162,7 +170,9 @@ If more than two boxes are missing, do more prep or implement directly.
 After builder finishes:
 - inspect actual diff, not just its summary;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, or unrelated formatting churn;
+- verify `.pi/recovery/{task_id}/before/...` snapshots exist for modified existing files;
 - run or review validation results;
+- commit verified task output immediately with selective staging only; never include unrelated dirty files;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 
