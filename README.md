@@ -68,7 +68,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (19)
+## 🤖 Agentes Disponíveis (20)
 
 ### Pipeline de Código
 
@@ -76,7 +76,8 @@ git pull
 |--------|-------|--------|--------|-------------|
 | **Scout Highspeed** | ⚡ | Explorador rápido — mapeia arquivos, dependências, padrões, testes | GPT-5.3 Codex Spark | default para exploração rápida/backend/infra/algoritmos |
 | **Scout** | 🔍 | Explorador cauteloso com workflow Kimi/checkpoint | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
-| **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
+| **Planner** | 🏛️ | Arquiteto — cria planos detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
+| **Planner Heavy** | 🏛️ | Core de planejamento limpo para `/plan-heavy`, baseado em handoff determinístico | Claude Opus | usado pelo harness em long-horizon/high-risk/shared-file plans |
 | **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
 | **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando Kimi/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
@@ -202,7 +203,7 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `website-pipeline` | Orquestração design → conteúdo → plano → build |
 | `website-stack` | Convenções de stack para websites |
 
-## 🔌 Extensões (5)
+## 🔌 Extensões (6)
 
 | Extensão | O que faz |
 |----------|-----------|
@@ -210,7 +211,24 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `goal-mode.ts` | Adiciona `/goal` para fixar done criteria até concluir ou limpar |
 | `jina-reader.ts` | Lê URLs e PDFs via Jina Reader |
 | `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
+| `plan-heavy.ts` | Harness `/plan-heavy` para handoff determinístico + validação de plano |
 | `project-memory.ts` | Gerencia memória persistente por projeto |
+
+### `/plan-heavy` — Planner Harness
+
+Use para planejamento long-horizon/high-risk antes de builders. O harness cria um handoff determinístico com repo state, dirty files, hazards e checkpoint policy, depois orienta o uso do `planner-heavy`.
+
+```txt
+/plan-heavy <goal>              # cria .pi/plans/<slug>/HANDOFF.md + prompt para planner-heavy
+/plan-heavy validate <plan-dir> # valida PLAN_FULL/SCHEDULE/TASKS antes de rodar builders
+```
+
+Fluxo v1:
+
+1. `/plan-heavy <goal>` coleta `git status`, commits recentes, `.pi/plans`, dirty files e shared-file hazards.
+2. O orchestrator lança `planner-heavy` com o prompt gerado em `PLAN_HEAVY_PROMPT.md`.
+3. `planner-heavy` escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
+4. `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots, checkpoint commits, agents ou preservation contracts.
 
 ### `/goal` — Goal Mode
 
@@ -285,8 +303,9 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 19 agentes (.md)
+├── agents/                 # 20 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
+│   ├── planner-heavy.md    # Core limpo para /plan-heavy
 │   ├── planner-quick.md    # Planner leve para quick fixes
 │   ├── builder.md          # Engenheiro de execução cauteloso
 │   ├── builder-highspeed.md # Executor rápido GPT-5.3 Codex Spark
