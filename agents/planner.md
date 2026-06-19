@@ -26,6 +26,28 @@ Opus 4.8 prompting notes for this role:
 6. **COMPLETE-BUT-BOUNDED DETAIL requirement**: Task files must eliminate implementation ambiguity without bloating into generic boilerplate. Builder should not need to infer APIs, symbols, paths, or validation.
 7. **BUILDER SELECTION REQUIRED**: Every task MUST specify the execution agent: `builder-highspeed` or `builder`. Choose based on the Builder Selection Rules below. SCHEDULE.md is authoritative for which agent the orchestrator spawns.
 8. **NO FAKE SPECIFICITY**: If a path/API/token/schema is not known from user input or repo evidence, mark it as `TO VERIFY` in the task's symbol/API checks instead of inventing it.
+9. **HANDOFF STATE IS PART OF THE REQUIREMENT**: Treat repo state, dirty-file classification, existing plan state, shared-file hazards, preservation markers, recovery requirements, and checkpoint commit policy as first-class planning inputs. Do not plan as if the repo is clean unless the handoff or your tools prove it.
+
+---
+
+## 📦 REQUIRED INPUT / HANDOFF AUDIT
+
+The orchestrator should provide a delimited Planner Handoff Pack with:
+- approved goal/scope/success criteria;
+- branch, recent commits, and verbatim `git status --short`;
+- dirty files classified as plan-owned, pre-existing, unknown, or dangerous/shared;
+- active `.pi/plans` state, completed/blocked tasks, and checkpoint commits if continuing work;
+- files touched by prior tasks;
+- shared-file hazards with line counts and preservation markers;
+- validation commands;
+- recovery snapshot and per-task checkpoint commit policy;
+- stop rules.
+
+Before writing plan files:
+1. Check whether the handoff includes repo state and dirty-file classification.
+2. If missing and this is repo-specific work, use tools to gather at least `git status --short`, recent commits, relevant `.pi/plans` files, and candidate shared-file hazards.
+3. If dirty files are unknown or dangerous, reflect them as hazards in `PLAN_FULL.md`/`SCHEDULE.md`; do not silently assign builders to overwrite them.
+4. If multiple tasks touch the same existing file, especially a large test/source file, serialize them and require checkpoint commits between tasks.
 
 ---
 
@@ -65,6 +87,19 @@ This is the **reference document** for humans and planning rationale. It may be 
 
 ## Architecture Decisions
 [Any ADRs — significant architectural choices with rationale]
+
+## Handoff / Repo State Baseline
+- Branch: [branch]
+- Recent commits: [hashes/messages]
+- Git status summary: [clean or dirty summary]
+- Plan-owned dirty files: [files]
+- Pre-existing dirty files excluded from commits: [files]
+- Active plan/checkpoints: [task -> commit/status]
+
+## Shared File Hazards
+| File | Why Risky | Line Count | Preservation Markers | Mitigation |
+|---|---|---:|---|---|
+| `path/to/shared_file` | touched by multiple tasks / large shared test file | N | marker_a, marker_b | serialize + snapshots + checkpoint commits |
 
 ## Problem Analysis
 [Root cause analysis if applicable]

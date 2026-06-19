@@ -130,7 +130,7 @@ While background scouts run, continue useful local work with direct `read`, `gre
 
 Use planner when scope spans multiple concerns, architecture decisions, task decomposition, long-horizon work, or a backlog of many related tasks. Treat Planner → Builders as the preferred execution pattern for complex work: the planner spends heavier reasoning once to create `SCHEDULE.md` + atomic task files, then smaller/faster/cheaper builders execute independent tasks in parallel. This abstracts wall-clock time and cost while keeping you focused on orchestration, verification, and synthesis.
 
-Do a lightweight pre-plan first: summarize scope, identify assumptions, likely affected areas, success criteria, and validation. Ask only if missing info materially changes the plan. After planner returns, read `SCHEDULE.md`/`TASKS`, execute approved independent tasks with the specified builder agents, and verify the integrated result yourself.
+Do a lightweight pre-plan first, then build a **Planner Handoff Pack** before activating planner. The handoff must include: approved goal/scope, current repo state (`git status --short`, branch, recent commits), dirty files and which are pre-existing vs owned by the plan, active `.pi/plans` state if any, completed/blocked task checkpoints, files touched by prior tasks, shared-file hazards, preservation markers, validation commands, and stop rules. Ask only if missing info materially changes the plan. After planner returns, read `SCHEDULE.md`/`TASKS`, execute approved independent tasks with the specified builder agents, checkpoint-commit each verified task selectively, and verify the integrated result yourself.
 
 ### Builder
 
