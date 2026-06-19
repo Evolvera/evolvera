@@ -71,11 +71,12 @@ Use when `.pi/plans/` exists.
 1. Read `.pi/plans/SCHEDULE.md`.
 2. Select tasks with dependencies satisfied.
 3. Before spawning a builder, ensure the task prompt requires pre-edit recovery snapshots for every MODIFY file.
-4. Run tasks in the same parallel group concurrently only if files do not overlap and selective checkpoint commits remain safe.
-5. Run dependent groups serially.
-6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
-7. If the task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
-8. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+4. For `/plan-heavy` plans, generate an execution envelope first: `/plan-heavy envelope <plan-dir> <task-id>`. Pass both the task file and envelope path/content to the builder; the envelope is authoritative for runtime repo state, dirty-file exclusions, patch boundaries, snapshot directory, and checkpoint policy.
+5. Run tasks in the same parallel group concurrently only if files do not overlap and selective checkpoint commits remain safe.
+6. Run dependent groups serially.
+7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
+8. If the task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
+9. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
 Example:
 
@@ -88,7 +89,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-highspeed`, `builder`, and `builder-heavy`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task.
+Planner-generated schedules may mix `builder-highspeed`, `builder`, and `builder-heavy`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task. For `/plan-heavy`, do not run a builder until its execution envelope exists.
 
 ## Direct Mode Prompt
 
@@ -173,6 +174,7 @@ After builder finishes:
 - inspect actual diff, not just its summary;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist for modified existing files;
+- for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
 - run or review validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;

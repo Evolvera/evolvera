@@ -83,12 +83,14 @@ Do not keep searching to improve phrasing or gather unrelated examples.
 
 For planner task files:
 1. Read the task file completely.
-2. Identify goal, target files, preservation contract, recovery requirements, validation, and stop rules.
-3. Snapshot every MODIFY file before editing.
-4. Apply the smallest targeted change; avoid whole-file rewrites.
-5. Validate with the most relevant available command/check.
-6. Review focused diff and line-count changes before COMPLETE.
-7. Write handover if the task template requires it.
+2. If an `EXECUTION_ENVELOPE` is provided, read it next; treat it as authoritative for runtime repo state, dirty-file exclusions, allowed edit anchors, snapshot directory, and checkpoint policy.
+3. Identify goal, target files, preservation contract, patch boundaries, preservation markers, recovery requirements, validation, and stop rules.
+4. Snapshot every MODIFY file before editing.
+5. Apply the smallest targeted change; avoid whole-file rewrites.
+6. Validate with the most relevant available command/check.
+7. Run preservation marker commands/checks after editing.
+8. Review focused diff and line-count changes before COMPLETE.
+9. Write handover if the task template requires it.
 
 For direct prompts:
 - infer the smallest safe scope;

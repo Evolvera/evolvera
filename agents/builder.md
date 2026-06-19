@@ -39,27 +39,29 @@ If the task conflicts with existing code or requires unsafe broad deletion, stop
 Before any code mutation:
 
 1. Read the task file completely, or parse the direct prompt if no task file exists.
-2. Extract:
+2. If an `EXECUTION_ENVELOPE` is provided, read it next; treat it as authoritative for runtime repo state, dirty-file exclusions, allowed edit anchors, snapshot directory, and checkpoint policy.
+3. Extract:
    - goal;
    - success criteria;
    - target files;
    - files to read first;
    - validation commands/checks;
+   - patch boundaries and preservation markers;
    - constraints and out-of-scope items.
-3. For each target file:
+4. For each target file:
    - if `CREATE`: verify parent directory/patterns;
    - if `MODIFY`: read the current file and the exact nearby lines likely to change.
-4. Record preservation baseline for every MODIFY file:
+5. Record preservation baseline for every MODIFY file:
    - relevant exports/functions/components;
    - public API/props/types;
    - important branches/error handling;
    - existing tests/validation/logging/styles that must remain.
-5. Create a byte-for-byte recovery snapshot before editing every MODIFY file:
+6. Create a byte-for-byte recovery snapshot before editing every MODIFY file:
    - path format: `.pi/recovery/{task_id}/before/<original-relative-path>`;
    - preserve directory structure under `before/`;
    - record line count and SHA-256/hash when available;
    - if snapshot creation fails, STOP and report `BLOCKED`.
-6. Write `.pi/build/TILL-DO_{task_id}.md` with real evidence.
+7. Write `.pi/build/TILL-DO_{task_id}.md` with real evidence.
 
 TILL-DO format:
 

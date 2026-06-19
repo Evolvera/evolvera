@@ -219,8 +219,9 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 Use para planejamento long-horizon/high-risk antes de builders. O harness cria um handoff determinístico com repo state, dirty files, hazards e checkpoint policy, depois orienta o uso do `planner-heavy`.
 
 ```txt
-/plan-heavy <goal>              # cria .pi/plans/<slug>/HANDOFF.md + prompt para planner-heavy
-/plan-heavy validate <plan-dir> # valida PLAN_FULL/SCHEDULE/TASKS antes de rodar builders
+/plan-heavy <goal>                         # cria .pi/plans/<slug>/HANDOFF.md + prompt para planner-heavy
+/plan-heavy validate <plan-dir>            # valida PLAN_FULL/SCHEDULE/TASKS antes de rodar builders
+/plan-heavy envelope <plan-dir> <task-id>  # cria EXECUTION_ENVELOPE para o builder da task
 ```
 
 Fluxo v1:
@@ -228,7 +229,8 @@ Fluxo v1:
 1. `/plan-heavy <goal>` coleta `git status`, commits recentes, `.pi/plans`, dirty files e shared-file hazards.
 2. O orchestrator lança `planner-heavy` com o prompt gerado em `PLAN_HEAVY_PROMPT.md`.
 3. `planner-heavy` escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
-4. `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots, checkpoint commits, agents ou preservation contracts.
+4. `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots, checkpoint commits, agents, patch boundaries ou preservation contracts.
+5. Antes de chamar um builder, `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff da task com git status atual, target files, patch boundaries e preservation markers.
 
 ### `/goal` — Goal Mode
 

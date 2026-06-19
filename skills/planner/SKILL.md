@@ -267,6 +267,8 @@ Implementation plans MUST include:
 - named resources, files, APIs, or systems involved
 - state transitions or data flow where relevant
 - preservation constraints for existing behavior/API/tests/styles
+- patch boundaries and forbidden edits for every MODIFY task
+- preservation marker commands/greps for every shared or existing file
 - recovery snapshot requirements for every MODIFY file
 - validation commands or checks
 - focused diff review requirements
@@ -292,7 +294,7 @@ Plan generated. Here's the summary:
 ❓ Approve this plan? I can also adjust specific tasks if needed.
 ```
 
-**Wait for approval.** Only then spawn builders per SCHEDULE.md. During execution, commit each verified task separately with selective staging and record the commit hash in the schedule before starting dependent tasks.
+**Wait for approval.** Only then spawn builders per SCHEDULE.md. For `/plan-heavy` plans, generate an execution envelope before each builder with `/plan-heavy envelope <plan-dir> <task-id>` and pass both the task file and envelope to the builder. During execution, commit each verified task separately with selective staging and record the commit hash in the schedule before starting dependent tasks.
 
 ---
 
@@ -303,6 +305,9 @@ Plan generated. Here's the summary:
 | User says "fix auth" → immediately spawn planner | Ask: "What specifically about auth? Login error? Token expiry? Password reset?" |
 | Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
 | Running multiple builders on the same shared file | Serialize them and checkpoint-commit after each task |
+| One task mixes evidence extraction, JSON artifacts, source edits, tests, and docs | Split by artifact class and validation boundary |
+| Task lacks allowed edit anchors / forbidden edits | Add Patch Boundaries before spawning builder |
+| Builder receives only task.md for a high-risk `/plan-heavy` task | Generate and pass an Execution Envelope first |
 | Run planner without scout context | Send scouts first if codebase is unfamiliar |
 | Run planner without repo-state handoff | Build the Planner Handoff Pack with git status, dirty-file classification, hazards, and checkpoints |
 | Treat dirty working tree as implicit context | Classify dirty files explicitly; exclude pre-existing dirty files from task commits |
