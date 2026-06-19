@@ -14,8 +14,9 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 
 | Tier | Agents | Model | Best For | Avoid |
 |---|---|---|---|---|
-| Default | `scout`, `builder` | Kimi for Coding | cautious implementation, lower hallucination risk, normal delegated work | latency-sensitive batches |
-| Highspeed | `scout-highspeed`, `builder-highspeed` | GPT-5.3 Codex Spark | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, algorithms, physics/math/logic-heavy tasks | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
+| Default | `scout`, `builder` | Kimi for Coding | explicit, bounded, normal-risk tasks where structured lifecycle helps | latency-sensitive batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior Kimi destructive churn |
+| Highspeed | `scout-highspeed`, `builder-highspeed` | GPT-5.3 Codex Spark | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, mechanical changes | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
+| Heavy | `builder-heavy` | GPT-5.5 medium | complex or higher-risk bounded work: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | tiny mechanical edits, broad planning, vague UI/design tasks |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
@@ -132,8 +133,8 @@ Agent({
 - Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than Kimi. Fast hallucinations can look correct.
 - Use `builder-highspeed` for single-file/module-local edits, rapid prototypes, utility generation, CSS tweaks, React component adjustments, layout experiments with existing design constraints, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors.
 - Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
-- Use `builder` for more cautious delegated implementation where hallucination risk matters more than latency, especially multi-file integration, long checklists, structured/exhaustive workflows, or sensitive behavior.
-- Avoid `builder-highspeed` for final frontend polish, brand/design decisions, or vague UI requests; use website pipeline or Kimi builder with exact design instructions.
+- Use `builder` for explicit, bounded, normal-risk work where Kimi's lifecycle is useful. Do not route complex work to Kimi just because it is the default. Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. When unsure between Kimi and heavy for high-risk work, choose heavy.
+- Avoid `builder-highspeed` for final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder`, or `builder-heavy` with exact design instructions depending on risk.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
 - Parallelize when files are disjoint.
@@ -148,12 +149,12 @@ scout → planner → builder → validator
 
 1. **scout** first if you don't understand the code
 2. **planner** next if architecture is needed (after your pre-plan + user approval)
-3. **builder-highspeed/builder** to execute planned tasks according to the planner's `Agent` column
+3. **builder-highspeed/builder/builder-heavy** to execute planned tasks according to the planner's `Agent` column
 4. **validator** after builder for high-impact or >10 files changed
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when caution matters
+- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when cautious structure matters; `builder-heavy` when correctness/preservation risk is high
 - Critical (auth, payment) → builder + validator
 
 ---

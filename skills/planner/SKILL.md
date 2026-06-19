@@ -232,7 +232,7 @@ Generate a complete plan ecosystem in .pi/plans/. Preserve the handoff's repo-st
 - ✅ Validation commands/checks
 - ✅ Recovery snapshot and checkpoint commit policy
 - ✅ Stop conditions and missing-evidence behavior
-- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed` vs `builder` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md` or `task_02_builder.md`).
+- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed`, `builder`, or `builder-heavy` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md`, `task_02_builder.md`, or `task_03_builder-heavy.md`).
 
 ### Planner Output
 
@@ -245,14 +245,16 @@ Planner generates:
 └── TASKS/
     ├── task_01_builder-highspeed.md  # Spark sweet spot task
     ├── task_02_builder.md            # cautious Kimi task
+    ├── task_03_builder-heavy.md      # GPT-5.5 correctness-sensitive task
     └── ...
 ```
 
 Planner must use the Builder Skill routing:
 - `builder-highspeed`: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, explicit backend/tooling/tests/algorithm/math/physics tasks.
-- `builder`: lower hallucination risk, multi-file integration, subtle behavior changes, long or exhaustive checklists, structured/stateful workflows, sensitive auth/payment/security code, final visual polish, brand/design decisions, ambiguous tasks.
+- `builder`: Kimi for explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER is useful and the diff is easy to verify. Do not treat it as the safe default for complex work.
+- `builder-heavy`: GPT-5.5 medium for complex or higher-risk bounded implementation: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. When unsure between Kimi and heavy for high-risk work, choose heavy.
 
-For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. For `builder-heavy`, the planner must state why GPT-5.5 is needed and keep the task bounded enough to validate. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
 
 Every builder task, Kimi or Spark, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
@@ -313,6 +315,6 @@ Plan generated. Here's the summary:
 |-------|-----|------|--------------|
 | **Pre-Plan** | You | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
-| **Execute** | Builder agents (`builder-highspeed` or `builder` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
+| **Execute** | Builder agents (`builder-highspeed`, `builder`, or `builder-heavy` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
 
 **Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**
