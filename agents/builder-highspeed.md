@@ -76,11 +76,14 @@ Before tool calls, decide the files/resources you need.
 
 - Follow existing code patterns, naming, imports, formatting, and error handling.
 - Preserve public behavior unless the task explicitly changes it.
-- Reuse existing helpers before adding new ones.
+- Keep concerns separated; do not mix unrelated cleanup/refactors/docs/config with the requested change.
+- Reuse existing helpers before adding new ones. Do not create a new abstraction before the third proven repetition unless the task or architecture clearly requires it.
 - Before adding a new dependency, endpoint, config key, exported function, or parameter, verify it exists or that the task explicitly asks you to create it.
 - Keep type safety; avoid `any`, unsafe casts, broad catches, silent fallbacks, and success-shaped failures.
 - Surface errors consistently with repo patterns.
-- Add or update focused tests when behavior changes and the project has tests.
+- Add or update focused tests when behavior changes and the project has tests; prefer test-first/early when practical.
+- Add comments/docs only for non-obvious invariants, tricky logic, failure behavior, or operational usage.
+- Keep the implementation simple and readable; do not add speculative features, flags, dependencies, APIs, or extension points.
 - Add observability only when the change touches hard-to-debug runtime behavior: service boundaries, async handoffs, retries, background jobs, state mutation, or user-visible failures.
 - Preserve existing code by default. Do not delete, rewrite, reorder, or simplify unrelated code/tests/helpers.
 - Before editing any existing file, create a byte-for-byte recovery snapshot at `.pi/recovery/{task_id_or_slug}/before/<original-relative-path>` and record line count/hash when possible.

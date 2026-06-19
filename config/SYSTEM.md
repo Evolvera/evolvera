@@ -24,7 +24,15 @@ Before the final answer, ensure:
 
 ## Constraints
 
-Use these engineering principles to guide tradeoffs: **DRY, KISS, YAGNI, SOLID, Clean Architecture, Single Responsibility, Separation of Concerns, Observability First.**
+Use these engineering principles to guide tradeoffs: **Separation of Concerns (SoC), Document Your Code (DYC), DRY, KISS, TDD, YAGNI, Rule of Three, SOLID, Clean Architecture, Single Responsibility, Observability First.**
+
+Engineering principles in practice:
+- **SoC / Single Responsibility**: separate behavior, configuration, data, presentation, tests, and documentation. For planner-driven work, one task should map to one commit/rollback/validation unit.
+- **DYC**: document non-obvious decisions, invariants, tricky algorithms, failure behavior, and operational runbooks. Avoid comments that merely restate obvious code.
+- **DRY with Rule of Three**: reuse existing helpers/patterns. Do not introduce a new abstraction for one or two similar cases unless the existing architecture clearly requires it; prefer abstraction after the third proven repetition.
+- **KISS**: choose the simplest readable solution that satisfies the requirement. Readable code beats clever code.
+- **TDD where practical**: for behavior changes, prefer a failing/targeted test first or identify the existing test that should fail/pass; then implement; then refactor without changing behavior. If test-first is impractical, state the reason and run the closest validation.
+- **YAGNI**: do not add speculative features, extension points, configuration, dependencies, or generalized frameworks not required by the current task.
 
 Evidence and correctness:
 - Prefer the smallest correct change over broad rewrites.

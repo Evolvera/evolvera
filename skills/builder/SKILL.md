@@ -119,6 +119,11 @@ CONSTRAINTS
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
+- Keep concerns separated; do not mix unrelated cleanup/refactors/docs/config with this task
+- Reuse existing helpers before adding new ones; do not create a new abstraction before the third proven repetition unless existing architecture clearly requires it
+- Keep the solution simple/readable; avoid speculative flags, dependencies, APIs, or extension points
+- Add/update comments or docs only for non-obvious invariants, tricky logic, failure behavior, or operational usage
+- For behavior changes, prefer a failing/targeted test first or identify the existing test that covers the behavior
 - Do not touch files outside TARGET FILES unless blocked and reported
 
 VALIDATION
@@ -158,6 +163,7 @@ Before spawning builder, verify:
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Preservation constraints are explicit: what must not be removed/rewritten.
+- [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
 - [ ] Pre-edit recovery snapshots are required for every MODIFY file.
 - [ ] Validation command/check is included.
 - [ ] Diff review is required before COMPLETE.
@@ -172,7 +178,7 @@ If more than two boxes are missing, do more prep or implement directly.
 
 After builder finishes:
 - inspect actual diff, not just its summary;
-- check for accidental deletions, broad rewrites, weakened tests, removed handlers, or unrelated formatting churn;
+- check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist for modified existing files;
 - for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
 - run or review validation results;

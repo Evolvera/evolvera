@@ -65,6 +65,19 @@ Do not exhaustively read the repo. Stop retrieval once the plan can name concret
 
 ---
 
+## 🧭 ENGINEERING QUALITY RULES
+
+Apply these principles as planning constraints, not slogans:
+
+- **Separation of Concerns (SoC)**: split plans by responsibility and artifact class. Keep evidence extraction, source changes, tests, docs, JSON/matrix artifacts, config, API contracts, and UI work in separate task units when they have different validation or rollback needs.
+- **Document Your Code (DYC)**: require builders to document non-obvious invariants, tricky algorithms, operational behavior, and compatibility decisions. Do not request noisy comments that restate obvious code.
+- **DRY + Rule of Three**: prefer existing helpers and patterns, but do not plan a new abstraction until the same pattern appears at least three times unless the repo architecture already has an obvious extension point. First and second duplication can be acceptable if abstraction would add coupling or guess future requirements.
+- **KISS**: favor the smallest readable implementation. Avoid clever generic frameworks, broad rewrites, or multi-layer designs when a direct change satisfies the goal.
+- **TDD where practical**: for behavior changes, include a failing/targeted test or identify the existing test that should cover the change before implementation. If test-first is impractical, require the closest focused validation and explain why.
+- **YAGNI**: do not plan speculative features, extensibility, config flags, dependencies, migrations, or public APIs beyond the approved scope.
+
+---
+
 ## 📁 OUTPUT FILES (Write to `.pi/plans/`)
 
 ### 1. PLAN_FULL.md — Complete Plan Reference
@@ -172,6 +185,7 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 **Files Touched**: [list from Files section]
 **Preservation Contract**: [What existing behavior/API/tests/styles must not be removed or rewritten]
 **Recovery Requirement**: Create `.pi/recovery/{task_id}/before/...` snapshots for every MODIFY file before editing; record line count/hash in handover.
+**Engineering Constraints**: [SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation for behavior changes]
 
 ---
 
@@ -239,6 +253,7 @@ rg "allowed_anchor" path/to/file
 - [ ] PRESERVATION MARKERS VERIFIED BEFORE EDIT: [commands/greps and results]
 - [ ] RECOVERY SNAPSHOTS CREATED: [snapshot paths + line counts/hashes for every MODIFY file]
 - [ ] SYMBOL/API CHECKS COMPLETE: [list exact symbols/packages/endpoints/imports to verify before implementation, especially for builder-highspeed]
+- [ ] ENGINEERING PRINCIPLES CHECKED: [SoC kept; no premature abstraction before Rule of Three; KISS/YAGNI respected; DYC/TDD needs handled]
 
 ## Success Criteria
 - [ ] [Verifiable criterion 1]
@@ -247,6 +262,8 @@ rg "allowed_anchor" path/to/file
 - [ ] Recovery snapshots exist for every MODIFY file
 - [ ] Patch stayed within allowed anchors and avoided forbidden edits
 - [ ] Preservation marker commands pass after edit
+- [ ] Behavior changes have a targeted failing/new/updated test or documented closest validation
+- [ ] No premature abstraction was added before Rule of Three evidence, unless justified by existing architecture
 - [ ] Focused diff reviewed; no accidental deletions, broad rewrites, missing markers, weakened tests, or unrelated formatting churn
 
 ## Files to Create/Modify

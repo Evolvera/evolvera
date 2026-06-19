@@ -267,6 +267,7 @@ Implementation plans MUST include:
 - named resources, files, APIs, or systems involved
 - state transitions or data flow where relevant
 - preservation constraints for existing behavior/API/tests/styles
+- engineering constraints: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation
 - patch boundaries and forbidden edits for every MODIFY task
 - preservation marker commands/greps for every shared or existing file
 - recovery snapshot requirements for every MODIFY file
@@ -307,6 +308,8 @@ Plan generated. Here's the summary:
 | Running multiple builders on the same shared file | Serialize them and checkpoint-commit after each task |
 | One task mixes evidence extraction, JSON artifacts, source edits, tests, and docs | Split by artifact class and validation boundary |
 | Task lacks allowed edit anchors / forbidden edits | Add Patch Boundaries before spawning builder |
+| Planner creates abstraction task for first/second duplicated pattern | Keep local duplication or require Rule-of-Three / architecture justification |
+| Behavior-changing task has no test/validation expectation | Add TDD or closest-validation gate |
 | Builder receives only task.md for a high-risk `/plan-heavy` task | Generate and pass an Execution Envelope first |
 | Run planner without scout context | Send scouts first if codebase is unfamiliar |
 | Run planner without repo-state handoff | Build the Planner Handoff Pack with git status, dirty-file classification, hazards, and checkpoints |
