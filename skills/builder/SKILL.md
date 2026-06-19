@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Use the builder agent to implement focused code changes. Builder runs on a fast delegated model — split work into small, atomic tasks and parallelize when files are disjoint. Can be invoked directly by the main model or from planner-generated task files.
+description: Use the builder agent to implement focused code changes. Builder runs on a fast delegated model — split work into small, atomic tasks and parallelize when files are disjoint. Can be invoked directly by you or from planner-generated task files.
 ---
 
 # Builder Skill — Focused Code Execution
@@ -9,13 +9,15 @@ Builder is a delegated implementation agent. Use either the default Kimi `builde
 
 ## Goal
 
-Delegate implementation without overloading the main model, while preserving quality through narrow scope and explicit validation.
+Delegate implementation without overloading yourself, while preserving quality through narrow scope and explicit validation.
 
 Success means:
 - the requested change is implemented;
 - only intended files are changed;
 - existing project patterns are followed;
+- existing behavior/code is preserved except for explicitly requested changes;
 - relevant validation is run or a clear blocker is reported;
+- the builder reviewed its focused diff for accidental deletions/broad rewrites;
 - the result includes what changed, validation result, and any unresolved risk.
 
 ## Agent Choice
@@ -108,6 +110,8 @@ TARGET FILES
 
 CONSTRAINTS
 - Follow existing patterns in [file/dir]
+- Preserve existing code/behavior except the explicitly requested change
+- Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
 - Do not touch files outside TARGET FILES unless blocked and reported
@@ -115,6 +119,7 @@ CONSTRAINTS
 VALIDATION
 Run:
 - [targeted test/typecheck/lint/build command]
+Also review focused diff for accidental deletions or broad rewrites.
 If validation cannot run, explain why and provide the next best check.
 
 STOP RULES
@@ -144,7 +149,9 @@ Before spawning builder, verify:
 - [ ] Files to read are listed.
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
+- [ ] Preservation constraints are explicit: what must not be removed/rewritten.
 - [ ] Validation command/check is included.
+- [ ] Diff review is required before COMPLETE.
 - [ ] Task is small enough for a delegated model.
 - [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, and every API/package/symbol can be verified.
 
@@ -154,9 +161,10 @@ If more than two boxes are missing, do more prep or implement directly.
 
 After builder finishes:
 - inspect actual diff, not just its summary;
+- check for accidental deletions, broad rewrites, weakened tests, removed handlers, or unrelated formatting churn;
 - run or review validation results;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
-- if it fails twice, stop delegating and diagnose before continuing.
+- if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 
 ## Examples
 

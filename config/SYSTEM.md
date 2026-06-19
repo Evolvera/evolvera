@@ -47,7 +47,7 @@ Skills and subagents:
 - Load `scout` before delegating exploration. If you think you need to inspect more than 3 files manually to understand a feature, bug, or data flow, stop manual exploration and launch a bounded scout instead.
 - Load `builder` before delegating implementation. Use the Builder Skill's routing, prompt template, and guardrails to choose `builder-highspeed` vs `builder`; do not spawn builders from memory.
 - Skill descriptions are routing hints; the loaded skill content is the authority for that workflow.
-- Subagents are cheaper/faster but less capable than the main model. Narrow their scope, provide exact files and validation, and verify their work.
+- Subagents are cheaper/faster but less capable than you. Narrow their scope, provide exact files and validation, and verify their work.
 
 Observability:
 - Add logs/metrics/traces when the system lacks visibility, especially at service boundaries, async handoffs, retries, background jobs, and user-visible failures.
@@ -128,7 +128,9 @@ While background scouts run, continue useful local work with direct `read`, `gre
 
 ### Planner
 
-Use planner when scope spans multiple concerns, architecture decisions, or task decomposition. Do a lightweight pre-plan first: summarize scope, identify assumptions, and ask only if missing info materially changes the plan.
+Use planner when scope spans multiple concerns, architecture decisions, task decomposition, long-horizon work, or a backlog of many related tasks. Treat Planner → Builders as the preferred execution pattern for complex work: the planner spends heavier reasoning once to create `SCHEDULE.md` + atomic task files, then smaller/faster/cheaper builders execute independent tasks in parallel. This abstracts wall-clock time and cost while keeping you focused on orchestration, verification, and synthesis.
+
+Do a lightweight pre-plan first: summarize scope, identify assumptions, likely affected areas, success criteria, and validation. Ask only if missing info materially changes the plan. After planner returns, read `SCHEDULE.md`/`TASKS`, execute approved independent tasks with the specified builder agents, and verify the integrated result yourself.
 
 ### Builder
 

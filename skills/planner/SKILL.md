@@ -5,7 +5,7 @@ description: Use the planner agent to create detailed implementation plans for c
 
 # Planner Skill — Implementation Plan Generator
 
-> **⏱️ PLANNER IS EXPENSIVE**: The planner agent runs for **minutes** on a heavy model. A wrong or vague prompt wastes time and money. Do a lightweight pre-plan first — clarify outcome, success criteria, constraints, and validation before activating planner.
+> **⏱️ PLANNER IS EXPENSIVE BUT LEVERAGED**: The planner agent runs for **minutes** on a heavy model. Use it deliberately for complex/long-horizon work where one high-quality plan can save wall-clock time and cost by splitting execution across smaller, faster, cheaper builders. A wrong or vague prompt still wastes time and money, so do a lightweight pre-plan first — clarify outcome, success criteria, constraints, and validation before activating planner.
 
 ## Workflow: Pre-Plan → Review → Plan → Execute
 
@@ -14,13 +14,13 @@ User Request
     │
     ▼
 ┌─────────────┐
-│  PRE-PLAN   │ ← YOU (main model) do this. Fast, cheap, no agent.
+│  PRE-PLAN   │ ← YOU do this. Fast, cheap, no agent.
 │  (2-5 min)  │   Ask clarifying questions. Map scope. Decide path.
 └──────┬──────┘
        │
        ├── Simple? (single file, <20 lines, no architecture) ──→ Direct builder
        │
-       └── Complex? (multi-file, architecture, unknowns) ──→ Continue
+       └── Complex/long-horizon? (multi-file, architecture, many tasks) ──→ Continue
               │
               ▼
        ┌─────────────┐
@@ -57,7 +57,9 @@ User Request
 ### Goal
 Understand the user's request deeply enough to either:
 1. **Execute directly** (simple → builder or direct implementation)
-2. **Feed an outcome-first prompt to the planner** (complex → planner agent)
+2. **Feed an outcome-first prompt to the planner** (complex/long-horizon → planner agent)
+
+Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
 The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then let the planner choose an efficient implementation path.
 
@@ -107,7 +109,8 @@ Write a brief summary (5-15 lines) to show the user:
 | Single file, <20 lines, no architecture impact | **Direct** — Use `read`/`edit` yourself or spawn builder directly |
 | 2-5 files, straightforward changes, clear scope | **Direct** — Spawn builder with a detailed prompt |
 | >5 files, architecture decisions, unclear scope, multiple scenarios | **Planner** — Do full pre-plan, get user approval, then activate planner |
-| Refactor, new feature, cross-cutting concern | **Planner** — Always |
+| Long-horizon task, many related subtasks, or parallelizable backlog | **Planner → Builders** — Planner creates the schedule; builders execute independent tasks |
+| Refactor, new feature, cross-cutting concern | **Planner** — Default unless the user asks for a quick direct patch |
 
 ---
 
@@ -180,13 +183,17 @@ Planner must use the Builder Skill routing:
 - `builder-highspeed`: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, explicit backend/tooling/tests/algorithm/math/physics tasks.
 - `builder`: lower hallucination risk, multi-file integration, subtle behavior changes, long or exhaustive checklists, structured/stateful workflows, sensitive auth/payment/security code, final visual polish, brand/design decisions, ambiguous tasks.
 
-For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. Each task file must include `**Agent**`, `**Why This Agent**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+
+Every builder task, Kimi or Spark, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
 Implementation plans MUST include:
 - requirements and where each is addressed
 - named resources, files, APIs, or systems involved
 - state transitions or data flow where relevant
+- preservation constraints for existing behavior/API/tests/styles
 - validation commands or checks
+- focused diff review requirements
 - failure behavior
 - privacy and security considerations
 - open questions that materially affect implementation
@@ -228,7 +235,7 @@ Plan generated. Here's the summary:
 
 | Phase | Who | Cost | User Review? |
 |-------|-----|------|--------------|
-| **Pre-Plan** | You (main model) | Cheap / seconds | Show summary, ask approval |
+| **Pre-Plan** | You | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
 | **Execute** | Builder agents (`builder-highspeed` or `builder` per SCHEDULE) | Medium | Execute approved plan |
 

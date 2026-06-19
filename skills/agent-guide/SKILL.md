@@ -18,12 +18,14 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 | Highspeed | `scout-highspeed`, `builder-highspeed` | GPT-5.3 Codex Spark | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, algorithms, physics/math/logic-heavy tasks | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
-- **Lower total token cost** — many tiny scouts cost far less than one giant investigation
-- **Faster wall-clock time** — scouts run in parallel
-- **Higher per-scout quality** — each scout gets a crisp, bounded question it can actually answer well
-- **Easier to verify** — small outputs are simpler to audit and merge
+- **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
+- **Faster wall-clock time** — independent agents run in parallel
+- **Higher per-agent quality** — each agent gets a crisp, bounded question it can actually answer well
+- **Easier to verify** — small outputs/diffs are simpler to audit and merge
 
-**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 3–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, the main model should keep doing useful direct inspection instead of waiting idly.
+**Long-horizon rule of thumb:** When you see complex work ahead — many files, many tasks, architecture decisions, unclear sequencing, or a backlog that can be split — Planner → Builders is usually the way to go. Planner spends the expensive reasoning once, writes `SCHEDULE.md` and atomic task files, and you run smaller/faster/cheaper builders in parallel. You should orchestrate, verify, and synthesize instead of doing every implementation step yourself.
+
+**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 3–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -73,6 +75,7 @@ Creates detailed implementation plans. It analyzes requirements, designs archite
 - You need architecture decisions or new patterns
 - Scope is unclear — you don't know all files involved
 - User asks for a new feature without implementation details
+- Long-horizon work is ahead: many related tasks, phased delivery, or parallelizable implementation work
 
 **How to use:**
 ```
