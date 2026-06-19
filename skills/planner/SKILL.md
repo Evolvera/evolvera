@@ -61,7 +61,64 @@ Understand the user's request deeply enough to either:
 
 Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
-The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then let the planner choose an efficient implementation path.
+The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then build a Planner Handoff Pack so the planner sees the real operational state, not just the desired feature. Let the planner choose an efficient implementation path from that grounded handoff.
+
+
+### Planner Handoff Pack (Mandatory Before Planner)
+
+Before calling `Agent(subagent_type="planner")`, create a handoff with delimited sections. This is the planner's source of truth for operational state.
+
+```markdown
+<approved_goal>
+[User-approved goal, scope, out-of-scope, success criteria]
+</approved_goal>
+
+<repo_state>
+- Branch: [git branch]
+- Recent commits: [last 3-5 hashes/messages]
+- Git status: [verbatim `git status --short`]
+- Dirty files owned by this plan: [files]
+- Pre-existing dirty files NOT owned by this plan: [files that must not be staged/committed]
+</repo_state>
+
+<active_plan_state>
+- Existing `.pi/plans` path: [if any]
+- Completed tasks + checkpoint commits: [task -> commit]
+- Blocked/error tasks: [task -> reason]
+- Files touched by prior tasks: [file -> tasks]
+</active_plan_state>
+
+<shared_file_hazards>
+[List any large/shared files, repeated target files, generated files, or test corpus files. Include current line counts and known markers that must survive.]
+</shared_file_hazards>
+
+<preservation_constraints>
+- Markers/symbols/tests that must still exist after each task
+- Public APIs/exports/contracts that must not change
+- Files/directories builders must not touch
+</preservation_constraints>
+
+<validation_and_checkpointing>
+- Validation commands/checks
+- Recovery snapshot requirement for MODIFY files
+- Selective checkpoint commit policy per verified task
+</validation_and_checkpointing>
+
+<stop_rules>
+[When planner/builders must block instead of guessing]
+</stop_rules>
+```
+
+Minimum commands to gather the pack when in a git repo:
+
+```bash
+git branch --show-current
+git log --oneline -5
+git status --short
+find .pi/plans -maxdepth 3 -type f 2>/dev/null | sort
+```
+
+If the repo has dirty state, explicitly classify it before planner: plan-owned, pre-existing, unknown, or dangerous/shared. Unknown dirty files are hazards, not context to silently ignore.
 
 ### Pre-Plan Checklist
 
@@ -150,18 +207,30 @@ Activate `Agent(subagent_type="planner")` ONLY when:
 Agent({
   subagent_type: "planner",
   description: "Plan [brief title]",
-  prompt: "PRE-PLAN SUMMARY (user-approved):\n\n[Copy the approved pre-plan here]\n\nADDITIONAL CONTEXT:\n[Scout results if available]\n[User clarifications]\n[Tech stack details]\n\nGenerate a complete plan ecosystem in .pi/plans/"
+  prompt: `PLANNER HANDOFF PACK (user-approved / current repo state):
+
+[Paste the full delimited Planner Handoff Pack here]
+
+SCOUT / EVIDENCE REPORTS:
+[Scout results if available]
+
+Generate a complete plan ecosystem in .pi/plans/. Preserve the handoff's repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy in PLAN_FULL.md, SCHEDULE.md, and every relevant task file.`,
 })
 ```
 
 **The prompt MUST include:**
-- ✅ The approved pre-plan summary
+- ✅ The full Planner Handoff Pack with approved goal/scope
+- ✅ Current repo state: branch, recent commits, verbatim `git status --short`
+- ✅ Dirty-file classification: plan-owned vs pre-existing vs unknown/dangerous
+- ✅ Existing plan/task state if continuing work: completed/blocked tasks and checkpoint commits
+- ✅ Shared-file hazards: repeated target files, large test files, current line counts, preservation markers
 - ✅ Outcome and success criteria
 - ✅ Constraints and out-of-scope boundaries
 - ✅ Available context/evidence: scout results, files read, logs, docs
 - ✅ Any user clarifications
 - ✅ Tech stack / constraints
 - ✅ Validation commands/checks
+- ✅ Recovery snapshot and checkpoint commit policy
 - ✅ Stop conditions and missing-evidence behavior
 - ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed` vs `builder` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md` or `task_02_builder.md`).
 
@@ -231,6 +300,8 @@ Plan generated. Here's the summary:
 | Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
 | Running multiple builders on the same shared file | Serialize them and checkpoint-commit after each task |
 | Run planner without scout context | Send scouts first if codebase is unfamiliar |
+| Run planner without repo-state handoff | Build the Planner Handoff Pack with git status, dirty-file classification, hazards, and checkpoints |
+| Treat dirty working tree as implicit context | Classify dirty files explicitly; exclude pre-existing dirty files from task commits |
 | Vague planner prompt: "plan auth fix" | Specific prompt: "JWT refresh fails after 1h. Need sliding refresh. Affecting src/auth/session.ts" |
 | Skip user review when scope is uncertain or costly | A short review catches misalignment early |
 
