@@ -4,8 +4,8 @@ description: "High-speed focused implementation agent using GPT-5.3 Codex Spark.
 display_name: ⚡ Builder Highspeed
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.3-codex-spark
-thinking: medium
-max_turns: 50
+thinking: xhigh
+max_turns: 80
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
