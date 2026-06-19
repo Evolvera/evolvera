@@ -68,7 +68,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (18)
+## 🤖 Agentes Disponíveis (19)
 
 ### Pipeline de Código
 
@@ -79,6 +79,7 @@ git pull
 | **Planner** | 🏛️ | Arquiteto — cria planos ultra-detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
 | **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
 | **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
+| **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando Kimi/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
 | **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | Kimi for Coding | "valida esse PR", "audita os testes", "code review" |
 | **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | GPT-5.5 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
 | **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | Kimi for Coding | "polish esse site", "refina o design", "melhora a UX" |
@@ -92,7 +93,7 @@ Scout Highspeed/Scout → mapeia codebase
   ↓
 Planner → gera plano detalhado (plans/*.md)
   ↓
-Builder Highspeed/Builder → executa plano
+Builder Highspeed/Builder/Builder Heavy → executa plano
   ↓
 Validator → quality gate (testes, segurança, arquitetura)
 ```
@@ -100,7 +101,8 @@ Validator → quality gate (testes, segurança, arquitetura)
 **Quando pular etapas:**
 - Tarefa trivial (mudar texto, CSS) → faça direto, sem agentes
 - Tarefa média sem plano formal → `builder-highspeed` direto quando explícita/single-file/module-local; `builder` quando cautela importa
-- Mudança crítica (auth, payment, PII) → builder + validator automático
+- Tarefa correctness-sensitive/shared-file → `builder-heavy` + checkpoint/validator
+- Mudança crítica (auth, payment, PII) → builder-heavy ou builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
 
 ### Website Building Chain
@@ -283,11 +285,12 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 18 agentes (.md)
+├── agents/                 # 19 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
 │   ├── planner-quick.md    # Planner leve para quick fixes
 │   ├── builder.md          # Engenheiro de execução cauteloso
 │   ├── builder-highspeed.md # Executor rápido GPT-5.3 Codex Spark
+│   ├── builder-heavy.md    # Executor robusto GPT-5.5 medium
 │   ├── scout.md            # Explorador cauteloso
 │   ├── scout-highspeed.md  # Explorador rápido GPT-5.3 Codex Spark
 │   ├── validator.md        # Quality gate

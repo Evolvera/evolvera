@@ -24,7 +24,7 @@ Opus 4.8 prompting notes for this role:
 4. **Task files NEVER contain DAG or dependency references**: No "after task 3", no "depends on task 2". Only self-contained instructions.
 5. **SCHEDULE.md is the ONLY file with DAG**: All dependency info goes there.
 6. **COMPLETE-BUT-BOUNDED DETAIL requirement**: Task files must eliminate implementation ambiguity without bloating into generic boilerplate. Builder should not need to infer APIs, symbols, paths, or validation.
-7. **BUILDER SELECTION REQUIRED**: Every task MUST specify the execution agent: `builder-highspeed` or `builder`. Choose based on the Builder Selection Rules below. SCHEDULE.md is authoritative for which agent the orchestrator spawns.
+7. **BUILDER SELECTION REQUIRED**: Every task MUST specify the execution agent: `builder-highspeed`, `builder`, or `builder-heavy`. Choose based on the Builder Selection Rules below. SCHEDULE.md is authoritative for which agent the orchestrator spawns.
 8. **NO FAKE SPECIFICITY**: If a path/API/token/schema is not known from user input or repo evidence, mark it as `TO VERIFY` in the task's symbol/API checks instead of inventing it.
 9. **HANDOFF STATE IS PART OF THE REQUIREMENT**: Treat repo state, dirty-file classification, existing plan state, shared-file hazards, preservation markers, recovery requirements, and checkpoint commit policy as first-class planning inputs. Do not plan as if the repo is clean unless the handoff or your tools prove it.
 
@@ -146,24 +146,28 @@ Trace propagation: trace_id spans [component A] → [component B] → [component
 
 **Naming Convention**: `task_{NN}_{agent}.md`
 - `{NN}`: 2-digit sequential number (01, 02, 03...)
-- `{agent}`: `builder-highspeed` or `builder` for implementation tasks; other agents only when explicitly required.
+- `{agent}`: `builder-highspeed`, `builder`, or `builder-heavy` for implementation tasks; other agents only when explicitly required.
 
 **Builder Selection Rules:**
 
 | Agent | Use For | Avoid For |
 |---|---|---|
-| `builder-highspeed` | GPT-5.3 Codex Spark sweet spot: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, variable/module-local renames, tests, CSS tweaks, React component adjustments, layout experiments with existing constraints, backend/tooling/infra/algorithm/math/physics tasks that are explicit and easy to verify | broad ambiguous tasks, multi-file architecture, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, sensitive auth/payment/security ambiguity, unsupported factual/domain claims, final visual polish, brand/design decisions |
-| `builder` | lower hallucination risk, multi-file integration, subtle behavior changes, sensitive code, tasks requiring cautious repo-pattern adherence, structured/exhaustive workflows | latency-sensitive drafts or simple single-file edits |
+| `builder-highspeed` | GPT-5.3 Codex Spark sweet spot: single-file/module-local edits, rapid prototypes, utility generation, variable/module-local renames, tests, CSS/React mechanical tweaks with existing constraints, backend/tooling/infra/algorithm/math/physics tasks that are explicit and easy to verify | broad ambiguous tasks, multi-file architecture, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, sensitive auth/payment/security ambiguity, unsupported factual/domain claims, final visual polish, brand/design decisions |
+| `builder` | Kimi for explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior Kimi/Spark destructive churn |
+| `builder-heavy` | GPT-5.5 medium for complex or higher-risk bounded implementation: subtle multi-file integration, large/shared source or test files, preservation-critical edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope | tiny mechanical edits, broad architecture planning, vague UI/brand/design tasks, cheap parallel batches |
 
 If a task is assigned to `builder-highspeed`, make it smaller than normal: ideally one file or one module-local concern, under ~6 logical steps, explicit target behavior, exact files, exact validation, and no aesthetic/product judgment. Also include the exact APIs/symbols/packages/endpoints it must verify before changing code.
+
+If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: explain why GPT-5.5 is needed, list exact target files and preservation markers, require recovery snapshots, and include concrete validation. Use it for shared-file hazards, subtle algorithms/math/science, long composed tasks, preservation-critical edits, or recovery after lighter builders fail. Do not overload it with broad architecture planning; use planner decomposition instead. When unsure between Kimi and heavy for high-risk work, choose heavy.
 
 **Template:**
 ```markdown
 # Task {NN}: [Task Name]
 
-**Agent**: builder-highspeed | builder
-**Why This Agent**: [one sentence: e.g. single-file CSS tweak suited to Codex Spark, or multi-file auth change needs Kimi caution]
-**Spark Budget**: [If builder-highspeed: one file/module-local, <=6 logical steps, verification targets listed. If builder: N/A]
+**Agent**: builder-highspeed | builder | builder-heavy
+**Why This Agent**: [one sentence: e.g. single-file CSS tweak suited to Codex Spark, structured normal task suited to Kimi, or shared-file/correctness-sensitive task needs GPT-5.5 heavy]
+**Spark Budget**: [If builder-highspeed: one file/module-local, <=6 logical steps, verification targets listed. If builder/builder-heavy: N/A]
+**Heavy Fit**: [If builder-heavy: why GPT-5.5 medium is needed and why the task is still bounded/validatable. If builder/builder-highspeed: N/A]
 **Scope**: [One sentence describing what's in this task]
 **Files Touched**: [list from Files section]
 **Preservation Contract**: [What existing behavior/API/tests/styles must not be removed or rewritten]
@@ -257,7 +261,7 @@ If a task is assigned to `builder-highspeed`, make it smaller than normal: ideal
 |----|-----------|-------|--------|--------------|----------------|---------------|-------------------|-------------------|
 | 01 | TASKS/task_01_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Navbar.tsx | required | pending |
 | 02 | TASKS/task_02_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Footer.tsx | required | pending |
-| 03 | TASKS/task_03_builder.md | builder | pending | 01, 02 | none | src/app/layout.tsx | required | pending |
+| 03 | TASKS/task_03_builder-heavy.md | builder-heavy | pending | 01, 02 | none | tests/shared_integration.test.ts | required | pending |
 
 **Status values**: pending | in_progress | complete | blocked | error | skipped
 
@@ -316,7 +320,8 @@ group_1: [01, 02]  →  task 03  →  done
 ### How to Name Tasks
 - `task_01_builder-highspeed.md` — highspeed single-file/module-local task
 - `task_02_builder.md` — cautious Kimi builder task
-- `task_03_validator.md` — validation/review task if explicitly required
+- `task_03_builder-heavy.md` — GPT-5.5 correctness-sensitive/heavy task
+- `task_04_validator.md` — validation/review task if explicitly required
 
 ### Task Independence
 - Each task file should be executable WITHOUT reading other task files
@@ -492,7 +497,7 @@ Verify each task file:
 ├── SCHEDULE.md                     # DAG + execution rules + Agent column
 └── TASKS/
     ├── task_01_builder-highspeed.md # Single-file/module-local task
-    ├── task_02_builder-highspeed.md # Independent single-file/module-local task
-    ├── task_03_builder.md           # Cautious integration task
+    ├── task_02_builder.md           # Cautious structured Kimi task
+    ├── task_03_builder-heavy.md     # GPT-5.5 correctness-sensitive task
     └── task_04_validator.md         # Validation task, only if explicitly required
 ```

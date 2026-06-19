@@ -5,7 +5,7 @@ description: Use the builder agent to implement focused code changes. Builder ru
 
 # Builder Skill — Focused Code Execution
 
-Builder is a delegated implementation agent. Use either the default Kimi `builder` or GPT-5.3 Codex Spark `builder-highspeed` based on task fit. Both need small, bounded, verifiable prompts.
+Builder is a delegated implementation agent. Use `builder-highspeed`, `builder`, or `builder-heavy` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
 
 ## Goal
 
@@ -24,18 +24,19 @@ Success means:
 
 | Agent | Use When | Avoid When |
 |---|---|---|
-| `builder-highspeed` | Codex Spark sweet spot: single-file edits, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing design constraints, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, final visual polish or brand/design decisions |
-| `builder` | lower hallucination risk matters; task needs more caution; existing workflow expects Kimi behavior; task has multiple files or subtle integration risk | large latency-sensitive batches |
+| `builder-highspeed` | Codex Spark sweet spot: single-file/module-local edits, rapid prototypes, CSS/React mechanical tweaks with existing constraints, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, final visual polish or brand/design decisions |
+| `builder` | Kimi for explicit, bounded, normal-risk tasks where the structured TILL-DO/TODO/HANDOVER lifecycle helps; use when the change is clear and easy to diff/validate | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior Kimi/Spark destructive churn |
+| `builder-heavy` | GPT-5.5 medium for complex or higher-risk bounded implementation: subtle multi-file integration, shared-file hazards, large tests/source files, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope | tiny edits, cheap mechanical batches, vague architecture/design tasks that need planner/scout first |
 
-Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone than Kimi/Codex-style senior agents. Its failure mode is fast, plausible-looking wrong output. Default to it only when the task is explicit, bounded, and easy to verify — ideally a single-file or module-local edit. Use `builder` when correctness risk outweighs speed.
+Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone. Use it only when the task is explicit, bounded, and easy to verify. Treat Kimi `builder` as structured and useful, not automatically safer for complex work. Use `builder-heavy` when correctness risk, shared-file preservation, math/science/algorithm reasoning, subtle integration, long composed workflow, or prior builder failure makes GPT-5.5 judgment worth the extra cost. When genuinely unsure between Kimi and heavy for a high-risk task, choose heavy.
 
 ## When to Use Builder
 
-Use builder for:
+Use a builder for:
 - one focused fix, component, endpoint, test, or refactor;
-- 1–2 files with one concern;
 - planner-generated task files;
-- mechanical changes with clear target behavior.
+- mechanical changes with clear target behavior;
+- `builder-heavy` tasks that are bounded but complex/correctness-sensitive enough to need stronger reasoning.
 
 For `builder-highspeed`, prefer even smaller slices:
 - one file or one module-local concern;
@@ -53,7 +54,7 @@ When using `builder-highspeed`, prompts must include tighter steering because Sp
 - **No phantom dependencies**: do not let it add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
 - **Short workflows only**: avoid if the task needs 6–8+ ordered steps, broad repo context, or stateful checklist execution.
 - **Simple outputs**: avoid requiring complex structured output from Spark unless absolutely necessary; use concise reports.
-- **Switch to Kimi**: use `builder` for multi-file integration, auth/payment/security, subtle behavior, migrations, broad refactors, or anything where a wrong-looking-right answer is expensive.
+- **Switch away from Spark**: use `builder` for normal-risk structured execution, or `builder-heavy` for subtle integration, shared-file hazards, migrations, math/science/algorithm-heavy work, auth/payment/security-adjacent changes, or anything where a wrong-looking-right answer is expensive.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -87,7 +88,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-highspeed` and `builder`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task.
+Planner-generated schedules may mix `builder-highspeed`, `builder`, and `builder-heavy`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task.
 
 ## Direct Mode Prompt
 
@@ -162,6 +163,7 @@ Before spawning builder, verify:
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
 - [ ] Task is small enough for a delegated model.
 - [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, and every API/package/symbol can be verified.
+- [ ] If using `builder-heavy`, task is bounded, correctness-sensitive, and includes enough repo state/preservation constraints to justify the heavier model.
 
 If more than two boxes are missing, do more prep or implement directly.
 
@@ -224,6 +226,6 @@ Agent({ subagent_type: "builder-highspeed", run_in_background: true, description
 | One builder for UI + API + DB | Split by concern and dependencies |
 | No validation command | Include targeted test or explain why none exists |
 | Broad refactor request | Use planner first |
-| Spark asked to execute a long checklist | Split into small tasks or use `builder` |
+| Spark asked to execute a long checklist | Split into small tasks, use `builder`, or use `builder-heavy` when the task is bounded but subtle |
 | Spark allowed to infer APIs/packages | Require grep/package verification before implementation |
 | Trusting builder summary only | Check diff and diagnostics |

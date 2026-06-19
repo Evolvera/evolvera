@@ -45,7 +45,7 @@ Skills and subagents:
 - Use skills when they match the task. Load the full `SKILL.md` before following a specialized workflow.
 - Load `agent-guide` before using scout/planner/builder.
 - Load `scout` before delegating exploration. If you think you need to inspect more than 3 files manually to understand a feature, bug, or data flow, stop manual exploration and launch a bounded scout instead.
-- Load `builder` before delegating implementation. Use the Builder Skill's routing, prompt template, and guardrails to choose `builder-highspeed` vs `builder`; do not spawn builders from memory.
+- Load `builder` before delegating implementation. Use the Builder Skill's routing, prompt template, and guardrails to choose `builder-highspeed` vs `builder` vs `builder-heavy`; do not spawn builders from memory.
 - Skill descriptions are routing hints; the loaded skill content is the authority for that workflow.
 - Subagents are cheaper/faster but less capable than you. Narrow their scope, provide exact files and validation, and verify their work.
 
@@ -106,7 +106,7 @@ High-value skills:
 - `agent-guide` — load before using scout/planner/builder.
 - `scout` — codebase exploration and evidence gathering; use when manual investigation would exceed 3 files.
 - `planner` — multi-file architecture/task planning.
-- `builder` — focused implementation tasks; use its routing rules before choosing `builder-highspeed` or `builder`.
+- `builder` — focused implementation tasks; use its routing rules before choosing `builder-highspeed`, `builder`, or `builder-heavy`.
 - `website-pipeline`, `website-stack`, `design-catalog` — website work.
 - `project-memory` — persistent project context.
 - `pi-tool-expert` — PI extensions, skills, custom tools, MCP, model/provider config.
@@ -134,9 +134,9 @@ Do a lightweight pre-plan first, then build a **Planner Handoff Pack** before ac
 
 ### Builder
 
-Use `builder-highspeed` for Spark sweet spots: single-file/module-local edits, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, backend/tooling/infra/tests, algorithms, physics/math, and mechanical refactors. It is much faster but less capable, shorter-context, and more hallucination-prone; fast wrong answers can look correct. Keep prompts concrete: target files, <=~6 logical steps, exact validation, and explicit checks for APIs/packages/symbols/endpoints before implementation. Use `builder` when caution matters more than speed, especially multi-file integration, long checklists, structured/exhaustive workflows, or sensitive code. Avoid highspeed builder for final visual polish, brand/design decisions, or vague UI requests.
+Use `builder-highspeed` for Spark sweet spots: single-file/module-local edits, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, backend/tooling/infra/tests, and mechanical refactors. It is much faster but less capable, shorter-context, and more hallucination-prone; fast wrong answers can look correct. Keep prompts concrete: target files, <=~6 logical steps, exact validation, and explicit checks for APIs/packages/symbols/endpoints before implementation. Use `builder` for explicit, bounded, normal-risk Kimi execution with TILL-DO/TODO/HANDOVER; do not treat it as the safe default for complex work. Use `builder-heavy` for bounded but complex/correctness-sensitive work that merits GPT-5.5: subtle multi-file integration, large/shared files, preservation-critical tests/source, migrations, math/science/algorithm-heavy tasks, long composed workflows, auth/payment/security-adjacent changes, or recovery after lighter builder failure. When unsure between Kimi and heavy for high-risk work, choose heavy. Avoid highspeed builder for final visual polish, brand/design decisions, or vague UI requests.
 
-Before spawning any builder, load the `builder` skill and follow its routing rules, prompt checklist, and Spark guardrails. Give exact files to read, exact intended changes/patterns, validation commands, and preservation constraints. Builder tasks that modify existing files must create pre-edit recovery snapshots and review focused diffs before COMPLETE. In planner-driven execution, make a checkpoint commit after each validated task using selective staging for only that task's intended files/artifacts; never include unrelated pre-existing dirty files. Split multi-concern work into multiple builders only when files are disjoint and checkpointing remains safe.
+Before spawning any builder, load the `builder` skill and follow its routing rules, prompt checklist, Spark guardrails, and heavy-builder routing. Give exact files to read, exact intended changes/patterns, validation commands, and preservation constraints. Builder tasks that modify existing files must create pre-edit recovery snapshots and review focused diffs before COMPLETE. In planner-driven execution, make a checkpoint commit after each validated task using selective staging for only that task's intended files/artifacts; never include unrelated pre-existing dirty files. Split multi-concern work into multiple builders only when files are disjoint and checkpointing remains safe.
 
 ### Validator
 
