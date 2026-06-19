@@ -5,7 +5,7 @@ description: Use the scout agent for codebase exploration, file discovery, and e
 
 # Scout Skill — Codebase Exploration Agent
 
-> **⚡ EFFICIENCY FIRST**: Scout has two delegated variants. Use `scout-highspeed` for most fast bounded exploration; use `scout` when you need the older checkpoint-heavy Kimi workflow or lower hallucination risk. Whenever the mission touches multiple areas, **split into parallel scouts** — do NOT explore sequentially.
+> **⚡ EFFICIENCY FIRST**: Scout has two delegated variants. Use `scout-highspeed` for most fast bounded exploration; use `scout` when you need Kimi's stronger coherent read-only synthesis or lower hallucination risk. Whenever the mission touches multiple areas, **split into parallel scouts** when decomposition preserves quality.
 
 ## When to Use
 
@@ -25,7 +25,7 @@ Invoke `Agent(subagent_type="scout-highspeed")` or `Agent(subagent_type="scout")
 | Agent | Use When | Avoid When |
 |---|---|---|
 | `scout-highspeed` | micro-scouts: narrow file discovery, symbol grep, one dependency/config/test slice, backend/infra/tests/config, algorithms/math/physics-heavy code understanding with tight scope | frontend visual/design critique, broad unsupported factual research, whole-repo audits, exhaustive/stateful investigations, corpus/coverage mapping in one prompt, 6–8+ independent retrieval threads |
-| `scout` | you need older checkpoint artifacts, lower hallucination risk, exhaustive coverage, or stronger large-context coherence | latency-sensitive parallel scans |
+| `scout` | you need lower hallucination risk, exhaustive coverage, contradiction resolution, or stronger large-context coherence | latency-sensitive parallel scans |
 
 Default to `scout-highspeed` only after decomposing into micro-missions. Use many highspeed scouts in parallel for independent angles. Switch to `scout` when one report must hold broad state across many areas.
 
@@ -108,7 +108,7 @@ Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: 
 Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Map data models", prompt: "MISSION: Map model files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return PARTIAL with next splits if broad. ..." })
 Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Check test config", prompt: "MISSION: Find test config/scripts only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return PARTIAL with next splits if broad. ..." })
 
-// While scouts run, the main model should keep working:
+// While scouts run, keep working:
 // - read obvious high-signal files
 // - run targeted grep/find commands
 // - inspect tests/logs/configs
@@ -146,10 +146,10 @@ Agent({
 
 Scout agents follow these absolute rules:
 
-1. **READ-ONLY** — Never modifies, creates, or edits files
-2. **NO OPINIONS** — Only reports findings, never suggests improvements
-3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists
-4. **QUOTE EXACTLY** — Copies text verbatim from source
+1. **READ-ONLY** — Never modifies, creates, or edits files; normal Kimi scout also does not create checkpoint files on disk
+2. **NO OPINIONS** — Only reports findings, never suggests improvements unless explicitly asked for analysis
+3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists and states searched scope
+4. **QUOTE EXACTLY** — Copies relevant source text verbatim when quoting code
 5. **EVIDENCE-BASED** — Every claim backed by file evidence
 
 ## Scout Output Format
