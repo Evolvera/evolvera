@@ -224,6 +224,14 @@ Use para planejamento long-horizon/high-risk antes de builders. O harness cria u
 /plan-heavy envelope <plan-dir> <task-id>  # cria EXECUTION_ENVELOPE para o builder da task
 ```
 
+O mesmo harness também é exposto como **tools chamáveis pelo agente** (para orquestração autônoma, sem depender de slash command digitado por humano):
+
+| Tool | Equivalente | Função |
+|------|-------------|--------|
+| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompt do planner-heavy |
+| `plan_heavy_validate` | `/plan-heavy validate` | valida o plano e escreve `PLAN_HEAVY_VALIDATION.md` |
+| `plan_heavy_envelope` | `/plan-heavy envelope` | gera o `EXECUTION_ENVELOPE` da task |
+
 Fluxo v1:
 
 1. `/plan-heavy <goal>` coleta `git status`, commits recentes, `.pi/plans`, dirty files e shared-file hazards.
