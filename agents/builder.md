@@ -21,6 +21,17 @@ Kimi performs best with clear sections, explicit steps, and reference text. Trea
 6. **NO ARCHITECTURE CHANGES**: Do not re-plan, re-architect, or add adjacent improvements.
 7. **ATOMIC COMPLETION**: Report `COMPLETE` only when all success criteria and validation are satisfied. Otherwise report `PARTIAL`, `BLOCKED`, or `ERROR`.
 
+## Engineering Quality Rules
+
+Apply these rules while staying inside the task scope:
+
+- **SoC**: keep responsibilities separated. Do not mix unrelated concerns, artifact types, or cleanup with the requested change.
+- **DYC**: add or update comments/docs only for non-obvious invariants, tricky logic, compatibility constraints, failure behavior, or operational usage. Do not add noise comments.
+- **DRY + Rule of Three**: reuse existing helpers. Do not create a new abstraction for one or two similar cases unless the task or existing architecture explicitly requires it; tolerate small duplication until the third proven repetition.
+- **KISS**: implement the simplest readable solution. Avoid cleverness, generic frameworks, and broad rewrites.
+- **TDD where practical**: for behavior changes, prefer adding/updating the targeted test before implementation, or identify the existing test that covers the behavior. If impossible, record the closest validation.
+- **YAGNI**: do not add speculative options, flags, dependencies, APIs, or future-proof extension points.
+
 ## Input Priority
 
 Use this priority order when instructions conflict:
@@ -47,6 +58,7 @@ Before any code mutation:
    - files to read first;
    - validation commands/checks;
    - patch boundaries and preservation markers;
+   - engineering constraints: SoC, DYC, DRY/Rule-of-Three, KISS, TDD, YAGNI;
    - constraints and out-of-scope items.
 4. For each target file:
    - if `CREATE`: verify parent directory/patterns;
@@ -79,6 +91,7 @@ TILL-DO format:
 - [x] PRESERVATION BASELINE: [what must not be removed]
 - [x] RECOVERY SNAPSHOTS: [snapshot path + line count/hash for each MODIFY file]
 - [x] VALIDATION PLAN: [commands/checks]
+- [x] ENGINEERING CHECK: [SoC preserved; no premature abstraction; KISS/YAGNI respected; DYC/TDD handled]
 ```
 
 If any gate cannot be completed, write HANDOVER with `status: BLOCKED` and do not edit code.
@@ -113,8 +126,9 @@ For each step:
 3. Use `edit` for existing files with narrow replacements.
 4. Use `write` only for new files, `.pi/build/*` artifacts, or `.pi/recovery/*` snapshots.
 5. Preserve unrelated code, imports, handlers, branches, comments, tests, styling, and public API.
-6. Never replace a large existing file with a partial regenerated version.
-7. After the step, update TODO artifact and note files changed.
+6. Do not introduce abstractions, dependencies, flags, or extension points unless required by the task or justified by existing architecture/Rule of Three evidence.
+7. Never replace a large existing file with a partial regenerated version.
+8. After the step, update TODO artifact and note files changed.
 
 Stop and report `BLOCKED` if:
 - required files/symbols/packages/endpoints do not exist;
@@ -134,6 +148,8 @@ Before `COMPLETE`:
    - no broad formatting churn;
    - no out-of-scope file changes;
    - no unrelated cleanup;
+   - no premature abstraction or speculative YAGNI additions;
+   - comments/docs are useful for non-obvious behavior, not noise;
    - removals are intentional and tied to success criteria.
 4. Compare line counts for large files and investigate any large drop before COMPLETE.
 5. If a deletion/rewrite is accidental, restore from `.pi/recovery/{task_id}/before/...` before finishing.

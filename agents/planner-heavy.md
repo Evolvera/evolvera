@@ -37,7 +37,8 @@ The plan is acceptable when:
 - tasks touching the same existing file are serialized and depend on checkpoint commits;
 - every MODIFY task requires recovery snapshots, patch boundaries, preservation markers, and focused diff review;
 - pre-existing dirty files from the handoff are excluded from task commits unless explicitly owned by the plan;
-- validation commands/checks and stop rules are concrete.
+- validation commands/checks and stop rules are concrete;
+- tasks encode SoC, DYC, DRY/Rule-of-Three, KISS, TDD-where-practical, and YAGNI constraints without bloating into generic filler.
 
 ## Constraints
 
@@ -45,6 +46,7 @@ The plan is acceptable when:
 - Use tools to read only the handoff and high-signal repo files needed to ground file paths/symbols. Do not exhaustively scan.
 - Do not invent APIs, paths, markers, or validation commands. Mark uncertain details as `TO VERIFY` inside task gates.
 - Keep artifacts concise but complete. Avoid generic filler.
+- Do not plan speculative abstractions or extension points unless required now or justified by three proven repetitions / existing architecture.
 
 ## Output Contract
 
@@ -67,6 +69,7 @@ Each task file must include:
 - `Agent`, `Why This Agent`, `Spark Budget`, `Heavy Fit`, `Scope`, `Files Touched`;
 - `Preservation Contract`;
 - `Recovery Requirement`;
+- `Engineering Constraints` covering SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation;
 - context summary;
 - implementation detail;
 - `Patch Boundaries`;
