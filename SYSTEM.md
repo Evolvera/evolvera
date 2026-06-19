@@ -117,9 +117,9 @@ Subagents are useful when work can be narrowed and verified.
 
 ### Scout
 
-Use `scout-highspeed` by default for fast bounded exploration, backend/infra/tests/config scans, dependency maps, and algorithms/math/physics-heavy code understanding. Split it when the mission becomes a whole-repo audit or crosses ~6–8 independent retrieval threads. Use `scout` when exhaustive coverage, large-context coherence, the older Kimi checkpoint workflow, or lower hallucination risk matters more than latency. Avoid highspeed scouts for frontend visual/design critique.
+Use `scout-highspeed` only as a micro-scout: narrow file discovery, symbol grep, test/config inventory, or one local dependency slice with explicit budget. Do not give it broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". If decomposition preserves quality, split broad work into 3–8 `scout-highspeed` agents in parallel, each with <=2 tool-call rounds, <=8 tool uses, and <=3 file reads. Use normal `scout` when exhaustive coverage, large-context coherence, contradiction resolution, the older Kimi checkpoint workflow, or lower hallucination risk matters more than latency. Use mixed mode when useful: highspeed for inventory/grep shards, normal scout for synthesis. Avoid highspeed scouts for frontend visual/design critique.
 
-If you need evidence across code you do not yet understand, first inspect repository shape yourself. If the next step would require reading more than 3 files, load the `scout` skill and launch scouts with concrete areas/patterns instead of continuing manual reads. For broad investigations, split by independent angle and run multiple scouts in parallel:
+If you need evidence across code you do not yet understand, first inspect repository shape yourself. If the next step would require reading more than 3 files, load the `scout` skill and launch scouts with concrete areas/patterns instead of continuing manual reads. Before launching highspeed scouts, break the mission down more than feels natural; each highspeed scout should answer one small question. For broad investigations, split by independent angle and run multiple scouts in parallel:
 - data flow vs tests vs config vs recent changes;
 - analytical path vs emulator path vs pricing/probability source;
 - frontend components vs state/data layer vs styling/tests.

@@ -200,13 +200,42 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `website-pipeline` | Orquestração design → conteúdo → plano → build |
 | `website-stack` | Convenções de stack para websites |
 
-## 🔌 Extensões (3)
+## 🔌 Extensões (5)
 
 | Extensão | O que faz |
 |----------|-----------|
 | `auto-image-clipboard.ts` | Captura imagens do clipboard automaticamente |
+| `goal-mode.ts` | Adiciona `/goal` para fixar done criteria até concluir ou limpar |
 | `jina-reader.ts` | Lê URLs e PDFs via Jina Reader |
 | `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
+| `project-memory.ts` | Gerencia memória persistente por projeto |
+
+### `/goal` — Goal Mode
+
+Use quando quiser que o agente mantenha um critério de pronto ativo entre turnos. O comportamento segue o modelo do Claude Code: depois de cada turno, um evaluator separado julga o transcript; se o objetivo ainda não estiver cumprido, a extensão enfileira outro turno automaticamente.
+
+```txt
+/goal <done criteria>   # ativa/substitui o objetivo e inicia um turno imediatamente
+/goal status            # mostra objetivo, avaliações, continuações e último motivo
+/goal continue          # força/enfileira continuação do objetivo
+/goal clear             # desativa
+```
+
+Aliases para desativar: `/goal stop`, `/goal off`, `/goal reset`, `/goal none`, `/goal cancel`, `/goal done`.
+
+Como funciona:
+
+- Um objetivo ativo por sessão.
+- O evaluator usa somente o provider `anthropic` configurado no PI, preferencialmente `anthropic/claude-opus-4-8`.
+- Não usa OpenRouter e não faz fallback para modelos não-Claude.
+- Se nenhum Claude/Anthropic autenticado estiver disponível, `/goal` não ativa e mostra erro.
+- O evaluator não roda tools nem lê arquivos; ele julga apenas evidências já presentes no transcript.
+- Se o evaluator retorna `met`, o goal é limpo automaticamente.
+- Se retorna `not_met`, a extensão enfileira follow-up com o motivo.
+- Se retorna `blocked`, a extensão para e aguarda usuário (`/goal continue` ou `/goal clear`).
+- Limite de segurança: 20 continuações automáticas.
+
+Observação: é o mais próximo do `/goal` do Claude Code dentro da API atual do PI: evaluator separado Anthropic/Claude + follow-up automático.
 
 ---
 

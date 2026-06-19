@@ -24,10 +24,70 @@ Invoke `Agent(subagent_type="scout-highspeed")` or `Agent(subagent_type="scout")
 
 | Agent | Use When | Avoid When |
 |---|---|---|
-| `scout-highspeed` | fast bounded file discovery, call/dependency maps, backend/infra/tests/config, algorithms/math/physics-heavy code understanding | frontend visual/design critique, broad unsupported factual research, whole-repo audits, exhaustive/stateful investigations, 6–8+ independent retrieval threads |
+| `scout-highspeed` | micro-scouts: narrow file discovery, symbol grep, one dependency/config/test slice, backend/infra/tests/config, algorithms/math/physics-heavy code understanding with tight scope | frontend visual/design critique, broad unsupported factual research, whole-repo audits, exhaustive/stateful investigations, corpus/coverage mapping in one prompt, 6–8+ independent retrieval threads |
 | `scout` | you need older checkpoint artifacts, lower hallucination risk, exhaustive coverage, or stronger large-context coherence | latency-sensitive parallel scans |
 
-Default to `scout-highspeed` for bounded repo exploration. Use multiple highspeed scouts in parallel for independent angles. Switch to `scout` when one report must hold broad state across many areas.
+Default to `scout-highspeed` only after decomposing into micro-missions. Use many highspeed scouts in parallel for independent angles. Switch to `scout` when one report must hold broad state across many areas.
+
+## Routing: Highspeed vs Normal vs Mixed
+
+Choose based on whether decomposition preserves quality.
+
+### Use mostly `scout-highspeed` when decomposition is clean
+Use highspeed micro-scouts when the work can be split into independent slices and merged mechanically.
+
+Good examples:
+- file inventory by directory or glob;
+- symbol/function lookup by name;
+- test/config discovery;
+- import/call-site grep;
+- one module's local dependencies;
+- comparing separate implementations of the same interface.
+
+Pattern:
+```ts
+// Run all at once, in one assistant message, with run_in_background: true
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find unit tests", prompt: "MISSION: Find unit test files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: tests/unit, src/**/*.test.*" })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find fixtures", prompt: "MISSION: Find fixtures/helpers only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: tests, fixtures, src" })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find coverage config", prompt: "MISSION: Find coverage scripts/config only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: package.json, vitest.*, jest.*, nyc.*, .github" })
+```
+
+### Use normal `scout` when splitting would lose coherence
+Use Kimi `scout` when the answer needs one coherent mental model across many files, long state retention, contradiction resolution, or an exhaustive audit.
+
+Examples:
+- "explain the whole auth architecture and edge cases";
+- "audit analytical correctness across emulator + pricing + probability + tests";
+- "map end-to-end payment flow including retries, webhooks, DB state, and UI states";
+- "prove coverage is sufficient against business requirements";
+- any investigation where partial independent reports would be misleading without cross-file synthesis.
+
+Pattern:
+```ts
+Agent({
+  subagent_type: "scout",
+  description: "Audit payment flow",
+  prompt: "MISSION: Build one coherent evidence-based map of payment flow across API, DB, webhooks, retries, UI state, and tests. Exhaustive enough to identify contradictions. Return exact file paths/lines and gaps."
+})
+```
+
+### Use mixed mode for broad investigations
+Use highspeed scouts for cheap inventory/evidence shards, and one normal scout for synthesis when coherence matters.
+
+Examples:
+- Highspeed scouts: inventory test files, find config, grep target symbols, list fixtures.
+- Normal scout: synthesize whether coverage matches requirements and identify gaps.
+
+Pattern:
+```ts
+// Phase 1: parallel highspeed evidence shards
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Inventory tests", prompt: "MISSION: Inventory test files by directory only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return counts, paths, and PARTIAL next splits." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Grep target APIs", prompt: "MISSION: Grep target API usages only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return matching files/symbols." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find coverage config", prompt: "MISSION: Find coverage config/scripts only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files." })
+
+// Phase 2: normal scout only if synthesis still needs cross-file coherence
+Agent({ subagent_type: "scout", description: "Synthesize coverage gaps", prompt: "Use the highspeed reports plus focused reads to determine coverage gaps. Preserve contradictions and cite exact evidence." })
+```
 
 ## When NOT to Use
 
@@ -38,15 +98,15 @@ Default to `scout-highspeed` for bounded repo exploration. Use multiple highspee
 
 ## How to Invoke
 
-### Default: Parallel Scouts (Recommended)
+### Default: Parallel Micro-Scouts (Recommended)
 
-> **RULE**: If the mission has 2+ independent angles, launch **2-4 scouts in parallel**. Scout is cheap and fast — parallelizing saves time and reduces context overload per scout.
+> **RULE**: If the mission has 2+ independent angles, launch **3-8 scouts in parallel**. `scout-highspeed` is a micro-scout; it should not receive corpus/coverage/exhaustive prompts. Parallelizing saves time and prevents context drift per scout.
 
 ```
 // Launch ALL in parallel — no waiting between them
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find entry points", prompt: "..." })
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Map data models", prompt: "..." })
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Check tests", prompt: "..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find entry points", prompt: "MISSION: Find entry files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return PARTIAL with next splits if broad. ..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Map data models", prompt: "MISSION: Map model files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return PARTIAL with next splits if broad. ..." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Check test config", prompt: "MISSION: Find test config/scripts only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return PARTIAL with next splits if broad. ..." })
 
 // While scouts run, the main model should keep working:
 // - read obvious high-signal files
@@ -62,13 +122,13 @@ get_subagent_result({ agent_id: "[id3]", wait: true })
 
 ### Single Scout (Only for Simple/Trivial)
 
-Use a single scout ONLY when the scope is genuinely narrow (1 concern, 1 area):
+Use a single `scout-highspeed` ONLY when the scope is genuinely narrow (1 concern, 1 area, <=3 likely file reads). If the prompt contains words like `all`, `complete`, `corpus`, `coverage`, `inventory`, `entire`, or `map`, split first unless the area is tiny.
 
 ```
 Agent({
   subagent_type: "scout-highspeed",
   description: "[3-5 words]",
-  prompt: "MISSION: [clear objective]\n\nFOCUS ON:\n- [aspect 1]\n- [aspect 2]\n\nAREA: [root paths]\n\nReturn a complete scout report with file paths, key findings, and evidence."
+  prompt: "MISSION: [one narrow objective]\n\nBUDGET:\n- max 2 tool-call rounds\n- max ~8 total tool uses\n- read <=3 files\n- return PARTIAL with next micro-scout splits if broad\n\nFOCUS ON:\n- [aspect 1]\n\nAREA: [specific root paths/patterns]\n\nReturn file paths, key findings, and evidence."
 })
 ```
 
@@ -80,7 +140,7 @@ Agent({
 | `description` | ✅ | Short 3-5 word summary |
 | `prompt` | ✅ | Detailed mission with FOCUS ON and AREA |
 | `run_in_background` | ✅ **Always `true` for parallel** | `true` when launching multiple scouts |
-| `max_turns` | Optional | Default unlimited. Use 20-30 for quick scouts; keep highspeed scouts short to reduce context drift |
+| `max_turns` | Optional | Use 8-15 for `scout-highspeed` micro-scouts; use higher only for Kimi `scout` |
 
 ## Scout Behavior Rules
 
@@ -103,13 +163,13 @@ Scout returns a structured report with:
 
 ### Retrieval Budget
 
-Scout should retrieve enough evidence to answer its bounded mission, then stop. For `scout-highspeed`, prefer 5-12 tool calls and return `PARTIAL` rather than overextending. Continue searching only when:
+Scout should retrieve enough evidence to answer its bounded mission, then stop. For `scout-highspeed`, prefer 3-8 tool uses across <=2 tool-call rounds and return `PARTIAL` rather than overextending. Continue searching only when:
 - the current evidence does not answer the scout's assigned question;
 - a required file, symbol, parameter, owner, date, ID, or source is missing;
 - the mission asks for exhaustive coverage or dependency/call graph mapping;
 - the report would otherwise contain an important unsupported claim.
 
-If a highspeed scout mission grows into a large-codebase audit, 6–8+ independent retrieval threads, or a stateful exhaustive investigation, split it into multiple scouts or route to `scout`.
+If a highspeed scout mission grows into a large-codebase audit, corpus/coverage mapping, 6–8+ independent retrieval threads, or a stateful exhaustive investigation, split it into multiple highspeed scouts or route to `scout`.
 
 Do not keep searching to improve phrasing or collect nonessential examples. Absence of evidence is not evidence of absence unless the searched scope is appropriate and stated.
 
@@ -170,30 +230,29 @@ User Request
 
 ## Examples
 
-### Example 1: Find auth implementation
+### Example 1: Auth discovery with highspeed micro-scouts
 ```
-Agent({
-  subagent_type: "scout-highspeed",
-  description: "Find auth logic",
-  prompt: "MISSION: Find all authentication-related code in this project.\n\nFOCUS ON:\n- Login/register endpoints\n- JWT/token handling\n- Middleware or guards\n- User model/schema\n\nAREA: src/\n\nReturn file paths, key functions, and how auth flows work."
-})
+// Launch together, not sequentially
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find auth routes", prompt: "MISSION: Find auth route/endpoint files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: src, app, pages, routes. Return paths/symbols/evidence or PARTIAL next splits." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find token logic", prompt: "MISSION: Find JWT/session/token helper files only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: src, lib, server. Return paths/symbols/evidence or PARTIAL next splits." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find auth tests", prompt: "MISSION: Find auth-related tests only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. AREA: tests, src. Return paths/symbols/evidence or PARTIAL next splits." })
 ```
 
-### Example 2: Map before planning
+### Example 2: Payment flow needs normal scout for coherence
 ```
 Agent({
-  subagent_type: "scout-highspeed",
+  subagent_type: "scout",
   description: "Map payment flow",
-  prompt: "MISSION: Map the complete payment processing flow.\n\nFOCUS ON:\n- API endpoints that handle payments\n- Database models for transactions\n- External service integrations (Stripe, etc.)\n- Error handling and retry logic\n\nAREA: src/payments/, src/api/, prisma/schema.prisma\n\nReturn a flow map with file references."
+  prompt: "MISSION: Build one coherent evidence-based map of the payment flow across API endpoints, DB models, webhooks, external integrations, retries, error handling, and tests. Return exact file paths/lines, contradictions, and gaps."
 })
 ```
 
 ### Example 3: Parallel scouts for large refactor
 ```
 // Launch 3 scouts in parallel
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find exports", prompt: "MISSION: List all exports from src/utils/. What functions, types, constants are exported? Who imports them?" })
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find tests", prompt: "MISSION: Find all test files for src/utils/. What testing framework? What coverage?" })
-Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find usage", prompt: "MISSION: Find all files that import from src/utils/. Map internal and external consumers." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find util exports", prompt: "MISSION: List export declarations in src/utils only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return export paths/symbols; PARTIAL if broad." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find util tests", prompt: "MISSION: Find test files for src/utils only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return paths/framework evidence; PARTIAL if broad." })
+Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: "Find util imports", prompt: "MISSION: Grep imports from src/utils only. BUDGET: <=2 tool rounds, <=8 tool uses, read <=3 files. Return consumer paths; PARTIAL if broad." })
 
 // Collect and consolidate
 get_subagent_result({ agent_id: "...", wait: true })
