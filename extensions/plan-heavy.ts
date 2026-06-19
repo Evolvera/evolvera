@@ -198,18 +198,51 @@ function listTaskFiles(planDir: string): string[] {
   return readdirSync(tasksDir).filter((f) => f.endsWith(".md")).map((f) => join(tasksDir, f));
 }
 
-function extractSection(markdown: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = markdown.match(new RegExp(`(^|\\n)## ${escaped}\\n([\\s\\S]*?)(?=\\n## |$)`, "i"));
-  return match?.[2]?.trim() ?? "";
+// Tolerant section extraction: finds a label as a heading (`## Label`, any level,
+// with optional trailing suffix), a bold field (`**Label:**`), or a list field
+// (`- **Label:**`). Separators in the label match space/hyphen/slash runs so
+// "Files to Create / Modify" and "Shared-File Hazards" still match. Captures the
+// block after the start line: for headings until the next heading; for fields
+// until the next heading or first non-indented, non-blank line.
+function extractSection(markdown: string, label: string): string {
+  const words = label
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!words.length) return "";
+  const labelRe = words.join("[\\s/-]+");
+  const startRe = new RegExp(`^\\s*(?:[-*>]\\s*)?(?:#{1,6}\\s*)?(?:\\*\\*)?\\s*${labelRe}\\b`, "i");
+  const lines = markdown.split("\n");
+  const startIdx = lines.findIndex((l) => startRe.test(l));
+  if (startIdx < 0) return "";
+  const isHeading = /^\s*#{1,6}\s/.test(lines[startIdx]);
+  const out: string[] = [];
+  for (let j = startIdx + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (/^\s*#{1,6}\s/.test(l)) break;
+    if (!isHeading && l.trim() !== "" && /^\S/.test(l)) break;
+    out.push(l);
+  }
+  return out.join("\n").trim();
 }
 
 function parseTargetFiles(taskContent: string): string[] {
-  const section = extractSection(taskContent, "Files to Create/Modify");
-  return section
-    .split("\n")
-    .map((line) => line.match(/`([^`]+)`/)?.[1])
-    .filter((value): value is string => Boolean(value));
+  for (const label of ["Files Touched", "Files to Create / Modify", "Target Files", "Files to Modify"]) {
+    const section = extractSection(taskContent, label);
+    if (!section) continue;
+    const files = [
+      ...new Set(
+        section
+          .split("\n")
+          .map((line) => line.match(/`([^`]+)`/)?.[1])
+          .filter((value): value is string => Boolean(value))
+          .filter((p) => p.includes("/") && !p.includes("*") && !p.startsWith(".pi/")),
+      ),
+    ];
+    if (files.length) return files;
+  }
+  return [];
 }
 
 function findTaskFile(planDir: string, ref: string): string | null {
