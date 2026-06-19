@@ -23,7 +23,7 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 - **Higher per-scout quality** — each scout gets a crisp, bounded question it can actually answer well
 - **Easier to verify** — small outputs are simpler to audit and merge
 
-**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", split it into 2–5 narrower scouts and run them in parallel. While they run, the main model should keep doing useful direct inspection instead of waiting idly.
+**Rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 3–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, the main model should keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -49,11 +49,13 @@ Agent({
 ```
 
 **Rules:**
-- Use `scout-highspeed` by default for quick bounded exploration, algorithms, backend, infra, tests, config, and math-heavy code understanding.
-- Split highspeed scout work when it crosses ~6–8 independent retrieval threads or starts becoming a whole-repo audit.
+- Use `scout-highspeed` for micro-scouts: narrow file discovery, symbol grep, test/config inventory, one local dependency slice, algorithms/backend/infra/math-heavy code understanding with tight scope.
+- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split those into 3–8 parallel micro-scouts first.
 - Use `scout` when lower hallucination risk, exhaustive coverage, large-context coherence, or existing scout checkpoint artifacts matter more than speed.
+- Use mixed mode when useful: highspeed scouts for evidence shards, normal scout for synthesis/contradiction resolution.
 - Do not use highspeed scouts for frontend design critique or visual polish; use website/design agents instead.
 - Give scout a **clear question**, not vague tasks.
+- For highspeed scouts, include explicit budget: <=2 tool-call rounds, <=8 tool uses, read <=3 files, return PARTIAL with next splits if broad.
 - Tell it **where to look** (directories, file patterns).
 - Ask for **exact file paths and line numbers**.
 - **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
@@ -164,7 +166,9 @@ scout → planner → builder → validator
 | Letting Spark infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use Kimi builder |
 | Using Spark for long checklists | Context drift after several steps | Split tasks or route to Kimi builder |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
-| Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into 2–5 parallel scouts, one angle each |
+| Asking one highspeed scout a broad corpus/coverage question | Spark burns context, hits turn limits, or returns shallow partials | Split into 3–8 parallel micro-scouts or use normal `scout` |
+| Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with Kimi synthesis |
+| Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
 
 ---
 
