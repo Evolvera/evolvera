@@ -61,6 +61,8 @@ Understand the user's request deeply enough to either:
 
 Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
+Use `/plan-heavy` instead of direct planner activation when risk is high: dirty working tree, existing `.pi/plans`, shared/large files, preservation-critical tasks, math/science/algorithm correctness, long composed workflows, or recovery after a builder failure. `/plan-heavy` creates `HANDOFF.md`, then uses the clean `planner-heavy` subagent and `/plan-heavy validate` gate.
+
 The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then build a Planner Handoff Pack so the planner sees the real operational state, not just the desired feature. Let the planner choose an efficient implementation path from that grounded handoff.
 
 
