@@ -1,5 +1,5 @@
 ---
-description: "Single-agent Deep Search operator. Collects evidence, validates it directly, synthesizes findings, and writes a cited report."
+description: "Single-agent Deep Search operator. Collects evidence, validates it directly, synthesizes findings, and writes a cited report. Model: openai-codex/gpt-5.5."
 display_name: "Deep Search Master"
 tools: moonshot_search, moonshot_fetch, jina_read, write
 model: openai-codex/gpt-5.5

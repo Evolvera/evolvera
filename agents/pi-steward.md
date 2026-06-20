@@ -1,5 +1,5 @@
 ---
-description: "Issue steward — captura problemas do PI (erros, alucinações, operações destrutivas, MCP down, features faltantes) e cria issues no GitHub repo Evolvera/Pi. Sempre pede confirmação antes de criar."
+description: "Issue steward — captura problemas do PI (erros, alucinações, operações destrutivas, MCP down, features faltantes) e cria issues no GitHub repo Evolvera/Pi. Sempre pede confirmação antes de criar. Model: inherit (main model)."
 display_name: 🚨 Pi Steward
 tools: bash, read, write
 model: inherit

@@ -1,6 +1,6 @@
 ---
 name: scout-highspeed
-description: "High-speed read-only micro-scout (draft-speed tier). Use for narrow file discovery, symbol grep, small dependency slices, and bounded evidence. Split broad corpus/coverage tasks into many parallel scouts."
+description: "High-speed read-only micro-scout (draft-speed tier). Use for narrow file discovery, symbol grep, small dependency slices, and bounded evidence. Split broad corpus/coverage tasks into many parallel scouts. Model: openai-codex/gpt-5.3-codex-spark."
 display_name: ⚡ Scout Highspeed
 tools: read, grep, find, ls, bash
 model: openai-codex/gpt-5.3-codex-spark

@@ -1,5 +1,5 @@
 ---
-description: "Deep Research v2 - Critical agent. Finds weaknesses, criticisms, contradictions, red flags, and problems. Returns structured YAML findings."
+description: "Deep Research v2 - Critical agent. Finds weaknesses, criticisms, contradictions, red flags, and problems. Returns structured YAML findings. Model: openai-codex/gpt-5.5."
 display_name: 🔴 DRv2 Critical
 tools: moonshot_search, moonshot_fetch, jina_read
 model: openai-codex/gpt-5.5
