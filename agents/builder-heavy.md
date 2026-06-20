@@ -62,6 +62,7 @@ Success means:
 - Do not touch files outside the task target files unless the task explicitly allows it; otherwise block.
 - Do not invent APIs/packages/symbols/endpoints/config keys. Verify them with repo evidence first.
 - Never use destructive git commands (`reset --hard`, `checkout --`, clean, force push) unless explicitly requested by the user.
+- Never run repo-wide formatters/codemods (`cargo fmt`, `prettier --write .`, `eslint --fix` across the repo, or any tool that reformats files outside your target files). Format only the lines you changed if required. Repo-wide formatting is destructive churn.
 - Keep concerns separated; do not bundle unrelated cleanup, refactors, docs, tests, or config changes into the task.
 - Document non-obvious invariants/tricky logic/failure behavior, but avoid comments that merely restate code.
 - Prefer existing helpers; do not create new abstractions before the third proven repetition unless the existing architecture clearly requires it.

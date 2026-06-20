@@ -36,6 +36,9 @@ The plan is acceptable when:
 - `builder-highspeed` is used only for small, explicit, easy-to-verify module-local/mechanical tasks;
 - each task is one safe commit/rollback/validation unit;
 - tasks are split by artifact class, patch boundary, validation boundary, failure mode, and rollback boundary;
+- each canonical data artifact gets its own task (never bundle multiple JSON/matrix files plus source/API into one commit);
+- parallel groups are disjoint over the FULL file set including shared registry/declaration/config files (`mod.rs`, barrel `index.ts`, `__init__.py`, route tables, `Cargo.toml`, `package.json`); new-file tasks that share a registry are serialized OR their registrations are centralized into one wiring task — never parallel;
+- task patch boundaries forbid repo-wide formatters/codemods (`cargo fmt`, `prettier --write .`, `eslint --fix`) that touch out-of-scope files;
 - tasks touching the same existing file are serialized and depend on checkpoint commits;
 - every MODIFY task requires recovery snapshots, patch boundaries, preservation markers, and focused diff review;
 - pre-existing dirty files from the handoff are excluded from task commits unless explicitly owned by the plan;
@@ -92,6 +95,8 @@ Stop with `BLOCKED` in your final response if:
 - plan output path is unclear;
 - safe task decomposition is impossible without more user input;
 - a task would mix evidence extraction with artifact/source updates instead of splitting;
+- a task would bundle multiple canonical data artifacts (or artifacts plus source/API) into one commit;
+- two parallel tasks would share any file, including a one-line registry/declaration edit, instead of being serialized or centralized;
 - a task would modify a shared/large existing file without concrete patch boundaries and preservation markers.
 
 ## Final Response
