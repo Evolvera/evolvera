@@ -83,6 +83,10 @@ async function run(cwd: string, command: string): Promise<string> {
   }
 }
 
+function isIdentifierTerm(t: string): boolean {
+  return /[_./]/.test(t) || /[A-Z]/.test(t) || /\d/.test(t);
+}
+
 async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFiles: number): Promise<{ text: string; fileCount: number; matchCount: number }> {
   const termArgs = terms.map((t) => `-e ${shellQuote(t)}`).join(" ");
   const pathArgs = paths ? paths.split(/[\s,]+/).filter(Boolean).map(shellQuote).join(" ") : ".";
@@ -101,8 +105,20 @@ async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFi
     byFile.get(file)!.push({ line, text: text.slice(0, 300) });
   }
 
+  // Rank by distinct-term coverage first (a file matching several distinct query
+  // terms is more relevant than one matching a single generic term many times),
+  // weighting identifier-like terms higher, then by raw match count.
+  const lowerTerms = terms.map((t) => ({ lower: t.toLowerCase(), weight: isIdentifierTerm(t) ? 2 : 1 }));
+  const score = (hits: Array<{ line: string; text: string }>): number => {
+    const blob = hits.map((h) => h.text).join("\n").toLowerCase();
+    let coverage = 0;
+    for (const { lower, weight } of lowerTerms) {
+      if (blob.includes(lower)) coverage += weight;
+    }
+    return coverage * 1000 + hits.length;
+  };
   const ranked = Array.from(byFile.entries())
-    .sort((a, b) => b[1].length - a[1].length)
+    .sort((a, b) => score(b[1]) - score(a[1]) || b[1].length - a[1].length)
     .slice(0, maxFiles);
 
   let text = "";
