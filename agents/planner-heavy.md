@@ -32,6 +32,7 @@ If `BRIEFS/brief_merged.md` exists in the plan directory, read it first and trea
 The plan is acceptable when:
 - every task has exactly one `Agent`: `builder-highspeed`, `builder`, or `builder-heavy`;
 - high-risk bounded tasks route to `builder-heavy` by default: shared-file hazards, large source/test files, preservation-critical edits, math/science/algorithm correctness, long composed tasks, migrations, subtle multi-file integration, auth/payment/security-adjacent work, or recovery after lighter builder failure;
+- high-CONSEQUENCE read-only tasks also route to `builder-heavy`: feasibility/stop-gate decisions, evidence-adjudication, verdict/status/classification calls, and evidence-index or source-of-truth artifacts that later tasks cite. Read-only/single-doc does NOT mean low-risk — a wrong judgment there propagates silently because downstream gates only catch fabrication/churn in code, not a wrong conclusion in a doc. Kimi `builder` may COLLECT evidence (cite files, list facts) but must not be the one to ADJUDICATE verdicts; route adjudication to `builder-heavy` or the final planner, or split collection from adjudication;
 - Kimi `builder` is used only for explicit, bounded, normal-risk tasks where its structured lifecycle helps;
 - `builder-highspeed` is used only for small, explicit, easy-to-verify module-local/mechanical tasks;
 - each task is one safe commit/rollback/validation unit;
