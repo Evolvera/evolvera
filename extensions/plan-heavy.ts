@@ -173,19 +173,41 @@ ${hazards}
 </stop_rules>
 `;
 
-  const prompt = `Use \`${relative(cwd, join(planDir, "HANDOFF.md"))}\` as source of truth.
+  const rel = (p: string) => relative(cwd, join(planDir, p));
+  const handoffRel = rel("HANDOFF.md");
+
+  const briefPrompt = `ENSEMBLE BRIEF PHASE — run twice in parallel (one Opus 4.8, one GPT-5.5).
+
+Each plan-briefer:
+- Reads \`${handoffRel}\` (source of truth for repo state, hazards, preservation, validation, stop rules).
+- Goal:
+${goal}
+- Writes ONE strategy brief (logic, knowledge, decomposition approach, sequencing, risks, builder-routing intuition, validation). NO task files, NO DAG, NO code.
+- Output path: the Opus run writes \`${rel("BRIEFS/brief_opus.md")}\`; the GPT-5.5 run writes \`${rel("BRIEFS/brief_gpt.md")}\`.
+
+Launch both with run_in_background so they run concurrently; pass each its own output path.`;
+
+  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (Opus 4.8).
+
+- Read \`${rel("BRIEFS/brief_opus.md")}\` and \`${rel("BRIEFS/brief_gpt.md")}\` (and \`${handoffRel}\` for reference).
+- Merge into \`${rel("BRIEFS/brief_merged.md")}\` per the plan-brief-merger system prompt: keep the strongest grounded reasoning from each, reconcile or flag disagreements, carry forward all TO VERIFY. NO task files, NO DAG.`;
+
+  const prompt = `Use \`${handoffRel}\` as source of truth. If \`${rel("BRIEFS/brief_merged.md")}\` exists, read it first as strong strategy input.
 
 Write the plan ecosystem into \`${relative(cwd, planDir)}\`:
 - PLAN_FULL.md
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Route high-risk bounded tasks to builder-heavy. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route high-risk bounded tasks to builder-heavy. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
 
+  ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
   writeText(join(planDir, "PLAN_HEAVY_PROMPT.md"), prompt);
+  writeText(join(planDir, "BRIEFS", "BRIEF_PROMPT.md"), briefPrompt);
+  writeText(join(planDir, "BRIEFS", "MERGE_PROMPT.md"), mergePrompt);
 
-  return { planDir, handoff, prompt };
+  return { planDir, handoff, prompt, briefPrompt, mergePrompt };
 }
 
 function readMaybe(path: string): string {
@@ -441,13 +463,14 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const { planDir, prompt } = await createHandoff(ctx.cwd, raw);
+      const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(ctx.cwd, raw);
       const relativePlanDir = relative(ctx.cwd, planDir);
       ctx.ui.notify(`Plan-heavy handoff created: ${relativePlanDir}`, "info");
-      ctx.ui.setEditorText(`Launch planner-heavy with:\n\n${prompt}`);
+      const flow = `Plan-heavy ensemble flow (5 phases):\n\n1) BRIEFS (parallel) — plan-briefer ×2:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy (GPT-5.5 xhigh):\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
+      ctx.ui.setEditorText(flow);
 
       if (ctx.isIdle()) {
-        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`. Launch the \`planner-heavy\` subagent with this prompt:\n\n${prompt}`);
+        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`. Run the ensemble: launch two \`plan-briefer\` subagents (Opus 4.8 + GPT-5.5) in parallel, then \`plan-brief-merger\`, then \`planner-heavy\`.\n\n${flow}`);
       }
     },
   });
@@ -459,15 +482,15 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     name: "plan_heavy_handoff",
     label: "Plan Heavy: Handoff",
     description:
-      "Deterministically collect repo state (branch, recent commits, git status, existing .pi/plans, dirty files, shared-file hazards) and create a planner-heavy handoff. " +
-      "Creates .pi/plans/<slug>/HANDOFF.md and PLAN_HEAVY_PROMPT.md and returns the plan dir + the prompt to launch the planner-heavy subagent. Use before planning high-risk/long-horizon work.",
-    promptSnippet: "Use plan_heavy_handoff to start the /plan-heavy harness from the agent (no slash command needed).",
+      "Deterministically collect repo state (branch, recent commits, git status, existing .pi/plans, dirty files, shared-file hazards) and create a planner-heavy handoff for the ensemble flow. " +
+      "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns the plan dir plus the brief, merge, and planner prompts. Use before planning high-risk/long-horizon work.",
+    promptSnippet: "Use plan_heavy_handoff to start the /plan-heavy ensemble (briefs → merge → plan) from the agent (no slash command needed).",
     parameters: Type.Object({
       goal: Type.String({ description: "Approved goal/scope for the heavy plan." }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
-        const { planDir, prompt } = await createHandoff(ctx.cwd, params.goal);
+        const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(ctx.cwd, params.goal);
         const relativePlanDir = relative(ctx.cwd, planDir);
         return {
           content: [
@@ -475,8 +498,10 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
               type: "text",
               text:
                 `Plan-heavy handoff created at \`${relativePlanDir}\`.\n\n` +
-                `Next: launch the \`planner-heavy\` subagent with this prompt, then call plan_heavy_validate.\n\n` +
-                `--- PLANNER-HEAVY PROMPT ---\n${prompt}`,
+                `Run the ensemble in order, then call plan_heavy_validate:\n\n` +
+                `=== PHASE 1: BRIEFS (launch plan-briefer ×2 in parallel — Opus 4.8 + GPT-5.5) ===\n${briefPrompt}\n\n` +
+                `=== PHASE 2: MERGE (launch plan-brief-merger) ===\n${mergePrompt}\n\n` +
+                `=== PHASE 3: PLAN (launch planner-heavy) ===\n${prompt}`,
             },
           ],
           details: { planDir: relativePlanDir },
