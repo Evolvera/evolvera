@@ -136,16 +136,46 @@ async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFi
   return { text: text.trim(), fileCount: ranked.length, matchCount };
 }
 
-async function resolveModel(ctx: {
+// Synthesis runs on a fast, cheap scout-tier model regardless of which agent
+// called the tool — a one-shot grounded summary does not need a frontier model,
+// and it keeps the expensive caller's budget free. Falls back to the caller's
+// model only if no scout-tier model is authenticated.
+const SYNTH_CANDIDATES: Array<[provider: string, model: string]> = [
+  ["kimi-coding", "kimi-for-coding"],
+  ["openai-codex", "gpt-5.3-codex-spark"],
+];
+
+type ResolverCtx = {
   model?: unknown;
-  modelRegistry: { getApiKeyAndHeaders: (model: unknown) => Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string> }> };
-}): Promise<{ model: unknown; apiKey: string; headers?: Record<string, string>; label: string } | null> {
+  modelRegistry: {
+    find?: (provider: string, model: string) => unknown;
+    getApiKeyAndHeaders: (model: unknown) => Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string> }>;
+  };
+};
+
+async function resolveModel(ctx: ResolverCtx): Promise<{ model: unknown; apiKey: string; headers?: Record<string, string>; label: string } | null> {
+  // Prefer a scout-tier model for synthesis.
+  if (ctx.modelRegistry.find) {
+    for (const [provider, id] of SYNTH_CANDIDATES) {
+      const model = ctx.modelRegistry.find(provider, id);
+      if (!model) continue;
+      try {
+        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+        if (auth.ok && auth.apiKey) {
+          return { model, apiKey: auth.apiKey, headers: auth.headers, label: `${provider}/${id}` };
+        }
+      } catch {
+        /* try next candidate */
+      }
+    }
+  }
+  // Fallback: the calling agent's current model.
   const m = ctx.model as { provider?: string; id?: string } | undefined;
   if (!m) return null;
   try {
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
     if (auth.ok && auth.apiKey) {
-      return { model: ctx.model, apiKey: auth.apiKey, headers: auth.headers, label: `${m.provider ?? "?"}/${m.id ?? "current"}` };
+      return { model: ctx.model, apiKey: auth.apiKey, headers: auth.headers, label: `${m.provider ?? "?"}/${m.id ?? "current"} (caller)` };
     }
   } catch {
     /* fall through */
@@ -158,7 +188,7 @@ export default function scoutToolExtension(pi: ExtensionAPI) {
     name: "scout_codebase",
     label: "Scout Codebase",
     description:
-      "Read-only codebase understanding in one call. Gathers repository evidence (ripgrep matches + excerpts) for a question and returns a grounded evidence report with `path:line` citations, synthesized by the current model. " +
+      "Read-only codebase understanding in one call. Gathers repository evidence (ripgrep matches + excerpts) for a question and returns a grounded evidence report with `path:line` citations, synthesized by a fast scout-tier model. " +
       "Use to understand code, structure, or data flow without spawning a subagent. Read-only: it never edits files. Uses model tokens.",
     promptSnippet: "Use scout_codebase to understand part of the repo (returns grounded evidence with path:line citations).",
     parameters: Type.Object({
