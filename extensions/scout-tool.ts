@@ -1,0 +1,223 @@
+/**
+ * Scout Tool Extension
+ *
+ * A read-only codebase-understanding tool callable by any agent (including ones
+ * without the Agent tool, e.g. plan-briefer). Given a question, it gathers
+ * evidence from the repo (ripgrep matches + excerpts) and synthesizes a grounded
+ * evidence report with `path:line` citations using the current model. If no model
+ * is available, it returns the raw evidence bundle (graceful degradation).
+ *
+ * Usage (agent tool call):
+ *   scout_codebase({ question: "how does auth token refresh work?" })
+ *   scout_codebase({ question: "...", paths: "src/auth src/api", maxFiles: 6 })
+ */
+
+import { complete, type UserMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { promisify } from "node:util";
+import { execFile } from "node:child_process";
+
+const execFileAsync = promisify(execFile);
+
+const MAX_MATCH_LINES = 400;
+const MAX_LINES_PER_FILE = 25;
+const MAX_EVIDENCE_CHARS = 40_000;
+const DEFAULT_MAX_FILES = 8;
+
+const STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "what", "where", "when", "which", "how", "does", "do",
+  "is", "are", "was", "were", "from", "into", "your", "you", "about", "of", "in", "on", "to", "a", "an",
+  "it", "its", "be", "by", "or", "as", "at", "we", "our", "can", "will", "should", "would", "use", "used",
+  "code", "codebase", "repo", "repository", "file", "files", "find", "show", "explain", "understand",
+]);
+
+const SCOUT_SYSTEM_PROMPT = `You are a read-only codebase scout. You receive a QUESTION and EVIDENCE gathered from the repository (ripgrep matches with file:line and code excerpts). Produce a concise, grounded evidence report.
+
+Sections:
+- Answer: directly answer the question from the evidence.
+- Key locations: bullet list of \`path:line\` entries, each with a one-line note.
+- How it works / data flow: short explanation grounded in the excerpts.
+- Gaps / unverified: what the evidence does not show, plus suggested next search terms or files to open.
+
+Rules:
+- Cite only file:line that appear in the evidence. Do not invent files, symbols, or behavior the evidence does not support.
+- If the evidence is insufficient to answer, say so plainly and suggest the next search instead of guessing.
+- Keep it tight. No preamble, no restated question.`;
+
+function normalizeStr(v: unknown): string {
+  return typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
+}
+
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+function extractTerms(question: string, explicit: string): string[] {
+  const terms = new Set<string>();
+  // explicit terms win
+  for (const t of explicit.split(/[\s,]+/).filter(Boolean)) terms.add(t);
+  // quoted phrases
+  for (const m of question.matchAll(/"([^"]{2,})"/g)) terms.add(m[1].trim());
+  // identifier-ish tokens (snake_case, camelCase, dotted/pathed, with digits)
+  for (const m of question.matchAll(/[A-Za-z_][A-Za-z0-9_./-]{2,}/g)) {
+    const tok = m[0];
+    const lower = tok.toLowerCase();
+    if (/[_./A-Z]/.test(tok) || /\d/.test(tok)) { terms.add(tok); continue; }
+    if (!STOPWORDS.has(lower) && lower.length >= 3) terms.add(lower);
+  }
+  return Array.from(terms).slice(0, 8);
+}
+
+async function run(cwd: string, command: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("bash", ["-lc", command], {
+      cwd,
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    return stdout;
+  } catch (error) {
+    const err = error as { stdout?: string };
+    return err.stdout ?? "";
+  }
+}
+
+async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFiles: number): Promise<{ text: string; fileCount: number; matchCount: number }> {
+  const termArgs = terms.map((t) => `-e ${shellQuote(t)}`).join(" ");
+  const pathArgs = paths ? paths.split(/[\s,]+/).filter(Boolean).map(shellQuote).join(" ") : ".";
+  const rgCmd = `rg --no-heading --line-number --ignore-case ${termArgs} -- ${pathArgs} 2>/dev/null | head -n ${MAX_MATCH_LINES}`;
+  const grepCmd = `grep -rInI ${termArgs} ${pathArgs} 2>/dev/null | head -n ${MAX_MATCH_LINES}`;
+  const raw = await run(cwd, `if command -v rg >/dev/null 2>&1; then ${rgCmd}; else ${grepCmd}; fi`);
+
+  const byFile = new Map<string, Array<{ line: string; text: string }>>();
+  let matchCount = 0;
+  for (const row of raw.split("\n")) {
+    const m = row.match(/^([^:]+):(\d+):(.*)$/);
+    if (!m) continue;
+    matchCount++;
+    const [, file, line, text] = m;
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file)!.push({ line, text: text.slice(0, 300) });
+  }
+
+  const ranked = Array.from(byFile.entries())
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, maxFiles);
+
+  let text = "";
+  for (const [file, hits] of ranked) {
+    text += `\n### ${file}  (${hits.length} matches)\n`;
+    for (const h of hits.slice(0, MAX_LINES_PER_FILE)) {
+      text += `${h.line}: ${h.text}\n`;
+    }
+    if (text.length > MAX_EVIDENCE_CHARS) {
+      text = text.slice(0, MAX_EVIDENCE_CHARS) + "\n[... evidence truncated ...]\n";
+      break;
+    }
+  }
+
+  return { text: text.trim(), fileCount: ranked.length, matchCount };
+}
+
+async function resolveModel(ctx: {
+  model?: unknown;
+  modelRegistry: { getApiKeyAndHeaders: (model: unknown) => Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string> }> };
+}): Promise<{ model: unknown; apiKey: string; headers?: Record<string, string>; label: string } | null> {
+  const m = ctx.model as { provider?: string; id?: string } | undefined;
+  if (!m) return null;
+  try {
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+    if (auth.ok && auth.apiKey) {
+      return { model: ctx.model, apiKey: auth.apiKey, headers: auth.headers, label: `${m.provider ?? "?"}/${m.id ?? "current"}` };
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+export default function scoutToolExtension(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "scout_codebase",
+    label: "Scout Codebase",
+    description:
+      "Read-only codebase understanding in one call. Gathers repository evidence (ripgrep matches + excerpts) for a question and returns a grounded evidence report with `path:line` citations, synthesized by the current model. " +
+      "Use to understand code, structure, or data flow without spawning a subagent. Read-only: it never edits files. Uses model tokens.",
+    promptSnippet: "Use scout_codebase to understand part of the repo (returns grounded evidence with path:line citations).",
+    parameters: Type.Object({
+      question: Type.String({ description: "What you want to understand, as a concrete question." }),
+      paths: Type.Optional(Type.String({ description: "Optional space/comma-separated dirs or globs to focus the search (e.g. 'src/auth src/api')." })),
+      terms: Type.Optional(Type.String({ description: "Optional explicit search terms/symbols to grep, overriding keyword extraction." })),
+      maxFiles: Type.Optional(Type.Number({ description: `Max files to include in evidence (default ${DEFAULT_MAX_FILES}, capped at 20).` })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const question = normalizeStr(params.question);
+      if (!question) {
+        return { content: [{ type: "text", text: "scout_codebase needs a 'question'." }], isError: true, details: { error: "no_question" } };
+      }
+      const explicit = normalizeStr(params.terms);
+      const paths = normalizeStr(params.paths);
+      const maxFiles = Math.max(1, Math.min(20, Number(params.maxFiles) || DEFAULT_MAX_FILES));
+      const terms = extractTerms(question, explicit);
+
+      if (terms.length === 0) {
+        return {
+          content: [{ type: "text", text: "scout_codebase could not derive search terms from the question. Pass explicit `terms`." }],
+          isError: true,
+          details: { error: "no_terms" },
+        };
+      }
+
+      const evidence = await gatherEvidence(ctx.cwd, terms, paths, maxFiles);
+      const header = `Scout: ${question}\nTerms: ${terms.join(", ")}\nScanned: ${evidence.fileCount} files / ${evidence.matchCount} matches${paths ? ` in ${paths}` : ""}`;
+
+      if (!evidence.text) {
+        return {
+          content: [{ type: "text", text: `${header}\n\nNo matches found. Try different terms or a broader path scope.` }],
+          details: { fileCount: 0, matchCount: 0, terms },
+        };
+      }
+
+      const selected = await resolveModel(ctx);
+      if (!selected) {
+        // Graceful degradation: return raw evidence so the tool still helps.
+        return {
+          content: [{ type: "text", text: `${header}\n\n(No model available for synthesis; returning raw evidence.)\n\n## Evidence\n${evidence.text}` }],
+          details: { synthesized: false, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
+        };
+      }
+
+      const userMessage: UserMessage = {
+        role: "user",
+        timestamp: Date.now(),
+        content: [{ type: "text", text: `QUESTION:\n${question}\n\nEVIDENCE (ripgrep matches, file:line):\n${evidence.text}` }],
+      };
+
+      try {
+        const response = await complete(
+          selected.model as never,
+          { systemPrompt: SCOUT_SYSTEM_PROMPT, messages: [userMessage] },
+          { apiKey: selected.apiKey, headers: selected.headers, signal: ctx.signal, maxTokens: 1600, temperature: 0.2 },
+        );
+        const report = response.content
+          .filter((c): c is { type: "text"; text: string } => c.type === "text")
+          .map((c) => c.text)
+          .join("\n")
+          .trim();
+        return {
+          content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label}\n\n${report || "(empty synthesis)"}` }],
+          details: { synthesized: true, model: selected.label, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `${header}\n\n(Synthesis failed: ${message}. Returning raw evidence.)\n\n## Evidence\n${evidence.text}` }],
+          details: { synthesized: false, error: message, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
+        };
+      }
+    },
+  });
+
+  console.log("[scout-tool] Extension loaded: scout_codebase tool available");
+}
