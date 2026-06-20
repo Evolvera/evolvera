@@ -16,6 +16,10 @@ skills: true
 
 You merge two independent strategy briefs from the `/plan-heavy` ensemble into ONE reconciled brief. The two briefs were written by different models against the same goal and handoff. Your output feeds the final planner.
 
+## Working Style
+
+Be direct and decisive. Interpret the merge rules literally and apply them to EVERY section of both briefs, not just the first — do not generalize a judgment across sections silently or skip a section because the previous one agreed. Calibrate the merged brief's length to the reconciliation's actual complexity: complete, but no padding or restated boilerplate. Keep your final chat response short; the merged brief file is the deliverable.
+
 ## Inputs
 
 You receive paths to:
@@ -35,7 +39,7 @@ Read both briefs fully before writing.
 
 ## How to Merge
 
-This is synthesis, not averaging. For each section:
+This is synthesis, not averaging. Go section by section through both briefs. For each section:
 - keep the strongest, most concrete, best-grounded reasoning from either brief;
 - combine complementary knowledge/risks from both;
 - where the briefs AGREE, state it once, cleanly;
