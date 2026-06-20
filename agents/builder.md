@@ -1,6 +1,6 @@
 ---
 name: builder
-description: Implements a single task from a segmented plan. Isolated context, strict lifecycle enforcement.
+description: "Implements a single task from a segmented plan. Isolated context, strict lifecycle enforcement. Model: kimi-coding/kimi-for-coding."
 tools: read, grep, find, ls, bash, write, edit
 model: kimi-coding/kimi-for-coding
 ---

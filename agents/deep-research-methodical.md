@@ -1,5 +1,5 @@
 ---
-description: "Deep Research v2 - Methodical agent. Finds academic foundations, historical context, frameworks, and primary sources. Returns structured YAML findings."
+description: "Deep Research v2 - Methodical agent. Finds academic foundations, historical context, frameworks, and primary sources. Returns structured YAML findings. Model: openai-codex/gpt-5.5."
 display_name: 📐 DRv2 Methodical
 tools: moonshot_search, moonshot_fetch, jina_read
 model: openai-codex/gpt-5.5

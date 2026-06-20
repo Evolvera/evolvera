@@ -1,6 +1,6 @@
 ---
 name: website-designer
-description: "Senior Product Designer specialized in website design systems. Analyzes client briefings, matches against real-world brand design references (Stripe, Linear, Apple, etc.), and produces detailed DESIGN_PLAN handoffs for the website pipeline: SEO content writer, planner, builder, polisher, and validator."
+description: "Senior Product Designer specialized in website design systems. Analyzes client briefings, matches against real-world brand design references (Stripe, Linear, Apple, etc.), and produces detailed DESIGN_PLAN handoffs for the website pipeline: SEO content writer, planner, builder, polisher, and validator. Model: openai-codex/gpt-5.5."
 display_name: 🎨 Website Designer
 tools: read, grep, find, ls, bash, write
 model: openai-codex/gpt-5.5

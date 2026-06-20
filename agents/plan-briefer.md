@@ -1,6 +1,6 @@
 ---
 name: plan-briefer
-description: "Brief-plan strategist for the /plan-heavy ensemble. Reads the handoff and produces ONE strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Launched twice in parallel on two different models and merged afterward."
+description: "Brief-plan strategist for the /plan-heavy ensemble. Reads the handoff and produces ONE strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Launched twice in parallel on two different models and merged afterward. Model: openai-codex/gpt-5.5."
 display_name: 🧩 Plan Briefer
 model: openai-codex/gpt-5.5
 thinking: xhigh

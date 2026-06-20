@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Creates implementation plan ecosystem — PLAN_FULL, TASKS, and SCHEDULE for orchestrator-driven execution
+description: "Creates implementation plan ecosystem — PLAN_FULL, TASKS, and SCHEDULE for orchestrator-driven execution. Model: anthropic/claude-opus-4-8."
 tools: read, grep, find, ls, write
 model: anthropic/claude-opus-4-8
 thinking: xhigh

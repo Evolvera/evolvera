@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Guided read-only codebase exploration with evidence-based reports for handoff to planner/builder.
+description: "Guided read-only codebase exploration with evidence-based reports for handoff to planner/builder. Model: kimi-coding/kimi-for-coding."
 tools: read, grep, find, ls, bash
 model: kimi-coding/kimi-for-coding
 ---

@@ -1,6 +1,6 @@
 ---
 name: planner-heavy
-description: "Heavy planner core for /plan-heavy harness. Reads a generated HANDOFF.md and creates PLAN_FULL, SCHEDULE, and TASKS with builder-heavy routing for high-risk work."
+description: "Heavy planner core for /plan-heavy harness. Reads a generated HANDOFF.md and creates PLAN_FULL, SCHEDULE, and TASKS with builder-heavy routing for high-risk work. Model: openai-codex/gpt-5.5."
 display_name: 🏛️ Planner Heavy
 model: openai-codex/gpt-5.5
 thinking: xhigh

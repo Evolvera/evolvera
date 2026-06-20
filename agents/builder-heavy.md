@@ -1,6 +1,6 @@
 ---
 name: builder-heavy
-description: "Heavy-duty, high-capability implementation agent. Use for subtle multi-file integration, complex test/source changes, shared-file hazards, migrations, correctness-sensitive fixes, and tasks where the lighter builders' risk is too high."
+description: "Heavy-duty, high-capability implementation agent. Use for subtle multi-file integration, complex test/source changes, shared-file hazards, migrations, correctness-sensitive fixes, and tasks where the lighter builders' risk is too high. Model: openai-codex/gpt-5.5."
 display_name: 🧠 Builder Heavy
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.5

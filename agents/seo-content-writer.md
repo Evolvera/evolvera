@@ -1,6 +1,6 @@
 ---
 name: seo-content-writer
-description: "Senior SEO Content Strategist and Conversion Copywriter. Analyzes `.pi/plans/DESIGN_PLAN.md` and user briefing to produce `.pi/plans/CONTENT_PLAN.md` with optimized website copy, microcopy, meta tags, and schema markup. Requires human approval before proceeding to build phase."
+description: "Senior SEO Content Strategist and Conversion Copywriter. Analyzes `.pi/plans/DESIGN_PLAN.md` and user briefing to produce `.pi/plans/CONTENT_PLAN.md` with optimized website copy, microcopy, meta tags, and schema markup. Requires human approval before proceeding to build phase. Model: openai-codex/gpt-5.5."
 display_name: ✍️ SEO Content Writer
 tools: read, grep, find, ls, bash, write
 model: openai-codex/gpt-5.5

@@ -1,6 +1,6 @@
 ---
 name: builder-highspeed
-description: "High-speed focused implementation agent (draft-speed tier). Best for single-file edits, rapid prototypes, CSS/React iteration, utilities, backend/tooling/tests, and math/logic-heavy fixes. Avoid broad ambiguous tasks and final visual polish."
+description: "High-speed focused implementation agent (draft-speed tier). Best for single-file edits, rapid prototypes, CSS/React iteration, utilities, backend/tooling/tests, and math/logic-heavy fixes. Avoid broad ambiguous tasks and final visual polish. Model: openai-codex/gpt-5.3-codex-spark."
 display_name: ⚡ Builder Highspeed
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.3-codex-spark
