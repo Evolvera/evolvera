@@ -211,19 +211,27 @@ export default function scoutToolExtension(pi: ExtensionAPI) {
       };
 
       try {
-        const response = await complete(
+        const response = (await complete(
           selected.model as never,
           { systemPrompt: SCOUT_SYSTEM_PROMPT, messages: [userMessage] },
-          { apiKey: selected.apiKey, headers: selected.headers, signal: ctx.signal, maxTokens: 1600, temperature: 0.2 },
-        );
+          { apiKey: selected.apiKey, headers: selected.headers, signal: ctx.signal, maxTokens: 6000, temperature: 0.2 },
+        )) as { content: Array<{ type: string; text?: string }>; stopReason?: string; errorMessage?: string };
         const report = response.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
+          .filter((c) => c.type === "text" && typeof c.text === "string")
+          .map((c) => c.text as string)
           .join("\n")
           .trim();
+        if (report) {
+          return {
+            content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label}\n\n${report}` }],
+            details: { synthesized: true, model: selected.label, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
+          };
+        }
+        const blocks = response.content.map((c) => c.type).join(",") || "none";
+        const diag = `stopReason=${response.stopReason ?? "?"}; blocks=[${blocks}]${response.errorMessage ? `; error=${response.errorMessage}` : ""}`;
         return {
-          content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label}\n\n${report || "(empty synthesis)"}` }],
-          details: { synthesized: true, model: selected.label, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
+          content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label} returned no text (${diag}). Raw evidence below.\n\n## Evidence\n${evidence.text}` }],
+          details: { synthesized: false, diag, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
