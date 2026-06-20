@@ -68,7 +68,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (24)
+## 🤖 Agentes Disponíveis (25)
 
 ### Pipeline de Código
 
@@ -78,7 +78,8 @@ git pull
 | **Scout** | 🔍 | Explorador cauteloso com workflow Kimi/checkpoint | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Planner** | 🏛️ | Arquiteto — cria planos detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
 | **Planner Heavy** | 🏛️ | Planejador estruturado final do `/plan-heavy`; consome handoff + brief mergeado | GPT-5.5 xhigh | escreve PLAN_FULL/SCHEDULE/TASKS no harness ensemble |
-| **Plan Briefer** | 🧩 | Gera UM brief de estratégia/lógica (sem tasks/DAG); roda 2× em paralelo | Opus 4.8 + GPT-5.5 | fase de brief do `/plan-heavy` |
+| **Plan Briefer** | 🧩 | Gera UM brief de estratégia/lógica (sem tasks/DAG), afinado pro GPT-5.5 | GPT-5.5 xhigh | fase de brief do `/plan-heavy` |
+| **Plan Briefer (Opus)** | 🧩 | Mesmo papel, afinado pro guia do Opus 4.8 (literal, grounded em tools) | Claude Opus 4.8 | fase de brief do `/plan-heavy` |
 | **Plan Brief Merger** | 🔗 | Funde os 2 briefs em um só, reconciliando divergências | Claude Opus 4.8 | fase de merge do `/plan-heavy` |
 | **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
 | **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
@@ -237,7 +238,7 @@ O mesmo harness também é exposto como **tools chamáveis pelo agente** (para o
 Fluxo ensemble (5 fases):
 
 1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md` e `MERGE_PROMPT.md`.
-2. **Briefs (paralelo)** — dois `plan-briefer` rodam em paralelo (um Opus 4.8, um GPT-5.5). Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_opus.md`, `BRIEFS/brief_gpt.md`) — sem tasks, sem DAG.
+2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.5) e `plan-briefer-opus` (Opus) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_opus.md`) — sem tasks, sem DAG.
 3. **Merge** — `plan-brief-merger` (Opus 4.8) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
 4. **Plano** — `planner-heavy` (GPT-5.5 xhigh) lê `HANDOFF.md` + `brief_merged.md` e escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
 5. **Gate/execução** — `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots/checkpoints/agents/patch boundaries/preservation; depois `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff de cada task; então os builders executam.
