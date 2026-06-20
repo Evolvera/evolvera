@@ -4,7 +4,7 @@ description: "Brief-plan strategist for the /plan-heavy ensemble. Reads the hand
 display_name: 🧩 Plan Briefer
 model: openai-codex/gpt-5.5
 thinking: xhigh
-tools: read, grep, find, ls, write, scout_codebase
+tools: read, grep, find, ls, write, understand_codebase
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
@@ -27,7 +27,7 @@ You receive:
 - the approved goal;
 - an output path for your brief (e.g. `BRIEFS/brief_<model>.md`).
 
-Read the handoff first. Retrieval budget: inspect only the high-signal files your recommendation hinges on (the code/oracle/config/data that decides the approach). For a fast grounded overview of an area, call `scout_codebase` (returns evidence with `path:line` citations) instead of opening many files by hand. Stop once you can name concrete files/symbols and justify the strategy; do not exhaustively scan, and mark anything unverified as `TO VERIFY` rather than reading more to feel thorough.
+Read the handoff first. Retrieval budget: inspect only the high-signal files your recommendation hinges on (the code/oracle/config/data that decides the approach). For a fast grounded overview of an area, call `understand_codebase` (returns evidence with `path:line` citations) instead of opening many files by hand. Stop once you can name concrete files/symbols and justify the strategy; do not exhaustively scan, and mark anything unverified as `TO VERIFY` rather than reading more to feel thorough.
 
 ## Hard Boundaries
 
