@@ -14,9 +14,9 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 
 | Tier | Agents | Model | Best For | Avoid |
 |---|---|---|---|---|
-| Default | `scout`, `builder` | Kimi for Coding | explicit, bounded, normal-risk tasks where structured lifecycle helps | latency-sensitive batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior Kimi destructive churn |
-| Highspeed | `scout-highspeed`, `builder-highspeed` | GPT-5.3 Codex Spark | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, mechanical changes | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
-| Heavy | `builder-heavy` | GPT-5.5 medium | complex or higher-risk bounded work: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | tiny mechanical edits, broad planning, vague UI/design tasks |
+| Default | `scout`, `builder` | Standard tier | explicit, bounded, normal-risk tasks where structured lifecycle helps | latency-sensitive batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior destructive churn |
+| Highspeed | `scout-highspeed`, `builder-highspeed` | Draft-speed tier | very fast bounded retrieval/execution, single-file edits, rapid prototypes, CSS/React component tweaks with existing constraints, backend/tooling/tests, mechanical changes | broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
+| Heavy | `builder-heavy` | High-capability tier | complex or higher-risk bounded work: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | tiny mechanical edits, broad planning, vague UI/design tasks |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
@@ -130,11 +130,11 @@ Agent({
 ```
 
 **Rules:**
-- Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than Kimi. Fast hallucinations can look correct.
+- Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than the standard tier. Fast hallucinations can look correct.
 - Use `builder-highspeed` for single-file/module-local edits, rapid prototypes, utility generation, CSS tweaks, React component adjustments, layout experiments with existing design constraints, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors.
 - Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
-- Use `builder` for explicit, bounded, normal-risk work where Kimi's lifecycle is useful. Do not route complex work to Kimi just because it is the default. Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. When unsure between Kimi and heavy for high-risk work, choose heavy.
-- Route by consequence, not only by mutation risk. A read-only / single-file / doc-or-JSON task is still high-risk when its output is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — downstream gates catch fabrication/churn in code, not a wrong judgment in a doc. Route those to `builder-heavy` (plus review). Kimi may COLLECT evidence but not ADJUDICATE verdicts.
+- Use `builder` for explicit, bounded, normal-risk work where its structured lifecycle is useful. Do not route complex work to it just because it is the default. Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. When unsure between the standard and heavy builder for high-risk work, choose heavy.
+- Route by consequence, not only by mutation risk. A read-only / single-file / doc-or-JSON task is still high-risk when its output is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — downstream gates catch fabrication/churn in code, not a wrong judgment in a doc. Route those to `builder-heavy` (plus review). `builder` may COLLECT evidence but not ADJUDICATE verdicts.
 - Avoid `builder-highspeed` for final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder`, or `builder-heavy` with exact design instructions depending on risk.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
@@ -168,11 +168,11 @@ scout → planner → builder → validator
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
 | Not doing pre-plan before planner | Planner guesses scope, produces bad plans | You pre-plan, user approves, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
-| Letting Spark infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use Kimi builder |
-| Using Spark for long checklists | Context drift after several steps | Split tasks or route to Kimi builder |
+| Letting `builder-highspeed` infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use `builder` |
+| Using `builder-highspeed` for long checklists | Context drift after several steps | Split tasks or route to `builder` |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
-| Asking one highspeed scout a broad corpus/coverage question | Spark burns context, hits turn limits, or returns shallow partials | Split into 3–8 parallel micro-scouts or use normal `scout` |
-| Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with Kimi synthesis |
+| Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 3–8 parallel micro-scouts or use normal `scout` |
+| Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
 | Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
 
 ---

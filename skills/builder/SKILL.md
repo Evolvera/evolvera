@@ -24,13 +24,13 @@ Success means:
 
 | Agent | Use When | Avoid When |
 |---|---|---|
-| `builder-highspeed` | Codex Spark sweet spot: single-file/module-local edits, rapid prototypes, CSS/React mechanical tweaks with existing constraints, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, final visual polish or brand/design decisions |
-| `builder` | Kimi for explicit, bounded, normal-risk tasks where the structured TILL-DO/TODO/HANDOVER lifecycle helps; use when the change is clear and easy to diff/validate; evidence COLLECTION (cite files, list facts) | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior Kimi/Spark destructive churn; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only) |
-| `builder-heavy` | GPT-5.5 medium for complex or higher-risk bounded implementation: subtle multi-file integration, shared-file hazards, large tests/source files, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status decisions) that later tasks depend on | tiny edits, cheap mechanical batches, vague architecture/design tasks that need planner/scout first |
+| `builder-highspeed` | Highspeed sweet spot: single-file/module-local edits, rapid prototypes, CSS/React mechanical tweaks with existing constraints, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, final visual polish or brand/design decisions |
+| `builder` | For explicit, bounded, normal-risk tasks where the structured TILL-DO/TODO/HANDOVER lifecycle helps; use when the change is clear and easy to diff/validate; evidence COLLECTION (cite files, list facts) | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior destructive churn from a lighter builder; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only) |
+| `builder-heavy` | For complex or higher-risk bounded implementation: subtle multi-file integration, shared-file hazards, large tests/source files, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status decisions) that later tasks depend on | tiny edits, cheap mechanical batches, vague architecture/design tasks that need planner/scout first |
 
-Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone. Use it only when the task is explicit, bounded, and easy to verify. Treat Kimi `builder` as structured and useful, not automatically safer for complex work. Use `builder-heavy` when correctness risk, shared-file preservation, math/science/algorithm reasoning, subtle integration, long composed workflow, or prior builder failure makes GPT-5.5 judgment worth the extra cost. When genuinely unsure between Kimi and heavy for a high-risk task, choose heavy.
+Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone. Use it only when the task is explicit, bounded, and easy to verify. Treat `builder` as structured and useful, not automatically safer for complex work. Use `builder-heavy` when correctness risk, shared-file preservation, math/science/algorithm reasoning, subtle integration, long composed workflow, or prior builder failure makes the extra capability worth the cost. When genuinely unsure between the standard and heavy builder for a high-risk task, choose heavy.
 
-**Route by consequence, not only by mutation risk.** A read-only / single-file / "just a doc or JSON" task is still high-risk when its OUTPUT is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — a wrong judgment there propagates silently because downstream gates (tests, lint, anti-cheat, type/build) catch fabrication/churn in code, not a wrong conclusion in a doc. Use `builder-heavy` (plus review) for those, and for adjudicating conflicting evidence. Kimi `builder` may COLLECT evidence but should not be the one to ADJUDICATE verdicts; split collection from adjudication if one task does both.
+**Route by consequence, not only by mutation risk.** A read-only / single-file / "just a doc or JSON" task is still high-risk when its OUTPUT is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — a wrong judgment there propagates silently because downstream gates (tests, lint, anti-cheat, type/build) catch fabrication/churn in code, not a wrong conclusion in a doc. Use `builder-heavy` (plus review) for those, and for adjudicating conflicting evidence. `builder` may COLLECT evidence but should not be the one to ADJUDICATE verdicts; split collection from adjudication if one task does both.
 
 ## When to Use Builder
 
@@ -48,15 +48,15 @@ For `builder-highspeed`, prefer even smaller slices:
 - no large context retention or exhaustive workflow;
 - no need for aesthetic/product judgment.
 
-### Spark Risk Guardrails
+### Highspeed Risk Guardrails
 
-When using `builder-highspeed`, prompts must include tighter steering because Spark drifts sooner and hallucinates routine details more often:
+When using `builder-highspeed`, prompts must include tighter steering because it drifts sooner and hallucinates routine details more often:
 
 - **Verify symbols before use**: instruct it to grep/read existing APIs, package names, endpoints, function parameters, imports, and config keys before relying on them.
 - **No phantom dependencies**: do not let it add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
 - **Short workflows only**: avoid if the task needs 6–8+ ordered steps, broad repo context, or stateful checklist execution.
-- **Simple outputs**: avoid requiring complex structured output from Spark unless absolutely necessary; use concise reports.
-- **Switch away from Spark**: use `builder` for normal-risk structured execution, or `builder-heavy` for subtle integration, shared-file hazards, migrations, math/science/algorithm-heavy work, auth/payment/security-adjacent changes, or anything where a wrong-looking-right answer is expensive.
+- **Simple outputs**: avoid requiring complex structured output from it unless absolutely necessary; use concise reports.
+- **Switch away from highspeed**: use `builder` for normal-risk structured execution, or `builder-heavy` for subtle integration, shared-file hazards, migrations, math/science/algorithm-heavy work, auth/payment/security-adjacent changes, or anything where a wrong-looking-right answer is expensive.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -236,6 +236,6 @@ Agent({ subagent_type: "builder-highspeed", run_in_background: true, description
 | One builder for UI + API + DB | Split by concern and dependencies |
 | No validation command | Include targeted test or explain why none exists |
 | Broad refactor request | Use planner first |
-| Spark asked to execute a long checklist | Split into small tasks, use `builder`, or use `builder-heavy` when the task is bounded but subtle |
-| Spark allowed to infer APIs/packages | Require grep/package verification before implementation |
+| `builder-highspeed` asked to execute a long checklist | Split into small tasks, use `builder`, or use `builder-heavy` when the task is bounded but subtle |
+| `builder-highspeed` allowed to infer APIs/packages | Require grep/package verification before implementation |
 | Trusting builder summary only | Check diff and diagnostics |

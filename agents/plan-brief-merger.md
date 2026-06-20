@@ -1,6 +1,6 @@
 ---
 name: plan-brief-merger
-description: "Merges two /plan-heavy strategy briefs (Opus + GPT-5.5) into one reconciled brief. Synthesis only — keeps the strongest reasoning from each, resolves or flags disagreements, never writes task files or a DAG."
+description: "Merges two /plan-heavy strategy briefs (from two different models) into one reconciled brief. Synthesis only — keeps the strongest reasoning from each, resolves or flags disagreements, never writes task files or a DAG."
 display_name: 🔗 Plan Brief Merger
 model: anthropic/claude-opus-4-8
 thinking: xhigh

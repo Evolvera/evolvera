@@ -5,7 +5,7 @@ description: Use the scout agent for codebase exploration, file discovery, and e
 
 # Scout Skill — Codebase Exploration Agent
 
-> **⚡ EFFICIENCY FIRST**: Scout has two delegated variants. Use `scout-highspeed` for most fast bounded exploration; use `scout` when you need Kimi's stronger coherent read-only synthesis or lower hallucination risk. Whenever the mission touches multiple areas, **split into parallel scouts** when decomposition preserves quality.
+> **⚡ EFFICIENCY FIRST**: Scout has two delegated variants. Use `scout-highspeed` for most fast bounded exploration; use `scout` when you need stronger coherent read-only synthesis or lower hallucination risk. Whenever the mission touches multiple areas, **split into parallel scouts** when decomposition preserves quality.
 
 ## When to Use
 
@@ -53,7 +53,7 @@ Agent({ subagent_type: "scout-highspeed", run_in_background: true, description: 
 ```
 
 ### Use normal `scout` when splitting would lose coherence
-Use Kimi `scout` when the answer needs one coherent mental model across many files, long state retention, contradiction resolution, or an exhaustive audit.
+Use `scout` when the answer needs one coherent mental model across many files, long state retention, contradiction resolution, or an exhaustive audit.
 
 Examples:
 - "explain the whole auth architecture and edge cases";
@@ -136,17 +136,17 @@ Agent({
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `subagent_type` | ✅ | `"scout-highspeed"` for fast default, `"scout"` for checkpoint/Kimi workflow |
+| `subagent_type` | ✅ | `"scout-highspeed"` for fast default, `"scout"` for coherent/exhaustive workflow |
 | `description` | ✅ | Short 3-5 word summary |
 | `prompt` | ✅ | Detailed mission with FOCUS ON and AREA |
 | `run_in_background` | ✅ **Always `true` for parallel** | `true` when launching multiple scouts |
-| `max_turns` | Optional | Use 8-15 for `scout-highspeed` micro-scouts; use higher only for Kimi `scout` |
+| `max_turns` | Optional | Use 8-15 for `scout-highspeed` micro-scouts; use higher only for `scout` |
 
 ## Scout Behavior Rules
 
 Scout agents follow these absolute rules:
 
-1. **READ-ONLY** — Never modifies, creates, or edits files; normal Kimi scout also does not create checkpoint files on disk
+1. **READ-ONLY** — Never modifies, creates, or edits files; normal `scout` also does not create checkpoint files on disk
 2. **NO OPINIONS** — Only reports findings, never suggests improvements unless explicitly asked for analysis
 3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists and states searched scope
 4. **QUOTE EXACTLY** — Copies relevant source text verbatim when quoting code

@@ -61,7 +61,7 @@ Understand the user's request deeply enough to either:
 
 Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
-Use `/plan-heavy` instead of direct planner activation when risk is high: dirty working tree, existing `.pi/plans`, shared/large files, preservation-critical tasks, math/science/algorithm correctness, long composed workflows, or recovery after a builder failure. `/plan-heavy` runs a 5-phase ensemble: (1) `plan_heavy_handoff` collects repo state into `HANDOFF.md` + `BRIEFS/` prompts; (2) two `plan-briefer` subagents (Opus 4.8 + GPT-5.5) write independent single-file strategy briefs in parallel; (3) `plan-brief-merger` (Opus) reconciles them into `BRIEFS/brief_merged.md`; (4) `planner-heavy` (GPT-5.5 xhigh) consumes the handoff + merged brief and writes `PLAN_FULL.md`/`SCHEDULE.md`/`TASKS/`; (5) `plan_heavy_validate` gates the plan and `plan_heavy_envelope` briefs each builder. The ensemble merge happens at the prose/strategy level (safe), never at the DAG/task level; `planner-heavy` stays authoritative and grounds every concrete detail in the repo.
+Use `/plan-heavy` instead of direct planner activation when risk is high: dirty working tree, existing `.pi/plans`, shared/large files, preservation-critical tasks, math/science/algorithm correctness, long composed workflows, or recovery after a builder failure. `/plan-heavy` runs a 5-phase ensemble: (1) `plan_heavy_handoff` collects repo state into `HANDOFF.md` + `BRIEFS/` prompts; (2) two `plan-briefer` subagents (two different models) write independent single-file strategy briefs in parallel; (3) `plan-brief-merger` reconciles them into `BRIEFS/brief_merged.md`; (4) `planner-heavy` consumes the handoff + merged brief and writes `PLAN_FULL.md`/`SCHEDULE.md`/`TASKS/`; (5) `plan_heavy_validate` gates the plan and `plan_heavy_envelope` briefs each builder. The ensemble merge happens at the prose/strategy level (safe), never at the DAG/task level; `planner-heavy` stays authoritative and grounds every concrete detail in the repo.
 
 The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then build a Planner Handoff Pack so the planner sees the real operational state, not just the desired feature. Let the planner choose an efficient implementation path from that grounded handoff.
 
@@ -245,20 +245,20 @@ Planner generates:
 ├── PLAN_FULL.md          # Complete reference
 ├── SCHEDULE.md           # DAG + execution rules + Agent column
 └── TASKS/
-    ├── task_01_builder-highspeed.md  # Spark sweet spot task
-    ├── task_02_builder.md            # cautious Kimi task
-    ├── task_03_builder-heavy.md      # GPT-5.5 correctness-sensitive task
+    ├── task_01_builder-highspeed.md  # highspeed sweet spot task
+    ├── task_02_builder.md            # cautious standard task
+    ├── task_03_builder-heavy.md      # correctness-sensitive task
     └── ...
 ```
 
 Planner must use the Builder Skill routing:
 - `builder-highspeed`: single-file edits, module-local changes, rapid prototypes, utility generation, function signature swaps, module-local renames, CSS tweaks, React component adjustments, layout experiments with existing constraints, explicit backend/tooling/tests/algorithm/math/physics tasks.
-- `builder`: Kimi for explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER is useful and the diff is easy to verify. Do not treat it as the safe default for complex work.
-- `builder-heavy`: GPT-5.5 medium for complex or higher-risk bounded implementation: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. When unsure between Kimi and heavy for high-risk work, choose heavy.
+- `builder`: For explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER is useful and the diff is easy to verify. Do not treat it as the safe default for complex work.
+- `builder-heavy`: For complex or higher-risk bounded implementation: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. When unsure between the standard and heavy builder for high-risk work, choose heavy.
 
-For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so Spark cannot invent routine details. For `builder-heavy`, the planner must state why GPT-5.5 is needed and keep the task bounded enough to validate. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for Spark tasks `**Spark Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so it cannot invent routine details. For `builder-heavy`, the planner must state why the heavy tier is needed and keep the task bounded enough to validate. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for highspeed tasks `**Highspeed Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
 
-Every builder task, Kimi or Spark, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
+Every builder task, regardless of tier, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
 `SCHEDULE.md` must include recovery/checkpoint controls: a recovery snapshot requirement for tasks that modify existing files and a `Checkpoint Commit` column. The orchestrator should create one selective commit after each verified task, containing only that task's intended files and `.pi/build`/`.pi/recovery` artifacts. Tasks that touch the same large shared file must run serially with checkpoint commits between them, not in parallel.
 
