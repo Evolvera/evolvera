@@ -203,6 +203,7 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 - Allowed edit anchors: [exact function/test/JSON key/section names the builder may modify]
 - Forbidden edits: [functions/files/sections that must not change]
 - Patch mode: [append-only | exact anchored replacement | create-only | targeted JSON field update]
+- No repo-wide formatters/codemods: builder MUST NOT run `cargo fmt`, `prettier --write .`, `eslint --fix` across the repo, or any tool that reformats files outside this task's target files.
 
 ## Preservation Markers
 Before and after editing, these commands or greps must pass:
@@ -321,7 +322,7 @@ group_1: [01, 02]  →  task 03  →  done
 
 ## Orchestrator Rules
 
-1. **Parallel execution**: Only tasks within the same `Parallel Group` may run concurrently, and only when file sets are disjoint.
+1. **Parallel execution**: Only tasks within the same `Parallel Group` may run concurrently, and only when their FULL file sets are disjoint — including shared registry/declaration/config files (`mod.rs`, barrel `index.ts`, `__init__.py`, route tables, `Cargo.toml`, `package.json`). If two tasks share even a one-line registry edit, they are NOT parallel.
 2. **Dependency enforcement**: A task may only start after ALL its `Dependencies` show `status: complete` and have a `Checkpoint Commit` hash.
 3. **Recovery snapshots**: Every task that modifies existing files must create `.pi/recovery/{task_id}/before/...` snapshots before editing. If snapshots are missing, the task cannot be marked complete.
 4. **Status updates**: The orchestrator updates `Status`, `Recovery Snapshot`, `Checkpoint Commit`, and `Execution Log`. Builders do NOT modify this file.
@@ -348,6 +349,7 @@ group_1: [01, 02]  →  task 03  →  done
 ### When to Split a Task
 - Task is not one safe commit/rollback unit → SPLIT
 - Task mixes artifact classes (evidence/log extraction, JSON/matrix artifacts, source code, tests, docs, API contract) → SPLIT
+- Task updates more than one canonical data artifact (e.g. several JSON/matrix files) → SPLIT into one task per artifact. NEVER bundle multiple canonical artifacts plus source/API edits into one commit.
 - Task first derives truth from logs/evidence and then applies changes → SPLIT into evidence-index task first, then consumer tasks
 - Task has multiple validation modes or failure modes → SPLIT
 - Task scope touches >3 files in different directories → SPLIT
@@ -369,6 +371,18 @@ group_1: [01, 02]  →  task 03  →  done
   - Task B's "Prerequisite Files" lists what it expects
 - Document the interface/contract between tasks (e.g., "Task 01 creates src/types/User.ts that Task 03 imports")
 - If multiple tasks must touch the same large shared file, they are NOT parallel. Prefer serial tasks with checkpoint commits between them, or split additions into separate files/modules when the project allows it.
+
+### Parallel-Safety = FULL File-Set Disjointness (including registry/declaration files)
+
+Two tasks may share a `Parallel Group` ONLY if the UNION of every file each one writes is pairwise disjoint — including one-line edits to shared registry/declaration/config files. Do NOT call tasks "disjoint" just because their main payload files differ.
+
+**Shared registry/declaration hazard (mandatory check):** adding a new file almost always requires registering it in a shared file — `mod.rs` (`pub mod x;`), a barrel `index.ts`, `__init__.py`, a route/dispatcher table, `Cargo.toml`, `package.json`, DI containers, etc. That registry edit is a SHARED-FILE hazard. When two or more new-file tasks must touch the same registry, you MUST do one of:
+1. **Centralize** all registrations into ONE wiring task (preferred): the new-file tasks create only their own file; the wiring task adds every `pub mod`/import/route in one place; or
+2. **Serialize** the new-file tasks (not parallel), each appending its single registry line with a checkpoint commit between them.
+
+Never mark two new-file tasks parallel while both edit the same registry.
+
+For every `Parallel Group`, the `Safety` line must list the FULL file set per task (payload + registry/config) and assert disjointness over that full set.
 
 ---
 

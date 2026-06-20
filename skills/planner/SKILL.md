@@ -307,6 +307,10 @@ Plan generated. Here's the summary:
 | Planner returns plan → immediately spawn builders | Show plan summary, get user approval first |
 | Running multiple builders on the same shared file | Serialize them and checkpoint-commit after each task |
 | One task mixes evidence extraction, JSON artifacts, source edits, tests, and docs | Split by artifact class and validation boundary |
+| One task updates several canonical data artifacts plus source/API in one commit | One task per artifact; the source/API edit is its own task |
+| Two new-file tasks marked "disjoint" but both edit a shared registry (`mod.rs`, barrel `index.ts`, route table) | Centralize registrations in one wiring task, or serialize the new-file tasks — never parallel |
+| Parallel "Safety" line lists only payload files | List the FULL file set per task (payload + registry/config) and assert disjointness over all of it |
+| Builder allowed to run `cargo fmt`/`prettier --write .` | Patch boundary forbids repo-wide formatters; format only changed lines |
 | Task lacks allowed edit anchors / forbidden edits | Add Patch Boundaries before spawning builder |
 | Planner creates abstraction task for first/second duplicated pattern | Keep local duplication or require Rule-of-Three / architecture justification |
 | Behavior-changing task has no test/validation expectation | Add TDD or closest-validation gate |

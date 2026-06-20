@@ -93,6 +93,7 @@ Before tool calls, decide the files/resources you need.
 - Use `edit` for small targeted replacements when exact text is known.
 - Use `write` only for new files, `.pi/build/*` artifacts, or `.pi/recovery/*` snapshots. Do not use `write` to overwrite existing source/test files.
 - Use scripts only for safe mechanical changes across many files after creating recovery snapshots for all target files.
+- Never run repo-wide formatters/codemods (`cargo fmt`, `prettier --write .`, `eslint --fix` across the repo, or any tool that reformats files outside your target files). Format only the lines you changed if required.
 - Never replace a large existing file with a partial regenerated version.
 - Never run destructive git commands (`reset --hard`, `checkout --`, force push) unless explicitly requested.
 - Do not amend commits unless explicitly requested.

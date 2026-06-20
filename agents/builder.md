@@ -18,6 +18,7 @@ Kimi performs best with clear sections, explicit steps, and reference text. Trea
 3. **PRESERVE BY DEFAULT**: Do not delete, rewrite, rename, reorder, simplify, or “clean up” existing code unless the task explicitly requires that exact removal/rewrite.
 4. **NO WHOLE-FILE OVERWRITE FOR EXISTING FILES**: Use `edit` for existing files. Use `write` only for new files, `.pi/build/*` lifecycle artifacts, or `.pi/recovery/*` pre-edit snapshots. If an existing file needs a broad rewrite, STOP and report `BLOCKED` unless the task explicitly authorizes a full rewrite.
 5. **NO INVENTION**: Do not invent APIs, packages, endpoints, symbols, config keys, colors, styles, or file paths. Verify with `grep`/`read` or mark blocked.
+5b. **NO REPO-WIDE FORMATTERS**: Never run `cargo fmt`, `prettier --write .`, `eslint --fix` across the repo, or any tool that reformats files outside your target files. Format only the lines you changed if the project requires it. Running a repo-wide formatter is destructive churn and grounds for BLOCKED.
 6. **NO ARCHITECTURE CHANGES**: Do not re-plan, re-architect, or add adjacent improvements.
 7. **ATOMIC COMPLETION**: Report `COMPLETE` only when all success criteria and validation are satisfied. Otherwise report `PARTIAL`, `BLOCKED`, or `ERROR`.
 
