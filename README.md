@@ -68,7 +68,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (20)
+## 🤖 Agentes Disponíveis (24)
 
 ### Pipeline de Código
 
@@ -77,7 +77,9 @@ git pull
 | **Scout Highspeed** | ⚡ | Explorador rápido — mapeia arquivos, dependências, padrões, testes | GPT-5.3 Codex Spark | default para exploração rápida/backend/infra/algoritmos |
 | **Scout** | 🔍 | Explorador cauteloso com workflow Kimi/checkpoint | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Planner** | 🏛️ | Arquiteto — cria planos detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
-| **Planner Heavy** | 🏛️ | Core de planejamento limpo para `/plan-heavy`, baseado em handoff determinístico | Claude Opus | usado pelo harness em long-horizon/high-risk/shared-file plans |
+| **Planner Heavy** | 🏛️ | Planejador estruturado final do `/plan-heavy`; consome handoff + brief mergeado | GPT-5.5 xhigh | escreve PLAN_FULL/SCHEDULE/TASKS no harness ensemble |
+| **Plan Briefer** | 🧩 | Gera UM brief de estratégia/lógica (sem tasks/DAG); roda 2× em paralelo | Opus 4.8 + GPT-5.5 | fase de brief do `/plan-heavy` |
+| **Plan Brief Merger** | 🔗 | Funde os 2 briefs em um só, reconciliando divergências | Claude Opus 4.8 | fase de merge do `/plan-heavy` |
 | **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
 | **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
 | **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando Kimi/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
@@ -232,13 +234,15 @@ O mesmo harness também é exposto como **tools chamáveis pelo agente** (para o
 | `plan_heavy_validate` | `/plan-heavy validate` | valida o plano e escreve `PLAN_HEAVY_VALIDATION.md` |
 | `plan_heavy_envelope` | `/plan-heavy envelope` | gera o `EXECUTION_ENVELOPE` da task |
 
-Fluxo v1:
+Fluxo ensemble (5 fases):
 
-1. `/plan-heavy <goal>` coleta `git status`, commits recentes, `.pi/plans`, dirty files e shared-file hazards.
-2. O orchestrator lança `planner-heavy` com o prompt gerado em `PLAN_HEAVY_PROMPT.md`.
-3. `planner-heavy` escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
-4. `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots, checkpoint commits, agents, patch boundaries ou preservation contracts.
-5. Antes de chamar um builder, `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff da task com git status atual, target files, patch boundaries e preservation markers.
+1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md` e `MERGE_PROMPT.md`.
+2. **Briefs (paralelo)** — dois `plan-briefer` rodam em paralelo (um Opus 4.8, um GPT-5.5). Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_opus.md`, `BRIEFS/brief_gpt.md`) — sem tasks, sem DAG.
+3. **Merge** — `plan-brief-merger` (Opus 4.8) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
+4. **Plano** — `planner-heavy` (GPT-5.5 xhigh) lê `HANDOFF.md` + `brief_merged.md` e escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
+5. **Gate/execução** — `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots/checkpoints/agents/patch boundaries/preservation; depois `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff de cada task; então os builders executam.
+
+O merge acontece no nível de **brief (prosa/estratégia)**, fácil e seguro de fundir — nunca no nível de DAG/tasks. O `planner-heavy` continua dono do output estruturado e grounda tudo no repo (brief é guia, repo vence em divergência).
 
 ### `/goal` — Goal Mode
 

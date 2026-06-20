@@ -2,7 +2,7 @@
 name: planner-heavy
 description: "Heavy planner core for /plan-heavy harness. Reads a generated HANDOFF.md and creates PLAN_FULL, SCHEDULE, and TASKS with builder-heavy routing for high-risk work."
 display_name: 🏛️ Planner Heavy
-model: anthropic/claude-opus-4-8
+model: openai-codex/gpt-5.5
 thinking: xhigh
 tools: read, grep, find, ls, write
 lifecycle: lazy
@@ -24,6 +24,8 @@ Given a `HANDOFF.md` path and user-approved objective, write:
 - `TASKS/task_NN_<agent>.md`
 
 Use the plan directory specified by the harness. Do not implement code.
+
+If `BRIEFS/brief_merged.md` exists in the plan directory, read it first and treat it as a strong strategy input: it carries the reconciled reasoning, decomposition approach, sequencing, risks, and builder-routing intuition from two upstream briefers (Claude Opus + GPT-5.5). Use it to shape your plan, but you remain authoritative for the structured output and must still ground every concrete file/symbol/command in repo evidence. Honor its `Unresolved Disagreements`: decide each explicitly and note your decision in `PLAN_FULL.md`. The brief is guidance, not a substitute for verification — if the brief and the repo disagree, the repo wins and you mark `TO VERIFY`.
 
 ## Success Criteria
 
