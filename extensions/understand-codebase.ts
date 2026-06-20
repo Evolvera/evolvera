@@ -1,5 +1,5 @@
 /**
- * Scout Tool Extension
+ * Understand Codebase Tool Extension
  *
  * A read-only codebase-understanding tool callable by any agent (including ones
  * without the Agent tool, e.g. plan-briefer). Given a question, it gathers
@@ -8,8 +8,8 @@
  * is available, it returns the raw evidence bundle (graceful degradation).
  *
  * Usage (agent tool call):
- *   scout_codebase({ question: "how does auth token refresh work?" })
- *   scout_codebase({ question: "...", paths: "src/auth src/api", maxFiles: 6 })
+ *   understand_codebase({ question: "how does auth token refresh work?" })
+ *   understand_codebase({ question: "...", paths: "src/auth src/api", maxFiles: 6 })
  */
 
 import { complete, type UserMessage } from "@earendil-works/pi-ai";
@@ -183,14 +183,14 @@ async function resolveModel(ctx: ResolverCtx): Promise<{ model: unknown; apiKey:
   return null;
 }
 
-export default function scoutToolExtension(pi: ExtensionAPI) {
+export default function understandCodebaseExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "scout_codebase",
-    label: "Scout Codebase",
+    name: "understand_codebase",
+    label: "Understand Codebase",
     description:
       "Read-only codebase understanding in one call. Gathers repository evidence (ripgrep matches + excerpts) for a question and returns a grounded evidence report with `path:line` citations, synthesized by a fast scout-tier model. " +
       "Use to understand code, structure, or data flow without spawning a subagent. Read-only: it never edits files. Uses model tokens.",
-    promptSnippet: "Use scout_codebase to understand part of the repo (returns grounded evidence with path:line citations).",
+    promptSnippet: "Use understand_codebase to understand part of the repo (returns grounded evidence with path:line citations).",
     parameters: Type.Object({
       question: Type.String({ description: "What you want to understand, as a concrete question." }),
       paths: Type.Optional(Type.String({ description: "Optional space/comma-separated dirs or globs to focus the search (e.g. 'src/auth src/api')." })),
@@ -200,7 +200,7 @@ export default function scoutToolExtension(pi: ExtensionAPI) {
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const question = normalizeStr(params.question);
       if (!question) {
-        return { content: [{ type: "text", text: "scout_codebase needs a 'question'." }], isError: true, details: { error: "no_question" } };
+        return { content: [{ type: "text", text: "understand_codebase needs a 'question'." }], isError: true, details: { error: "no_question" } };
       }
       const explicit = normalizeStr(params.terms);
       const paths = normalizeStr(params.paths);
@@ -209,7 +209,7 @@ export default function scoutToolExtension(pi: ExtensionAPI) {
 
       if (terms.length === 0) {
         return {
-          content: [{ type: "text", text: "scout_codebase could not derive search terms from the question. Pass explicit `terms`." }],
+          content: [{ type: "text", text: "understand_codebase could not derive search terms from the question. Pass explicit `terms`." }],
           isError: true,
           details: { error: "no_terms" },
         };
@@ -273,5 +273,5 @@ export default function scoutToolExtension(pi: ExtensionAPI) {
     },
   });
 
-  console.log("[scout-tool] Extension loaded: scout_codebase tool available");
+  console.log("[understand-codebase] Extension loaded: understand_codebase tool available");
 }
