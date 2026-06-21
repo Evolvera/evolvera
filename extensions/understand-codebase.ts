@@ -212,14 +212,19 @@ async function resolveModel(ctx: ResolverCtx): Promise<Resolved | null> {
   return null;
 }
 
-async function callModel(sel: Resolved, signal: AbortSignal | undefined, system: string, user: string, maxTokens: number): Promise<string> {
+async function callModel(sel: Resolved, signal: AbortSignal | undefined, system: string, user: string, maxTokens: number): Promise<{ text: string; diag: string }> {
   const userMessage: UserMessage = { role: "user", timestamp: Date.now(), content: [{ type: "text", text: user }] };
+  // reasoning: "off" — these are bounded utility calls; without it, reasoning
+  // models (e.g. Codex Spark, which only supports off/xhigh) spend the whole
+  // token budget thinking and emit no text.
   const resp = (await complete(
     sel.model as never,
     { systemPrompt: system, messages: [userMessage] },
-    { apiKey: sel.apiKey, headers: sel.headers, signal, maxTokens, temperature: 0.2 },
-  )) as { content: Array<{ type: string; text?: string }> };
-  return textOf(resp);
+    { apiKey: sel.apiKey, headers: sel.headers, signal, maxTokens, temperature: 0.2, reasoning: "off" },
+  )) as { content: Array<{ type: string; text?: string }>; stopReason?: string; errorMessage?: string };
+  const blocks = resp.content.map((c) => c.type).join(",") || "none";
+  const diag = `stop=${resp.stopReason ?? "?"} blocks=[${blocks}]${resp.errorMessage ? ` err=${resp.errorMessage}` : ""}`;
+  return { text: textOf(resp), diag };
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +291,7 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
       // PHASE 1 — plan search commands.
       let commands: string[] = [];
       try {
-        const planRaw = await callModel(sel, ctx.signal, PLAN_SYSTEM, `QUESTION:\n${question}${scope}`, 700);
+        const { text: planRaw } = await callModel(sel, ctx.signal, PLAN_SYSTEM, `QUESTION:\n${question}${scope}`, 1000);
         const plan = parseJsonObject(planRaw);
         if (plan && Array.isArray(plan.commands)) commands = (plan.commands as unknown[]).map((c) => normalizeStr(c)).filter(Boolean);
       } catch {
@@ -307,7 +312,7 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
       let fileText = "";
       let filesRead = 0;
       try {
-        const pickRaw = await callModel(sel, ctx.signal, PICK_SYSTEM, `QUESTION:\n${question}\n\nSEARCH RESULTS:\n${search.text}`, 700);
+        const { text: pickRaw } = await callModel(sel, ctx.signal, PICK_SYSTEM, `QUESTION:\n${question}\n\nSEARCH RESULTS:\n${search.text}`, 1000);
         const pick = parseJsonObject(pickRaw);
         const files = pick && Array.isArray(pick.files) ? (pick.files as Array<Record<string, unknown>>) : [];
         // PHASE 4 — read picked files in parallel (bounded).
@@ -333,15 +338,14 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
       const evidence = `SEARCH RESULTS:\n${search.text}${fileText ? `\n\nFILE EXCERPTS:\n${fileText}` : ""}`;
       const header = `Understand: ${question}\nModel: ${sel.label} | commands run: ${search.ran}${search.skipped ? ` (skipped ${search.skipped} unsafe)` : ""} | files read: ${filesRead}`;
       try {
-        const report = await callModel(sel, ctx.signal, SYNTH_SYSTEM, `QUESTION:\n${question}\n\nEVIDENCE:\n${evidence}`, 2500);
+        const { text: report, diag } = await callModel(sel, ctx.signal, SYNTH_SYSTEM, `QUESTION:\n${question}\n\nEVIDENCE:\n${evidence}`, 3000);
         if (report) {
           return { content: [{ type: "text", text: `${header}\n\n${report}` }], details: { synthesized: true, model: sel.label, ran: search.ran, filesRead } };
         }
+        return { content: [{ type: "text", text: `${header}\n\n(Synthesis returned no text [${diag}]; raw evidence below.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false, diag, ran: search.ran, filesRead } };
       } catch (error) {
         return { content: [{ type: "text", text: `${header}\n\n(Synthesis failed: ${error instanceof Error ? error.message : String(error)}.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false } };
       }
-      // Empty synthesis: return raw evidence so the call is never wasted.
-      return { content: [{ type: "text", text: `${header}\n\n(Synthesis returned no text; raw evidence below.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false, ran: search.ran, filesRead } };
     },
   });
 
