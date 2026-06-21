@@ -110,6 +110,10 @@ function questionTerms(question: string): string[] {
   return Array.from(terms).slice(0, MAX_TERMS);
 }
 
+function isIdentifierTerm(t: string): boolean {
+  return /[_./-]/.test(t) || /[A-Z]/.test(t) || /\d/.test(t);
+}
+
 // The harness builds the command (read-only ripgrep), so the model never writes shell.
 function buildSearch(terms: string[], paths: string[] | undefined, scope: string): { display: string; run: string } | null {
   const t = terms.map(normalizeStr).filter(Boolean).slice(0, MAX_TERMS);
@@ -131,11 +135,13 @@ function buildSearch(terms: string[], paths: string[] | undefined, scope: string
 }
 
 async function runSearches(cwd: string, searches: Array<{ terms?: unknown; paths?: unknown }>, scope: string): Promise<{ text: string; ranked: Array<{ path: string; lines: number[] }>; ran: number }> {
-  const byFile = new Map<string, number[]>();
+  const byFile = new Map<string, { lines: number[]; blob: string }>();
+  const allTerms = new Set<string>();
   let text = "";
   let ran = 0;
   for (const s of searches.slice(0, MAX_SEARCHES)) {
     const terms = Array.isArray(s.terms) ? (s.terms as unknown[]).map(normalizeStr).filter(Boolean) : [];
+    for (const t of terms) allTerms.add(t.toLowerCase());
     const paths = Array.isArray(s.paths) ? (s.paths as unknown[]).map(normalizeStr).filter(Boolean) : undefined;
     const cmd = buildSearch(terms, paths, scope);
     if (!cmd) continue;
@@ -143,19 +149,28 @@ async function runSearches(cwd: string, searches: Array<{ terms?: unknown; paths
     const out = (await run(cwd, cmd.run)).slice(0, MAX_CMD_OUTPUT_CHARS);
     text += `\n$ ${cmd.display}\n${out.trim() || "(no output)"}\n`;
     for (const row of out.split("\n")) {
-      const m = row.match(/^([^:]+):(\d+):/);
-      if (m) {
-        const arr = byFile.get(m[1]) ?? [];
-        arr.push(Number(m[2]));
-        byFile.set(m[1], arr);
-      }
+      const m = row.match(/^([^:]+):(\d+):(.*)$/);
+      if (!m) continue;
+      const rec = byFile.get(m[1]) ?? { lines: [], blob: "" };
+      rec.lines.push(Number(m[2]));
+      if (rec.blob.length < 4000) rec.blob += " " + m[3].toLowerCase();
+      byFile.set(m[1], rec);
     }
     if (text.length > MAX_SEARCH_CHARS) {
       text = text.slice(0, MAX_SEARCH_CHARS) + "\n[... search truncated ...]\n";
       break;
     }
   }
-  const ranked = [...byFile.entries()].sort((a, b) => b[1].length - a[1].length).map(([path, lines]) => ({ path, lines }));
+  // Rank by distinct-term coverage (identifier terms weighted higher), then by raw
+  // match count. This stops a file that merely spams one generic term (e.g. a doc
+  // with many "blocked") from outranking the file that matches the specific symbols.
+  const weighted = [...allTerms].map((t) => ({ t, w: isIdentifierTerm(t) ? 2 : 1 }));
+  const score = (rec: { lines: number[]; blob: string }) => {
+    let cov = 0;
+    for (const { t, w } of weighted) if (rec.blob.includes(t)) cov += w;
+    return cov * 1000 + rec.lines.length;
+  };
+  const ranked = [...byFile.entries()].sort((a, b) => score(b[1]) - score(a[1])).map(([path, rec]) => ({ path, lines: rec.lines }));
   return { text: text.trim(), ranked, ran };
 }
 
