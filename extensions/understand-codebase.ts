@@ -39,14 +39,14 @@ const MAX_FILE_CHARS = 24_000;
 const FALLBACK_MATCH_LINES = 400;
 
 // Read-only command sandbox: only these binaries may run, no shell metacharacters.
-const ALLOWED_BINS = new Set(["rg", "grep", "egrep", "fgrep", "find", "ls", "wc", "head", "tail"]);
+const ALLOWED_BINS = new Set(["rg", "grep", "egrep", "fgrep", "find", "ls", "wc", "head", "tail", "sort", "uniq", "cut"]);
 
 const PLAN_SYSTEM = `You plan a READ-ONLY investigation of a code repository to answer a QUESTION.
 
 Output ONLY a JSON object: {"commands": ["rg ...", "find ..."]}.
 Rules:
-- Allowed binaries only: rg, grep, find, ls, wc (you may pipe to head/tail).
-- Read-only: no file writes, no redirection (>), no ;, &, backticks, or $( ).
+- Allowed binaries only: rg, grep, find, ls, wc (you may pipe to head, tail, sort, uniq, cut).
+- Read-only: no file writes, no redirection. Do NOT add 2>/dev/null or 2>&1 — the harness handles stderr. No ;, &, backticks, or $( ).
 - Prefer ripgrep with -n and --ignore-case and concrete symbols/terms from the question.
 - Propose 2-6 targeted commands that locate the code needed to answer.
 - If paths are provided, scope searches to them.`;
@@ -90,6 +90,15 @@ async function run(cwd: string, command: string): Promise<string> {
   }
 }
 
+// Strip benign stderr redirections the model often adds; the harness adds its own.
+function sanitizeCommand(cmd: string): string {
+  return cmd
+    .replace(/\s*2\s*>\s*\/dev\/null/g, "")
+    .replace(/\s*2\s*>\s*&\s*1/g, "")
+    .replace(/\s*>\s*\/dev\/null/g, "")
+    .trim();
+}
+
 function isSafeSearchCommand(cmd: string): boolean {
   const c = cmd.trim();
   if (!c || c.length > 400) return false;
@@ -108,7 +117,7 @@ async function runSearchCommands(cwd: string, commands: string[]): Promise<{ tex
   let ran = 0;
   let skipped = 0;
   for (const raw of commands.slice(0, MAX_COMMANDS)) {
-    const cmd = normalizeStr(raw);
+    const cmd = sanitizeCommand(normalizeStr(raw));
     if (!isSafeSearchCommand(cmd)) {
       skipped++;
       continue;
@@ -299,12 +308,17 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
         /* fall through to fallback search below */
       }
 
-      // PHASE 2 — execute search (or deterministic fallback if planning gave nothing usable).
-      let search = await runSearchCommands(ctx.cwd, commands);
-      if (!search.text) {
-        const ev = await fallbackEvidence(ctx.cwd, question, paths);
-        search = { text: ev, ran: 0, skipped: search.skipped };
-      }
+      // PHASE 2 — execute the planned searches AND a deterministic baseline term
+      // search, so obvious matches are never missed even if the model's commands
+      // are weak or get rejected by the sandbox.
+      const planned = await runSearchCommands(ctx.cwd, commands);
+      const baseline = await fallbackEvidence(ctx.cwd, question, paths);
+      const parts: string[] = [];
+      if (baseline) parts.push(`# baseline term search\n${baseline}`);
+      if (planned.text) parts.push(`# planned searches\n${planned.text}`);
+      let searchText = parts.join("\n\n");
+      if (searchText.length > MAX_SEARCH_CHARS) searchText = searchText.slice(0, MAX_SEARCH_CHARS) + "\n[... search truncated ...]\n";
+      const search = { text: searchText, ran: planned.ran, skipped: planned.skipped };
       if (!search.text) {
         return { content: [{ type: "text", text: `Understand: ${question}\n\nNo evidence found. Try different wording or a path scope.` }], details: { ran: search.ran } };
       }
