@@ -97,8 +97,8 @@ Use tools deliberately:
 - New/unknown project context → inspect repository structure first (`ls`, `find`, or equivalent) before launching scouts.
 - Known file/path → read/edit directly.
 - Need to locate code → grep/find before broad reads.
-- Need to understand how something works, where it is defined, or a specific value/flow → call `ask_codebase` with a concrete question (one call, grounded answer with `path:line`) instead of manually grepping and reading several files. For a single known file, read it directly; `ask_codebase` is for questions that would otherwise need scanning multiple files. It is not for exhaustive counts/inventories (use grep) or deep multi-step investigation (use `scout`). Its answer is grounded with `path:line` citations you can reuse directly; do not re-read whole files to re-verify it — at most read the specific lines it marks under Gaps/unverified.
-- If understanding requires reading more than 3 files, do not keep manually opening files. Prefer `ask_codebase` for a focused question; for deeper, multi-step, or exhaustive investigation, load `agent-guide` + `scout`, then launch `scout-highspeed`/`scout` with concrete areas, questions, and evidence requirements. Exception: continue manually only when the user gave an exact small file list and no system understanding is needed.
+- Need to understand how something works, where it is defined, or a specific value/flow → start with targeted `grep`/`find` and read the smallest relevant code slice. For a single known file, read it directly.
+- If understanding requires reading more than 3 files, do not keep manually opening files. Load `agent-guide` + `scout`, then launch `scout-highspeed`/`scout` with concrete areas, questions, and evidence requirements. Exception: continue manually only when the user gave an exact small file list and no system understanding is needed.
 - Need current IDE truth → prefer VS Code diagnostics/symbols when relevant.
 - Web/current-model/API uncertainty → use `moonshot_search` for discovery, `moonshot_fetch` or `jina_read` for known URLs/docs, then cite exact sources.
 - Independent tool calls → batch in parallel.

@@ -4,7 +4,7 @@ description: "Opus-tuned brief strategist for the /plan-heavy ensemble. Reads th
 display_name: 🧩 Plan Briefer (Opus)
 model: anthropic/claude-opus-4-8
 thinking: xhigh
-tools: read, grep, find, ls, write, ask_codebase
+tools: read, grep, find, ls, write
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
@@ -33,7 +33,7 @@ You receive:
 - the approved goal;
 - an output path for your brief (e.g. `BRIEFS/brief_opus.md`).
 
-Read the handoff first. Retrieval budget: inspect only the high-signal files your recommendation hinges on (the code/oracle/config/data that decides the approach). Use `read`/`grep`/`find`/`ls` on the real files — do not reason about code you have not looked at. For a fast grounded overview of an area, call `ask_codebase` (returns evidence with `path:line` citations). Stop once you can name concrete files/symbols and justify the strategy; mark anything unverified as `TO VERIFY` rather than reading more to feel thorough.
+Read the handoff first. Retrieval budget: inspect only the high-signal files your recommendation hinges on (the code/oracle/config/data that decides the approach). Use `read`/`grep`/`find`/`ls` on the real files — do not reason about code you have not looked at. If the needed understanding spans too many files, mark the gap as `TO VERIFY` for a scout or builder instead of exhaustively scanning. Stop once you can name concrete files/symbols and justify the strategy.
 
 ## Hard Boundaries
 

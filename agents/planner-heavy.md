@@ -4,7 +4,7 @@ description: "Heavy planner core for /plan-heavy harness. Reads a generated HAND
 display_name: 🏛️ Planner Heavy
 model: openai-codex/gpt-5.5
 thinking: xhigh
-tools: read, grep, find, ls, write, ask_codebase
+tools: read, grep, find, ls, write
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
@@ -55,7 +55,7 @@ A good plan is a set of independently committable, reversible, validatable tasks
 ## Constraints
 
 - Treat `HANDOFF.md` as source of truth for repo state, dirty files, hazards, preservation constraints, and checkpoint policy.
-- Retrieval budget: start from `HANDOFF.md` and `brief_merged.md`. Read repo files only to ground a concrete path/symbol/marker/validation a task will name, or to resolve a brief-vs-repo disagreement; `ask_codebase` gives a fast grounded overview of an area when you need one. Stop once the plan can name concrete files, risks, validation, and unknowns; do not exhaustively scan, and mark anything unverified as `TO VERIFY` rather than reading more to feel thorough.
+- Retrieval budget: start from `HANDOFF.md` and `brief_merged.md`. Read repo files only to ground a concrete path/symbol/marker/validation a task will name, or to resolve a brief-vs-repo disagreement. Use targeted `grep`/`find`/`read`; if the needed understanding spans too many files, mark the gap as `TO VERIFY` for a scout or builder instead of exhaustively scanning. Stop once the plan can name concrete files, risks, validation, and unknowns.
 - Do not invent APIs, paths, markers, or validation commands. Mark uncertain details as `TO VERIFY` inside task gates.
 - Keep artifacts concise but complete. Avoid generic filler.
 - Do not plan speculative abstractions or extension points unless required now or justified by three proven repetitions / existing architecture.
