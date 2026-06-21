@@ -117,8 +117,11 @@ function buildSearch(terms: string[], paths: string[] | undefined, scope: string
   const termArgs = t.map((x) => `-e ${shellQuote(x)}`).join(" ");
   const pathList = paths && paths.length ? paths : scope ? scope.split(/[\s,]+/).filter(Boolean) : ["."];
   const pathArgs = pathList.map((p) => shellQuote(normalizeStr(p))).join(" ");
-  const rg = `rg --no-heading --line-number --ignore-case ${termArgs} -- ${pathArgs}`;
-  const grep = `grep -rInI ${termArgs} ${pathArgs}`;
+  // Exclude backup/snapshot/non-source noise so stale copies are never cited as real code.
+  const rgExclude = "--glob '!*.bak*' --glob '!*.orig' --glob '!*~' --glob '!*.snapshot'";
+  const grepExclude = "--exclude='*.bak*' --exclude='*.orig' --exclude='*~' --exclude='*.snapshot'";
+  const rg = `rg --no-heading --line-number --ignore-case ${rgExclude} ${termArgs} -- ${pathArgs}`;
+  const grep = `grep -rInI ${grepExclude} ${termArgs} ${pathArgs}`;
   return { display: `rg ${t.join(" | ")}`, run: `if command -v rg >/dev/null 2>&1; then ${rg} 2>/dev/null | head -n 120; else ${grep} 2>/dev/null | head -n 120; fi` };
 }
 
@@ -432,14 +435,20 @@ export default function askCodebaseExtension(pi: ExtensionAPI) {
       // PHASE 4 — read picked files in parallel (bounded). When the model gives an
       // explicit range, read it; otherwise read windows around the file's match
       // lines so relevant code anywhere in a large file is captured (not just the head).
+      // Always read match-centered windows when the file has matches — this captures
+      // dense clusters (where the real behavior lives) even if the model picked an
+      // incomplete range. The model's chosen range is folded in as extra window seeds.
       const matchLinesByPath = new Map(search.ranked.map((f) => [f.path, f.lines]));
       let fileText = "";
       let filesRead = 0;
       const reads = await Promise.all(
         picks.slice(0, MAX_READ_FILES).map((f) => {
-          if (typeof f.start === "number") return readRange(ctx.cwd, f.path, f.start, f.end);
-          const ml = matchLinesByPath.get(f.path);
-          return ml && ml.length ? readWindows(ctx.cwd, f.path, ml) : readRange(ctx.cwd, f.path);
+          const ml = (matchLinesByPath.get(f.path) ?? []).slice();
+          if (typeof f.start === "number") {
+            const end = typeof f.end === "number" ? f.end : f.start;
+            for (let i = f.start; i <= Math.min(end, f.start + 40); i += 4) ml.push(i);
+          }
+          return ml.length ? readWindows(ctx.cwd, f.path, ml) : readRange(ctx.cwd, f.path, f.start, f.end);
         }),
       );
       for (const r of reads) {
