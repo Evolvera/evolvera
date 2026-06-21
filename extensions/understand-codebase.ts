@@ -253,7 +253,7 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
       "Use it to quickly understand how something works, where something is defined, or how data flows, instead of reading many files yourself or spawning a scout subagent. Read-only: it never edits anything. " +
       "Input: a concrete `question` (and optional `paths` to scope to certain dirs/globs). " +
       "Output: a short report with sections Answer, Key locations (path:line), How it works, and Gaps. " +
-      "Best for focused understanding in one call; for deep multi-step investigation use a scout subagent.",
+      "Best for focused understanding in one call. NOT for exhaustive counts or full inventories across many files (it samples ranked evidence and can undercount or miscount, e.g. example snippets inside docs); for an exact census use grep directly, and for deep multi-step investigation use a scout subagent.",
     promptSnippet: "Use understand_codebase to quickly understand part of the repo: pass a question, get a grounded answer with path:line citations.",
     promptGuidelines: [
       "Prefer understand_codebase over manually reading 3+ files to understand a feature, bug, or data flow.",
