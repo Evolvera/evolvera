@@ -42,6 +42,9 @@ const MAX_CITES = 12;
 const MAX_CITE_LINES = 40;
 const MAX_CITE_CHARS = 8000;
 const CITE_CONTEXT = 2;
+const WINDOW_GAP = 12;
+const WINDOW_CONTEXT = 3;
+const WINDOW_MAX_LINES = 160;
 
 const PLAN_SYSTEM = `You plan a READ-ONLY investigation to answer a QUESTION about a code repository.
 
@@ -117,8 +120,8 @@ function buildSearch(terms: string[], paths: string[] | undefined, scope: string
   return { display: `rg ${t.join(" | ")}`, run: `if command -v rg >/dev/null 2>&1; then ${rg} 2>/dev/null | head -n 120; else ${grep} 2>/dev/null | head -n 120; fi` };
 }
 
-async function runSearches(cwd: string, searches: Array<{ terms?: unknown; paths?: unknown }>, scope: string): Promise<{ text: string; ranked: string[]; ran: number }> {
-  const byFile = new Map<string, number>();
+async function runSearches(cwd: string, searches: Array<{ terms?: unknown; paths?: unknown }>, scope: string): Promise<{ text: string; ranked: Array<{ path: string; lines: number[] }>; ran: number }> {
+  const byFile = new Map<string, number[]>();
   let text = "";
   let ran = 0;
   for (const s of searches.slice(0, MAX_SEARCHES)) {
@@ -131,15 +134,67 @@ async function runSearches(cwd: string, searches: Array<{ terms?: unknown; paths
     text += `\n$ ${cmd.display}\n${out.trim() || "(no output)"}\n`;
     for (const row of out.split("\n")) {
       const m = row.match(/^([^:]+):(\d+):/);
-      if (m) byFile.set(m[1], (byFile.get(m[1]) ?? 0) + 1);
+      if (m) {
+        const arr = byFile.get(m[1]) ?? [];
+        arr.push(Number(m[2]));
+        byFile.set(m[1], arr);
+      }
     }
     if (text.length > MAX_SEARCH_CHARS) {
       text = text.slice(0, MAX_SEARCH_CHARS) + "\n[... search truncated ...]\n";
       break;
     }
   }
-  const ranked = [...byFile.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => f);
+  const ranked = [...byFile.entries()].sort((a, b) => b[1].length - a[1].length).map(([path, lines]) => ({ path, lines }));
   return { text: text.trim(), ranked, ran };
+}
+
+// Read bounded windows around the match-line clusters of a file, so relevant code
+// anywhere in a large file is captured (not just the first MAX_READ_LINES from the
+// top). Match lines are marked with '>'.
+async function readWindows(cwd: string, path: string, matchLines: number[]): Promise<string> {
+  const rel = safeRelPath(cwd, path);
+  if (!rel) return "";
+  let content: string;
+  try {
+    content = await readFile(join(cwd, rel), "utf8");
+  } catch {
+    return "";
+  }
+  const lines = content.split("\n");
+  const nums = [...new Set(matchLines.filter((n) => Number.isFinite(n) && n > 0))].sort((a, b) => a - b);
+  if (!nums.length) return "";
+  const windows: Array<{ start: number; end: number; count: number }> = [];
+  for (const n of nums) {
+    const last = windows[windows.length - 1];
+    if (last && n - last.end <= WINDOW_GAP) {
+      last.end = n;
+      last.count++;
+    } else {
+      windows.push({ start: n, end: n, count: 1 });
+    }
+  }
+  // Prioritize the densest match clusters (most relevant) so they are captured
+  // within the line budget even when sparse matches exist elsewhere in the file.
+  const span = (w: { start: number; end: number }) => Math.min(lines.length, w.end + WINDOW_CONTEXT) - Math.max(1, w.start - WINDOW_CONTEXT) + 1;
+  const selected: typeof windows = [];
+  let budget = 0;
+  for (const w of [...windows].sort((a, b) => b.count - a.count)) {
+    if (selected.length && budget + span(w) > WINDOW_MAX_LINES) continue;
+    selected.push(w);
+    budget += span(w);
+    if (budget >= WINDOW_MAX_LINES) break;
+  }
+  selected.sort((a, b) => a.start - b.start);
+  const matchSet = new Set(nums);
+  let out = `\n### ${rel}\n`;
+  for (let w = 0; w < selected.length; w++) {
+    if (w > 0) out += "  —\n";
+    const s = Math.max(1, selected[w].start - WINDOW_CONTEXT);
+    const e = Math.min(lines.length, selected[w].end + WINDOW_CONTEXT);
+    for (let i = s; i <= e; i++) out += `${matchSet.has(i) ? ">" : " "}${i}: ${(lines[i - 1] ?? "").slice(0, 200)}\n`;
+  }
+  return out;
 }
 
 function safeRelPath(cwd: string, path: string): string | null {
@@ -370,12 +425,21 @@ export default function askCodebaseExtension(pi: ExtensionAPI) {
       } catch {
         /* fall through to auto-pick */
       }
-      if (!picks.length) picks = search.ranked.slice(0, AUTO_READ_FILES).map((p) => ({ path: p }));
+      if (!picks.length) picks = search.ranked.slice(0, AUTO_READ_FILES).map((f) => ({ path: f.path }));
 
-      // PHASE 4 — read picked files in parallel (bounded).
+      // PHASE 4 — read picked files in parallel (bounded). When the model gives an
+      // explicit range, read it; otherwise read windows around the file's match
+      // lines so relevant code anywhere in a large file is captured (not just the head).
+      const matchLinesByPath = new Map(search.ranked.map((f) => [f.path, f.lines]));
       let fileText = "";
       let filesRead = 0;
-      const reads = await Promise.all(picks.slice(0, MAX_READ_FILES).map((f) => readRange(ctx.cwd, f.path, f.start, f.end)));
+      const reads = await Promise.all(
+        picks.slice(0, MAX_READ_FILES).map((f) => {
+          if (typeof f.start === "number") return readRange(ctx.cwd, f.path, f.start, f.end);
+          const ml = matchLinesByPath.get(f.path);
+          return ml && ml.length ? readWindows(ctx.cwd, f.path, ml) : readRange(ctx.cwd, f.path);
+        }),
+      );
       for (const r of reads) {
         if (!r) continue;
         filesRead++;
