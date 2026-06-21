@@ -1,15 +1,22 @@
 /**
  * Understand Codebase Tool Extension
  *
- * A read-only codebase-understanding tool callable by any agent (including ones
- * without the Agent tool, e.g. plan-briefer). Given a question, it gathers
- * evidence from the repo (ripgrep matches + excerpts) and synthesizes a grounded
- * evidence report with `path:line` citations using the current model. If no model
- * is available, it returns the raw evidence bundle (graceful degradation).
+ * A read-only codebase-understanding tool callable by any agent. It runs a small
+ * LLM-driven investigation loop on a fast model (Codex Spark by default):
+ *   1. PLAN   — the model proposes read-only search commands (rg/grep/find/ls/wc).
+ *   2. SEARCH — the harness executes those commands (sandboxed, read-only).
+ *   3. PICK   — the model picks the most important files/ranges to read.
+ *   4. READ   — the harness reads those files in parallel (bounded).
+ *   5. SYNTH  — the model writes a structured answer with `path:line` citations.
+ *
+ * Every LLM step degrades gracefully: if the model is unavailable or returns
+ * unparseable output, the tool falls back to deterministic ripgrep evidence so
+ * it never breaks. The model only ever drives read-only search/read — the harness
+ * validates and executes; the model never runs arbitrary shell.
  *
  * Usage (agent tool call):
  *   understand_codebase({ question: "how does auth token refresh work?" })
- *   understand_codebase({ question: "...", paths: "src/auth src/api", maxFiles: 6 })
+ *   understand_codebase({ question: "...", paths: "src/auth src/api" })
  */
 
 import { complete, type UserMessage } from "@earendil-works/pi-ai";
@@ -18,35 +25,53 @@ import { Type } from "typebox";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, normalize } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
-const MAX_MATCH_LINES = 400;
-const WINDOW_PAD = 3;
-const MAX_WINDOW_LINES = 100;
-const MAX_EVIDENCE_CHARS = 40_000;
-const DEFAULT_MAX_FILES = 8;
+// Bounds.
+const MAX_COMMANDS = 8;
+const MAX_CMD_OUTPUT_CHARS = 4000;
+const MAX_SEARCH_CHARS = 16_000;
+const MAX_READ_FILES = 6;
+const MAX_READ_LINES = 160;
+const MAX_FILE_CHARS = 24_000;
+const FALLBACK_MATCH_LINES = 400;
 
-const STOPWORDS = new Set([
-  "the", "and", "for", "with", "that", "this", "what", "where", "when", "which", "how", "does", "do",
-  "is", "are", "was", "were", "from", "into", "your", "you", "about", "of", "in", "on", "to", "a", "an",
-  "it", "its", "be", "by", "or", "as", "at", "we", "our", "can", "will", "should", "would", "use", "used",
-  "code", "codebase", "repo", "repository", "file", "files", "find", "show", "explain", "understand",
-]);
+// Read-only command sandbox: only these binaries may run, no shell metacharacters.
+const ALLOWED_BINS = new Set(["rg", "grep", "egrep", "fgrep", "find", "ls", "wc", "head", "tail"]);
 
-const SCOUT_SYSTEM_PROMPT = `You are a read-only codebase scout. You receive a QUESTION and EVIDENCE gathered from the repository (ripgrep matches with file:line and code excerpts). Produce a concise, grounded evidence report.
+const PLAN_SYSTEM = `You plan a READ-ONLY investigation of a code repository to answer a QUESTION.
+
+Output ONLY a JSON object: {"commands": ["rg ...", "find ..."]}.
+Rules:
+- Allowed binaries only: rg, grep, find, ls, wc (you may pipe to head/tail).
+- Read-only: no file writes, no redirection (>), no ;, &, backticks, or $( ).
+- Prefer ripgrep with -n and --ignore-case and concrete symbols/terms from the question.
+- Propose 2-6 targeted commands that locate the code needed to answer.
+- If paths are provided, scope searches to them.`;
+
+const PICK_SYSTEM = `Given a QUESTION and SEARCH RESULTS from a repository, choose the few files most worth reading in full to answer.
+
+Output ONLY a JSON object: {"files": [{"path": "rel/path", "start": 40, "end": 120}]}.
+Rules:
+- At most 6 files. Use relative paths exactly as they appear in the search results.
+- start/end are optional 1-based line ranges; omit them to read the head of the file.
+- If the search results already fully answer the question, output {"files": []}.`;
+
+const SYNTH_SYSTEM = `You are a read-only codebase scout. You receive a QUESTION and EVIDENCE (search results + file excerpts with file:line). Produce a concise, grounded report.
 
 Sections:
 - Answer: directly answer the question from the evidence.
 - Key locations: bullet list of \`path:line\` entries, each with a one-line note.
 - How it works / data flow: short explanation grounded in the excerpts.
-- Gaps / unverified: what the evidence does not show, plus suggested next search terms or files to open.
+- Gaps / unverified: what the evidence does not show, plus the next search to run.
 
-Rules:
-- Cite only file:line that appear in the evidence. Do not invent files, symbols, or behavior the evidence does not support.
-- If the evidence is insufficient to answer, say so plainly and suggest the next search instead of guessing.
-- Keep it tight. No preamble, no restated question.`;
+Rules: cite only file:line present in the evidence; never invent files, symbols, or behavior; if evidence is insufficient, say so and suggest the next step. Keep it tight, no preamble.`;
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
 
 function normalizeStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
@@ -56,122 +81,101 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-function extractTerms(question: string, explicit: string): string[] {
-  const terms = new Set<string>();
-  // explicit terms win
-  for (const t of explicit.split(/[\s,]+/).filter(Boolean)) terms.add(t);
-  // quoted phrases
-  for (const m of question.matchAll(/"([^"]{2,})"/g)) terms.add(m[1].trim());
-  // identifier-ish tokens (snake_case, camelCase, dotted/pathed, with digits)
-  for (const m of question.matchAll(/[A-Za-z_][A-Za-z0-9_./-]{2,}/g)) {
-    const tok = m[0];
-    const lower = tok.toLowerCase();
-    if (/[_./A-Z]/.test(tok) || /\d/.test(tok)) { terms.add(tok); continue; }
-    if (!STOPWORDS.has(lower) && lower.length >= 3) terms.add(lower);
-  }
-  return Array.from(terms).slice(0, 8);
-}
-
 async function run(cwd: string, command: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("bash", ["-lc", command], {
-      cwd,
-      timeout: 30_000,
-      maxBuffer: 1024 * 1024 * 8,
-    });
+    const { stdout } = await execFileAsync("bash", ["-lc", command], { cwd, timeout: 30_000, maxBuffer: 1024 * 1024 * 8 });
     return stdout;
   } catch (error) {
-    const err = error as { stdout?: string };
-    return err.stdout ?? "";
+    return (error as { stdout?: string }).stdout ?? "";
   }
 }
 
-function isIdentifierTerm(t: string): boolean {
-  return /[_./]/.test(t) || /[A-Z]/.test(t) || /\d/.test(t);
+function isSafeSearchCommand(cmd: string): boolean {
+  const c = cmd.trim();
+  if (!c || c.length > 400) return false;
+  if (/[;&><`]|\$\(|\$\{|\n|\r/.test(c)) return false;
+  const segments = c.split("|").map((s) => s.trim()).filter(Boolean);
+  if (!segments.length) return false;
+  for (const seg of segments) {
+    const bin = seg.split(/\s+/)[0];
+    if (!ALLOWED_BINS.has(bin)) return false;
+  }
+  return true;
 }
 
-// Read a bounded window around the match lines of one file, marking matched
-// lines with '>'. Returns a numbered excerpt so the synthesis sees real context.
-async function readWindow(cwd: string, file: string, matchLines: number[]): Promise<string> {
-  const nums = matchLines.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
-  if (!nums.length) return "";
-  let content: string;
-  try {
-    content = await readFile(join(cwd, file), "utf8");
-  } catch {
-    return nums.map((n) => `${n}: (match)`).join("\n") + "\n";
-  }
-  const lines = content.split("\n");
-  const start = Math.max(1, nums[0] - WINDOW_PAD);
-  let end = Math.min(lines.length, nums[nums.length - 1] + WINDOW_PAD);
-  if (end - start + 1 > MAX_WINDOW_LINES) end = Math.min(lines.length, start + MAX_WINDOW_LINES - 1);
-  const matchSet = new Set(nums);
-  let out = "";
-  for (let i = start; i <= end; i++) {
-    out += `${matchSet.has(i) ? ">" : " "}${i}: ${(lines[i - 1] ?? "").slice(0, 200)}\n`;
-  }
-  return out;
-}
-
-async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFiles: number): Promise<{ text: string; fileCount: number; matchCount: number }> {
-  const termArgs = terms.map((t) => `-e ${shellQuote(t)}`).join(" ");
-  const pathArgs = paths ? paths.split(/[\s,]+/).filter(Boolean).map(shellQuote).join(" ") : ".";
-  const rgCmd = `rg --no-heading --line-number --ignore-case ${termArgs} -- ${pathArgs} 2>/dev/null | head -n ${MAX_MATCH_LINES}`;
-  const grepCmd = `grep -rInI ${termArgs} ${pathArgs} 2>/dev/null | head -n ${MAX_MATCH_LINES}`;
-  const raw = await run(cwd, `if command -v rg >/dev/null 2>&1; then ${rgCmd}; else ${grepCmd}; fi`);
-
-  const byFile = new Map<string, Array<{ line: string; text: string }>>();
-  let matchCount = 0;
-  for (const row of raw.split("\n")) {
-    const m = row.match(/^([^:]+):(\d+):(.*)$/);
-    if (!m) continue;
-    matchCount++;
-    const [, file, line, text] = m;
-    if (!byFile.has(file)) byFile.set(file, []);
-    byFile.get(file)!.push({ line, text: text.slice(0, 300) });
-  }
-
-  // Rank by distinct-term coverage first (a file matching several distinct query
-  // terms is more relevant than one matching a single generic term many times),
-  // weighting identifier-like terms higher, then by raw match count.
-  const lowerTerms = terms.map((t) => ({ lower: t.toLowerCase(), weight: isIdentifierTerm(t) ? 2 : 1 }));
-  const score = (hits: Array<{ line: string; text: string }>): number => {
-    const blob = hits.map((h) => h.text).join("\n").toLowerCase();
-    let coverage = 0;
-    for (const { lower, weight } of lowerTerms) {
-      if (blob.includes(lower)) coverage += weight;
-    }
-    return coverage * 1000 + hits.length;
-  };
-  const ranked = Array.from(byFile.entries())
-    .sort((a, b) => score(b[1]) - score(a[1]) || b[1].length - a[1].length)
-    .slice(0, maxFiles);
-
-  // Read a windowed excerpt around the matches for each top file IN PARALLEL,
-  // so the synthesis sees real surrounding code, not isolated match lines.
-  const excerpts = await Promise.all(
-    ranked.map(async ([file, hits]) => ({ file, count: hits.length, window: await readWindow(cwd, file, hits.map((h) => Number(h.line))) })),
-  );
-
+async function runSearchCommands(cwd: string, commands: string[]): Promise<{ text: string; ran: number; skipped: number }> {
   let text = "";
-  for (const { file, count, window } of excerpts) {
-    text += `\n### ${file}  (${count} matches)\n${window}`;
-    if (text.length > MAX_EVIDENCE_CHARS) {
-      text = text.slice(0, MAX_EVIDENCE_CHARS) + "\n[... evidence truncated ...]\n";
+  let ran = 0;
+  let skipped = 0;
+  for (const raw of commands.slice(0, MAX_COMMANDS)) {
+    const cmd = normalizeStr(raw);
+    if (!isSafeSearchCommand(cmd)) {
+      skipped++;
+      continue;
+    }
+    const out = (await run(cwd, `${cmd} 2>/dev/null | head -n 120`)).slice(0, MAX_CMD_OUTPUT_CHARS);
+    ran++;
+    text += `\n$ ${cmd}\n${out.trim() || "(no output)"}\n`;
+    if (text.length > MAX_SEARCH_CHARS) {
+      text = text.slice(0, MAX_SEARCH_CHARS) + "\n[... search output truncated ...]\n";
       break;
     }
   }
-
-  return { text: text.trim(), fileCount: ranked.length, matchCount };
+  return { text: text.trim(), ran, skipped };
 }
 
-// Synthesis runs on a fast, cheap scout-tier model regardless of which agent
-// called the tool — a one-shot grounded summary does not need a frontier model,
-// and it keeps the expensive caller's budget free. Falls back to the caller's
-// model only if no scout-tier model is authenticated.
-const SYNTH_CANDIDATES: Array<[provider: string, model: string]> = [
-  ["kimi-coding", "kimi-for-coding"],
+function safeRelPath(cwd: string, path: string): string | null {
+  const p = normalizeStr(path);
+  if (!p || isAbsolute(p) || p.includes("..")) return null;
+  const full = normalize(join(cwd, p));
+  return full.startsWith(normalize(cwd)) ? p : null;
+}
+
+async function readRange(cwd: string, path: string, start?: number, end?: number): Promise<string> {
+  const rel = safeRelPath(cwd, path);
+  if (!rel) return "";
+  let content: string;
+  try {
+    content = await readFile(join(cwd, rel), "utf8");
+  } catch {
+    return "";
+  }
+  const lines = content.split("\n");
+  let s = Number.isFinite(start) && (start as number) > 0 ? (start as number) : 1;
+  let e = Number.isFinite(end) && (end as number) >= s ? (end as number) : s + MAX_READ_LINES - 1;
+  if (e - s + 1 > MAX_READ_LINES) e = s + MAX_READ_LINES - 1;
+  e = Math.min(e, lines.length);
+  s = Math.max(1, s);
+  let out = `\n### ${rel}  (lines ${s}-${e})\n`;
+  for (let i = s; i <= e; i++) out += `${i}: ${(lines[i - 1] ?? "").slice(0, 200)}\n`;
+  return out;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function textOf(resp: { content: Array<{ type: string; text?: string }> }): string {
+  return resp.content
+    .filter((c) => c.type === "text" && typeof c.text === "string")
+    .map((c) => c.text as string)
+    .join("\n")
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
+// model resolution — prefer a fast scout-tier model regardless of caller
+// ---------------------------------------------------------------------------
+
+const MODEL_CANDIDATES: Array<[provider: string, model: string]> = [
   ["openai-codex", "gpt-5.3-codex-spark"],
+  ["kimi-coding", "kimi-for-coding"],
 ];
 
 type ResolverCtx = {
@@ -182,123 +186,162 @@ type ResolverCtx = {
   };
 };
 
-async function resolveModel(ctx: ResolverCtx): Promise<{ model: unknown; apiKey: string; headers?: Record<string, string>; label: string } | null> {
-  // Prefer a scout-tier model for synthesis.
+type Resolved = { model: unknown; apiKey: string; headers?: Record<string, string>; label: string };
+
+async function resolveModel(ctx: ResolverCtx): Promise<Resolved | null> {
   if (ctx.modelRegistry.find) {
-    for (const [provider, id] of SYNTH_CANDIDATES) {
+    for (const [provider, id] of MODEL_CANDIDATES) {
       const model = ctx.modelRegistry.find(provider, id);
       if (!model) continue;
       try {
         const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-        if (auth.ok && auth.apiKey) {
-          return { model, apiKey: auth.apiKey, headers: auth.headers, label: `${provider}/${id}` };
-        }
+        if (auth.ok && auth.apiKey) return { model, apiKey: auth.apiKey, headers: auth.headers, label: `${provider}/${id}` };
       } catch {
-        /* try next candidate */
+        /* try next */
       }
     }
   }
-  // Fallback: the calling agent's current model.
   const m = ctx.model as { provider?: string; id?: string } | undefined;
   if (!m) return null;
   try {
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-    if (auth.ok && auth.apiKey) {
-      return { model: ctx.model, apiKey: auth.apiKey, headers: auth.headers, label: `${m.provider ?? "?"}/${m.id ?? "current"} (caller)` };
-    }
+    if (auth.ok && auth.apiKey) return { model: ctx.model, apiKey: auth.apiKey, headers: auth.headers, label: `${m.provider ?? "?"}/${m.id ?? "current"} (caller)` };
   } catch {
     /* fall through */
   }
   return null;
 }
 
+async function callModel(sel: Resolved, signal: AbortSignal | undefined, system: string, user: string, maxTokens: number): Promise<string> {
+  const userMessage: UserMessage = { role: "user", timestamp: Date.now(), content: [{ type: "text", text: user }] };
+  const resp = (await complete(
+    sel.model as never,
+    { systemPrompt: system, messages: [userMessage] },
+    { apiKey: sel.apiKey, headers: sel.headers, signal, maxTokens, temperature: 0.2 },
+  )) as { content: Array<{ type: string; text?: string }> };
+  return textOf(resp);
+}
+
+// ---------------------------------------------------------------------------
+// deterministic fallback (no model / planning failed): one ripgrep pass
+// ---------------------------------------------------------------------------
+
+const STOPWORDS = new Set(
+  "the and for with that this what where when which how does do is are was were from into your you about of in on to a an it its be by or as at we our can will should would use used code codebase repo repository file files find show explain understand".split(" "),
+);
+
+function fallbackTerms(question: string): string[] {
+  const terms = new Set<string>();
+  for (const m of question.matchAll(/"([^"]{2,})"/g)) terms.add(m[1].trim());
+  for (const m of question.matchAll(/[A-Za-z_][A-Za-z0-9_./-]{2,}/g)) {
+    const tok = m[0];
+    const lower = tok.toLowerCase();
+    if (/[_./A-Z]/.test(tok) || /\d/.test(tok)) terms.add(tok);
+    else if (!STOPWORDS.has(lower) && lower.length >= 3) terms.add(lower);
+  }
+  return Array.from(terms).slice(0, 8);
+}
+
+async function fallbackEvidence(cwd: string, question: string, paths: string): Promise<string> {
+  const terms = fallbackTerms(question);
+  if (!terms.length) return "";
+  const termArgs = terms.map((t) => `-e ${shellQuote(t)}`).join(" ");
+  const pathArgs = paths ? paths.split(/[\s,]+/).filter(Boolean).map(shellQuote).join(" ") : ".";
+  const raw = await run(cwd, `if command -v rg >/dev/null 2>&1; then rg --no-heading --line-number --ignore-case ${termArgs} -- ${pathArgs} 2>/dev/null | head -n ${FALLBACK_MATCH_LINES}; else grep -rInI ${termArgs} ${pathArgs} 2>/dev/null | head -n ${FALLBACK_MATCH_LINES}; fi`);
+  return raw.trim().slice(0, MAX_SEARCH_CHARS);
+}
+
+// ---------------------------------------------------------------------------
+// tool
+// ---------------------------------------------------------------------------
+
 export default function understandCodebaseExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "understand_codebase",
     label: "Understand Codebase",
     description:
-      "Read-only codebase understanding in one call. Gathers repository evidence (ripgrep matches + excerpts) for a question and returns a grounded evidence report with `path:line` citations, synthesized by a fast scout-tier model. " +
-      "Use to understand code, structure, or data flow without spawning a subagent. Read-only: it never edits files. Uses model tokens.",
-    promptSnippet: "Use understand_codebase to understand part of the repo (returns grounded evidence with path:line citations).",
+      "Read-only codebase understanding. Runs a small investigation loop on a fast model: it plans read-only search commands, the harness executes them, the model picks key files, the harness reads them, then the model writes a structured answer with `path:line` citations. " +
+      "Use to understand code, structure, or data flow in one call without spawning a subagent. The model only drives read-only search/read; it never runs arbitrary shell. Uses model tokens (fast/cheap tier).",
+    promptSnippet: "Use understand_codebase to understand part of the repo (plans searches, reads key files, returns grounded answer with path:line citations).",
     parameters: Type.Object({
       question: Type.String({ description: "What you want to understand, as a concrete question." }),
-      paths: Type.Optional(Type.String({ description: "Optional space/comma-separated dirs or globs to focus the search (e.g. 'src/auth src/api')." })),
-      terms: Type.Optional(Type.String({ description: "Optional explicit search terms/symbols to grep, overriding keyword extraction." })),
-      maxFiles: Type.Optional(Type.Number({ description: `Max files to include in evidence (default ${DEFAULT_MAX_FILES}, capped at 20).` })),
+      paths: Type.Optional(Type.String({ description: "Optional space/comma-separated dirs or globs to focus the investigation." })),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const question = normalizeStr(params.question);
       if (!question) {
         return { content: [{ type: "text", text: "understand_codebase needs a 'question'." }], isError: true, details: { error: "no_question" } };
       }
-      const explicit = normalizeStr(params.terms);
       const paths = normalizeStr(params.paths);
-      const maxFiles = Math.max(1, Math.min(20, Number(params.maxFiles) || DEFAULT_MAX_FILES));
-      const terms = extractTerms(question, explicit);
+      const scope = paths ? `\nScope paths: ${paths}` : "";
+      const sel = await resolveModel(ctx);
 
-      if (terms.length === 0) {
-        return {
-          content: [{ type: "text", text: "understand_codebase could not derive search terms from the question. Pass explicit `terms`." }],
-          isError: true,
-          details: { error: "no_terms" },
-        };
+      // No model: deterministic ripgrep evidence only.
+      if (!sel) {
+        const ev = await fallbackEvidence(ctx.cwd, question, paths);
+        const body = ev ? `## Evidence (no model available)\n${ev}` : "No model available and no matches found.";
+        return { content: [{ type: "text", text: `Understand: ${question}\n\n${body}` }], details: { synthesized: false } };
       }
 
-      const evidence = await gatherEvidence(ctx.cwd, terms, paths, maxFiles);
-      const header = `Scout: ${question}\nTerms: ${terms.join(", ")}\nScanned: ${evidence.fileCount} files / ${evidence.matchCount} matches${paths ? ` in ${paths}` : ""}`;
-
-      if (!evidence.text) {
-        return {
-          content: [{ type: "text", text: `${header}\n\nNo matches found. Try different terms or a broader path scope.` }],
-          details: { fileCount: 0, matchCount: 0, terms },
-        };
-      }
-
-      const selected = await resolveModel(ctx);
-      if (!selected) {
-        // Graceful degradation: return raw evidence so the tool still helps.
-        return {
-          content: [{ type: "text", text: `${header}\n\n(No model available for synthesis; returning raw evidence.)\n\n## Evidence\n${evidence.text}` }],
-          details: { synthesized: false, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
-        };
-      }
-
-      const userMessage: UserMessage = {
-        role: "user",
-        timestamp: Date.now(),
-        content: [{ type: "text", text: `QUESTION:\n${question}\n\nEVIDENCE (ripgrep matches, file:line):\n${evidence.text}` }],
-      };
-
+      // PHASE 1 — plan search commands.
+      let commands: string[] = [];
       try {
-        const response = (await complete(
-          selected.model as never,
-          { systemPrompt: SCOUT_SYSTEM_PROMPT, messages: [userMessage] },
-          { apiKey: selected.apiKey, headers: selected.headers, signal: ctx.signal, maxTokens: 6000, temperature: 0.2 },
-        )) as { content: Array<{ type: string; text?: string }>; stopReason?: string; errorMessage?: string };
-        const report = response.content
-          .filter((c) => c.type === "text" && typeof c.text === "string")
-          .map((c) => c.text as string)
-          .join("\n")
-          .trim();
-        if (report) {
-          return {
-            content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label}\n\n${report}` }],
-            details: { synthesized: true, model: selected.label, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
-          };
-        }
-        const blocks = response.content.map((c) => c.type).join(",") || "none";
-        const diag = `stopReason=${response.stopReason ?? "?"}; blocks=[${blocks}]${response.errorMessage ? `; error=${response.errorMessage}` : ""}`;
-        return {
-          content: [{ type: "text", text: `${header}\nSynthesis: ${selected.label} returned no text (${diag}). Raw evidence below.\n\n## Evidence\n${evidence.text}` }],
-          details: { synthesized: false, diag, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: "text", text: `${header}\n\n(Synthesis failed: ${message}. Returning raw evidence.)\n\n## Evidence\n${evidence.text}` }],
-          details: { synthesized: false, error: message, fileCount: evidence.fileCount, matchCount: evidence.matchCount, terms },
-        };
+        const planRaw = await callModel(sel, ctx.signal, PLAN_SYSTEM, `QUESTION:\n${question}${scope}`, 700);
+        const plan = parseJsonObject(planRaw);
+        if (plan && Array.isArray(plan.commands)) commands = (plan.commands as unknown[]).map((c) => normalizeStr(c)).filter(Boolean);
+      } catch {
+        /* fall through to fallback search below */
       }
+
+      // PHASE 2 — execute search (or deterministic fallback if planning gave nothing usable).
+      let search = await runSearchCommands(ctx.cwd, commands);
+      if (!search.text) {
+        const ev = await fallbackEvidence(ctx.cwd, question, paths);
+        search = { text: ev, ran: 0, skipped: search.skipped };
+      }
+      if (!search.text) {
+        return { content: [{ type: "text", text: `Understand: ${question}\n\nNo evidence found. Try different wording or a path scope.` }], details: { ran: search.ran } };
+      }
+
+      // PHASE 3 — pick files to read.
+      let fileText = "";
+      let filesRead = 0;
+      try {
+        const pickRaw = await callModel(sel, ctx.signal, PICK_SYSTEM, `QUESTION:\n${question}\n\nSEARCH RESULTS:\n${search.text}`, 700);
+        const pick = parseJsonObject(pickRaw);
+        const files = pick && Array.isArray(pick.files) ? (pick.files as Array<Record<string, unknown>>) : [];
+        // PHASE 4 — read picked files in parallel (bounded).
+        const reads = await Promise.all(
+          files.slice(0, MAX_READ_FILES).map((f) =>
+            readRange(ctx.cwd, normalizeStr(f.path), typeof f.start === "number" ? f.start : undefined, typeof f.end === "number" ? f.end : undefined),
+          ),
+        );
+        for (const r of reads) {
+          if (!r) continue;
+          filesRead++;
+          fileText += r;
+          if (fileText.length > MAX_FILE_CHARS) {
+            fileText = fileText.slice(0, MAX_FILE_CHARS) + "\n[... file excerpts truncated ...]\n";
+            break;
+          }
+        }
+      } catch {
+        /* synthesize from search results alone */
+      }
+
+      // PHASE 5 — synthesize.
+      const evidence = `SEARCH RESULTS:\n${search.text}${fileText ? `\n\nFILE EXCERPTS:\n${fileText}` : ""}`;
+      const header = `Understand: ${question}\nModel: ${sel.label} | commands run: ${search.ran}${search.skipped ? ` (skipped ${search.skipped} unsafe)` : ""} | files read: ${filesRead}`;
+      try {
+        const report = await callModel(sel, ctx.signal, SYNTH_SYSTEM, `QUESTION:\n${question}\n\nEVIDENCE:\n${evidence}`, 2500);
+        if (report) {
+          return { content: [{ type: "text", text: `${header}\n\n${report}` }], details: { synthesized: true, model: sel.label, ran: search.ran, filesRead } };
+        }
+      } catch (error) {
+        return { content: [{ type: "text", text: `${header}\n\n(Synthesis failed: ${error instanceof Error ? error.message : String(error)}.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false } };
+      }
+      // Empty synthesis: return raw evidence so the call is never wasted.
+      return { content: [{ type: "text", text: `${header}\n\n(Synthesis returned no text; raw evidence below.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false, ran: search.ran, filesRead } };
     },
   });
 
