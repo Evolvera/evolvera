@@ -17,11 +17,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 const execFileAsync = promisify(execFile);
 
 const MAX_MATCH_LINES = 400;
-const MAX_LINES_PER_FILE = 25;
+const WINDOW_PAD = 3;
+const MAX_WINDOW_LINES = 100;
 const MAX_EVIDENCE_CHARS = 40_000;
 const DEFAULT_MAX_FILES = 8;
 
@@ -87,6 +90,29 @@ function isIdentifierTerm(t: string): boolean {
   return /[_./]/.test(t) || /[A-Z]/.test(t) || /\d/.test(t);
 }
 
+// Read a bounded window around the match lines of one file, marking matched
+// lines with '>'. Returns a numbered excerpt so the synthesis sees real context.
+async function readWindow(cwd: string, file: string, matchLines: number[]): Promise<string> {
+  const nums = matchLines.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  if (!nums.length) return "";
+  let content: string;
+  try {
+    content = await readFile(join(cwd, file), "utf8");
+  } catch {
+    return nums.map((n) => `${n}: (match)`).join("\n") + "\n";
+  }
+  const lines = content.split("\n");
+  const start = Math.max(1, nums[0] - WINDOW_PAD);
+  let end = Math.min(lines.length, nums[nums.length - 1] + WINDOW_PAD);
+  if (end - start + 1 > MAX_WINDOW_LINES) end = Math.min(lines.length, start + MAX_WINDOW_LINES - 1);
+  const matchSet = new Set(nums);
+  let out = "";
+  for (let i = start; i <= end; i++) {
+    out += `${matchSet.has(i) ? ">" : " "}${i}: ${(lines[i - 1] ?? "").slice(0, 200)}\n`;
+  }
+  return out;
+}
+
 async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFiles: number): Promise<{ text: string; fileCount: number; matchCount: number }> {
   const termArgs = terms.map((t) => `-e ${shellQuote(t)}`).join(" ");
   const pathArgs = paths ? paths.split(/[\s,]+/).filter(Boolean).map(shellQuote).join(" ") : ".";
@@ -121,12 +147,15 @@ async function gatherEvidence(cwd: string, terms: string[], paths: string, maxFi
     .sort((a, b) => score(b[1]) - score(a[1]) || b[1].length - a[1].length)
     .slice(0, maxFiles);
 
+  // Read a windowed excerpt around the matches for each top file IN PARALLEL,
+  // so the synthesis sees real surrounding code, not isolated match lines.
+  const excerpts = await Promise.all(
+    ranked.map(async ([file, hits]) => ({ file, count: hits.length, window: await readWindow(cwd, file, hits.map((h) => Number(h.line))) })),
+  );
+
   let text = "";
-  for (const [file, hits] of ranked) {
-    text += `\n### ${file}  (${hits.length} matches)\n`;
-    for (const h of hits.slice(0, MAX_LINES_PER_FILE)) {
-      text += `${h.line}: ${h.text}\n`;
-    }
+  for (const { file, count, window } of excerpts) {
+    text += `\n### ${file}  (${count} matches)\n${window}`;
     if (text.length > MAX_EVIDENCE_CHARS) {
       text = text.slice(0, MAX_EVIDENCE_CHARS) + "\n[... evidence truncated ...]\n";
       break;
