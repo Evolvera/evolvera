@@ -117,9 +117,14 @@ function buildSearch(terms: string[], paths: string[] | undefined, scope: string
   const termArgs = t.map((x) => `-e ${shellQuote(x)}`).join(" ");
   const pathList = paths && paths.length ? paths : scope ? scope.split(/[\s,]+/).filter(Boolean) : ["."];
   const pathArgs = pathList.map((p) => shellQuote(normalizeStr(p))).join(" ");
-  // Exclude backup/snapshot/non-source noise so stale copies are never cited as real code.
-  const rgExclude = "--glob '!*.bak*' --glob '!*.orig' --glob '!*~' --glob '!*.snapshot'";
-  const grepExclude = "--exclude='*.bak*' --exclude='*.orig' --exclude='*~' --exclude='*.snapshot'";
+  // Exclude runtime/build/backup noise so logs, session transcripts, plan artifacts,
+  // and stale copies are never searched or cited as real source code.
+  const rgExclude =
+    "--glob '!sessions/**' --glob '!.pi/**' --glob '!node_modules/**' --glob '!dist/**' --glob '!build/**' " +
+    "--glob '!*.jsonl' --glob '!*.log' --glob '!*.lock' --glob '!*.bak*' --glob '!*.orig' --glob '!*~' --glob '!*.snapshot'";
+  const grepExclude =
+    "--exclude-dir=sessions --exclude-dir=.pi --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build " +
+    "--exclude='*.jsonl' --exclude='*.log' --exclude='*.lock' --exclude='*.bak*' --exclude='*.orig' --exclude='*~' --exclude='*.snapshot'";
   const rg = `rg --no-heading --line-number --ignore-case ${rgExclude} ${termArgs} -- ${pathArgs}`;
   const grep = `grep -rInI ${grepExclude} ${termArgs} ${pathArgs}`;
   return { display: `rg ${t.join(" | ")}`, run: `if command -v rg >/dev/null 2>&1; then ${rg} 2>/dev/null | head -n 120; else ${grep} 2>/dev/null | head -n 120; fi` };
