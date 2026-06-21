@@ -38,6 +38,10 @@ const AUTO_READ_FILES = 3;
 const MAX_READ_LINES = 160;
 const MAX_FILE_CHARS = 24_000;
 const MAX_TERMS = 8;
+const MAX_CITES = 12;
+const MAX_CITE_LINES = 40;
+const MAX_CITE_CHARS = 8000;
+const CITE_CONTEXT = 2;
 
 const PLAN_SYSTEM = `You plan a READ-ONLY investigation to answer a QUESTION about a code repository.
 
@@ -173,6 +177,64 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// Pull every `path:line` (or `path:start-end`) citation out of the synthesized
+// report so the harness can attach the REAL file content for each — citations
+// become verifiable by construction instead of trusting the model's line numbers.
+function extractCitations(report: string): Array<{ path: string; start: number; end?: number }> {
+  const re = /`?([A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+):(\d+)(?:[-\u2013:](\d+))?`?/g;
+  const seen = new Set<string>();
+  const out: Array<{ path: string; start: number; end?: number }> = [];
+  for (const m of report.matchAll(re)) {
+    const start = Number(m[2]);
+    if (!start) continue;
+    const path = m[1];
+    const end = m[3] ? Number(m[3]) : undefined;
+    const key = `${path}:${start}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ path, start, end });
+    if (out.length >= MAX_CITES) break;
+  }
+  return out;
+}
+
+// Read the exact cited lines from disk and render them, marking cited lines with '>'.
+// If a cited line is past end of file, that is surfaced (the model's citation was wrong).
+async function verifyCitations(cwd: string, cites: Array<{ path: string; start: number; end?: number }>): Promise<string> {
+  const blocks = await Promise.all(
+    cites.map(async ({ path, start, end }) => {
+      const rel = safeRelPath(cwd, path);
+      if (!rel) return "";
+      let content: string;
+      try {
+        content = await readFile(join(cwd, rel), "utf8");
+      } catch {
+        return "";
+      }
+      const lines = content.split("\n");
+      if (start > lines.length) return `\n### ${rel}:${start}\n(line ${start} is past end of file — ${lines.length} lines; citation likely wrong)\n`;
+      const s = Math.max(1, end ? start : start - CITE_CONTEXT);
+      const e = Math.min(lines.length, end ? Math.min(end, start + MAX_CITE_LINES - 1) : start + CITE_CONTEXT);
+      let out = `\n### ${rel}:${end ? `${start}-${end}` : start}\n`;
+      for (let i = s; i <= e; i++) {
+        const cited = end ? i >= start && i <= end : i === start;
+        out += `${cited ? ">" : " "}${i}: ${(lines[i - 1] ?? "").slice(0, 200)}\n`;
+      }
+      return out;
+    }),
+  );
+  let text = "";
+  for (const b of blocks) {
+    if (!b) continue;
+    text += b;
+    if (text.length > MAX_CITE_CHARS) {
+      text = text.slice(0, MAX_CITE_CHARS) + "\n[... citations truncated ...]\n";
+      break;
+    }
+  }
+  return text.trim();
 }
 
 function textOf(resp: { content: Array<{ type: string; text?: string }> }): string {
@@ -330,7 +392,10 @@ export default function askCodebaseExtension(pi: ExtensionAPI) {
       try {
         const { text: report, diag } = await callModel(sel, ctx.signal, SYNTH_SYSTEM, `QUESTION:\n${question}\n\nEVIDENCE:\n${evidence}`, 3000);
         if (report) {
-          return { content: [{ type: "text", text: `${header}\n\n${report}` }], details: { synthesized: true, model: sel.label, searches: search.ran, filesRead } };
+          const cites = extractCitations(report);
+          const verified = await verifyCitations(ctx.cwd, cites);
+          const text = verified ? `${header}\n\n${report}\n\n## Cited lines (verified by harness)\n${verified}` : `${header}\n\n${report}`;
+          return { content: [{ type: "text", text }], details: { synthesized: true, model: sel.label, searches: search.ran, filesRead, citationsVerified: cites.length } };
         }
         return { content: [{ type: "text", text: `${header}\n\n(Synthesis returned no text [${diag}]; raw evidence below.)\n\n## Evidence\n${evidence}` }], details: { synthesized: false, diag } };
       } catch (error) {
