@@ -216,7 +216,6 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
 | `plan-heavy.ts` | Harness `/plan-heavy` para handoff determinístico + validação de plano |
 | `project-memory.ts` | Gerencia memória persistente por projeto |
-| `ask-codebase.ts` | Tool `ask_codebase`: responde UMA pergunta sobre o código (read-only) com citações `path:line` |
 
 ### `/plan-heavy` — Planner Harness
 
