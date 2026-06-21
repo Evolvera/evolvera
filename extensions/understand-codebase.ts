@@ -249,9 +249,16 @@ export default function understandCodebaseExtension(pi: ExtensionAPI) {
     name: "understand_codebase",
     label: "Understand Codebase",
     description:
-      "Read-only codebase understanding. Runs a small investigation loop on a fast model: it plans targeted searches, the harness greps and ranks files, the model picks key files, the harness reads them, then the model writes a structured answer with `path:line` citations. " +
-      "Use to understand code, structure, or data flow in one call without spawning a subagent. The model only drives read-only search/read; it never runs arbitrary shell. Uses model tokens (fast/cheap tier).",
-    promptSnippet: "Use understand_codebase to understand part of the repo (returns a grounded answer with path:line citations).",
+      "Ask a question about THIS repository's code and get back a grounded answer with `path:line` citations. " +
+      "Use it to quickly understand how something works, where something is defined, or how data flows, instead of reading many files yourself or spawning a scout subagent. Read-only: it never edits anything. " +
+      "Input: a concrete `question` (and optional `paths` to scope to certain dirs/globs). " +
+      "Output: a short report with sections Answer, Key locations (path:line), How it works, and Gaps. " +
+      "Best for focused understanding in one call; for deep multi-step investigation use a scout subagent.",
+    promptSnippet: "Use understand_codebase to quickly understand part of the repo: pass a question, get a grounded answer with path:line citations.",
+    promptGuidelines: [
+      "Prefer understand_codebase over manually reading 3+ files to understand a feature, bug, or data flow.",
+      "Pass a specific question (and optional paths to scope it); it returns an Answer with path:line citations, not raw grep.",
+    ],
     parameters: Type.Object({
       question: Type.String({ description: "What you want to understand, as a concrete question." }),
       paths: Type.Optional(Type.String({ description: "Optional space/comma-separated dirs or globs to focus the investigation." })),
