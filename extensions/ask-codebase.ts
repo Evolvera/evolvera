@@ -51,6 +51,7 @@ const PLAN_SYSTEM = `You plan a READ-ONLY investigation to answer a QUESTION abo
 Output ONLY a JSON object: {"searches": [{"terms": ["..."], "paths": ["dir"]}]}.
 - Each search is a set of literal terms/identifiers grepped case-insensitively (matched as OR).
 - Use 2-4 searches with the most discriminative symbols from the question: function names, constants, type names, config keys, error strings.
+- Include a search for the key symbols the answer will hinge on (the central function/type/constant names) so their DEFINITIONS and CALL SITES are found even if they live in other files — one hop of dependencies, not a full graph.
 - "paths" is optional: directories to scope a search; omit to use the caller's scope or whole repo.
 - Do NOT write shell commands. Only terms and paths. No regex tricks needed; plain identifiers work best.`;
 
@@ -58,6 +59,7 @@ const PICK_SYSTEM = `Given a QUESTION and SEARCH RESULTS from a repository, choo
 
 Output ONLY a JSON object: {"files": [{"path": "rel/path", "start": 40, "end": 120}]}.
 - At most 6 files. Use relative paths exactly as they appear in the search results.
+- Include files that DEFINE or CALL the key symbols central to the answer, not only the files with the most matches — one hop of dependencies (the helper/type a function relies on, or its caller) is often where the real behavior lives.
 - start/end are optional 1-based line ranges; omit to read the head of the file.
 - If the search results already fully answer the question, output {"files": []}.`;
 
