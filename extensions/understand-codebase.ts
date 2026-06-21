@@ -220,7 +220,8 @@ async function callModel(sel: Resolved, signal: AbortSignal | undefined, system:
   const resp = (await complete(
     sel.model as never,
     { systemPrompt: system, messages: [userMessage] },
-    { apiKey: sel.apiKey, headers: sel.headers, signal, maxTokens, temperature: 0.2, reasoning: "off" },
+    // No `temperature`: the Codex responses API rejects it (400 Unsupported parameter).
+    { apiKey: sel.apiKey, headers: sel.headers, signal, maxTokens, reasoning: "off" },
   )) as { content: Array<{ type: string; text?: string }>; stopReason?: string; errorMessage?: string };
   const blocks = resp.content.map((c) => c.type).join(",") || "none";
   const diag = `stop=${resp.stopReason ?? "?"} blocks=[${blocks}]${resp.errorMessage ? ` err=${resp.errorMessage}` : ""}`;
