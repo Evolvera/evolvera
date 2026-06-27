@@ -9,6 +9,8 @@ description: Use the planner agent to create detailed implementation plans for c
 
 ## Workflow: Pre-Plan → Review → Plan → Execute
 
+For quick/simple planning requests, the **pre-plan is the plan**: write the concise Pre-Plan Summary directly for the user and stop there unless they explicitly ask for a full planner-generated plan ecosystem. Lightweight planning lives in this skill's pre-plan phase.
+
 ```
 User Request
     │
@@ -56,8 +58,11 @@ User Request
 
 ### Goal
 Understand the user's request deeply enough to either:
-1. **Execute directly** (simple → builder or direct implementation)
-2. **Feed an outcome-first prompt to the planner** (complex/long-horizon → planner agent)
+1. **Serve as the final lightweight plan** when the user wants a quick plan/pre-plan only
+2. **Execute directly** (simple → builder or direct implementation)
+3. **Feed an outcome-first prompt to the planner** (complex/long-horizon → planner agent)
+
+When the user asks for a simple plan, quick fix plan, or "pre-plano", do not launch a planner agent by default. Produce the Pre-Plan Summary as the deliverable, mark `Path` as `Pre-plan only`, and ask whether they want to proceed to execution or upgrade to a full planner-generated plan.
 
 Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
@@ -165,6 +170,7 @@ Write a brief summary (5-15 lines) to show the user:
 
 | If... | Then... |
 |-------|---------|
+| User asks for a quick/simple plan, quick fix plan, or pre-plano | **Pre-plan only** — The Pre-Plan Summary is the final plan unless the user asks to upgrade |
 | Single file, <20 lines, no architecture impact | **Direct** — Use `read`/`edit` yourself or spawn builder directly |
 | 2-5 files, straightforward changes, clear scope | **Direct** — Spawn builder with a detailed prompt |
 | >5 files, architecture decisions, unclear scope, multiple scenarios | **Planner** — Do full pre-plan, get user approval, then activate planner |

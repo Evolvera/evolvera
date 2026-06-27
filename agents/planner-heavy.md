@@ -4,6 +4,7 @@ description: "Heavy planner core for /plan-heavy harness. Reads a generated HAND
 display_name: 🏛️ Planner Heavy
 model: openai-codex/gpt-5.5
 thinking: xhigh
+max_turns: 35
 tools: read, grep, find, ls, write
 lifecycle: lazy
 prompt_mode: replace

@@ -139,7 +139,6 @@ website-designer → builder → validator → website-polisher → builder → 
 |--------|-------|--------|-------------|
 | **Agent Expert** | 🤖 | Meta-agente que cria, configura e modifica outros agentes | "cria um agente que faz X" |
 | **Pi Steward** | 🚨 | Captura bugs do PI e cria issues no GitHub | "o PI errou", "registra esse problema" |
-| **Planner Quick** | ⚡ | Planner leve para quick fixes e tarefas simples (1-5 arquivos, trocas de string) | "corrige os tool names", "troca X por Y" |
 
 ### Pesquisa Web
 
@@ -284,7 +283,7 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 | Pesquisa web ampla | `moonshot_search` | "pesquisa X", "quem é Y?" |
 | Explorar código | `scout` | "como funciona X?" |
 | Planejar feature | `planner` | "planeja a implementação de X" |
-| Planejar quick fix | `planner-quick` | "corrige X", "troca Y por Z" |
+| Planejar quick fix | Pré-plano direto | "corrige X", "troca Y por Z" |
 | Implementar | `builder` | "implementa X" |
 | Validar código | `validator` | "valida esse PR" |
 | Criar site/landing | `website-designer` | "cria um site para X", "builda landing page" |
@@ -318,10 +317,9 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 20 agentes (.md)
+├── agents/                 # 24 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
 │   ├── planner-heavy.md    # Core limpo para /plan-heavy
-│   ├── planner-quick.md    # Planner leve para quick fixes
 │   ├── builder.md          # Engenheiro de execução cauteloso
 │   ├── builder-highspeed.md # Executor rápido GPT-5.3 Codex Spark
 │   ├── builder-heavy.md    # Executor robusto GPT-5.5 medium

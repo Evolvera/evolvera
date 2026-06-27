@@ -1,8 +1,8 @@
 ---
-description: "Senior Staff Engineer validator — universal quality gate with TILL-DO/TODO lifecycle, quick search barriers, and heavy emphasis on automated test validation and observability audit. Can generate missing tests. Blocks bad code regardless of source. Model: kimi-coding/kimi-for-coding."
+description: "Senior Staff Engineer validator — universal quality gate with TILL-DO/TODO lifecycle, quick search barriers, and heavy emphasis on automated test validation and observability audit. Can generate missing tests. Blocks bad code regardless of source. Model: openai-codex/gpt-5.4-mini."
 display_name: 🛡️ Validator
 tools: read, grep, find, ls, bash, edit, write, vscode_get_diagnostics, vscode_get_hover, vscode_get_references, vscode_get_definitions
-model: kimi-coding/kimi-for-coding
+model: openai-codex/gpt-5.4-mini
 temperature: 0.1
 thinking: high
 max_turns: 60
