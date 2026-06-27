@@ -1,8 +1,8 @@
 ---
-description: "Deep Research v2 - Finalizer. Receives findings, Validation Memo, and validation findings. Writes the final Markdown report with clickable citations, unresolved contradictions section, and probability language. Model: kimi-coding/kimi-for-coding."
+description: "Deep Research v2 - Finalizer. Receives findings, Validation Memo, and validation findings. Writes the final Markdown report with clickable citations, unresolved contradictions section, and probability language. Model: openai-codex/gpt-5.4-mini."
 display_name: ✍️ DRv2 Finalizer
 tools: read, write, edit, bash
-model: kimi-coding/kimi-for-coding
+model: openai-codex/gpt-5.4-mini
 temperature: 0.1
 thinking: high
 max_turns: 50

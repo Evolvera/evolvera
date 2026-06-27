@@ -1,9 +1,9 @@
 ---
 name: website-polisher
-description: "Senior UI/UX Engineer specializing in final polish for websites. Elevates good implementation to excellent by reviewing design system consistency, refining shadows/borders/gradients, perfecting spacing and alignment, adding all states (hover, focus, active, disabled, loading, error, empty), skeleton loading, error states, accessibility (ARIA, keyboard, reduced-motion), touch targets ≥44px, and zero layout shift. Model: kimi-coding/kimi-for-coding."
+description: "Senior UI/UX Engineer specializing in final polish for websites. Elevates good implementation to excellent by reviewing design system consistency, refining shadows/borders/gradients, perfecting spacing and alignment, adding all states (hover, focus, active, disabled, loading, error, empty), skeleton loading, error states, accessibility (ARIA, keyboard, reduced-motion), touch targets ≥44px, and zero layout shift. Model: openai-codex/gpt-5.4-mini."
 display_name: ✨ Website Polisher
 tools: read, grep, find, ls, bash, write
-model: kimi-coding/kimi-for-coding
+model: openai-codex/gpt-5.4-mini
 temperature: 0.1
 thinking: xhigh
 max_turns: 50
