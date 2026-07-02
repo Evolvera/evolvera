@@ -1,6 +1,6 @@
 ---
 name: website-home-preview
-description: Autonomous high-quality website Home preview flow. Use when the user wants a premium one-page Home preview as a single static index.html, not a full production website/project. Reuses builder and validator, with no human approval gates.
+description: Autonomous high-quality website Home preview flow. Use when the user wants a premium one-page Home preview as a single static index.html, not a full production website/project. Reuses seo-content-writer, builder-home, website-polisher, and validator with no human approval gates.
 ---
 
 # Website Home Preview Skill
@@ -13,10 +13,13 @@ The full website pipeline builds a real project. This flow builds only a **premi
 
 ```txt
 website-home-designer
+  → seo-content-writer (HOME_PREVIEW_MODE)
   → website-home-planner
-  → builder
+  → builder-home
+  → website-polisher
+  → builder-home applies polish
   → validator
-  → builder fixes only if validator blocks
+  → builder-home fixes only if validator blocks
   → validator final check
 ```
 
@@ -29,9 +32,11 @@ All artifacts live in one predictable directory:
 ```txt
 .pi/previews/<slug>/
 ├── HOME_DESIGN_OPTIONS.md
+├── HOME_CONTENT_PLAN.md    # seo-content-writer output
 ├── HOME_PLAN.md
-├── TASK_builder.md
+├── TASK_builder-home.md
 ├── index.html
+├── HOME_POLISH_PLAN.md     # website-polisher output
 └── REVIEW.md              # validator output if it writes one
 ```
 
@@ -70,7 +75,7 @@ Use `website-pipeline` for full production websites.
 - No human approval gate.
 - Do not ask the user to choose a design option; the planner chooses.
 - Missing facts become labeled preview placeholders, not blockers.
-- Same quality bar as the full website pipeline: premium design, real design references, responsive layout, accessibility, hover/focus states, and coherent copy.
+- Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher` pass.
 
 ## Step 1 — Home Designer
 
@@ -98,20 +103,52 @@ Expected output:
 .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
 ```
 
-## Step 2 — Home Planner
+## Step 2 — Home Content Writer
 
-Launch `website-home-planner` after the design options exist.
+Run the existing `seo-content-writer` in Home Preview Mode.
 
 Prompt template:
 
 ```txt
-Read .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md and create the autonomous execution plan for a single-file Home Page preview.
+HOME_PREVIEW_MODE
+
+Create autonomous Home Page content for this preview.
+
+Read:
+- .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- User briefing: [USER BRIEFING]
+
+Write:
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+
+Rules:
+- Scope is one Home Page preview only.
+- No human approval gate; do not ask for approval.
+- Fill copy autonomously using source-backed facts, inferred assumptions, and clearly labeled preview placeholders.
+- Do not invent metrics, awards, testimonials, certifications, prices, guarantees, or legal claims.
+- Include nav labels, section copy, CTA text, microcopy, alt text, FAQ copy when useful, metadata, and schema notes suitable for one static index.html.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/HOME_CONTENT_PLAN.md
+```
+
+## Step 3 — Home Planner
+
+Launch `website-home-planner` after design and content artifacts exist.
+
+Prompt template:
+
+```txt
+Read .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md and .pi/previews/<slug>/HOME_CONTENT_PLAN.md, then create the autonomous execution plan for a single-file Home Page preview.
 
 Requirements:
 - Choose or fuse the best design direction without asking the user.
-- Generate final preview copy and section structure.
+- Use HOME_CONTENT_PLAN.md as the source of truth for copy.
 - Write .pi/previews/<slug>/HOME_PLAN.md
-- Write .pi/previews/<slug>/TASK_builder.md for the existing builder agent.
+- Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
 - The builder output must be exactly .pi/previews/<slug>/index.html
 - No full project, no package.json, no framework, no build step.
 ```
@@ -120,23 +157,23 @@ Expected outputs:
 
 ```txt
 .pi/previews/<slug>/HOME_PLAN.md
-.pi/previews/<slug>/TASK_builder.md
+.pi/previews/<slug>/TASK_builder-home.md
 ```
 
-## Step 3 — Builder
+## Step 4 — Builder Home Creates Preview
 
-Use the existing `builder` agent by default. Use `builder-heavy` only if the briefing demands unusually high visual complexity or if builder fails.
+Use the dedicated `builder-home` agent by default. Use `builder-heavy` only if the briefing demands unusually high visual complexity or if builder-home fails.
 
 Prompt template:
 
 ```txt
-Implement the task in .pi/previews/<slug>/TASK_builder.md.
+Implement the task in .pi/previews/<slug>/TASK_builder-home.md.
 
 Hard constraints:
 - Create or replace only .pi/previews/<slug>/index.html
 - Do not create a project or any extra files.
-- Follow HOME_PLAN.md and HOME_DESIGN_OPTIONS.md exactly.
-- Run the validation commands listed in TASK_builder.md.
+- Follow HOME_PLAN.md, HOME_CONTENT_PLAN.md, and HOME_DESIGN_OPTIONS.md exactly.
+- Run the validation commands listed in TASK_builder-home.md.
 ```
 
 Expected output:
@@ -145,7 +182,58 @@ Expected output:
 .pi/previews/<slug>/index.html
 ```
 
-## Step 4 — Validator
+## Step 5 — Website Polisher
+
+Run the existing `website-polisher` in Home Preview Mode.
+
+Prompt template:
+
+```txt
+HOME_PREVIEW_MODE
+
+Audit the static Home preview at .pi/previews/<slug>/index.html.
+
+Read:
+- .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+- .pi/previews/<slug>/HOME_PLAN.md
+- .pi/previews/<slug>/index.html
+
+Write:
+- .pi/previews/<slug>/HOME_POLISH_PLAN.md
+
+Rules:
+- READ-ONLY: do not edit index.html.
+- Audit only .pi/previews/<slug>/index.html.
+- Do not require Next.js, Tailwind config, app/layout, components, or project structure.
+- Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
+- Focus on visual quality: hierarchy, spacing, rhythm, typography, colors, shadows, gradients, responsive behavior, hover/focus states, accessibility, reduced motion, and touch targets.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/HOME_POLISH_PLAN.md
+```
+
+## Step 6 — Builder Home Applies Polish
+
+Run `builder-home` once to apply the polish plan.
+
+Prompt template:
+
+```txt
+Apply the polish fixes from .pi/previews/<slug>/HOME_POLISH_PLAN.md.
+
+Hard constraints:
+- Modify only .pi/previews/<slug>/index.html
+- Do not create any extra files.
+- Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
+- Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
+- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes.
+```
+
+## Step 7 — Validator
 
 Use the existing `validator` with static-preview scope.
 
@@ -156,7 +244,9 @@ Validate the static Home preview at .pi/previews/<slug>/index.html.
 
 Read:
 - .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
 - .pi/previews/<slug>/HOME_PLAN.md
+- .pi/previews/<slug>/HOME_POLISH_PLAN.md
 - .pi/previews/<slug>/index.html
 
 Validate:
@@ -167,22 +257,23 @@ Validate:
 - accessible landmarks/headings/buttons/links;
 - visible focus states;
 - reduced-motion handling;
+- polish plan was applied or explicitly justified;
 - no fake unsupported factual claims presented as facts;
-- visual/content alignment with HOME_PLAN.md.
+- visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md.
 
 If you write a report, write .pi/previews/<slug>/REVIEW.md.
 Return PASS, CONDITIONAL, or REJECT with concrete fixes.
 ```
 
-## Step 5 — Autonomous Fix Loop
+## Step 8 — Autonomous Fix Loop
 
 If validator returns:
 
 | Verdict | Action |
 |---|---|
 | PASS | Stop and report the preview path. |
-| CONDITIONAL | Run `builder` once with validator fixes, then validate again. |
-| REJECT | Run `builder` once if fixes are concrete and within `index.html`; otherwise stop blocked with reason. |
+| CONDITIONAL | Run `builder-home` once with validator fixes, then validate again. |
+| REJECT | Run `builder-home` once if fixes are concrete and within `index.html`; otherwise stop blocked with reason. |
 
 Maximum fix attempts: **1**. After one failed fix attempt, stop and report the blocker.
 
@@ -192,8 +283,10 @@ Maximum fix attempts: **1**. After one failed fix attempt, stop and report the b
 Home preview created: .pi/previews/<slug>/index.html
 Artifacts:
 - HOME_DESIGN_OPTIONS.md
+- HOME_CONTENT_PLAN.md
 - HOME_PLAN.md
-- TASK_builder.md
+- TASK_builder-home.md
+- HOME_POLISH_PLAN.md
 - REVIEW.md if generated
 Validation: PASS/CONDITIONAL/REJECT
 Notes: [only important assumptions or blockers]

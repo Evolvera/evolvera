@@ -68,7 +68,7 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (26)
+## 🤖 Agentes Disponíveis (27)
 
 ### Pipeline de Código
 
@@ -79,16 +79,18 @@ git pull
 | **Planner** | 🏛️ | Arquiteto — cria planos detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
 | **Planner Heavy** | 🏛️ | Planejador estruturado final do `/plan-heavy`; consome handoff + brief mergeado | GPT-5.5 xhigh | escreve PLAN_FULL/SCHEDULE/TASKS no harness ensemble |
 | **Plan Briefer** | 🧩 | Gera UM brief de estratégia/lógica (sem tasks/DAG), afinado pro GPT-5.5 | GPT-5.5 xhigh | fase de brief do `/plan-heavy` |
-| **Plan Briefer (Fable)** | 🧩 | Briefer do ensemble com Claude Fable 5 high e Opus 4.8 como fallback manual | Claude Fable 5 high | fase de brief do `/plan-heavy` |
+| **Plan Briefer (Fable)** | 🧩 | Briefer do ensemble com Claude Fable 5 high; paired com o briefer GPT | Claude Fable 5 high | fase de brief do `/plan-heavy` |
 | **Plan Brief Merger** | 🔗 | Funde os 2 briefs em um só, reconciliando divergências | GPT-5.5 high | fase de merge do `/plan-heavy` |
-| **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
-| **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Claude Sonnet 5 medium | quando menor risco de alucinação importa mais que velocidade |
-| **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando builder padrão/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
+| **Builder Highspeed** | ⚡ | Executor rápido para single-file/mechanical edits, protótipos não-visuais, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | evitar frontend real; usar UI só para tiny token/class/text swaps |
+| **Builder** | 🔨 | Executor cauteloso e melhor opção para frontend/UI quality: componentes, CSS/Tailwind, layout, responsivo, estados e polish | Claude Sonnet 5 medium | default para frontend e tarefas normais verificáveis |
+| **Builder Home** | 🏗️ | Executor especializado para criar/polir uma Home Preview em `.pi/previews/<slug>/index.html` | MiniMax M3 | fluxo `website-home-preview` |
+| **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando o risco é integração/correção, não apenas qualidade visual/frontend |
 | **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | GPT-5.4 mini | "valida esse PR", "audita os testes", "code review" |
 | **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | GPT-5.5 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
+| **SEO Content Writer** | ✍️ | Copy/SEO — cria conteúdo completo ou `HOME_CONTENT_PLAN.md` no fluxo Home Preview | GPT-5.5 | etapa de conteúdo dos fluxos de website |
 | **Website Home Designer** | 🏠 | Designer enxuto para preview premium de uma Home Page em `index.html` | Claude Fable 5 | "faz uma home preview", "gera um index.html visual" |
 | **Website Home Planner** | 🧭 | Escolhe/funde opções de design e cria tarefa autônoma para o builder gerar `index.html` | Claude Fable 5 | etapa planner do fluxo `website-home-preview` |
-| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | GPT-5.4 mini | "polish esse site", "refina o design", "melhora a UX" |
+| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | Claude Sonnet 5 medium | "polish esse site", "refina o design", "melhora a UX" |
 
 ### Pipeline Natural
 
@@ -106,7 +108,8 @@ Validator → quality gate (testes, segurança, arquitetura)
 
 **Quando pular etapas:**
 - Tarefa trivial (mudar texto, CSS) → faça direto, sem agentes
-- Tarefa média sem plano formal → `builder-highspeed` direto quando explícita/single-file/module-local; `builder` quando cautela importa
+- Frontend/UI coding → `builder` por padrão; `builder-highspeed` só para tiny token/class/text swaps; `builder-heavy` só se houver risco de integração/correção
+- Tarefa média sem plano formal → `builder` quando frontend/qualidade importa; `builder-highspeed` só quando for mecânica/explícita/single-file/module-local
 - Tarefa correctness-sensitive/shared-file → `builder-heavy` + checkpoint/validator
 - Mudança crítica (auth, payment, PII) → builder-heavy ou builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
@@ -116,12 +119,12 @@ Validator → quality gate (testes, segurança, arquitetura)
 Fluxo autônomo para gerar uma Home Page premium em um único arquivo `index.html`:
 
 ```
-website-home-designer → website-home-planner → builder → validator
+website-home-designer → seo-content-writer → website-home-planner → builder-home → website-polisher → builder-home → validator
 ```
 
 **Resultado:** `.pi/previews/<slug>/index.html`
 
-Use quando quiser preview visual/copy de uma Home sem criar projeto completo, sem Next/Tailwind build, e sem human-in-the-loop.
+Use quando quiser preview visual/copy de uma Home sem criar projeto completo, sem Next/Tailwind build, e sem human-in-the-loop. O `website-polisher` faz uma passada dedicada de qualidade visual antes da validação final.
 
 ### Website Building Chain
 
@@ -236,7 +239,7 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 Use para planejamento long-horizon/high-risk antes de builders. O harness cria um handoff determinístico com repo state, dirty files, hazards e checkpoint policy, depois orienta o uso do `planner-heavy`.
 
 ```txt
-/plan-heavy <goal>                         # cria .pi/plans/<slug>/HANDOFF.md + prompt para planner-heavy
+/plan-heavy <goal>                         # cria handoff + prompts dos briefers/merge/planner e inicia o ensemble
 /plan-heavy validate <plan-dir>            # valida PLAN_FULL/SCHEDULE/TASKS antes de rodar builders
 /plan-heavy envelope <plan-dir> <task-id>  # cria EXECUTION_ENVELOPE para o builder da task
 ```
@@ -245,14 +248,14 @@ O mesmo harness também é exposto como **tools chamáveis pelo agente** (para o
 
 | Tool | Equivalente | Função |
 |------|-------------|--------|
-| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompt do planner-heavy |
+| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompts separados para briefers/merge/planner |
 | `plan_heavy_validate` | `/plan-heavy validate` | valida o plano e escreve `PLAN_HEAVY_VALIDATION.md` |
 | `plan_heavy_envelope` | `/plan-heavy envelope` | gera o `EXECUTION_ENVELOPE` da task |
 
 Fluxo ensemble (5 fases):
 
-1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md` e `MERGE_PROMPT.md`.
-2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.5) e `plan-briefer-fable` (Claude Fable 5 high primário; fallback manual para Opus 4.8 se indisponível) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_fable.md`) — sem tasks, sem DAG.
+1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md`, prompts separados dos briefers e `MERGE_PROMPT.md`. O agente não deve parar aqui.
+2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.5) e `plan-briefer-fable` (Claude Fable 5 high) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_fable.md`) — sem tasks, sem DAG.
 3. **Merge** — `plan-brief-merger` (GPT-5.5 high) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
 4. **Plano** — `planner-heavy` (GPT-5.5 xhigh) lê `HANDOFF.md` + `brief_merged.md` e escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
 5. **Gate/execução** — `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots/checkpoints/agents/patch boundaries/preservation; depois `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff de cada task; então os builders executam.
@@ -315,9 +318,10 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 | **GPT-5.5** | Modelo padrão local, Plan Briefer, Plan Brief Merger, agentes de website/copy | xhigh/high |
 | **Claude Fable 5** | Plan Briefer (Fable), Website Home Designer/Planner | high/xhigh |
 | **GPT-5.3 Codex Spark** | Builder Highspeed, Scout Highspeed | medium |
-| **GPT-5.4 mini** | Scout, Validator, Website Polisher, Deep Research Auditor/Finalizer | high |
-| **Claude Sonnet 5** | Builder | medium |
-| **Claude Opus** | Planner; fallback manual do plan-briefer-fable | xhigh |
+| **MiniMax M3** | Builder Home | high |
+| **GPT-5.4 mini** | Scout, Validator, Deep Research Auditor/Finalizer | high |
+| **Claude Sonnet 5** | Builder, Website Polisher | medium |
+| **Claude Opus** | Planner | xhigh |
 | **inherit** | Agent Expert, Pi Steward (herdam do contexto) | 0.1 |
 
 > Temperature 0.1 = determinístico, ideal para código. Baixa criatividade, máxima reprodutibilidade.
@@ -334,15 +338,17 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 26 agentes (.md)
+├── agents/                 # 27 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
 │   ├── planner-heavy.md    # Core limpo para /plan-heavy
-│   ├── builder.md          # Engenheiro de execução cauteloso
+│   ├── builder.md          # Engenheiro cauteloso; default frontend/UI
+│   ├── builder-home.md     # Executor especializado Home Preview MiniMax M3
 │   ├── builder-highspeed.md # Executor rápido GPT-5.3 Codex Spark
 │   ├── builder-heavy.md    # Executor robusto GPT-5.5 medium
 │   ├── scout.md            # Explorador cauteloso
 │   ├── scout-highspeed.md  # Explorador rápido GPT-5.3 Codex Spark
 │   ├── validator.md        # Quality gate
+│   ├── seo-content-writer.md # Copy/SEO para websites
 │   ├── website-designer.md # Designer de websites
 │   ├── website-home-designer.md # Designer de Home preview
 │   ├── website-home-planner.md # Planner de Home preview

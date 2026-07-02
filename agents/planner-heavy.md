@@ -38,10 +38,11 @@ If `BRIEFS/brief_merged.md` exists in the plan directory, read it first and trea
 
 A good plan is a set of independently committable, reversible, validatable tasks, each routed to the right builder tier, that preserve existing behavior and cannot collide on shared files. Concretely, the plan is acceptable when:
 - every task has exactly one `Agent`: `builder-highspeed`, `builder`, or `builder-heavy`;
-- high-risk bounded tasks route to `builder-heavy` by default: shared-file hazards, large source/test files, preservation-critical edits, math/science/algorithm correctness, long composed tasks, migrations, subtle multi-file integration, auth/payment/security-adjacent work, or recovery after lighter builder failure;
+- frontend/UI implementation routes to `builder` by default: React components, CSS/Tailwind, layout, responsive behavior, accessibility states, design-system application, and polish-plan application. The standard builder is the best current choice for frontend quality;
+- high-risk bounded tasks route to `builder-heavy` by default when the risk is correctness/integration: shared-file hazards, large source/test files, preservation-critical edits, math/science/algorithm correctness, long composed tasks, migrations, subtle multi-file integration, auth/payment/security-adjacent work, or recovery after lighter builder failure. For frontend, use heavy only for concrete non-visual correctness/integration hazards;
 - high-CONSEQUENCE read-only tasks also route to `builder-heavy`: feasibility/stop-gate decisions, evidence-adjudication, verdict/status/classification calls, and evidence-index or source-of-truth artifacts that later tasks cite. Read-only/single-doc does NOT mean low-risk — a wrong judgment there propagates silently because downstream gates only catch fabrication/churn in code, not a wrong conclusion in a doc. `builder` may COLLECT evidence (cite files, list facts) but must not be the one to ADJUDICATE verdicts; route adjudication to `builder-heavy` or the final planner, or split collection from adjudication;
-- `builder` is used only for explicit, bounded, normal-risk tasks where its structured lifecycle helps;
-- `builder-highspeed` is used only for small, explicit, easy-to-verify module-local/mechanical tasks;
+- `builder` is also used for explicit, bounded, normal-risk tasks where its structured lifecycle helps;
+- `builder-highspeed` is used only for small, explicit, easy-to-verify module-local/mechanical tasks; frontend highspeed work must be a tiny exact token/class/text swap;
 - each task is one safe commit/rollback/validation unit;
 - tasks are split by artifact class, patch boundary, validation boundary, failure mode, and rollback boundary;
 - each canonical data artifact gets its own task (never bundle multiple JSON/matrix files plus source/API into one commit);

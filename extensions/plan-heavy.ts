@@ -176,13 +176,48 @@ ${hazards}
   const rel = (p: string) => relative(cwd, join(planDir, p));
   const handoffRel = rel("HANDOFF.md");
 
-  const briefPrompt = `ENSEMBLE BRIEF PHASE — launch two briefers in parallel (model diversity is the point):
-- \`plan-briefer\` writes \`${rel("BRIEFS/brief_gpt.md")}\`
-- \`plan-briefer-fable\` writes \`${rel("BRIEFS/brief_fable.md")}\` using Claude Fable 5 with thinking \`high\` by default; if Fable is unavailable, relaunch it with model override \`anthropic/claude-opus-4-8\`.
+  const briefGptPrompt = `PLAN-HEAVY BRIEF PHASE — GPT BRIEFER
 
-Each reads \`${handoffRel}\` (repo state, hazards, preservation, validation, stop rules) and this goal:
+You are \`plan-briefer\`.
+
+Read first:
+- \`${handoffRel}\`
+
+Goal:
 ${goal}
-Each writes ONE strategy brief (logic, knowledge, decomposition approach, sequencing, risks, builder-routing intuition, validation). NO task files, NO DAG, NO code. Launch both with run_in_background so they run concurrently; pass each its own output path.`;
+
+Write exactly one file:
+- \`${rel("BRIEFS/brief_gpt.md")}\`
+
+Produce one strategy brief only: logic, knowledge, decomposition approach, sequencing, risks, builder-routing intuition, and validation. NO task files, NO DAG, NO code.`;
+
+  const briefFablePrompt = `PLAN-HEAVY BRIEF PHASE — FABLE BRIEFER
+
+You are \`plan-briefer-fable\`, the Claude Fable 5 high briefer. Treat this run as Fable.
+
+Read first:
+- \`${handoffRel}\`
+
+Goal:
+${goal}
+
+Write exactly one file:
+- \`${rel("BRIEFS/brief_fable.md")}\`
+
+Produce one strategy brief only: logic, knowledge, decomposition approach, sequencing, risks, builder-routing intuition, and validation. NO task files, NO DAG, NO code.`;
+
+  const briefPrompt = `ORCHESTRATOR LAUNCH INSTRUCTIONS — DO NOT STOP AFTER HANDOFF.
+
+The handoff tool/command only created files. Continue the ensemble automatically:
+
+1. Launch TWO Agent calls in the SAME message with \`run_in_background: true\`:
+   - \`subagent_type: "plan-briefer"\`, prompt file: \`${rel("BRIEFS/PROMPT_plan-briefer.md")}\`, output: \`${rel("BRIEFS/brief_gpt.md")}\`
+   - \`subagent_type: "plan-briefer-fable"\`, prompt file: \`${rel("BRIEFS/PROMPT_plan-briefer-fable.md")}\`, output: \`${rel("BRIEFS/brief_fable.md")}\`
+2. Wait for both briefers, then run \`plan-brief-merger\`.
+3. Then run \`planner-heavy\`.
+4. Then call \`plan_heavy_validate\`.
+
+Normal flow uses Fable. If the Fable launch fails, stop and report the launch error so the orchestrator/user can choose a manual model override outside this prompt.`;
 
   const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (GPT-5.5 high).
 
@@ -196,12 +231,14 @@ Write the plan ecosystem into \`${relative(cwd, planDir)}\`:
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route high-risk bounded tasks to builder-heavy. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route high-risk bounded tasks to builder-heavy. Frontend/UI coding quality defaults to builder; use builder-highspeed only for tiny exact mechanical UI tweaks, and use builder-heavy for frontend only when there is a concrete non-visual correctness/integration hazard. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
 
   ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
   writeText(join(planDir, "PLAN_HEAVY_PROMPT.md"), prompt);
   writeText(join(planDir, "BRIEFS", "BRIEF_PROMPT.md"), briefPrompt);
+  writeText(join(planDir, "BRIEFS", "PROMPT_plan-briefer.md"), briefGptPrompt);
+  writeText(join(planDir, "BRIEFS", "PROMPT_plan-briefer-fable.md"), briefFablePrompt);
   writeText(join(planDir, "BRIEFS", "MERGE_PROMPT.md"), mergePrompt);
 
   return { planDir, handoff, prompt, briefPrompt, mergePrompt };
@@ -463,11 +500,11 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
       const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(ctx.cwd, raw);
       const relativePlanDir = relative(ctx.cwd, planDir);
       ctx.ui.notify(`Plan-heavy handoff created: ${relativePlanDir}`, "info");
-      const flow = `Plan-heavy ensemble flow (5 phases):\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-fable:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy:\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
+      const flow = `Plan-heavy ensemble flow (5 phases):\n\nIMPORTANT: handoff creation is not completion. Do not answer the user yet; continue by launching the agents below.\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-fable:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy:\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
       ctx.ui.setEditorText(flow);
 
       if (ctx.isIdle()) {
-        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`. Run the ensemble: launch \`plan-briefer\` and \`plan-briefer-fable\` in parallel, then \`plan-brief-merger\`, then \`planner-heavy\`.\n\n${flow}`);
+        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`, but this is not done. Continue now: launch \`plan-briefer\` and \`plan-briefer-fable\` in parallel using the prompt files under \`${relativePlanDir}/BRIEFS/\`; then run \`plan-brief-merger\`, \`planner-heavy\`, and \`plan_heavy_validate\`.\n\n${flow}`);
       }
     },
   });
@@ -480,8 +517,8 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     label: "Plan Heavy: Handoff",
     description:
       "Deterministically collect repo state (branch, recent commits, git status, existing .pi/plans, dirty files, shared-file hazards) and create a planner-heavy handoff for the ensemble flow. " +
-      "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns the plan dir plus the brief, merge, and planner prompts. Use before planning high-risk/long-horizon work.",
-    promptSnippet: "Use plan_heavy_handoff to start the /plan-heavy ensemble (briefs → merge → plan) from the agent (no slash command needed).",
+      "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns explicit instructions to continue by launching plan-briefer and plan-briefer-fable in parallel, then plan-brief-merger, planner-heavy, and plan_heavy_validate. Use before planning high-risk/long-horizon work.",
+    promptSnippet: "Use plan_heavy_handoff to start /plan-heavy, then do not stop: launch plan-briefer + plan-briefer-fable in parallel, merge, plan, and validate.",
     parameters: Type.Object({
       goal: Type.String({ description: "Approved goal/scope for the heavy plan." }),
     }),
@@ -495,8 +532,9 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
               type: "text",
               text:
                 `Plan-heavy handoff created at \`${relativePlanDir}\`.\n\n` +
-                `Run the ensemble in order, then call plan_heavy_validate:\n\n` +
+                `IMPORTANT: this tool only created the handoff. Do not stop or answer the user yet. Immediately continue the ensemble, then call plan_heavy_validate.\n\n` +
                 `=== PHASE 1: BRIEFS (launch plan-briefer + plan-briefer-fable in parallel) ===\n${briefPrompt}\n\n` +
+                `Prompt files:\n- \`${relativePlanDir}/BRIEFS/PROMPT_plan-briefer.md\`\n- \`${relativePlanDir}/BRIEFS/PROMPT_plan-briefer-fable.md\`\n\n` +
                 `=== PHASE 2: MERGE (launch plan-brief-merger) ===\n${mergePrompt}\n\n` +
                 `=== PHASE 3: PLAN (launch planner-heavy) ===\n${prompt}`,
             },

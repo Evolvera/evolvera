@@ -165,13 +165,13 @@ Trace propagation: trace_id spans [component A] → [component B] → [component
 
 | Agent | Use For | Avoid For |
 |---|---|---|
-| `builder-highspeed` | Highspeed sweet spot: single-file/module-local edits, rapid prototypes, utility generation, variable/module-local renames, tests, CSS/React mechanical tweaks with existing constraints, backend/tooling/infra/algorithm/math/physics tasks that are explicit and easy to verify | broad ambiguous tasks, multi-file architecture, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, sensitive auth/payment/security ambiguity, unsupported factual/domain claims, final visual polish, brand/design decisions |
-| `builder` | For explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify; evidence COLLECTION (cite files, list facts) | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior destructive churn from a lighter builder; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only/single-doc) |
-| `builder-heavy` | For complex or higher-risk bounded implementation: subtle multi-file integration, large/shared source or test files, preservation-critical edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status/classification decisions) that later tasks depend on | tiny mechanical edits, broad architecture planning, vague UI/brand/design tasks, cheap parallel batches |
+| `builder-highspeed` | Highspeed sweet spot: single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, variable/module-local renames, tests, backend/tooling/infra/algorithm/math/physics tasks that are explicit and easy to verify. Frontend only for tiny exact token/class/text swaps. | broad ambiguous tasks, multi-file architecture, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, sensitive auth/payment/security ambiguity, unsupported factual/domain claims, frontend/UI implementation beyond tiny exact tweaks, final visual polish, brand/design decisions |
+| `builder` | Preferred/default for frontend/UI coding: React components, CSS/Tailwind styling, layout, responsive behavior, accessibility states, design-system application, and polish-plan application. Also fits explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify; evidence COLLECTION (cite files, list facts). | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior destructive churn from a lighter builder; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only/single-doc) |
+| `builder-heavy` | For complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared source or test files, preservation-critical edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status/classification decisions) that later tasks depend on | frontend/UI work when the main reason is visual quality or design-system execution, tiny mechanical edits, broad architecture planning, vague UI/brand/design tasks, cheap parallel batches |
 
-If a task is assigned to `builder-highspeed`, make it smaller than normal: ideally one file or one module-local concern, under ~6 logical steps, explicit target behavior, exact files, exact validation, and no aesthetic/product judgment. Also include the exact APIs/symbols/packages/endpoints it must verify before changing code.
+If a task is assigned to `builder-highspeed`, make it smaller than normal: ideally one file or one module-local concern, under ~6 logical steps, explicit target behavior, exact files, exact validation, and no aesthetic/product judgment. Also include the exact APIs/symbols/packages/endpoints it must verify before changing code. Frontend highspeed tasks must be tiny exact mechanical tweaks only.
 
-If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: explain why the heavy tier is needed, list exact target files and preservation markers, require recovery snapshots, and include concrete validation. Use it for shared-file hazards, subtle algorithms/math/science, long composed tasks, preservation-critical edits, or recovery after lighter builders fail. Do not overload it with broad architecture planning; use planner decomposition instead. When unsure between the standard and heavy builder for high-risk work, choose heavy.
+If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: explain why the heavy tier is needed, list exact target files and preservation markers, require recovery snapshots, and include concrete validation. Use it for shared-file hazards, subtle algorithms/math/science, long composed tasks, preservation-critical edits, or recovery after lighter builders fail. Do not overload it with broad architecture planning; use planner decomposition instead. For frontend, route heavy only when there is a concrete non-visual correctness/integration hazard; if the main concern is UI implementation quality, choose `builder`.
 
 **Route by consequence, not only by mutation risk.** A task can be read-only, single-file, or "just a doc/JSON" and still be high-risk when its OUTPUT is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact that later tasks depend on. Read-only does NOT mean low-risk. Route to `builder-heavy` (and require orchestrator/human review of the output) when a task:
 - decides whether or how downstream work proceeds (feasibility / stop-gate);
@@ -186,7 +186,7 @@ If a task is assigned to `builder-heavy`, keep it outcome-first and bounded: exp
 # Task {NN}: [Task Name]
 
 **Agent**: builder-highspeed | builder | builder-heavy
-**Why This Agent**: [one sentence: e.g. single-file CSS tweak suited to highspeed, structured normal task suited to the standard builder, or shared-file/correctness-sensitive task needs the heavy builder]
+**Why This Agent**: [one sentence: e.g. frontend/UI implementation suited to standard builder, tiny exact mechanical edit suited to highspeed, or shared-file/correctness-sensitive task needs heavy]
 **Highspeed Budget**: [If builder-highspeed: one file/module-local, <=6 logical steps, verification targets listed. If builder/builder-heavy: N/A]
 **Heavy Fit**: [If builder-heavy: why the heavy tier is needed and why the task is still bounded/validatable. If builder/builder-highspeed: N/A]
 **Scope**: [One sentence describing what's in this task]
@@ -303,8 +303,8 @@ rg "allowed_anchor" path/to/file
 
 | ID | Task File | Agent | Status | Dependencies | Parallel Group | Files Touched | Recovery Snapshot | Checkpoint Commit |
 |----|-----------|-------|--------|--------------|----------------|---------------|-------------------|-------------------|
-| 01 | TASKS/task_01_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Navbar.tsx | required | pending |
-| 02 | TASKS/task_02_builder-highspeed.md | builder-highspeed | pending | none | group_1 | src/components/Footer.tsx | required | pending |
+| 01 | TASKS/task_01_builder.md | builder | pending | none | group_1 | src/components/Navbar.tsx | required | pending |
+| 02 | TASKS/task_02_builder.md | builder | pending | none | group_1 | src/components/Footer.tsx | required | pending |
 | 03 | TASKS/task_03_builder-heavy.md | builder-heavy | pending | 01, 02 | none | tests/shared_integration.test.ts | required | pending |
 
 **Status values**: pending | in_progress | complete | blocked | error | skipped
@@ -439,8 +439,9 @@ Every task that touches data flow, state mutation, IPC, network, or async operat
 ## Implementation Detail: UI Specifications
 
 ### Agent Routing
-- Use `builder-highspeed` for CSS tweaks, React component adjustments, layout experiments, and rapid variants ONLY when design tokens/specs are already defined and the task is single-file/component-local.
-- Use `builder` or the website pipeline for final visual polish, brand/aesthetic decisions, unclear design direction, or cross-component stateful UI work.
+- Use `builder` by default for frontend/UI coding: CSS/Tailwind, React component adjustments, layout implementation, responsive behavior, accessibility states, design-system application, and polish-plan application.
+- Use `builder-highspeed` only for tiny exact mechanical UI tweaks when design tokens/classes/specs are already defined and the task is single-file/component-local.
+- Use `builder-heavy` for frontend only when there is a concrete non-visual correctness/integration hazard: shared files, auth/payment/security UI flows, cross-cutting state/data flow, recovery after failure, or preservation-critical large files.
 - If assigned to `builder-highspeed`, include exact token values/classes when known, exact existing components/hooks to inspect, and verification targets for imports/props before editing.
 
 ### Visual Direction Guardrail
@@ -557,8 +558,8 @@ Verify each task file:
 ├── PLAN_FULL.md                    # Full plan reference
 ├── SCHEDULE.md                     # DAG + execution rules + Agent column
 └── TASKS/
-    ├── task_01_builder-highspeed.md # Single-file/module-local task
-    ├── task_02_builder.md           # Cautious structured standard task
+    ├── task_01_builder.md           # Standard/frontend-quality task
+    ├── task_02_builder-highspeed.md # Tiny mechanical task
     ├── task_03_builder-heavy.md     # Correctness-sensitive task
     └── task_04_validator.md         # Validation task, only if explicitly required
 ```

@@ -1,6 +1,6 @@
 ---
 name: builder-heavy
-description: "Heavy-duty, high-capability implementation agent. Use for subtle multi-file integration, complex test/source changes, shared-file hazards, migrations, correctness-sensitive fixes, and tasks where the lighter builders' risk is too high. Model: openai-codex/gpt-5.5."
+description: "Heavy-duty, high-capability implementation agent. Use for subtle multi-file integration, complex test/source changes, shared-file hazards, migrations, correctness-sensitive fixes, and non-visual high-risk frontend integration. Do not use just for frontend/UI quality; prefer builder. Model: openai-codex/gpt-5.5."
 display_name: 🧠 Builder Heavy
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.5
@@ -32,11 +32,13 @@ Use this agent for:
 - long composed tasks that are still bounded and validateable;
 - migrations, behavior changes, compatibility work, or state/data-flow changes;
 - auth/payment/security-adjacent work when scope is explicit;
+- frontend tasks only when the risk is non-visual correctness/integration, such as shared state/data flow, auth/payment/security UI behavior, or preservation-critical large files;
 - fixing issues after a lighter builder failed or caused churn;
-- tasks needing stronger judgment than `builder-highspeed` or `builder`.
+- tasks needing stronger correctness/integration judgment than `builder-highspeed` or `builder`.
 
 Avoid this agent for:
 - tiny single-file edits that `edit` or `builder-highspeed` can handle;
+- frontend/UI work whose main risk is visual quality, layout, styling, design-system execution, or polish application — route that to `builder`;
 - broad architecture planning that belongs to `planner`;
 - vague UI/brand polish without a design plan;
 - tasks with unknown scope that need scout/planner first.
