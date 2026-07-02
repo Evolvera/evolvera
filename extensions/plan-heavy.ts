@@ -178,15 +178,15 @@ ${hazards}
 
   const briefPrompt = `ENSEMBLE BRIEF PHASE — launch two briefers in parallel (model diversity is the point):
 - \`plan-briefer\` writes \`${rel("BRIEFS/brief_gpt.md")}\`
-- \`plan-briefer-opus\` writes \`${rel("BRIEFS/brief_opus.md")}\`
+- \`plan-briefer-fable\` writes \`${rel("BRIEFS/brief_fable.md")}\` using Claude Fable 5 with thinking \`high\` by default; if Fable is unavailable, relaunch it with model override \`anthropic/claude-opus-4-8\`.
 
 Each reads \`${handoffRel}\` (repo state, hazards, preservation, validation, stop rules) and this goal:
 ${goal}
 Each writes ONE strategy brief (logic, knowledge, decomposition approach, sequencing, risks, builder-routing intuition, validation). NO task files, NO DAG, NO code. Launch both with run_in_background so they run concurrently; pass each its own output path.`;
 
-  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (Opus 4.8).
+  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (GPT-5.5 high).
 
-- Read \`${rel("BRIEFS/brief_opus.md")}\` and \`${rel("BRIEFS/brief_gpt.md")}\` (and \`${handoffRel}\` for reference).
+- Read \`${rel("BRIEFS/brief_fable.md")}\` and \`${rel("BRIEFS/brief_gpt.md")}\` (and \`${handoffRel}\` for reference).
 - Merge into \`${rel("BRIEFS/brief_merged.md")}\` per the plan-brief-merger system prompt: keep the strongest grounded reasoning from each, reconcile or flag disagreements, carry forward all TO VERIFY. NO task files, NO DAG.`;
 
   const prompt = `Use \`${handoffRel}\` as source of truth. If \`${rel("BRIEFS/brief_merged.md")}\` exists, read it first as strong strategy input.
@@ -463,11 +463,11 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
       const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(ctx.cwd, raw);
       const relativePlanDir = relative(ctx.cwd, planDir);
       ctx.ui.notify(`Plan-heavy handoff created: ${relativePlanDir}`, "info");
-      const flow = `Plan-heavy ensemble flow (5 phases):\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-opus:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy:\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
+      const flow = `Plan-heavy ensemble flow (5 phases):\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-fable:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy:\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
       ctx.ui.setEditorText(flow);
 
       if (ctx.isIdle()) {
-        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`. Run the ensemble: launch \`plan-briefer\` and \`plan-briefer-opus\` in parallel, then \`plan-brief-merger\`, then \`planner-heavy\`.\n\n${flow}`);
+        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`. Run the ensemble: launch \`plan-briefer\` and \`plan-briefer-fable\` in parallel, then \`plan-brief-merger\`, then \`planner-heavy\`.\n\n${flow}`);
       }
     },
   });
@@ -496,7 +496,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
               text:
                 `Plan-heavy handoff created at \`${relativePlanDir}\`.\n\n` +
                 `Run the ensemble in order, then call plan_heavy_validate:\n\n` +
-                `=== PHASE 1: BRIEFS (launch plan-briefer + plan-briefer-opus in parallel) ===\n${briefPrompt}\n\n` +
+                `=== PHASE 1: BRIEFS (launch plan-briefer + plan-briefer-fable in parallel) ===\n${briefPrompt}\n\n` +
                 `=== PHASE 2: MERGE (launch plan-brief-merger) ===\n${mergePrompt}\n\n` +
                 `=== PHASE 3: PLAN (launch planner-heavy) ===\n${prompt}`,
             },

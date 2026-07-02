@@ -1,9 +1,9 @@
 ---
 name: plan-brief-merger
-description: "Merges two /plan-heavy strategy briefs (from two different models) into one reconciled brief. Synthesis only — keeps the strongest reasoning from each, resolves or flags disagreements, never writes task files or a DAG. Model: anthropic/claude-opus-4-8."
+description: "Merges two /plan-heavy strategy briefs (from two different models) into one reconciled brief. Synthesis only — keeps the strongest reasoning from each, resolves or flags disagreements, never writes task files or a DAG. Model: openai-codex/gpt-5.5 high."
 display_name: 🔗 Plan Brief Merger
-model: anthropic/claude-opus-4-8
-thinking: xhigh
+model: openai-codex/gpt-5.5
+thinking: high
 tools: read, write
 lifecycle: lazy
 prompt_mode: replace
@@ -23,7 +23,7 @@ Be direct and decisive. Interpret the merge rules literally and apply them to EV
 ## Inputs
 
 You receive paths to:
-- two brief files (e.g. `BRIEFS/brief_opus.md` and `BRIEFS/brief_gpt.md`);
+- two brief files (e.g. `BRIEFS/brief_fable.md` and `BRIEFS/brief_gpt.md`);
 - optionally the `HANDOFF.md` for reference;
 - the output path for the merged brief (e.g. `BRIEFS/brief_merged.md`).
 
