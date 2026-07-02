@@ -68,25 +68,27 @@ git pull
 
 ---
 
-## 🤖 Agentes Disponíveis (25)
+## 🤖 Agentes Disponíveis (26)
 
 ### Pipeline de Código
 
 | Agente | Emoji | Função | Modelo | Quando usar |
 |--------|-------|--------|--------|-------------|
 | **Scout Highspeed** | ⚡ | Explorador rápido — mapeia arquivos, dependências, padrões, testes | GPT-5.3 Codex Spark | default para exploração rápida/backend/infra/algoritmos |
-| **Scout** | 🔍 | Explorador cauteloso com workflow Kimi/checkpoint | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
+| **Scout** | 🔍 | Explorador cauteloso com workflow estruturado | GPT-5.4 mini | quando menor risco de alucinação importa mais que velocidade |
 | **Planner** | 🏛️ | Arquiteto — cria planos detalhados para features, refactors, bug fixes | Claude Opus | "planeja X", "desenha arquitetura de Y", "como refatorar Z?" |
 | **Planner Heavy** | 🏛️ | Planejador estruturado final do `/plan-heavy`; consome handoff + brief mergeado | GPT-5.5 xhigh | escreve PLAN_FULL/SCHEDULE/TASKS no harness ensemble |
 | **Plan Briefer** | 🧩 | Gera UM brief de estratégia/lógica (sem tasks/DAG), afinado pro GPT-5.5 | GPT-5.5 xhigh | fase de brief do `/plan-heavy` |
-| **Plan Briefer (Opus)** | 🧩 | Mesmo papel, afinado pro guia do Opus 4.8 (literal, grounded em tools) | Claude Opus 4.8 | fase de brief do `/plan-heavy` |
-| **Plan Brief Merger** | 🔗 | Funde os 2 briefs em um só, reconciliando divergências | Claude Opus 4.8 | fase de merge do `/plan-heavy` |
+| **Plan Briefer (Fable)** | 🧩 | Briefer do ensemble com Claude Fable 5 high e Opus 4.8 como fallback manual | Claude Fable 5 high | fase de brief do `/plan-heavy` |
+| **Plan Brief Merger** | 🔗 | Funde os 2 briefs em um só, reconciliando divergências | GPT-5.5 high | fase de merge do `/plan-heavy` |
 | **Builder Highspeed** | ⚡ | Executor rápido para single-file edits, protótipos, CSS/React tweaks, testes, tooling, backend, lógica/math | GPT-5.3 Codex Spark | usar em tarefas explícitas e verificáveis; evitar tarefas amplas e polish/design final |
-| **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Kimi for Coding | quando menor risco de alucinação importa mais que velocidade |
-| **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando Kimi/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
-| **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | Kimi for Coding | "valida esse PR", "audita os testes", "code review" |
+| **Builder** | 🔨 | Executor cauteloso com disciplina Git-first, checklists, verificação final | Claude Sonnet 5 medium | quando menor risco de alucinação importa mais que velocidade |
+| **Builder Heavy** | 🧠 | Executor robusto GPT-5.5 para integração sutil, arquivos compartilhados, migrações e correções correctness-sensitive | GPT-5.5 medium | quando builder padrão/Spark é arriscado demais, especialmente shared-file hazards ou recuperação pós-falha |
+| **Validator** | 🛡️ | Quality gate — valida testes, segurança, arquitetura. Pode gerar testes e BLOQUEIA código ruim | GPT-5.4 mini | "valida esse PR", "audita os testes", "code review" |
 | **Website Designer** | 🎨 | Designer de websites — analisa briefings, referencia marcas reais (Stripe, Apple, Linear, etc.) e produz DESIGN_PLAN.md detalhado | GPT-5.5 | "cria um site para X", "builda uma landing page", "faz um site institucional" |
-| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | Kimi for Coding | "polish esse site", "refina o design", "melhora a UX" |
+| **Website Home Designer** | 🏠 | Designer enxuto para preview premium de uma Home Page em `index.html` | Claude Fable 5 | "faz uma home preview", "gera um index.html visual" |
+| **Website Home Planner** | 🧭 | Escolhe/funde opções de design e cria tarefa autônoma para o builder gerar `index.html` | Claude Fable 5 | etapa planner do fluxo `website-home-preview` |
+| **Website Polisher** | ✨ | UI/UX Engineer — audit final, refina shadows/borders/gradients, estados (hover, focus, disabled, loading, error), acessibilidade, polish completo | GPT-5.4 mini | "polish esse site", "refina o design", "melhora a UX" |
 
 ### Pipeline Natural
 
@@ -108,6 +110,18 @@ Validator → quality gate (testes, segurança, arquitetura)
 - Tarefa correctness-sensitive/shared-file → `builder-heavy` + checkpoint/validator
 - Mudança crítica (auth, payment, PII) → builder-heavy ou builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
+
+### Website Home Preview Chain
+
+Fluxo autônomo para gerar uma Home Page premium em um único arquivo `index.html`:
+
+```
+website-home-designer → website-home-planner → builder → validator
+```
+
+**Resultado:** `.pi/previews/<slug>/index.html`
+
+Use quando quiser preview visual/copy de uma Home sem criar projeto completo, sem Next/Tailwind build, e sem human-in-the-loop.
 
 ### Website Building Chain
 
@@ -202,6 +216,7 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `planner` | Workflow para planejamento multi-file |
 | `project-memory` | Memória persistente por projeto |
 | `scout` | Exploração read-only do codebase |
+| `website-home-preview` | Fluxo autônomo para Home Page premium em `index.html` |
 | `website-pipeline` | Orquestração design → conteúdo → plano → build |
 | `website-stack` | Convenções de stack para websites |
 
@@ -237,8 +252,8 @@ O mesmo harness também é exposto como **tools chamáveis pelo agente** (para o
 Fluxo ensemble (5 fases):
 
 1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md` e `MERGE_PROMPT.md`.
-2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.5) e `plan-briefer-opus` (Opus) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_opus.md`) — sem tasks, sem DAG.
-3. **Merge** — `plan-brief-merger` (Opus 4.8) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
+2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.5) e `plan-briefer-fable` (Claude Fable 5 high primário; fallback manual para Opus 4.8 se indisponível) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_fable.md`) — sem tasks, sem DAG.
+3. **Merge** — `plan-brief-merger` (GPT-5.5 high) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
 4. **Plano** — `planner-heavy` (GPT-5.5 xhigh) lê `HANDOFF.md` + `brief_merged.md` e escreve `PLAN_FULL.md`, `SCHEDULE.md` e `TASKS/`.
 5. **Gate/execução** — `/plan-heavy validate <plan-dir>` bloqueia plano sem snapshots/checkpoints/agents/patch boundaries/preservation; depois `/plan-heavy envelope <plan-dir> <task-id>` gera o runtime handoff de cada task; então os builders executam.
 
@@ -297,10 +312,12 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 | Modelo | Agentes | Temperatura |
 |--------|---------|-------------|
-| **GPT-5.5** | Modelo padrão local e agentes de website/copy | xhigh |
+| **GPT-5.5** | Modelo padrão local, Plan Briefer, Plan Brief Merger, agentes de website/copy | xhigh/high |
+| **Claude Fable 5** | Plan Briefer (Fable), Website Home Designer/Planner | high/xhigh |
 | **GPT-5.3 Codex Spark** | Builder Highspeed, Scout Highspeed | medium |
-| **Kimi for Coding** | Scout, Builder, Validator, Deep Research Auditor/Finalizer | 0.1 |
-| **Claude Opus** | Planner | xhigh |
+| **GPT-5.4 mini** | Scout, Validator, Website Polisher, Deep Research Auditor/Finalizer | high |
+| **Claude Sonnet 5** | Builder | medium |
+| **Claude Opus** | Planner; fallback manual do plan-briefer-fable | xhigh |
 | **inherit** | Agent Expert, Pi Steward (herdam do contexto) | 0.1 |
 
 > Temperature 0.1 = determinístico, ideal para código. Baixa criatividade, máxima reprodutibilidade.
@@ -317,7 +334,7 @@ Pi/
 │   ├── SYSTEM.md           # System prompt customizado
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
-├── agents/                 # 24 agentes (.md)
+├── agents/                 # 26 agentes (.md)
 │   ├── planner.md          # Arquiteto/Planejador
 │   ├── planner-heavy.md    # Core limpo para /plan-heavy
 │   ├── builder.md          # Engenheiro de execução cauteloso
@@ -327,6 +344,8 @@ Pi/
 │   ├── scout-highspeed.md  # Explorador rápido GPT-5.3 Codex Spark
 │   ├── validator.md        # Quality gate
 │   ├── website-designer.md # Designer de websites
+│   ├── website-home-designer.md # Designer de Home preview
+│   ├── website-home-planner.md # Planner de Home preview
 │   ├── website-polisher.md # UI/UX polish
 │   ├── agent-expert.md     # Meta-agente para criar agentes
 │   ├── pi-steward.md       # Canal de feedback/bugs
@@ -342,6 +361,7 @@ Pi/
 │   ├── planner/
 │   ├── project-memory/
 │   ├── scout/
+│   ├── website-home-preview/
 │   ├── website-pipeline/
 │   └── website-stack/
 └── extensions/             # 3 extensões (.ts)
