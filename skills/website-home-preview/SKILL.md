@@ -17,10 +17,13 @@ Compact Strategy Intake (orchestrator, no approval gate)
   → seo-content-writer (HOME_PREVIEW_MODE)
   → website-home-planner
   → builder-home
+  → visual snapshot capture (portrait + landscape)
   → website-polisher
   → builder-home applies polish
+  → visual snapshot refresh
   → validator
   → builder-home fixes only if validator blocks
+  → visual snapshot refresh
   → validator final check
 ```
 
@@ -37,6 +40,10 @@ All artifacts live in one predictable directory:
 ├── HOME_PLAN.md
 ├── TASK_builder-home.md
 ├── index.html
+├── screenshots/
+│   ├── portrait.png
+│   ├── landscape.png
+│   └── VISUAL_SNAPSHOT.md
 ├── HOME_POLISH_PLAN.md     # website-polisher output
 └── REVIEW.md              # validator output if it writes one
 ```
@@ -71,7 +78,8 @@ Use `website-pipeline` for full production websites.
 ## Non-Negotiables
 
 - One Home Page only.
-- One final HTML file only.
+- One final website HTML file only.
+- Screenshot files are allowed only as validation artifacts under `.pi/previews/<slug>/screenshots/`.
 - No Next.js, React, Tailwind build, shadcn, package manager, or build step.
 - No human approval gate.
 - Do not ask the user to choose a design option; the planner chooses.
@@ -205,7 +213,29 @@ Expected output:
 .pi/previews/<slug>/index.html
 ```
 
-## Step 5 — Website Polisher
+## Step 5 — Visual Snapshot Capture
+
+Capture screenshots in both portrait and landscape so agents can evaluate the page visually, not only from code.
+
+Run from the repository root:
+
+```bash
+node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs \
+  .pi/previews/<slug>/index.html \
+  .pi/previews/<slug>/screenshots
+```
+
+Expected outputs:
+
+```txt
+.pi/previews/<slug>/screenshots/portrait.png     # 390x844 viewport, full page
+.pi/previews/<slug>/screenshots/landscape.png    # 1440x900 viewport, full page
+.pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md
+```
+
+If Playwright/Chromium is unavailable, the script tries to install Chromium once through `npx playwright install chromium`. If screenshot capture still fails, keep going only if the user asked for best-effort preview; otherwise stop with a clear browser/sandbox blocker.
+
+## Step 6 — Website Polisher
 
 Run the existing `website-polisher` in Home Preview Mode.
 
@@ -221,6 +251,9 @@ Read:
 - .pi/previews/<slug>/HOME_CONTENT_PLAN.md
 - .pi/previews/<slug>/HOME_PLAN.md
 - .pi/previews/<slug>/index.html
+- .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md if present
+- .pi/previews/<slug>/screenshots/portrait.png if image reading is supported
+- .pi/previews/<slug>/screenshots/landscape.png if image reading is supported
 
 Write:
 - .pi/previews/<slug>/HOME_POLISH_PLAN.md
@@ -230,7 +263,7 @@ Rules:
 - Audit only .pi/previews/<slug>/index.html.
 - Do not require Next.js, Tailwind config, app/layout, components, or project structure.
 - Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
-- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, responsive behavior, hover/focus states, accessibility, reduced motion, and touch targets.
+- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, responsive behavior, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
 ```
 
 Expected output:
@@ -239,7 +272,7 @@ Expected output:
 .pi/previews/<slug>/HOME_POLISH_PLAN.md
 ```
 
-## Step 6 — Builder Home Applies Polish
+## Step 7 — Builder Home Applies Polish
 
 Run `builder-home` once to apply the polish plan.
 
@@ -254,9 +287,10 @@ Hard constraints:
 - Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
 - Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
 - Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes.
+- Refresh screenshots after polish using the Visual Snapshot Capture command above.
 ```
 
-## Step 7 — Validator
+## Step 8 — Validator
 
 Use the existing `validator` with static-preview scope.
 
@@ -271,6 +305,9 @@ Read:
 - .pi/previews/<slug>/HOME_PLAN.md
 - .pi/previews/<slug>/HOME_POLISH_PLAN.md
 - .pi/previews/<slug>/index.html
+- .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md
+- .pi/previews/<slug>/screenshots/portrait.png
+- .pi/previews/<slug>/screenshots/landscape.png
 
 Validate:
 - exactly one index.html output, no extra project files required;
@@ -284,21 +321,23 @@ Validate:
 - no fake unsupported factual claims presented as facts;
 - no fake logos/photos/product screenshots/client marks/testimonials/awards/metrics presented as real;
 - clear first impression and primary CTA;
+- portrait screenshot has no horizontal scroll, clipped content, unreadable text, broken stacking, or inaccessible tap targets;
+- landscape screenshot uses space intentionally and does not look sparse, stretched, or misaligned;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md.
 
 If you write a report, write .pi/previews/<slug>/REVIEW.md.
 Return PASS, CONDITIONAL, or REJECT with concrete fixes.
 ```
 
-## Step 8 — Autonomous Fix Loop
+## Step 9 — Autonomous Fix Loop
 
 If validator returns:
 
 | Verdict | Action |
 |---|---|
 | PASS | Stop and report the preview path. |
-| CONDITIONAL | Run `builder-home` once with validator fixes, then validate again. |
-| REJECT | Run `builder-home` once if fixes are concrete and within `index.html`; otherwise stop blocked with reason. |
+| CONDITIONAL | Run `builder-home` once with validator fixes, refresh screenshots, then validate again. |
+| REJECT | Run `builder-home` once if fixes are concrete and within `index.html`; refresh screenshots, then validate again. Otherwise stop blocked with reason. |
 
 Maximum fix attempts: **1**. After one failed fix attempt, stop and report the blocker.
 
@@ -312,6 +351,9 @@ Artifacts:
 - HOME_PLAN.md
 - TASK_builder-home.md
 - HOME_POLISH_PLAN.md
+- screenshots/portrait.png
+- screenshots/landscape.png
+- screenshots/VISUAL_SNAPSHOT.md
 - REVIEW.md if generated
 Validation: PASS/CONDITIONAL/REJECT
 Notes: [only important assumptions or blockers]

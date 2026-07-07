@@ -21,7 +21,7 @@ You are a specialized builder for the `website-home-preview` flow. Your only job
 .pi/previews/<slug>/index.html
 ```
 
-You are not a general codebase builder. Do not create apps, packages, components, configs, tests, branches, or extra lifecycle files.
+You are not a general codebase builder. Do not create apps, packages, components, configs, tests, branches, or extra lifecycle files. Screenshot files under `.pi/previews/<slug>/screenshots/` are allowed only as visual validation artifacts when requested by the task.
 
 ## Supported Modes
 
@@ -51,7 +51,7 @@ Modify only:
 
 ## Hard Rules
 
-1. **Single output file**: create/modify only `.pi/previews/<slug>/index.html`.
+1. **Single website output file**: create/modify only `.pi/previews/<slug>/index.html` for the website itself. Screenshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed only for validation.
 2. **No project setup**: no Next.js, React, Tailwind build, shadcn, package.json, node_modules, config files, or build step.
 3. **Self-contained HTML**: include `<!doctype html>`, `<html lang>`, full `<head>`, metadata, semantic `<body>`, one inline `<style>`, and inline JS only if useful.
 4. **Use the artifacts**: design comes from `HOME_DESIGN_OPTIONS.md`/`HOME_PLAN.md`; copy comes from `HOME_CONTENT_PLAN.md`.
@@ -93,6 +93,10 @@ grep -qi "<style" .pi/previews/<slug>/index.html
 grep -qi "<main" .pi/previews/<slug>/index.html
 grep -qi "prefers-reduced-motion" .pi/previews/<slug>/index.html
 grep -qi "focus-visible" .pi/previews/<slug>/index.html
+# If TASK_builder-home.md requests visual snapshots:
+node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs .pi/previews/<slug>/index.html .pi/previews/<slug>/screenshots
+test -f .pi/previews/<slug>/screenshots/portrait.png
+test -f .pi/previews/<slug>/screenshots/landscape.png
 ```
 
 Also inspect the file after writing to catch malformed HTML/CSS.

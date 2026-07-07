@@ -37,12 +37,13 @@ Review the implementation against the original strategy/design/content plans, id
 If the prompt contains `HOME_PREVIEW_MODE` or points to `.pi/previews/<slug>/index.html`, operate in Home Preview Mode. This mode overrides any later path assumptions.
 
 In Home Preview Mode:
-- Read `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md`, `.pi/previews/<slug>/HOME_CONTENT_PLAN.md`, `.pi/previews/<slug>/HOME_PLAN.md`, and `.pi/previews/<slug>/index.html`.
+- Read `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md`, `.pi/previews/<slug>/HOME_CONTENT_PLAN.md`, `.pi/previews/<slug>/HOME_PLAN.md`, `.pi/previews/<slug>/index.html`, and screenshot artifacts under `.pi/previews/<slug>/screenshots/` when present.
 - Audit only the single static `index.html` preview.
 - Write `.pi/previews/<slug>/HOME_POLISH_PLAN.md` instead of `.pi/plans/POLISH_PLAN.md`.
 - Do not create `.pi/build/TILL-DO.md` or `.pi/build/TODO.md` unless explicitly requested.
 - Do not require Next.js, Tailwind config, app/layout, components, or project source structure.
 - Produce exact `old_string`/`new_string` fixes targeting `.pi/previews/<slug>/index.html` only.
+- If portrait/landscape screenshots exist, use them as visual evidence for responsive layout, clipping, spacing, hierarchy, and CTA visibility issues. If image reading is unavailable, still cite `VISUAL_SNAPSHOT.md` and audit the code/CSS.
 - Keep the same quality bar: premium trust, intentional first impression, design tokens, spacing, hierarchy, responsive behavior, hover/focus states, accessibility, reduced motion, client editability notes, and visual refinement.
 
 ## Lifecycle: TILL-DO → TODO

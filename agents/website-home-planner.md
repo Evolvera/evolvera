@@ -121,6 +121,7 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Inline JS only if necessary.
 - No build step.
 - No external required assets.
+- Visual snapshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed for validation.
 ```
 
 ## Output 2: TASK_builder-home.md
@@ -140,6 +141,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 
 ## Must Create/Modify
 - Create or replace only `.pi/previews/<slug>/index.html`.
+- Validation may create or replace screenshot artifacts under `.pi/previews/<slug>/screenshots/`.
 
 ## Hard Requirements
 - Single self-contained HTML file.
@@ -153,7 +155,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Respect `prefers-reduced-motion`.
 - No package manager, no framework, no build step.
 - No external assets required to render well.
-- Do not create any other files.
+- Do not create any other project/source files. Screenshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed only for visual validation.
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]
@@ -165,6 +167,9 @@ Run:
 - `grep -qi "<style" .pi/previews/<slug>/index.html`
 - `grep -qi "<main" .pi/previews/<slug>/index.html`
 - `grep -qi "prefers-reduced-motion" .pi/previews/<slug>/index.html`
+- `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs .pi/previews/<slug>/index.html .pi/previews/<slug>/screenshots`
+- `test -f .pi/previews/<slug>/screenshots/portrait.png`
+- `test -f .pi/previews/<slug>/screenshots/landscape.png`
 
 ## Stop Rules
 - Stop if asked to create a full production project.
