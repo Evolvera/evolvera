@@ -153,8 +153,8 @@ Include, when suitable:
 - Desktop/landscape layout rules:
 - What changes between mobile and desktop:
 - What must stay consistent across both:
-- Screenshot review criteria for portrait:
-- Screenshot review criteria for landscape:
+- Screenshot review criteria for portrait: no horizontal overflow, no cropped/off-canvas visuals, readable text, CTA visible without awkward scrolling, touch targets clear.
+- Screenshot review criteria for landscape: no excessive empty/dead space, no stretched mobile layout, no floating/off-canvas imagery, balanced hero/content/visual proportions, clear CTA and hierarchy.
 
 ## 9. Design Tokens
 - Colors:
@@ -172,6 +172,7 @@ Include, when suitable:
 - JS must be inline and minimal, only if useful.
 - No build step, no framework, no package manager.
 - Prefer CSS shapes/gradients/inline SVG placeholders over external assets.
+- Any image, visual motif, mockup, card stack, or illustration placeholder must stay inside its intended container at both portrait and landscape sizes.
 - If no logo exists, use a tasteful temporary wordmark, not a fake logo.
 - If no imagery exists, use intentional placeholders/motifs, not fake photography.
 - Do not fake testimonials, client logos, awards, metrics, certifications, product screenshots, guarantees, or legal claims.
