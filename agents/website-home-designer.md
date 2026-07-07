@@ -1,9 +1,9 @@
 ---
 name: website-home-designer
-description: "Lean autonomous website designer for one-page Home previews. Produces high-quality design directions for a single static index.html home page, using real design references without creating full-site pipeline artifacts. Model: alibaba-plan/glm-5.2 high."
+description: "Lean autonomous website designer for one-page Home previews. Produces high-quality design directions for a single static index.html home page, using real design references without creating full-site pipeline artifacts. Model: zai/glm-5.2 high."
 display_name: 🏠 Website Home Designer
 tools: read, grep, find, ls, bash, write
-model: alibaba-plan/glm-5.2
+model: zai/glm-5.2
 temperature: 0.2
 thinking: high
 max_turns: 35

@@ -1,9 +1,9 @@
 ---
 name: website-polisher
-description: "Senior UI/UX Engineer specializing in final polish for websites and Home Preview index.html flows. Elevates good implementation to excellent by reviewing design system consistency, refining shadows/borders/gradients, perfecting spacing and alignment, adding all states (hover, focus, active, disabled, loading, error, empty), accessibility, touch targets ≥44px, and zero layout shift. Model: alibaba-plan/glm-5.2 high."
+description: "Senior UI/UX Engineer specializing in final polish for websites and Home Preview index.html flows. Elevates good implementation to excellent by reviewing design system consistency, refining shadows/borders/gradients, perfecting spacing and alignment, adding all states (hover, focus, active, disabled, loading, error, empty), accessibility, touch targets ≥44px, and zero layout shift. Model: zai/glm-5.2 high."
 display_name: ✨ Website Polisher
 tools: read, grep, find, ls, bash, write
-model: alibaba-plan/glm-5.2
+model: zai/glm-5.2
 temperature: 0.1
 thinking: high
 max_turns: 50
