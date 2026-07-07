@@ -114,8 +114,8 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Desktop landscape structure: [grid/composition, hero balance, visual motif placement, whitespace density, CTA placement]
 - What changes across breakpoints:
 - What stays consistent across breakpoints:
-- Portrait screenshot acceptance criteria:
-- Landscape screenshot acceptance criteria:
+- Portrait screenshot acceptance criteria: no horizontal overflow, no clipped/off-canvas visuals, readable type, visible primary CTA, intentional stacking, clear touch targets.
+- Landscape screenshot acceptance criteria: no excessive empty/dead space, no stretched mobile layout, no floating/off-canvas imagery, balanced hero/content/visual proportions, clear hierarchy and CTA.
 
 ## 6. Accessibility and UX Requirements
 - Semantic landmarks:
@@ -162,7 +162,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Responsive at mobile/tablet/desktop.
 - Mobile-first CSS, but desktop/landscape must have its own intentional composition.
 - At 390x844 portrait: no horizontal scroll, readable type, intentional stacking, visible primary CTA, touch targets ≥44px.
-- At 1440x900 landscape: use space intentionally with balanced grid/composition, no stretched mobile layout, no sparse dead zones, clear hero hierarchy and CTA.
+- At 1440x900 landscape: use space intentionally with balanced grid/composition, no stretched mobile layout, no sparse dead zones, no off-canvas/floating imagery outside intended containers, clear hero hierarchy and CTA.
 - Accessible landmarks: header, main, section, footer.
 - Keyboard-visible focus states.
 - Hover/active states for interactive elements.
@@ -170,6 +170,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - No package manager, no framework, no build step.
 - No external assets required to render well.
 - Do not create any other project/source files. Screenshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed only for visual validation.
+- Media/visual placeholders must use max-width/aspect-ratio/overflow-safe rules so they do not escape containers on portrait or landscape screenshots.
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]

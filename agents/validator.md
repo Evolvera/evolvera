@@ -29,8 +29,8 @@ skills: true
 
 If validating a `.pi/previews/<slug>/index.html` Home Preview and screenshots exist under `.pi/previews/<slug>/screenshots/`, treat them as required visual evidence:
 - read `VISUAL_SNAPSHOT.md`;
-- inspect `portrait.png` for mobile/portrait issues: horizontal scroll, clipped content, unreadable text, broken stacking, hidden CTAs, weak tap targets, or cramped desktop-derived layout;
-- inspect `landscape.png` for desktop/landscape issues: sparse composition, stretched mobile layout, broken alignment, weak hierarchy, hidden or competing CTAs, or poor use of wide space;
+- inspect `portrait.png` for mobile/portrait issues: horizontal scroll, clipped/off-canvas images or visual motifs, unreadable text, broken stacking, hidden CTAs, weak tap targets, or cramped desktop-derived layout;
+- inspect `landscape.png` for desktop/landscape issues: excessive empty/dead space, sparse composition, stretched mobile layout, off-canvas/floating imagery, broken alignment, weak hierarchy, hidden or competing CTAs, or poor use of wide space;
 - if screenshots are missing, request or run the Home Preview screenshot capture command before final PASS when sandbox/browser tooling is available.
 
 ---

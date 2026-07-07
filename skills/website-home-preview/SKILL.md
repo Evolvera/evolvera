@@ -265,7 +265,7 @@ Rules:
 - Audit only .pi/previews/<slug>/index.html.
 - Do not require Next.js, Tailwind config, app/layout, components, or project structure.
 - Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
-- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
+- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, image/visual containment, empty-space balance, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
 ```
 
 Expected output:
@@ -323,8 +323,9 @@ Validate:
 - no fake unsupported factual claims presented as facts;
 - no fake logos/photos/product screenshots/client marks/testimonials/awards/metrics presented as real;
 - clear first impression and primary CTA;
-- portrait screenshot has no horizontal scroll, clipped content, unreadable text, broken stacking, hidden primary CTA, or inaccessible tap targets;
-- landscape screenshot uses space intentionally and does not look sparse, stretched, generic, or misaligned;
+- portrait screenshot has no horizontal scroll, clipped/off-canvas visuals, unreadable text, broken stacking, hidden primary CTA, or inaccessible tap targets;
+- landscape screenshot uses space intentionally and does not look sparse, stretched, generic, misaligned, or full of empty/dead space;
+- images, mockups, card stacks, decorative motifs, and placeholders stay inside intended containers at both portrait and landscape sizes;
 - mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md.
 

@@ -72,6 +72,8 @@ Before finalizing, verify the page has:
 - buttons/links with hover, active, and focus-visible states;
 - visual richness using CSS gradients, borders, shadows, cards, masks, or inline SVG/CSS shapes;
 - no layout shift from missing dimensions where images/placeholders appear;
+- no visual/image/mockup/card stack escaping its intended container or causing overflow;
+- no excessive desktop dead space that makes sections feel empty or unfinished;
 - `prefers-reduced-motion` handling if animations/transitions are used.
 
 ## Implementation Guidance
@@ -81,6 +83,7 @@ Before finalizing, verify the page has:
 - Use inline SVG or CSS shapes for visuals instead of required external images.
 - Implement mobile styles first, then add breakpoint rules where desktop composition genuinely changes.
 - If using external fonts/images, the page must still look good without them.
+- Constrain visual motifs/media with `max-width`, `aspect-ratio`, `overflow: hidden` where appropriate, and breakpoint-specific sizing.
 - Use comments only for non-obvious preview placeholders or tricky CSS choices.
 - Keep JS minimal: mobile nav toggle, small interaction, or none.
 
