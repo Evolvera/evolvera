@@ -25,6 +25,14 @@ skills: true
 
 **Mandate**: Critical ou high-severity issues = **REJECTED** até corrigir. Sem exceções.
 
+## Home Preview Visual Snapshot Mode
+
+If validating a `.pi/previews/<slug>/index.html` Home Preview and screenshots exist under `.pi/previews/<slug>/screenshots/`, treat them as required visual evidence:
+- read `VISUAL_SNAPSHOT.md`;
+- inspect `portrait.png` for mobile/portrait issues: horizontal scroll, clipped content, unreadable text, broken stacking, hidden CTAs, weak tap targets;
+- inspect `landscape.png` for desktop/landscape issues: sparse composition, stretched sections, broken alignment, weak hierarchy, hidden or competing CTAs;
+- if screenshots are missing, request or run the Home Preview screenshot capture command before final PASS when sandbox/browser tooling is available.
+
 ---
 
 ## State Reset (MANDATORY)
