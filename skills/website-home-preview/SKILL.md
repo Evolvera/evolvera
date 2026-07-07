@@ -123,6 +123,7 @@ Requirements:
 - Scope is only one Home Page, not a full site.
 - No human approval. Make labeled assumptions if details are missing.
 - Design for premium trust: clear first impression, no DIY/template energy, restrained typography/colors, purposeful visuals, clear CTA.
+- Design mobile-first, but specify separate portrait/mobile and desktop/landscape composition strategies. Desktop must not be a stretched mobile layout; mobile must not be a cramped desktop layout.
 - Asset boundary: use provided assets if available; otherwise specify temporary wordmark, CSS/inline-SVG motifs, and placeholders. Do not invent final logo/images/proof.
 ```
 
@@ -179,6 +180,7 @@ Requirements:
 - Use HOME_CONTENT_PLAN.md as the source of truth for copy.
 - Write .pi/previews/<slug>/HOME_PLAN.md
 - Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
+- Preserve and operationalize the designer's mobile-first + desktop/landscape strategy.
 - The builder output must be exactly .pi/previews/<slug>/index.html
 - No full project, no package.json, no framework, no build step.
 ```
@@ -263,7 +265,7 @@ Rules:
 - Audit only .pi/previews/<slug>/index.html.
 - Do not require Next.js, Tailwind config, app/layout, components, or project structure.
 - Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
-- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, responsive behavior, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
+- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
 ```
 
 Expected output:
@@ -321,8 +323,9 @@ Validate:
 - no fake unsupported factual claims presented as facts;
 - no fake logos/photos/product screenshots/client marks/testimonials/awards/metrics presented as real;
 - clear first impression and primary CTA;
-- portrait screenshot has no horizontal scroll, clipped content, unreadable text, broken stacking, or inaccessible tap targets;
-- landscape screenshot uses space intentionally and does not look sparse, stretched, or misaligned;
+- portrait screenshot has no horizontal scroll, clipped content, unreadable text, broken stacking, hidden primary CTA, or inaccessible tap targets;
+- landscape screenshot uses space intentionally and does not look sparse, stretched, generic, or misaligned;
+- mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md.
 
 If you write a report, write .pi/previews/<slug>/REVIEW.md.

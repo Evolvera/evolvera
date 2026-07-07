@@ -61,6 +61,7 @@ Prefer:
 - semantic HTML;
 - inline CSS variables/tokens;
 - responsive CSS;
+- mobile-first layout with deliberate desktop/landscape composition, not a simple stretched mobile layout;
 - accessible nav, buttons, forms/CTA states if present;
 - inline SVG/CSS visual motifs;
 - no external dependencies.
@@ -104,9 +105,19 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Layout/grid:
 - Components:
 - Motion/interactions:
-- Responsive rules:
 
-## 5. Accessibility and UX Requirements
+## 5. Responsive Composition Plan
+- Mobile-first approach:
+- Portrait/mobile viewport target: 390x844
+- Desktop/landscape viewport target: 1440x900
+- Mobile portrait structure: [stacking, nav, hero, CTA, section rhythm, touch targets]
+- Desktop landscape structure: [grid/composition, hero balance, visual motif placement, whitespace density, CTA placement]
+- What changes across breakpoints:
+- What stays consistent across breakpoints:
+- Portrait screenshot acceptance criteria:
+- Landscape screenshot acceptance criteria:
+
+## 6. Accessibility and UX Requirements
 - Semantic landmarks:
 - Heading order:
 - Contrast:
@@ -114,7 +125,7 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Touch targets:
 - Reduced motion:
 
-## 6. Static HTML Constraints
+## 7. Static HTML Constraints
 - Output path: `.pi/previews/<slug>/index.html`
 - Single file only.
 - Inline CSS only.
@@ -149,6 +160,9 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Inline CSS in one `<style>` block.
 - CSS variables for design tokens.
 - Responsive at mobile/tablet/desktop.
+- Mobile-first CSS, but desktop/landscape must have its own intentional composition.
+- At 390x844 portrait: no horizontal scroll, readable type, intentional stacking, visible primary CTA, touch targets ≥44px.
+- At 1440x900 landscape: use space intentionally with balanced grid/composition, no stretched mobile layout, no sparse dead zones, clear hero hierarchy and CTA.
 - Accessible landmarks: header, main, section, footer.
 - Keyboard-visible focus states.
 - Hover/active states for interactive elements.
@@ -159,6 +173,12 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]
+
+## Responsive Implementation Requirements
+- Implement mobile styles first.
+- Add explicit breakpoint rules for tablet/desktop where composition changes.
+- Preserve the planner's portrait/mobile and desktop/landscape strategies from HOME_PLAN.
+- Do not rely on a single fluid layout if it makes desktop look stretched or mobile look cramped.
 
 ## Validation
 Run:
