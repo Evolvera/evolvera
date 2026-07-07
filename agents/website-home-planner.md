@@ -1,11 +1,11 @@
 ---
 name: website-home-planner
-description: "Autonomous planner for one-page Home previews. Reads HOME_DESIGN_OPTIONS and HOME_CONTENT_PLAN, selects/fuses the best design direction, writes HOME_PLAN and a builder task to produce a single static index.html. Model: anthropic/claude-fable-5."
+description: "Autonomous planner for one-page Home previews. Reads HOME_DESIGN_OPTIONS and HOME_CONTENT_PLAN, selects/fuses the best design direction, writes HOME_PLAN and a builder task to produce a single static index.html. Model: alibaba-plan/glm-5.2 high."
 display_name: 🧭 Website Home Planner
 tools: read, grep, find, ls, bash, write
-model: anthropic/claude-fable-5
+model: alibaba-plan/glm-5.2
 temperature: 0.1
-thinking: xhigh
+thinking: high
 max_turns: 35
 lifecycle: lazy
 prompt_mode: replace

@@ -5,7 +5,7 @@ description: Use the builder agent to implement focused code changes. Builder ru
 
 # Builder Skill — Focused Code Execution
 
-Builder is a delegated implementation agent. Use `builder-highspeed`, `builder`, or `builder-heavy` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
+Builder is a delegated implementation agent. Use `builder-highspeed`, `builder`, `builder-heavy`, or `builder-heavy-design` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
 
 ## Goal
 
@@ -25,20 +25,22 @@ Success means:
 | Agent | Use When | Avoid When |
 |---|---|---|
 | `builder-highspeed` | Highspeed sweet spot: single-file/module-local mechanical edits, rapid non-visual prototypes, utilities, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, frontend/UI implementation beyond tiny exact tweaks, final visual polish or brand/design decisions |
-| `builder` | Preferred/default for frontend/UI coding: React components, CSS/Tailwind, layout, responsive behavior, accessibility states, design-system application, and applying polish plans. Also fits explicit, bounded, normal-risk tasks where TILL-DO/TODO/HANDOVER helps; evidence COLLECTION (cite files, list facts) | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior destructive churn from a lighter builder; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only) |
-| `builder-heavy` | For complex or higher-risk bounded implementation where the risk is correctness/integration: subtle multi-file integration, shared-file hazards, large tests/source files, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status decisions) that later tasks depend on | frontend/UI work when the main risk is visual quality or design-system execution; tiny edits; cheap mechanical batches; vague architecture/design tasks that need planner/scout first |
+| `builder` | Preferred/default for frontend/UI coding: React components, CSS/Tailwind, layout, responsive behavior, accessibility states, design-system application, and applying polish plans. Also strong for normal-risk logic/backend/tooling tasks when the scope is explicit and bounded; evidence COLLECTION (cite files, list facts) | complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, large multi-file composition, prior destructive churn from a lighter builder; top-tier visual spectacle/3D/motion tasks; decision/stop-gate/evidence-ADJUDICATION tasks whose output drives downstream work (even if read-only) |
+| `builder-heavy` | For complex or higher-risk bounded implementation where the risk is correctness/integration: subtle multi-file integration, shared-file hazards, large tests/source files, migrations, math/science/algorithm correctness, long/composed tasks, recovery after lighter builder failure, auth/payment/security-adjacent work with explicit scope; high-consequence read-only artifacts (feasibility stop-gates, evidence indices, verdict/status decisions) that later tasks depend on. This is the heavy logic/backend/math/correctness tier. | frontend/UI work when the main risk is visual quality or design-system execution; premium design polish; 2D/3D visual craft; tiny edits; cheap mechanical batches; vague architecture/design tasks that need planner/scout first |
+| `builder-heavy-design` | Ultimate design-quality tier for bounded website/frontend work where the main risk is visual excellence: premium marketing sites, distinctive UI systems, advanced CSS/SVG/Canvas/3D-feeling visuals, complex animation, immersive hero sections, high-end responsive polish, or rescuing UI that works but still feels generic. | backend, APIs, DB, infra, auth/payment/security correctness, math/algorithm/science, migrations, subtle data-flow integration, unsupported factual claims, or tasks with unclear product/design direction that need `website-designer` first |
 
-Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone. Use it only when the task is explicit, bounded, and easy to verify. For frontend/UI coding, treat the standard `builder` as the quality default: it currently produces better UI/frontend code than both `builder-highspeed` and `builder-heavy`. Use `builder-heavy` when correctness risk, shared-file preservation, math/science/algorithm reasoning, subtle integration, long composed workflow, or prior builder failure makes the extra capability worth the cost. When genuinely unsure between standard and heavy for frontend, prefer `builder` unless there is a concrete non-visual correctness/integration hazard.
+Treat `builder-highspeed` as a draft-speed executor: much faster, but less capable, shorter-context, and more hallucination-prone. Use it only when the task is explicit, bounded, and easy to verify. For frontend/UI coding, treat the standard `builder` as the quality default: it is very strong for UI implementation, layout, design-system application, accessibility, and normal frontend polish. Use `builder-heavy-design` when the task explicitly needs top-of-line design quality, advanced 2D/3D visuals, distinctive art direction, sophisticated animation, immersive hero work, or premium visual rescue beyond what the default builder should handle. Use `builder-heavy` when correctness risk, shared-file preservation, math/science/algorithm reasoning, subtle integration, long composed workflow, backend/logic complexity, or prior builder failure makes the extra correctness capability worth the cost. When genuinely unsure for frontend, prefer `builder` unless the task clearly calls for either `builder-heavy-design` (visual excellence) or `builder-heavy` (non-visual correctness/integration hazard).
 
 **Route by consequence, not only by mutation risk.** A read-only / single-file / "just a doc or JSON" task is still high-risk when its OUTPUT is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — a wrong judgment there propagates silently because downstream gates (tests, lint, anti-cheat, type/build) catch fabrication/churn in code, not a wrong conclusion in a doc. Use `builder-heavy` (plus review) for those, and for adjudicating conflicting evidence. `builder` may COLLECT evidence but should not be the one to ADJUDICATE verdicts; split collection from adjudication if one task does both.
 
 ### Frontend/UI Routing Override
 
 For implementation tasks whose primary work is frontend quality, route to `builder` by default:
-- React/Vue/Svelte components, JSX/TSX structure, Tailwind/CSS styling, layout, responsive behavior, accessibility states, animations, design-system application, and applying `website-polisher` fixes.
+- React/Vue/Svelte components, JSX/TSX structure, Tailwind/CSS styling, layout, responsive behavior, accessibility states, ordinary animations, design-system application, and applying most `website-polisher` fixes.
 - Use `builder-highspeed` only for tiny, exact, mechanical UI edits such as a known class/token/text swap in one file.
+- Use `builder-heavy-design` when the task requires exceptional design execution: premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling scenes, immersive sections, distinctive art direction, or when `builder` produced acceptable code but not a visually top-tier result.
 - Use `builder-heavy` only when the frontend task is high-risk for non-visual reasons: shared-file hazards, cross-cutting state/data flow, auth/payment/security-adjacent UI behavior, migrations, recovery after failure, or preservation-critical large files.
-- If the only reason to choose heavy is “premium UI quality,” choose `builder` instead.
+- If the only reason to choose heavy is “premium UI quality,” choose `builder-heavy-design`, not `builder-heavy`.
 
 ## When to Use Builder
 
@@ -46,7 +48,8 @@ Use a builder for:
 - one focused fix, component, endpoint, test, or refactor;
 - planner-generated task files;
 - mechanical changes with clear target behavior;
-- `builder-heavy` tasks that are bounded but complex/correctness-sensitive enough to need stronger reasoning.
+- `builder-heavy` tasks that are bounded but complex/correctness-sensitive enough to need stronger reasoning;
+- `builder-heavy-design` tasks that are bounded but require exceptional visual/design execution.
 
 For `builder-highspeed`, prefer even smaller slices:
 - one file or one module-local concern;
@@ -64,7 +67,7 @@ When using `builder-highspeed`, prompts must include tighter steering because it
 - **No phantom dependencies**: do not let it add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
 - **Short workflows only**: avoid if the task needs 6–8+ ordered steps, broad repo context, or stateful checklist execution.
 - **Simple outputs**: avoid requiring complex structured output from it unless absolutely necessary; use concise reports.
-- **Switch away from highspeed**: use `builder` for frontend/UI implementation, polish application, and normal-risk structured execution. Use `builder-heavy` for subtle integration, shared-file hazards, migrations, math/science/algorithm-heavy work, auth/payment/security-adjacent changes, or anything where a wrong-looking-right answer is expensive.
+- **Switch away from highspeed**: use `builder` for frontend/UI implementation, normal polish application, and normal-risk structured execution. Use `builder-heavy-design` for top-tier website visual quality, advanced animation, and 2D/3D design craft. Use `builder-heavy` for subtle integration, shared-file hazards, migrations, math/science/algorithm-heavy work, auth/payment/security-adjacent changes, or anything where a wrong-looking-right answer is expensive.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -99,7 +102,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-highspeed`, `builder`, and `builder-heavy`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task. For `/plan-heavy`, do not run a builder until its execution envelope exists.
+Planner-generated schedules may mix `builder-highspeed`, `builder`, `builder-heavy`, and `builder-heavy-design`. Always use the `Agent` value in `SCHEDULE.md` and the task file frontmatter/header. The schedule must also define checkpoint expectations; default is one selective commit per verified task. For `/plan-heavy`, do not run a builder until its execution envelope exists.
 
 ## Direct Mode Prompt
 
@@ -181,6 +184,7 @@ Before spawning builder, verify:
 - [ ] Task is small enough for a delegated model.
 - [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, every API/package/symbol can be verified, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-heavy`, task is bounded, correctness-sensitive, and includes enough repo state/preservation constraints to justify the heavier model; frontend tasks routed heavy have a concrete non-visual correctness/integration reason.
+- [ ] If using `builder-heavy-design`, task is bounded, design-sensitive, and includes enough design artifacts/visual acceptance criteria to justify the visual heavy tier.
 
 If more than two boxes are missing, do more prep or implement directly.
 
