@@ -43,7 +43,7 @@ In Home Preview Mode:
 - Do not create `.pi/build/TILL-DO.md` or `.pi/build/TODO.md` unless explicitly requested.
 - Do not require Next.js, Tailwind config, app/layout, components, or project source structure.
 - Produce exact `old_string`/`new_string` fixes targeting `.pi/previews/<slug>/index.html` only.
-- If portrait/landscape screenshots exist, use them as visual evidence for responsive layout, clipping, spacing, hierarchy, and CTA visibility issues. If image reading is unavailable, still cite `VISUAL_SNAPSHOT.md` and audit the code/CSS.
+- If portrait/landscape screenshots exist, use them as visual evidence for responsive layout, clipping, spacing, hierarchy, and CTA visibility issues. Specifically check that portrait/mobile feels intentionally stacked and touch-friendly, while landscape/desktop has its own balanced composition rather than a stretched mobile layout. If image reading is unavailable, still cite `VISUAL_SNAPSHOT.md` and audit the code/CSS.
 - Keep the same quality bar: premium trust, intentional first impression, design tokens, spacing, hierarchy, responsive behavior, hover/focus states, accessibility, reduced motion, client editability notes, and visual refinement.
 
 ## Lifecycle: TILL-DO → TODO
@@ -121,6 +121,7 @@ For EVERY element found, verify:
 - [ ] Visual design feels appropriate to the business category and buyer psychology
 - [ ] The page has a clear emotional arc: first glance → trust → action
 - [ ] The strongest CTA is visible and not competing with too many alternatives
+- [ ] Mobile portrait and desktop landscape have distinct, intentional compositions appropriate to their viewport
 - [ ] Supporting CTAs are secondary in hierarchy
 - [ ] Trust signals/proof are visible where promised in DESIGN_PLAN/CONTENT_PLAN
 - [ ] Missing proof remains a placeholder or is omitted — never faked

@@ -53,7 +53,7 @@ The Home preview should feel like a premium first screen of a real product/site,
 - purposeful graphics/assets that guide attention or explain information;
 - section rhythm from hero to final CTA;
 - design tokens that can be implemented in one HTML file;
-- responsive behavior;
+- mobile-first responsive behavior with separate portrait/mobile and landscape/desktop composition decisions;
 - hover/focus/active states;
 - accessibility constraints;
 - enough content intent for autonomous copy generation.
@@ -104,6 +104,8 @@ Write `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md` with this structure:
 - Asset/placeholder strategy:
 - Trust/proof strategy:
 - Interaction style:
+- Mobile-first strategy: [portrait 390px — hierarchy, stacking, nav, CTA placement, touch targets]
+- Desktop/landscape strategy: [1440px — composition, grid, visual density, hero balance, CTA placement]
 - Risks/tradeoffs:
 
 ## 4. Option B — [Name]
@@ -129,7 +131,8 @@ For each section:
 - Asset/graphic placeholder:
 - Trust/proof placeholder:
 - States/interactions:
-- Responsive behavior:
+- Mobile portrait behavior: [390px class viewport — stacking, spacing, text scale, CTA/touch targets]
+- Desktop landscape behavior: [1440px class viewport — grid/composition, use of whitespace, visual motif placement]
 - Accessibility notes:
 
 Include, when suitable:
@@ -144,7 +147,16 @@ Include, when suitable:
 - Final CTA
 - Footer
 
-## 8. Design Tokens
+## 8. Responsive Composition Strategy
+- Mobile-first principle:
+- Portrait/mobile layout rules:
+- Desktop/landscape layout rules:
+- What changes between mobile and desktop:
+- What must stay consistent across both:
+- Screenshot review criteria for portrait:
+- Screenshot review criteria for landscape:
+
+## 9. Design Tokens
 - Colors:
 - Typography:
 - Spacing scale:
@@ -154,7 +166,7 @@ Include, when suitable:
 - Gradients/textures:
 - Motion timings:
 
-## 9. Preview Constraints
+## 10. Preview Constraints
 - Must be a single `index.html` file.
 - CSS must be inline in `<style>`.
 - JS must be inline and minimal, only if useful.

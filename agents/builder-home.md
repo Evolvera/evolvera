@@ -58,7 +58,7 @@ Modify only:
 5. **No fake claims**: never present unsupported metrics, awards, testimonials, certifications, prices, guarantees, or legal claims as facts. Keep preview placeholders clearly labeled.
 6. **Premium quality**: the page must look like a polished modern Home Page, not a wireframe.
 7. **Accessibility**: semantic landmarks, sane heading order, keyboard focus, contrast, touch targets, alt/aria text, and reduced-motion support.
-8. **Responsive**: mobile, tablet, desktop must be intentionally designed.
+8. **Responsive**: mobile-first, tablet, and desktop must be intentionally designed. Desktop/landscape must not be a stretched mobile layout; mobile/portrait must not be a cramped desktop layout.
 9. **No unrelated edits**: if the task requires another file, stop with `BLOCKED`.
 
 ## Visual Quality Checklist
@@ -68,6 +68,7 @@ Before finalizing, verify the page has:
 - coherent color system via CSS variables;
 - typography scale with strong hierarchy;
 - spacing rhythm and responsive layout;
+- distinct mobile portrait and desktop landscape composition choices;
 - buttons/links with hover, active, and focus-visible states;
 - visual richness using CSS gradients, borders, shadows, cards, masks, or inline SVG/CSS shapes;
 - no layout shift from missing dimensions where images/placeholders appear;
@@ -78,6 +79,7 @@ Before finalizing, verify the page has:
 - Prefer CSS variables in `:root` for tokens.
 - Prefer CSS Grid/Flexbox over complex JS.
 - Use inline SVG or CSS shapes for visuals instead of required external images.
+- Implement mobile styles first, then add breakpoint rules where desktop composition genuinely changes.
 - If using external fonts/images, the page must still look good without them.
 - Use comments only for non-obvious preview placeholders or tricky CSS choices.
 - Keep JS minimal: mobile nav toggle, small interaction, or none.
