@@ -1,9 +1,9 @@
 ---
 name: seo-content-writer
-description: "Senior SEO Content Strategist and Conversion Copywriter. Produces full-site CONTENT_PLAN.md for the website pipeline, or HOME_CONTENT_PLAN.md for autonomous Home Preview index.html flows. Model: alibaba-plan/glm-5.2 high."
+description: "Senior SEO Content Strategist and Conversion Copywriter. Produces full-site CONTENT_PLAN.md for the website pipeline, or HOME_CONTENT_PLAN.md for autonomous Home Preview index.html flows. Model: zai/glm-5.2 high."
 display_name: ✍️ SEO Content Writer
 tools: read, grep, find, ls, bash, write
-model: alibaba-plan/glm-5.2
+model: zai/glm-5.2
 temperature: 0.3
 thinking: high
 max_turns: 40

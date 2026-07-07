@@ -1,6 +1,7 @@
 node_modules/
 .env
 *.log
+pi-web.pid
 .DS_Store
 Thumbs.db
 mcp-secrets.json
