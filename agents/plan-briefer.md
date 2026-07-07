@@ -71,8 +71,8 @@ UNITS and their boundaries — not numbered tasks or a DAG.]
 and how to mitigate each. Reference handoff hazards.]
 
 ## Builder Routing Intuition
-[For each unit: which builder tier fits (builder-highspeed / builder / builder-heavy) and why,
-based on risk/complexity. This is guidance for the final planner, not a binding assignment. Frontend/UI coding quality defaults to `builder`; use `builder-highspeed` only for tiny exact mechanical UI tweaks, and `builder-heavy` for frontend only when there is a concrete non-visual correctness/integration hazard.]
+[For each unit: which builder tier fits (builder-highspeed / builder / builder-heavy / builder-heavy-design) and why,
+based on risk/complexity. This is guidance for the final planner, not a binding assignment. Frontend/UI coding quality defaults to `builder`; use `builder-highspeed` only for tiny exact mechanical UI tweaks; use `builder-heavy-design` for exceptional visual quality, advanced motion, 2D/3D website craft, or premium visual rescue; use `builder-heavy` for frontend only when there is a concrete non-visual correctness/integration hazard.]
 
 ## Validation Strategy
 [How to prove each unit works: tests, typecheck, build, markers. TDD-where-practical.]

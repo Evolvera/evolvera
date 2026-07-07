@@ -14,9 +14,10 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 
 | Tier | Agents | Model | Best For | Avoid |
 |---|---|---|---|---|
-| Default | `scout`, `builder` | Standard tier | explicit, bounded, normal-risk tasks where structured lifecycle helps; preferred/default for frontend/UI coding quality | latency-sensitive non-visual batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior destructive churn |
+| Default | `scout`, `builder` | Standard tier | explicit, bounded, normal-risk tasks where structured lifecycle helps; preferred/default for frontend/UI coding quality | latency-sensitive non-visual batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior destructive churn, top-tier 2D/3D visual spectacle |
 | Highspeed | `scout-highspeed`, `builder-highspeed` | Draft-speed tier | very fast bounded retrieval/execution, single-file mechanical edits, rapid non-visual prototypes, backend/tooling/tests, mechanical changes | frontend/UI implementation beyond tiny exact token/class/text swaps, broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
-| Heavy | `builder-heavy` | High-capability tier | complex or higher-risk bounded work where the risk is correctness/integration: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | frontend/UI work whose main risk is visual quality/design-system execution, tiny mechanical edits, broad planning, vague UI/design tasks |
+| Heavy | `builder-heavy` | Correctness/integration tier | complex or higher-risk bounded work where the risk is correctness/integration: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | frontend/UI work whose main risk is visual quality/design-system execution, tiny mechanical edits, broad planning, vague UI/design tasks |
+| Heavy Design | `builder-heavy-design` | Ultimate visual tier | bounded website/frontend work where the risk is exceptional visual quality: premium websites, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, visual rescue after normal builder output is not premium | backend/API/DB/infra, auth/payment/security correctness, math/algorithm/science, migrations, subtle integration, unsupported factual claims |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
@@ -134,9 +135,10 @@ Agent({
 - Use `builder` as the preferred/default agent for frontend/UI coding quality: React components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and polish-plan application.
 - Use `builder-highspeed` for single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors. For frontend, use it only for tiny exact token/class/text swaps.
 - Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
-- Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. For frontend, use heavy only when there is a concrete non-visual correctness/integration hazard; if the reason is UI quality, choose `builder`.
+- Use `builder-heavy-design` for bounded frontend/website work whose main risk is exceptional visual quality: premium UI, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, or visual rescue after normal builder output is functional but not premium.
+- Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. For frontend, use heavy only when there is a concrete non-visual correctness/integration hazard; if the reason is UI quality, choose `builder-heavy-design` for ultimate visual work or `builder` for normal UI.
 - Route by consequence, not only by mutation risk. A read-only / single-file / doc-or-JSON task is still high-risk when its output is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — downstream gates catch fabrication/churn in code, not a wrong judgment in a doc. Route those to `builder-heavy` (plus review). `builder` may COLLECT evidence but not ADJUDICATE verdicts.
-- Avoid `builder-highspeed` for real frontend implementation, final frontend polish, brand/design decisions, or vague UI requests; use website pipeline or `builder`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
+- Avoid `builder-highspeed` for real frontend implementation, final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder`, or `builder-heavy-design` for exceptional visual execution. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
 - Parallelize when files are disjoint.
@@ -151,12 +153,12 @@ scout → planner → builder → validator
 
 1. **scout** first if you don't understand the code
 2. **planner** next if architecture is needed (after your pre-plan + user approval)
-3. **builder-highspeed/builder/builder-heavy** to execute planned tasks according to the planner's `Agent` column
+3. **builder-highspeed/builder/builder-heavy/builder-heavy-design** to execute planned tasks according to the planner's `Agent` column
 4. **validator** after builder for high-impact or >10 files changed
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when cautious structure matters; `builder-heavy` when correctness/preservation risk is high
+- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when cautious structure matters or normal UI quality matters; `builder-heavy` when correctness/preservation risk is high; `builder-heavy-design` when exceptional website visual quality matters
 - Critical (auth, payment) → builder + validator
 
 ---

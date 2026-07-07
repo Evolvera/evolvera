@@ -1,0 +1,14 @@
+{
+  "name": "pi-studio",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Docker-friendly workspace web interface for Pi Coding Agent RPC mode.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --check server.mjs && node --check public/app.js && node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

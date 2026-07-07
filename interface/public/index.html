@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PI Studio</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="studio-shell">
+      <aside class="project-rail">
+        <div class="brand">
+          <div class="brand-mark">π</div>
+          <div>
+            <strong>PI Studio</strong>
+            <span>workspace agent</span>
+          </div>
+        </div>
+
+        <div class="rail-section-head">
+          <span>Projetos</span>
+          <button id="refreshProjectsBtn" title="Recarregar projetos">↻</button>
+        </div>
+        <div id="projectsList" class="projects-list"></div>
+
+        <div class="rail-footer">
+          <div id="runtimePill" class="runtime-pill">booting</div>
+          <button id="openDockerHelpBtn" class="link-button">Docker setup</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="workspace-topbar">
+          <div class="project-title-block">
+            <div id="projectEyebrow" class="eyebrow">Nenhum projeto selecionado</div>
+            <h1 id="projectTitle">Escolha um projeto</h1>
+            <p id="projectPath">O PI inicia automaticamente quando você abre um projeto.</p>
+          </div>
+          <div class="top-actions">
+            <button id="newSessionBtn">Nova conversa</button>
+          </div>
+        </header>
+
+        <section class="chat-column">
+          <div id="widgetArea" class="widget-area hidden"></div>
+          <div id="messages" class="messages" aria-live="polite">
+            <div class="empty-state">
+              <div class="empty-orb">π</div>
+              <h2>PI pronto dentro do projeto</h2>
+              <p>Selecione um projeto na esquerda. As conversas ficam no dropdown do próprio projeto.</p>
+            </div>
+          </div>
+
+          <footer class="composer-wrap">
+            <div id="attachments" class="attachments"></div>
+            <form id="composer" class="composer">
+              <textarea id="promptInput" rows="1" placeholder="Pede algo pro PI neste projeto…"></textarea>
+              <div class="composer-toolbar">
+                <label class="file-button">
+                  <input id="imageInput" type="file" accept="image/*" multiple />
+                  + imagem
+                </label>
+                <button id="actionBtn" class="primary" type="submit" aria-label="Enviar">Enviar</button>
+              </div>
+            </form>
+          </footer>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="uiDialog" class="ui-dialog">
+      <form method="dialog" id="uiDialogForm">
+        <h3 id="uiDialogTitle">PI precisa de resposta</h3>
+        <div id="uiDialogBody"></div>
+        <menu>
+          <button id="uiCancelBtn" value="cancel">Cancelar</button>
+          <button id="uiOkBtn" class="primary" value="ok">OK</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="dockerDialog" class="ui-dialog wide-dialog">
+      <form method="dialog">
+        <h3>Rodar como ambiente Docker</h3>
+        <p>Use Docker quando quiser que o PI Studio seja o ambiente de trabalho e cada pasta montada vire um projeto.</p>
+        <pre><code>cd /Users/j.henrique/.pi/agent/interface
+PI_WORKSPACES_DIR="$HOME" docker compose up --build</code></pre>
+        <p class="muted">O compose monta seus projetos em <code>/workspaces</code> e seu <code>~/.pi/agent</code> dentro do container para manter agentes, skills, auth e histórico.</p>
+        <menu><button class="primary" value="ok">Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <div id="toasts" class="toasts"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

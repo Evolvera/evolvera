@@ -1,0 +1,728 @@
+#!/usr/bin/env node
+import { createServer } from "node:http";
+import { spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { access, readdir, readFile, stat } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, "public");
+const DEFAULT_HOST = process.env.PI_WEB_HOST || "127.0.0.1";
+const DEFAULT_PORT = Number.parseInt(process.env.PI_WEB_PORT || "4123", 10);
+const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
+const MAX_BODY_BYTES = 30 * 1024 * 1024;
+const HISTORY_LIMIT = 800;
+const LOG_LIMIT = 1000;
+const PROJECT_LIMIT = Number.parseInt(process.env.PI_WEB_PROJECT_LIMIT || "200", 10);
+const PROJECT_MARKERS = new Set([
+  ".git",
+  ".pi",
+  "AGENTS.md",
+  "package.json",
+  "pnpm-workspace.yaml",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "composer.json",
+  "Gemfile",
+  "deno.json",
+]);
+const SKIP_DIRS = new Set([
+  ".Trash",
+  ".cache",
+  ".npm",
+  ".bun",
+  ".config",
+  "Library",
+  "Applications",
+  "Movies",
+  "Music",
+  "Pictures",
+  "node_modules",
+]);
+
+const sessions = new Map();
+const projects = new Map();
+const serverLogs = [];
+
+function recordLog(level, message, details = undefined) {
+  const entry = { at: new Date().toISOString(), level, message, details };
+  serverLogs.push(entry);
+  if (serverLogs.length > LOG_LIMIT) serverLogs.shift();
+  return entry;
+}
+
+function json(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+function text(res, status, payload, contentType = "text/plain; charset=utf-8") {
+  res.writeHead(status, {
+    "content-type": contentType,
+    "content-length": Buffer.byteLength(payload),
+    "cache-control": "no-store",
+  });
+  res.end(payload);
+}
+
+function sendSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeName(value) {
+  return String(value || "").replace(/[\u0000-\u001f]/g, "").trim();
+}
+
+function projectIdFor(cwd) {
+  return createHash("sha1").update(path.resolve(cwd)).digest("hex").slice(0, 16);
+}
+
+function parseStringArrayEnv(name) {
+  const raw = process.env[name];
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Allow PATH-style env as a convenience.
+  }
+  return raw.split(path.delimiter).map((item) => item.trim()).filter(Boolean);
+}
+
+function parsePiPrefixArgs() {
+  const raw = process.env.PI_WEB_PI_BIN_ARGS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Fall through to safe default.
+  }
+  recordLog("warn", "Ignoring PI_WEB_PI_BIN_ARGS; expected JSON array of strings.");
+  return [];
+}
+
+async function readJsonBody(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      const err = new Error("Request body too large");
+      err.statusCode = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
+  if (chunks.length === 0) return {};
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    error.statusCode = 400;
+    error.message = `Invalid JSON body: ${error.message}`;
+    throw error;
+  }
+}
+
+async function pathExists(filePath) {
+  try {
+    await access(filePath, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isDirectory(filePath) {
+  try {
+    return (await stat(filePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function looksLikeProject(dir) {
+  for (const marker of PROJECT_MARKERS) {
+    if (await pathExists(path.join(dir, marker))) return true;
+  }
+  return false;
+}
+
+function parseFrontmatter(markdown) {
+  if (!markdown.startsWith("---")) return {};
+  const end = markdown.indexOf("\n---", 3);
+  if (end === -1) return {};
+  const block = markdown.slice(3, end).trim();
+  const data = {};
+  for (const line of block.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    data[key] = rawValue.trim().replace(/^['"]|['"]$/g, "");
+  }
+  return data;
+}
+
+async function readAgentsFromDir(dir, scope) {
+  if (!(await isDirectory(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  const agents = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const filePath = path.join(dir, entry.name);
+    const content = await readFile(filePath, "utf8");
+    const fm = parseFrontmatter(content);
+    const fallbackName = entry.name.replace(/\.md$/i, "");
+    const bodyTitle = content.match(/^#\s+(.+)$/m)?.[1];
+    agents.push({
+      name: fm.name || fallbackName,
+      description: fm.description || bodyTitle || "Custom Pi agent",
+      model: fm.model || undefined,
+      thinking: fm.thinking || undefined,
+      tools: fm.tools || undefined,
+      scope,
+      path: filePath,
+    });
+  }
+  return agents;
+}
+
+async function listAgents(cwd = process.cwd()) {
+  const dirs = [
+    { dir: path.join(AGENT_DIR, "agents"), scope: "global" },
+    { dir: path.join(cwd, ".pi", "agents"), scope: "project" },
+  ];
+  const byName = new Map();
+  for (const { dir, scope } of dirs) {
+    for (const agent of await readAgentsFromDir(dir, scope)) byName.set(agent.name, agent);
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function getProjectRoots() {
+  const explicit = parseStringArrayEnv("PI_PROJECT_ROOTS");
+  if (explicit.length) return explicit.map((item) => path.resolve(item));
+  const workspace = process.env.PI_WORKSPACES_DIR || ((await isDirectory("/workspaces")) ? "/workspaces" : homedir());
+  return [path.resolve(workspace)];
+}
+
+async function discoverProjects() {
+  const found = new Map();
+  for (const root of await getProjectRoots()) {
+    if (!(await isDirectory(root))) continue;
+    if (await looksLikeProject(root)) {
+      const project = makeProject(root, root);
+      found.set(project.id, project);
+    }
+    let entries = [];
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      recordLog("warn", `Cannot read project root ${root}`, { error: error.message });
+      continue;
+    }
+    for (const entry of entries) {
+      if (found.size >= PROJECT_LIMIT) break;
+      if (!entry.isDirectory() || SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+      const cwd = path.join(root, entry.name);
+      if (!(await looksLikeProject(cwd))) continue;
+      const project = makeProject(cwd, root);
+      found.set(project.id, project);
+    }
+  }
+  if (found.size === 0) {
+    const fallback = makeProject(process.cwd(), path.dirname(process.cwd()));
+    found.set(fallback.id, fallback);
+  }
+  projects.clear();
+  for (const project of [...found.values()].sort((a, b) => a.name.localeCompare(b.name))) projects.set(project.id, project);
+  return [...projects.values()];
+}
+
+function makeProject(cwd, root) {
+  const resolved = path.resolve(cwd);
+  const active = [...sessions.values()].find((session) => session.cwd === resolved && !session.exited);
+  return {
+    id: projectIdFor(resolved),
+    name: path.basename(resolved) || resolved,
+    cwd: resolved,
+    root,
+    activeSessionId: active?.id || null,
+    hasGit: false,
+  };
+}
+
+async function ensureProject(projectId) {
+  if (!projects.has(projectId)) await discoverProjects();
+  const project = projects.get(projectId);
+  if (!project) {
+    const error = new Error("Unknown project");
+    error.statusCode = 404;
+    throw error;
+  }
+  return project;
+}
+
+class PiRpcSession {
+  constructor(options) {
+    this.id = randomUUID();
+    this.projectId = options.projectId;
+    this.projectName = options.projectName;
+    this.cwd = path.resolve(options.cwd || process.cwd());
+    this.createdAt = new Date().toISOString();
+    this.clients = new Set();
+    this.history = [];
+    this.stdoutBuffer = "";
+    this.stderrBuffer = "";
+    this.exited = false;
+    this.exitCode = null;
+    this.signal = null;
+    this.options = options;
+    this.proc = null;
+    this.lastState = null;
+  }
+
+  start() {
+    const piBin = process.env.PI_WEB_PI_BIN || "pi";
+    const args = [...parsePiPrefixArgs(), "--mode", "rpc", "--name", this.projectName || path.basename(this.cwd) || "pi-web"];
+    if (process.env.PI_WEB_PROVIDER) args.push("--provider", process.env.PI_WEB_PROVIDER);
+    if (process.env.PI_WEB_MODEL) args.push("--model", process.env.PI_WEB_MODEL);
+
+    this.proc = spawn(piBin, args, {
+      cwd: this.cwd,
+      env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    this.proc.stdout.setEncoding("utf8");
+    this.proc.stderr.setEncoding("utf8");
+    this.proc.stdout.on("data", (chunk) => this.consumeStdout(chunk));
+    this.proc.stderr.on("data", (chunk) => this.consumeStderr(chunk));
+    this.proc.on("error", (error) => {
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      this.broadcast("process_error", { type: "process_error", message: error.message });
+    });
+    this.proc.on("exit", (code, signal) => {
+      this.exited = true;
+      this.exitCode = code;
+      this.signal = signal;
+      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
+      this.broadcast("process_exit", { type: "process_exit", code, signal });
+      for (const client of this.clients) client.end();
+      this.clients.clear();
+    });
+
+    recordLog("info", `Started PI for ${this.cwd}`, { sessionId: this.id, piBin, args: redactArgs(args) });
+    this.broadcast("session_ready", {
+      type: "session_ready",
+      id: this.id,
+      projectId: this.projectId,
+      projectName: this.projectName,
+      cwd: this.cwd,
+      createdAt: this.createdAt,
+      piBin,
+      args: redactArgs(args),
+    });
+
+    setTimeout(() => {
+      try {
+        this.send({ id: "bootstrap-state", type: "get_state" });
+        this.send({ id: "bootstrap-commands", type: "get_commands" });
+      } catch {
+        // The process may have failed immediately; process_error covers it.
+      }
+    }, 250);
+  }
+
+  consumeStdout(chunk) {
+    this.stdoutBuffer += chunk;
+    let newlineIndex = this.stdoutBuffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      let line = this.stdoutBuffer.slice(0, newlineIndex);
+      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      this.handleStdoutLine(line);
+      newlineIndex = this.stdoutBuffer.indexOf("\n");
+    }
+  }
+
+  consumeStderr(chunk) {
+    this.stderrBuffer += chunk;
+    let newlineIndex = this.stderrBuffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      let line = this.stderrBuffer.slice(0, newlineIndex);
+      this.stderrBuffer = this.stderrBuffer.slice(newlineIndex + 1);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line.trim()) {
+        recordLog("stderr", line, { sessionId: this.id, cwd: this.cwd });
+        this.broadcast("stderr", { type: "stderr", text: line });
+      }
+      newlineIndex = this.stderrBuffer.indexOf("\n");
+    }
+  }
+
+  handleStdoutLine(line) {
+    if (!line.trim()) return;
+    try {
+      const payload = JSON.parse(line);
+      if (payload.type === "response" && payload.command === "get_state" && payload.success) this.lastState = payload.data;
+      this.broadcast("rpc", payload);
+    } catch (error) {
+      this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
+    }
+  }
+
+  broadcast(event, payload) {
+    const envelope = { event, payload, at: new Date().toISOString() };
+    this.history.push(envelope);
+    if (this.history.length > HISTORY_LIMIT) this.history.shift();
+    for (const client of this.clients) sendSse(client, event, payload);
+  }
+
+  addClient(res) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    res.write(`: connected ${this.id}\n\n`);
+    for (const item of this.history) sendSse(res, item.event, item.payload);
+    const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
+    this.clients.add(res);
+    res.on("close", () => {
+      clearInterval(heartbeat);
+      this.clients.delete(res);
+    });
+  }
+
+  send(command) {
+    if (!isPlainObject(command)) throw new Error("RPC command must be a JSON object");
+    if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
+    this.proc.stdin.write(`${JSON.stringify(command)}\n`);
+  }
+
+  stop() {
+    if (!this.proc || this.exited) return;
+    this.proc.kill("SIGTERM");
+    setTimeout(() => {
+      if (!this.exited) this.proc.kill("SIGKILL");
+    }, 2500).unref();
+  }
+
+  summary() {
+    return {
+      id: this.id,
+      projectId: this.projectId,
+      projectName: this.projectName,
+      cwd: this.cwd,
+      createdAt: this.createdAt,
+      exited: this.exited,
+      exitCode: this.exitCode,
+      signal: this.signal,
+      clientCount: this.clients.size,
+      sessionId: this.lastState?.sessionId,
+      sessionName: this.lastState?.sessionName,
+      model: this.lastState?.model,
+      isStreaming: this.lastState?.isStreaming ?? false,
+    };
+  }
+}
+
+function redactArgs(args) {
+  return args.map((arg) => (/key|token|auth|secret/i.test(String(arg)) ? "[redacted]" : arg));
+}
+
+async function getOrStartProjectSession(project) {
+  const existing = [...sessions.values()].find((session) => session.projectId === project.id && !session.exited);
+  if (existing) return existing;
+  const session = new PiRpcSession({ projectId: project.id, projectName: project.name, cwd: project.cwd });
+  sessions.set(session.id, session);
+  session.start();
+  return session;
+}
+
+async function readFirstLine(filePath) {
+  const content = await readFile(filePath, "utf8");
+  return content.split(/\r?\n/, 1)[0];
+}
+
+function messageText(message) {
+  if (!message) return "";
+  if (typeof message.content === "string") return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => (part?.type === "text" ? part.text || "" : ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
+function compactTitle(text, fallback) {
+  const cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return fallback;
+  return cleaned.length > 72 ? `${cleaned.slice(0, 69)}…` : cleaned;
+}
+
+async function readSessionTitle(filePath, fallback) {
+  const content = await readFile(filePath, "utf8");
+  const lines = content.split(/\r?\n/).slice(1, 220);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === "message" && entry.message?.role === "user") {
+        return compactTitle(messageText(entry.message), fallback);
+      }
+    } catch {
+      // Ignore malformed partial lines.
+    }
+  }
+  return fallback;
+}
+
+async function listProjectHistory(project) {
+  const sessionsRoot = path.join(AGENT_DIR, "sessions");
+  if (!(await isDirectory(sessionsRoot))) return [];
+  const out = [];
+  const dirs = await readdir(sessionsRoot, { withFileTypes: true });
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsRoot, dir.name);
+    let files = [];
+    try {
+      files = await readdir(fullDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const firstLine = await readFirstLine(filePath);
+        const header = JSON.parse(firstLine);
+        if (path.resolve(header.cwd || "") !== project.cwd) continue;
+        const fileStat = await stat(filePath);
+        const timestamp = header.timestamp || fileStat.mtime.toISOString();
+        out.push({
+          path: filePath,
+          title: await readSessionTitle(filePath, "Nova conversa"),
+          timestamp,
+          bytes: fileStat.size,
+          sessionId: header.id,
+        });
+      } catch {
+        // Ignore malformed/partial session files.
+      }
+    }
+  }
+  return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50);
+}
+
+async function serveStatic(req, res, pathname) {
+  const rel = pathname === "/" ? "/index.html" : pathname;
+  const decoded = decodeURIComponent(rel);
+  const filePath = path.normalize(path.join(PUBLIC_DIR, decoded));
+  if (!filePath.startsWith(PUBLIC_DIR)) return text(res, 403, "Forbidden");
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    return text(res, 404, "Not found");
+  }
+  if (!fileStat.isFile()) return text(res, 404, "Not found");
+  const ext = path.extname(filePath).toLowerCase();
+  const type = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+  }[ext] || "application/octet-stream";
+  res.writeHead(200, { "content-type": type, "content-length": fileStat.size, "cache-control": "no-store" });
+  createReadStream(filePath).pipe(res);
+}
+
+function parseProjectRoute(pathname) {
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch))?$/);
+  if (!match) return null;
+  return { projectId: decodeURIComponent(match[1]), action: match[2] };
+}
+
+async function route(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || `${DEFAULT_HOST}:${DEFAULT_PORT}`}`);
+  const { pathname } = url;
+
+  try {
+    if (req.method === "GET" && pathname === "/api/health") {
+      return json(res, 200, {
+        ok: true,
+        host: DEFAULT_HOST,
+        piBin: process.env.PI_WEB_PI_BIN || "pi",
+        agentDir: AGENT_DIR,
+        projectRoots: await getProjectRoots(),
+        node: process.version,
+        sessions: sessions.size,
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/bootstrap") {
+      const discovered = await discoverProjects();
+      const firstProject = discovered[0];
+      return json(res, 200, {
+        projects: discovered,
+        agents: await listAgents(firstProject?.cwd || process.cwd()),
+        activeSessions: [...sessions.values()].map((session) => session.summary()),
+        logs: serverLogs.slice(-200),
+        config: { agentDir: AGENT_DIR, projectRoots: await getProjectRoots() },
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/projects") {
+      return json(res, 200, { projects: await discoverProjects() });
+    }
+
+    if (req.method === "GET" && pathname === "/api/agents") {
+      const cwd = url.searchParams.get("cwd") || process.cwd();
+      return json(res, 200, { agents: await listAgents(cwd) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/logs") {
+      return json(res, 200, { logs: serverLogs.slice(-300) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/sessions") {
+      return json(res, 200, { sessions: [...sessions.values()].map((session) => session.summary()) });
+    }
+
+    const projectRoute = parseProjectRoute(pathname);
+    if (projectRoute) {
+      const project = await ensureProject(projectRoute.projectId);
+      const { action } = projectRoute;
+
+      if (req.method === "POST" && action === "open") {
+        const session = await getOrStartProjectSession(project);
+        return json(res, 201, { project, session: session.summary(), agents: await listAgents(project.cwd), history: await listProjectHistory(project) });
+      }
+
+      if (req.method === "GET" && action === "events") {
+        const session = await getOrStartProjectSession(project);
+        return session.addClient(res);
+      }
+
+      if (req.method === "POST" && action === "command") {
+        const body = await readJsonBody(req);
+        const session = await getOrStartProjectSession(project);
+        session.send(body);
+        return json(res, 202, { ok: true, session: session.summary() });
+      }
+
+      if (req.method === "POST" && action === "ui-response") {
+        const body = await readJsonBody(req);
+        if (!body.id) return json(res, 400, { error: "Missing extension UI request id" });
+        const session = await getOrStartProjectSession(project);
+        session.send({ type: "extension_ui_response", ...body });
+        return json(res, 202, { ok: true });
+      }
+
+      if (req.method === "POST" && action === "stop") {
+        const existing = [...sessions.values()].find((session) => session.projectId === project.id && !session.exited);
+        existing?.stop();
+        return json(res, 202, { ok: true });
+      }
+
+      if (req.method === "GET" && action === "history") {
+        return json(res, 200, { history: await listProjectHistory(project) });
+      }
+
+      if (req.method === "POST" && action === "switch") {
+        const body = await readJsonBody(req);
+        if (!body.sessionPath) return json(res, 400, { error: "Missing sessionPath" });
+        const session = await getOrStartProjectSession(project);
+        session.send({ id: body.id || randomUUID(), type: "switch_session", sessionPath: body.sessionPath });
+        setTimeout(() => {
+          try {
+            session.send({ id: randomUUID(), type: "get_entries" });
+          } catch {
+            // Ignore if session exited.
+          }
+        }, 250);
+        return json(res, 202, { ok: true });
+      }
+    }
+
+    // Backward-compatible direct session endpoint used by smoke tests/tools.
+    const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|command|ui-response|stop))?$/);
+    if (sessionMatch) {
+      const [, id, action] = sessionMatch;
+      const session = sessions.get(id);
+      if (!session) return json(res, 404, { error: "Unknown session" });
+      if (req.method === "GET" && action === "events") return session.addClient(res);
+      if (req.method === "POST" && action === "command") {
+        session.send(await readJsonBody(req));
+        return json(res, 202, { ok: true });
+      }
+      if (req.method === "POST" && action === "stop") {
+        session.stop();
+        return json(res, 202, { ok: true });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/sessions") {
+      const body = await readJsonBody(req);
+      const cwd = path.resolve(safeName(body.cwd) || process.cwd());
+      const project = makeProject(cwd, path.dirname(cwd));
+      projects.set(project.id, project);
+      const session = await getOrStartProjectSession(project);
+      return json(res, 201, { project, session: session.summary() });
+    }
+
+    if (req.method === "GET") return serveStatic(req, res, pathname);
+    return json(res, 405, { error: "Method not allowed" });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    recordLog(status >= 500 ? "error" : "warn", error.message, { pathname });
+    return json(res, status, { error: error.message || "Internal server error" });
+  }
+}
+
+const server = createServer((req, res) => {
+  route(req, res).catch((error) => json(res, 500, { error: error.message || "Internal server error" }));
+});
+
+server.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : DEFAULT_PORT;
+  const line = `PI Studio listening on http://${DEFAULT_HOST}:${port}`;
+  recordLog("info", line);
+  console.log(line);
+});
+
+function shutdown() {
+  for (const session of sessions.values()) session.stop();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

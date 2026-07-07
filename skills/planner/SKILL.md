@@ -240,7 +240,7 @@ Generate a complete plan ecosystem in .pi/plans/. Preserve the handoff's repo-st
 - ✅ Validation commands/checks
 - ✅ Recovery snapshot and checkpoint commit policy
 - ✅ Stop conditions and missing-evidence behavior
-- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed`, `builder`, or `builder-heavy` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md`, `task_02_builder.md`, or `task_03_builder-heavy.md`).
+- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed`, `builder`, `builder-heavy`, or `builder-heavy-design` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md`, `task_02_builder.md`, `task_03_builder-heavy.md`, or `task_04_builder-heavy-design.md`).
 
 ### Planner Output
 
@@ -254,15 +254,17 @@ Planner generates:
     ├── task_01_builder-highspeed.md  # highspeed sweet spot task
     ├── task_02_builder.md            # cautious standard task
     ├── task_03_builder-heavy.md      # correctness-sensitive task
+    ├── task_04_builder-heavy-design.md # exceptional visual/design task
     └── ...
 ```
 
 Planner must use the Builder Skill routing:
 - `builder-highspeed`: single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, function signature swaps, module-local renames, and explicit backend/tooling/tests/algorithm/math/physics tasks. Use for frontend only when the UI change is a tiny exact mechanical tweak with known tokens/classes.
-- `builder`: preferred/default for frontend/UI implementation — React components, CSS/Tailwind styling, layout, responsive behavior, accessibility states, design-system application, and polish-plan application — plus explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify.
-- `builder-heavy`: For complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. For frontend, choose heavy only for concrete non-visual correctness/integration hazards; if the reason is UI quality, choose `builder`.
+- `builder`: preferred/default for frontend/UI implementation — React components, CSS/Tailwind styling, layout, responsive behavior, accessibility states, design-system application, and most polish-plan application — plus explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify.
+- `builder-heavy`: For complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. For frontend, choose heavy only for concrete non-visual correctness/integration hazards.
+- `builder-heavy-design`: ultimate visual-quality tier for bounded website/frontend work: premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive sections, distinctive art direction, and visual rescue when standard `builder` output is functional but not premium enough.
 
-For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so it cannot invent routine details; frontend highspeed tasks must be tiny exact mechanical tweaks. For `builder-heavy`, the planner must state why the heavy tier is needed and keep the task bounded enough to validate; frontend heavy tasks must name the non-visual correctness/integration hazard. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple, but normal frontend quality work should route to `builder`. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for highspeed tasks `**Highspeed Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so it cannot invent routine details; frontend highspeed tasks must be tiny exact mechanical tweaks. For `builder-heavy`, the planner must state why the correctness/integration heavy tier is needed and keep the task bounded enough to validate; frontend heavy tasks must name the non-visual correctness/integration hazard. For `builder-heavy-design`, the planner must state why the visual heavy tier is needed, include design artifacts, concrete visual acceptance criteria, responsive/a11y/reduced-motion requirements, and screenshot/browser validation if available. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple; normal frontend quality work should route to `builder`; exceptional website visual quality should route to `builder-heavy-design`. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for highspeed tasks `**Highspeed Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
 
 Every builder task, regardless of tier, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
@@ -335,6 +337,6 @@ Plan generated. Here's the summary:
 |-------|-----|------|--------------|
 | **Pre-Plan** | You | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
-| **Execute** | Builder agents (`builder-highspeed`, `builder`, or `builder-heavy` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
+| **Execute** | Builder agents (`builder-highspeed`, `builder`, `builder-heavy`, or `builder-heavy-design` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
 
 **Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**

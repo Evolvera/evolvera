@@ -1,0 +1,21 @@
+services:
+  pi-studio:
+    build:
+      context: .
+    container_name: pi-studio
+    environment:
+      PI_WEB_HOST: 0.0.0.0
+      PI_WEB_PORT: 4123
+      PI_WORKSPACES_DIR: /workspaces
+      # Optional overrides:
+      # PI_WEB_MODEL: openai-codex/gpt-5.5
+      # PI_WEB_PROVIDER: openai-codex
+    ports:
+      - "4123:4123"
+    volumes:
+      # Mount the folder that contains your projects. Override with:
+      # PI_WORKSPACES_DIR=/path/to/projects docker compose up --build
+      - ${PI_WORKSPACES_DIR:-$HOME}:/workspaces
+      # Reuse your local PI config/auth/agents/sessions inside the container.
+      - ${HOME}/.pi/agent:/root/.pi/agent
+    restart: unless-stopped

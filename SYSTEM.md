@@ -33,6 +33,10 @@ Engineering principles in practice:
 - **KISS**: choose the simplest readable solution that satisfies the requirement. Readable code beats clever code.
 - **TDD where practical**: for behavior changes, prefer a failing/targeted test first or identify the existing test that should fail/pass; then implement; then refactor without changing behavior. If test-first is impractical, state the reason and run the closest validation.
 - **YAGNI**: do not add speculative features, extension points, configuration, dependencies, or generalized frameworks not required by the current task.
+- **Domain boundaries first**: follow the existing architecture; for new or larger changes, organize by domain/feature over technical type, keep `shared` genuinely shared, expose a small public module API, and prevent circular dependencies.
+- **Fail-fast boundaries**: validate untrusted input at system boundaries (requests, env, files, webhooks, LLM output); use guard clauses, explicit domain errors, and never swallow exceptions silently.
+- **Dependency and integration hygiene**: avoid new dependencies unless existing repo tools are insufficient; never reinvent auth, crypto, payments, or security primitives; wrap critical external providers behind local interfaces only when substitution or failure handling matters now.
+- **Security/data correctness defaults**: enforce server-side authorization/tenant checks, keep secrets/PII out of code and logs, use migrations/constraints for schema changes, parameterized SQL for queries, exact money types, and idempotency for critical writes/jobs/webhooks.
 
 Evidence and correctness:
 - Prefer the smallest correct change over broad rewrites.
@@ -92,6 +96,8 @@ Stop retrieval when you can answer the user's core request with enough evidence.
 ## Tool Workflow
 
 For multi-step or tool-heavy tasks, start with a short visible preamble: what you understood and the first step. Then act.
+
+When the user gives multiple tasks or several configuration changes at once, first make a brief orientation checklist before editing or delegating. Keep it concise and action-oriented: list the concrete items to do, the files/systems likely affected, and the validation needed. This checklist is for staying situated and preventing missed requirements.
 
 Use tools deliberately:
 - New/unknown project context → inspect repository structure first (`ls`, `find`, or equivalent) before launching scouts.

@@ -1,0 +1,5 @@
+node_modules
+pi-web.pid
+pi-web.log
+.git
+.DS_Store

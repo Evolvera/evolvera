@@ -16,6 +16,9 @@
 
 import { complete, type UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 type GoalStatus = "active" | "achieved" | "blocked" | "cleared";
 
@@ -124,23 +127,147 @@ ${goal.criteria}
 Continue autonomously from the current state. Use tools where useful. Do not merely summarize unless the goal is now demonstrably complete or a real blocker requires user input. Surface concrete evidence for the evaluator.`;
 }
 
+function coerceVisibleText(value: unknown, depth = 0): string {
+  if (value == null || depth > 6) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => coerceVisibleText(item, depth + 1))
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const preferredKeys = [
+      "text",
+      "output_text",
+      "content",
+      "message",
+      "summary_text",
+      "summary",
+      "thinking",
+      "reasoning",
+      "reasoning_content",
+      "completion",
+      "response",
+    ];
+
+    const parts: string[] = [];
+    for (const key of preferredKeys) {
+      if (key in record) {
+        const text = coerceVisibleText(record[key], depth + 1);
+        if (text) parts.push(text);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+
+    try {
+      return JSON.stringify(record);
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function goalEvaluationFromParsed(parsed: Partial<GoalEvaluation> & Record<string, unknown>): GoalEvaluation | null {
+  if (parsed.status === "met" || parsed.status === "not_met" || parsed.status === "blocked") {
+    return {
+      status: parsed.status,
+      reason: typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : "No reason provided.",
+    };
+  }
+
+  const statusText = String(parsed.status ?? parsed.state ?? parsed.goal_status ?? parsed.evaluator_action ?? "").toUpperCase();
+  const isBlocked =
+    parsed.blocked === true ||
+    parsed.user_input_required === true ||
+    parsed.real_blocker_requires_user_input === true ||
+    statusText.includes("BLOCKED");
+  if (isBlocked) {
+    return {
+      status: "blocked",
+      reason: typeof parsed.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim()
+        : "Goal artifact reports a blocker or required user input.",
+    };
+  }
+
+  const doneStatus = String(parsed.definition_of_done_status ?? "").toUpperCase();
+  const complete =
+    parsed.goal_complete === true ||
+    parsed.goal_condition_complete === true ||
+    statusText.includes("COMPLETE_FOR_APPROVED_SCOPE") ||
+    statusText.includes("COMPLETE_WITH_RESIDUAL_BLOCKS") ||
+    statusText.includes("STOP_GOAL_COMPLETE") ||
+    statusText.includes("GOAL_COMPLETE") ||
+    doneStatus === "PASS" ||
+    doneStatus.startsWith("PASS_");
+  if (complete) {
+    return {
+      status: "met",
+      reason: typeof parsed.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim()
+        : "Goal artifact reports completion for the approved scope.",
+    };
+  }
+
+  if (statusText.includes("ACTIVE") || statusText.includes("CONTINUE") || statusText.includes("NOT_MET")) {
+    return {
+      status: "not_met",
+      reason: typeof parsed.reason === "string" && parsed.reason.trim()
+        ? parsed.reason.trim()
+        : "Goal artifact reports active or continuing work.",
+    };
+  }
+
+  return null;
+}
+
+function candidateJsonObjects(text: string): string[] {
+  const candidates: string[] = [];
+  for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i += 1) {
+      const ch = text[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (ch === "{") depth += 1;
+      if (ch === "}") depth -= 1;
+      if (depth === 0) {
+        candidates.push(text.slice(start, i + 1));
+        break;
+      }
+    }
+  }
+  return candidates;
+}
+
 function extractText(message: unknown): string {
-  const typed = message as { role?: string; content?: unknown; summary?: string; stopReason?: string; errorMessage?: string };
+  const typed = message as { role?: string; content?: unknown; summary?: unknown; stopReason?: string; errorMessage?: string };
   if (typeof typed.summary === "string") return typed.summary;
 
-  const content = typed.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return typed.errorMessage ? `ERROR: ${typed.errorMessage}` : "";
+  const text = coerceVisibleText(typed.content).trim();
+  if (text) return text;
 
-  return content
-    .map((part) => {
-      const p = part as { type?: string; text?: string; name?: string; arguments?: unknown };
-      if (p.type === "text" && typeof p.text === "string") return p.text;
-      if (p.type === "toolCall") return `[toolCall ${p.name ?? "unknown"}] ${JSON.stringify(p.arguments ?? {})}`;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
+  return typed.errorMessage ? `ERROR: ${typed.errorMessage}` : "";
 }
 
 function serializeMessages(messages: unknown[], maxChars = MAX_TRANSCRIPT_CHARS): string {
@@ -166,26 +293,39 @@ function serializeMessages(messages: unknown[], maxChars = MAX_TRANSCRIPT_CHARS)
 
 function parseEvaluation(text: string): GoalEvaluation | null {
   const trimmed = text.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
-  const candidate = fenced ?? trimmed;
+  if (!trimmed) return null;
 
-  try {
-    const parsed = JSON.parse(candidate) as Partial<GoalEvaluation>;
-    if (parsed.status === "met" || parsed.status === "not_met" || parsed.status === "blocked") {
-      return {
-        status: parsed.status,
-        reason: typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : "No reason provided.",
-      };
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
+  const candidates = [fenced, trimmed, trimmed.replace(/\\"/g, '"'), ...candidateJsonObjects(trimmed)]
+    .filter((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate.trim()) as Partial<GoalEvaluation> & Record<string, unknown>;
+      const normalized = goalEvaluationFromParsed(parsed);
+      if (normalized) return normalized;
+    } catch {
+      // Try the next candidate/fallback.
     }
-  } catch {
-    // Fall through to regex extraction.
   }
 
-  const status = candidate.match(/"?status"?\s*:\s*"?(met|not_met|blocked)"?/i)?.[1] as GoalEvaluation["status"] | undefined;
-  if (!status) return null;
+  const status = trimmed.match(/"?status"?\s*:\s*"?(met|not_met|blocked)"?/i)?.[1] as GoalEvaluation["status"] | undefined;
+  if (status) {
+    const reason = trimmed.match(/"?reason"?\s*:\s*"([\s\S]*?)"\s*[}\n]/i)?.[1]?.trim() || "Evaluator returned a status without a parseable reason.";
+    return { status, reason };
+  }
 
-  const reason = candidate.match(/"?reason"?\s*:\s*"([\s\S]*?)"\s*[}\n]/i)?.[1]?.trim() || "Evaluator returned a status without a parseable reason.";
-  return { status, reason };
+  if (
+    /"?goal_complete"?\s*:\s*true/i.test(trimmed) ||
+    /"?should_stop_goal_loop"?\s*:\s*true/i.test(trimmed) ||
+    /COMPLETE_FOR_APPROVED_SCOPE/.test(trimmed) ||
+    /COMPLETE_WITH_RESIDUAL_BLOCKS/.test(trimmed) ||
+    /STOP_GOAL_COMPLETE/.test(trimmed)
+  ) {
+    return { status: "met", reason: "Evaluator output included a completed Goal Mode artifact." };
+  }
+
+  return null;
 }
 
 function persistGoal(pi: ExtensionAPI, event: string, goal: GoalState | null, details?: Record<string, unknown>) {
@@ -233,6 +373,65 @@ async function selectEvaluatorModel(ctx: {
   return null;
 }
 
+function workspaceCwd(ctx: { cwd?: string } | unknown): string {
+  const maybe = ctx as { cwd?: unknown };
+  return typeof maybe.cwd === "string" && maybe.cwd.trim() ? maybe.cwd : process.cwd();
+}
+
+function readCompletionArtifact(cwd: string): GoalEvaluation | null {
+  const artifactRoots = Array.from(
+    new Set(
+      [cwd, process.cwd(), process.env.PWD]
+        .filter((root): root is string => typeof root === "string" && root.trim().length > 0)
+        .flatMap((root) => {
+          const resolved = path.resolve(root);
+          const roots = [resolved];
+          let cursor = resolved;
+          for (let i = 0; i < 4; i += 1) {
+            const parent = path.dirname(cursor);
+            if (parent === cursor) break;
+            roots.push(parent);
+            cursor = parent;
+          }
+          return roots;
+        }),
+    ),
+  );
+  const directArtifactDirs = Array.from(
+    new Set([
+      ...artifactRoots.map((root) => path.join(root, ".pi")),
+      path.join(os.homedir(), ".pi"),
+    ]),
+  );
+  const artifactNames = [
+    "GOAL_MODE_STATUS.json",
+    "GOAL_MODE_RESULT.json",
+    "GOAL_MODE_EVALUATOR_MINIMAL.json",
+    "GOAL_MODE_EVALUATOR_NATIVE.json",
+    "GOAL_MODE_EVALUATOR_STOP_PACKET.json",
+    "GOAL_MODE_EVALUATOR_ONE_LINE.json",
+  ];
+  const candidateFiles = directArtifactDirs.flatMap((dir) => artifactNames.map((name) => path.join(dir, name)));
+
+  for (const file of candidateFiles) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<GoalEvaluation> & Record<string, unknown>;
+      const evaluation = goalEvaluationFromParsed(parsed);
+      if (evaluation?.status === "met") {
+        return {
+          status: "met",
+          reason: `Repository Goal Mode artifact ${path.relative(cwd, file)} reports completion for the approved scope.`,
+        };
+      }
+    } catch {
+      // Ignore malformed artifacts and fall back to the model evaluator.
+    }
+  }
+
+  return null;
+}
+
 async function evaluateGoal(goal: GoalState, messages: unknown[], ctx: {
   model?: unknown;
   modelRegistry: { find: (provider: string, model: string) => unknown; getApiKeyAndHeaders: (model: unknown) => Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string>; error?: string }> };
@@ -270,10 +469,18 @@ async function evaluateGoal(goal: GoalState, messages: unknown[], ctx: {
     },
   );
 
-  const text = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
+  let text = coerceVisibleText(response.content);
+  if (!text.trim()) {
+    text = coerceVisibleText(response);
+  }
+
+  if (!text.trim()) {
+    return {
+      status: "blocked",
+      reason: `Goal evaluator ${selected.label} returned no visible text, so Goal Mode cannot safely auto-continue. Reload PI after updating the evaluator extension, then use /goal continue or /goal clear.`,
+      modelLabel: selected.label,
+    };
+  }
 
   const parsed = parseEvaluation(text);
   if (!parsed) {
@@ -404,6 +611,17 @@ export default function goalModeExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (_event, ctx) => {
     if (!activeGoal || activeGoal.status !== "active") return;
 
+    const completionArtifact = readCompletionArtifact(workspaceCwd(ctx));
+    if (completionArtifact?.status === "met") {
+      activeGoal.status = "achieved";
+      activeGoal.updatedAt = nowIso();
+      persistGoal(pi, "achieved", activeGoal, { evaluation: completionArtifact, source: "before_agent_start_artifact" });
+      activeGoal = null;
+      ctx.ui.setStatus("goal-mode", "");
+      ctx.ui.notify(`Goal achieved and cleared: ${completionArtifact.reason}`, "info");
+      return;
+    }
+
     const goalBlock = formatGoalBlock(activeGoal);
     if (ctx.systemPrompt) {
       ctx.systemPrompt = `${goalBlock}\n\n${ctx.systemPrompt}`;
@@ -425,7 +643,8 @@ export default function goalModeExtension(pi: ExtensionAPI) {
     isEvaluating = true;
 
     try {
-      const evaluation = await evaluateGoal(goal, event.messages as unknown[], ctx as never);
+      const completionArtifact = readCompletionArtifact(workspaceCwd(ctx));
+      const evaluation = completionArtifact ?? (await evaluateGoal(goal, event.messages as unknown[], ctx as never));
       goal.evaluations += 1;
       goal.updatedAt = nowIso();
       goal.lastReason = evaluation.reason;
@@ -474,6 +693,16 @@ export default function goalModeExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     restoreGoalFromSession(ctx);
     if (activeGoal) {
+      const completionArtifact = readCompletionArtifact(workspaceCwd(ctx));
+      if (completionArtifact?.status === "met") {
+        activeGoal.status = "achieved";
+        activeGoal.updatedAt = nowIso();
+        persistGoal(pi, "achieved", activeGoal, { evaluation: completionArtifact, source: "session_start_artifact" });
+        activeGoal = null;
+        ctx.ui.setStatus("goal-mode", "");
+        ctx.ui.notify(`Goal achieved and cleared: ${completionArtifact.reason}`, "info");
+        return;
+      }
       ctx.ui.setStatus("goal-mode", `◎ /goal active: ${summarize(activeGoal.criteria)}`);
     }
   });
