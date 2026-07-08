@@ -29,10 +29,12 @@ skills: true
 
 If validating a `.pi/previews/<slug>/index.html` Home Preview and screenshots exist under `.pi/previews/<slug>/screenshots/`, treat them as required visual evidence:
 - read `VISUAL_SNAPSHOT.md`;
-- inspect `portrait.png` for mobile/portrait issues: horizontal scroll, clipped/off-canvas images or visual motifs, image/media frames with accidental blank gutters, unreadable text, broken stacking, hidden CTAs, broken/deformed CTA icons, weak tap targets, or cramped desktop-derived layout;
+- inspect `portrait.png` for mobile/portrait issues: horizontal scroll/lateral panning, document/content wider than the viewport, clipped/off-canvas cards/logos/images or visual motifs, grids continuing past the right edge, cramped two-column card grids where one column would be readable, image/media frames with accidental blank gutters, unreadable text, broken stacking, hidden CTAs, broken/deformed CTA icons, weak tap targets, or cramped desktop-derived layout;
 - inspect `landscape.png` for desktop/landscape issues: excessive empty/dead space, sparse composition, stretched mobile layout, image stuck to one side leaving accidental white/blank media-frame gutters, off-canvas/floating imagery, broken alignment, weak hierarchy, hidden or competing CTAs, broken/deformed CTA icons, or poor use of wide space;
 - reject screenshots where any CTA icon appears as an emoji/tofu/missing glyph, is visually corrupted, misaligned, or harms button clarity; require text-only or a controlled inline SVG replacement;
 - reject media cards/backgrounds where the image does not intentionally fill, crop, center, or contain within the frame, especially when a large blank white area remains inside the visual container;
+- reject mobile screenshots where any section, grid, carousel, logo strip, floating CTA, or card row causes lateral scroll or is partially cut off to the right; do not accept `overflow-x: hidden` as the only fix if it merely hides clipped content;
+- reject mobile grids/cards that are technically inside the viewport but visually too squeezed: tiny cards, awkward multi-line labels, excessive gaps between narrow columns, or two-column layouts that reduce readability; require one-column stacking or a better mobile-specific composition;
 - if screenshots are missing, request or run the Home Preview screenshot capture command before final PASS when sandbox/browser tooling is available.
 
 ---

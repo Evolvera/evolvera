@@ -131,7 +131,7 @@ For each section:
 - Asset/graphic placeholder:
 - Trust/proof placeholder:
 - States/interactions:
-- Mobile portrait behavior: [390px class viewport — stacking, spacing, text scale, CTA/touch targets]
+- Mobile portrait behavior: [390px class viewport — stacking, spacing, text scale, CTA/touch targets, grid/card/logo stacking rules, no lateral scroll]
 - Desktop landscape behavior: [1440px class viewport — grid/composition, use of whitespace, visual motif placement]
 - Accessibility notes:
 
@@ -153,7 +153,7 @@ Include, when suitable:
 - Desktop/landscape layout rules:
 - What changes between mobile and desktop:
 - What must stay consistent across both:
-- Screenshot review criteria for portrait: no horizontal overflow, no cropped/off-canvas visuals, readable text, CTA visible without awkward scrolling, touch targets clear.
+- Screenshot review criteria for portrait: no horizontal overflow/lateral scroll, no cropped/off-canvas visuals, no grid/card/logo strip continuing past the right edge, no squeezed tiny card grids, readable text, CTA visible without awkward scrolling, touch targets clear.
 - Screenshot review criteria for landscape: no excessive empty/dead space, no stretched mobile layout, no floating/off-canvas imagery, balanced hero/content/visual proportions, clear CTA and hierarchy.
 
 ## 9. Design Tokens
