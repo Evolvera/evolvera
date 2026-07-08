@@ -122,6 +122,8 @@ For EVERY element found, verify:
 - [ ] The page has a clear emotional arc: first glance → trust → action
 - [ ] The strongest CTA is visible and not competing with too many alternatives
 - [ ] Mobile portrait and desktop landscape have distinct, intentional compositions appropriate to their viewport
+- [ ] Mobile portrait has no lateral/horizontal scroll; no section, grid, card row, logo strip, or floating CTA extends past the viewport
+- [ ] Mobile grids/cards are not squeezed into tiny columns; stack to one column when readability suffers
 - [ ] No visual/image/mockup/card stack is clipped, floating outside its intended container, or causing overflow
 - [ ] Image/media frames do not show accidental white/blank gutters from poor fit, alignment, or cropping
 - [ ] CTA icons are clean, aligned, and not emoji/tofu/missing/corrupted glyphs; use text-only or inline SVG if needed

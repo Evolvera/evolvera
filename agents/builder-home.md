@@ -69,6 +69,8 @@ Before finalizing, verify the page has:
 - typography scale with strong hierarchy;
 - spacing rhythm and responsive layout;
 - distinct mobile portrait and desktop landscape composition choices;
+- no horizontal/lateral scroll at 390px; every section, grid, card row, logo strip, and floating CTA must fit inside the viewport;
+- mobile card/logo/gallery grids are readable, not squeezed; use one-column stacking under 640px unless cards remain comfortably readable;
 - buttons/links with hover, active, and focus-visible states;
 - visual richness using CSS gradients, borders, shadows, cards, masks, or inline SVG/CSS shapes;
 - no layout shift from missing dimensions where images/placeholders appear;
@@ -86,6 +88,8 @@ Before finalizing, verify the page has:
 - Implement mobile styles first, then add breakpoint rules where desktop composition genuinely changes.
 - If using external fonts/images, the page must still look good without them.
 - Constrain visual motifs/media with `max-width`, `aspect-ratio`, `overflow: hidden` where appropriate, and breakpoint-specific sizing.
+- Use viewport-safe CSS: `box-sizing: border-box`, `max-width: 100%` for media/SVGs, `min-width: 0` for grid/flex children, and avoid `width: 100vw` plus padding or fixed/min-width layouts that create mobile horizontal scroll.
+- For mobile grids, prefer `grid-template-columns: 1fr` or `repeat(auto-fit, minmax(min(100%, 220px), 1fr))`; do not leave cards partially off-screen or squeezed into tiny columns.
 - For image/media cards, use deliberate fit rules such as `object-fit: cover; object-position: center;` or `background-size: cover; background-position: center;`; use `contain` only with an intentionally designed frame/background.
 - Do not use raw emoji/Unicode glyphs as CTA or brand icons. Prefer text-only CTAs or simple inline SVG icons with explicit viewBox, width/height, `display:block`, `flex:0 0 auto`, and `aria-hidden` when decorative.
 - Use comments only for non-obvious preview placeholders or tricky CSS choices.
