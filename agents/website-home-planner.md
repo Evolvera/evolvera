@@ -104,6 +104,8 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Typography:
 - Layout/grid:
 - Components:
+- Media/visual fit policy: [for every real image, mockup, visual card, or background: aspect-ratio, object-fit/background-size, object-position/background-position, overflow behavior, focal point, and how to avoid accidental blank bands/gutters]
+- Icon policy: [avoid emoji/font-dependent icons in CTAs; use text-only buttons or controlled inline SVG icons with explicit viewBox, size, alignment, and aria-hidden labels]
 - Motion/interactions:
 
 ## 5. Responsive Composition Plan
@@ -114,8 +116,8 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Desktop landscape structure: [grid/composition, hero balance, visual motif placement, whitespace density, CTA placement]
 - What changes across breakpoints:
 - What stays consistent across breakpoints:
-- Portrait screenshot acceptance criteria: no horizontal overflow, no clipped/off-canvas visuals, readable type, visible primary CTA, intentional stacking, clear touch targets.
-- Landscape screenshot acceptance criteria: no excessive empty/dead space, no stretched mobile layout, no floating/off-canvas imagery, balanced hero/content/visual proportions, clear hierarchy and CTA.
+- Portrait screenshot acceptance criteria: no horizontal overflow, no clipped/off-canvas visuals, no accidental blank bands inside image/media frames, no broken/deformed icons, readable type, visible primary CTA, intentional stacking, clear touch targets.
+- Landscape screenshot acceptance criteria: no excessive empty/dead space, no stretched mobile layout, no floating/off-canvas imagery, no media frame with the image stuck to one side leaving accidental white/empty gutters, balanced hero/content/visual proportions, clean CTA icons or text-only CTAs, clear hierarchy and CTA.
 
 ## 6. Accessibility and UX Requirements
 - Semantic landmarks:
@@ -162,7 +164,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Responsive at mobile/tablet/desktop.
 - Mobile-first CSS, but desktop/landscape must have its own intentional composition.
 - At 390x844 portrait: no horizontal scroll, readable type, intentional stacking, visible primary CTA, touch targets ≥44px.
-- At 1440x900 landscape: use space intentionally with balanced grid/composition, no stretched mobile layout, no sparse dead zones, no off-canvas/floating imagery outside intended containers, clear hero hierarchy and CTA.
+- At 1440x900 landscape: use space intentionally with balanced grid/composition, no stretched mobile layout, no sparse dead zones, no off-canvas/floating imagery outside intended containers, no accidental white/empty gutters inside media frames, clear hero hierarchy and CTA.
 - Accessible landmarks: header, main, section, footer.
 - Keyboard-visible focus states.
 - Hover/active states for interactive elements.
@@ -171,6 +173,8 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - No external assets required to render well.
 - Do not create any other project/source files. Screenshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed only for visual validation.
 - Media/visual placeholders must use max-width/aspect-ratio/overflow-safe rules so they do not escape containers on portrait or landscape screenshots.
+- Real images, image placeholders, mockups, and background visuals must define deliberate fit behavior: usually `object-fit: cover; object-position: center;` or `background-size: cover; background-position: center;`. Use `contain` only when the surrounding frame/background is intentionally designed; never leave accidental white/blank gutters.
+- CTA icons must not be emoji or font-dependent glyphs. Use no icon, or a simple inline SVG with explicit `viewBox`, `width`, `height`, `display:block`, `flex:0 0 auto`, and `aria-hidden="true"` when decorative.
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]
@@ -180,6 +184,8 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Add explicit breakpoint rules for tablet/desktop where composition changes.
 - Preserve the planner's portrait/mobile and desktop/landscape strategies from HOME_PLAN.
 - Do not rely on a single fluid layout if it makes desktop look stretched or mobile look cramped.
+- For every visual/media card, specify how the asset centers/fills/crops at mobile and desktop breakpoints.
+- For every CTA icon, prefer text-only or inline SVG; never use raw emoji/Unicode brand icons that can render inconsistently.
 
 ## Validation
 Run:

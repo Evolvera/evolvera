@@ -323,9 +323,11 @@ Validate:
 - no fake unsupported factual claims presented as facts;
 - no fake logos/photos/product screenshots/client marks/testimonials/awards/metrics presented as real;
 - clear first impression and primary CTA;
-- portrait screenshot has no horizontal scroll, clipped/off-canvas visuals, unreadable text, broken stacking, hidden primary CTA, or inaccessible tap targets;
+- portrait screenshot has no horizontal scroll, clipped/off-canvas visuals, accidental blank gutters inside image/media frames, unreadable text, broken stacking, hidden primary CTA, broken CTA icons, or inaccessible tap targets;
 - landscape screenshot uses space intentionally and does not look sparse, stretched, generic, misaligned, or full of empty/dead space;
 - images, mockups, card stacks, decorative motifs, and placeholders stay inside intended containers at both portrait and landscape sizes;
+- image/media frames fill, crop, center, or contain deliberately; no asset should sit to one side leaving an accidental white/blank area inside the frame;
+- CTA icons are either omitted/text-only or implemented as clean inline SVG; no emoji/tofu/missing/corrupted glyphs;
 - mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md.
 
