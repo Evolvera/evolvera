@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Transform a giant implementation backlog into GitHub issues with priority/effort, then ship one-by-one through backlog → ready → in progress → in review → done with PR. Always scouts the existing repo by module first, educates when inputs are missing, proposes a plan, and only acts after explicit user OK. Use for backlog→issues→kanban delivery or a generic GitHub permission unblock checklist.
+description: Transform a giant implementation backlog into GitHub issues with priority/effort, then ship one-by-one through a real kanban (backlog→ready→in progress→in review→done) with one branch per issue and live board updates. Always scouts the existing repo by module first, teaches how to read the board like an engineer, educates when inputs are missing, proposes a plan, and only acts after explicit user OK. Use for backlog→issues, "continue project X", next-issue loops, or a generic GitHub permission unblock checklist.
 ---
 
 # Flow — Backlog → Issues → Ship
@@ -10,15 +10,22 @@ Skill operacional para transformar uma lista grande de implementação em issues
 **Regra de ouro:** o Flow quase sempre roda em **projeto existente** (não greenfield). Antes de perguntar ou criar issues, **entenda o repo com scouts por módulo**. Depois proponha, tire dúvidas, e só avance com **OK explícito** do usuário.
 
 ```txt
-Entrada (lista / pedido / “só /skill:flow”)
+Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:flow”)
   → Educar se faltar contexto (não inventar backlog)
   → Permission gate GitHub
+  → Ler o kanban atual (issues + labels + PRs)  
   → Scout do projeto por módulos (evidence-first)
   → Draft de backlog + sugestões + dúvidas abertas
   → REVIEW GATE: usuário aprova (OK)
-  → Criar issues (priority + effort)
-  → Kanban: backlog → ready → in progress → in review → done(+PR)
-  → Por issue: REVIEW GATE → planner/builder → PR
+  → Criar/atualizar issues (priority + effort + status)
+  → Loop engenheiro:
+       ler board → puxar 1 issue ready
+       → branch NOVA off default (1 issue = 1 branch)
+       → status: in progress (atualizar kanban NA HORA)
+       → planner/builder → commits na branch da issue
+       → PR → status: in review
+       → merge/close → status: done
+       → voltar ao board (nunca reutilizar a branch pra outra issue)
 ```
 
 ## Quando usar
@@ -27,6 +34,7 @@ Entrada (lista / pedido / “só /skill:flow”)
 - Quer issues reais no GitHub ligadas ao repo
 - Quer prioridade + effort estimados a partir do estado atual do sistema
 - Quer loop de entrega issue-a-issue até PR
+- Diz **“segue o projeto X”**, **“continua o board”**, **“próxima issue”**, **“o que tem ready?”**
 - Faltam permissões e precisa de checklist genérico pro usuário repassar a quem administra o repo/org
 - Usuário chama `/skill:flow` com pouco ou nenhum input — **ainda assim a skill deve educar e guiar**
 
@@ -35,11 +43,14 @@ Entrada (lista / pedido / “só /skill:flow”)
 ## Princípios de interação (obrigatórios)
 
 1. **Evidence before questions** — scoute o repo antes de bombardear o usuário. Perguntas devem ser informadas pelo que o código mostra.
-2. **Never invent backlog** — sem lista/pedido claro, **não fabrique** issues. Eduque e peça o mínimo.
+2. **Never invent backlog** — sem lista/pedido claro **e** sem board existente, **não fabrique** issues. Eduque e peça o mínimo.
 3. **Propose, then ask** — sempre mostre um draft (o que faria) + sugestões + dúvidas. Não execute criação em massa no escuro.
-4. **Explicit OK gates** — em todo ponto irreversível (criar issues, puxar issue, abrir PR se combinado, mudar labels em lote), peça confirmação. “OK”, “pode”, “aprovo”, “manda” = go. Silêncio ≠ aprovação.
+4. **Explicit OK gates** — em todo ponto irreversível (criar issues, puxar issue, abrir PR se combinado, mudar labels em lote), peça confirmação. “OK”, “pode”, “aprovo”, “manda”, “continua”, “próxima” = go pro passo pedido. Silêncio ≠ aprovação.
 5. **Educate, don’t scold** — se o usuário veio sem nada, explique o que o Flow precisa e como fornecer, em tom colaborativo.
 6. **One concern per gate** — não misture “aprova as 20 issues” com “escolhe stack” na mesma pergunta confusa; separe decisões.
+7. **Read the board first** — em continue/próxima, leia issues+labels+PRs+branches antes de codar.
+8. **1 issue = 1 branch off default** — atualize o kanban **na hora** de cada transição (ready → in progress → in review → done). Nunca reutilize branch de outra issue.
+9. **WIP = 1** por executor (default) — termine ou estacione com transparência antes de puxar outro card.
 
 ---
 
@@ -439,70 +450,185 @@ Espere OK de novo se for implementar.
 
 ---
 
-## Phase 6 — Kanban loop (uma por uma, com OK)
+## Phase 6 — Ler o kanban como engenheiro (obrigatório)
 
-```txt
-backlog → ready → in progress → in review → done (+PR)
+Antes de puxar qualquer issue — inclusive quando o user disser **"segue o projeto X"**, **"continua"**, **"próxima"** — **leia o board de verdade**. Não confie só na memória da sessão.
+
+### 6.0 Snapshot do board
+
+```bash
+# Issues abertas com labels (visão kanban via labels)
+gh issue list --state open --limit 100 \
+  --json number,title,labels,assignees,updatedAt,url,body \
+  --jq 'sort_by(.number) | .[] | {number,title,labels:[.labels[].name],url,updatedAt}'
+
+# PRs abertos (o que já está in review de fato)
+gh pr list --state open --limit 50 \
+  --json number,title,headRefName,body,url,isDraft
+
+# Branches flow locais / remotas (WIP real)
+git branch -a | rg 'flow/#' || true
+git status --short
+git branch --show-current
 ```
 
-### 6.1 Escolher a próxima
+Monte mentalmente (e em `ISSUES.md` se útil) as colunas:
 
-Default:
+| Coluna | Fonte de verdade | Significa |
+|--------|------------------|-----------|
+| **backlog** | `status:backlog` | Capturado, ainda **não** está pronto pra puxar |
+| **ready** | `status:ready` | Definition of Ready ok — pode virar WIP |
+| **in progress** | `status:in-progress` + branch `flow/#N-...` | Alguém está implementando **agora** |
+| **in review** | `status:in-review` + PR aberto | Código pronto, esperando review/checks |
+| **done** | `status:done` / issue closed | Entregue (default: PR merged) |
 
-1. `priority:p0` desbloqueada  
-2. `priority:p1` desbloqueada, effort menor entre iguais  
-3. demais por priority → effort → número  
+Se houver GitHub Project com Status, prefira o Project **e** mantenha labels espelhando (ou documente qual é a source of truth). Labels `status:*` são o default do Flow.
 
-Não puxe dependência aberta sem acordo.
+### 6.1 O que entra em cada coluna (DoR / DoD)
 
-**Antes de puxar:** mini-gate se o user não tiver acabado de autorizar:
+Pense como staff engineer, não como bot de labels.
+
+#### `backlog` — “existe, mas ainda não puxa”
+
+Pode estar aqui se **qualquer** um for verdade:
+
+- acceptance criteria fracos / ambíguos
+- dependência de outra issue/decisão ainda aberta
+- effort XL sem split
+- falta de contexto de módulo (ainda não scouteado o bastante)
+- bloqueio externo (acesso, design, API de terceiro)
+- “talvez depois” disfarçado de task
+
+**Ação típica no backlog:** refinar, quebrar, linkar deps, **não** codar.
+
+#### `ready` — Definition of Ready
+
+Só promove `backlog → ready` quando **tudo** abaixo passa:
+
+- [ ] Título claro + summary legível
+- [ ] Acceptance criteria testáveis (checkboxes)
+- [ ] Área/módulos conhecidos (paths do PROJECT_MAP)
+- [ ] Priority + effort estimados com evidência
+- [ ] Dependências resolvidas **ou** explicitamente aceitas
+- [ ] Não é XL sem split (XL volta pro backlog como epics filhos)
+- [ ] Não conflita com issue/PR já abertos no mesmo pedaço
+
+**Ready ≠ compromisso de fazer agora.** Ready = “pode ser puxado sem vergonha”.
+
+#### `in progress` — WIP real
+
+- No máximo **1 issue in progress por executor** (default)
+- **Obrigatório:** branch dedicada já criada a partir da default
+- Status no GitHub atualizado **no momento** em que a branch nasce / o trabalho começa — não no fim do dia
+- Comentário curto na issue com branch + intenção ajuda o board humano
+
+#### `in review`
+
+- PR aberto (não draft, salvo acordo)
+- Validação local/CI rodada ou motivo explícito
+- Issue aponta pro PR; PR tem `Closes #N` / `Fixes #N` quando for fechar no merge
+- Label `status:in-review` **no mesmo passo** do `gh pr create`
+
+#### `done`
+
+- Default: **PR merged** (ou issue fechada com close reason aceito)
+- Alternativa só se user combinar: done = PR aberto + checks verdes
+- Não deixe issue open com label done, nem PR merged com status in-progress
+
+### 6.2 Como “assistir” o board (triagem contínua)
+
+Em todo “continua / próxima / segue o projeto”:
+
+1. **Ler colunas** (6.0)
+2. **Detectar anomalias** e corrigir ou reportar:
+   - `in progress` sem branch / branch órfã sem issue
+   - `in review` sem PR
+   - `ready` com deps abertas
+   - 2+ `in progress` pro mesmo executor sem OK de paralelo
+   - working tree suja em branch errada
+   - issue P0 parada enquanto P3 está in progress
+3. **Sugerir a próxima** com raciocínio de engenheiro (não só o menor número)
+4. **Pedir OK** se o user não autorizou o pull nesta mensagem
+5. Só então puxar
+
+Ordem de pull default:
+
+1. Destravar `in review` se o user pediu merge/fix de review e isso for o gargalo
+2. Continuar a **mesma** issue se já há `in progress` sua (não abandonar WIP sem motivo)
+3. Senão: `priority:p0` ready e desbloqueada
+4. Senão: `priority:p1` ready, effort menor entre iguais
+5. Senão: demais ready por priority → effort → número
+6. Se **nada** ready: refine backlog (promova o que passar DoR) — **não** code do backlog cru
 
 ```md
-Próxima sugerida: #<N> — <title> (P?, E?)
-Por quê: ...
-Plano: ready → in progress → [planner|builder] → PR
-OK pra puxar?
+## Board read — OWNER/REPO
+| Status | Issues |
+|--------|--------|
+| in progress | #… |
+| in review | #… (+ PR links) |
+| ready | #… |
+| backlog | #… (top) |
+
+Anomalies: ...
+Next recommended: #<N> — why: ...
+Branch plan: `flow/#N-slug` off `main`
+OK to pull?
 ```
 
-### 6.2 `backlog` → `ready`
+---
 
-Só se acceptance criteria claros, deps ok, effort ≠ XL sem split.
+## Phase 7 — Uma issue = uma branch (hard rule)
 
-```bash
-gh issue edit <N> --remove-label "status:backlog" --add-label "status:ready"
-```
+### 7.1 Política de branch
 
-### 6.3 `ready` → `in progress`
-
-```bash
-gh issue edit <N> --remove-label "status:ready" --add-label "status:in-progress"
-gh issue develop <N> --checkout 2>/dev/null || git checkout -b "flow/#<N>-short-slug"
-gh issue comment <N> --body "Flow: moved to **in progress**. Branch: \`flow/#<N>-...\`"
-```
-
-### 6.4 Implementar (planner no centro)
-
-| Issue | Caminho |
+| Regra | Detalhe |
 |-------|---------|
-| S, local | direta / `builder` |
-| M | pre-plan leve → builder(s) |
-| L / multi-file | `planner` skill → builders |
-| Alto risco | `/plan-heavy` path |
+| 1 issue → 1 branch | Nunca misture duas issues na mesma branch |
+| Base | Sempre criar a partir da **default branch atualizada** (`main`/`master`/… do repo) |
+| Nome | `flow/#<N>-<short-slug>` (slug kebab, ≤ ~40 chars) |
+| Vida | Branch morre no merge/close da issue; próxima issue = **nova** branch |
+| Sync | Antes de criar: `git fetch` + rebase/ff da default local |
+| Sujo | Se working tree tiver mudanças de outra issue → stash/commit/descartar com OK — **não** carregar lixo pra branch nova |
 
-Sempre:
+### 7.2 Sequência atômica ao puxar (status + branch juntos)
 
-1. `agent-guide` antes de subagents  
-2. Scout extra se a issue exigir entendimento novo  
-3. Planner quando L/complexa  
-4. Validar antes de PR  
-5. Branch/`Closes #N` / planos em `.pi/plans/` referenciando a issue  
-
-Se o planner gerar plano grande: **mostre resumo e peça OK** antes de builders (alinhado à skill planner).
-
-### 6.5 `in progress` → `in review`
+Quando o user der OK pra puxar `#N`:
 
 ```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
+DEFAULT=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+git fetch origin "$DEFAULT"
+git checkout "$DEFAULT"
+git pull --ff-only origin "$DEFAULT"
+
+# status → in progress ANTES ou imediatamente ao criar a branch (não deixe board mentir)
+gh issue edit <N> --remove-label "status:ready" --remove-label "status:backlog" --add-label "status:in-progress"
+
+SLUG="<short-slug>"
+BRANCH="flow/#<N>-${SLUG}"
+git checkout -b "$BRANCH"
+
+gh issue comment <N> --body "Flow: **in progress** on `$BRANCH` (base: `$DEFAULT`)."
+```
+
+Alternativa se `gh issue develop` existir e for confiável:
+
+```bash
+gh issue develop <N> --checkout --name "flow/#<N>-${SLUG}"
+# ainda assim garanta labels status:* atualizadas
+```
+
+### 7.3 Durante o trabalho
+
+- Commits **só** na branch da issue
+- Escopo da issue: se aparecer trabalho extra → nova issue no backlog, não “já que estamos aqui”
+- Atualize `ISSUES.md` local (branch, PR, status)
+- Se bloquear: comente na issue, mova de volta pra `ready` ou deixe `in progress` com comment de blocker — **nunca** suma com o card
+
+### 7.4 PR + in review
+
+```bash
+git push -u origin HEAD
+gh pr create --base "$DEFAULT" --title "<title>" --body "$(cat <<'EOF'
 ## Summary
 ...
 
@@ -519,33 +645,83 @@ EOF
 )"
 
 gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
+gh issue comment <N> --body "Flow: **in review** — PR opened."
 ```
 
-### 6.6 `in review` → `done`
-
-- Default: **done = PR merged** (ou close aceito)
-- Alternativa só se o user combinar: done = PR aberto + checks ok
+### 7.5 Done + limpeza de branch
 
 ```bash
+# após merge (ou conforme acordo)
 gh issue edit <N> --remove-label "status:in-review" --add-label "status:done"
+git checkout "$DEFAULT"
+git pull --ff-only origin "$DEFAULT"
+git branch -d "flow/#<N>-..." 2>/dev/null || true
+# próxima issue: repita 7.2 em branch NOVA — nunca reaproveitar a branch merged pra outro card
 ```
-
-### 6.7 Próxima
-
-Volte a 6.1. Uma issue `in progress` por executor, salvo paralelo explícito + OK.
 
 ---
 
-## Phase 7 — Relatórios
+## Phase 8 — Implementar a issue puxada
+
+| Issue | Caminho |
+|-------|---------|
+| S, local | direta / `builder` |
+| M | pre-plan leve → builder(s) |
+| L / multi-file | `planner` skill → builders |
+| Alto risco | `/plan-heavy` path |
+
+Sempre:
+
+1. `agent-guide` antes de subagents  
+2. Scout extra se a issue exigir entendimento novo  
+3. Planner quando L/complexa  
+4. Validar antes de PR  
+5. Planos em `.pi/plans/` referenciando `#N`  
+
+Se o planner gerar plano grande: **mostre resumo e peça OK** antes de builders.
+
+---
+
+## Phase 9 — Modo “segue o projeto X” / continue
+
+Quando o user **não** manda lista nova, e sim continuidade:
+
+```txt
+"segue o projeto", "continua o board", "próxima issue",
+"manda ver no repo X", "o que tem ready?"
+```
+
+### Playbook
+
+1. `cd` / confirmar repo X (path ou `owner/name`)
+2. Permission gate leve (`gh issue list` ok?)
+3. **Board read** (Phase 6) — fonte da verdade
+4. Se existir `.pi/flow/<slug>/` → reler `ISSUES.md` + `PROJECT_MAP.md`; se velho, refresh com scouts focados
+5. Se **não** existir flow state mas o repo já tem issues/labels → operar em cima do board GitHub (não recriar tudo)
+6. Reportar board + anomalias + next recommended
+7. Se user já disse “continua / manda / próxima” na mesma frase → isso conta como OK pra **uma** issue recomendada (ainda diga qual e o que fará)
+8. Puxar com **nova branch** + status update
+9. Ship → voltar ao board e oferecer a seguinte
+
+### O que **não** fazer no continue
+
+- Recriar o backlog inteiro sem necessidade
+- Puxar issue do backlog sem DoR
+- Continuar em branch aleatória (`main` suja, branch de outra issue)
+- Avançar 3 cards sem atualizar labels
+
+---
+
+## Phase 10 — Relatórios
 
 ```md
 ## Flow status — OWNER/REPO
-- Created: N issues
-- By priority: P0=x P1=y ...
-- By status: backlog=… ready=… in-progress=… in-review=… done=…
-- Now: #<N> — stage
-- Blockers / open questions: ...
-- Next suggested: #<M> (awaiting OK)
+- Board: backlog=… ready=… in-progress=… in-review=… done=…
+- Active branch: flow/#N-...
+- Active issue: #N — stage
+- Open PRs: ...
+- Anomalies fixed/noted: ...
+- Next suggested: #M (awaiting OK unless already authorized)
 ```
 
 Artefatos:
@@ -554,8 +730,8 @@ Artefatos:
 .pi/flow/<repo-slug>/
   PROJECT_MAP.md
   BACKLOG.md
-  ISSUES.md
-  PERMISSIONS.md   # só se gate falhou
+  ISSUES.md          # inclua branch name + PR url por issue
+  PERMISSIONS.md     # só se gate falhou
 ```
 
 ---
@@ -564,13 +740,15 @@ Artefatos:
 
 Pare / eduque / pergunte quando:
 
-- Flow chamado sem repo, sem lista e sem outcome
+- Flow chamado sem repo, sem lista e sem outcome (e sem board existente pra continuar)
 - Permissão GitHub insuficiente
-- PROJECT_MAP ainda não existe e alguém pede issues “já”
+- PROJECT_MAP ainda não existe e alguém pede issues “já” em projeto desconhecido
 - Lista ambígua no que é “implementar agora”
 - Dúvida material sem OK (escopo, prioridade, split XL, auth/pay/security)
 - Effort XL sem critério de split
-- Working tree suja com mudanças não relacionadas
+- Working tree suja com mudanças de **outra** issue/branch
+- Tentativa de reusar branch de issue A pra issue B
+- Board inconsistente (in progress sem branch) e user quer “só code”
 - Duas falhas de create/PR sem hipótese nova
 
 ---
@@ -583,6 +761,9 @@ Pare / eduque / pergunte quando:
 - Chutar priority/effort sem PROJECT_MAP
 - Pular REVIEW GATE
 - Duplicar issues já abertas
+- Codar direto do **backlog** sem passar por **ready**
+- Dois cards in progress na mesma branch
+- Esquecer de mover label quando cria branch/PR
 - Pular planner em L/XL
 - Done sem PR/validação
 - Engolir erro de permissão
@@ -592,22 +773,31 @@ Pare / eduque / pergunte quando:
 
 ## Quick start (orquestrador)
 
-1. Se input incompleto → **educar** + pedir mínimo (repo + lista/outcome)  
+### A) Lista nova → issues
+1. Educar se incompleto  
 2. Permission gate  
-3. **Scouts por módulo** → `PROJECT_MAP.md`  
-4. Normalizar + estimar → draft  
-5. **REVIEW GATE** (proposal + sugestões + dúvidas) → esperar **OK**  
-6. Labels + `gh issue create` → `ISSUES.md`  
-7. Perguntar se puxa a primeira → OK → planner/builder → PR → kanban  
-8. Repetir com OK por issue  
+3. Scouts por módulo → `PROJECT_MAP.md`  
+4. Draft + **REVIEW GATE** → OK  
+5. Labels + create issues  
+6. Perguntar se puxa a primeira  
+
+### B) Continuar projeto / board
+1. Confirmar repo  
+2. **Ler kanban** + anomalias  
+3. Recomendar 1 issue ready  
+4. OK (explícito ou “continua/próxima”)  
+5. Branch nova + `in progress`  
+6. Implement → PR → `in review` → `done`  
+7. Voltar ao board  
 
 ### Comando mental
 
 ```txt
 /skill:flow
-# ou
-/skill:flow
 User: [lista] — cria issues e vamos uma a uma
+
+/skill:flow
+User: segue o projeto X / próxima issue
 ```
 
-Mesmo com lista, a ordem é: **mapear repo → propor → OK → criar**.
+Ordem sagrada: **ler board → evidência do repo → propor → OK → 1 issue / 1 branch → atualizar kanban a cada transição**.
