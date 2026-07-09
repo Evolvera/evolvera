@@ -13,6 +13,9 @@ Toda memória de projeto fica em: `{cwd}/.pi/memory/`
 > - `.pi/build/` — checklists temporários de execução (TILL-DO.md, TODO.md)
 > - `.pi/validate/` — artefatos de validação (REVIEW.md, FIX_REQUIRED.md)
 > - `.pi/memory/` — memória persistente do projeto (este skill)
+> - `.pi/flow/` — cache operacional rebuildable de entrega, de propriedade do skill `flow`
+>
+> `.pi/memory/` registra contexto e conhecimento genérico; não possui claims nem o estado de entrega do Flow. Para Flow, o estado remoto atual do GitHub sempre prevalece sobre `.pi/flow/`, `.pi/memory/` e contexto de chat. Ausência ou desatualização desses caches nunca autoriza recriar backlog, assumir issue ou sobrescrever estado remoto.
 
 | Arquivo | Descrição |
 |---------|-----------|
@@ -30,6 +33,8 @@ Toda memória de projeto fica em: `{cwd}/.pi/memory/`
 
 A extension `project-memory.ts` injeta o conteúdo de `.pi/memory/_summary.md` automaticamente no system prompt via hook `before_agent_start`.
 Se o conteúdo injetado disser que NÃO existe memória → execute o SCAN INICIAL (Regra 2) IMEDIATAMENTE antes de responder qualquer coisa.
+
+**Exceção Flow:** quando a intenção atual for continuar board/issues/PRs via skill `flow`, a Phase 6 de re-entry remoto do Flow acontece primeiro. Memória ausente não significa projeto novo quando o GitHub já contém board, issues, branches ou PRs. Só depois da reconciliação remota crie/atualize memória, se isso ainda for necessário; nunca deixe o scan de memória assumir issue, alterar kanban ou atrasar a retomada do WIP remoto.
 
 ---
 

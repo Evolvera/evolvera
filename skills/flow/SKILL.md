@@ -24,7 +24,8 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
        → status: in progress (atualizar kanban NA HORA)
        → planner/builder → commits na branch da issue
        → PR → status: in review
-       → merge/close → status: done
+       → merge verificado → issue fechada + status: done
+       → PR fechado sem merge: blocked/anomaly, nunca done
        → voltar ao board (nunca reutilizar a branch pra outra issue)
 ```
 
@@ -51,6 +52,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 7. **Read the board first** — em continue/próxima, leia issues+labels+PRs+branches antes de codar.
 8. **1 issue = 1 branch off default** — atualize o kanban **na hora** de cada transição (ready → in progress → in review → done). Nunca reutilize branch de outra issue.
 9. **WIP = 1** por executor (default) — termine ou estacione com transparência antes de puxar outro card.
+10. **GitHub é autoridade, local é cache** — precedência: **GitHub Project Status (quando configurado) → estado das issues/PRs + branches remotas atuais → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura remota nova sempre substitui estado local antigo; nunca trate cache local como claim ou lock.
 
 ---
 
@@ -437,10 +439,12 @@ EOF
 ```md
 # Flow Issues — OWNER/REPO
 
-| Backlog # | Issue | Priority | Effort | Status | URL |
-|-----------|-------|----------|--------|--------|-----|
-| 1 | #12 | P1 | M | backlog | https://... |
+| Backlog # | Issue | Priority | Effort | Status | Assignee | Branch | PR | Last verified at |
+|-----------|-------|----------|--------|--------|----------|--------|----|------------------|
+| 1 | [#12](https://...) | P1 | M | backlog | — | — | — | 2026-07-09T12:00:00Z |
 ```
+
+`ISSUES.md` é uma projeção local do remoto, não um board alternativo. Atualize a linha após cada transição verificada e use timestamp UTC ISO-8601.
 
 Depois de criar, reporte distribuição e **pergunte**:
 
@@ -450,41 +454,150 @@ Espere OK de novo se for implementar.
 
 ---
 
-## Phase 6 — Ler o kanban como engenheiro (obrigatório)
+## Phase 6 — Re-entry + ler o kanban como engenheiro (obrigatório)
 
-Antes de puxar qualquer issue — inclusive quando o user disser **"segue o projeto X"**, **"continua"**, **"próxima"** — **leia o board de verdade**. Não confie só na memória da sessão.
+Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser **"segue"**, **"continua"**, **"próxima"** — reconstrua a entrega pelo GitHub. A ordem de autoridade é:
 
-### 6.0 Snapshot do board
+1. **GitHub Project Status**, quando um Project estiver configurado para o repo;
+2. **issue/PR no GitHub + branches no remote atual**;
+3. cache local `.pi/flow/<repo-slug>/`;
+4. `.pi/memory/` e contexto do chat.
+
+Conflito é resolvido pela fonte mais alta. Uma leitura remota nova sempre invalida fatos locais antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente.
+
+### 6.0 Re-entry remoto obrigatório
+
+Execute nesta ordem em **todo** continue/próxima e no início de um chat novo:
 
 ```bash
-# Issues abertas com labels (visão kanban via labels)
-gh issue list --state open --limit 100 \
-  --json number,title,labels,assignees,updatedAt,url,body \
-  --jq 'sort_by(.number) | .[] | {number,title,labels:[.labels[].name],url,updatedAt}'
+REPO_NWO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+OWNER=${REPO_NWO%/*}
+REPO=${REPO_NWO#*/}
+DEFAULT=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
+EXECUTOR=$(gh api user -q .login)
+git fetch --prune origin
 
-# PRs abertos (o que já está in review de fato)
-gh pr list --state open --limit 50 \
-  --json number,title,headRefName,body,url,isDraft
+# Descubra Projects v2 ligados ao repo sem depender de chat/cache anterior.
+gh api graphql --paginate \
+  -F owner="$OWNER" -F repo="$REPO" \
+  -f query='query($owner:String!,$repo:String!,$endCursor:String){
+    repository(owner:$owner,name:$repo){
+      projectsV2(first:100,after:$endCursor){
+        nodes{id number title url closed owner{... on Organization{login} ... on User{login}}}
+        pageInfo{hasNextPage endCursor}
+      }
+    }
+  }'
 
-# Branches flow locais / remotas (WIP real)
-git branch -a | rg 'flow/#' || true
+# Enumere issues e PRs até o fim; limites fixos não provam ausência/estado global.
+gh api --paginate "repos/$OWNER/$REPO/issues?state=all&per_page=100" \
+  --jq '.[] | select(has("pull_request") | not) | {number,title,state,labels:[.labels[].name],assignees:[.assignees[].login],updated_at,closed_at,html_url}'
+
+gh api --paginate "repos/$OWNER/$REPO/pulls?state=all&per_page=100" \
+  --jq '.[] | {number,title,state,draft,head:.head.ref,base:.base.ref,merged_at,closed_at,html_url}'
+
+# Inventarie todas as branches do remote; depois classifique Flow, legacy e anomalias.
+# Filtrar só `flow/#*` pode esconder WIP antigo/não conforme.
+git ls-remote --heads origin
+
 git status --short
 git branch --show-current
+git rev-parse HEAD
 ```
 
-Monte mentalmente (e em `ISSUES.md` se útil) as colunas:
+Project discovery:
 
-| Coluna | Fonte de verdade | Significa |
-|--------|------------------|-----------|
-| **backlog** | `status:backlog` | Capturado, ainda **não** está pronto pra puxar |
-| **ready** | `status:ready` | Definition of Ready ok — pode virar WIP |
-| **in progress** | `status:in-progress` + branch `flow/#N-...` | Alguém está implementando **agora** |
-| **in review** | `status:in-review` + PR aberto | Código pronto, esperando review/checks |
-| **done** | `status:done` / issue closed | Entregue (default: PR merged) |
+1. Ignore Projects `closed=true` unless the user explicitly says they remain authoritative.
+2. If exactly one open Project is linked, use its returned `owner.login` and `number`.
+3. If multiple open Projects are linked, compare their title/URL and documented repo convention; if authority is still ambiguous, stop and ask which Project owns delivery status.
+4. If none is linked, use labels `status:*`. If a linked Project exists but permission prevents reading it, report the permission blocker rather than silently falling back to labels.
+5. For the selected Project, resolve all items and the `Status` field before classifying the board:
 
-Se houver GitHub Project com Status, prefira o Project **e** mantenha labels espelhando (ou documente qual é a source of truth). Labels `status:*` são o default do Flow.
+```bash
+PROJECT_OWNER=<owner.login>
+PROJECT_NUMBER=<number>
+PROJECT_ID=<id retornado na discovery>
 
-### 6.1 O que entra em cada coluna (DoR / DoD)
+flow_project_items() {
+  local total limit
+  total=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 1 --format json --jq '.totalCount')
+  limit=$total
+  [ "$limit" -gt 0 ] || limit=1
+  # O mesmo response usado na classificação valida seu próprio `totalCount`.
+  gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit "$limit" --format json \
+    --jq 'if (.items | length) == .totalCount then . else error("Project item list truncated") end'
+}
+
+flow_project_fields() {
+  local total limit
+  total=$(gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit 1 --format json --jq '.totalCount')
+  limit=$total
+  [ "$limit" -gt 0 ] || limit=1
+  # O mesmo response usado para resolver Status/options valida seu próprio `totalCount`.
+  gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --limit "$limit" --format json \
+    --jq 'if (.fields | length) == .totalCount then . else error("Project field list truncated") end'
+}
+
+flow_project_items
+flow_project_fields
+# Guarde o field id de `Status` e os option ids de Backlog/Ready/In progress/In review/Done.
+```
+
+Confirme as duas igualdades antes de usar Project como autoridade; truncamento de items ou fields bloqueia classificação global. Para uma issue/PR candidata, complemente com `gh issue view <N> --json number,title,state,labels,assignees,closedAt,url`, `gh pr view <PR> --json number,url,state,isDraft,headRefName,baseRefName,headRefOid,mergedAt,closedAt,reviewDecision,statusCheckRollup` e, quando necessário, `gh pr checks <PR>`.
+
+**Só depois** leia `STATE.md`, `ISSUES.md` e `PROJECT_MAP.md`. Se `.pi/flow` estiver ausente, reconstrua-o do remoto; não recrie backlog/issues. Registre o instante real da leitura remota em UTC, não o horário lembrado pelo chat.
+
+### 6.1 Cache canônico de re-entry
+
+`.pi/flow/<repo-slug>/STATE.md`:
+
+```md
+# Flow State — OWNER/REPO
+
+- Authority: GitHub (Project Status when configured, then issue/PR/remote branches)
+- Repo: OWNER/REPO
+- Remote: origin — https://github.com/OWNER/REPO.git
+- Default branch: main
+- Active issue: #123 | none
+- Executor login: octocat
+- Assignee/claim: octocat | unclaimed | ambiguous: login-a,login-b
+- Branch: flow/#123-short-slug | none
+- PR: #456 — https://github.com/OWNER/REPO/pull/456 — OPEN | CLOSED | MERGED | none
+- Stage: backlog | ready | claiming | in-progress | in-review | blocked | done | anomaly | idle
+- Remote head SHA: <40-char SHA> | none
+- Last verified at: 2026-07-09T12:00:00Z
+```
+
+Escreva apenas fatos verificados. `STATE.md` pode ser apagado e reconstruído sem perda remota; nunca use sua presença como exclusão mútua.
+
+### 6.2 Classificar o board reconciliado
+
+| Coluna | Postcondição remota | Significa |
+|--------|---------------------|-----------|
+| **backlog** | Project/label backlog | Capturado, ainda **não** está pronto pra puxar |
+| **ready** | Project/label ready; sem claim conflitante | Definition of Ready ok |
+| **in progress** | assignee executor + branch remota única `flow/#N-*` + Project/label coerente | Claim visível e implementação ativa |
+| **in review** | PR aberto com head da issue/base default + Project/label coerente | Esperando review/checks |
+| **done** | PR correspondente com `mergedAt != null`, issue fechada e status coerente | Entregue |
+
+Issue fechada ou PR fechado sem merge **não** implica done.
+
+### 6.3 Casos determinísticos de reconciliação
+
+| Evidência remota | Classificação e ação segura |
+|------------------|-----------------------------|
+| `ready` + branch `flow/#N-*` | Claim incompleto. Verifique assignee/PR; se é do executor e não há conflito, complete `in-progress`; senão reporte e não puxe. |
+| `in-progress` sem branch remota | Claim quebrado. Pare implementação; releia assignee/PR. Complete branch somente se o executor é dono e não há trabalho divergente; caso contrário marque/reporte `anomaly`. |
+| PR aberto com label/status errado | PR prevalece para o estágio; verifique head/base e então corrija para `in-review`, confirmando pós-condição. |
+| PR merged + issue/status stale | Verifique `mergedAt` e vínculo; feche issue se não auto-fechou, remova status stale e marque done. |
+| PR closed, `mergedAt=null` | Não é done. Classifique `blocked`/`anomaly`; decida com usuário se reabrir ou criar PR substituto. |
+| Issue closed sem PR merged | Não é done. Preserve o close e reporte motivo/anomalia; reabra/retome somente após decisão explícita, mas não aplique `done` sem PR merged. |
+| 2+ branches `flow/#N-*` ou 2+ PRs da issue | Ambíguo. Não escolha nem apague; liste URLs/SHAs/owners e peça decisão/handoff. |
+| vários assignees ou assignee ≠ executor | Outro dono/claim ambíguo. Não puxe; exija handoff explícito no GitHub e nova reconciliação. |
+
+Nunca corrija anomalia com force push, reset destrutivo ou deleção silenciosa de branch remota. Após qualquer reparo, releia as fontes afetadas e só então atualize caches.
+
+### 6.4 O que entra em cada coluna (DoR / DoD)
 
 Pense como staff engineer, não como bot de labels.
 
@@ -531,11 +644,10 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 
 #### `done`
 
-- Default: **PR merged** (ou issue fechada com close reason aceito)
-- Alternativa só se user combinar: done = PR aberto + checks verdes
+- **Obrigatório:** PR correspondente com `mergedAt != null`; issue fechada isoladamente nunca basta
 - Não deixe issue open com label done, nem PR merged com status in-progress
 
-### 6.2 Como “assistir” o board (triagem contínua)
+### 6.5 Como “assistir” o board (triagem contínua)
 
 Em todo “continua / próxima / segue o projeto”:
 
@@ -579,56 +691,76 @@ OK to pull?
 
 ## Phase 7 — Uma issue = uma branch (hard rule)
 
-### 7.1 Política de branch
+### 7.1 Política de branch e claim cross-chat
 
 | Regra | Detalhe |
 |-------|---------|
 | 1 issue → 1 branch | Nunca misture duas issues na mesma branch |
-| Base | Sempre criar a partir da **default branch atualizada** (`main`/`master`/… do repo) |
-| Nome | `flow/#<N>-<short-slug>` (slug kebab, ≤ ~40 chars) |
-| Vida | Branch morre no merge/close da issue; próxima issue = **nova** branch |
-| Sync | Antes de criar: `git fetch` + rebase/ff da default local |
-| Sujo | Se working tree tiver mudanças de outra issue → stash/commit/descartar com OK — **não** carregar lixo pra branch nova |
+| Base | Sempre a **default branch remota atualizada** (`origin/main`, `origin/master`, …) |
+| Nome | Determinístico: `flow/#<N>-<short-slug>` (título em lowercase ASCII, não alfanumérico → `-`, trim, primeiros 40 chars) |
+| Claim | Assignee único no GitHub **mais** branch remota determinística; nenhum deles isoladamente é lock |
+| WIP | 1 issue por executor; resolva/estacione o WIP remoto atual antes de puxar outra |
+| Sujo | Mudanças de outra issue bloqueiam troca; stash/commit/descartar só com OK |
+| Cleanup | Branch local só depois do merge verificado; nunca delete branch remota silenciosamente |
 
-### 7.2 Sequência atômica ao puxar (status + branch juntos)
+Antes do claim, complete a Phase 6, classifique **todas** as branches remotas e procure qualquer `refs/heads/flow/#N-*`, branch legacy ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição; registre-a como candidata/anomalia somente quando issue, PR, commit ou convenção do repo estabelecer relação. Se já há branch/PR ligada, reconcilie e retome; não crie outra. Não puxe se outro login é assignee, se há múltiplos assignees, ou se outro WIP pertence ao executor.
 
-Quando o user der OK pra puxar `#N`:
+Handoff exige evidência explícita no GitHub (assignee trocado e comentário/decisão identificável), árvore segura e nova reconciliação. Multi-assignee é `ambiguous`, não colaboração implícita: pare até ficar um executor responsável ou o usuário documentar uma política diferente.
+
+### 7.2 Claim como transição + verificação de pós-condição
+
+Git e GitHub não oferecem uma transação única. Prefira publicar primeiro a branch determinística, que torna a intenção visível, e só então editar assignee/status. Quando o user autorizar `#N`:
 
 ```bash
 DEFAULT=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
-git fetch origin "$DEFAULT"
-git checkout "$DEFAULT"
-git pull --ff-only origin "$DEFAULT"
-
-# status → in progress ANTES ou imediatamente ao criar a branch (não deixe board mentir)
-gh issue edit <N> --remove-label "status:ready" --remove-label "status:backlog" --add-label "status:in-progress"
-
-SLUG="<short-slug>"
+EXECUTOR=$(gh api user -q .login)
+SLUG="<slug-determinístico-do-título>"
 BRANCH="flow/#<N>-${SLUG}"
-git checkout -b "$BRANCH"
 
-gh issue comment <N> --body "Flow: **in progress** on `$BRANCH` (base: `$DEFAULT`)."
+git fetch --prune origin
+git status --short                         # deve estar seguro para trocar
+# Pare se issue, assignee, PR ou `git ls-remote` mostrar claim/conflito.
+git ls-remote --heads origin "refs/heads/flow/#<N>-*"
+
+git checkout -b "$BRANCH" "origin/$DEFAULT"
+git push -u origin "$BRANCH"              # sem force; deve reportar `[new branch]`
+
+# Assignee + labels numa edição de issue quando possível.
+gh issue edit <N> --add-assignee "$EXECUTOR" \
+  --remove-label "status:ready" --remove-label "status:backlog" \
+  --add-label "status:in-progress"
+gh issue comment <N> --body "Flow: **in progress** on \`$BRANCH\` (base: \`$DEFAULT\`, executor: \`$EXECUTOR\`)."
 ```
 
-Alternativa se `gh issue develop` existir e for confiável:
+Se o push não reportar criação de branch nova (por exemplo, outro chat venceu a corrida e o resultado foi `Everything up-to-date`), trate a branch como preexistente: pare e reconcilie, mesmo que o SHA seja igual. Se houver Project, atualize seu Status para `In progress` na mesma transição operacional usando os IDs resolvidos na Phase 6:
 
 ```bash
-gh issue develop <N> --checkout --name "flow/#<N>-${SLUG}"
-# ainda assim garanta labels status:* atualizadas
+gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_PROGRESS_OPTION_ID"
 ```
 
-### 7.3 Durante o trabalho
+Rode `flow_project_items` e confirme o valor do item; nunca presuma sucesso pelo exit code isolado. Depois **releia** issue, Project, branch remota e PRs: a pós-condição é assignee único=`$EXECUTOR`, branch remota única no SHA esperado, nenhum PR/claim conflitante e Status/label `in-progress`. Só então grave `STATE.md` e `ISSUES.md` com `lastVerifiedAt` e comece a editar código.
 
-- Commits **só** na branch da issue
-- Escopo da issue: se aparecer trabalho extra → nova issue no backlog, não “já que estamos aqui”
-- Atualize `ISSUES.md` local (branch, PR, status)
-- Se bloquear: comente na issue, mova de volta pra `ready` ou deixe `in progress` com comment de blocker — **nunca** suma com o card
+Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a parte ausente quando a propriedade continuar inequívoca. Caso contrário registre/reporte exatamente branch, assignees, status, SHA e erro. Não tente “rollback” apagando branch remota nem sobrescreva trabalho do usuário.
 
-### 7.4 PR + in review
+### 7.3 Durante o trabalho e builders
+
+- Commits e validação final acontecem **só** na branch Flow ativa da issue.
+- Antes de retomar edição em chat novo e antes de cada push, faça fetch da branch e compare seu SHA remoto com `Remote head SHA` verificado no `STATE.md`. Se o remoto avançou inesperadamente, outro chat/processo publicou trabalho: pare, reconcilie e não faça rebase/merge automático nem sobrescreva.
+- Push é sempre normal, nunca force; rejeição non-fast-forward é uma barreira de concorrência e exige nova reconciliação.
+- Builders operam por default na branch ativa, **sem isolamento por worktree**.
+- Se isolamento for realmente necessário, declare-o antes: o builder não pode publicar a branch de worktree como branch Flow; transfira commits explicitamente para a branch `flow/#N-*` (por cherry-pick não destrutivo), valide novamente nela e confira o SHA remoto antes do PR.
+- Escopo extra vira nova issue no backlog; não misture concerns.
+- Após push, blocker, handoff ou mudança de SHA/stage, releia a evidência afetada e atualize `STATE.md` + `ISSUES.md`.
+- Se bloquear, comente e represente o status acordado; nunca suma com o card ou libere claim apenas no cache local.
+
+### 7.4 PR + in review como transição verificada
+
+Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue.
 
 ```bash
-git push -u origin HEAD
-gh pr create --base "$DEFAULT" --title "<title>" --body "$(cat <<'EOF'
+git push -u origin "$BRANCH"
+PR_URL=$(gh pr create --head "$BRANCH" --base "$DEFAULT" --title "<title>" --body "$(cat <<'EOF'
 ## Summary
 ...
 
@@ -642,22 +774,45 @@ Closes #<N>
 ## Notes
 ...
 EOF
-)"
+)")
 
 gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
-gh issue comment <N> --body "Flow: **in review** — PR opened."
+gh issue comment <N> --body "Flow: **in review** — $PR_URL"
 ```
 
-### 7.5 Done + limpeza de branch
+Atualize Project Status, se configurado, e releia a pós-condição:
 
 ```bash
-# após merge (ou conforme acordo)
-gh issue edit <N> --remove-label "status:in-review" --add-label "status:done"
-git checkout "$DEFAULT"
-git pull --ff-only origin "$DEFAULT"
-git branch -d "flow/#<N>-..." 2>/dev/null || true
-# próxima issue: repita 7.2 em branch NOVA — nunca reaproveitar a branch merged pra outro card
+gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_REVIEW_OPTION_ID"
+flow_project_items
+# No item `$PROJECT_ITEM_ID`, confirme Status = In review.
 ```
+
+Releia o PR e a issue: URL/número existem, `headRefName=$BRANCH`, `baseRefName=$DEFAULT`, head SHA é o validado, PR está aberto no draft/review state acordado, checks/validação estão registrados e label/Project dizem `in-review`. Review approvals continuam obrigatórios conforme proteção/política; Flow não faz merge automático. Falha de qualquer pós-condição volta para reconciliação, não para criar PR duplicado. Atualize os caches após verificação.
+
+### 7.5 Merge, done e limpeza como transições verificadas
+
+Depois do merge autorizado ter ocorrido, prove-o remotamente antes de marcar done:
+
+```bash
+gh pr view <PR> \
+  --json number,url,state,headRefName,baseRefName,headRefOid,mergedAt,closedAt,reviewDecision,statusCheckRollup
+gh issue view <N> --json number,state,labels,assignees,url
+```
+
+A pós-condição default exige `mergedAt != null`, PR/head/base esperados e checks/reviews conforme política. PR fechado com `mergedAt=null` **não** é done. Se o merge não auto-fechou a issue, feche-a explicitamente; remova labels stale (`ready`, `in-progress`, `in-review`) e aplique `done`. Se houver Project:
+
+```bash
+gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"
+flow_project_items
+# No item `$PROJECT_ITEM_ID`, confirme Status = Done.
+```
+
+Releia issue/Project/PR e somente então atualize `STATE.md`/`ISSUES.md` para `done`.
+
+Por fim, com working tree limpa, volte à default, faça `git pull --ff-only origin "$DEFAULT"` e remova apenas a branch **local** com `git branch -d "$BRANCH"`. Não esconda falha de cleanup, não force delete e não delete branch remota sem autorização/política explícita. Volte à Phase 6 antes de recomendar outra issue.
 
 ---
 
@@ -695,42 +850,52 @@ Quando o user **não** manda lista nova, e sim continuidade:
 
 1. `cd` / confirmar repo X (path ou `owner/name`)
 2. Permission gate leve (`gh issue list` ok?)
-3. **Board read** (Phase 6) — fonte da verdade
-4. Se existir `.pi/flow/<slug>/` → reler `ISSUES.md` + `PROJECT_MAP.md`; se velho, refresh com scouts focados
-5. Se **não** existir flow state mas o repo já tem issues/labels → operar em cima do board GitHub (não recriar tudo)
-6. Reportar board + anomalias + next recommended
+3. Rodar **re-entry remoto completo** (Phase 6): fetch/prune, Project, issues, PRs all-state, branches remotas, branch/tree local
+4. Classificar/reparar ou reportar anomalias; retomar primeiro o WIP inequívoco do executor
+5. Só agora ler/reconstruir `STATE.md`, `ISSUES.md` e `PROJECT_MAP.md`; cache ausente/stale nunca recria backlog
+6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA e next recommended
 7. Se user já disse “continua / manda / próxima” na mesma frase → isso conta como OK pra **uma** issue recomendada (ainda diga qual e o que fará)
-8. Puxar com **nova branch** + status update
-9. Ship → voltar ao board e oferecer a seguinte
+8. Reconciliar novamente a candidata imediatamente antes do claim; puxar só se assignee/branch/PR permitirem
+9. Executar cada transição com pós-condição verificada, atualizar caches e shippar
+10. Após done verificado, voltar à Phase 6 e oferecer a seguinte
 
 ### O que **não** fazer no continue
 
-- Recriar o backlog inteiro sem necessidade
-- Puxar issue do backlog sem DoR
+- Ler cache/chat antes do remoto e tratá-lo como verdade
+- Recriar backlog porque `.pi/flow`/`.pi/memory` sumiu
+- Puxar issue do backlog sem DoR ou issue já reclamada por outro executor
 - Continuar em branch aleatória (`main` suja, branch de outra issue)
-- Avançar 3 cards sem atualizar labels
+- Avançar cards sem verificar pós-condições e atualizar Project/labels/caches
 
 ---
 
 ## Phase 10 — Relatórios
 
+Após **cada** transição verificada — issue criada/refinada/ready, claim, push/SHA relevante, blocker/handoff, PR, review status, merge/done e cleanup — atualize `STATE.md` e a linha de `ISSUES.md`. Nunca escreva o estado desejado antes de provar a pós-condição remota.
+
+Resume report compacto obrigatório:
+
 ```md
-## Flow status — OWNER/REPO
+## Flow resume — OWNER/REPO
+- Remote verified at: 2026-07-09T12:00:00Z
+- Authority read: Project <number|not configured>; issues/PRs; remote branches
 - Board: backlog=… ready=… in-progress=… in-review=… done=…
-- Active branch: flow/#N-...
-- Active issue: #N — stage
-- Open PRs: ...
-- Anomalies fixed/noted: ...
-- Next suggested: #M (awaiting OK unless already authorized)
+- Executor / WIP: login — #N | none
+- Claim evidence: assignee=…; branch=flow/#N-…@<sha> | none
+- PR evidence: #P <url> — OPEN|CLOSED|MERGED; head/base=…/…; checks/review=…
+- Local: branch=…; tree=clean|dirty (paths summarized)
+- Anomalies repaired/open: ...
+- Next: resume #N | recommend #M (awaiting OK unless already authorized)
 ```
 
 Artefatos:
 
 ```txt
 .pi/flow/<repo-slug>/
+  STATE.md           # cache canônico de re-entry; GitHub continua autoridade
   PROJECT_MAP.md
   BACKLOG.md
-  ISSUES.md          # inclua branch name + PR url por issue
+  ISSUES.md          # issue/status/assignee/branch/PR/last verified
   PERMISSIONS.md     # só se gate falhou
 ```
 
@@ -748,7 +913,8 @@ Pare / eduque / pergunte quando:
 - Effort XL sem critério de split
 - Working tree suja com mudanças de **outra** issue/branch
 - Tentativa de reusar branch de issue A pra issue B
-- Board inconsistente (in progress sem branch) e user quer “só code”
+- Board inconsistente (in progress sem branch), claim multi-assignee, branch/PR duplicado ou handoff ambíguo
+- Recuperação exigiria force push, reset destrutivo, deleção remota silenciosa ou enfraquecer aprovação/review
 - Duas falhas de create/PR sem hipótese nova
 
 ---
@@ -763,9 +929,12 @@ Pare / eduque / pergunte quando:
 - Duplicar issues já abertas
 - Codar direto do **backlog** sem passar por **ready**
 - Dois cards in progress na mesma branch
-- Esquecer de mover label quando cria branch/PR
+- Confiar em `git branch -a` ou `STATE.md` como prova do remoto
+- Chamar transições git+GitHub de “atômicas” ou seguir após pós-condição falhar
+- Esquecer de mover e verificar Project/label quando cria branch/PR
+- Publicar branch de worktree do builder como branch Flow
 - Pular planner em L/XL
-- Done sem PR/validação
+- Done sem PR correspondente, merge verificado, review/checks e status reconciliado
 - Engolir erro de permissão
 - Citar pessoas específicas no checklist de acesso (sempre genérico pro usuário)
 
@@ -782,13 +951,13 @@ Pare / eduque / pergunte quando:
 6. Perguntar se puxa a primeira  
 
 ### B) Continuar projeto / board
-1. Confirmar repo  
-2. **Ler kanban** + anomalias  
-3. Recomendar 1 issue ready  
-4. OK (explícito ou “continua/próxima”)  
-5. Branch nova + `in progress`  
-6. Implement → PR → `in review` → `done`  
-7. Voltar ao board  
+1. Confirmar repo e executar re-entry remoto completo
+2. Reconciliar Project + issues/PRs + branches remotas + estado local
+3. Retomar WIP próprio ou recomendar 1 issue ready
+4. OK (explícito ou “continua/próxima”)
+5. Claim verificado: branch remota + assignee + `in progress`
+6. Implement → validar → PR verificado → `in review` → merge verificado → `done`
+7. Atualizar caches e voltar ao board
 
 ### Comando mental
 
@@ -800,4 +969,4 @@ User: [lista] — cria issues e vamos uma a uma
 User: segue o projeto X / próxima issue
 ```
 
-Ordem sagrada: **ler board → evidência do repo → propor → OK → 1 issue / 1 branch → atualizar kanban a cada transição**.
+Ordem sagrada: **reler GitHub remoto → reconciliar caches → evidência do repo → propor → OK → claim de 1 issue / 1 branch → verificar e registrar cada transição → voltar ao board**.
