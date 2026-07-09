@@ -66,7 +66,7 @@ When the user asks for a simple plan, quick fix plan, or "pre-plano", do not lau
 
 Planner → Builders is the preferred path when a task is complex, spans many files, contains many subtasks, or can be parallelized. The planner spends heavier reasoning once to create `PLAN_FULL.md`, `SCHEDULE.md`, and atomic `TASKS/`; then smaller/faster/cheaper builders execute independent tasks in parallel while you orchestrate and verify.
 
-Use `/plan-heavy` instead of direct planner activation when risk is high: dirty working tree, existing `.pi/plans`, shared/large files, preservation-critical tasks, math/science/algorithm correctness, long composed workflows, or recovery after a builder failure. `/plan-heavy` runs a 5-phase ensemble: (1) `plan_heavy_handoff` collects repo state into `HANDOFF.md` + `BRIEFS/` prompts; (2) immediately launch `plan-briefer` (gpt-5.5) and `plan-briefer-fable` (Claude Fable 5 high) in parallel to write independent single-file strategy briefs; (3) `plan-brief-merger` (GPT-5.5 high) reconciles them into `BRIEFS/brief_merged.md`; (4) `planner-heavy` consumes the handoff + merged brief and writes `PLAN_FULL.md`/`SCHEDULE.md`/`TASKS/`; (5) `plan_heavy_validate` gates the plan and `plan_heavy_envelope` briefs each builder. Do not stop after handoff creation; the handoff is only phase 1 setup. If the Fable launch fails, stop and report the launch error instead of silently substituting another briefer. The ensemble merge happens at the prose/strategy level (safe), never at the DAG/task level; `planner-heavy` stays authoritative and grounds every concrete detail in the repo.
+Use `/plan-heavy` instead of direct planner activation when risk is high: dirty working tree, existing `.pi/plans`, shared/large files, preservation-critical tasks, math/science/algorithm correctness, long composed workflows, or recovery after a builder failure. `/plan-heavy` runs a 5-phase ensemble: (1) `plan_heavy_handoff` collects repo state into `HANDOFF.md` + `BRIEFS/` prompts; (2) immediately launch `plan-briefer` (GPT-5.6 Sol high) and `plan-briefer-fable` (Claude Fable 5 high) in parallel to write independent single-file strategy briefs; (3) `plan-brief-merger` (GPT-5.6 Terra high) reconciles them into `BRIEFS/brief_merged.md`; (4) `planner-heavy` (GPT-5.6 Sol xhigh) consumes the handoff + merged brief and writes `PLAN_FULL.md`/`SCHEDULE.md`/`TASKS/`; (5) `plan_heavy_validate` gates the plan and `plan_heavy_envelope` briefs each builder. Do not stop after handoff creation; the handoff is only phase 1 setup. If the Fable launch fails, stop and report the launch error instead of silently substituting another briefer. The ensemble merge happens at the prose/strategy level (safe), never at the DAG/task level; `planner-heavy` stays authoritative and grounds every concrete detail in the repo.
 
 The pre-plan should define the destination, not over-prescribe every step. Capture: target outcome, success criteria, constraints, available context/evidence, validation, and stop conditions. Then build a Planner Handoff Pack so the planner sees the real operational state, not just the desired feature. Let the planner choose an efficient implementation path from that grounded handoff.
 
@@ -222,7 +222,7 @@ Agent({
 SCOUT / EVIDENCE REPORTS:
 [Scout results if available]
 
-Generate a complete plan ecosystem in .pi/plans/. Preserve the handoff's repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy in PLAN_FULL.md, SCHEDULE.md, and every relevant task file.`,
+Generate a complete plan ecosystem in .pi/plans/. Keep PLAN_FULL authoritative, SCHEDULE compact, and each TASK file execution-focused. Preserve only task-relevant hazards/constraints in TASKS; do not repeat the whole handoff. Do not include TODO/TILL-DO templates or generic engineering boilerplate because builders/execution envelopes already own that process.`,
 })
 ```
 
@@ -240,7 +240,7 @@ Generate a complete plan ecosystem in .pi/plans/. Preserve the handoff's repo-st
 - ✅ Validation commands/checks
 - ✅ Recovery snapshot and checkpoint commit policy
 - ✅ Stop conditions and missing-evidence behavior
-- ✅ Builder routing instructions from `/skill:builder`: planner must choose `builder-highspeed`, `builder`, `builder-heavy`, or `builder-heavy-design` per task, write the chosen agent in `SCHEDULE.md`, and name task files accordingly (`task_01_builder-highspeed.md`, `task_02_builder.md`, `task_03_builder-heavy.md`, or `task_04_builder-heavy-design.md`).
+- ✅ Task routing instructions: choose `builder-highspeed`, `builder`, `builder-design`, `builder-heavy`, or `builder-heavy-design` for implementation; add a linked `validator` successor only for selected high-consequence/high-complexity tasks whose defects could escape builder checks.
 
 ### Planner Output
 
@@ -252,23 +252,48 @@ Planner generates:
 ├── SCHEDULE.md           # DAG + execution rules + Agent column
 └── TASKS/
     ├── task_01_builder-highspeed.md  # highspeed sweet spot task
-    ├── task_02_builder.md            # cautious standard task
-    ├── task_03_builder-heavy.md      # correctness-sensitive task
-    ├── task_04_builder-heavy-design.md # exceptional visual/design task
+    ├── task_02_builder.md            # normal-risk general task
+    ├── task_03_builder-design.md     # standard frontend/UI task
+    ├── task_04_builder-heavy.md      # correctness-sensitive task
+    ├── task_05_builder-heavy-design.md # exceptional visual/design task
+    ├── task_06_validator.md          # selective gate for one sensitive builder task
     └── ...
 ```
 
 Planner must use the Builder Skill routing:
-- `builder-highspeed`: single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, function signature swaps, module-local renames, and explicit backend/tooling/tests/algorithm/math/physics tasks. Use for frontend only when the UI change is a tiny exact mechanical tweak with known tokens/classes.
-- `builder`: preferred/default for frontend/UI implementation — React components, CSS/Tailwind styling, layout, responsive behavior, accessibility states, design-system application, and most polish-plan application — plus explicit, bounded, normal-risk tasks where structured TILL-DO/TODO/HANDOVER helps and the diff is easy to verify.
-- `builder-heavy`: For complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared files, preservation-critical test/source edits, migrations, math/science/algorithm correctness, long/composed tasks, recovery after a lighter builder failed, or auth/payment/security-adjacent work with explicit scope. For frontend, choose heavy only for concrete non-visual correctness/integration hazards.
-- `builder-heavy-design`: ultimate visual-quality tier for bounded website/frontend work: premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive sections, distinctive art direction, and visual rescue when standard `builder` output is functional but not premium enough.
+- `builder-highspeed`: single-file/module-local mechanical edits and explicit backend/tooling/tests/algorithm tasks. Frontend only for tiny exact token/class/text swaps.
+- `builder`: normal-risk general implementation, bounded backend/tooling/tests, structured edits, non-design-led integration, and evidence collection.
+- `builder-design`: default frontend/UI child tier for components, CSS/Tailwind, layout, responsive behavior, accessibility states, design-system application, ordinary motion, and polish-plan execution.
+- `builder-heavy`: complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared files, migrations, math/science/algorithm correctness, recovery, or auth/payment/security-adjacent work.
+- `builder-heavy-design`: parent/ultimate visual tier for premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive sections, distinctive art direction, and rescue after `builder-design`.
 
-For `builder-highspeed`, the planner must keep the task under ~6 logical implementation steps and list explicit symbol/API/package/endpoint verification targets so it cannot invent routine details; frontend highspeed tasks must be tiny exact mechanical tweaks. For `builder-heavy`, the planner must state why the correctness/integration heavy tier is needed and keep the task bounded enough to validate; frontend heavy tasks must name the non-visual correctness/integration hazard. For `builder-heavy-design`, the planner must state why the visual heavy tier is needed, include design artifacts, concrete visual acceptance criteria, responsive/a11y/reduced-motion requirements, and screenshot/browser validation if available. Shared-file hazards, subtle algorithms/math/science, long composed workflows, and preservation-critical changes should route to `builder-heavy` unless the task is clearly simple; normal frontend quality work should route to `builder`; exceptional website visual quality should route to `builder-heavy-design`. Each task file must include `**Agent**`, `**Why This Agent**`, `**Preservation Contract**`, and for highspeed tasks `**Highspeed Budget**`. `SCHEDULE.md` must list the same agent so the orchestrator can spawn the correct subagent.
+For `builder-highspeed`, keep tasks under ~6 logical steps with explicit verification targets. For `builder-design`, include only grounded design artifacts and observable viewport/a11y checks. For `builder-heavy`, state the correctness/integration consequence in one sentence. For `builder-heavy-design`, state why the task exceeds `builder-design`. Normal frontend routes to `builder-design`; exceptional visual work escalates to `builder-heavy-design`. `SCHEDULE.md` must list the same agent.
+
+### Selective Validator Tasks
+
+The planner may route a task to `validator` only as an independent quality gate after a specific builder task. Add one when the producer changes auth/authorization, payments, secrets/privacy, destructive or irreversible data migration, public API compatibility, concurrency/idempotency, subtle algorithm/math behavior, critical cross-service integration, or broad/high-complexity user-visible behavior with meaningful regression risk. Treat `builder-heavy` as a reason to assess the need, not as an automatic validator requirement.
+
+Do not add validator tasks for every builder, mechanical edits, docs-only changes, or low-risk work already covered by decisive focused checks. For each justified gate:
+- create `TASKS/task_NN_validator.md` with `**Agent**: validator`;
+- put the exact producer builder task in its `SCHEDULE.md` dependencies; downstream tasks that trust the change depend on the validator task;
+- scope the brief to the producer checkpoint, exact changed files/behavior, risk hypothesis, required tests/diagnostics, and evidence for `PASS | BLOCKED`;
+- default to review-only with `Files Touched: none`, `Recovery Snapshot: not required`, and `Checkpoint Commit: not required (quality gate)`;
+- if `BLOCKED`, pause dependents, send findings back for a bounded builder repair, checkpoint that repair, and rerun the same validator task.
+
+Only authorize validator-written tests or review artifacts when explicitly useful; then declare those files and use normal recovery/checkpoint rules. Do not pre-create speculative repair tasks.
+
+### Compact Task Contract
+
+Planner task files are execution briefs, not duplicated process docs:
+- simple/create-only/evidence-doc: 25–60 lines;
+- normal implementation: 40–90 lines;
+- concrete contract/shared-file complexity: up to 140 lines when justified.
+
+Required core: Agent/Why/Goal, Change, 3–7 Acceptance checks, Validation, Checkpoint. Add Read, Constraints, Stop If, or one detail section only when they materially change execution. For a validator task, `Change` states review-only/no production edits and the other sections define the exact checkpoint scope and verdict evidence. Omit TODO/TILL-DO templates, generic principle paragraphs, repeated context, dependency prose, and `N/A` fields. Builders generate lifecycle artifacts themselves; `/plan-heavy envelope` carries detailed recovery/checkpoint state. Add at most one optional detail section when it materially changes execution.
 
 Every builder task, regardless of tier, must tell the builder what not to remove: existing public API, exports, handlers, tests, styles, auth/error paths, logging, or data flow that must be preserved. Include focused diff review as a success criterion so builders catch accidental deletions before reporting COMPLETE.
 
-`SCHEDULE.md` must include recovery/checkpoint controls: a recovery snapshot requirement for tasks that modify existing files and a `Checkpoint Commit` column. The orchestrator should create one selective commit after each verified task, containing only that task's intended files and `.pi/build`/`.pi/recovery` artifacts. Tasks that touch the same large shared file must run serially with checkpoint commits between them, not in parallel.
+`SCHEDULE.md` must include recovery/checkpoint controls: a recovery snapshot requirement for tasks that modify existing files and a `Checkpoint Commit` column. The orchestrator should create one selective commit after each verified writing task, containing only that task's intended files and `.pi/build`/`.pi/recovery` artifacts. Review-only validator tasks complete by recording `PASS`; they do not create empty commits. Tasks that touch the same large shared file must run serially with checkpoint commits between them, not in parallel.
 
 Implementation plans MUST include:
 - requirements and where each is addressed
@@ -303,7 +328,7 @@ Plan generated. Here's the summary:
 ❓ Approve this plan? I can also adjust specific tasks if needed.
 ```
 
-**Wait for approval.** Only then spawn builders per SCHEDULE.md. For `/plan-heavy` plans, generate an execution envelope before each builder with `/plan-heavy envelope <plan-dir> <task-id>` and pass both the task file and envelope to the builder. During execution, commit each verified task separately with selective staging and record the commit hash in the schedule before starting dependent tasks.
+**Wait for approval.** Only then execute agents per `SCHEDULE.md`. Generate an execution envelope before each `/plan-heavy` builder task and pass both the task file and envelope to the builder. After a sensitive builder checkpoint, run its linked validator task before any dependent work; `PASS` unlocks the DAG, while `BLOCKED` requires repair and revalidation. Commit each verified writing task separately with selective staging and record the commit hash; do not create empty commits for review-only gates.
 
 ---
 
@@ -337,6 +362,6 @@ Plan generated. Here's the summary:
 |-------|-----|------|--------------|
 | **Pre-Plan** | You | Cheap / seconds | Show summary, ask approval |
 | **Plan** | Planner agent | Expensive / minutes | Show plan summary, ask approval |
-| **Execute** | Builder agents (`builder-highspeed`, `builder`, `builder-heavy`, or `builder-heavy-design` per SCHEDULE) | Medium | Execute approved plan, verify diff, commit each task checkpoint |
+| **Execute** | Scheduled builders plus selective `validator` gates | Medium | Execute approved DAG, checkpoint writing tasks, and require `PASS` from linked sensitive gates |
 
 **Rule: Review with the user at the points where approval affects cost, scope, or risk — usually after pre-plan and after the generated plan.**
