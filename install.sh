@@ -36,6 +36,7 @@ for f in settings.json models.json SYSTEM.md; do
     [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
 done
 
+[ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"
 # ── Agents ────────────────────────────────────
 cp "$SCRIPT_DIR"/agents/*.md "$PI_DIR/agents/" 2>/dev/null
 info "$(ls "$SCRIPT_DIR"/agents/*.md 2>/dev/null | wc -l | tr -d ' ') agentes"
