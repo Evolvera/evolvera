@@ -52,6 +52,12 @@ foreach ($f in $configs) {
     }
 }
 
+$subagentsSrc = Join-Path $SCRIPT_DIR "subagents.json"
+if (Test-Path $subagentsSrc) {
+    Copy-Item $subagentsSrc (Join-Path $PI_DIR "subagents.json") -Force
+    Info "subagents.json"
+}
+
 # -- Agents -----------------------------------------------
 $agents = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "agents") -Filter "*.md" -ErrorAction SilentlyContinue
 if ($agents) {
