@@ -53,6 +53,8 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 8. **1 issue = 1 branch off default** — atualize o kanban **na hora** de cada transição (ready → in progress → in review → done). Nunca reutilize branch de outra issue.
 9. **WIP = 1** por executor (default) — termine ou estacione com transparência antes de puxar outro card.
 10. **GitHub é autoridade, local é cache** — precedência: **GitHub Project Status (quando configurado) → estado das issues/PRs + branches remotas atuais → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura remota nova sempre substitui estado local antigo; nunca trate cache local como claim ou lock.
+11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
+12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na default branch. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
 
 ---
 
@@ -202,7 +204,7 @@ Carregue `agent-guide` + `scout`. Prefira **vários scouts paralelos e estreitos
 | tests/ci | como validar, pipelines, quality gates |
 | existing issues | issues/PRs abertos que se sobrepõem ao backlog |
 
-Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”.
+Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI também deve inventariar a cobertura realmente executável por jornada (unit, integração, contrato, E2E/smoke e manual), apontar features funcionais sem proteção e recomendar a baseline mínima antes de mudanças naquela superfície.
 
 ### 1.3 Síntese local
 
@@ -253,7 +255,17 @@ Para cada item:
 3. **Acceptance criteria** (bullets testáveis)
 4. **Área do sistema** (módulos/paths do PROJECT_MAP)
 5. **Dependências**
-6. **Tipo**: `feature` | `fix` | `chore` | `refactor` | `docs` | `infra`
+6. **Impacto de regressão** — jornadas, contratos, integrações e dados já existentes que a issue pode afetar; identificar a suíte/comandos que devem ser executados.
+7. **Tipo**: `feature` | `fix` | `chore` | `refactor` | `docs` | `infra`
+
+Para toda issue de código, os acceptance criteria devem incluir, quando aplicável:
+
+- teste novo ou ajustado que reproduz o bug/contrato/mudança;
+- suíte de regressão direcionada aos módulos e jornadas afetados;
+- suíte padrão do repositório (ou uma justificativa explícita e aprovada para a parte que não puder rodar);
+- regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência.
+
+Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o backlog deve conter uma issue de **baseline de caracterização** antes das mudanças que possam afetá-la. Essa issue deve: catalogar comportamento válido versus bugs/vulnerabilidades conhecidos; automatizar primeiro as jornadas Tier 0 (auth, dinheiro, dados críticos) e depois as jornadas core; usar banco/fixtures e providers fake; e provar que a baseline passa na branch default. As issues posteriores devem depender dela.
 
 ### Dedup e corte
 
@@ -625,6 +637,8 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - [ ] Dependências resolvidas **ou** explicitamente aceitas
 - [ ] Não é XL sem split (XL volta pro backlog como epics filhos)
 - [ ] Não conflita com issue/PR já abertos no mesmo pedaço
+- [ ] Impacto de regressão mapeado: jornadas/contratos anteriores, testes existentes e comandos obrigatórios estão identificados
+- [ ] Para features existentes afetadas, a baseline de caracterização já passa na default branch ou há uma issue predecessora explícita que a estabelecerá
 
 **Ready ≠ compromisso de fazer agora.** Ready = “pode ser puxado sem vergonha”.
 
@@ -768,8 +782,11 @@ PR_URL=$(gh pr create --head "$BRANCH" --base "$DEFAULT" --title "<title>" --bod
 Closes #<N>
 
 ## Validation
-- [ ] tests / checks run
+- [ ] teste novo/ajustado para o comportamento desta issue
+- [ ] regressão direcionada para jornadas, contratos e issues anteriores afetadas
+- [ ] suíte padrão relevante do repositório
 - [ ] diagnostics clean (relevant)
+- [ ] limitações de ambiente/validação, se houver, documentadas (não marcar done sem decisão explícita)
 
 ## Notes
 ...
@@ -827,11 +844,19 @@ Por fim, com working tree limpa, volte à default, faça `git pull --ff-only ori
 
 Sempre:
 
-1. `agent-guide` antes de subagents  
-2. Scout extra se a issue exigir entendimento novo  
-3. Planner quando L/complexa  
-4. Validar antes de PR  
-5. Planos em `.pi/plans/` referenciando `#N`  
+1. `agent-guide` antes de subagents
+2. Scout extra se a issue exigir entendimento novo
+3. Antes de editar, mapear o impacto de regressão: testes, contratos, jornadas e issues anteriores na mesma superfície
+4. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
+5. Planner quando L/complexa
+6. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
+7. Registrar os comandos e resultados no PR; se uma camada não rodar, declarar o motivo, risco e próxima ação
+8. Não avançar para `done` se houver falha, teste obrigatório não executado, ou perda de cobertura material sem decisão explícita
+9. Planos em `.pi/plans/` referenciando `#N`
+
+A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.
+
+Exceção estreita: contenção emergencial que reduz exposição ativa pode preceder uma baseline completa somente com escopo mínimo, smoke test da jornada válida, rollback conhecido e aprovação explícita do usuário. A caracterização completa continua como dependência da próxima alteração funcional; nunca use a exceção para normalizar cobertura ausente.
 
 Se o planner gerar plano grande: **mostre resumo e peça OK** antes de builders.
 
