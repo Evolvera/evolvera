@@ -27,7 +27,7 @@ info "PI instalado"
 
 # ── Diretórios ────────────────────────────────
 step "Preparando diretórios"
-mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin}
+mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin,themes}
 
 # ── Configs ───────────────────────────────────
 step "Instalando configuração"
@@ -37,6 +37,8 @@ for f in settings.json models.json SYSTEM.md; do
 done
 
 [ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"
+cp "$SCRIPT_DIR"/themes/*.json "$PI_DIR/themes/" 2>/dev/null && info "temas"
+
 # ── Agents ────────────────────────────────────
 cp "$SCRIPT_DIR"/agents/*.md "$PI_DIR/agents/" 2>/dev/null
 info "$(ls "$SCRIPT_DIR"/agents/*.md 2>/dev/null | wc -l | tr -d ' ') agentes"
