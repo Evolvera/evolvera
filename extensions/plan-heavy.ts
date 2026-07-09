@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, relative } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -161,15 +161,16 @@ ${hazards}
 <validation_and_checkpointing>
 - Every MODIFY task requires recovery snapshot under \`.pi/recovery/{task_id}/before/...\`.
 - Every task requires focused diff review before COMPLETE.
-- Every verified task should be committed separately with selective staging only.
-- SCHEDULE.md must record Recovery Snapshot and Checkpoint Commit per task.
+- Every verified writing task should be committed separately with selective staging only.
+- Review-only validator gates record PASS/BLOCKED and do not create empty commits.
+- SCHEDULE.md must record Recovery Snapshot and Checkpoint Commit or validator verdict semantics per task.
 </validation_and_checkpointing>
 
 <stop_rules>
 - Block if dirty-file ownership is ambiguous for files a task must touch.
 - Block if a task would modify a large/shared file without preservation markers.
 - Block if safe validation cannot be defined for a correctness-sensitive change.
-- Route high-risk bounded tasks to builder-heavy.
+- Route high-risk bounded implementation to builder-heavy and assess whether a linked validator successor is warranted by consequence.
 </stop_rules>
 `;
 
@@ -178,7 +179,7 @@ ${hazards}
 
   const briefGptPrompt = `PLAN-HEAVY BRIEF PHASE — GPT BRIEFER
 
-You are \`plan-briefer\`.
+You are \`plan-briefer\`, the GPT-5.6 Sol high briefer.
 
 Read first:
 - \`${handoffRel}\`
@@ -219,7 +220,7 @@ The handoff tool/command only created files. Continue the ensemble automatically
 
 Normal flow uses Fable. If the Fable launch fails, stop and report the launch error so the orchestrator/user can choose a manual model override outside this prompt.`;
 
-  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (GPT-5.5 high).
+  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (GPT-5.6 Terra high).
 
 - Read \`${rel("BRIEFS/brief_fable.md")}\` and \`${rel("BRIEFS/brief_gpt.md")}\` (and \`${handoffRel}\` for reference).
 - Merge into \`${rel("BRIEFS/brief_merged.md")}\` per the plan-brief-merger system prompt: keep the strongest grounded reasoning from each, reconcile or flag disagreements, carry forward all TO VERIFY. NO task files, NO DAG.`;
@@ -231,7 +232,7 @@ Write the plan ecosystem into \`${relative(cwd, planDir)}\`:
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route high-risk bounded tasks to builder-heavy. Frontend/UI coding quality defaults to builder; use builder-highspeed only for tiny exact mechanical UI tweaks, and use builder-heavy for frontend only when there is a concrete non-visual correctness/integration hazard. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route normal-risk general work to builder, frontend/UI quality to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Use builder-highspeed for tiny explicit mechanical/module-local backend, tooling, test, or algorithm tasks; frontend highspeed work is limited to exact token/class/text swaps. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
 
   ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
@@ -283,22 +284,59 @@ function extractSection(markdown: string, label: string): string {
   return out.join("\n").trim();
 }
 
-function parseTargetFiles(taskContent: string): string[] {
-  for (const label of ["Files Touched", "Files to Create / Modify", "Target Files", "Files to Modify"]) {
+function normalizeTargetPath(value: string): string | null {
+  const normalized = posix.normalize(value.trim().replace(/\\/g, "/")).replace(/^\.\//, "");
+  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.startsWith("/")) return null;
+  return normalized;
+}
+
+function isPlausibleTargetPath(value: string): boolean {
+  const candidate = value.trim();
+  if (!candidate || /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) || /[(){}]/.test(candidate)) return false;
+  const rootFile = /^(?:\.[A-Za-z0-9_-]+|[^/]+\.[A-Za-z0-9][A-Za-z0-9._-]*|Makefile|Dockerfile|LICENSE|README)$/i.test(candidate);
+  return candidate.includes("/") || rootFile;
+}
+
+function keepTargetPath(value: string | null): value is string {
+  if (!value) return false;
+  return !value.startsWith(".pi/recovery/") && !value.startsWith(".pi/build/") && !value.includes("/EXECUTION_ENVELOPES/");
+}
+
+interface TargetParseResult {
+  files: string[];
+  invalid: string[];
+}
+
+function parseDeclaredTargets(values: string[]): TargetParseResult {
+  const files = new Set<string>();
+  const invalid = new Set<string>();
+  for (const value of values.filter(isPlausibleTargetPath)) {
+    const normalized = value.includes("*") ? null : normalizeTargetPath(value);
+    if (!normalized || !keepTargetPath(normalized)) {
+      invalid.add(value);
+    } else {
+      files.add(normalized);
+    }
+  }
+  return { files: [...files], invalid: [...invalid] };
+}
+
+function parseTaskTargets(taskContent: string): TargetParseResult {
+  for (const label of ["Change", "Files Touched", "Files to Create / Modify", "Target Files", "Files to Modify"]) {
     const section = extractSection(taskContent, label);
     if (!section) continue;
-    const files = [
-      ...new Set(
-        section
-          .split("\n")
-          .map((line) => line.match(/`([^`]+)`/)?.[1])
-          .filter((value): value is string => Boolean(value))
-          .filter((p) => p.includes("/") && !p.includes("*") && !p.startsWith(".pi/")),
-      ),
-    ];
-    if (files.length) return files;
+    const parsed = parseDeclaredTargets(
+      section
+        .split("\n")
+        .flatMap((line) => [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1])),
+    );
+    if (parsed.files.length || parsed.invalid.length) return parsed;
   }
-  return [];
+  return { files: [], invalid: [] };
+}
+
+function parseTargetFiles(taskContent: string): string[] {
+  return parseTaskTargets(taskContent).files;
 }
 
 function findTaskFile(planDir: string, ref: string): string | null {
@@ -364,11 +402,11 @@ ${lineCounts.length ? lineCounts.join("\n") : "- None / new files only / not fou
 ## Recovery Snapshot Directory
 \`${snapshotDir}\`
 
-## Patch Boundaries From Task
-${extractSection(taskContent, "Patch Boundaries") || "TO VERIFY: task missing Patch Boundaries; builder must block or request repair before editing."}
+## Task Constraints / Patch Anchors
+${extractSection(taskContent, "Patch Anchors") || extractSection(taskContent, "Constraints") || extractSection(taskContent, "Patch Boundaries") || "- No task-specific anchors found; use target-file scope and stop on ambiguity."}
 
-## Preservation Markers From Task
-${extractSection(taskContent, "Preservation Markers") || "TO VERIFY: task missing Preservation Markers; builder must block or request repair before editing."}
+## Acceptance / Preservation Signals
+${extractSection(taskContent, "Acceptance") || extractSection(taskContent, "Preservation Markers") || extractSection(taskContent, "Success Criteria") || "- Follow the task Goal/Change contract and stop if it cannot be verified."}
 
 ## Dirty File Rules
 - Stage/commit only files listed in this task plus relevant \`.pi/build\` and \`.pi/recovery\` artifacts.
@@ -376,8 +414,8 @@ ${extractSection(taskContent, "Preservation Markers") || "TO VERIFY: task missin
 - If a target file has pre-existing unrelated dirty hunks, use anchored edits and selective staging.
 
 ## Validation / Checkpoint Rules
-- Run the task validation from the task file.
-- Run preservation marker commands before and after editing.
+- Run the task Validation checks.
+- Enforce task-specific Constraints/Patch Anchors and Acceptance signals when present.
 - Review focused diff for target files only.
 - If complete, orchestrator creates one selective checkpoint commit and records it in SCHEDULE.md.
 
@@ -405,12 +443,81 @@ function hasLabel(content: string, label: string): boolean {
   return re.test(content);
 }
 
+interface ScheduleTaskRow {
+  id: string;
+  taskFile: string;
+  agent: string;
+  dependencies: string;
+  parallelGroup: string;
+  checkpointCommit: string;
+  filesTouched: string[];
+  invalidTargets: string[];
+}
+
+function parseScheduleTargets(value: string): TargetParseResult {
+  return parseDeclaredTargets(
+    value
+      .replace(/`/g, "")
+      .split(/\s*(?:,|;|<br\s*\/?>)\s*/i),
+  );
+}
+
+function parseScheduleTaskRows(schedule: string): ScheduleTaskRow[] {
+  const lines = schedule.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*\|/.test(lines[i])) continue;
+    const headers = lines[i].split("|").slice(1, -1).map((cell) => cell.trim().toLowerCase());
+    const idIndex = headers.indexOf("id");
+    const taskIndex = headers.findIndex((header) => header.includes("task file"));
+    const agentIndex = headers.indexOf("agent");
+    const depsIndex = headers.findIndex((header) => header.includes("depend"));
+    const groupIndex = headers.findIndex((header) => header.includes("parallel group"));
+    const filesIndex = headers.findIndex((header) => header.includes("files touched"));
+    const checkpointIndex = headers.findIndex((header) => header.includes("checkpoint commit"));
+    if (idIndex < 0 || taskIndex < 0 || agentIndex < 0 || depsIndex < 0 || groupIndex < 0 || filesIndex < 0 || checkpointIndex < 0) continue;
+
+    const rows: ScheduleTaskRow[] = [];
+    for (let j = i + 2; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
+      const cells = lines[j].split("|").slice(1, -1).map((cell) => cell.trim().replace(/`/g, ""));
+      if (!cells[idIndex] || /^[-:]+$/.test(cells[idIndex])) continue;
+      const targets = parseScheduleTargets(cells[filesIndex] ?? "");
+      rows.push({
+        id: cells[idIndex],
+        taskFile: cells[taskIndex] ?? "",
+        agent: cells[agentIndex] ?? "",
+        dependencies: cells[depsIndex] ?? "",
+        parallelGroup: cells[groupIndex] ?? "",
+        checkpointCommit: cells[checkpointIndex] ?? "",
+        filesTouched: targets.files,
+        invalidTargets: targets.invalid,
+      });
+    }
+    return rows;
+  }
+  return [];
+}
+
+function isActiveParallelGroup(value: string): boolean {
+  return Boolean(value) && !/^(?:none|n\/a|na|—|-)$/i.test(value.trim());
+}
+
+function declaredAgent(taskContent: string): string {
+  return taskContent.match(/\*\*Agent\*\*\s*:\s*([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? "";
+}
+
+function dependencyIds(value: string): string[] {
+  if (!value || /^(?:none|n\/a|na|—|-)$/i.test(value.trim())) return [];
+  return [...value.matchAll(/\b0*(\d+)\b/g)].map((match) => match[1]);
+}
+
 function validatePlan(planDir: string): { ok: boolean; report: string } {
   const required = ["HANDOFF.md", "PLAN_FULL.md", "SCHEDULE.md"];
   const missing = required.filter((f) => !existsSync(join(planDir, f)));
   const schedule = readMaybe(join(planDir, "SCHEDULE.md"));
   const plan = readMaybe(join(planDir, "PLAN_FULL.md"));
+  const handoff = readMaybe(join(planDir, "HANDOFF.md"));
   const tasks = listTaskFiles(planDir);
+  const scheduleRows = parseScheduleTaskRows(schedule);
   const findings: string[] = [];
 
   for (const file of missing) findings.push(`BLOCKER: missing ${file}`);
@@ -423,14 +530,148 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
   if (!hasLabel(plan, "Shared File Hazards")) findings.push("BLOCKER: PLAN_FULL.md missing Shared File Hazards section");
   if (!/dirty/i.test(plan + schedule)) findings.push("WARN: dirty-file handling not mentioned in plan/schedule");
 
-  const requiredLabels = ["Agent", "Why This Agent", "Preservation Contract", "Recovery Requirement", "Patch Boundaries", "Preservation Markers", "TILL-DO", "Success Criteria"];
+  const compactLabels = ["Agent", "Why", "Goal", "Change", "Acceptance", "Validation", "Checkpoint"];
+  const legacyLabels = ["Agent", "Why This Agent", "Preservation Contract", "Recovery Requirement", "Patch Boundaries", "Preservation Markers", "TILL-DO", "Success Criteria"];
+  const sharedHazardText = `${extractSection(plan, "Shared File Hazards")}\n${extractSection(handoff, "Shared File Hazards")}`.toLowerCase();
+  const validAgents = new Set(["builder-highspeed", "builder", "builder-design", "builder-heavy", "builder-heavy-design", "validator"]);
+  const taskRecords: Array<{
+    name: string;
+    content: string;
+    agent: string;
+    compact: boolean;
+    targets: string[];
+    modifies: boolean;
+    schedule?: ScheduleTaskRow;
+  }> = [];
+
   for (const task of tasks) {
     const content = readMaybe(task);
     const name = relative(planDir, task);
+    const agent = declaredAgent(content);
+    const compact = hasLabel(content, "Goal") && hasLabel(content, "Change") && hasLabel(content, "Acceptance");
+    const requiredLabels = compact ? compactLabels : legacyLabels;
+    const parsedTaskTargets = parseTaskTargets(content);
+    const taskTargets = parsedTaskTargets.files;
+    const change = extractSection(content, "Change");
+    const modifies = compact
+      ? change.split("\n").some((line) => /`[^`]+`/.test(line) && /\bMODIFY\b/i.test(line))
+      : /\bMODIFY\b/i.test(extractSection(content, "Files to Create / Modify"));
+    const taskBase = name.split("/").pop() ?? name;
+    const scheduleRow = scheduleRows.find((row) => row.taskFile.endsWith(taskBase));
+    const scheduleTargets = scheduleRow?.filesTouched ?? [];
+    const targets = [...new Set([...taskTargets, ...scheduleTargets])];
+
     for (const label of requiredLabels) {
       if (!hasLabel(content, label)) findings.push(`BLOCKER: ${name} missing "${label}" field/section`);
     }
-    if (/builder-heavy/i.test(content) && !hasLabel(content, "Heavy Fit")) findings.push(`BLOCKER: ${name} builder-heavy task missing Heavy Fit`);
+    for (const target of parsedTaskTargets.invalid) {
+      findings.push(`BLOCKER: ${name} declares unsafe target path ${target}`);
+    }
+    for (const target of scheduleRow?.invalidTargets ?? []) {
+      findings.push(`BLOCKER: SCHEDULE row ${scheduleRow?.id} declares unsafe target path ${target}`);
+    }
+    if (!validAgents.has(agent)) findings.push(`BLOCKER: ${name} declares unsupported Agent ${agent || "<missing>"}`);
+    const expectedSuffix = agent ? `_${agent}.md` : "";
+    if (expectedSuffix && !name.endsWith(expectedSuffix)) findings.push(`BLOCKER: ${name} filename does not match Agent ${agent}`);
+    if (!scheduleRow) {
+      findings.push(`BLOCKER: ${name} has no matching SCHEDULE row`);
+    } else {
+      if (scheduleRow.agent.toLowerCase() !== agent) {
+        findings.push(`BLOCKER: ${name} Agent ${agent || "<missing>"} does not match SCHEDULE Agent ${scheduleRow.agent || "<missing>"}`);
+      }
+      if (compact) {
+        for (const target of scheduleTargets.filter((file) => !taskTargets.includes(file))) {
+          findings.push(`BLOCKER: ${name} Change omits scheduled target ${target}`);
+        }
+        for (const target of taskTargets.filter((file) => !scheduleTargets.includes(file))) {
+          findings.push(`BLOCKER: SCHEDULE Files Touched omits ${target} from ${name}`);
+        }
+      }
+    }
+    if (!compact && /builder-heavy/i.test(content) && !hasLabel(content, "Heavy Fit")) {
+      findings.push(`BLOCKER: ${name} legacy builder-heavy task missing Heavy Fit`);
+    }
+    if (compact && modifies) {
+      const checkpoint = extractSection(content, "Checkpoint");
+      const recoveryLine = checkpoint.split("\n").find((line) => /recovery snapshot/i.test(line)) ?? "";
+      const requiresRecovery = /\b(?:required|yes)\b/i.test(recoveryLine) && !/\b(?:not required|no)\b/i.test(recoveryLine);
+      if (!requiresRecovery) findings.push(`BLOCKER: ${name} MODIFY task must require a recovery snapshot in Checkpoint`);
+    }
+
+    const declaredHazard = targets.some((file) => {
+      const normalized = file.toLowerCase();
+      const base = normalized.split("/").pop() ?? normalized;
+      return sharedHazardText.includes(normalized) || (base.length > 3 && sharedHazardText.includes(base));
+    });
+    if (compact && modifies && declaredHazard && !hasLabel(content, "Constraints") && !hasLabel(content, "Patch Anchors")) {
+      findings.push(`BLOCKER: ${name} modifies a declared shared-file hazard but has no Constraints or Patch Anchors`);
+    }
+
+    const lines = content.split("\n").length;
+    if (compact && lines > 160 && !hasLabel(content, "Detail Exception")) {
+      findings.push(`BLOCKER: ${name} has ${lines} lines; compact task exceeds 160 lines without a Detail Exception`);
+    } else if (compact && lines > 140) {
+      findings.push(`WARN: ${name} has ${lines} lines; verify every extra detail changes execution`);
+    }
+    taskRecords.push({ name, content, agent, compact, targets, modifies, schedule: scheduleRow });
+  }
+
+  for (const record of taskRecords.filter((task) => task.agent === "validator")) {
+    if (!record.schedule) continue;
+    const deps = dependencyIds(record.schedule.dependencies);
+    const dependencyRows = deps.map((id) => scheduleRows.find((row) => Number(row.id) === Number(id))).filter((row): row is ScheduleTaskRow => Boolean(row));
+    if (!deps.length) findings.push(`BLOCKER: ${record.name} validator gate has no builder dependency`);
+    if (deps.some((id) => !scheduleRows.some((row) => Number(row.id) === Number(id)))) {
+      findings.push(`BLOCKER: ${record.name} validator gate references an unknown dependency`);
+    }
+    if (deps.length && !dependencyRows.some((row) => row.agent.toLowerCase().startsWith("builder"))) {
+      findings.push(`BLOCKER: ${record.name} validator gate is not linked to a builder task`);
+    }
+    if (!record.targets.length) {
+      const checkpoint = extractSection(record.content, "Checkpoint");
+      if (!/checkpoint commit\s*:\s*not required/i.test(checkpoint)) {
+        findings.push(`BLOCKER: ${record.name} review-only validator task must state Checkpoint Commit: not required`);
+      }
+      if (!/not required/i.test(record.schedule.checkpointCommit)) {
+        findings.push(`BLOCKER: ${record.name} review-only validator SCHEDULE row must not require a checkpoint commit`);
+      }
+    }
+  }
+
+  const targetOwners = new Map<string, typeof taskRecords>();
+  for (const record of taskRecords) {
+    for (const target of record.targets) {
+      const owners = targetOwners.get(target) ?? [];
+      owners.push(record);
+      targetOwners.set(target, owners);
+    }
+  }
+  for (const [target, owners] of targetOwners) {
+    if (owners.length < 2) continue;
+    for (let i = 0; i < owners.length; i++) {
+      for (let j = i + 1; j < owners.length; j++) {
+        const a = owners[i];
+        const b = owners[j];
+        if (!a.schedule || !b.schedule) {
+          findings.push(`BLOCKER: overlapping target ${target} cannot be checked because a SCHEDULE row is missing for ${a.name} or ${b.name}`);
+          continue;
+        }
+        const sameParallelGroup = isActiveParallelGroup(a.schedule.parallelGroup) && a.schedule.parallelGroup === b.schedule.parallelGroup;
+        if (sameParallelGroup) {
+          findings.push(`BLOCKER: overlapping target ${target} is assigned to parallel group ${a.schedule.parallelGroup} in ${a.name} and ${b.name}`);
+        }
+        const aDependsOnB = new RegExp(`(^|[^0-9])0*${b.schedule.id}([^0-9]|$)`).test(a.schedule.dependencies);
+        const bDependsOnA = new RegExp(`(^|[^0-9])0*${a.schedule.id}([^0-9]|$)`).test(b.schedule.dependencies);
+        if (!aDependsOnB && !bDependsOnA) {
+          findings.push(`BLOCKER: overlapping target ${target} is not serialized by an explicit dependency between ${a.name} and ${b.name}`);
+        }
+        for (const record of [a, b]) {
+          if (record.compact && record.modifies && !hasLabel(record.content, "Constraints") && !hasLabel(record.content, "Patch Anchors")) {
+            findings.push(`BLOCKER: ${record.name} overlaps on ${target} but has no Constraints or Patch Anchors`);
+          }
+        }
+      }
+    }
   }
 
   const blockers = findings.filter((f) => f.startsWith("BLOCKER"));
@@ -552,7 +793,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     name: "plan_heavy_envelope",
     label: "Plan Heavy: Envelope",
     description:
-      "Create an execution envelope for one planner-heavy task. Captures current git status, target files, line counts, patch boundaries, preservation markers, snapshot dir, and checkpoint rules. " +
+      "Create an execution envelope for one planner-heavy task. Captures current git status, target files, line counts, task constraints/anchors, acceptance signals, snapshot dir, and checkpoint rules. " +
       "Pass both the task file and this envelope to the builder before execution.",
     promptSnippet: "Use plan_heavy_envelope before spawning a builder for a /plan-heavy task.",
     parameters: Type.Object({
@@ -583,7 +824,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     name: "plan_heavy_validate",
     label: "Plan Heavy: Validate",
     description:
-      "Validate a generated plan ecosystem (HANDOFF/PLAN_FULL/SCHEDULE/TASKS) for checkpoint commits, recovery snapshots, shared-file hazards, agent routing, patch boundaries, preservation markers, and required task gates. Writes PLAN_HEAVY_VALIDATION.md and returns PASS/BLOCKED.",
+      "Validate a generated plan ecosystem (HANDOFF/PLAN_FULL/SCHEDULE/TASKS) for checkpoint commits, recovery snapshots, shared-file hazards, agent routing, compact task contracts, validation, and task-specific constraints. Supports compact and legacy task formats. Writes PLAN_HEAVY_VALIDATION.md and returns PASS/BLOCKED.",
     promptSnippet: "Use plan_heavy_validate after planner-heavy writes the plan and before spawning builders.",
     parameters: Type.Object({
       planDir: Type.String({ description: "Plan directory (absolute or relative to cwd)." }),
