@@ -30,7 +30,7 @@ Info "PI instalado"
 # -- Diretorios -------------------------------------------
 Step "Preparando diretorios"
 
-$dirs = @("agents", "skills", "extensions", "sessions", "research", "helpers", "bin")
+$dirs = @("agents", "skills", "extensions", "sessions", "research", "helpers", "bin", "themes")
 foreach ($dir in $dirs) {
     $path = Join-Path $PI_DIR $dir
     if (-not (Test-Path $path)) {
@@ -56,6 +56,12 @@ $subagentsSrc = Join-Path $SCRIPT_DIR "subagents.json"
 if (Test-Path $subagentsSrc) {
     Copy-Item $subagentsSrc (Join-Path $PI_DIR "subagents.json") -Force
     Info "subagents.json"
+}
+
+$themes = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "themes") -Filter "*.json" -ErrorAction SilentlyContinue
+if ($themes) {
+    Copy-Item $themes.FullName (Join-Path $PI_DIR "themes") -Force
+    Info ($themes.Count.ToString() + " temas")
 }
 
 # -- Agents -----------------------------------------------
