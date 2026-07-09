@@ -8,16 +8,21 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or bu
 > **LOAD THIS SKILL FIRST** before using `scout`, `planner`, or `builder`.  
 > Using subagents without these instructions causes context overload, poor results, and wasted tokens.
 
+## Runtime Identity
+
+Every custom agent must declare explicit `model:` and `thinking:` frontmatter. Its `display_name` must end with `· <Model Label> · <thinking>` so the initial Agent launch line visibly identifies the effective model and reasoning effort. Keep all three synchronized when changing routing. Agents using `model: inherit` display `inherit` plus their explicit effort.
+
 ## Economic Mindset
 
 `scout` and `builder` run on delegated models. There are now two speed tiers:
 
 | Tier | Agents | Model | Best For | Avoid |
 |---|---|---|---|---|
-| Default | `scout`, `builder` | Standard tier | explicit, bounded, normal-risk tasks where structured lifecycle helps; preferred/default for frontend/UI coding quality | latency-sensitive non-visual batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, prior destructive churn, top-tier 2D/3D visual spectacle |
+| Default | `scout`, `builder` | Standard general tier | explicit, bounded, normal-risk exploration/implementation, backend/tooling/tests, and structured code edits | latency-sensitive batches, complex long tasks, shared-file hazards, subtle math/science/algorithm correctness, visual/UI judgment |
+| Design | `builder-design` | Standard visual tier | default frontend/UI implementation, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system and polish-plan application | backend/API/DB/infra, correctness-heavy integration, advanced immersive/2D/3D visual spectacle |
 | Highspeed | `scout-highspeed`, `builder-highspeed` | Draft-speed tier | very fast bounded retrieval/execution, single-file mechanical edits, rapid non-visual prototypes, backend/tooling/tests, mechanical changes | frontend/UI implementation beyond tiny exact token/class/text swaps, broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
 | Heavy | `builder-heavy` | Correctness/integration tier | complex or higher-risk bounded work where the risk is correctness/integration: subtle integration, large/shared files, preservation-critical changes, migrations, math/science/algorithm correctness, long composed tasks, recovery after lighter builder failure | frontend/UI work whose main risk is visual quality/design-system execution, tiny mechanical edits, broad planning, vague UI/design tasks |
-| Heavy Design | `builder-heavy-design` | Ultimate visual tier | bounded website/frontend work where the risk is exceptional visual quality: premium websites, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, visual rescue after normal builder output is not premium | backend/API/DB/infra, auth/payment/security correctness, math/algorithm/science, migrations, subtle integration, unsupported factual claims |
+| Heavy Design | `builder-heavy-design` | Parent/ultimate visual tier | bounded website/frontend work where the risk is exceptional visual quality: premium websites, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, visual rescue after `builder-design` | backend/API/DB/infra, auth/payment/security correctness, math/algorithm/science, migrations, subtle integration, normal UI tasks |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
@@ -99,7 +104,8 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 **Rules:**
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial
 - Planner is **expensive** — don't run it for trivial tasks
-- Read `SCHEDULE.md` and `TASKS/` before spawning builders
+- Read `SCHEDULE.md` and `TASKS/` before spawning agents
+- For selected high-consequence/high-complexity builder tasks, expect a separate `validator` task linked as the next DAG gate; do not turn validation into a blanket task after every builder
 
 ---
 
@@ -132,13 +138,14 @@ Agent({
 
 **Rules:**
 - Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than the standard tier. Fast hallucinations can look correct.
-- Use `builder` as the preferred/default agent for frontend/UI coding quality: React components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and polish-plan application.
+- Use `builder` for normal-risk general implementation: bounded backend/tooling/tests, structured edits, and non-design-led integration.
+- Use `builder-design` as the preferred/default agent for frontend/UI coding quality: React components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and polish-plan application.
 - Use `builder-highspeed` for single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors. For frontend, use it only for tiny exact token/class/text swaps.
 - Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
-- Use `builder-heavy-design` for bounded frontend/website work whose main risk is exceptional visual quality: premium UI, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, or visual rescue after normal builder output is functional but not premium.
-- Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. For frontend, use heavy only when there is a concrete non-visual correctness/integration hazard; if the reason is UI quality, choose `builder-heavy-design` for ultimate visual work or `builder` for normal UI.
+- Use `builder-heavy-design` as the parent escalation tier for bounded frontend/website work whose main risk is exceptional visual quality: premium UI, advanced motion, 2D/3D visual craft, immersive sections, distinctive art direction, or visual rescue after `builder-design` output is functional but not premium.
+- Use `builder-heavy` for bounded but more complex/correctness-sensitive work: large shared files, subtle multi-file integration, migrations, math/science/algorithm-heavy tasks, preservation-critical tests/source, auth/payment/security-adjacent tasks, long composed tasks, or recovery after lighter builders fail. For frontend, use heavy only when there is a concrete non-visual correctness/integration hazard.
 - Route by consequence, not only by mutation risk. A read-only / single-file / doc-or-JSON task is still high-risk when its output is a decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact other tasks depend on — downstream gates catch fabrication/churn in code, not a wrong judgment in a doc. Route those to `builder-heavy` (plus review). `builder` may COLLECT evidence but not ADJUDICATE verdicts.
-- Avoid `builder-highspeed` for real frontend implementation, final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder`, or `builder-heavy-design` for exceptional visual execution. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
+- Avoid `builder-highspeed` for real frontend implementation, final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
 - Parallelize when files are disjoint.
@@ -153,13 +160,16 @@ scout → planner → builder → validator
 
 1. **scout** first if you don't understand the code
 2. **planner** next if architecture is needed (after your pre-plan + user approval)
-3. **builder-highspeed/builder/builder-heavy/builder-heavy-design** to execute planned tasks according to the planner's `Agent` column
-4. **validator** after builder for high-impact or >10 files changed
+3. **builder-highspeed/builder/builder-design/builder-heavy/builder-heavy-design** to execute planned tasks according to the planner's `Agent` column
+4. **validator** as a linked successor for selected high-impact, security/data-sensitive, compatibility-critical, or complex regression-prone builder tasks
+
+For planner-driven work, the schedule edge is authoritative: `builder checkpoint → validator PASS → dependent tasks`. A validator `BLOCKED` verdict pauses dependents, returns findings for bounded repair, and reruns the same gate. Review-only validator tasks do not need empty commits.
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → direct `builder-highspeed` when low-risk and explicit; `builder` when cautious structure matters or normal UI quality matters; `builder-heavy` when correctness/preservation risk is high; `builder-heavy-design` when exceptional website visual quality matters
+- Small focused change → direct `builder-highspeed` when low-risk and mechanical; `builder` for normal general code; `builder-design` for normal UI quality; `builder-heavy` when correctness/preservation risk is high; `builder-heavy-design` when exceptional website visual quality matters
 - Critical (auth, payment) → builder + validator
+- Low-risk/mechanical/docs-only task → no separate validator task unless evidence shows a specific escape risk
 
 ---
 
