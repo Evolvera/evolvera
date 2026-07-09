@@ -3,6 +3,7 @@
 	"name": "cyberpsycho",
 	"vars": {
 		"crimson": "#e06c78",
+		"scarletGlow": "#ff3b30",
 		"emberSoft": "#c98181",
 		"emberDeep": "#b0555f",
 		"errorRed": "#f2707e",
@@ -80,7 +81,7 @@
 		"thinkingLow": "#b07d72",
 		"thinkingMedium": "#cf8378",
 		"thinkingHigh": "#e0697a",
-		"thinkingXhigh": "royalSoft",
+		"thinkingXhigh": "scarletGlow",
 
 		"bashMode": "#8ec07c"
 	},
