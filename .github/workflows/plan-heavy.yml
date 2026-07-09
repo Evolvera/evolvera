@@ -1,0 +1,33 @@
+name: Plan Heavy Harness
+
+on:
+  push:
+    paths:
+      - "extensions/plan-heavy.ts"
+      - "extensions/test/plan-heavy.smoke.mjs"
+      - "npm/package.json"
+      - "npm/package-lock.json"
+      - ".github/workflows/plan-heavy.yml"
+  pull_request:
+    paths:
+      - "extensions/plan-heavy.ts"
+      - "extensions/test/plan-heavy.smoke.mjs"
+      - "npm/package.json"
+      - "npm/package-lock.json"
+      - ".github/workflows/plan-heavy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: npm/package-lock.json
+      - run: npm ci --prefix npm
+      - run: npm run test:plan-heavy --prefix npm
