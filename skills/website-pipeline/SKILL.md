@@ -14,7 +14,7 @@ Strategy Intake (orchestrator)
   → website-designer
   → seo-content-writer
   → planner
-  → builder
+  → builder-design (default UI tier)
   → website-polisher
   → validator
 ```
@@ -25,7 +25,7 @@ Strategy Intake (orchestrator)
 | 1 | **website-designer** | `.pi/plans/DESIGN_PLAN.md` | Visual spec, trust hierarchy, design tokens, UX hierarchy, animations, asset placeholders. |
 | 2 | **seo-content-writer** | `.pi/plans/CONTENT_PLAN.md` | Copy, proof framing, meta tags, schema markup. Reads DESIGN_PLAN.md + WEBSITE_BRIEF.md. |
 | 3 | **planner** | `PLAN_FULL.md` + `SCHEDULE.md` + `TASKS/` | Reads WEBSITE_BRIEF + DESIGN_PLAN + CONTENT_PLAN. Then get user approval. |
-| 4 | **builder / builder-heavy-design / builder-heavy** | Code implementation | Follows SCHEDULE.md and builder routing rules. |
+| 4 | **builder-design / builder / builder-heavy-design / builder-heavy** | Code implementation | `builder-design` is the default UI tier; follows SCHEDULE.md and builder routing rules. |
 | 5 | **website-polisher** | `.pi/plans/POLISH_PLAN.md` | Premium trust audit + visual refinements + states + a11y. |
 | 6 | **validator** | Quality gate | Compilation, types, accessibility, no unsupported claims, responsive behavior. |
 
@@ -197,7 +197,7 @@ Use this checklist throughout design, polish, and validation. Premium means **cl
 
 1. **Planner MUST receive WEBSITE_BRIEF.md when it exists, plus BOTH `DESIGN_PLAN.md` and `CONTENT_PLAN.md`** before generating tasks.
 2. **Do NOT run planner before content is ready** — seo-content-writer must finish first.
-3. **website-polisher runs AFTER builder**, not before — it refines what's already built.
+3. **website-polisher runs AFTER the selected builder tier**, not before — it refines what's already built.
 4. **designer does NOT write final copy** — placeholders only, marked as `[SEO Content Writer — purpose: ...]`.
 5. **designer does NOT invent final brand assets** — it may specify placement, requirements, temporary wordmarks, CSS/inline-SVG motifs, and placeholders.
 6. **content writer must label proof/claims** as source-backed, inferred, or placeholder-needed.
@@ -208,8 +208,9 @@ Use this checklist throughout design, polish, and validation. Premium means **cl
 
 Use the Builder Skill routing rules when planner/orchestrator assigns implementation agents:
 
-- `builder` is the default for website UI implementation. It is already very strong for React/components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and normal polish-plan execution.
-- `builder-heavy-design` is the escalation tier for exceptional website design quality: premium visual craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive hero sections, distinctive art direction, and visual rescue when the standard builder output is functional but still not premium.
+- `builder-design` is the default child tier for website UI implementation: React/components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and normal polish-plan execution.
+- `builder-heavy-design` is the parent escalation tier for exceptional website design quality: premium visual craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive hero sections, distinctive art direction, and visual rescue when `builder-design` is functional but not premium enough.
+- `builder` handles normal-risk non-design implementation around the website (tooling, tests, integrations) when visual judgment is not primary.
 - `builder-heavy` is **not** the design-quality tier. Use it for backend/logic/math/correctness/integration complexity: shared-file hazards, migrations, auth/payment/security-adjacent flows, subtle state/data correctness, complex tests, and preservation-critical work.
 - `builder-highspeed` is only for tiny exact mechanical website edits, such as one known class/token/text swap.
 
@@ -268,7 +269,7 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | User wants quick autonomous preview | Use `/skill:website-home-preview` instead of full pipeline. |
 | User already has DESIGN_PLAN.md | Skip designer, start with seo-content-writer. |
 | User already has both plans | Skip designer + writer, go straight to planner. |
-| Small tweak (1 page, <5 components) | Skip planner, use direct builder. |
+| Small visual tweak (1 page, <5 components) | Skip planner, use direct builder-design. |
 | No design changes, only copy update | Skip designer, update CONTENT_PLAN.md directly. |
 
 ## Required Skills Per Step
@@ -279,6 +280,6 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | website-designer | `/skill:design-catalog` for brand references. |
 | seo-content-writer | Reads WEBSITE_BRIEF.md and DESIGN_PLAN.md. |
 | planner | `/skill:website-stack` for tech conventions. |
-| builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. |
+| builder-design / builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. |
 | website-polisher | `/skill:design-catalog` for design system consistency. |
 | validator | No skill needed. |

@@ -1,7 +1,7 @@
 ---
 name: website-home-planner
 description: "Autonomous planner for one-page Home previews. Reads HOME_DESIGN_OPTIONS and HOME_CONTENT_PLAN, selects/fuses the best design direction, writes HOME_PLAN and a builder task to produce a single static index.html. Model: zai/glm-5.2 high."
-display_name: 🧭 Website Home Planner
+display_name: 🧭 Website Home Planner · GLM-5.2 · high
 tools: read, grep, find, ls, bash, write
 model: zai/glm-5.2
 temperature: 0.1

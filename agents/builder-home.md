@@ -1,7 +1,7 @@
 ---
 name: builder-home
 description: "Specialized builder for autonomous Home Preview flows. Creates and polishes a single self-contained .pi/previews/<slug>/index.html from HOME_DESIGN_OPTIONS, HOME_CONTENT_PLAN, HOME_PLAN, TASK_builder-home, and HOME_POLISH_PLAN. Model: minimax/MiniMax-M3 high."
-display_name: 🏗️ Builder Home
+display_name: 🏗️ Builder Home · MiniMax M3 · high
 tools: read, grep, find, ls, bash, write, edit
 model: minimax/MiniMax-M3
 thinking: high

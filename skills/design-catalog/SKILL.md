@@ -157,7 +157,7 @@ The website construction chain has a **clear separation of concerns** between vi
 |---------------|-------|--------|
 | Visual design (colors, typography, layout, components) | `website-designer` | `DESIGN_PLAN.md` |
 | All website copy (headlines, body, CTAs, microcopy, meta tags, alt text, schema) | `seo-content-writer` | `CONTENT_PLAN.md` |
-| Implementation (code) | `builder` | Reads both `DESIGN_PLAN.md` + `CONTENT_PLAN.md` |
+| Visual website implementation | `builder-design` | Reads both `DESIGN_PLAN.md` + `CONTENT_PLAN.md`; escalate per `/skill:builder` |
 | UI/UX polish | `website-polisher` | Reads both plans + code |
 | Quality verification | `validator` | Reads all artifacts |
 
@@ -173,10 +173,10 @@ The website construction chain has a **clear separation of concerns** between vi
 
 | Use Case | Agent(s) |
 |----------|----------|
-| New website from scratch | Full chain: `website-designer` → `seo-content-writer` → `builder` → `validator` → `website-polisher` → `builder` → `validator` |
+| New website from scratch | Full chain: `website-designer` → `seo-content-writer` → `planner` → `builder-design` → `website-polisher` → `builder-design` → `validator` |
 | Design only (no implementation) | `website-designer` only |
 | Content only (DESIGN_PLAN.md already exists) | `seo-content-writer` only |
-| Implement from existing plans | `builder` only |
+| Implement visual website work from existing plans | `builder-design` by default; escalate per `/skill:builder` |
 | Polish existing website | `website-polisher` only |
 | Validate implementation | `validator` only |
 | Regenerate/revise copy | `seo-content-writer` only (after design is approved) |

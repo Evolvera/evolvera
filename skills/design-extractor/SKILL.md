@@ -7,7 +7,6 @@ tools:
   - write
   - read
 model: openai-codex/gpt-5.5
-temperature: 0.2
 thinking: low
 max_turns: 20
 lifecycle: lazy
