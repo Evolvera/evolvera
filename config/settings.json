@@ -1,13 +1,15 @@
 {
-  "lastChangelogVersion": "0.70.6",
+  "lastChangelogVersion": "0.80.3",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "zai",
-  "defaultModel": "glm-5.1",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-sol",
   "defaultThinkingLevel": "high",
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents",
+    "npm:pi-alibaba-models",
     "npm:pi-provider-kimi-code"
   ],
-  "hideThinkingBlock": false
+  "hideThinkingBlock": false,
+  "theme": "dark"
 }

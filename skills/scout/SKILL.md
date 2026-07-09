@@ -92,6 +92,7 @@ Agent({ subagent_type: "scout", description: "Synthesize coverage gaps", prompt:
 ## When NOT to Use
 
 - **DO NOT** use scout for code modification (use builder)
+- **DO NOT** ask scout to run tests, project code, git commands, generators, formatters, or shell commands. Both scout variants intentionally exclude `bash`, `write`, and `edit`; the orchestrator must run any required command.
 - **DO NOT** use scout for writing plans (use planner)
 - **DO NOT** use scout for trivial single-file lookups (use `read`/`grep` directly)
 - **DO NOT** run scout sequentially if missions are independent — **ALWAYS parallelize**
@@ -146,7 +147,7 @@ Agent({
 
 Scout agents follow these absolute rules:
 
-1. **READ-ONLY** — Never modifies, creates, or edits files; normal `scout` also does not create checkpoint files on disk
+1. **READ-ONLY BY CAPABILITY** — Uses only `read`, `grep`, `find`, and `ls`; never modifies, creates, executes, or edits files and never creates checkpoints. If command output is required, it returns `PARTIAL` with the exact command for the orchestrator.
 2. **NO OPINIONS** — Only reports findings, never suggests improvements unless explicitly asked for analysis
 3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists and states searched scope
 4. **QUOTE EXACTLY** — Copies relevant source text verbatim when quoting code

@@ -10,20 +10,20 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 | File | Created By | Read By | Purpose |
 |------|-----------|---------|---------|
-| `.pi/plans/DESIGN_PLAN.md` | `website-designer` | `seo-content-writer`, `planner`, `builder`, `website-polisher` | Detailed design + UX strategy + SEO guidance |
-| `.pi/plans/CONTENT_PLAN.md` | `seo-content-writer` | `planner`, `builder`, `website-polisher`, `validator` | All website copy, meta tags, microcopy, alt text, schema markup |
-| Planner Phase Plan | `planner` | `builder` | Implementation phase instructions passed as prompt context by PI principal |
-| `.pi/plans/POLISH_PLAN.md` | `website-polisher` (READ-ONLY) | `builder`, `validator` | UI/UX polish instructions (file, old_string, new_string per fix) |
+| `.pi/plans/DESIGN_PLAN.md` | `website-designer` | `seo-content-writer`, `planner`, `builder-design`, `website-polisher` | Detailed design + UX strategy + SEO guidance |
+| `.pi/plans/CONTENT_PLAN.md` | `seo-content-writer` | `planner`, `builder-design`, `website-polisher`, `validator` | All website copy, meta tags, microcopy, alt text, schema markup |
+| Planner Phase Plan | `planner` | selected builder tier (default UI: `builder-design`) | Implementation phase instructions passed as prompt context by PI principal |
+| `.pi/plans/POLISH_PLAN.md` | `website-polisher` (READ-ONLY) | `builder-design`, `validator` | UI/UX polish instructions (file, old_string, new_string per fix) |
 | `.pi/validate/REVIEW.md` | `validator` | user, PI principal | Quality gate verdict (PASS/CONDITIONAL/REJECT) |
-| `.pi/build/TILL-DO.md` | builder, polisher, seo-content-writer | themselves | Pre-flight sanity gates |
-| `.pi/build/TODO.md` | builder, polisher, seo-content-writer | themselves | Atomic execution steps |
+| `.pi/build/TILL-DO.md` | builder-design, polisher, seo-content-writer | themselves | Pre-flight sanity gates |
+| `.pi/build/TODO.md` | builder-design, polisher, seo-content-writer | themselves | Atomic execution steps |
 
 ### File Naming Conventions
 
 - **`.pi/plans/DESIGN_PLAN.md`** — Output of website-designer (lives in `.pi/plans/`)
 - **`.pi/plans/POLISH_PLAN.md`** — Output of website-polisher (lives in `.pi/plans/`; NOT "POLISH_NOTES")
 - **`.pi/validate/REVIEW.md`** — Output of validator (lives in `.pi/validate/`)
-- **`.pi/build/TILL-DO.md`**, **`.pi/build/TODO.md`** — Lifecycle artifacts for builder/polisher
+- **`.pi/build/TILL-DO.md`**, **`.pi/build/TODO.md`** — Lifecycle artifacts for builder-design/polisher
 
 ### Branch Conventions
 
@@ -57,13 +57,13 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  planner [PRE-EXISTENT]                                                 │
 │  Input: `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + /skill:website-stack       │
-│  Output: Phase plan (passed as prompt context to builder)              │
+│  Output: Phase plan (passed as prompt context to builder-design)              │
 │  Rule: Loads website-stack skill for technical context                 │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │ [prompt context]
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  builder [PRE-EXISTENT]                                                 │
+│  builder-design                                                 │
 │  Input: `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` + planner phase plan + briefing│
 │  Output: Code in branch agent/<timestamp>-website-<slug>               │
 │  Tools: read, grep, find, ls, bash, write, edit, bash (git)            │
@@ -91,7 +91,7 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  builder [PRE-EXISTENT]                                                 │
+│  builder-design                                                 │
 │  Input: `.pi/plans/POLISH_PLAN.md` + `.pi/plans/CONTENT_PLAN.md` (context reference)          │
 │  Output: Code with visual fixes applied (same branch)                  │
 │  Tools: read, grep, find, ls, bash, write, edit, bash (git)           │
@@ -109,9 +109,9 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 ## Mandatory Rules
 
-1. **Polisher runs AFTER first validator approval**: The polisher should only run if the validator gave PASS or CONDITIONAL (not REJECT). If REJECT, the builder must fix the underlying issues first.
+1. **Polisher runs AFTER first validator approval**: The polisher should only run if the validator gave PASS or CONDITIONAL (not REJECT). If REJECT, the builder-design agent must fix the underlying issues first.
 
-2. **Polisher is READ-ONLY**: The polisher NEVER edits source code. It only reads code and writes `.pi/plans/POLISH_PLAN.md`. The builder executes the polish plan.
+2. **Polisher is READ-ONLY**: The polisher NEVER edits source code. It only reads code and writes `.pi/plans/POLISH_PLAN.md`. The builder-design agent executes the polish plan.
 
 3. **Builder and Validator are pre-existing**: These agents are NOT modified by this chain. They are generic agents that receive specific inputs.
 
@@ -119,7 +119,7 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 5. **File location**: All plan artifacts (DESIGN_PLAN.md, CONTENT_PLAN.md, POLISH_PLAN.md) live in `.pi/plans/`. Validation artifacts (REVIEW.md) live in `.pi/validate/`.
 
-6. **Branch isolation**: The builder creates an isolated branch. The polisher operates on that branch without creating a new one.
+6. **Branch isolation**: The builder-design agent creates an isolated branch. The polisher operates on that branch without creating a new one.
 
 7. **Planner loads website-stack skill**: The planner MUST load `/skill:website-stack` before producing the phase plan to ensure technical accuracy.
 
@@ -157,9 +157,9 @@ Agent(subagent_type="planner", prompt=
 "Return the plan as structured markdown. Do NOT write code.")
 ```
 
-**Prompt format for builder invocation (including planner output):**
+**Prompt format for builder-design invocation (including planner output):**
 ```
-Agent(subagent_type="builder", prompt=
+Agent(subagent_type="builder-design", prompt=
 "Implement the website according to these artifacts and plan.\n\n"
 "ARTIFACTS (read from `.pi/plans/`):\n"
 "- `.pi/plans/DESIGN_PLAN.md`\n"
@@ -174,14 +174,14 @@ Agent(subagent_type="builder", prompt=
 
 ## Builder Content Contract
 
-When the builder receives `.pi/plans/DESIGN_PLAN.md`, `.pi/plans/CONTENT_PLAN.md`, and the planner's phase plan:
-- The builder reads `.pi/plans/DESIGN_PLAN.md` for **visual design**, layout, components, hierarchy, and accessibility specs
-- The builder reads `.pi/plans/CONTENT_PLAN.md` for **ALL textual content** (headlines, body copy, CTAs, meta tags, microcopy, alt text, schema markup)
-- The builder follows the **planner's phase plan** for implementation order (scaffolding → layout → sections → interactions → SEO)
-- The builder **MUST prioritize** `.pi/plans/CONTENT_PLAN.md` copy over any generated placeholders
-- If `.pi/plans/CONTENT_PLAN.md` is **missing**, the builder falls back to current behavior (generic placeholders or self-generated copy)
-- If the planner's phase plan is **missing**, the builder self-organizes using standard Next.js scaffolding order
-- The builder **MUST respect** the language specified in `.pi/plans/CONTENT_PLAN.md`'s Project Context section
+When builder-design receives `.pi/plans/DESIGN_PLAN.md`, `.pi/plans/CONTENT_PLAN.md`, and the planner's phase plan:
+- Builder-design reads `.pi/plans/DESIGN_PLAN.md` for **visual design**, layout, components, hierarchy, and accessibility specs
+- Builder-design reads `.pi/plans/CONTENT_PLAN.md` for **ALL textual content** (headlines, body copy, CTAs, meta tags, microcopy, alt text, schema markup)
+- Builder-design follows the **planner's phase plan** for implementation order (scaffolding → layout → sections → interactions → SEO)
+- Builder-design **MUST prioritize** `.pi/plans/CONTENT_PLAN.md` copy over any generated placeholders
+- If `.pi/plans/CONTENT_PLAN.md` is **missing**, builder-design falls back to current behavior (generic placeholders or self-generated copy)
+- If the planner's phase plan is **missing**, builder-design self-organizes using standard Next.js scaffolding order
+- Builder-design **MUST respect** the language specified in `.pi/plans/CONTENT_PLAN.md`'s Project Context section
 
 ## Human Approval Gate
 
@@ -191,9 +191,9 @@ The `seo-content-writer` is the **ONLY agent** in the website chain with a **man
 1. `seo-content-writer` generates `.pi/plans/CONTENT_PLAN.md`
 2. `seo-content-writer` **pauses** and presents the full plan to the user
 3. User reviews and either:
-   - **Approves** → PI principal proceeds to invoke `builder` with both artifacts
+   - **Approves** → PI principal proceeds to planner and then the selected builder tier (default UI: `builder-design`)
    - **Requests changes** → `seo-content-writer` regenerates specific sections and re-presents
-4. The PI principal **MUST NOT auto-advance** to the builder step until the user explicitly approves
+4. The PI principal **MUST NOT auto-advance** to the builder-design step until the user explicitly approves
 
 **This is a design invariant, not a configuration.** It ensures brand safety and prevents costly post-build content revisions.
 
@@ -206,7 +206,7 @@ The `seo-content-writer` is the **ONLY agent** in the website chain with a **man
 | Validator REJECT | Builder fixes issues; re-run validator |
 | Polisher exceeds max_turns | Prioritize: Critical (a11y, states) → High → Medium; document pending |
 | Builder fails to apply polish | Builder skips unapplyable fixes and reports |
-| Planner fails to generate plan | PI principal falls back to passing artifacts directly to builder with generic step-by-step instruction |
+| Planner fails to generate plan | PI principal falls back to passing artifacts directly to builder-design with generic step-by-step instruction |
 
 ## Design Catalog Dependency
 

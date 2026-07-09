@@ -1,6 +1,6 @@
 ---
 name: website-home-preview
-description: Autonomous high-quality website Home preview flow. Use when the user wants a premium one-page Home preview as a single static index.html, not a full production website/project. Reuses seo-content-writer, builder-home, website-polisher, and validator with no human approval gates.
+description: Autonomous high-quality website Home preview flow. Use when the user wants a premium one-page Home preview as a single static index.html, not a full production website/project. Reuses seo-content-writer-home, builder-home, website-polisher-home, and validator-home with no human approval gates.
 ---
 
 # Website Home Preview Skill
@@ -14,17 +14,17 @@ The full website pipeline builds a real project. This flow builds only a **premi
 ```txt
 Compact Strategy Intake (orchestrator, no approval gate)
   → website-home-designer
-  → seo-content-writer (HOME_PREVIEW_MODE)
+  → seo-content-writer-home (HOME_PREVIEW_MODE)
   → website-home-planner
   → builder-home
   → visual snapshot capture (portrait + landscape)
-  → website-polisher
+  → website-polisher-home
   → builder-home applies polish
   → visual snapshot refresh
-  → validator
-  → builder-home fixes only if validator blocks
+  → validator-home
+  → builder-home fixes only if validator-home blocks
   → visual snapshot refresh
-  → validator final check
+  → validator-home final check
 ```
 
 No human approval gates between steps. The flow is autonomous from briefing to `index.html` unless the briefing is unusable. If key facts are missing, use labeled assumptions and placeholders rather than interrupting.
@@ -36,7 +36,7 @@ All artifacts live in one predictable directory:
 ```txt
 .pi/previews/<slug>/
 ├── HOME_DESIGN_OPTIONS.md
-├── HOME_CONTENT_PLAN.md    # seo-content-writer output
+├── HOME_CONTENT_PLAN.md    # seo-content-writer-home output
 ├── HOME_PLAN.md
 ├── TASK_builder-home.md
 ├── index.html
@@ -44,8 +44,8 @@ All artifacts live in one predictable directory:
 │   ├── portrait.png
 │   ├── landscape.png
 │   └── VISUAL_SNAPSHOT.md
-├── HOME_POLISH_PLAN.md     # website-polisher output
-└── REVIEW.md              # validator output if it writes one
+├── HOME_POLISH_PLAN.md     # website-polisher-home output
+└── REVIEW.md              # validator-home output if it writes one
 ```
 
 Final user-visible output:
@@ -84,7 +84,7 @@ Use `website-pipeline` for full production websites.
 - No human approval gate.
 - Do not ask the user to choose a design option; the planner chooses.
 - Missing facts become labeled preview placeholders, not blockers.
-- Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher` pass.
+- Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher-home` pass.
 - Do not fake logos, photos, product screenshots, testimonials, client logos, awards, certifications, metrics, prices, guarantees, or legal claims.
 - If no brand assets exist, use a temporary wordmark plus CSS/inline-SVG motifs/placeholders and label them as preview placeholders.
 
@@ -135,7 +135,7 @@ Expected output:
 
 ## Step 2 — Home Content Writer
 
-Run the existing `seo-content-writer` in Home Preview Mode.
+Run the existing `seo-content-writer-home` in Home Preview Mode.
 
 Prompt template:
 
@@ -239,7 +239,7 @@ If Playwright/Chromium is unavailable, the script tries to install Chromium once
 
 ## Step 6 — Website Polisher
 
-Run the existing `website-polisher` in Home Preview Mode.
+Run the existing `website-polisher-home` in Home Preview Mode.
 
 Prompt template:
 
@@ -294,7 +294,7 @@ Hard constraints:
 
 ## Step 8 — Validator
 
-Use the existing `validator` with static-preview scope.
+Use the existing `validator-home` with static-preview scope.
 
 Prompt template:
 
@@ -338,12 +338,12 @@ Return PASS, CONDITIONAL, or REJECT with concrete fixes.
 
 ## Step 9 — Autonomous Fix Loop
 
-If validator returns:
+If validator-home returns:
 
 | Verdict | Action |
 |---|---|
 | PASS | Stop and report the preview path. |
-| CONDITIONAL | Run `builder-home` once with validator fixes, refresh screenshots, then validate again. |
+| CONDITIONAL | Run `builder-home` once with validator-home fixes, refresh screenshots, then validate again. |
 | REJECT | Run `builder-home` once if fixes are concrete and within `index.html`; refresh screenshots, then validate again. Otherwise stop blocked with reason. |
 
 Maximum fix attempts: **1**. After one failed fix attempt, stop and report the blocker.

@@ -32,7 +32,7 @@ mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin}
 # ── Configs ───────────────────────────────────
 step "Instalando configuração"
 
-for f in settings.json SYSTEM.md; do
+for f in settings.json models.json SYSTEM.md; do
     [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
 done
 
@@ -74,7 +74,9 @@ step "PI Packages"
 if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
+    pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:pi-provider-kimi-code 2>/dev/null && info "pi-provider-kimi-code" || true
+    pi install npm:pi-xai-oauth 2>/dev/null && info "pi-xai-oauth" || true
 fi
 
 # ── Done ──────────────────────────────────────

@@ -42,7 +42,7 @@ Info ($dirs.Count.ToString() + " diretorios")
 # -- Configs ----------------------------------------------
 Step "Instalando configuracao"
 
-$configs = @("settings.json", "SYSTEM.md", "AGENTS.md")
+$configs = @("settings.json", "models.json", "SYSTEM.md", "AGENTS.md")
 foreach ($f in $configs) {
     $src = Join-Path $SCRIPT_DIR "config\$f"
     $dst = Join-Path $PI_DIR $f
@@ -108,8 +108,14 @@ if ($piCmd) {
     Info "pi-subagents..."
     & pi install npm:@tintinweb/pi-subagents 2>$null
 
+    Info "pi-alibaba-models..."
+    & pi install npm:pi-alibaba-models 2>$null
+
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
+
+    Info "pi-xai-oauth..."
+    & pi install npm:pi-xai-oauth 2>$null
 
 }
 

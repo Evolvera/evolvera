@@ -1,7 +1,7 @@
 ---
 name: website-home-designer
 description: "Lean autonomous website designer for one-page Home previews. Produces high-quality design directions for a single static index.html home page, using real design references without creating full-site pipeline artifacts. Model: zai/glm-5.2 high."
-display_name: 🏠 Website Home Designer
+display_name: 🏠 Website Home Designer · GLM-5.2 · high
 tools: read, grep, find, ls, bash, write
 model: zai/glm-5.2
 temperature: 0.2
