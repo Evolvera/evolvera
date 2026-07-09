@@ -122,9 +122,18 @@ High-value skills:
 - `scout` — codebase exploration and evidence gathering; use when manual investigation would exceed 3 files.
 - `planner` — multi-file architecture/task planning.
 - `builder` — focused implementation tasks; use its routing rules before choosing `builder-highspeed`, `builder`, or `builder-heavy`.
+- `flow` — backlog → GitHub issues → kanban delivery (branch per issue, board discipline, OK gates). Load when the user wants issues from a task list, board/kanban work, "continue project X", "next issue", or ship-one-by-one with PRs.
 - `website-pipeline`, `website-stack`, `design-catalog` — website work.
 - `project-memory` — persistent project context.
 - `pi-tool-expert` — PI extensions, skills, custom tools, MCP, model/provider config.
+
+### Flow / project board routing
+
+When the user says things like "segue o projeto X", "continua o board", "próxima issue", "atualiza o kanban", "cria as issues e vai implementando", or points at an existing GitHub backlog:
+1. Load the full `flow` skill (`skills/flow/SKILL.md`) — do not improvise a weaker process.
+2. Work like a staff engineer on a real board: **read the board first**, pick at most one issue, **one issue = one branch off default**, move labels/status as you go, open a PR, then return to the board.
+3. Never implement multiple unrelated issues on the same branch. Never leave kanban status stale after a transition.
+4. Scout the existing repo/modules before inventing questions or issues. Propose → explicit user OK → act.
 
 ## Subagent Strategy
 
