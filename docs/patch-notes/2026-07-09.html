@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Guia educativo das mudanças do PI em 2026-07-09: agentes, orquestração, Flow, Plan Heavy, modelos e instalação.">
+  <title>PI2 Cyber Master — Patch Notes 2026-07-09</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1d1719;
+      --panel: #251c1f;
+      --panel-strong: #2e2025;
+      --line: #544a4c;
+      --muted: #a2938f;
+      --text: #e8e1dc;
+      --scarlet: #ff3b30;
+      --crimson: #e06c78;
+      --gold: #e3b46e;
+      --blue: #7d97ff;
+      --green: #adc793;
+      --warning: #dfa15c;
+      --code: #9dc08b;
+      --max: 1120px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 72% -15%, #4d2029 0, transparent 34rem), var(--bg);
+      color: var(--text);
+      font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); }
+    a:hover { color: #b4c3ff; }
+    code { color: var(--code); font: 0.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .shell { width: min(var(--max), calc(100% - 2rem)); margin: 0 auto; }
+    .hero { padding: 5rem 0 3rem; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--gold); font: 700 .76rem/1 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
+    h1, h2, h3 { line-height: 1.14; }
+    h1 { max-width: 800px; margin: .7rem 0 1rem; font-size: clamp(2.35rem, 7vw, 5.5rem); letter-spacing: -.055em; }
+    h1 span { color: var(--scarlet); text-shadow: 0 0 12px #ff3b3088, 0 0 34px #ff3b3044; }
+    .lede { max-width: 760px; margin: 0; color: #cfc2bd; font-size: clamp(1.05rem, 2.2vw, 1.28rem); }
+    .badges { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1.7rem; }
+    .badge { padding: .28rem .65rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: .75rem ui-monospace, monospace; }
+    .badge.ok { border-color: #adc79366; color: var(--green); }
+    .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 3.5rem; padding: 2.6rem 0 5rem; }
+    nav { position: sticky; top: 1.5rem; height: fit-content; border-left: 1px solid var(--line); padding-left: 1rem; }
+    nav a { display: block; padding: .3rem 0; color: var(--muted); font-size: .88rem; text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    section { scroll-margin-top: 1.5rem; margin-bottom: 4rem; }
+    h2 { margin: 0 0 1.1rem; color: var(--gold); font-size: clamp(1.55rem, 4vw, 2.35rem); letter-spacing: -.035em; }
+    h3 { margin: 2rem 0 .65rem; font-size: 1.15rem; }
+    p { margin: .6rem 0 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .card { padding: 1.25rem; background: linear-gradient(145deg, #2b2024, var(--panel)); border: 1px solid var(--line); border-radius: 14px; }
+    .card h3 { margin: 0 0 .55rem; color: var(--text); }
+    .card p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .callout { margin: 1.5rem 0; padding: 1rem 1.15rem; border-left: 3px solid var(--scarlet); background: #331f23; border-radius: 0 10px 10px 0; }
+    .callout strong { color: #ffe0dc; }
+    .callout.info { border-color: var(--blue); background: #222438; }
+    .callout.warn { border-color: var(--warning); background: #35271e; }
+    ul, ol { padding-left: 1.35rem; }
+    li { margin: .45rem 0; }
+    .flow { display: grid; gap: .55rem; margin: 1.25rem 0; }
+    .flow-step { position: relative; padding: .85rem 1rem .85rem 3.1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .flow-step::before { content: attr(data-n); position: absolute; left: .8rem; top: .82rem; display: grid; place-items: center; width: 1.45rem; height: 1.45rem; color: #1d1719; background: var(--gold); border-radius: 50%; font: 700 .75rem ui-monospace, monospace; }
+    .flow-step strong { display: block; }
+    .flow-step span { color: var(--muted); font-size: .92rem; }
+    .matrix { width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .matrix th, .matrix td { padding: .8rem .9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    .matrix tr:last-child td { border-bottom: 0; }
+    .matrix th { color: var(--gold); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+    .matrix td { color: #d7cbc6; font-size: .92rem; }
+    .matrix td:first-child { color: var(--text); font-weight: 650; }
+    .checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: 1rem; }
+    .check { padding: .75rem .85rem; background: #20281f; border: 1px solid #53674a; border-radius: 9px; color: #d4e1ca; font-size: .9rem; }
+    .check::before { content: "✓"; margin-right: .5rem; color: var(--green); font-weight: 800; }
+    .commit-list { list-style: none; padding: 0; margin: 0; }
+    .commit-list li { padding: .75rem 0; border-bottom: 1px solid var(--line); }
+    .commit-list code { color: var(--crimson); }
+    footer { border-top: 1px solid var(--line); padding: 2.25rem 0 3.5rem; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 780px) {
+      .hero { padding-top: 3rem; }
+      .layout { grid-template-columns: 1fr; gap: 1.5rem; }
+      nav { position: static; display: flex; flex-wrap: wrap; gap: .2rem .8rem; border: 0; padding: 0; }
+      nav a { padding: 0; }
+      .grid, .checks { grid-template-columns: 1fr; }
+      .matrix { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="shell">
+      <div class="eyebrow">Release guide · 09 Jul 2026</div>
+      <h1>PI2 <span>Cyber Master</span></h1>
+      <p class="lede">Um guia prático das mudanças que transformaram a infraestrutura do PI: agentes com roteamento explícito, planejamento seguro, entrega remota-first e uma instalação que compartilha configuração, capacidade e tema.</p>
+      <div class="badges">
+        <span class="badge ok">32 agentes validados</span>
+        <span class="badge ok">Plan Heavy smoke: PASS</span>
+        <span class="badge">OpenAI: 350k contexto</span>
+        <span class="badge">Anthropic: 585k contexto</span>
+        <span class="badge">Cyberpsycho padrão</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell layout">
+    <nav aria-label="Navegação do documento">
+      <a href="#visao">Visão geral</a>
+      <a href="#agentes">Agentes e roteamento</a>
+      <a href="#orquestracao">Orquestração</a>
+      <a href="#plan-heavy">Plan Heavy</a>
+      <a href="#flow">Flow remoto-first</a>
+      <a href="#instalacao">Instalação e tema</a>
+      <a href="#validacao">Validação</a>
+      <a href="#limites">Limitações</a>
+      <a href="#commits">Commits</a>
+    </nav>
+
+    <article>
+      <section id="visao">
+        <div class="eyebrow">O que mudou</div>
+        <h2>Menos ambiguidade, mais entrega verificável</h2>
+        <p>Antes, muitas decisões de modelo, escopo e recuperação dependiam de instruções longas ou do estado do chat. Esta atualização torna essas regras explícitas em agentes, skills, configurações e gates de validação.</p>
+        <div class="grid">
+          <div class="card"><h3>Roteamento explícito</h3><p>Cada agente declara modelo, esforço de raciocínio e identidade visível no runtime.</p></div>
+          <div class="card"><h3>Escopo controlado</h3><p>Scouts são read-only por capacidade; validators começam no alvo solicitado e evitam ruído do repositório.</p></div>
+          <div class="card"><h3>Planos executáveis</h3><p>Tasks compactas carregam objetivo, mudança, acceptance, validação e checkpoint — sem duplicar boilerplate.</p></div>
+          <div class="card"><h3>Estado remoto confiável</h3><p>O Flow reconstrói o trabalho a partir de GitHub, PRs e branches antes de retomar uma issue.</p></div>
+        </div>
+      </section>
+
+      <section id="agentes">
+        <div class="eyebrow">Como escolher o agente</div>
+        <h2>32 agentes, com responsabilidade nítida</h2>
+        <p>A frota foi ampliada de 27 para 32 agentes. Os papéis principais usam GPT-5.6 Sol, Terra ou Luna, além de Claude Fable 5 para trabalho visual. O nome exibido passa a mostrar o modelo e o nível de raciocínio efetivos.</p>
+        <table class="matrix">
+          <thead><tr><th>Quando</th><th>Agente</th><th>Por quê</th></tr></thead>
+          <tbody>
+            <tr><td>Busca curta e mecânica</td><td><code>scout-highspeed</code></td><td>Localiza arquivos, símbolos ou uma dependência pequena.</td></tr>
+            <tr><td>Entendimento coerente</td><td><code>scout</code></td><td>Investiga com evidência; só pode usar <code>read</code>, <code>grep</code>, <code>find</code> e <code>ls</code>.</td></tr>
+            <tr><td>Código geral de risco normal</td><td><code>builder</code></td><td>Backend, tooling, testes e integração não visual.</td></tr>
+            <tr><td>Frontend e UI</td><td><code>builder-design</code></td><td>Tier padrão de componentes, layout, responsividade e acessibilidade.</td></tr>
+            <tr><td>Integração delicada</td><td><code>builder-heavy</code></td><td>Arquivos compartilhados, migrações, algoritmos ou risco de correção.</td></tr>
+            <tr><td>Visual excepcional</td><td><code>builder-heavy-design</code></td><td>Motion avançado, 2D/3D, direção de arte e resgate visual.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout info"><strong>Home Preview é isolado.</strong> MiniMax M3 e GLM-5.2 só atendem as variantes <code>*-home</code>. Copy, polish e validação de Home não misturam mais os agentes de site completo.</div>
+        <p>Os 26 prompts não-Home foram reduzidos de 4.657 para 2.545 linhas, preservando contratos de saída, guardrails e propósito. Isso reduz repetição sem remover a evidência e a validação exigidas.</p>
+      </section>
+
+      <section id="orquestracao">
+        <div class="eyebrow">Como o PI decide o processo</div>
+        <h2>Três níveis de orquestração</h2>
+        <p>O sistema escolhe o nível de coordenação pela consequência, dependências e risco — não apenas pela quantidade de arquivos.</p>
+        <div class="flow">
+          <div class="flow-step" data-n="1"><strong>Direct Orchestrator</strong><span>Para edição trivial e conhecida: localizar, alterar, validar e concluir sem criar uma cadeia artificial.</span></div>
+          <div class="flow-step" data-n="2"><strong>Focused Subagents</strong><span>Para investigação ou execução delimitada: scout para evidência, builder adequado ao risco, validator apenas quando o custo de falha justificar.</span></div>
+          <div class="flow-step" data-n="3"><strong>Planned Delivery</strong><span>Para mudanças longas, compartilhadas ou de alto risco: plano, tarefas atômicas, dependências, checkpoints e gates selecionados.</span></div>
+        </div>
+        <h3>Contrato compacto de task</h3>
+        <p>Tasks de planner deixam de repetir TODO/TILL-DO e princípios genéricos. A unidade de execução responde cinco perguntas: <code>Goal</code>, <code>Change</code>, <code>Acceptance</code>, <code>Validation</code> e <code>Checkpoint</code>. O execution envelope carrega o estado runtime, recovery e limites de patch.</p>
+      </section>
+
+      <section id="plan-heavy">
+        <div class="eyebrow">Planejamento com gate</div>
+        <h2><code>/plan-heavy</code> ficou mais rigoroso</h2>
+        <ul>
+          <li>Aceita contratos compactos e legados, sem perder compatibilidade de planos anteriores.</li>
+          <li>Normaliza paths e bloqueia traversal, glob, target absoluto e referências operacionais inseguras.</li>
+          <li>Exige concordância entre <code>SCHEDULE.md</code>, arquivo da task, agente declarado e arquivos tocados.</li>
+          <li>Impede executar em paralelo tasks que se sobrepõem em um arquivo compartilhado.</li>
+          <li>Modela validators review-only como <code>PASS | BLOCKED</code>, sem commits vazios.</li>
+        </ul>
+        <div class="callout"><strong>Regra prática:</strong> um checkpoint comprova uma mudança escrita; um validator independente comprova que a mudança pode desbloquear o próximo nó do DAG.</div>
+        <p>O harness possui smoke test em Node e workflow GitHub Actions. O teste cobre recovery, gates de validator, consistência de targets, serialização de overlap, paths inseguros e conteúdo de envelopes.</p>
+      </section>
+
+      <section id="flow">
+        <div class="eyebrow">Entrega contínua</div>
+        <h2>Flow usa GitHub como autoridade</h2>
+        <p>Cache local e memória de chat não são mais tratados como prova de ownership. Em cada <em>continue</em> ou chat novo, a reentrada busca Project, issues, PRs e branches remotas antes de decidir o que retomar.</p>
+        <div class="flow">
+          <div class="flow-step" data-n="1"><strong>Reconstruir o board</strong><span>Descobrir Project v2, paginar issues e PRs, buscar todas as branches remotas e classificar inconsistências.</span></div>
+          <div class="flow-step" data-n="2"><strong>Claim verificável</strong><span>Uma issue é reclamada por assignee único + branch determinística <code>flow/#N-slug</code> + SHA confirmado.</span></div>
+          <div class="flow-step" data-n="3"><strong>Publicar e reler</strong><span>Depois de branch, PR ou mudança de status, o Flow relê a fonte remota e só então atualiza <code>.pi/flow</code>.</span></div>
+          <div class="flow-step" data-n="4"><strong>Concluir com merge</strong><span><code>done</code> exige PR correspondente com <code>mergedAt != null</code>; issue fechada ou PR fechado sem merge vira anomalia/blocker.</span></div>
+        </div>
+        <div class="callout warn"><strong>Não existe “transação mágica” entre Git e GitHub.</strong> O processo usa pós-condições lidas do remoto, nunca força push, não apaga branch remota silenciosamente e não confunde cache com lock.</div>
+      </section>
+
+      <section id="instalacao">
+        <div class="eyebrow">O que chega após um pull</div>
+        <h2>Configuração compartilhada, instalação previsível</h2>
+        <p>Quem fizer pull e rodar o instalador recebe a frota de agentes, configurações de modelo, limites de concorrência e o tema compartilhado. Não é necessário copiar arquivos locais manualmente.</p>
+        <table class="matrix">
+          <thead><tr><th>Artefato</th><th>Valor atual</th><th>Função</th></tr></thead>
+          <tbody>
+            <tr><td><code>subagents.json</code></td><td><code>maxConcurrent: 8</code></td><td>Compartilha o limite de concorrência dos subagentes.</td></tr>
+            <tr><td><code>themes/cyberpsycho.json</code></td><td>Cyberpsycho padrão</td><td>É copiado pelos instaladores Unix e PowerShell.</td></tr>
+            <tr><td><code>thinkingXhigh</code></td><td>Escarlate luminoso <code>#ff3b30</code></td><td>Dá destaque visual máximo ao xhigh. O renderer do terminal suporta cor, não glow/animação real.</td></tr>
+            <tr><td>GPT-5.6</td><td>350k de contexto</td><td>Sol, Terra e Luna.</td></tr>
+            <tr><td>Anthropic</td><td>585k de contexto</td><td>Overrides para os modelos Claude configurados.</td></tr>
+          </tbody>
+        </table>
+        <h3>Checklist para uma instalação nova</h3>
+        <ol>
+          <li>Faça <code>git pull</code>.</li>
+          <li>Execute <code>./install.sh</code> no Unix ou <code>.\install.ps1</code> no Windows.</li>
+          <li>Reinicie ou recarregue o PI para carregar agentes, modelos e tema.</li>
+          <li>Use <code>/settings</code> se quiser confirmar o tema ativo.</li>
+        </ol>
+      </section>
+
+      <section id="validacao">
+        <div class="eyebrow">Evidência de qualidade</div>
+        <h2>O que foi verificado</h2>
+        <div class="checks">
+          <div class="check">32 agentes, identidade e isolamento Home</div>
+          <div class="check">Hashes dos seis agentes Home preservados</div>
+          <div class="check"><code>npm run test:plan-heavy --prefix npm</code></div>
+          <div class="check">Extensão <code>plan-heavy.ts</code> válida</div>
+          <div class="check">Skills alteradas válidas</div>
+          <div class="check"><code>bash -n install.sh</code> e smoke em sandbox</div>
+          <div class="check">JSONs de modelo e tema válidos</div>
+          <div class="check">Diagnósticos VS Code sem erros</div>
+        </div>
+      </section>
+
+      <section id="limites">
+        <div class="eyebrow">O que ainda exige atenção</div>
+        <h2>Limitações conhecidas</h2>
+        <ul>
+          <li>O instalador PowerShell foi revisado, mas não executado neste ambiente porque <code>pwsh</code> não estava disponível.</li>
+          <li>O protocolo Flow remoto-first foi validado estruturalmente, mas não foi exercido contra um Project GitHub real nesta rodada para não mutar um board externo.</li>
+          <li>O tema do PI aceita tokens de cor. Efeitos de glow, blur e animação dependem do renderer do terminal/UI e não são parte do schema de tema.</li>
+        </ul>
+      </section>
+
+      <section id="commits">
+        <div class="eyebrow">Histórico da entrega</div>
+        <h2>Commits relevantes de 2026-07-09</h2>
+        <ul class="commit-list">
+          <li><code>b055080</code> — Teach flow branch-per-issue kanban delivery</li>
+          <li><code>bdf7ef3</code> — Cap GPT and Claude context windows at 500k</li>
+          <li><code>bf7de42</code> — feat(agents): modernize routing and prompt contracts</li>
+          <li><code>2342b0d</code> — refactor(orchestration): adopt adaptive delivery levels</li>
+          <li><code>36404a8</code> — feat(plan-heavy): harden compact task validation</li>
+          <li><code>75809df</code> — feat(flow): make delivery state remote-authoritative</li>
+          <li><code>c5f63a1</code> — chore(subagents): share concurrency configuration</li>
+          <li><code>ee267d8</code> — feat(theme): ship cyberpsycho as default</li>
+          <li><code>deaea55</code> — config(models): tune provider context windows</li>
+          <li><code>330bacf</code> — feat(theme): emphasize xhigh thinking in scarlet</li>
+        </ul>
+      </section>
+    </article>
+  </main>
+
+  <footer>
+    <div class="shell">PI2 Cyber Master · Fonte canônica: <a href="2026-07-09.md">patch notes em Markdown</a> · Documento estático, sem dependências externas.</div>
+  </footer>
+</body>
+</html>
