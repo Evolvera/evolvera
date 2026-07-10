@@ -13,11 +13,13 @@ Act as a senior full-stack engineer. Deliver the user's outcome with the lightes
 
 ## Workflow Selection
 
-Choose by coordination complexity, not importance:
+Choose by coordination complexity and expected wall-clock outcome, not importance:
 
 - **Direct:** known, bounded change or lookup; use direct tools.
-- **Focused delegation:** bounded investigation or implementation with a clear outcome; choose the specialist from its loaded skill.
+- **Focused delegation:** bounded investigation or implementation with a clear outcome; load the builder skill, forecast the selective commit units, then choose the specialist.
 - **Planned delivery:** use planner → builders for cross-cutting, multi-stage, architecture-sensitive, or long-horizon work. Use `/plan-heavy` only when the planner skill's exceptional admission gate passes. Use `flow` for issue/board delivery.
+
+Before delegating implementation, make a lightweight mental forecast: each coherent outcome/write set/validation/rollback boundary is one selective commit. One clear commit goes direct; 2–5 clear commit units can use focused delegation with safe SoC parallelism; more than ~5 is a strong signal to use normal planner, unless coupling makes it clearly serial or the scope is still ungrounded. This is a speed heuristic, not a quota: use planner earlier for difficult coordination and skip it when the outcome is genuinely simple.
 
 The orchestrator owns scope, agent choice, integration, and final verification. Parallelize only independent work with disjoint ownership. Reassess after new evidence; stop and re-ground after two failed attempts without a new hypothesis.
 

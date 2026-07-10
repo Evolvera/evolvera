@@ -16,7 +16,15 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 | Multiple concerns, architecture decisions, unclear sequencing, or many dependent/parallel tasks | **Normal planner** — default full-plan route |
 | Exceptional preservation/recovery or subtle invariant risk passes the gate below | **`/plan-heavy`** — rare escalation |
 
-Importance alone does not require planning. High-impact but bounded deploy, staging, SSH, security, nginx/Plesk, ACME, CI, provider, reload, or rollback work normally uses a concise pre-plan or normal planner, then `builder-heavy` plus selective validation.
+### Commit Forecast (speed heuristic)
+
+Before selecting a route, mentally forecast the smallest coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. This is not a task quota or user-facing ceremony.
+
+- **1 commit:** direct tools or one focused builder.
+- **2–5 clear commits:** load the builder skill; use focused delegation and parallelize only disjoint SoC slices when the coordination overhead is lower than serial execution.
+- **More than ~5 commits:** normal planner is preferred, because it can create the dependency graph once and reduce wall-clock time through safe parallel groups.
+
+Override the count when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; stay direct when several edits are mechanically one coherent commit. Importance alone does not require planning. High-impact but bounded deploy, staging, SSH, security, nginx/Plesk, ACME, CI, provider, reload, or rollback work normally uses a concise pre-plan or normal planner, then `builder-heavy` plus selective validation.
 
 ## 2. Lightweight Planning Intake
 
@@ -87,7 +95,7 @@ Expected output:
 
 ## 4. `/plan-heavy` — Exceptional Admission Gate
 
-Use `/plan-heavy` only when a full plan is already justified **and** normal planner output is insufficient because at least one is true:
+Use `/plan-heavy` only when a full plan is already justified, its independent strategy work is expected to improve both long-horizon quality **and** elapsed delivery time, **and** normal planner output is insufficient because at least one is true:
 
 1. Target files contain overlapping pre-existing user changes or partially executed checkpoints that require preservation/recovery reconciliation.
 2. The work is recovering a failed multi-task delivery where shared-file ownership, checkpoint history, or rollback state is ambiguous.
@@ -111,6 +119,7 @@ A good plan reduces builder complexity without expanding scope:
 - Any task count is acceptable when every task has one coherent responsibility.
 - Every writing task maps to exactly one selective commit: one outcome, exact write set, validation result, and rollback/recovery boundary.
 - Split at real implementation, write-set, checkpoint, rollback, or validation boundaries—not to repeat hazards, matrices, or process prose.
+- Optimize for critical path: group only independent, disjoint SoC slices in parallel; serialize shared contracts/external effects; do not manufacture parallelism.
 - `PLAN_FULL.md` owns rationale; `SCHEDULE.md` owns dependencies; task files own execution contracts.
 - PR creation, merge, CI waiting, board/Flow reconciliation, and branch cleanup remain orchestrator steps, not builder tasks.
 - Historical plans, adjacent risks, and optional improvements never expand approved scope.

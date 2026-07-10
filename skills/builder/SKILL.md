@@ -11,6 +11,10 @@ Builder is a delegated implementation family. Use `builder-highspeed`, `builder`
 
 Delegate implementation without overloading yourself, while preserving quality through narrow scope and explicit validation.
 
+## Commit Scope
+
+Normally, one writing builder call maps to one selective commit: a cohesive SoC outcome with its write set and validation. The orchestrator commits after verification. Split or use planner only when real ownership, validation, rollback, or dependency boundaries make that clearer; review-only validators do not commit.
+
 Success means:
 - the requested change is implemented;
 - only intended files are changed;
@@ -89,7 +93,7 @@ If unclear, pre-plan or scout first.
 
 ## Planner-Driven Mode
 
-Use when `.pi/plans/` exists.
+Use only when the current task explicitly names an active `PLAN_DIR`/task file. Historical or unrelated `.pi/plans/` directories never force planner-driven execution.
 
 1. Read `.pi/plans/SCHEDULE.md` and use its `Agent` and dependency columns as the execution authority.
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
@@ -153,7 +157,7 @@ CONSTRAINTS
 VALIDATION
 Run:
 - [targeted test/typecheck/lint/build command]
-Also review focused diff for accidental deletions or broad rewrites and verify recovery snapshots exist for MODIFY files.
+Also review focused diff for accidental deletions or broad rewrites and verify any recovery snapshots required by the task exist.
 If validation cannot run, explain why and provide the next best check.
 
 CHECKPOINT
@@ -165,6 +169,8 @@ STOP RULES
 ```
 
 ## Parallelization
+
+Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
 
 For focused delegation, default to one builder. Parallelize independent implementation slices by SoC—component/module, API endpoint, test suite, configuration surface—only when it genuinely reduces scope per builder and write sets are provably disjoint. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
 
