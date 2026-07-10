@@ -1,6 +1,6 @@
 ---
 name: website-pipeline
-description: Website project orchestration pipeline. Use when the user asks to build, design, or modify a website. Defines strategy intake, premium website quality gates, and the correct agent order: designer, content writer, planner, builder, polisher, validator.
+description: "Website project orchestration pipeline. Use when the user asks to build, design, or modify a website. Defines strategy intake, premium website quality gates, and the correct agent order: designer, content writer, planner, builder, polisher, validator."
 ---
 
 # Website Pipeline — Premium Website Workflow
