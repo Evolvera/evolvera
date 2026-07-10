@@ -9,8 +9,8 @@ max_turns: 18
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Scout Highspeed — Draft-Speed Explorer

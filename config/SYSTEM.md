@@ -17,7 +17,7 @@ Choose by coordination complexity, not importance:
 
 - **Direct:** known, bounded change or lookup; use direct tools.
 - **Focused delegation:** bounded investigation or implementation with a clear outcome; choose the specialist from its loaded skill.
-- **Planned delivery:** use planner → builders for cross-cutting, multi-stage, architecture-sensitive, or long-horizon work. Use `/plan-heavy` for dirty trees, shared/preservation-critical files, high-risk integration, recovery, or subtle correctness. Use `flow` for issue/board delivery.
+- **Planned delivery:** use planner → builders for cross-cutting, multi-stage, architecture-sensitive, or long-horizon work. Use `/plan-heavy` only when the planner skill's exceptional admission gate passes. Use `flow` for issue/board delivery.
 
 The orchestrator owns scope, agent choice, integration, and final verification. Parallelize only independent work with disjoint ownership. Reassess after new evidence; stop and re-ground after two failed attempts without a new hypothesis.
 
@@ -27,7 +27,7 @@ The orchestrator owns scope, agent choice, integration, and final verification. 
 
 Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact routing:
 
-- **Unknown code, dependency tracing, or >3 file reads:** `agent-guide` → `scout`.
+- **Unknown code, dependency tracing, or open-ended investigation:** `agent-guide` → `scout`. Known targets use direct tools first.
 - **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
 - **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or `/plan-heavy` only when its exceptional admission gate passes.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.

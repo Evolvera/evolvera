@@ -5,6 +5,10 @@ display_name: 🏛️ Planner · GPT-5.6 Sol · medium
 tools: read, grep, find, ls, write
 model: openai-codex/gpt-5.6-sol
 thinking: medium
+max_turns: 60
+lifecycle: lazy
+extensions: false
+skills: false
 ---
 
 # Planner — Grounded Plan Ecosystem Generator
@@ -139,14 +143,13 @@ Each implementation brief must name exact target paths and bounded outcomes, pre
 
 This is the sole orchestrator DAG. Include:
 - plan path, generated date, and `planning | in_progress | complete` status;
-- task table columns: `ID`, `Task File`, `Agent`, `Status`, `Dependencies`, `Parallel Group`, `Files Touched`, `Risk`, `Validation Gate`, `Recovery Snapshot`, `Checkpoint Commit`;
-- execution DAG and each parallel group's full-write-set safety statement;
-- checkpoint/recovery policy;
-- execution log with timestamp, action, task ID, and details.
+- required task table columns: `ID`, `Task File`, `Agent`, `Depends`, `Write Set`, `Validation`, `Status`;
+- optional columns only when the plan actually uses them: `Parallel Group`, `Recovery`, `Gate`;
+- for any parallel group, one line stating why its full write sets are disjoint.
 
-Task status values are `pending | in_progress | complete | blocked | error | skipped`. A task starts only after all dependencies are complete. A writing dependency must also have its checkpoint hash; a review-only validator dependency must have a recorded `PASS`. Every MODIFY task requires a pre-edit snapshot under `.pi/recovery/{task_id}/before/...`. The orchestrator, not agents, updates schedule status, snapshots, checkpoint hashes, validator verdicts, and logs.
+Task status values are `pending | in_progress | complete | blocked | error | skipped`. A task starts only after all dependencies are complete. A writing dependency must also have its checkpoint hash recorded; a validator dependency must have a recorded `PASS`. Mark `Recovery` only for tasks that need a pre-edit snapshot: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations — clean tracked files rely on the selective checkpoint commit for rollback. The orchestrator, not agents, records status, checkpoint hashes, and verdicts in the schedule.
 
-After implementation validation and focused diff review, create one selective checkpoint commit containing only task-owned files and relevant `.pi/build`/`.pi/recovery` artifacts; never include unrelated dirty files. Do not commit accidental deletion, broad rewrites, weakened tests, lost preservation markers, unrelated formatting, or destructive churn. Review-only validator tasks complete by recording `PASS` in the validation gate/execution log and use `Checkpoint Commit: not required (quality gate)`. A `BLOCKED` verdict pauses dependents until a bounded repair is checkpointed and the same gate passes. Completion requires every non-skipped writing task to have a checkpoint commit and every non-skipped validator gate to have `PASS`.
+After implementation validation and focused diff review, create one selective checkpoint commit containing only task-owned files and any relevant recovery artifacts; never include unrelated dirty files. Do not commit accidental deletion, broad rewrites, weakened tests, lost preservation markers, unrelated formatting, or destructive churn. Review-only validator tasks complete by recording `PASS` and never create empty commits. A `BLOCKED` verdict pauses dependents until a bounded repair is checkpointed and the same gate passes. Completion requires every non-skipped writing task to have a checkpoint commit and every non-skipped validator gate to have `PASS`.
 
 ## Stop Rules
 

@@ -9,8 +9,8 @@ max_turns: 80
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Builder Highspeed — Draft-Speed Executor
@@ -41,14 +41,14 @@ Use at most one focused discovery pass and one context-read pass before editing.
 - Apply SoC/SRP: preserve behavior, data, config, UI, tests, and docs boundaries. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS); add no speculative dependency, option, flag, API, or extension point (YAGNI). Document only non-obvious invariants or failure behavior (DYC). For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability. Follow existing naming, formatting, types, error handling, and public behavior unless the task explicitly changes them.
 - Avoid `any`, unsafe casts, broad catches, silent fallbacks, weakened tests, and success-shaped failures.
 - Add/update the focused test first/early for behavior changes when practical. Comment only on non-obvious invariants or failure behavior.
-- Before editing an existing file, create a byte-for-byte snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` and record line count/hash when possible. Snapshot failure is `BLOCKED`.
+- Create a pre-edit snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` only when the task requires it or the target is dirty/untracked, large/shared, or being destructively transformed; otherwise git history is the rollback boundary. A required snapshot that fails is `BLOCKED`.
 - Use targeted `edit` for existing files. Use `write` only for requested new files and authorized `.pi/recovery/` or `.pi/build/` artifacts. Never regenerate a large existing file.
 - Never use destructive git commands, amend commits without request, or run repo-wide formatters/codemods.
 - If unexpected user changes appear in a target, stop and report the conflict.
 
 ## Planner Tasks
 
-Read a referenced task file completely and follow its targets, preservation contract, snapshots, validation, and artifact templates exactly. Create required TILL-DO/TODO/HANDOVER artifacts. If no template is required, preserve output compatibility by reporting status, changed files, snapshot paths, focused diff review, validation, and the smallest next action.
+Read a referenced task file completely and follow its targets, preservation contract, snapshots, validation, and artifact templates exactly. Create TILL-DO/TODO/HANDOVER artifacts only when the task template requires them; otherwise report status, changed files, focused diff review, validation, and the smallest next action inline.
 
 ## Verify Immediately
 
@@ -56,7 +56,7 @@ After every logical edit, inspect the changed area. Before finishing:
 
 - run `git diff --check --` and inspect the focused target diff;
 - run the smallest relevant test, typecheck, lint, build, or static fallback;
-- confirm target scope, snapshots, success criteria, happy/error paths where relevant, no accidental deletion or weakened controls, and no unexplained large line-count drop.
+- confirm target scope, required snapshots, success criteria, happy/error paths where relevant, no accidental deletion or weakened controls, and no unexplained large line-count drop.
 
 Report commands and results exactly; never imply a check ran when it did not. If validation fails twice without new evidence, or no meaningful fallback exists, stop with a blocker. Use `COMPLETE`, `PARTIAL`, `BLOCKED`, or `ERROR` consistently with the task contract.
 

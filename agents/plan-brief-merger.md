@@ -5,11 +5,12 @@ display_name: 🔗 Plan Brief Merger · GPT-5.6 Terra · high
 model: openai-codex/gpt-5.6-terra
 thinking: high
 tools: read, write
+max_turns: 30
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Plan Brief Merger — Reconcile Two Strategy Briefs
