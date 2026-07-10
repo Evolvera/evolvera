@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Transform a giant implementation backlog into GitHub issues with priority/effort, then ship one-by-one through a real kanban (backlog→ready→in progress→in review→done) with one branch per issue and live board updates. Always scouts the existing repo by module first, teaches how to read the board like an engineer, educates when inputs are missing, proposes a plan, and only acts after explicit user OK. Use for backlog→issues, "continue project X", next-issue loops, or a generic GitHub permission unblock checklist.
+description: Transform a backlog into an approved GitHub Project with issues plus an adaptive project plan, schedule, and issue DAG under .pi/flow/, then ship safely through the kanban with one branch per issue. Works for one PI/executor by default and exposes optional safe parallel groups without requiring parallel execution. Always scouts first, proposes before acting, and requires explicit user approval for external or material changes.
 ---
 
 # Flow — Backlog → Issues → Ship
@@ -19,7 +19,8 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
   → REVIEW GATE: usuário aprova (OK para Project + issues)
   → Reusar Project existente ou criar Project, linkar repo(s), configurar Kanban
   → Criar/atualizar issues como cards organizados no Project (priority + effort + status)
-  → Loop engenheiro:
+  → Materializar `.pi/flow/<project-slug>/PLAN.md` + `SCHEDULE.md` + `DAG.json` + `INDEX.md`
+  → Loop engenheiro (solo por default; paralelo apenas quando autorizado e seguro):
        ler board → puxar 1 issue ready
        → branch NOVA off default (1 issue = 1 branch)
        → status: in progress (atualizar kanban NA HORA)
@@ -57,6 +58,8 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
 12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na default branch. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
 13. **Project/Kanban é obrigatório para delivery Flow** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. Depois, adicionar cada issue como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo se o usuário pedir explicitamente esse modo excepcional. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
+14. **DAG adaptativo, solo-first** — todo backlog criado pelo Flow ganha um plano e schedule de issues sob `.pi/flow/<project-slug>/`. O DAG ordena dependências, waves, gates e oportunidades de paralelo, mas nunca exige múltiplos executores: um único PI percorre os nós `ready` em ordem topológica, respeitando WIP=1. Paralelismo é otimização opcional, só com autorização, executores/worktrees separados e ausência de hazards compartilhados.
+15. **Sem duplicar issues localmente** — título, body, ACs, status, assignee, branch, PR e comentários vivem no GitHub. `INDEX.md` mantém somente links/identidades estáveis; `PLAN.md`, `SCHEDULE.md` e `DAG.json` guardam estratégia e dependências. Estado operacional continua sendo relido do remoto e cacheado apenas em `STATE.md`.
 
 ---
 
@@ -176,7 +179,7 @@ gh label list
 
 Espere o usuário confirmar que liberou. Só então continue.
 
-Salve em `.pi/flow/<repo-slug>/PERMISSIONS.md` se o gate falhar.
+Salve em `.pi/flow/<project-slug>/PERMISSIONS.md` se o gate falhar.
 
 ---
 
@@ -212,7 +215,7 @@ Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está clar
 
 Escreva (não commitar a menos que peçam):
 
-`.pi/flow/<repo-slug>/PROJECT_MAP.md`
+`.pi/flow/<project-slug>/PROJECT_MAP.md`
 
 ```md
 # Project map — OWNER/REPO
@@ -276,7 +279,7 @@ Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o
 - Marcar `blocked` se depender de decisão externa
 - Não criar issue para “pesquisar depois” sem outcome
 
-`.pi/flow/<repo-slug>/BACKLOG.md`
+`.pi/flow/<project-slug>/BACKLOG.md`
 
 ```md
 # Flow Backlog — OWNER/REPO — YYYY-MM-DD
@@ -402,7 +405,7 @@ gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$ISSUE_URL
 # então use `gh project item-edit` e releia o card para confirmar os valores.
 ```
 
-5. Antes de reportar conclusão, reconcilie contagens: toda issue criada/reutilizada no escopo aparece uma única vez no Project, todos os repos foram linkados e nenhum card novo ficou sem Status. Registre URL, owner, número e field IDs em `STATE.md`/`ISSUES.md`.
+5. Antes de reportar conclusão, reconcilie contagens: toda issue criada/reutilizada no escopo aparece uma única vez no Project, todos os repos foram linkados e nenhum card novo ficou sem Status. Registre identidade do Project e links estáveis das issues em `INDEX.md`; field/option IDs e evidência operacional verificada ficam em `STATE.md` quando necessários.
 
 ### Labels (idempotente; espelho/fallback técnico; reutilize convenção do repo se já existir)
 
@@ -472,19 +475,120 @@ EOF
 - Reportar URL/número do Project e de cada issue/card
 - Não recriar se já existir equivalente — linkar
 - `effort:xl` → split antes de `ready`
-- Mapa local:
 
-`.pi/flow/<repo-slug>/ISSUES.md`
+### 5.1 Plano, schedule e DAG do Project (obrigatório para backlog criado pelo Flow)
 
-```md
-# Flow Issues — OWNER/REPO
+Use um `project-slug` estável para o Project; em projeto de um único repo ele pode coincidir com o `repo-slug`:
 
-| Backlog # | Issue | Priority | Effort | Status | Assignee | Branch | PR | Last verified at |
-|-----------|-------|----------|--------|--------|----------|--------|----|------------------|
-| 1 | [#12](https://...) | P1 | M | backlog | — | — | — | 2026-07-09T12:00:00Z |
+```txt
+.pi/flow/<project-slug>/
+  PLAN.md
+  SCHEDULE.md
+  DAG.json
+  INDEX.md
 ```
 
-`ISSUES.md` é uma projeção local do remoto, não um board alternativo. Atualize a linha após cada transição verificada e use timestamp UTC ISO-8601.
+- `PLAN.md`: objetivo aprovado, escopo/repos, estratégia de waves, invariantes de segurança/regressão, critérios de replanejamento e decisões materiais já aprovadas.
+- `SCHEDULE.md`: visão humana do DAG — ordem topológica, waves, dependências, gates, hazards compartilhados, caminho sugerido (`direct`, `planner`, `plan-heavy`) e oportunidades opcionais de paralelo.
+- `DAG.json`: espelho mínimo e machine-readable do schedule; não contém body/status operacional da issue.
+- `INDEX.md`: índice humano mínimo de Project, repos e IDs estáveis das issues; nunca replica ACs, status, assignee, branch, PR ou comentários.
+
+`PLAN.md`:
+
+```md
+# Flow Plan — <title>
+
+- Revision: 1
+- Project: <url>
+- Approved goal: ...
+
+## Scope
+- In: ...
+- Out: ...
+
+## Delivery strategy
+- Baselines/gates: ...
+- Wave rationale: ...
+- Regression/rollback invariants: ...
+
+## Replan triggers
+- New dependency or shared-surface hazard
+- Issue split/merge or missing deliverable
+- Validation evidence invalidates ordering/assumptions
+
+## Approved material decisions
+- YYYY-MM-DD — ...
+```
+
+`SCHEDULE.md`:
+
+```md
+# Flow Schedule — <title>
+
+- Plan revision: 1
+- Mode: solo-first; parallel groups are optional
+
+## Wave 0
+| Node | Issue | Depends on | Route | Parallel group | Shared surfaces | Dependency gate |
+|------|-------|------------|-------|----------------|-----------------|-----------------|
+| BE-02 | OWNER/BACKEND#12 | — | planner | baseline | .github/workflows | merged-default |
+| APP-00 | OWNER/APP#3 | — | planner | baseline | app tests | merged-default |
+
+## Wave 1
+| Node | Issue | Depends on | Route | Parallel group | Shared surfaces | Dependency gate |
+|------|-------|------------|-------|----------------|-----------------|-----------------|
+| BE-03 | OWNER/BACKEND#13 | BE-02 | plan-heavy | — | auth, database | merged-default |
+
+## Replan log
+- Revision 1 — initial approved graph
+```
+
+`INDEX.md`:
+
+```md
+# Flow Project Index — <title>
+
+- Project: <owner>/<number> — <url>
+
+## Repositories
+- backend → OWNER/BACKEND
+- app → OWNER/APP
+
+## Issues
+- BE-02 → [OWNER/BACKEND#12](https://github.com/OWNER/BACKEND/issues/12)
+- APP-00 → [OWNER/APP#3](https://github.com/OWNER/APP/issues/3)
+```
+
+`DAG.json` mínimo:
+
+```json
+{
+  "schemaVersion": 1,
+  "planRevision": 1,
+  "project": { "owner": "OWNER", "number": 7, "url": "https://github.com/orgs/OWNER/projects/7" },
+  "nodes": {
+    "BE-02": {
+      "issue": "OWNER/BACKEND#12",
+      "dependsOn": [],
+      "wave": 0,
+      "parallelGroup": "baseline",
+      "route": "planner",
+      "sharedSurfaces": [".github/workflows"],
+      "dependencyGate": "merged-default"
+    }
+  }
+}
+```
+
+Regras do DAG:
+
+1. Cada nó representa uma issue entregável do Kanban, não as subtarefas internas de builder. Se uma issue precisar de planner, o DAG menor vive em `.pi/plans/` dentro daquela entrega.
+2. GitHub mantém a issue completa e todo estado dinâmico; não grave status/assignee/branch/PR em `INDEX.md` ou `DAG.json`.
+3. Dependência só é satisfeita quando a evidência remota exigida pelo gate existir; por default, upstream `done` significa PR merged na default + issue fechada/status coerente.
+4. Um executor solo escolhe um nó `ready` por vez na wave topológica mais antiga; `parallelGroup` é apenas uma oportunidade, nunca uma exigência.
+5. Múltiplos executores só podem usar nós paralelos após OK aplicável, worktrees/branches distintos e checagem de `sharedSurfaces`, migrations, lockfiles e contratos compartilhados.
+6. Quando evidência de execução revelar nova dependência, split, issue, gate de validação, hazard ou ordem necessária, proponha a revisão. Mudança material de escopo, prioridade, dependência, wave ou composição de issues exige OK explícito **antes** de escrever a nova revision em `PLAN.md`/`SCHEDULE.md`/`DAG.json` e antes de qualquer mutação externa correspondente. Ajuste não material pode ser registrado com evidência e revision log.
+7. `SCHEDULE.md` e `DAG.json` devem concordar em nós, dependências, waves e revision. Divergência bloqueia novo pull até reconciliação; não recrie issues para “consertar” o cache.
 
 Depois de criar, reporte distribuição e **pergunte**:
 
@@ -500,7 +604,7 @@ Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser
 
 1. **GitHub Project Status** — obrigatório para delivery criado pelo Flow; labels só são fallback temporário para histórico/migração aprovada;
 2. **issue/PR no GitHub + branches no remote atual**;
-3. cache local `.pi/flow/<repo-slug>/`;
+3. cache local `.pi/flow/<project-slug>/`;
 4. `.pi/memory/` e contexto do chat.
 
 Conflito é resolvido pela fonte mais alta. Uma leitura remota nova sempre invalida fatos locais antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente.
@@ -585,11 +689,11 @@ flow_project_fields
 
 Confirme as duas igualdades antes de usar Project como autoridade; truncamento de items ou fields bloqueia classificação global. Para uma issue/PR candidata, complemente com `gh issue view <N> --json number,title,state,labels,assignees,closedAt,url`, `gh pr view <PR> --json number,url,state,isDraft,headRefName,baseRefName,headRefOid,mergedAt,closedAt,reviewDecision,statusCheckRollup` e, quando necessário, `gh pr checks <PR>`.
 
-**Só depois** leia `STATE.md`, `ISSUES.md` e `PROJECT_MAP.md`. Se `.pi/flow` estiver ausente, reconstrua-o do remoto; não recrie backlog/issues. Registre o instante real da leitura remota em UTC, não o horário lembrado pelo chat.
+**Só depois** leia `STATE.md`, `INDEX.md`, `PROJECT_MAP.md`, `PLAN.md`, `SCHEDULE.md` e `DAG.json`. Se `.pi/flow` estiver ausente, reconstrua o índice/estado a partir do remoto e proponha reconstruir plano/DAG sem recriar backlog/issues. Registre o instante real da leitura remota em UTC, não o horário lembrado pelo chat.
 
 ### 6.1 Cache canônico de re-entry
 
-`.pi/flow/<repo-slug>/STATE.md`:
+`.pi/flow/<project-slug>/STATE.md`:
 
 ```md
 # Flow State — OWNER/REPO
@@ -690,30 +794,34 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - **Obrigatório:** PR correspondente com `mergedAt != null`; issue fechada isoladamente nunca basta
 - Não deixe issue open com label done, nem PR merged com status in-progress
 
-### 6.5 Como “assistir” o board (triagem contínua)
+### 6.5 Como “assistir” o board e o DAG (triagem contínua)
 
 Em todo “continua / próxima / segue o projeto”:
 
-1. **Ler colunas** (6.0)
-2. **Detectar anomalias** e corrigir ou reportar:
+1. **Ler colunas e evidência remota** (6.0)
+2. **Reconciliar `SCHEDULE.md` + `DAG.json`** com as issues reais; o DAG fornece ordem/dependências, nunca substitui o status remoto
+3. **Detectar anomalias** e corrigir ou reportar:
    - `in progress` sem branch / branch órfã sem issue
    - `in review` sem PR
-   - `ready` com deps abertas
+   - `ready` com deps abertas ou gate upstream ainda não merged na default
+   - nó/issue ausente, dependência circular ou divergência `SCHEDULE.md` ↔ `DAG.json`
    - 2+ `in progress` pro mesmo executor sem OK de paralelo
    - working tree suja em branch errada
    - issue P0 parada enquanto P3 está in progress
-3. **Sugerir a próxima** com raciocínio de engenheiro (não só o menor número)
-4. **Pedir OK** se o user não autorizou o pull nesta mensagem
-5. Só então puxar
+4. **Calcular nós executáveis agora**: status remoto `ready`, dependências satisfeitas e nenhum hazard incompatível com WIP atual
+5. **Sugerir a próxima** com raciocínio de engenheiro e posição no DAG (não só o menor número)
+6. **Pedir OK** se o user não autorizou o pull nesta mensagem
+7. Só então puxar
 
-Ordem de pull default:
+Ordem de pull default (um PI/executor):
 
 1. Destravar `in review` se o user pediu merge/fix de review e isso for o gargalo
 2. Continuar a **mesma** issue se já há `in progress` sua (não abandonar WIP sem motivo)
-3. Senão: `priority:p0` ready e desbloqueada
-4. Senão: `priority:p1` ready, effort menor entre iguais
-5. Senão: demais ready por priority → effort → número
-6. Se **nada** ready: refine backlog (promova o que passar DoR) — **não** code do backlog cru
+3. Senão: escolher entre os nós executáveis da wave topológica mais antiga
+4. Dentro da mesma wave: `priority:p0` → `priority:p1` → demais; entre iguais, effort menor → número
+5. Se **nada** executável: atualizar/refinar o plano ou promover backlog que passe DoR — **não** code do backlog cru
+
+Se houver vários nós no mesmo `parallelGroup`, reporte a oportunidade, mas execute apenas um por vez no modo solo. Paralelismo só entra com autorização e isolamento explícitos; o schedule continua válido sem ele.
 
 ```md
 ## Board read — OWNER/REPO
@@ -782,7 +890,7 @@ gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
   --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_PROGRESS_OPTION_ID"
 ```
 
-Rode `flow_project_items` e confirme o valor do item; nunca presuma sucesso pelo exit code isolado. Depois **releia** issue, Project, branch remota e PRs: a pós-condição é assignee único=`$EXECUTOR`, branch remota única no SHA esperado, nenhum PR/claim conflitante e Status/label `in-progress`. Só então grave `STATE.md` e `ISSUES.md` com `lastVerifiedAt` e comece a editar código.
+Rode `flow_project_items` e confirme o valor do item; nunca presuma sucesso pelo exit code isolado. Depois **releia** issue, Project, branch remota e PRs: a pós-condição é assignee único=`$EXECUTOR`, branch remota única no SHA esperado, nenhum PR/claim conflitante e Status/label `in-progress`. Só então grave `STATE.md` com `lastVerifiedAt`; atualize `INDEX.md` apenas se a identidade/URL da issue ou Project mudou. Depois comece a editar código.
 
 Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a parte ausente quando a propriedade continuar inequívoca. Caso contrário registre/reporte exatamente branch, assignees, status, SHA e erro. Não tente “rollback” apagando branch remota nem sobrescreva trabalho do usuário.
 
@@ -794,7 +902,7 @@ Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a
 - Builders operam por default na branch ativa, **sem isolamento por worktree**.
 - Se isolamento for realmente necessário, declare-o antes: o builder não pode publicar a branch de worktree como branch Flow; transfira commits explicitamente para a branch `flow/#N-*` (por cherry-pick não destrutivo), valide novamente nela e confira o SHA remoto antes do PR.
 - Escopo extra vira nova issue no backlog; não misture concerns.
-- Após push, blocker, handoff ou mudança de SHA/stage, releia a evidência afetada e atualize `STATE.md` + `ISSUES.md`.
+- Após push, blocker, handoff ou mudança de SHA/stage, releia a evidência afetada e atualize `STATE.md`; `INDEX.md` não acompanha transições.
 - Se bloquear, comente e represente o status acordado; nunca suma com o card ou libere claim apenas no cache local.
 
 ### 7.4 PR + in review como transição verificada
@@ -857,7 +965,7 @@ flow_project_items
 # No item `$PROJECT_ITEM_ID`, confirme Status = Done.
 ```
 
-Releia issue/Project/PR e somente então atualize `STATE.md`/`ISSUES.md` para `done`.
+Releia issue/Project/PR e somente então atualize `STATE.md` para `done`; o status permanece exclusivamente no GitHub, não em `INDEX.md`/`DAG.json`.
 
 Por fim, com working tree limpa, volte à default, faça `git pull --ff-only origin "$DEFAULT"` e remova apenas a branch **local** com `git branch -d "$BRANCH"`. Não esconda falha de cleanup, não force delete e não delete branch remota sem autorização/política explícita. Volte à Phase 6 antes de recomendar outra issue.
 
@@ -908,7 +1016,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 2. Permission gate leve (`gh issue list` ok?)
 3. Rodar **re-entry remoto completo** (Phase 6): fetch/prune, Project, issues, PRs all-state, branches remotas, branch/tree local
 4. Classificar/reparar ou reportar anomalias; retomar primeiro o WIP inequívoco do executor
-5. Só agora ler/reconstruir `STATE.md`, `ISSUES.md` e `PROJECT_MAP.md`; cache ausente/stale nunca recria backlog
+5. Só agora ler/reconstruir `STATE.md`, `INDEX.md` e `PROJECT_MAP.md`, e reconciliar `PLAN.md`/`SCHEDULE.md`/`DAG.json`; artefato ausente/stale nunca recria backlog
 6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA e next recommended
 7. Se user já disse “continua / manda / próxima” na mesma frase → isso conta como OK pra **uma** issue recomendada (ainda diga qual e o que fará)
 8. Reconciliar novamente a candidata imediatamente antes do claim; puxar só se assignee/branch/PR permitirem
@@ -927,7 +1035,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 
 ## Phase 10 — Relatórios
 
-Após **cada** transição verificada — issue criada/refinada/ready, claim, push/SHA relevante, blocker/handoff, PR, review status, merge/done e cleanup — atualize `STATE.md` e a linha de `ISSUES.md`. Nunca escreva o estado desejado antes de provar a pós-condição remota.
+Após **cada** transição verificada — issue criada/refinada/ready, claim, push/SHA relevante, blocker/handoff, PR, review status, merge/done e cleanup — atualize `STATE.md`. Atualize `INDEX.md` apenas quando Project/repos/issue IDs ou URLs mudarem. Atualize `PLAN.md`/`SCHEDULE.md`/`DAG.json` apenas quando a estratégia ou o grafo mudar, nunca para espelhar status. Não escreva estado desejado antes de provar a pós-condição remota.
 
 Resume report compacto obrigatório:
 
@@ -936,6 +1044,7 @@ Resume report compacto obrigatório:
 - Remote verified at: 2026-07-09T12:00:00Z
 - Authority read: Project <number|not configured>; issues/PRs; remote branches
 - Board: backlog=… ready=… in-progress=… in-review=… done=…
+- Plan/DAG: revision=…; schedule=consistent|diverged; current wave=…; executable nodes=…
 - Executor / WIP: login — #N | none
 - Claim evidence: assignee=…; branch=flow/#N-…@<sha> | none
 - PR evidence: #P <url> — OPEN|CLOSED|MERGED; head/base=…/…; checks/review=…
@@ -947,11 +1056,14 @@ Resume report compacto obrigatório:
 Artefatos:
 
 ```txt
-.pi/flow/<repo-slug>/
-  STATE.md           # cache canônico de re-entry; GitHub continua autoridade
+.pi/flow/<project-slug>/
+  PLAN.md            # estratégia aprovada e critérios de replanejamento
+  SCHEDULE.md        # DAG humano: waves, ordem, gates, hazards e paralelo opcional
+  DAG.json           # espelho machine-readable mínimo do schedule
+  INDEX.md           # somente Project/repos/issue IDs + URLs estáveis
+  STATE.md           # cache operacional canônico de re-entry; GitHub continua autoridade
   PROJECT_MAP.md
-  BACKLOG.md
-  ISSUES.md          # issue/status/assignee/branch/PR/last verified
+  BACKLOG.md         # draft/proposta de origem; não espelha estado atual das issues
   PERMISSIONS.md     # só se gate falhou
 ```
 
@@ -998,22 +1110,23 @@ Pare / eduque / pergunte quando:
 
 ## Quick start (orquestrador)
 
-### A) Lista nova → issues
+### A) Lista nova → Project + issues + DAG
 1. Educar se incompleto  
 2. Permission gate  
 3. Scouts por módulo → `PROJECT_MAP.md`  
 4. Draft + **REVIEW GATE** → OK  
-5. Labels + create issues  
-6. Perguntar se puxa a primeira  
+5. Project/labels + create issues/cards
+6. Materializar `PLAN.md` + `SCHEDULE.md` + `DAG.json` + `INDEX.md` e verificar consistência
+7. Perguntar se puxa o primeiro nó executável
 
 ### B) Continuar projeto / board
-1. Confirmar repo e executar re-entry remoto completo
-2. Reconciliar Project + issues/PRs + branches remotas + estado local
-3. Retomar WIP próprio ou recomendar 1 issue ready
+1. Confirmar repo/Project e executar re-entry remoto completo
+2. Reconciliar Project + issues/PRs + branches remotas + `PLAN.md`/`SCHEDULE.md`/`DAG.json`
+3. Retomar WIP próprio ou recomendar 1 nó executável da wave topológica mais antiga
 4. OK (explícito ou “continua/próxima”)
 5. Claim verificado: branch remota + assignee + `in progress`
 6. Implement → validar → PR verificado → `in review` → merge verificado → `done`
-7. Atualizar caches e voltar ao board
+7. Atualizar `STATE.md`; replanejar DAG somente se evidência mudou estratégia/dependências; voltar ao board
 
 ### Comando mental
 
@@ -1025,4 +1138,4 @@ User: [lista] — cria issues e vamos uma a uma
 User: segue o projeto X / próxima issue
 ```
 
-Ordem sagrada: **reler GitHub remoto → reconciliar caches → evidência do repo → propor → OK → claim de 1 issue / 1 branch → verificar e registrar cada transição → voltar ao board**.
+Ordem sagrada: **reler GitHub remoto → reconciliar `PLAN/SCHEDULE/DAG` sem duplicar issues → evidência do repo → propor → OK → claim de 1 issue / 1 branch → verificar cada transição → replanejar só com evidência → voltar ao board**.

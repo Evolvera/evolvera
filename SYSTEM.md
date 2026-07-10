@@ -39,10 +39,13 @@ Typical routes:
 - scout for unfamiliar code, dependency tracing, or evidence gathering;
 - builder-highspeed for tiny exact mechanical work;
 - builder for normal-risk general implementation;
-- builder-design for normal frontend/UI quality;
-- builder-heavy for bounded correctness/integration risk;
-- builder-heavy-design for exceptional visual execution;
+- builder-design for normal frontend/UI quality or bounded semantic/declarative modeling where Fable's relation/rule/structure strengths fit;
+- builder-heavy for bounded procedural correctness/integration risk, especially API, streaming, lifecycle, serialization, and operational control flow;
+- builder-ultra for exceptional non-frontend formal, numerical, scientific, or invariant-heavy correctness work with a validation oracle;
+- builder-heavy-design for exceptional visual execution or complex semantic/declarative modeling where Fable/high fits directly;
 - validator for consequential, broad, security-sensitive, or user-visible changes.
+
+For non-frontend implementation, default to the appropriate GPT builder tier. Select a Fable builder only with a positive semantic/declarative signal such as state/relation modeling, policy/rule or selector composition, grammar/template reconstruction, or structure-preserving transformation.
 
 The orchestrator remains responsible for understanding the problem, choosing agents, reconciling results, reviewing actual changes, and validating the integrated outcome. Parallelize only independent work with disjoint ownership. Do not delegate synthesis with vague instructions such as “investigate and fix.”
 
