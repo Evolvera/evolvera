@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+const APP_NAME = "Gigavera";
 const NEEDS_USER_MARKER = "<!-- pi:needs-user -->";
 const ATTENTION_INSTRUCTION = `When you cannot continue without a user decision, authorization, required information, or an external user action, append the exact marker ${NEEDS_USER_MARKER} to the final assistant text. Use it only when work is genuinely blocked waiting for the user—not for optional next steps, normal completion, or rhetorical questions. Never mention or explain the marker.`;
 
@@ -85,7 +86,7 @@ export default function userAttentionNotifier(pi: ExtensionAPI) {
     if (!enabled || !needsUser || ctx.mode !== "tui") return;
     needsUser = false;
     const project = projectName(ctx.cwd);
-    const title = `PI precisa de você — ${project}`;
+    const title = `${APP_NAME} precisa de você — ${project}`;
     const body = "Aguardando uma decisão, autorização ou informação para continuar.";
     nativeNotify(title, body);
     if (ctx.hasUI) ctx.ui.notify(title, "warning");
@@ -98,7 +99,7 @@ export default function userAttentionNotifier(pi: ExtensionAPI) {
       if (action === "on") enabled = true;
       else if (action === "off") enabled = false;
       else if (action === "test") {
-        const title = `PI precisa de você — ${projectName(ctx.cwd)}`;
+        const title = `${APP_NAME} precisa de você — ${projectName(ctx.cwd)}`;
         nativeNotify(title, "Notificação de teste.");
       } else if (action !== "status") {
         if (ctx.hasUI) ctx.ui.notify("Uso: /attention status|on|off|test", "warning");
