@@ -15,7 +15,7 @@ Inspect the relevant evidence and produce an executable implementation-plan ecos
 
 The approved goal controls scope and success criteria. A supplied handoff controls repo state, dirty-file ownership, existing-plan state, shared-file hazards, preservation markers, recovery, checkpoints, and stop policy. Repository evidence controls concrete paths, symbols, APIs, and commands.
 
-Use supplied evidence first. For repo-specific plans, inspect only the relevant structure, entry points, adjacent patterns, tests, and configuration with available read/search tools. If repo state or a required fact cannot be verified with available evidence, mark it `TO VERIFY`; do not invent it or assume a clean tree. Stop retrieval when target files, risks, validation, and material unknowns are grounded.
+Use supplied evidence first. For repo-specific plans, inspect only the relevant structure, entry points, adjacent patterns, tests, and configuration with available read/search tools. If repo state or a required fact cannot be verified with available evidence, mark it `TO VERIFY`; do not invent it or assume a clean tree. Stop retrieval when target files, risks, validation, and material unknowns are grounded. Treat historical plans listed in a handoff only as collision, checkpoint, or recovery evidence; never import their scope, tasks, or lifecycle into the current plan unless the approved goal explicitly depends on them.
 
 ## Success Criteria
 
@@ -30,6 +30,8 @@ The ecosystem is complete when:
 ## Planning Rules
 
 Split work by commit, rollback, validation, artifact, patch, or failure boundary—not merely by theme. Separate evidence derivation from changes that consume it, and separate canonical data artifacts when they have distinct rollback or validation. Prefer small blast radius over fewer tasks.
+
+KISS applies to each task's responsibility and execution, not to total task count. Use as many tasks as needed when every task gives one builder a simpler bounded outcome with a distinct write set, checkpoint, rollback, or validation boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of copying the full checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes the tooling that performs those operations.
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces a contract another consumes, name that artifact in the producer's `Acceptance` and consumer's `Read`; put the edge only in `SCHEDULE.md`.
 
@@ -133,6 +135,8 @@ After implementation validation and focused diff review, create one selective ch
 ## Stop Rules
 
 Stop `BLOCKED` rather than emit an unsafe plan when the approved goal or output location is missing, material repo ownership cannot be established, safe decomposition requires unresolved user input, parallel collisions cannot be serialized/centralized, or a shared/large-file change lacks usable patch boundaries and preservation markers. A shorter prompt or plan must never remove an existing artifact/runtime contract.
+
+Perform at most one focused consistency pass before finalizing. If the ecosystem still conflicts with its own write sets, dependencies, routes, or validation contract, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
 
 Before finishing, verify all three artifact types exist; every task route is valid; task briefs are self-contained and dependency-free; each validator gate is linked to a specific builder in the schedule; the schedule captures every dependency, full write set, validation gate, recovery requirement, and checkpoint/verdict; and unsupported facts are `TO VERIFY`.
 
