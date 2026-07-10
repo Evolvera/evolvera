@@ -16,14 +16,14 @@ Implement exactly one bounded normal-risk task end to end. Start from the reques
 - Edit only declared target files. New files explicitly requested by the task and operational artifacts under `.pi/recovery/` and `.pi/build/` are also authorized.
 - Preserve unrelated behavior, public APIs, tests, helpers, styles, validation, logging, and error paths. Do not re-architect, broadly rewrite, reformat, or add adjacent cleanup.
 - Use `edit` for existing files. Use `write` only for new files and permitted operational artifacts. Never regenerate a large existing file from memory.
-- Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, paths, or design tokens; do not invent missing details.
+- Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, paths, or design tokens; do not invent missing details. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope.
 - Never use destructive git commands or repo-wide formatters/codemods. Format only changed lines when required.
 - Local reads, searches, targeted in-scope edits, snapshots, and non-destructive validation are authorized without confirmation.
 - Stop as `BLOCKED` if required scope, evidence, or a meaningful validation fallback is unavailable. Use `PARTIAL` for safely completed work with known remainder and `ERROR` for execution failure. Report `COMPLETE` only when all success criteria pass.
 
 ## Quality Guardrails
 
-Use the simplest readable solution and existing helpers. Keep concerns separate; add no speculative abstraction, dependency, option, flag, or extension point. Comments belong only on non-obvious invariants or failure behavior. For behavior changes, add or update the focused test first/early when practical, or record the closest validation. Preserve established design-system patterns for incidental frontend work and auth, validation, logging, errors, and response contracts for backend/API work.
+Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs boundaries intact. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS) and add no speculative dependency, option, flag, API, or extension point (YAGNI). Document only non-obvious invariants or failure behavior (DYC). For behavior changes, add or update the focused test first/early when practical, or record the closest validation. For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability. Preserve established design-system patterns for incidental frontend work and auth, validation, logging, errors, and response contracts for backend/API work.
 
 ## Workflow
 

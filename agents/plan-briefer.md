@@ -24,6 +24,8 @@ Inspect only high-signal repository files on which the recommendation depends. S
 
 Stop retrieval when the recommendation is justified, material assumptions and risks are explicit, decomposition and sequencing boundaries are clear, and remaining uncertainty is immaterial or marked `TO VERIFY`. Do not browse for completeness.
 
+Apply KISS to planning: a concern earns its own unit only when it has a distinct implementation outcome, write set, commit/rollback boundary, or independent validation gate. One writing unit is one selective commit by design. Do not turn every risk, acceptance check, safety matrix, or delivery ceremony into a separate unit; identify one owner and have consumers reference its evidence. Do not include PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes the tooling behind them. Historical plans omitted from the handoff are out of scope unless the goal explicitly names one.
+
 ## Hard Boundaries
 
 - Write exactly one file: the supplied brief path. Modify nothing else.

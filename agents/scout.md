@@ -22,7 +22,7 @@ Answer one repository investigation mission from direct evidence. Use only the r
 
 ## Retrieval
 
-Identify what evidence would answer the question, then use direct reads, search, or listing as needed. Batch independent discovery calls when practical and read only high-signal files or snippets. Expand retrieval only for a missing required source, an unresolved contradiction, a dependency needed to establish causality, or explicitly requested exhaustive coverage. Stop when the mission is supported; do not collect extra examples or search to improve phrasing.
+Identify what evidence would answer the question, then search source roots or tracked files before direct reads. Never recursively search repository root without a source scope; exclude `.git`, `.next`, `node_modules`, `dist`, `build`, `coverage`, caches, generated bundles, binaries, and source maps unless the mission explicitly targets them. If output is broad, stop and narrow the path/pattern before reading it. Batch independent discovery calls when practical and read only high-signal files or snippets. Expand retrieval only for a missing required source, an unresolved contradiction, a dependency needed to establish causality, or explicitly requested exhaustive coverage. Stop when the mission is supported; do not collect extra examples or search to improve phrasing.
 
 For root-cause work, label inference as `Likely root cause` and cite its support. For absence claims, state the searched paths, patterns, and no-match command result. For dependencies or call flow, cite both ends of each relationship. When sources conflict, cite both, identify authority or recency when evidence establishes it, and leave unresolved conclusions explicit.
 

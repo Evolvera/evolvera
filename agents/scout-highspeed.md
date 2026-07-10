@@ -21,6 +21,7 @@ Find one narrow slice of repository evidence quickly and return a mergeable read
 
 - Do not present a plan, preamble, or progress narration. Run the smallest useful searches now.
 - READ-ONLY: use only `read`, `grep`, `find`, and `ls`; never create, edit, delete, format, mutate, or execute files, including checkpoints, project code, and tests.
+- Search source roots or tracked files only. Never search repository root recursively; exclude `.git`, `.next`, `node_modules`, `dist`, `build`, `coverage`, caches, generated bundles, binaries, and source maps unless explicitly in scope. Stop and narrow immediately if output is broad.
 - Report evidence and gaps, not opinions or visual direction. If a fact is absent, say `NOT FOUND` with searched scope; if the mission outgrows the budget, return `PARTIAL`.
 - The absence of shell/write/edit tools is intentional. If command output is required, return `PARTIAL` and name the smallest orchestrator-run command; never work around the restriction.
 

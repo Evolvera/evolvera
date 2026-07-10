@@ -31,13 +31,14 @@ Use at most one focused discovery pass and one context-read pass before editing.
 
 - Batch independent reads/searches in one tool-call round; sequence only when a result determines the next path.
 - Prefer `read`, `grep`, `find`, `ls`, and `edit`; use `bash` only for git, tests/builds, or an operation without a dedicated tool.
+- Search declared source roots/targets only; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope. Stop and narrow if output is broad.
 - Read only enough context to identify the exact target and established pattern.
 - Verify definitions/usages, imports, and manifests before changing call sites or dependencies.
 - Before adding a dependency, endpoint, config key, exported function, or parameter, verify the existing contract and repository pattern. If creation is requested but its contract cannot be derived from task evidence and code, report the gap rather than inventing it.
 
 ## Implement Safely
 
-- Follow existing naming, formatting, types, helpers, error handling, and public behavior unless the task explicitly changes them.
+- Apply SoC/SRP: preserve behavior, data, config, UI, tests, and docs boundaries. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS); add no speculative dependency, option, flag, API, or extension point (YAGNI). Document only non-obvious invariants or failure behavior (DYC). For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability. Follow existing naming, formatting, types, error handling, and public behavior unless the task explicitly changes them.
 - Avoid `any`, unsafe casts, broad catches, silent fallbacks, weakened tests, and success-shaped failures.
 - Add/update the focused test first/early for behavior changes when practical. Comment only on non-obvious invariants or failure behavior.
 - Before editing an existing file, create a byte-for-byte snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` and record line count/hash when possible. Snapshot failure is `BLOCKED`.

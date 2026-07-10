@@ -74,14 +74,6 @@ async function detectSharedHazards(cwd: string, dirtyFiles: string[]): Promise<s
     if (reason) hazards.push(`- \`${file}\` — ${reason}; classify preservation markers before builder tasks.`);
   }
 
-  const existingSchedules = await run(
-    cwd,
-    "find .pi/plans -name SCHEDULE.md -type f -maxdepth 4 2>/dev/null | sort | tail -20",
-  );
-  if (existingSchedules.stdout) {
-    hazards.push("- Existing schedules found; inspect prior task/file ownership before planning new work.");
-  }
-
   return hazards.length ? hazards.join("\n") : "- None detected by harness. Planner should still verify target-file hazards from task context.";
 }
 
@@ -99,11 +91,10 @@ async function createHandoff(cwd: string, goal: string) {
   const planDir = join(cwd, ".pi", "plans", slug);
   ensureDir(join(planDir, "TASKS"));
 
-  const [branch, log, status, plans] = await Promise.all([
+  const [branch, log, status] = await Promise.all([
     run(cwd, "git branch --show-current 2>/dev/null || true"),
     run(cwd, "git log --oneline -5 2>/dev/null || true"),
     run(cwd, "git status --short 2>/dev/null || true"),
-    run(cwd, "find .pi/plans -maxdepth 3 -type f 2>/dev/null | sort | tail -200"),
   ]);
 
   const dirtyFiles = parseDirtyFiles(status.stdout);
@@ -138,15 +129,9 @@ ${status.stdout || "CLEAN"}
 ${dirtyFiles.length ? dirtyFiles.map((f) => `  - \`${f}\``).join("\n") : "  - None"}
 </dirty_files>
 
-<active_plan_state>
-Existing plan files found:
-\`\`\`text
-${plans.stdout || "NONE"}
-\`\`\`
-Completed tasks + checkpoint commits: TO VERIFY FROM EXISTING SCHEDULES IF CONTINUING WORK
-Blocked/error tasks: TO VERIFY FROM EXISTING SCHEDULES IF CONTINUING WORK
-Files touched by prior tasks: TO VERIFY FROM EXISTING SCHEDULES IF CONTINUING WORK
-</active_plan_state>
+<prior_plan_context>
+Historical \`.pi/plans/\` files are intentionally omitted to prevent unrelated scope from contaminating this plan. If the approved goal explicitly continues, repairs, or recovers a named prior plan, inspect only that named plan after confirming it is relevant.
+</prior_plan_context>
 
 <shared_file_hazards>
 ${hazards}
@@ -232,7 +217,7 @@ Write the plan ecosystem into \`${relative(cwd, planDir)}\`:
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. Route normal-risk general work to builder, frontend/UI quality to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Use builder-highspeed for tiny explicit mechanical/module-local backend, tooling, test, or algorithm tasks; frontend highspeed work is limited to exact token/class/text swaps. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. KISS means each builder gets a small, clear, independently verifiable outcome; task count is not capped. Every writing task must be intentionally shaped as one selective commit: it owns one implementation outcome, exact write set, validation result, and rollback boundary. Split only at real implementation, write-set, checkpoint, rollback, or validation boundaries. Give every matrix, safety rule, rollback procedure, and evidence package one owner; consumers reference that artifact/verdict instead of repeating it. Do not create builder tasks for PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes that tooling. Route normal-risk general work to builder, frontend/UI quality to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Use builder-highspeed for tiny explicit mechanical/module-local backend, tooling, test, or algorithm tasks; frontend highspeed work is limited to exact token/class/text swaps. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. If \`plan_heavy_validate\` returns BLOCKED, stop and report it; do not resume or reconcile the plan in a loop. After writing files, respond with the plan dir and next command: /plan-heavy validate ${relative(cwd, planDir)}.`;
 
   ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
@@ -757,7 +742,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     name: "plan_heavy_handoff",
     label: "Plan Heavy: Handoff",
     description:
-      "Deterministically collect repo state (branch, recent commits, git status, existing .pi/plans, dirty files, shared-file hazards) and create a planner-heavy handoff for the ensemble flow. " +
+      "Deterministically collect current repo state (branch, recent commits, git status, dirty files, shared-file hazards) and create a planner-heavy handoff for the ensemble flow. Historical plans are omitted unless the approved goal explicitly names one. " +
       "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns explicit instructions to continue by launching plan-briefer and plan-briefer-fable in parallel, then plan-brief-merger, planner-heavy, and plan_heavy_validate. Use before planning high-risk/long-horizon work.",
     promptSnippet: "Use plan_heavy_handoff to start /plan-heavy, then do not stop: launch plan-briefer + plan-briefer-fable in parallel, merge, plan, and validate.",
     parameters: Type.Object({

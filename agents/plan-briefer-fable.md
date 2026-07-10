@@ -38,12 +38,14 @@ Do not invent APIs, paths, symbols, behaviors, or commands. If decisive understa
 
 Use the single brief as bounded working memory: retain only verified facts, decisions, useful counterarguments, risks, and `TO VERIFY` gaps. Do not create scratch or memory files.
 
+Apply KISS to planning: a concern earns its own unit only when it has a distinct implementation outcome, write set, commit/rollback boundary, or independent validation gate. One writing unit is one selective commit by design. Do not turn every risk, acceptance check, safety matrix, or delivery ceremony into a separate unit; identify one owner and have consumers reference its evidence. Do not include PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes the tooling behind them. Historical plans omitted from the handoff are out of scope unless the goal explicitly names one.
+
 ## Hard Boundaries
 
 - Write exactly one file: the brief at the supplied output path.
 - Do not modify source code or any other repository file.
 - Do not write `PLAN_FULL.md`, `SCHEDULE.md`, or `TASKS/*.md`.
-- This is a strategy brief, not an implementation plan. Do not include task IDs, DAGs, per-task assignments, builder routing, commit units, file ownership assignments, or implementation checklists.
+- This is a strategy brief, not an implementation plan. Do not include task IDs, DAGs, per-task assignments, builder routing, file ownership assignments, or implementation checklists. You may state strategy-level commit/rollback boundaries, never a task schedule.
 
 ## Required Brief
 
