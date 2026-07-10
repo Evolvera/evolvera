@@ -785,7 +785,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 
 - PR aberto (não draft, salvo acordo)
 - Validação local/CI rodada ou motivo explícito
-- **Qualquer PR** recebe review independente por `validator`, distinto de quem planejou/implementou, em modo read-only; a profundidade é proporcional ao risco, mas requer evidência sem blockers mesmo para docs/config/infra
+- **Qualquer PR** recebe um review independente, read-only e bounded por `validator` no head SHA final; um `PASS` já registrado para esse SHA conta e não deve ser duplicado
 - Issue aponta pro PR; PR tem `Closes #N` / `Fixes #N` quando for fechar no merge
 - Label `status:in-review` **no mesmo passo** do `gh pr create`
 
@@ -907,7 +907,7 @@ Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a
 
 ### 7.4 PR + in review como transição verificada
 
-Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue. **Para qualquer PR**, rode um review independente pelo agente `validator`: o revisor deve ser distinto de quem planejou/implementou, operar em modo review-only (não editar), examinar o diff e os riscos proporcionais ao tipo de mudança — testes/regressões/segurança/contratos para código; links, precisão, escopo e impacto operacional para docs/config/infra — e registrar resultado/findings no PR. Findings bloqueantes voltam a issue para `in-progress`; corrija, revalide e peça novo review independente. Não abra/mova para `in-review` com blockers pendentes.
+Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue. **Para qualquer PR**, obtenha um único review independente pelo agente `validator`, distinto de planner/builder e estritamente read-only. Passe de uma vez: base/head SHA, diff/files, escopo e matriz aprovados, CI/testes já executados e limitações conhecidas. O review fica limitado a esse material; não autoriza SSH/probes externos, paths inventados, varredura do repo ou repetição cerimonial de suítes. Um `PASS` independente já emitido para o mesmo head SHA satisfaz o gate — não lance outro review final. Novo review só após mudança do head ou correção material de blocker concreto. Não mova para `in-review` com blocker comprovado no escopo.
 
 ```bash
 git push -u origin "$BRANCH"
@@ -988,9 +988,9 @@ Sempre:
 4. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
 5. Planner quando L/complexa
 6. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
-7. Antes de abrir **qualquer PR**, chamar `validator` como revisor independente, com prompt estritamente read-only e escopo do diff/PR; ele não pode ser o builder/planner da issue nem receber a tarefa de “corrigir” findings
-8. Registrar comandos, resultados e parecer do validator no PR; se uma camada não rodar, declarar o motivo, risco e próxima ação
-9. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker do validator ou perda de cobertura material sem decisão explícita
+7. Antes de abrir **qualquer PR**, garantir um único `PASS` independente de `validator` para o head SHA final; reutilizar PASS existente desse SHA e nunca relançar por metadado opcional ou falso positivo fora da matriz
+8. Registrar comandos, resultados e parecer bounded no PR; se uma camada exigida não rodar, declarar motivo, risco e próxima ação
+9. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita
 10. Planos em `.pi/plans/` referenciando `#N`
 
 A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.

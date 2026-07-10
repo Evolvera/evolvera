@@ -94,7 +94,7 @@ Summarize the user's request. Ask clarifying questions. Confirm scope.
 Agent({
   subagent_type: "planner",
   description: "Plan payment integration",
-  prompt: "Create implementation plan for Stripe checkout. User confirmed: single payment, no subscriptions, webhook for confirmation. Read existing code in src/payments/ first."
+  prompt: "PROJECT_ROOT: /absolute/project/root\nPLAN_DIR: /absolute/project/root/.pi/plans/20260710_120000Z_stripe_checkout\nCreate the approved Stripe checkout plan: single payment, no subscriptions, webhook confirmation. Read relevant code under PROJECT_ROOT/src/payments/. Write only inside PLAN_DIR."
 })
 
 # Step 3: Read generated files
@@ -106,7 +106,7 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial
 - Planner is **expensive** — don't run it for trivial tasks
 - Read `SCHEDULE.md` and `TASKS/` before spawning agents
-- For selected high-consequence/high-complexity builder tasks, expect a separate `validator` task linked as the next DAG gate; do not turn validation into a blanket task after every builder
+- Builders own focused validation. Add a separate `validator` task only when one named high-consequence defect could credibly escape builder checks and must gate dependents; do not add it after every builder or duplicate the final PR review
 
 ---
 
@@ -159,15 +159,16 @@ Agent({
 ## Pipeline Order
 
 ```
-scout → planner → builder → validator
+[scout if needed] → [planner if needed] → builder → focused validation
+                                                └→ validator only for a named gate or one final PR review
 ```
 
-1. **scout** first if you don't understand the code
-2. **planner** next if architecture is needed (after your pre-plan + user approval)
-3. **builder-highspeed/builder/builder-design/builder-heavy/builder-ultra/builder-heavy-design** to execute planned tasks according to the planner's `Agent` column
-4. **validator** as a linked successor for selected high-impact, security/data-sensitive, compatibility-critical, or complex regression-prone builder tasks
+1. **scout** only when bounded evidence is missing.
+2. **planner** only when the planner skill selects it; normal planner is the default full-plan route.
+3. **builder tier** executes and validates its bounded task.
+4. **validator** is exceptional during implementation, plus one independent bounded review for a final PR head SHA.
 
-For planner-driven work, the schedule edge is authoritative: `builder checkpoint → validator PASS → dependent tasks`. A validator `BLOCKED` verdict pauses dependents, returns findings for bounded repair, and reruns the same gate. Review-only validator tasks do not need empty commits.
+For a selected planner gate, the schedule edge is authoritative: `builder checkpoint → validator PASS → dependent task`. Do not add a validator merely because a task changed config, touched staging, or is important. A `PASS` covering the complete final PR diff at its exact head SHA satisfies the PR review gate; never launch a duplicate review for that SHA.
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`

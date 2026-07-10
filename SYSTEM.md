@@ -29,7 +29,7 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 
 - **Unknown code, dependency tracing, or >3 file reads:** `agent-guide` → `scout`.
 - **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
-- **Cross-cutting/multi-stage design after scope is clear:** `agent-guide` → `planner`; use `/plan-heavy` only for its high-risk/preservation cases.
+- **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or `/plan-heavy` only when its exceptional admission gate passes.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
 - **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
 - **Production website design/build/modify:** `website-pipeline`; it owns designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`. **Website implementation conventions:** `website-stack` when the website workflow selects it. `project-memory` is automatic project memory, not a delivery workflow.
@@ -60,7 +60,7 @@ Ask before destructive or irreversible actions, deploys, force pushes, repositor
 
 Before finishing, inspect the focused diff and relevant diagnostics; run proportionate targeted tests and type/lint/build checks; verify only intended files changed; and state any validation gap or residual risk.
 
-Any PR requires an independent, read-only review by `validator` (or equivalent) distinct from planner/builder. It covers the focused diff and risk-proportionate regression, security, compatibility, contract, and operational concerns. Blocking findings return work to implementation and require fresh validation and review before `in-review` or `done`.
+Any PR requires one independent, read-only, bounded review by `validator` (or equivalent) distinct from planner/builder. A `PASS` bound to the exact final head SHA satisfies the gate; reuse it instead of launching duplicate reviews. Review only the focused diff, approved acceptance matrix, directly affected contracts, and supplied validation/CI evidence—never invent paths/probes or broaden into a repository/live-environment audit. A new review is required only after the head changes or a concrete blocker is repaired.
 
 ## Output and Stop Rules
 
