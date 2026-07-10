@@ -240,7 +240,7 @@ Generate a complete plan ecosystem in .pi/plans/. Keep PLAN_FULL authoritative, 
 - ✅ Validation commands/checks
 - ✅ Recovery snapshot and checkpoint commit policy
 - ✅ Stop conditions and missing-evidence behavior
-- ✅ Task routing instructions: choose `builder-highspeed`, `builder`, `builder-design`, `builder-heavy`, or `builder-heavy-design` for implementation; add a linked `validator` successor only for selected high-consequence/high-complexity tasks whose defects could escape builder checks.
+- ✅ Task routing instructions: choose `builder-highspeed`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, or `builder-heavy-design` for implementation; add a linked `validator` successor only for selected high-consequence/high-complexity tasks whose defects could escape builder checks.
 
 ### Planner Output
 
@@ -253,21 +253,23 @@ Planner generates:
 └── TASKS/
     ├── task_01_builder-highspeed.md  # highspeed sweet spot task
     ├── task_02_builder.md            # normal-risk general task
-    ├── task_03_builder-design.md     # standard frontend/UI task
+    ├── task_03_builder-design.md     # normal visual or semantic/declarative task
     ├── task_04_builder-heavy.md      # correctness-sensitive task
-    ├── task_05_builder-heavy-design.md # exceptional visual/design task
-    ├── task_06_validator.md          # selective gate for one sensitive builder task
+    ├── task_05_builder-ultra.md      # exceptional invariant/oracle-driven correctness task
+    ├── task_06_builder-heavy-design.md # exceptional visual or complex semantic/declarative task
+    ├── task_07_validator.md          # selective gate for one sensitive builder task
     └── ...
 ```
 
-Planner must use the Builder Skill routing:
+Planner must use the Builder Skill routing. For non-frontend tasks, GPT is the default; Fable requires an explicit positive semantic/declarative signal:
 - `builder-highspeed`: single-file/module-local mechanical edits and explicit backend/tooling/tests/algorithm tasks. Frontend only for tiny exact token/class/text swaps.
 - `builder`: normal-risk general implementation, bounded backend/tooling/tests, structured edits, non-design-led integration, and evidence collection.
-- `builder-design`: default frontend/UI child tier for components, CSS/Tailwind, layout, responsive behavior, accessibility states, design-system application, ordinary motion, and polish-plan execution.
-- `builder-heavy`: complex or higher-risk bounded implementation where risk is correctness/integration: subtle multi-file integration, large/shared files, migrations, math/science/algorithm correctness, recovery, or auth/payment/security-adjacent work.
-- `builder-heavy-design`: parent/ultimate visual tier for premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive sections, distinctive art direction, and rescue after `builder-design`.
+- `builder-design`: normal Fable tier for components/layout/accessibility and bounded state/relation, policy/rule, selector, or reversible structural semantics.
+- `builder-heavy`: complex procedural correctness/integration: API/SDK, streaming, serialization, module/cache/daemon lifecycle, migrations, cross-service behavior, auth/payment, shared files, frontend data flow, or evidence adjudication.
+- `builder-ultra`: bounded non-frontend work only when concrete targets, a stated invariant/acceptance oracle, and exceptional-complexity evidence exist: formal proofs/invariants, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or reproducible heavy failure. Never select it for vague/unknown scope or a generic retry.
+- `builder-heavy-design`: direct Fable/high tier for premium visual craft or complex grammar/template, state/relation, policy/selector, and declarative structure-preservation tasks.
 
-For `builder-highspeed`, keep tasks under ~6 logical steps with explicit verification targets. For `builder-design`, include only grounded design artifacts and observable viewport/a11y checks. For `builder-heavy`, state the correctness/integration consequence in one sentence. For `builder-heavy-design`, state why the task exceeds `builder-design`. Normal frontend routes to `builder-design`; exceptional visual work escalates to `builder-heavy-design`. `SCHEDULE.md` must list the same agent.
+For `builder-highspeed`, keep tasks under ~6 logical steps with explicit verification targets. For `builder-design`, provide grounded visual criteria or a clear normal-complexity semantic/declarative oracle. For `builder-heavy`, state the procedural/operational integration consequence. For `builder-ultra`, state the formal/numerical/scientific invariant/oracle and escalation evidence. For `builder-heavy-design`, provide either exceptional visual criteria or the complex state/relation/rule/grammar/structure semantics that make Fable/high the direct fit. Choose by problem shape, not frontend/backend labels; `SCHEDULE.md` must list the same agent.
 
 ### Selective Validator Tasks
 

@@ -52,12 +52,15 @@ If a validator task is explicitly authorized to add repair tests or write review
 
 ## Task Routing
 
+For non-frontend tasks, default to the appropriate GPT tier. Route directly to Fable only when the task explicitly exhibits state/relation, policy/rule, selector, grammar/template, or structure-preservation semantics.
+
 Every task names exactly one agent; `SCHEDULE.md` is authoritative. Implementation routes are:
 - `builder-highspeed`: tiny, explicit, module-local mechanical work with exact verification; UI only for exact token/class/text swaps.
 - `builder`: normal-risk code, backend, tooling, tests, evidence collection, and integration.
-- `builder-design`: default frontend/UI, responsive behavior, accessibility states, design-system application, and normal visual polish.
-- `builder-heavy`: correctness/integration hazards, shared or large files, preservation-critical work, migrations, algorithms, subtle multi-file changes, security-sensitive work, recovery, or high-consequence evidence adjudication. Collection may use `builder`; verdicts downstream work trusts use heavy.
-- `builder-heavy-design`: exceptional visual craft, advanced motion/2D/3D, immersive art direction, or premium visual rescue.
+- `builder-design`: normal Fable tier for frontend/UI and bounded state/relation, policy/rule, selector, or reversible structural semantics.
+- `builder-heavy`: complex procedural correctness/integration: API/SDK, streaming, serialization, module/cache/daemon lifecycle, migrations, cross-service behavior, auth/payment, shared files, frontend data flow, or evidence adjudication.
+- `builder-ultra`: only bounded non-frontend work with concrete targets, a stated invariant/acceptance oracle, and demonstrated exceptional difficulty: formal proofs/invariants, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or a reproducible heavy failure. Vague/unknown scope routes to scout/planner, never ultra.
+- `builder-heavy-design`: direct Fable/high tier for exceptional visual craft or complex grammar/template, state/relation, policy/selector, and declarative structural semantics. It may be the first implementation when that problem shape fits.
 
 Use the lowest tier that safely owns the consequence; route frontend to heavy only for non-visual correctness/integration risk.
 
