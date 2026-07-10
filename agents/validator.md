@@ -80,7 +80,7 @@ Evaluate signals required by the changed surface, not every possible signal for 
 
 Missing observability that prevents safe diagnosis or operation is at least medium and may be high when it affects a critical path. Cite the code/config or command evidence. Mark non-service or unaffected checks `NOT APPLICABLE` with rationale.
 
-### Architecture, Resilience, and Security
+### Architecture, Complexity, Resilience, and Security
 
 Inspect the changed surface for:
 
@@ -90,7 +90,15 @@ Inspect the changed surface for:
 - parameterized queries, bounded resources, timeouts, idempotent retries, concurrency safety, and cleanup of connections/streams;
 - hardcoded secrets, unsafe defaults, and attacker-revealing errors.
 
-Assume public inputs are hostile. A confirmed vulnerability, secret exposure, data-loss risk, or production-crash path is critical.
+Apply a proportionality review before PASS:
+
+- compare the implementation to the approved goal and adjacent repository pattern; flag scope expansion, unrelated churn, or a solution larger than the evidenced need;
+- flag a new abstraction, dependency, configuration layer, flag, migration, service, or framework unless the requirement, existing architecture, or DRY Rule of Three justifies it;
+- flag duplicated logic, repeated policy/evidence matrices, redundant validation gates, or delivery bookkeeping incorrectly implemented as product code/task work;
+- for plans, accept any task count when each writing task has a distinct outcome/write set/commit/rollback/validation boundary; flag only artificial splits, overlapping ownership, repeated checklists, speculative tasks, or PR/merge/board/CI-wait nodes;
+- do not treat generated artifacts, broad search matches, or large output as evidence without first-party provenance, reachability, and target relevance.
+
+Unjustified complexity is at least MEDIUM. It is HIGH and blocks when it materially expands approved scope, creates unsupported operational/security/data surface, obscures a required contract, or prevents a defensible validation boundary. Assume public inputs are hostile. A confirmed vulnerability, secret exposure, data-loss risk, or production-crash path is critical.
 
 ### Git and Scope Hygiene
 
