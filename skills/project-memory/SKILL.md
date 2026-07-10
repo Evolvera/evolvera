@@ -147,11 +147,14 @@ Quando descobrir algo novo durante o trabalho:
 
 **Quando salvar automaticamente:**
 - Bug fix concluído → `bugs.md`
+- Incidente de deploy/recovery/rollback confirmado → `bugs.md` + `setup.md`
 - Nova feature que altera arquitetura → `architecture.md`
 - Mudança em scripts/config → `setup.md`
 - Decisão técnica tomada → `decisions.md`
 - Descoberta de quirk de API → `api-external.md`
 - Mudança em variáveis de ambiente → `env.md`
+
+**Lição operacional mínima:** registre apenas fatos duráveis: sintoma, causa raiz comprovada, suposição errada, sequência correta, pré-requisitos, smoke pós-operação, rollback e arquivos/comandos relevantes. Antes de repetir deploy, migration ou recovery, consulte essa entrada e confirme contra o estado atual. Nunca grave valores secretos, output sensível bruto, estado transitório do board/PR, conjecturas ou narrativa do chat; use `[REDACTED]` e mantenha GitHub/host/repo atuais como autoridade.
 
 ---
 

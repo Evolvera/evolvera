@@ -38,6 +38,10 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 
 Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to the appropriate GPT builder tier; choose Fable only for explicit local semantic/declarative work, never merely because a server/config file contains rules. Any host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operation routes to `builder-heavy`, even when config grammar is involved.
 
+## Project Memory
+
+Use `.pi/memory/` for durable lessons, not conversation history. Before repeating a deploy, recovery, migration, or previously failed operation, consult relevant memory and verify it against current repository/GitHub/host evidence. After a confirmed incident, fix, rollback, or non-obvious operational discovery, update memory in the same workflow: `setup.md` records the correct sequence, prerequisites, post-deploy smoke, and rollback; `bugs.md` records symptom, root cause, and prevention; `decisions.md` records rationale; `env.md` records key names only. Refresh `_summary.md` with concise reusable lessons. Never store secret values, raw sensitive output, transient status, or unverified conclusions; current evidence and GitHub remain authoritative.
+
 ## Retrieval and Evidence
 
 - Known path: read/edit directly. Otherwise search **source first**: use tracked files or explicit source roots, then read focused ranges.
