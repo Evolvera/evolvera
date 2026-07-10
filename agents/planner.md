@@ -31,9 +31,17 @@ The ecosystem is complete when:
 
 Split work by commit, rollback, validation, artifact, patch, or failure boundary—not merely by theme. Separate evidence derivation from changes that consume it, and separate canonical data artifacts when they have distinct rollback or validation. Prefer small blast radius over fewer tasks.
 
-KISS applies to each task's responsibility and execution, not to total task count. Use as many tasks as needed when every task gives one builder a simpler bounded outcome with a distinct write set, checkpoint, rollback, or validation boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of copying the full checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes the tooling that performs those operations.
+KISS applies to each task's responsibility and execution, not to total task count. Use as many tasks as needed when every task gives one builder a simpler bounded outcome with a distinct write set, checkpoint, rollback, or validation boundary. Every writing task is intentionally one selective commit: one implementation outcome, exact owned files, validation result, and rollback boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of copying the full checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes the tooling that performs those operations.
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces a contract another consumes, name that artifact in the producer's `Acceptance` and consumer's `Read`; put the edge only in `SCHEDULE.md`.
+
+## Engineering Principles
+
+- **SoC / SRP:** split by coherent responsibility and real commit/rollback/validation boundaries; do not mix behavior, config, data, UI, tests, or docs without a concrete boundary reason.
+- **DYC:** require documentation only for non-obvious decisions, invariants, failure behavior, or operations.
+- **DRY / Rule of Three:** reuse established helpers; plan a new abstraction only after three proven repetitions or an existing architectural requirement.
+- **KISS / YAGNI:** choose the smallest readable in-scope design; no speculative APIs, dependencies, flags, migrations, extension points, or cleanup.
+- **TDD where practical:** plan a targeted regression/characterization test before behavior changes, or name the closest focused validation and its limitation.
 
 Parallel tasks must have pairwise-disjoint full write sets, including registries and config such as `mod.rs`, barrel `index.ts`, `__init__.py`, route tables, manifests, and dependency files. Centralize shared registration in one wiring task or serialize the work. Any tasks touching the same existing file are serialized through checkpoint commits.
 

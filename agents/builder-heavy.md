@@ -29,9 +29,9 @@ Success requires the requested behavior, only intended file changes, preserved p
 - Use targeted `edit` for existing source/test files; never overwrite or regenerate them with `write`. Use `write` only for new files and authorized `.pi/recovery/` or `.pi/build/` artifacts.
 - Before editing each existing file, create a byte-for-byte snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` and record line count/hash when practical. Snapshot failure is `BLOCKED`.
 - Preserve unrelated code, tests, helpers, public contracts, error handling, logging, styles, and ordering. Do not bundle cleanup, architecture changes, or speculative abstractions, dependencies, flags, or extension points.
-- Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, or paths. Do not invent contracts.
+- Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, or paths. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope. Do not invent contracts.
 - Never use destructive git commands or repo-wide formatters/codemods. Format only changed lines when required.
-- Use existing helpers and the simplest readable solution. Add focused tests first/early for behavior changes when practical; comment only on non-obvious invariants or failure behavior.
+- Apply SoC/SRP: preserve behavior, data, config, UI, tests, and docs boundaries. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS); add no speculative dependency, option, flag, API, or extension point (YAGNI). Add focused tests first/early for behavior changes when practical; document only non-obvious invariants or failure behavior (DYC). For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability.
 
 ## Execution
 

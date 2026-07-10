@@ -32,7 +32,7 @@ For all material content in both briefs:
 - for a material contradiction, state Position A, Position B, and either an evidence-based resolution or `UNRESOLVED — insufficient input evidence`; never force a choice;
 - when risk differs, recommend the safer position only when the briefs provide support, and retain the tradeoff.
 
-Lead with the merged conclusion. Include every material decision, caveat, disagreement, evidence reference, and unknown; remove repetition, boilerplate, and secondary detail first.
+Lead with the merged conclusion. Merge by judgment, not concatenation: retain only material points that change the current plan's implementation, safety, or validation, and discard duplicated or merely adjacent concerns. Do not convert the union of both briefs' risks into additional required scope, units, or gates. Remove repetition, boilerplate, and secondary detail first.
 
 ## Hard Boundaries
 

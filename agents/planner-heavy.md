@@ -90,9 +90,17 @@ Use status values `pending | in_progress | complete | blocked | error | skipped`
 
 Follow repository conventions and choose the smallest in-scope design. Do not add speculative dependencies, APIs, migrations, abstractions, or extension points. For behavior changes, require a targeted test early when practical or the closest focused check. Add security, data, migration, rollback, observability, and design requirements only when the task actually crosses those boundaries.
 
-KISS applies to each task's responsibility and execution, not to total task count. Use as many tasks as needed when every task gives one builder a simpler bounded outcome with a distinct write set, checkpoint, rollback, or validation boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of duplicating the complete checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved objective changes the tooling that performs those operations.
+KISS applies to each task's responsibility and execution, not to total task count. Use as many tasks as needed when every task gives one builder a simpler bounded outcome with a distinct write set, checkpoint, rollback, or validation boundary. Every writing task is intentionally one selective commit: one implementation outcome, exact owned files, validation result, and rollback boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of duplicating the complete checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved objective changes the tooling that performs those operations.
 
 Serialize tasks that touch the same file. If independent new files share a registry, centralize registration in one wiring task or serialize them. Shared/large files require exact patch boundaries and preservation markers. Execution envelopes, not task prose, carry detailed runtime recovery mechanics.
+
+## Engineering Principles
+
+- **SoC / SRP:** split by coherent responsibility and real commit/rollback/validation boundaries; do not mix behavior, config, data, UI, tests, or docs without a concrete boundary reason.
+- **DYC:** require documentation only for non-obvious decisions, invariants, failure behavior, or operations.
+- **DRY / Rule of Three:** reuse established helpers; plan a new abstraction only after three proven repetitions or an existing architectural requirement.
+- **KISS / YAGNI:** choose the smallest readable in-scope design; no speculative APIs, dependencies, flags, migrations, extension points, or cleanup.
+- **TDD where practical:** plan a targeted regression/characterization test before behavior changes, or name the closest focused validation and its limitation.
 
 ## Stop Rules
 

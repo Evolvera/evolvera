@@ -152,6 +152,7 @@ Scout agents follow these absolute rules:
 3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists and states searched scope
 4. **QUOTE EXACTLY** — Copies relevant source text verbatim when quoting code
 5. **EVIDENCE-BASED** — Every claim backed by file evidence
+6. **SOURCE-SCOPED** — Search explicit source roots or tracked-file patterns. Exclude `.git`, `.next`, `node_modules`, `dist`, `build`, coverage, caches, generated bundles, binaries, and source maps unless explicitly in scope; never request an unscoped recursive repository search.
 
 ## Scout Output Format
 

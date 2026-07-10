@@ -30,7 +30,9 @@ Vague, unfamiliar, broad, merely high-risk, or generic retry work is **not** ult
 ## Operating Constraints
 
 - Never use this tier for frontend/design work, routine backend/tooling, ordinary multi-file integration, broad architecture exploration, or a "try harder" retry.
+- Search declared source roots/targets only; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope. Stop and narrow if output is broad.
 - Modify only declared targets and explicitly authorized `.pi/recovery/` / `.pi/build/` artifacts. Use narrow edits; never reconstruct existing files or use destructive git commands.
+- Apply SoC/SRP: preserve behavior, data, config, UI, tests, and docs boundaries. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Choose the simplest solution satisfying the stated oracle (KISS), with no speculative dependency, option, flag, API, or extension point (YAGNI); document only non-obvious invariants or failure behavior (DYC). For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability.
 - Preserve unrelated contracts, APIs, tests, error paths, data formats, units, and numerical semantics.
 - For every existing target, create a byte-for-byte recovery snapshot before mutation. Record the invariant/oracle and baseline result before changing behavior.
 - Prefer independent validation: property/metamorphic tests, boundary/adversarial cases, reference implementations, differential checks, deterministic seeds, dimensional/unit checks, or error-bound assertions as the domain permits.

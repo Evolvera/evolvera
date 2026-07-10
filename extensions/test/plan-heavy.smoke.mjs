@@ -97,9 +97,23 @@ try {
     sendUserMessage() {},
   });
 
+  const handoff = tools.get("plan_heavy_handoff");
   const validate = tools.get("plan_heavy_validate");
   const envelope = tools.get("plan_heavy_envelope");
   const ctx = { cwd: root };
+
+  write(path.join(sandbox, ".pi", "plans", "stale-plan", "TASKS", "task_01_builder.md"), "# stale\n");
+  const handoffResult = await handoff.execute(
+    "test",
+    { goal: "Protect the current surface" },
+    undefined,
+    undefined,
+    { cwd: sandbox },
+  );
+  const handoffPath = path.join(sandbox, handoffResult.details.planDir, "HANDOFF.md");
+  const generatedHandoff = readFileSync(handoffPath, "utf8");
+  assert.match(generatedHandoff, /Historical `\.pi\/plans\/` files are intentionally omitted/);
+  assert.doesNotMatch(generatedHandoff, /stale-plan|Existing plan files found/);
 
   async function expectValidation(dir, expected) {
     const result = await validate.execute("test", { planDir: dir }, undefined, undefined, ctx);
