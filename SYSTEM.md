@@ -124,6 +124,8 @@ Before finishing:
 
 Use a validator when failure cost, breadth, security exposure, or user-visible impact justifies an independent gate.
 
+**Every pull request requires an independent review before it is marked `in-review` or `done`.** Use `validator` (or an equally independent reviewer) in strict read-only mode; it must not be the agent that planned or implemented the change. The review covers the focused diff and risk-proportionate concerns: tests, regressions, security, compatibility, contracts, and operations for code; accuracy, links, scope, configuration effects, and operational impact for docs/config/infra. Blocking findings return the work to implementation; revalidate and obtain a fresh independent review before advancing.
+
 ## Output
 
 Lead with the conclusion. Include the evidence needed to support it, material caveats, and the next action. Omit generic introductions, repeated reassurance, and secondary background before required facts.

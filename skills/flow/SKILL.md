@@ -16,8 +16,9 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
   → Ler o kanban atual (issues + labels + PRs)  
   → Scout do projeto por módulos (evidence-first)
   → Draft de backlog + sugestões + dúvidas abertas
-  → REVIEW GATE: usuário aprova (OK)
-  → Criar/atualizar issues (priority + effort + status)
+  → REVIEW GATE: usuário aprova (OK para Project + issues)
+  → Reusar Project existente ou criar Project, linkar repo(s), configurar Kanban
+  → Criar/atualizar issues como cards organizados no Project (priority + effort + status)
   → Loop engenheiro:
        ler board → puxar 1 issue ready
        → branch NOVA off default (1 issue = 1 branch)
@@ -55,6 +56,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 10. **GitHub é autoridade, local é cache** — precedência: **GitHub Project Status (quando configurado) → estado das issues/PRs + branches remotas atuais → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura remota nova sempre substitui estado local antigo; nunca trate cache local como claim ou lock.
 11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
 12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na default branch. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
+13. **Project/Kanban é obrigatório para delivery Flow** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. Depois, adicionar cada issue como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo se o usuário pedir explicitamente esse modo excepcional. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
 
 ---
 
@@ -140,7 +142,7 @@ gh label list --limit 50
 | Criar issues | write no repo |
 | Criar labels | write no repo (admin/maintain ideal) |
 | Abrir PR | write + push de branch |
-| Mover project status | acesso ao Project (se usado) |
+| Criar, linkar e configurar Project; mover cards | escopo `project` + write no owner do Project (**obrigatório** para criar issues via Flow) |
 
 ### Se faltar permissão
 
@@ -204,7 +206,7 @@ Carregue `agent-guide` + `scout`. Prefira **vários scouts paralelos e estreitos
 | tests/ci | como validar, pipelines, quality gates |
 | existing issues | issues/PRs abertos que se sobrepõem ao backlog |
 
-Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI também deve inventariar a cobertura realmente executável por jornada (unit, integração, contrato, E2E/smoke e manual), apontar features funcionais sem proteção e recomendar a baseline mínima antes de mudanças naquela superfície.
+Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI também deve inventariar a cobertura realmente executável por jornada (unit, integração, contrato, E2E/smoke, browser/app e manual), apontar features funcionais sem proteção e recomendar a baseline mínima antes de mudanças naquela superfície. Quando houver frontend, o inventário inclui build/typecheck/lint, smoke das rotas afetadas, falhas de rede e erros `console.error`/exceções não esperadas durante as jornadas críticas.
 
 ### 1.3 Síntese local
 
@@ -265,7 +267,7 @@ Para toda issue de código, os acceptance criteria devem incluir, quando aplicá
 - suíte padrão do repositório (ou uma justificativa explícita e aprovada para a parte que não puder rodar);
 - regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência.
 
-Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o backlog deve conter uma issue de **baseline de caracterização** antes das mudanças que possam afetá-la. Essa issue deve: catalogar comportamento válido versus bugs/vulnerabilidades conhecidos; automatizar primeiro as jornadas Tier 0 (auth, dinheiro, dados críticos) e depois as jornadas core; usar banco/fixtures e providers fake; e provar que a baseline passa na branch default. As issues posteriores devem depender dela.
+Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o backlog deve conter uma issue de **baseline de caracterização** antes das mudanças que possam afetá-la. Essa issue deve: catalogar comportamento válido versus bugs/vulnerabilidades conhecidos; automatizar primeiro as jornadas Tier 0 (auth, dinheiro, dados críticos) e depois as jornadas core; usar banco/fixtures e providers fake; e provar que a baseline passa na branch default. Quando a superfície incluir frontend, a baseline também cobre build/typecheck/lint, navegação e interação das jornadas afetadas, contratos de rede e ausência de `console.error`/exceções inesperadas; avisos conhecidos só podem ser tolerados se forem documentados e tiverem issue de acompanhamento. As issues posteriores devem depender dela.
 
 ### Dedup e corte
 
@@ -346,7 +348,8 @@ Mostre um pacote único e legível. **Espere OK.**
 - Quebrar X em A/B porque ...
 - Reusar issue #K em vez de duplicar ...
 - Ordem recomendada de pull: #… → #…
-- Labels: criar padrão Flow **ou** reusar as do repo (`…`)
+- Project/Kanban: reusar `Project <url>` **ou** criar `<nome>` sob `<owner>`, linkar `<repo(s)>`, configurar colunas Backlog → Ready → In progress → In review → Done e exibir Priority/Effort
+- Labels: criar padrão Flow **como espelho do Project** ou reusar as do repo (`…`)
 
 ### Fora de escopo / later
 - ...
@@ -359,7 +362,8 @@ Mostre um pacote único e legível. **Espere OK.**
 - ...
 
 ### Próximo passo se aprovar
-- Criar labels (se necessário) + issues com `status:backlog`
+- Reusar/criar o Project indicado, linkar todos os repositórios do escopo e verificar o board com colunas `Backlog → Ready → In progress → In review → Done`
+- Criar labels (se necessário), issues e cards correspondentes no Project, todos em `Backlog`
 - **Não** puxar implementação até um segundo OK
 
 Responde com **OK** (e ajustes se quiser), ou corrige a lista.
@@ -367,16 +371,40 @@ Responde com **OK** (e ajustes se quiser), ou corrige a lista.
 
 ### Regras do gate
 
-- Sem OK → **zero** `gh issue create`
+- Sem OK → **zero** `gh project create`, `gh project link` ou `gh issue create`
+- O OK só cobre Project/Kanban, links de repo e issues/cards quando nome, owner, repos, colunas e escopo estiverem explicitamente mostrados no proposal; se qualquer um desses pontos estiver ausente ou mudar materialmente, pare e peça nova confirmação
+- Se faltar escopo `project`, owner ou acesso para configurar o board, bloqueie a criação das issues e entregue o checklist de permissão; não espalhe issues apenas com labels sem o opt-out explícito do usuário
 - Se o user ajustar 2 itens → atualize draft e **reconfirme** se a mudança for material
 - Se disser “OK cria e já puxa a primeira” → isso cobre create + start da #1; ainda confirme acceptance da #1 se estiver vaga
 - Eduque se o user pedir “só cria tudo agora” com lista ambígua: mostre o risco e peça o mínimo de clareza nos itens P0/P1
 
 ---
 
-## Phase 5 — Labels + criar issues (só pós-OK)
+## Phase 5 — Project/Kanban + labels + criar issues (só pós-OK)
 
-### Labels (idempotente; reutilize convenção do repo se já existir)
+### Project e Kanban (obrigatório)
+
+1. Descubra Projects abertos vinculados a **todos** os repositórios do escopo. Se houver um único board que governa a entrega, reutilize-o; se houver vários candidatos, pare e peça a escolha.
+2. Se não houver board, crie um GitHub Project no owner apropriado (organização do repo por default; usuário apenas para repo pessoal), com o nome e escopo aprovados no proposal:
+
+```bash
+PROJECT_NUMBER=$(gh project create --owner "$PROJECT_OWNER" --title "$PROJECT_TITLE" --format json --jq '.number')
+gh project link "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --repo "$REPO_NWO"
+# Repita `gh project link` para cada repo cross-repo aprovado.
+```
+
+3. Configure e **verifique** uma visualização Board agrupada por `Status`, com as colunas exatas `Backlog`, `Ready`, `In progress`, `In review`, `Done`; crie/exiba os campos `Priority` e `Effort`. Use a UI/API do GitHub quando o CLI não conseguir editar as opções do campo e releia fields/items depois — não presuma a configuração pelo exit code.
+4. Depois da criação de cada issue, adicione sua URL como item do Project, defina `Status=Backlog`, `Priority` e `Effort`, e releia o card para provar que aparece no board:
+
+```bash
+gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$ISSUE_URL"
+# Resolva IDs de item/campo/opção com `gh project item-list` e `gh project field-list`;
+# então use `gh project item-edit` e releia o card para confirmar os valores.
+```
+
+5. Antes de reportar conclusão, reconcilie contagens: toda issue criada/reutilizada no escopo aparece uma única vez no Project, todos os repos foram linkados e nenhum card novo ficou sem Status. Registre URL, owner, número e field IDs em `STATE.md`/`ISSUES.md`.
+
+### Labels (idempotente; espelho/fallback técnico; reutilize convenção do repo se já existir)
 
 ```bash
 gh label create "priority:p0" --color "B60205" --description "Critical / blocker" 2>/dev/null || true
@@ -441,7 +469,7 @@ EOF
 
 ### Regras
 
-- Reportar cada URL/número
+- Reportar URL/número do Project e de cada issue/card
 - Não recriar se já existir equivalente — linkar
 - `effort:xl` → split antes de `ready`
 - Mapa local:
@@ -470,7 +498,7 @@ Espere OK de novo se for implementar.
 
 Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser **"segue"**, **"continua"**, **"próxima"** — reconstrua a entrega pelo GitHub. A ordem de autoridade é:
 
-1. **GitHub Project Status**, quando um Project estiver configurado para o repo;
+1. **GitHub Project Status** — obrigatório para delivery criado pelo Flow; labels só são fallback temporário para histórico/migração aprovada;
 2. **issue/PR no GitHub + branches no remote atual**;
 3. cache local `.pi/flow/<repo-slug>/`;
 4. `.pi/memory/` e contexto do chat.
@@ -522,7 +550,7 @@ Project discovery:
 1. Ignore Projects `closed=true` unless the user explicitly says they remain authoritative.
 2. If exactly one open Project is linked, use its returned `owner.login` and `number`.
 3. If multiple open Projects are linked, compare their title/URL and documented repo convention; if authority is still ambiguous, stop and ask which Project owns delivery status.
-4. If none is linked, use labels `status:*`. If a linked Project exists but permission prevents reading it, report the permission blocker rather than silently falling back to labels.
+4. If none is linked, treat this as a Project-adoption gap: para uma entrega Flow nova, pare antes de criar/puxar issues e proponha/crie o Project conforme Phase 5; para issues históricas, labels `status:*` são fallback temporário de leitura enquanto o usuário aprova a migração para um Project. If a linked Project exists but permission prevents reading it, report the permission blocker rather than silently falling back to labels.
 5. For the selected Project, resolve all items and the `Status` field before classifying the board:
 
 ```bash
@@ -653,6 +681,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 
 - PR aberto (não draft, salvo acordo)
 - Validação local/CI rodada ou motivo explícito
+- **Qualquer PR** recebe review independente por `validator`, distinto de quem planejou/implementou, em modo read-only; a profundidade é proporcional ao risco, mas requer evidência sem blockers mesmo para docs/config/infra
 - Issue aponta pro PR; PR tem `Closes #N` / `Fixes #N` quando for fechar no merge
 - Label `status:in-review` **no mesmo passo** do `gh pr create`
 
@@ -770,7 +799,7 @@ Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a
 
 ### 7.4 PR + in review como transição verificada
 
-Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue.
+Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue. **Para qualquer PR**, rode um review independente pelo agente `validator`: o revisor deve ser distinto de quem planejou/implementou, operar em modo review-only (não editar), examinar o diff e os riscos proporcionais ao tipo de mudança — testes/regressões/segurança/contratos para código; links, precisão, escopo e impacto operacional para docs/config/infra — e registrar resultado/findings no PR. Findings bloqueantes voltam a issue para `in-progress`; corrija, revalide e peça novo review independente. Não abra/mova para `in-review` com blockers pendentes.
 
 ```bash
 git push -u origin "$BRANCH"
@@ -786,6 +815,7 @@ Closes #<N>
 - [ ] regressão direcionada para jornadas, contratos e issues anteriores afetadas
 - [ ] suíte padrão relevante do repositório
 - [ ] diagnostics clean (relevant)
+- [ ] review independente por `validator` (sem editar), sem blockers pendentes
 - [ ] limitações de ambiente/validação, se houver, documentadas (não marcar done sem decisão explícita)
 
 ## Notes
@@ -850,9 +880,10 @@ Sempre:
 4. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
 5. Planner quando L/complexa
 6. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
-7. Registrar os comandos e resultados no PR; se uma camada não rodar, declarar o motivo, risco e próxima ação
-8. Não avançar para `done` se houver falha, teste obrigatório não executado, ou perda de cobertura material sem decisão explícita
-9. Planos em `.pi/plans/` referenciando `#N`
+7. Antes de abrir **qualquer PR**, chamar `validator` como revisor independente, com prompt estritamente read-only e escopo do diff/PR; ele não pode ser o builder/planner da issue nem receber a tarefa de “corrigir” findings
+8. Registrar comandos, resultados e parecer do validator no PR; se uma camada não rodar, declarar o motivo, risco e próxima ação
+9. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker do validator ou perda de cobertura material sem decisão explícita
+10. Planos em `.pi/plans/` referenciando `#N`
 
 A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.
 
