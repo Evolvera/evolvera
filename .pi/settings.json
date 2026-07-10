@@ -1,0 +1,5 @@
+{
+  "packages": [
+    "npm:@juicesharp/rpiv-voice@1.20.0"
+  ]
+}
