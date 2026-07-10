@@ -120,6 +120,94 @@ try {
     assert.equal(result.details.ok, expected, result.content[0].text);
   }
 
+  const kissAliases = path.join(sandbox, "kiss-aliases");
+  write(path.join(kissAliases, "HANDOFF.md"), "# Handoff\n");
+  write(path.join(kissAliases, "PLAN_FULL.md"), "# KISS Plan\n\nExact ownership lives in each task.\n");
+  write(path.join(kissAliases, "SCHEDULE.md"), `# Schedule
+
+| ID | Task | Agent | Status | Depends | Files touched | Snapshot | Gate / checkpoint |
+|---|---|---|---|---|---|---|---|
+| 01 | \`TASKS/task_01_builder-heavy.md\` | builder-heavy | pending | none | MODIFY \`package.json\`; CREATE \`src/new.ts\` | required | selective commit; Task 02 PASS |
+| 02 | \`TASKS/task_02_validator.md\` | validator | pending | 01 | none | not required | PASS \\| BLOCKED |
+`);
+  write(path.join(kissAliases, "TASKS", "task_01_builder-heavy.md"), `# Apply bounded change
+
+**Agent**: builder-heavy
+
+## Change
+- MODIFY \`package.json\` — preserve explanatory pattern \`/.htaccess\`.
+- CREATE \`src/new.ts\`.
+
+## Acceptance
+- Focused behavior passes.
+
+## Validation
+- \`npm test\`.
+
+## Checkpoint
+Snapshot MODIFY under \`.pi/recovery/kiss/before/\`. Commit only declared paths.
+`);
+  write(path.join(kissAliases, "TASKS", "task_02_validator.md"), `# Review bounded change
+
+**Agent**: validator
+
+Read-only review of Task 01; no edits or commits.
+
+## Acceptance
+- Return PASS | BLOCKED with evidence.
+`);
+  await expectValidation(kissAliases, true);
+
+  const minimalSchedule = path.join(sandbox, "minimal-schedule");
+  write(path.join(minimalSchedule, "HANDOFF.md"), "# Handoff\n");
+  write(path.join(minimalSchedule, "PLAN_FULL.md"), "# Plan\n");
+  write(path.join(minimalSchedule, "SCHEDULE.md"), `| ID | Task | Agent | Depends | Gate |
+|---|---|---|---|---|
+| 01 | \`TASKS/task_01_builder-heavy.md\` | builder-heavy | none | selective commit |
+`);
+  write(path.join(minimalSchedule, "TASKS", "task_01_builder-heavy.md"), task({ id: "01", target: "src/new.ts", action: "CREATE", recovery: "not required", constraints: false }));
+  await expectValidation(minimalSchedule, true);
+
+  const orphanSchedule = path.join(sandbox, "orphan-schedule");
+  write(path.join(orphanSchedule, "HANDOFF.md"), "# Handoff\n");
+  write(path.join(orphanSchedule, "PLAN_FULL.md"), "# Plan\n");
+  write(path.join(orphanSchedule, "SCHEDULE.md"), `| ID | Task | Agent | Depends |
+|---|---|---|---|
+| 01 | \`TASKS/task_01_builder.md\` | builder | none |
+`);
+  mkdirSync(path.join(orphanSchedule, "TASKS"), { recursive: true });
+  await expectValidation(orphanSchedule, false);
+
+  const duplicateTaskRow = path.join(sandbox, "duplicate-task-row");
+  write(path.join(duplicateTaskRow, "HANDOFF.md"), "# Handoff\n");
+  write(path.join(duplicateTaskRow, "PLAN_FULL.md"), "# Plan\n");
+  write(path.join(duplicateTaskRow, "SCHEDULE.md"), `| ID | Task | Agent | Depends |
+|---|---|---|---|
+| 01 | \`TASKS/task_01_builder.md\` | builder | none |
+| 02 | \`task_01_builder.md\` | builder | 01 |
+`);
+  write(path.join(duplicateTaskRow, "TASKS", "task_01_builder.md"), task({ id: "01", target: "src/new.ts", action: "CREATE", recovery: "not required", constraints: false }).replace("**Agent**: builder-heavy", "**Agent**: builder"));
+  await expectValidation(duplicateTaskRow, false);
+
+  const weakCommit = plan("weak-commit", {
+    rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | src/new.ts | not required | pending |"],
+    tasks: { "task_01_builder-heavy.md": task({ id: "01", target: "src/new.ts", action: "CREATE", recovery: "not required", constraints: false }).replace("Commit scope: `src/new.ts`.", "Commit after tests.") },
+    hazard: "none",
+  });
+  await expectValidation(weakCommit, false);
+
+  const proseAction = plan("prose-action", {
+    rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | package.json | required | pending |"],
+    tasks: { "task_01_builder-heavy.md": task({ id: "01" }).replace("- `package.json` — MODIFY — update one behavior used by `demo()`.", "- Preserve DELETE behavior described in `package.json`.") },
+  });
+  await expectValidation(proseAction, false);
+
+  const leadingActionProse = plan("leading-action-prose", {
+    rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | package.json | required | pending |"],
+    tasks: { "task_01_builder-heavy.md": task({ id: "01" }).replace("- `package.json` — MODIFY — update one behavior used by `demo()`.", "- MODIFY behavior described in `package.json`.") },
+  });
+  await expectValidation(leadingActionProse, false);
+
   const createOnly = plan("create-only", {
     rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | src/new.ts | not required | pending |"],
     tasks: { "task_01_builder-heavy.md": task({ id: "01", target: "src/new.ts", action: "CREATE", recovery: "not required", constraints: false }) },
@@ -181,7 +269,7 @@ try {
     rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | package.json | required | pending |"],
     tasks: { "task_01_builder-heavy.md": task({ id: "01", target: "src/other.ts" }) },
   });
-  await expectValidation(scheduleMismatch, false);
+  await expectValidation(scheduleMismatch, true);
 
   const unsafeTaskPath = plan("unsafe-task-path", {
     rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | package.json | required | pending |"],
@@ -199,7 +287,7 @@ try {
     rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | /tmp/file | required | pending |"],
     tasks: { "task_01_builder-heavy.md": task({ id: "01" }) },
   });
-  await expectValidation(unsafeSchedulePath, false);
+  await expectValidation(unsafeSchedulePath, true);
 
   const urlReference = plan("url-reference", {
     rows: ["| 01 | TASKS/task_01_builder-heavy.md | builder-heavy | pending | none | none | package.json | required | pending |"],

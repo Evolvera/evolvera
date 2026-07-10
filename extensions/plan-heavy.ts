@@ -277,7 +277,7 @@ function normalizeTargetPath(value: string): string | null {
 
 function isPlausibleTargetPath(value: string): boolean {
   const candidate = value.trim();
-  if (!candidate || /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) || /[(){}]/.test(candidate)) return false;
+  if (!candidate || /\s/.test(candidate) || /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) || /[(){}]/.test(candidate)) return false;
   const rootFile = /^(?:\.[A-Za-z0-9_-]+|[^/]+\.[A-Za-z0-9][A-Za-z0-9._-]*|Makefile|Dockerfile|LICENSE|README)$/i.test(candidate);
   return candidate.includes("/") || rootFile;
 }
@@ -306,15 +306,35 @@ function parseDeclaredTargets(values: string[]): TargetParseResult {
   return { files: [...files], invalid: [...invalid] };
 }
 
+function declaredCodeTargets(line: string, requireAction: boolean): string[] {
+  const statement = line.trim().replace(/^[-*]\s+/, "");
+  const actionFirst = statement.match(/^(CREATE|MODIFY|DELETE|REMOVE|RENAME|MOVE)\b/i);
+  if (actionFirst) {
+    let declaration = statement.slice(actionFirst[0].length);
+    if (!/^\s*`/.test(declaration)) return [];
+    const proseBoundary = declaration.search(/\s(?:—|–)\s|:\s/);
+    if (proseBoundary >= 0) declaration = declaration.slice(0, proseBoundary);
+    return [...declaration.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  }
+
+  const pathFirst = statement.match(/^((?:`[^`]+`\s*(?:,\s*)?)+)\s*(?:—|–|-)\s*(?:CREATE|MODIFY|DELETE|REMOVE|RENAME|MOVE)\b/i);
+  if (pathFirst) return [...pathFirst[1].matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  if (requireAction) return [];
+  return [...statement.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+}
+
+function parseTaskChangeTargets(taskContent: string): TargetParseResult {
+  const section = extractSection(taskContent, "Change");
+  if (!section) return { files: [], invalid: [] };
+  return parseDeclaredTargets(section.split("\n").flatMap((line) => declaredCodeTargets(line, true)));
+}
+
 function parseTaskTargets(taskContent: string): TargetParseResult {
   for (const label of ["Change", "Files Touched", "Files to Create / Modify", "Target Files", "Files to Modify"]) {
     const section = extractSection(taskContent, label);
     if (!section) continue;
-    const parsed = parseDeclaredTargets(
-      section
-        .split("\n")
-        .flatMap((line) => [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1])),
-    );
+    const requireAction = label === "Change";
+    const parsed = parseDeclaredTargets(section.split("\n").flatMap((line) => declaredCodeTargets(line, requireAction)));
     if (parsed.files.length || parsed.invalid.length) return parsed;
   }
   return { files: [], invalid: [] };
@@ -428,6 +448,10 @@ function hasLabel(content: string, label: string): boolean {
   return re.test(content);
 }
 
+function hasAnyLabel(content: string, labels: string[]): boolean {
+  return labels.some((label) => hasLabel(content, label));
+}
+
 interface ScheduleTaskRow {
   id: string;
   taskFile: string;
@@ -435,16 +459,19 @@ interface ScheduleTaskRow {
   dependencies: string;
   parallelGroup: string;
   checkpointCommit: string;
+  recoverySnapshot: string;
   filesTouched: string[];
   invalidTargets: string[];
 }
 
 function parseScheduleTargets(value: string): TargetParseResult {
-  return parseDeclaredTargets(
-    value
-      .replace(/`/g, "")
-      .split(/\s*(?:,|;|<br\s*\/?>)\s*/i),
-  );
+  const codeTargets = [...value.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+  if (codeTargets.length) return parseDeclaredTargets(codeTargets);
+  const bareTargets = value
+    .split(/\s*(?:,|;|<br\s*\/?>)\s*/i)
+    .map((candidate) => candidate.replace(/^(?:CREATE|MODIFY|DELETE|REMOVE|RENAME|MOVE)\s+/i, "").trim())
+    .filter((candidate) => !/^(?:none|n\/a|na|—|-)$/i.test(candidate));
+  return parseDeclaredTargets(bareTargets);
 }
 
 function parseScheduleTaskRows(schedule: string): ScheduleTaskRow[] {
@@ -453,26 +480,28 @@ function parseScheduleTaskRows(schedule: string): ScheduleTaskRow[] {
     if (!/^\s*\|/.test(lines[i])) continue;
     const headers = lines[i].split("|").slice(1, -1).map((cell) => cell.trim().toLowerCase());
     const idIndex = headers.indexOf("id");
-    const taskIndex = headers.findIndex((header) => header.includes("task file"));
+    const taskIndex = headers.findIndex((header) => header === "task" || header.includes("task file"));
     const agentIndex = headers.indexOf("agent");
     const depsIndex = headers.findIndex((header) => header.includes("depend"));
     const groupIndex = headers.findIndex((header) => header.includes("parallel group"));
     const filesIndex = headers.findIndex((header) => header.includes("files touched"));
-    const checkpointIndex = headers.findIndex((header) => header.includes("checkpoint commit"));
-    if (idIndex < 0 || taskIndex < 0 || agentIndex < 0 || depsIndex < 0 || groupIndex < 0 || filesIndex < 0 || checkpointIndex < 0) continue;
+    const checkpointIndex = headers.findIndex((header) => header.includes("checkpoint") || header === "gate");
+    const snapshotIndex = headers.findIndex((header) => header.includes("recovery snapshot") || header === "snapshot");
+    if (idIndex < 0 || taskIndex < 0 || agentIndex < 0 || depsIndex < 0) continue;
 
     const rows: ScheduleTaskRow[] = [];
     for (let j = i + 2; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
       const cells = lines[j].split("|").slice(1, -1).map((cell) => cell.trim().replace(/`/g, ""));
       if (!cells[idIndex] || /^[-:]+$/.test(cells[idIndex])) continue;
-      const targets = parseScheduleTargets(cells[filesIndex] ?? "");
+      const targets = filesIndex >= 0 ? parseScheduleTargets(cells[filesIndex] ?? "") : { files: [], invalid: [] };
       rows.push({
         id: cells[idIndex],
         taskFile: cells[taskIndex] ?? "",
         agent: cells[agentIndex] ?? "",
         dependencies: cells[depsIndex] ?? "",
-        parallelGroup: cells[groupIndex] ?? "",
-        checkpointCommit: cells[checkpointIndex] ?? "",
+        parallelGroup: groupIndex >= 0 ? cells[groupIndex] ?? "" : "",
+        checkpointCommit: checkpointIndex >= 0 ? cells[checkpointIndex] ?? "" : "",
+        recoverySnapshot: snapshotIndex >= 0 ? cells[snapshotIndex] ?? "" : "",
         filesTouched: targets.files,
         invalidTargets: targets.invalid,
       });
@@ -490,9 +519,27 @@ function declaredAgent(taskContent: string): string {
   return taskContent.match(/\*\*Agent\*\*\s*:\s*([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? "";
 }
 
+function hasPassBlockedContract(value: string): boolean {
+  const normalized = value.replace(/[`*_]/g, "");
+  return /PASS\s*(?:\\?\||or)\s*BLOCKED/i.test(normalized);
+}
+
 function dependencyIds(value: string): string[] {
   if (!value || /^(?:none|n\/a|na|—|-)$/i.test(value.trim())) return [];
   return [...value.matchAll(/\b0*(\d+)\b/g)].map((match) => match[1]);
+}
+
+function scheduleDependsOn(sourceId: string, targetId: string, rows: ScheduleTaskRow[], seen = new Set<string>()): boolean {
+  const source = String(Number(sourceId));
+  const target = String(Number(targetId));
+  if (source === target || seen.has(source)) return source === target;
+  seen.add(source);
+  const row = rows.find((candidate) => String(Number(candidate.id)) === source);
+  if (!row) return false;
+  return dependencyIds(row.dependencies).some((dependency) => {
+    const normalized = String(Number(dependency));
+    return normalized === target || scheduleDependsOn(normalized, target, rows, seen);
+  });
 }
 
 function validatePlan(planDir: string): { ok: boolean; report: string } {
@@ -507,18 +554,12 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
 
   for (const file of missing) findings.push(`BLOCKER: missing ${file}`);
   if (!existsSync(join(planDir, "TASKS"))) findings.push("BLOCKER: missing TASKS/ directory");
-  if (!/Checkpoint Commit/i.test(schedule)) findings.push("BLOCKER: SCHEDULE.md missing Checkpoint Commit column/policy");
-  if (!/Recovery Snapshot/i.test(schedule)) findings.push("BLOCKER: SCHEDULE.md missing Recovery Snapshot column/policy");
-  if (!/builder-heavy/i.test(schedule + tasks.map(readMaybe).join("\n"))) {
-    findings.push("WARN: no builder-heavy task found; acceptable only if plan has no high-risk bounded work");
-  }
-  if (!hasLabel(plan, "Shared File Hazards")) findings.push("BLOCKER: PLAN_FULL.md missing Shared File Hazards section");
+  if (schedule && scheduleRows.length === 0) findings.push("BLOCKER: SCHEDULE.md has no parseable task table");
+  if (!hasLabel(plan, "Shared File Hazards")) findings.push("WARN: PLAN_FULL.md has no Shared File Hazards section; acceptable when target ownership and serialization are explicit elsewhere");
   if (!/dirty/i.test(plan + schedule)) findings.push("WARN: dirty-file handling not mentioned in plan/schedule");
 
-  const compactLabels = ["Agent", "Why", "Goal", "Change", "Acceptance", "Validation", "Checkpoint"];
-  const legacyLabels = ["Agent", "Why This Agent", "Preservation Contract", "Recovery Requirement", "Patch Boundaries", "Preservation Markers", "TILL-DO", "Success Criteria"];
   const sharedHazardText = `${extractSection(plan, "Shared File Hazards")}\n${extractSection(handoff, "Shared File Hazards")}`.toLowerCase();
-  const validAgents = new Set(["builder-highspeed", "builder", "builder-design", "builder-heavy", "builder-heavy-design", "validator"]);
+  const validAgents = new Set(["builder-highspeed", "builder", "builder-design", "builder-heavy", "builder-ultra", "builder-heavy-design", "validator"]);
   const taskRecords: Array<{
     name: string;
     content: string;
@@ -533,29 +574,49 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
     const content = readMaybe(task);
     const name = relative(planDir, task);
     const agent = declaredAgent(content);
-    const compact = hasLabel(content, "Goal") && hasLabel(content, "Change") && hasLabel(content, "Acceptance");
-    const requiredLabels = compact ? compactLabels : legacyLabels;
-    const parsedTaskTargets = parseTaskTargets(content);
+    const isValidator = agent === "validator";
+    const compact = hasLabel(content, "Change");
+    const parsedTaskTargets = parseTaskChangeTargets(content);
     const taskTargets = parsedTaskTargets.files;
     const change = extractSection(content, "Change");
-    const modifies = compact
-      ? change.split("\n").some((line) => /`[^`]+`/.test(line) && /\bMODIFY\b/i.test(line))
-      : /\bMODIFY\b/i.test(extractSection(content, "Files to Create / Modify"));
+    const modifies = change.split("\n").some((line) => /`[^`]+`/.test(line) && /\b(?:MODIFY|DELETE|REMOVE|RENAME|MOVE)\b/i.test(line));
     const taskBase = name.split("/").pop() ?? name;
     const scheduleRow = scheduleRows.find((row) => row.taskFile.endsWith(taskBase));
     const scheduleTargets = scheduleRow?.filesTouched ?? [];
-    const targets = [...new Set([...taskTargets, ...scheduleTargets])];
+    const targets = taskTargets.length ? taskTargets : scheduleTargets;
 
-    for (const label of requiredLabels) {
-      if (!hasLabel(content, label)) findings.push(`BLOCKER: ${name} missing "${label}" field/section`);
+    if (!validAgents.has(agent)) findings.push(`BLOCKER: ${name} declares unsupported Agent ${agent || "<missing>"}`);
+    if (isValidator) {
+      if (!hasAnyLabel(content, ["Acceptance", "Success Criteria"])) findings.push(`BLOCKER: ${name} validator task missing Acceptance/Success Criteria`);
+      if (!hasPassBlockedContract(content)) findings.push(`BLOCKER: ${name} validator task must define PASS | BLOCKED`);
+    } else {
+      const requiredGroups: Array<[string, string[]]> = [
+        ["Change", ["Change"]],
+        ["Acceptance", ["Acceptance", "Success Criteria"]],
+        ["Validation", ["Validation", "Verification", "Mandatory order"]],
+        ["Checkpoint", ["Checkpoint"]],
+      ];
+      for (const [display, aliases] of requiredGroups) {
+        if (!hasAnyLabel(content, aliases)) findings.push(`BLOCKER: ${name} missing ${display}`);
+      }
+      if (!taskTargets.length) findings.push(`BLOCKER: ${name} writing task declares no exact target path in its change section`);
+      const checkpoint = extractSection(content, "Checkpoint");
+      const selectiveCommit = /(?:\b(?:one|single|selective)\b[^\n]*\bcommit\b|\bcommit\b[^\n]*\b(?:only|exact|declared|scope)\b)/i.test(checkpoint);
+      if (checkpoint && !selectiveCommit) findings.push(`BLOCKER: ${name} Checkpoint must define one selective commit boundary`);
+      if (modifies) {
+        const taskRejectsRecovery = /(?:recovery snapshot|snapshot|recovery)\s*:\s*(?:not required|none|no|n\/a)/i.test(checkpoint);
+        const recoveryEvidence = `${checkpoint}\n${scheduleRow?.recoverySnapshot ?? ""}`;
+        const hasRecovery = /(?:snapshot|\.pi\/recovery\/|\brecovery\b)/i.test(recoveryEvidence);
+        if (taskRejectsRecovery || !hasRecovery) findings.push(`BLOCKER: ${name} MODIFY/DELETE task must define recovery or snapshot evidence`);
+      }
     }
+
     for (const target of parsedTaskTargets.invalid) {
       findings.push(`BLOCKER: ${name} declares unsafe target path ${target}`);
     }
-    for (const target of scheduleRow?.invalidTargets ?? []) {
-      findings.push(`BLOCKER: SCHEDULE row ${scheduleRow?.id} declares unsafe target path ${target}`);
+    if (scheduleRow?.invalidTargets.length) {
+      findings.push(`WARN: SCHEDULE row ${scheduleRow.id} contains a non-canonical or unsafe target summary; task Change remains write-set authority`);
     }
-    if (!validAgents.has(agent)) findings.push(`BLOCKER: ${name} declares unsupported Agent ${agent || "<missing>"}`);
     const expectedSuffix = agent ? `_${agent}.md` : "";
     if (expectedSuffix && !name.endsWith(expectedSuffix)) findings.push(`BLOCKER: ${name} filename does not match Agent ${agent}`);
     if (!scheduleRow) {
@@ -564,23 +625,11 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
       if (scheduleRow.agent.toLowerCase() !== agent) {
         findings.push(`BLOCKER: ${name} Agent ${agent || "<missing>"} does not match SCHEDULE Agent ${scheduleRow.agent || "<missing>"}`);
       }
-      if (compact) {
-        for (const target of scheduleTargets.filter((file) => !taskTargets.includes(file))) {
-          findings.push(`BLOCKER: ${name} Change omits scheduled target ${target}`);
-        }
-        for (const target of taskTargets.filter((file) => !scheduleTargets.includes(file))) {
-          findings.push(`BLOCKER: SCHEDULE Files Touched omits ${target} from ${name}`);
-        }
+      const scheduleOnly = scheduleTargets.filter((file) => !taskTargets.includes(file));
+      const taskOnly = taskTargets.filter((file) => !scheduleTargets.includes(file));
+      if (taskTargets.length && scheduleTargets.length && (scheduleOnly.length || taskOnly.length)) {
+        findings.push(`WARN: ${name} exact task targets differ from the SCHEDULE summary; task Change remains write-set authority`);
       }
-    }
-    if (!compact && /builder-heavy/i.test(content) && !hasLabel(content, "Heavy Fit")) {
-      findings.push(`BLOCKER: ${name} legacy builder-heavy task missing Heavy Fit`);
-    }
-    if (compact && modifies) {
-      const checkpoint = extractSection(content, "Checkpoint");
-      const recoveryLine = checkpoint.split("\n").find((line) => /recovery snapshot/i.test(line)) ?? "";
-      const requiresRecovery = /\b(?:required|yes)\b/i.test(recoveryLine) && !/\b(?:not required|no)\b/i.test(recoveryLine);
-      if (!requiresRecovery) findings.push(`BLOCKER: ${name} MODIFY task must require a recovery snapshot in Checkpoint`);
     }
 
     const declaredHazard = targets.some((file) => {
@@ -588,17 +637,28 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
       const base = normalized.split("/").pop() ?? normalized;
       return sharedHazardText.includes(normalized) || (base.length > 3 && sharedHazardText.includes(base));
     });
-    if (compact && modifies && declaredHazard && !hasLabel(content, "Constraints") && !hasLabel(content, "Patch Anchors")) {
+    if (!isValidator && modifies && declaredHazard && !hasLabel(content, "Constraints") && !hasLabel(content, "Patch Anchors")) {
       findings.push(`BLOCKER: ${name} modifies a declared shared-file hazard but has no Constraints or Patch Anchors`);
     }
 
     const lines = content.split("\n").length;
-    if (compact && lines > 160 && !hasLabel(content, "Detail Exception")) {
-      findings.push(`BLOCKER: ${name} has ${lines} lines; compact task exceeds 160 lines without a Detail Exception`);
-    } else if (compact && lines > 140) {
-      findings.push(`WARN: ${name} has ${lines} lines; verify every extra detail changes execution`);
-    }
+    if (lines > 180) findings.push(`WARN: ${name} has ${lines} lines; verify every extra detail changes execution`);
     taskRecords.push({ name, content, agent, compact, targets, modifies, schedule: scheduleRow });
+  }
+
+  const seenScheduleIds = new Set<string>();
+  const seenScheduleTasks = new Set<string>();
+  for (const row of scheduleRows) {
+    const normalizedId = String(Number(row.id));
+    if (seenScheduleIds.has(normalizedId)) findings.push(`BLOCKER: SCHEDULE has duplicate task ID ${row.id}`);
+    seenScheduleIds.add(normalizedId);
+    const normalizedTaskRef = row.taskFile.replace(/^\.\//, "");
+    const taskBase = normalizedTaskRef.split("/").pop() ?? normalizedTaskRef;
+    const matchedTask = tasks.find((task) => task.endsWith(taskBase));
+    const canonicalTaskRef = matchedTask ? relative(planDir, matchedTask) : normalizedTaskRef;
+    if (seenScheduleTasks.has(canonicalTaskRef)) findings.push(`BLOCKER: SCHEDULE references task file ${row.taskFile} more than once`);
+    seenScheduleTasks.add(canonicalTaskRef);
+    if (!matchedTask) findings.push(`BLOCKER: SCHEDULE row ${row.id} references missing task file ${row.taskFile || "<missing>"}`);
   }
 
   for (const record of taskRecords.filter((task) => task.agent === "validator")) {
@@ -614,11 +674,10 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
     }
     if (!record.targets.length) {
       const checkpoint = extractSection(record.content, "Checkpoint");
-      if (!/checkpoint commit\s*:\s*not required/i.test(checkpoint)) {
-        findings.push(`BLOCKER: ${record.name} review-only validator task must state Checkpoint Commit: not required`);
-      }
-      if (!/not required/i.test(record.schedule.checkpointCommit)) {
-        findings.push(`BLOCKER: ${record.name} review-only validator SCHEDULE row must not require a checkpoint commit`);
+      const noCommitEvidence = /(?:read-only|review-only|no edits|no commits|checkpoint commit\s*:\s*not required)/i.test(`${record.content}\n${checkpoint}`);
+      const scheduleVerdict = /not required/i.test(record.schedule.checkpointCommit) || hasPassBlockedContract(record.schedule.checkpointCommit);
+      if (!noCommitEvidence && !scheduleVerdict) {
+        findings.push(`BLOCKER: ${record.name} review-only validator must state no commit or use a PASS | BLOCKED schedule gate`);
       }
     }
   }
@@ -645,8 +704,8 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
         if (sameParallelGroup) {
           findings.push(`BLOCKER: overlapping target ${target} is assigned to parallel group ${a.schedule.parallelGroup} in ${a.name} and ${b.name}`);
         }
-        const aDependsOnB = new RegExp(`(^|[^0-9])0*${b.schedule.id}([^0-9]|$)`).test(a.schedule.dependencies);
-        const bDependsOnA = new RegExp(`(^|[^0-9])0*${a.schedule.id}([^0-9]|$)`).test(b.schedule.dependencies);
+        const aDependsOnB = scheduleDependsOn(a.schedule.id, b.schedule.id, scheduleRows);
+        const bDependsOnA = scheduleDependsOn(b.schedule.id, a.schedule.id, scheduleRows);
         if (!aDependsOnB && !bDependsOnA) {
           findings.push(`BLOCKER: overlapping target ${target} is not serialized by an explicit dependency between ${a.name} and ${b.name}`);
         }
