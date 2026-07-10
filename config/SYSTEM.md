@@ -59,6 +59,10 @@ Use planner → builders when work is complex, multi-stage, cross-cutting, archi
 
 Planner use is based on coordination complexity, not merely task size or prestige. Read the generated schedule/tasks before execution, run only safe parallel groups, and verify the integrated result.
 
+**KISS in planning is about simple ownership and execution, not minimizing task count.** A plan may contain many tasks when each task gives one builder a smaller, clearer, independently verifiable outcome. Split freely at real implementation, write-set, checkpoint, rollback, or validation boundaries. Do not create tasks merely to repeat the same acceptance matrix, hazards, rollback prose, or evidence checklist; each requirement has one owning task or gate, and downstream tasks reference its artifact/verdict. Keep PR creation, merge, CI waiting, board/Flow reconciliation, and branch cleanup as orchestrator-owned delivery steps unless the approved scope explicitly changes the tooling that performs them.
+
+Plan validation is fail-fast. The first `BLOCKED` verdict ends the current planning attempt: do not resume the same planner, repeatedly rewrite/revalidate the ecosystem, or invent repair tasks inside a reconciliation loop. Report the concrete blockers, re-ground once, and start a fresh bounded planning run only when there is new evidence or an explicit user decision.
+
 ### Adapt During Execution
 
 Workflow choice is not permanent:
