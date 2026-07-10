@@ -139,7 +139,7 @@ Agent({
 
 **Rules:**
 - Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than the standard tier. Fast hallucinations can look correct.
-- For non-frontend work, GPT is the default: use `builder` for normal complexity and `builder-heavy` for complex procedural/integration risk. Select a Fable tier only when a positive semantic/declarative signal is explicit—not merely because the task is unusual.
+- For non-frontend work, GPT is the default: use `builder` for normal complexity and `builder-heavy` for complex procedural/integration risk. Select a Fable tier only for a local semantic/declarative model with a clear oracle—not merely because the task is unusual or configuration contains rules. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations always use `builder-heavy`.
 - Use `builder` for normal-risk procedural implementation: bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, deterministic control flow, and structured integration. Its relative weakness is relation/rule/declarative semantic modeling; route that shape to Fable tiers only when that shape is actually present.
 - Use `builder-design` for normal frontend/UI coding quality and also as a direct first choice for bounded normal-complexity state/relation behavior, policy/rule composition, selector semantics, or reversible structural conversion with a clear oracle.
 - Use `builder-highspeed` for single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors. For frontend, use it only for tiny exact token/class/text swaps.
