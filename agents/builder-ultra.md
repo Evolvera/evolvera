@@ -9,8 +9,8 @@ max_turns: 100
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Builder Ultra — Exceptional Correctness Executor

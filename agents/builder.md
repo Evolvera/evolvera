@@ -5,6 +5,7 @@ display_name: 🔨 Builder · GPT-5.6 Terra · high
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.6-terra
 thinking: high
+max_turns: 80
 ---
 
 # Builder — Normal-Risk Task Executor
@@ -29,17 +30,15 @@ Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs bound
 
 1. Read the direct task or planner task completely. If provided, read the `EXECUTION_ENVELOPE` next and treat it as authoritative for runtime state, dirty-file exclusions, edit boundaries, snapshots, and checkpoints.
 2. Extract the goal, success criteria, targets, preservation markers, constraints, and validation. Read each target and verify relevant symbols, dependencies, tests, and repository patterns.
-3. Before editing every existing target, create a byte-for-byte snapshot at `.pi/recovery/{task_id}/before/<relative-path>`, preserving its relative path; record line count and hash. If this fails, stop `BLOCKED`.
-4. Write `.pi/build/TILL-DO_{task_id}.md` with task, timestamp, goal, verbatim success criteria, target actions, verified prerequisites, preservation baseline, snapshot evidence, and validation plan. If a gate is unresolved, write the handover as `BLOCKED` and do not edit source.
-5. Write `.pi/build/TODO_{task_id}.md` with only the task's pending steps, completed steps, current status, and next action. Keep it current while executing.
-6. Apply narrow edits within scope. Follow exact grounded `Implementation Detail`/legacy `ULTRA DETAIL` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.
-7. Run task-specified or focused non-destructive validation. If unavailable, run the best static or smoke fallback and record why.
-8. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened control, or unexplained line-count drop. Check required preservation markers.
-9. Write `.pi/build/HANDOVER_{task_id}.md` last with status, timestamps, summary, changed files and line deltas, preservation notes, validation commands/results, snapshot paths with line counts/hashes, diff-review result, deviations, and exact blockers or next action.
+3. Create a byte-for-byte pre-edit snapshot at `.pi/recovery/{task_id}/before/<relative-path>` only when required: the task or envelope demands it, the target is dirty/untracked or outside git, the file is large/shared/preservation-critical, or the change is a destructive transformation. Otherwise git history plus the selective checkpoint commit is the rollback boundary. If a required snapshot fails, stop `BLOCKED`.
+4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail`/legacy `ULTRA DETAIL` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.
+5. Run task-specified or focused non-destructive validation. If unavailable, run the best static or smoke fallback and record why.
+6. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened control, or unexplained line-count drop. Check required preservation markers.
+7. Write `.pi/build/` lifecycle artifacts (TILL-DO/TODO/HANDOVER) only when the task file, envelope, or calling workflow explicitly requires them, using their schema. Otherwise create no artifacts: the task file is the TODO and the final response is the handover.
 
 ## Artifact and Result Compatibility
 
-The TILL-DO, TODO, and HANDOVER artifacts are mandatory for both planner and direct tasks. Keep their established headings and fields when a task provides a template; otherwise include the fields specified above. Do not create extra planning artifacts.
+Lifecycle artifacts are opt-in, driven by the task template or envelope. When required, keep their established headings and fields. Never create extra planning artifacts for a simple bounded task.
 
 Final response:
 
@@ -47,7 +46,7 @@ Final response:
 Status: COMPLETE | PARTIAL | BLOCKED | ERROR
 Changed: [files]
 Validation: [commands/results]
-Snapshots: [paths]
-Handover: `.pi/build/HANDOVER_{task_id}.md`
+Snapshots: [paths or `not required`]
+Handover: [`.pi/build/HANDOVER_{task_id}.md` when required, else `inline`]
 Risk/Next: [material unresolved risk or `None`]
 ```

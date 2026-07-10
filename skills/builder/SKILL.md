@@ -93,9 +93,9 @@ Use when `.pi/plans/` exists.
 
 1. Read `.pi/plans/SCHEDULE.md` and use its `Agent` and dependency columns as the execution authority.
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
-3. For a builder task, require pre-edit recovery snapshots for every MODIFY file.
+3. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
 4. For `/plan-heavy` builder tasks, generate an execution envelope first: `/plan-heavy envelope <plan-dir> <task-id>`. Pass both the task file and envelope path/content to the builder; the envelope is authoritative for runtime repo state, dirty-file exclusions, patch boundaries, snapshot directory, and checkpoint policy.
-5. Run tasks in the same parallel group concurrently only if files do not overlap and selective checkpoint commits remain safe.
+5. Run tasks in the same parallel group concurrently only when full write sets, recovery/build artifacts, validation resources, and external effects are disjoint. Prefer small groups (2–4); parallelism is an optimization, never a requirement.
 6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
 7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
 8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
@@ -166,17 +166,21 @@ STOP RULES
 
 ## Parallelization
 
-Run builders in parallel when:
-- files are disjoint;
-- tasks have no dependency relationship;
-- each task has clear target files and validation.
+For focused delegation, default to one builder. Parallelize independent implementation slices by SoC—component/module, API endpoint, test suite, configuration surface—only when it genuinely reduces scope per builder and write sets are provably disjoint. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
+
+Run builders in parallel only when:
+- full write sets are disjoint, including registries, manifests, lockfiles, generated/recovery/build artifacts, and shared configuration;
+- tasks have no dependency or shared API/schema/contract transition;
+- validation commands, ports, databases, fixtures, caches, and external targets cannot interfere;
+- each task has exact targets, independent recovery/commit scope, and validation.
 
 Run serially when:
-- tasks touch the same file;
-- task B depends on task A;
-- a shared type/API contract may change;
-- a validator gate follows a sensitive builder task;
+- any source, registry, config, lockfile, migration, shared type/API contract, validation resource, or external environment overlaps;
+- task B depends on task A or its validator `PASS`;
+- deployment, provider, network, staging/production, reload, rollback, or another external side effect is involved;
 - validation from one task determines the next.
+
+Do not parallelize merely to fill slots. Prefer a smaller number of coherent, independently verifiable builders over overlapping work; use isolated worktrees when parallel branches require them.
 
 ## Prompt Quality Checklist
 
@@ -189,7 +193,7 @@ Before spawning builder, verify:
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Preservation constraints are explicit: what must not be removed/rewritten.
 - [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
-- [ ] Pre-edit recovery snapshots are required for every MODIFY file.
+- [ ] Pre-edit recovery snapshots are required where the task marks them (shared/large/preservation-critical, dirty overlap, destructive transforms).
 - [ ] Validation command/check is included.
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
@@ -207,7 +211,7 @@ If more than two boxes are missing, do more prep or implement directly.
 After builder finishes:
 - inspect actual diff, not just its summary;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
-- verify `.pi/recovery/{task_id}/before/...` snapshots exist for modified existing files;
+- verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
 - run or review validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;

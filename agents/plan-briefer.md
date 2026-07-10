@@ -5,11 +5,12 @@ display_name: 🧩 Plan Briefer · GPT-5.6 Sol · high
 model: openai-codex/gpt-5.6-sol
 thinking: high
 tools: read, grep, find, ls, write
+max_turns: 40
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Plan Briefer — Single-File Strategy Brief

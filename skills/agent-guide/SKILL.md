@@ -33,7 +33,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 
 **Long-horizon rule of thumb:** When you see complex work ahead — many files, many tasks, architecture decisions, unclear sequencing, or a backlog that can be split — Planner → Builders is usually the way to go. Planner spends the expensive reasoning once, writes `SCHEDULE.md` and atomic task files, and you run smaller/faster/cheaper builders in parallel. You should orchestrate, verify, and synthesize instead of doing every implementation step yourself.
 
-**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 3–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
+**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 2–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -47,7 +47,7 @@ Read-only exploration. It reads files, greps, finds patterns, maps dependencies,
 - You need root cause analysis
 - You need to trace data flow, function calls, or module relationships
 - The user mentions errors, logs, or symptoms without clear source
-- You're about to read more than 2 files manually — delegate to scout
+- Manual exploration keeps expanding without answering the question — delegate to scout (known targets stay direct)
 
 **How to use:**
 ```
@@ -60,7 +60,7 @@ Agent({
 
 **Rules:**
 - Use `scout-highspeed` for micro-scouts: narrow file discovery, symbol grep, test/config inventory, one local dependency slice, algorithms/backend/infra/math-heavy code understanding with tight scope.
-- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split those into 3–8 parallel micro-scouts first.
+- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split those into 2–8 parallel micro-scouts first, or use normal `scout`.
 - Use `scout` when lower hallucination risk, exhaustive coverage, large-context coherence, or existing scout checkpoint artifacts matter more than speed.
 - Use mixed mode when useful: highspeed scouts for evidence shards, normal scout for synthesis/contradiction resolution.
 - Do not use highspeed scouts for frontend design critique or visual polish; use website/design agents instead.
@@ -79,7 +79,7 @@ Agent({
 Creates detailed implementation plans. It analyzes requirements, designs architecture, splits work into atomic tasks, and generates `PLAN_FULL.md` + `SCHEDULE.md` + `TASKS/`.
 
 **When to use:**
-- Task touches >3 files or spans multiple concerns
+- Real coordination complexity: multiple dependent concerns, unclear sequencing, or shared ownership — not mere file count
 - You need architecture decisions or new patterns
 - Scope is unclear — you don't know all files involved
 - User asks for a new feature without implementation details
@@ -173,7 +173,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
 - Small focused change → `builder-highspeed` when mechanical; `builder` for normal procedural code; `builder-design` for normal visual or semantic/declarative work; `builder-heavy` for complex operational integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; `builder-ultra` only with an explicit oracle and exceptional non-frontend formal/numerical/scientific risk
-- Critical (auth, payment) → builder + validator
+- Critical (auth, payment) → appropriate builder tier with focused tests; add a validator gate only for a named escape risk that must block dependents — the single final PR review covers the rest
 - Low-risk/mechanical/docs-only task → no separate validator task unless evidence shows a specific escape risk
 
 ---
@@ -189,7 +189,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Letting `builder-highspeed` infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use `builder` |
 | Using `builder-highspeed` for long checklists | Context drift after several steps | Split tasks or route to `builder` |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
-| Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 3–8 parallel micro-scouts or use normal `scout` |
+| Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 2–8 parallel micro-scouts or use normal `scout` |
 | Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
 | Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
 
@@ -200,7 +200,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 - [ ] Did I load this skill? (`/skill:agent-guide`)
 - [ ] Is the task well-scoped? If not → scout or pre-plan
 - [ ] Do I know which files are involved? If not → scout
-- [ ] Is this >3 files or architectural? If yes → planner (after pre-plan)
-- [ ] Is this 1-2 files, well-defined? If yes → builder
+- [ ] Real coordination complexity (dependencies, architecture, sequencing)? If yes → planner skill
+- [ ] Bounded and well-defined? If yes → direct tools or one builder
 - [ ] Did I choose default vs highspeed based on task fit?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?

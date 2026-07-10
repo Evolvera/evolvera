@@ -5,11 +5,12 @@ display_name: 🧩 Plan Briefer (Fable) · Claude Fable 5 · high
 model: anthropic/claude-fable-5
 thinking: high
 tools: read, grep, find, ls, write
+max_turns: 40
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: true
-skills: true
+extensions: false
+skills: false
 ---
 
 # Plan Briefer (Fable Primary) — Independent Strategy Brief

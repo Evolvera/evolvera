@@ -10,7 +10,7 @@ lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
 extensions: false
-skills: true
+skills: false
 ---
 
 # Planner Heavy — Harness-Grounded Plan Generator

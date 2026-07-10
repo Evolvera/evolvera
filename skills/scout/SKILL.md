@@ -29,6 +29,10 @@ Invoke `Agent(subagent_type="scout-highspeed")` or `Agent(subagent_type="scout")
 
 Default to `scout-highspeed` only after decomposing into micro-missions. Use many highspeed scouts in parallel for independent angles. Switch to `scout` when one report must hold broad state across many areas.
 
+### Parallelism and Separation of Concerns
+
+Direct `grep`/`read` comes first; delegate only what direct tools cannot answer cheaply. Default to **one bounded scout**. Use 2–8 parallel scouts only when the mission has genuinely independent questions with disjoint search surfaces—routes vs data/model vs tests vs configuration. Launch an additional scout only when a result exposes a required missing dependency, not to "cover more ground". Never split to fill concurrency slots, when one result determines the next search, when evidence must be reconciled as one model, or when splitting duplicates retrieval. Launch a parallel group in one message with `run_in_background: true`, then synthesize its evidence once.
+
 ## Routing: Highspeed vs Normal vs Mixed
 
 Choose based on whether decomposition preserves quality.
@@ -95,13 +99,13 @@ Agent({ subagent_type: "scout", description: "Synthesize coverage gaps", prompt:
 - **DO NOT** ask scout to run tests, project code, git commands, generators, formatters, or shell commands. Both scout variants intentionally exclude `bash`, `write`, and `edit`; the orchestrator must run any required command.
 - **DO NOT** use scout for writing plans (use planner)
 - **DO NOT** use scout for trivial single-file lookups (use `read`/`grep` directly)
-- **DO NOT** run scout sequentially if missions are independent — **ALWAYS parallelize**
+- **DO NOT** split one coherent question across several scouts — parallelize only genuinely independent missions
 
 ## How to Invoke
 
 ### Default: Parallel Micro-Scouts (Recommended)
 
-> **RULE**: If the mission has 2+ independent angles, launch **3-8 scouts in parallel**. `scout-highspeed` is a micro-scout; it should not receive corpus/coverage/exhaustive prompts. Parallelizing saves time and prevents context drift per scout.
+> **RULE**: One scout by default. If the mission has 2+ genuinely independent angles, launch them together (2–8, one per angle). `scout-highspeed` is a micro-scout; it should not receive corpus/coverage/exhaustive prompts. Do not launch more scouts to restate or polish evidence you already have.
 
 ```
 // Launch ALL in parallel — no waiting between them

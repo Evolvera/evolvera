@@ -489,7 +489,7 @@ Use um `project-slug` estável para o Project; em projeto de um único repo ele 
 ```
 
 - `PLAN.md`: objetivo aprovado, escopo/repos, estratégia de waves, invariantes de segurança/regressão, critérios de replanejamento e decisões materiais já aprovadas.
-- `SCHEDULE.md`: visão humana do DAG — ordem topológica, waves, dependências, gates, hazards compartilhados, caminho sugerido (`direct`, `planner`, `plan-heavy`) e oportunidades opcionais de paralelo.
+- `SCHEDULE.md`: visão humana do DAG — ordem topológica, waves, dependências, gates, hazards compartilhados, caminho sugerido (`direct` ou `planner`; `plan-heavy` só quando o gate excepcional da skill planner passar) e oportunidades opcionais de paralelo.
 - `DAG.json`: espelho mínimo e machine-readable do schedule; não contém body/status operacional da issue.
 - `INDEX.md`: índice humano mínimo de Project, repos e IDs estáveis das issues; nunca replica ACs, status, assignee, branch, PR ou comentários.
 
@@ -537,7 +537,7 @@ Use um `project-slug` estável para o Project; em projeto de um único repo ele 
 ## Wave 1
 | Node | Issue | Depends on | Route | Parallel group | Shared surfaces | Dependency gate |
 |------|-------|------------|-------|----------------|-----------------|-----------------|
-| BE-03 | OWNER/BACKEND#13 | BE-02 | plan-heavy | — | auth, database | merged-default |
+| BE-03 | OWNER/BACKEND#13 | BE-02 | planner | — | auth, database | merged-default |
 
 ## Replan log
 - Revision 1 — initial approved graph
@@ -609,9 +609,11 @@ Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser
 
 Conflito é resolvido pela fonte mais alta. Uma leitura remota nova sempre invalida fatos locais antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente.
 
-### 6.0 Re-entry remoto obrigatório
+### 6.0 Re-entry remoto: fast path vs completo
 
-Execute nesta ordem em **todo** continue/próxima e no início de um chat novo:
+**Fast path (mesma sessão):** se o executor já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia apenas a issue WIP, seu PR e o head da branch (`gh issue view`, `gh pr view`, `git ls-remote`). Se tudo confere com o cache, prossiga. Qualquer divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo.
+
+**Re-entry completo** — execute nesta ordem no início de um chat novo, antes de puxar issue diferente, e após anomalia/handoff:
 
 ```bash
 REPO_NWO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
@@ -978,7 +980,7 @@ Por fim, com working tree limpa, volte à default, faça `git pull --ff-only ori
 | S, local | direta / `builder` |
 | M | pre-plan leve → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| Alto risco | `/plan-heavy` path |
+| Alto risco | `planner` → `builder-heavy` + gates seletivos; `/plan-heavy` somente se o gate excepcional da skill planner passar |
 
 Sempre:
 
