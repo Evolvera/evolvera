@@ -62,7 +62,7 @@ If a validator task is explicitly authorized to add repair tests or write review
 
 ## Task Routing
 
-For non-frontend tasks, default to the appropriate GPT tier. Route directly to Fable only when the task explicitly exhibits state/relation, policy/rule, selector, grammar/template, or structure-preservation semantics.
+For non-frontend tasks, default to the appropriate GPT tier. Route directly to Fable only for a local semantic/declarative model with a clear oracle: state/relation, policy/rule, selector, grammar/template, or structure preservation. Routing precedence: host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always use `builder-heavy`, even when config grammar is involved.
 
 Every task names exactly one agent; `SCHEDULE.md` is authoritative. Implementation routes are:
 - `builder-highspeed`: tiny, explicit, module-local mechanical work with exact verification; UI only for exact token/class/text swaps.

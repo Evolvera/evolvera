@@ -261,7 +261,7 @@ Planner generates:
     └── ...
 ```
 
-Planner must use the Builder Skill routing. For non-frontend tasks, GPT is the default; Fable requires an explicit positive semantic/declarative signal:
+Planner must use the Builder Skill routing. For non-frontend tasks, GPT is the default; Fable requires an explicit local semantic/declarative model with a clear oracle. Routing precedence: host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations always use `builder-heavy`, even when config grammar is involved:
 - `builder-highspeed`: single-file/module-local mechanical edits and explicit backend/tooling/tests/algorithm tasks. Frontend only for tiny exact token/class/text swaps.
 - `builder`: normal-risk general implementation, bounded backend/tooling/tests, structured edits, non-design-led integration, and evidence collection.
 - `builder-design`: normal Fable tier for components/layout/accessibility and bounded state/relation, policy/rule, selector, or reversible structural semantics.

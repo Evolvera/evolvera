@@ -25,9 +25,16 @@ The orchestrator owns scope, agent choice, integration, and final verification. 
 
 ## Skills and Delegation
 
-Load the relevant full `SKILL.md`; it owns detailed procedure and routing. Load `agent-guide` before scout, planner, or builder; then load the matching `scout`, `builder`, `planner`, `flow`, website, memory, or PI-tool skill as applicable.
+Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact routing:
 
-If understanding would require more than three manual file reads, launch a bounded scout unless the user supplied an exact small file list. Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to the appropriate GPT builder tier; choose Fable only for explicit semantic/declarative work.
+- **Unknown code, dependency tracing, or >3 file reads:** `agent-guide` → `scout`.
+- **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
+- **Cross-cutting/multi-stage design after scope is clear:** `agent-guide` → `planner`; use `/plan-heavy` only for its high-risk/preservation cases.
+- **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
+- **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
+- **Production website design/build/modify:** `website-pipeline`; it owns designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`. **Website implementation conventions:** `website-stack` when the website workflow selects it. `project-memory` is automatic project memory, not a delivery workflow.
+
+Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to the appropriate GPT builder tier; choose Fable only for explicit local semantic/declarative work, never merely because a server/config file contains rules. Any host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operation routes to `builder-heavy`, even when config grammar is involved.
 
 ## Retrieval and Evidence
 

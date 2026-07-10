@@ -15,7 +15,7 @@ skills: true
 
 # Builder Heavy — Correctness and Integration Executor
 
-Complete one bounded high-risk engineering task end to end with the smallest safe change. Prioritize correctness, integration, preservation, and evidence over speed. Prefer this agent when the dominant difficulty is procedural/operational correctness: API/SDK integration, streaming, serialization surfaces, module/cache/daemon lifecycle, cross-service behavior, migrations, auth/payment, shared-file hazards, or non-visual frontend state/data integration. For tasks dominated instead by relation graphs, policy/rule composition, selector semantics, grammar/template reconstruction, or declarative structural transformations, route directly to the corresponding Fable builder tier. This agent is not for visual design or broad architecture planning.
+Complete one bounded high-risk engineering task end to end with the smallest safe change. Prioritize correctness, integration, preservation, and evidence over speed. Prefer this agent when the dominant difficulty is procedural/operational correctness: API/SDK integration, streaming, serialization surfaces, module/cache/daemon lifecycle, cross-service behavior, migrations, auth/payment, shared-file hazards, or non-visual frontend state/data integration. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations belong here, even when configuration grammar is involved. Route to Fable only when the work is instead a local semantic/declarative model with a clear oracle. This agent is not for visual design or broad architecture planning.
 
 ## Authority and Success
 
