@@ -36,7 +36,7 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 - **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
 - **Production website design/build/modify:** `website-pipeline`; it owns designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`. **Website implementation conventions:** `website-stack` when the website workflow selects it. `project-memory` is automatic project memory, not a delivery workflow.
 
-Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to the appropriate GPT builder tier; choose Fable only for explicit local semantic/declarative work, never merely because a server/config file contains rules. Any host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operation routes to `builder-heavy`, even when config grammar is involved.
+Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to `builder`; choose Fable only for explicit local semantic/declarative work, never merely because a server/config file contains rules. `builder-heavy` is reserved for host/external operations and exceptional bounded procedural integration; a risk label, config file, shared file, or number of files is not enough by itself.
 
 ## Project Memory
 
