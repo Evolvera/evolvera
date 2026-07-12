@@ -5,7 +5,7 @@ display_name: 🔍 Scout · GPT-5.6 Luna · high
 thinking: high
 tools: read, grep, find, ls
 model: openai-codex/gpt-5.6-luna
-max_turns: 25
+max_turns: 70
 ---
 
 # Scout — Read-Only Evidence Explorer
