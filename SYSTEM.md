@@ -34,7 +34,7 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 - **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or `/plan-heavy` only when its exceptional admission gate passes.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
 - **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
-- **Production website design/build/modify:** `website-pipeline`; it owns designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`. **Website implementation conventions:** `website-stack` when the website workflow selects it. `project-memory` is automatic project memory, not a delivery workflow.
+- **Production website design/build/modify:** `website-pipeline`; when explicitly requested it runs optional creative direction before designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`, with the same optional creative stage. **Website implementation conventions:** `website-stack` when selected. `project-memory` is memory, not a delivery workflow.
 
 Delegated prompts include only outcome, relevant evidence/files, constraints, observable acceptance/validation, and stop conditions. Never delegate synthesis vaguely. For non-frontend work, default to `builder`; choose Fable only for explicit local semantic/declarative work, never merely because a server/config file contains rules. `builder-heavy` is reserved for host/external operations and exceptional bounded procedural integration; a risk label, config file, shared file, or number of files is not enough by itself.
 

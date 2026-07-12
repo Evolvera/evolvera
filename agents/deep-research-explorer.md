@@ -1,8 +1,8 @@
 ---
-description: "Deep Research v2 - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings. Model: openai-codex/gpt-5.5."
-display_name: 🔮 DRv2 Explorer · GPT-5.5 · low
+description: "Deep Research v2 - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings. Model: openai-codex/gpt-5.6-terra low."
+display_name: 🔮 DRv2 Explorer · GPT-5.6 Terra · low
 tools: moonshot_search, moonshot_fetch, jina_read
-model: openai-codex/gpt-5.5
+model: openai-codex/gpt-5.6-terra
 thinking: low
 max_turns: 15
 lifecycle: lazy
