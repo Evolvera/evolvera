@@ -27,6 +27,7 @@ Given:
 ```txt
 .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
 .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md   # optional; read only if present
 ```
 
 Create:
@@ -46,6 +47,7 @@ The builder task must be specific enough for the `builder-home` agent to generat
 
 - No human-in-the-loop. Do not ask for approval.
 - Choose one design direction or fuse options; record the decision.
+- If `HOME_CREATIVE_DIRECTION.md` exists, ensure the selected/fused direction preserves its required fallbacks and constraints: reduced-motion/static fallback, keyboard/DOM accessibility of the mechanic, mobile/touch behavior, and the performance budget. Record in HOME_PLAN.md how the dominant mechanic and accents are operationalized or why they were downgraded. If absent, plan exactly as usual.
 - Use `HOME_CONTENT_PLAN.md` as the source of truth for copy; only adapt copy when needed for visual fit and preserve its source/placeholder labels.
 - Do not invent unverifiable facts, metrics, awards, prices, certifications, guarantees, or testimonials.
 - If proof is missing, keep the content writer's tasteful preview placeholders clearly marked.
@@ -81,6 +83,7 @@ Write `.pi/previews/<slug>/HOME_PLAN.md`:
 
 ## 1. Decision
 - Selected direction:
+- Creative direction handling (only if HOME_CREATIVE_DIRECTION.md exists): [mechanic/accents preserved or downgraded + fallback/constraint preservation]
 - Why this direction wins:
 - Borrowed elements from other options:
 - Assumptions made:
@@ -150,6 +153,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 
 ## Read First
 - `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md`
+- `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` if present
 - `.pi/previews/<slug>/HOME_CONTENT_PLAN.md`
 - `.pi/previews/<slug>/HOME_PLAN.md`
 

@@ -1,0 +1,338 @@
+{
+  "version": 1,
+  "note": "Index-first selection: shortlist here, then read only 2-4 pattern files. Performance and complexity are cost levels (low|medium|high). Inspiration sites are inspiration, not performance evidence.",
+  "patterns": [
+    {
+      "slug": "scroll-gallery",
+      "name": "Scroll Gallery Rails",
+      "category": "media-navigation",
+      "communicates": "abundance, range, curation — 'we have a deep body of visual work'",
+      "best_for": [
+        "portfolios and studios with 8+ strong visuals",
+        "case-study or product-photography collections",
+        "campaign lookbooks and editorial archives"
+      ],
+      "avoid_when": [
+        "fewer than 8 strong media items",
+        "content is text- or spec-led",
+        "conversion-critical pages where scanning speed matters most"
+      ],
+      "asset_profile": "8-20 consistent, art-directed images/videos with alt text and stable aspect ratios",
+      "mobile_strategy": "native swipe carousel or vertical stack; no scroll-linked horizontal motion on touch",
+      "performance": "medium",
+      "complexity": "medium",
+      "pattern_file": "patterns/scroll-gallery.md",
+      "source_urls": [
+        "https://developer.chrome.com/docs/css-ui/scroll-driven-animations",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_scroll-driven_animations",
+        "https://gsap.com/docs/v3/Plugins/ScrollTrigger/",
+        "https://www.nngroup.com/articles/scrolljacking-101/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://web.dev/articles/animations-guide"
+      ]
+    },
+    {
+      "slug": "scrollytelling",
+      "name": "Scrollytelling Chapters",
+      "category": "narrative",
+      "communicates": "cause and effect, process, guided explanation — 'follow this story step by step'",
+      "best_for": [
+        "how-it-works and process explanations with 3+ causal steps",
+        "data stories and annotated visualizations",
+        "brand origin or transformation narratives"
+      ],
+      "avoid_when": [
+        "content is a flat list with no causal order",
+        "users primarily scan, compare, or transact",
+        "the story has fewer than 3 meaningful chapters"
+      ],
+      "asset_profile": "one strong visual per chapter (diagram, photo, chart, or product state) plus concise chapter copy",
+      "mobile_strategy": "shorter pin distances or unpinned stacked chapters; progress indicator preserved",
+      "performance": "medium",
+      "complexity": "high",
+      "pattern_file": "patterns/scrollytelling.md",
+      "source_urls": [
+        "https://gsap.com/docs/v3/Plugins/ScrollTrigger/",
+        "https://developer.chrome.com/docs/css-ui/scroll-driven-animations",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_scroll-driven_animations",
+        "https://www.nngroup.com/articles/scrolljacking-101/",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion"
+      ]
+    },
+    {
+      "slug": "parallax-depth",
+      "name": "Parallax Depth Planes",
+      "category": "depth",
+      "communicates": "atmosphere, place, layered richness — 'this world has depth'",
+      "best_for": [
+        "hero scenes for place-, product-, or mood-led brands",
+        "section transitions using masks and overlap reveals",
+        "storytelling backdrops behind editorial content"
+      ],
+      "avoid_when": [
+        "dense informational or utility pages",
+        "imagery lacks separable foreground/background layers",
+        "motion sensitivity is a primary audience concern and no budget exists for a strong static design"
+      ],
+      "asset_profile": "2-4 separable layers per scene (cutout PNG/SVG/photo planes) or gradient/mask compositions",
+      "mobile_strategy": "reduce to 1-2 planes with smaller offsets, or flatten to a designed static composition",
+      "performance": "medium",
+      "complexity": "medium",
+      "pattern_file": "patterns/parallax-depth.md",
+      "source_urls": [
+        "https://developer.chrome.com/docs/css-ui/scroll-driven-animations",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_scroll-driven_animations",
+        "https://web.dev/articles/animations-guide",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility#Motion"
+      ]
+    },
+    {
+      "slug": "kinetic-type",
+      "name": "Kinetic & Variable Typography",
+      "category": "typography",
+      "communicates": "voice, personality, editorial confidence — 'the words themselves are the brand'",
+      "best_for": [
+        "type-led brands, studios, publications, campaigns",
+        "manifesto or statement heroes with little imagery",
+        "brands with a licensed variable font worth showing off"
+      ],
+      "avoid_when": [
+        "long-form reading or dense UI copy",
+        "no distinctive licensed typeface is available",
+        "headline copy is not yet finalized or strong"
+      ],
+      "asset_profile": "licensed display/variable font (subset), finalized short headline copy; no imagery required",
+      "mobile_strategy": "smaller axis ranges and shorter durations; entrance-only animation instead of continuous motion",
+      "performance": "medium",
+      "complexity": "medium",
+      "pattern_file": "patterns/kinetic-type.md",
+      "source_urls": [
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_fonts/Variable_fonts_guide",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://web.dev/articles/animations-guide",
+        "https://web.dev/articles/vitals"
+      ]
+    },
+    {
+      "slug": "media-scrub",
+      "name": "Media Scrub Reveal",
+      "category": "media-narrative",
+      "communicates": "transformation, craftsmanship, precision — 'watch it change/assemble under your control'",
+      "best_for": [
+        "physical-product assembly or exploded views",
+        "before/after transformations tied to the value proposition",
+        "process reveals where user-controlled pacing adds understanding"
+      ],
+      "avoid_when": [
+        "no professionally produced image sequence or scrub-ready video exists",
+        "the transformation is not central to the message",
+        "budget requires strict low-bandwidth performance"
+      ],
+      "asset_profile": "produced image sequence (30-120 optimized frames) or keyframe-dense video, plus a hero-quality static fallback frame",
+      "mobile_strategy": "fewer/smaller frames or a tap-to-play video; never scroll-linked scrubbing on constrained devices",
+      "performance": "high",
+      "complexity": "high",
+      "pattern_file": "patterns/media-scrub.md",
+      "source_urls": [
+        "https://gsap.com/docs/v3/Plugins/ScrollTrigger/",
+        "https://developer.chrome.com/docs/css-ui/scroll-driven-animations",
+        "https://web.dev/articles/vitals",
+        "https://www.nngroup.com/articles/scrolljacking-101/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion"
+      ]
+    },
+    {
+      "slug": "view-transitions",
+      "name": "View & Shared-Element Transitions",
+      "category": "continuity",
+      "communicates": "continuity, polish, spatial coherence — 'this site is one continuous place'",
+      "best_for": [
+        "index-to-detail flows (work grids, product lists, articles)",
+        "multi-page sites needing app-like continuity",
+        "low-cost polish accent on almost any site"
+      ],
+      "avoid_when": [
+        "single-page sites with no navigation to smooth",
+        "transitions would delay content on slow connections",
+        "team cannot maintain progressive enhancement for non-supporting browsers"
+      ],
+      "asset_profile": "no new assets; requires consistent shared elements (thumbnail to hero image, title) across pages",
+      "mobile_strategy": "same transitions with shorter durations; instant navigation stays the baseline",
+      "performance": "low",
+      "complexity": "medium",
+      "pattern_file": "patterns/view-transitions.md",
+      "source_urls": [
+        "https://developer.chrome.com/docs/web-platform/view-transitions/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://web.dev/articles/vitals",
+        "https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics"
+      ]
+    },
+    {
+      "slug": "webgl-product-stage",
+      "name": "WebGL Product Stage",
+      "category": "3d",
+      "communicates": "spatial understanding, technical sophistication — 'inspect it from every angle'",
+      "best_for": [
+        "physical products whose form/configuration matters to the purchase",
+        "configurators (materials, colors, options)",
+        "spatial or architectural subjects"
+      ],
+      "avoid_when": [
+        "no production-quality 3D model exists or can be commissioned",
+        "a photo or video communicates the product equally well",
+        "the page must stay lightweight or the team cannot maintain a 3D pipeline"
+      ],
+      "asset_profile": "optimized glTF/GLB model (compressed, LOD-ready), HDRI/lighting setup, and a high-quality 2D fallback render",
+      "mobile_strategy": "reduced geometry/texture budget, capped device pixel ratio, tap-to-activate; static render on low-power devices",
+      "performance": "high",
+      "complexity": "high",
+      "pattern_file": "patterns/webgl-product-stage.md",
+      "source_urls": [
+        "https://threejs.org/",
+        "https://web.dev/articles/vitals",
+        "https://web.dev/articles/animations-guide",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility#Motion"
+      ]
+    },
+    {
+      "slug": "cursor-previews",
+      "name": "Cursor & Focus Previews",
+      "category": "preview",
+      "communicates": "density made light, curiosity — 'peek before you commit to a click'",
+      "best_for": [
+        "dense text indexes (work lists, article archives, rosters)",
+        "portfolios where a text list is the primary navigation",
+        "adding richness without heavy page media"
+      ],
+      "avoid_when": [
+        "index has fewer than ~6 items",
+        "preview media does not exist for most items",
+        "touch-first audience with no meaningful hover behavior planned"
+      ],
+      "asset_profile": "one lightweight preview image/clip per index item (lazy-loaded), consistent aspect ratio",
+      "mobile_strategy": "inline thumbnails, expandable rows, or first-tap-previews/second-tap-navigates with visible affordance",
+      "performance": "low",
+      "complexity": "low",
+      "pattern_file": "patterns/cursor-previews.md",
+      "source_urls": [
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://web.dev/articles/animations-guide",
+        "https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics"
+      ]
+    },
+    {
+      "slug": "editorial-collage",
+      "name": "Editorial Collage Grid",
+      "category": "layout",
+      "communicates": "taste, curation, magazine-grade art direction — 'a human composed this'",
+      "best_for": [
+        "editorial brands, studios, culture and fashion sites",
+        "mixed media (photo + type + graphic) storytelling sections",
+        "differentiating from uniform card-grid competitors"
+      ],
+      "avoid_when": [
+        "content is homogeneous and comparison-oriented (specs, pricing)",
+        "imagery is weak, inconsistent, or sparse",
+        "CMS-driven content changes shape unpredictably"
+      ],
+      "asset_profile": "6-12 art-directed images with intentional crops and stable aspect ratios; strong display typography",
+      "mobile_strategy": "recomposed single-column rhythm with deliberate scale contrast, not a collapsed grid",
+      "performance": "low",
+      "complexity": "medium",
+      "pattern_file": "patterns/editorial-collage.md",
+      "source_urls": [
+        "https://web.dev/articles/vitals",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics"
+      ]
+    },
+    {
+      "slug": "draggable-gallery",
+      "name": "Draggable Inertial Gallery",
+      "category": "media-navigation",
+      "communicates": "tactile exploration, abundance — 'dig through the collection with your hands'",
+      "best_for": [
+        "archives and collections with 15+ strong items",
+        "exploratory browsing where discovery is the point",
+        "brands whose identity is tactile/physical"
+      ],
+      "avoid_when": [
+        "collection is small or must be seen in full quickly",
+        "users need ordered comparison or filtering as the primary task",
+        "keyboard/AT-equivalent navigation cannot be provided"
+      ],
+      "asset_profile": "15+ optimized, lazy-loaded media items with alt text; consistent visual quality across the set",
+      "mobile_strategy": "native touch scrolling with scroll-snap; custom inertia only where it beats native feel",
+      "performance": "medium",
+      "complexity": "high",
+      "pattern_file": "patterns/draggable-gallery.md",
+      "source_urls": [
+        "https://gsap.com/docs/v3/Plugins/ScrollTrigger/",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://web.dev/articles/vitals",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion"
+      ]
+    },
+    {
+      "slug": "asset-loader",
+      "name": "Honest Asset Loader",
+      "category": "loading",
+      "communicates": "anticipation, brand ritual — 'the wait itself is designed'",
+      "best_for": [
+        "experiences with genuinely unavoidable heavy loading (WebGL, media scrub, large sequences)",
+        "floating-image collage intros that preload real gallery assets",
+        "campaign/exhibition sites where an entrance moment fits the brand"
+      ],
+      "avoid_when": [
+        "the page could simply load fast instead (most sites)",
+        "loader would delay LCP beyond budget",
+        "no real assets are being loaded (decorative fake loaders are forbidden)"
+      ],
+      "asset_profile": "the real heavy assets being preloaded; loader visuals reuse actual site imagery/wordmark",
+      "mobile_strategy": "shorter or skipped loader; never gate content behind an animation on slow connections",
+      "performance": "medium",
+      "complexity": "medium",
+      "pattern_file": "patterns/asset-loader.md",
+      "source_urls": [
+        "https://web.dev/articles/vitals",
+        "https://web.dev/articles/animations-guide",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://www.w3.org/TR/WCAG22/"
+      ]
+    },
+    {
+      "slug": "state-microinteractions",
+      "name": "State Microinteractions",
+      "category": "micro",
+      "communicates": "care, responsiveness, quality-in-the-details — 'this product is well made'",
+      "best_for": [
+        "sticky summary/CTA cards, reading progress, view-timeline section reveals",
+        "state-aware UI (saved, loading, success, empty) that earns trust",
+        "any site as a supporting accent — the default creative floor"
+      ],
+      "avoid_when": [
+        "used to disguise the absence of a real content or design idea",
+        "reveals hide above-the-fold content from crawlers or reduced-motion users",
+        "every element animates — accents must stay scarce"
+      ],
+      "asset_profile": "none beyond existing UI; optionally small inline SVG for progress/state icons",
+      "mobile_strategy": "identical behavior; sticky elements sized for thumbs and safe areas",
+      "performance": "low",
+      "complexity": "low",
+      "pattern_file": "patterns/state-microinteractions.md",
+      "source_urls": [
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_scroll-driven_animations",
+        "https://developer.chrome.com/docs/css-ui/scroll-driven-animations",
+        "https://web.dev/articles/animations-guide",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://www.w3.org/TR/WCAG22/"
+      ]
+    }
+  ]
+}

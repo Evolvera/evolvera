@@ -36,6 +36,7 @@ The artifact must give the planner enough design direction to choose and impleme
 - If details are missing, make tasteful, labeled assumptions.
 - Block only if there is no usable business/project context at all.
 - Use the design catalog when useful; prefer concrete real-world references over generic adjectives.
+- If `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` exists, read it first and build all 3 options around/adapting its interaction/art-direction thesis (dominant mechanic + accents). You keep design autonomy: you may downgrade or adapt the mechanic for usability or asset reality, but record any such downgrade and its reason in the artifact. Do not redefine the creative thesis; do not design copy. If the file is absent, proceed exactly as usual.
 - Design only one Home Page, not a full site.
 - Do not write code.
 - Do not write final implementation tasks; `website-home-planner` owns the builder handoff.
@@ -86,6 +87,12 @@ Write `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md` with this structure:
 - Trust/proof available:
 - Missing proof/assets placeholders:
 - Assumptions made autonomously:
+
+## 1.5 Creative Direction Intake (only if HOME_CREATIVE_DIRECTION.md exists)
+- Creative thesis adopted:
+- Dominant mechanic + accents carried into options:
+- Usability/asset-driven downgrades and why:
+- Fallback/constraints preserved (reduced motion, keyboard, touch, performance):
 
 ## 2. Design Reference Scan
 - Primary catalog/reference considered:
