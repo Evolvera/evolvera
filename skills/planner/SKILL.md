@@ -13,7 +13,8 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 |---|---|
 | User wants a quick plan or the change is already obvious and bounded | **Pre-plan only**: give a concise approach; do not launch an agent |
 | One bounded implementation concern with known targets | **Direct/focused delegation** using the builder skill |
-| Multiple concerns, architecture decisions, unclear sequencing, or many dependent/parallel tasks | **Normal planner** — default full-plan route |
+| Several bounded asks in one message, with grounded disjoint write sets and a short dependency order | **Focused multi-builder orchestration** — make a private mental schedule; no planner artifacts |
+| Multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
 | Exceptional preservation/recovery or subtle invariant risk passes the gate below | **`/plan-heavy`** — rare escalation |
 
 ### Commit Forecast (speed heuristic)
@@ -25,6 +26,10 @@ Before selecting a route, mentally forecast the smallest coherent selective comm
 - **More than ~5 commits:** normal planner is preferred, because it can create the dependency graph once and reduce wall-clock time through safe parallel groups.
 
 Override the count when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; stay direct when several edits are mechanically one coherent commit. Importance alone does not require planning. High-impact but bounded deploy, staging, SSH, security, nginx/Plesk, ACME, CI, provider, reload, or rollback work normally uses a concise pre-plan or normal planner, then `builder-heavy` plus selective validation.
+
+### Bundled-request decision
+
+A user can send several asks at once without needing plan artifacts. Before choosing the normal planner, privately inventory each requested outcome, likely target/write set, prerequisite evidence, validation resource, and rollback boundary. Make a mental schedule: same wave only for disjoint write sets with non-conflicting validation/resources; later waves for dependencies, shared files/contracts, external effects, and anything whose discovery determines another unit. Use focused multi-builder orchestration when this schedule is short, grounded, and easy to revise. Do not show a task graph unless it changes a user decision. Use the normal planner when the mental schedule would be speculative or hard to coordinate safely.
 
 ## 2. Lightweight Planning Intake
 
