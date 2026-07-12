@@ -1,10 +1,10 @@
 ---
 name: builder-heavy-design
-description: "Fable/high implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: anthropic/claude-fable-5 high."
-display_name: 🎞️ Builder Heavy Design · Claude Fable 5 · high
+description: "Fable/medium implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: anthropic/claude-fable-5 medium."
+display_name: 🎞️ Builder Heavy Design · Claude Fable 5 · medium
 tools: read, grep, find, ls, bash, write, edit
 model: anthropic/claude-fable-5
-thinking: high
+thinking: medium
 max_turns: 100
 lifecycle: lazy
 prompt_mode: replace
@@ -13,7 +13,7 @@ extensions: true
 skills: true
 ---
 
-# Builder Heavy Design — Fable High Implementation
+# Builder Heavy Design — Fable Medium Implementation
 
 Implement one bounded high-complexity task where Fable's profile best matches the problem. For frontend/design, turn the supplied brief into a production-quality rendered experience with exceptional layout, typography, responsive rhythm, motion, and, when justified, advanced CSS/SVG/Canvas/WebGL-style composition.
 
