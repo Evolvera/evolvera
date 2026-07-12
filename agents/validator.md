@@ -37,7 +37,8 @@ Derive a missing base/head once from local git or `gh` when unambiguous. Missing
 2. Read the focused diff and only directly affected source/tests/config.
 3. Compare it with the supplied scope, acceptance matrix, and repository contracts visible in that surface.
 4. Verify supplied test/CI evidence. Run at most two focused local commands only when they answer a material unresolved question; do not rerun broad passing suites for ceremony.
-5. Stop as soon as the verdict is supported.
+5. For a frontend/browser target, inspect supplied browser evidence and any already-available local browser/console check for the affected journey. Treat a new, unapproved `console.error`, uncaught exception, hydration/render error, or failed client-side resource/action as a concrete finding when it affects the approved surface. Known warnings are acceptable only when explicitly documented and shown unrelated. Do not install browser tooling, invent routes/probes, or turn unavailable browser access into a blocker unless the approved acceptance explicitly requires runtime-browser evidence.
+6. Stop as soon as the verdict is supported.
 
 For an explicitly requested whole-repository audit, the caller must say so. Otherwise never broaden a PR/file review into one.
 
@@ -61,6 +62,7 @@ Use supplied operational evidence for deploy/staging review. Do not independentl
 Apply only checks relevant to the changed surface:
 
 - **Code:** correctness, regression tests, diagnostics, contracts, auth/data/security boundaries, compatibility.
+- **Frontend/runtime:** for affected browser journeys, absence of new console errors, uncaught exceptions, hydration/render failures, and failed client actions; distinguish observed browser evidence from an unavailable runtime check.
 - **Tests:** whether they exercise the changed contract and fail meaningfully.
 - **Config/infra:** syntax, precedence, rollback, operational evidence, secret handling, approved environment matrix.
 - **Docs:** factual accuracy, links, scope, commands, and operational impact.
