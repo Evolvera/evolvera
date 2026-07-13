@@ -105,12 +105,14 @@ try {
   write(path.join(sandbox, ".pi", "plans", "stale-plan", "TASKS", "task_01_builder.md"), "# stale\n");
   const handoffResult = await handoff.execute(
     "test",
-    { goal: "Protect the current surface" },
+    { goal: "Protect the current surface", projectRoot: sandbox },
     undefined,
     undefined,
-    { cwd: sandbox },
+    { cwd: root },
   );
-  const handoffPath = path.join(sandbox, handoffResult.details.planDir, "HANDOFF.md");
+  assert.ok(path.isAbsolute(handoffResult.details.planDir), "planDir must be absolute");
+  assert.ok(handoffResult.details.planDir.startsWith(sandbox), "planDir must live under projectRoot");
+  const handoffPath = path.join(handoffResult.details.planDir, "HANDOFF.md");
   const generatedHandoff = readFileSync(handoffPath, "utf8");
   assert.match(generatedHandoff, /Historical `\.pi\/plans\/` files are intentionally omitted/);
   assert.doesNotMatch(generatedHandoff, /stale-plan|Existing plan files found/);

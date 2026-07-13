@@ -115,7 +115,7 @@ State the qualifying reason before invoking it. These do **not** qualify by them
 - staging, deploy, SSH, security, Plesk/nginx, ACME, CI, provider, reload, or rollback;
 - the task being important or high consequence.
 
-When admitted, use the deterministic `/plan-heavy` flow and its generated prompts. Historical plans remain excluded unless the goal names one. If `plan_heavy_validate` returns `BLOCKED`, end that attempt and report the bounded findings; do not resume or loop the planner.
+When admitted, use the deterministic `/plan-heavy` flow and its generated prompts. `plan_heavy_handoff` requires the same absolute `projectRoot` contract as the normal planner (resolve with `git -C <path> rev-parse --show-toplevel`); it never derives the repository from the session cwd, and all generated prompts use absolute paths. Historical plans remain excluded unless the goal names one. If `plan_heavy_validate` returns `BLOCKED`, end that attempt and report the bounded findings; do not resume or loop the planner.
 
 ## 5. Plan Quality Contract
 
