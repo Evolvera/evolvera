@@ -42,7 +42,7 @@ Establish only what changes the decision:
 - validation that proves completion;
 - blockers that require asking instead of guessing.
 
-Ask only when missing information materially changes correctness, risk, cost, or scope. If the user already approved an equivalent scope, do not add another approval ceremony merely to launch the planner.
+Ask only when missing information materially changes correctness, risk, cost, or scope **and** cannot be resolved from repository evidence (code, config, tests, git history, docs). If the user already approved an equivalent scope, do not add another approval ceremony merely to launch the planner.
 
 For an unfamiliar codebase, load `agent-guide` + `scout` and gather bounded evidence first. Search source roots/tracked files; exclude generated artifacts and historical plans unless explicitly relevant.
 
