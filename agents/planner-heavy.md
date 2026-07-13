@@ -4,7 +4,7 @@ description: "Heavy planner core for /plan-heavy. Reads HANDOFF.md plus the merg
 display_name: 🏛️ Planner Heavy · GPT-5.6 Sol · xhigh
 model: openai-codex/gpt-5.6-sol
 thinking: xhigh
-max_turns: 35
+max_turns: 60
 tools: read, grep, find, ls, write
 lifecycle: lazy
 prompt_mode: replace
