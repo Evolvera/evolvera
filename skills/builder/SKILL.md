@@ -5,7 +5,7 @@ description: Use the builder agent to implement focused code changes. Builder ru
 
 # Builder Skill — Focused Code Execution
 
-Builder is a delegated implementation family. Use `builder-highspeed`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, or `builder-heavy-design` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
+Builder is a delegated implementation family. Use `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, or `builder-heavy-design` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
 
 ## Goal
 
@@ -28,14 +28,15 @@ Success means:
 
 | Agent | Use When | Avoid When |
 |---|---|---|
-| `builder-highspeed` | Highspeed sweet spot: single-file/module-local mechanical edits, rapid non-visual prototypes, utilities, backend/tooling/infra/tests/algorithms/math/physics/mechanical edits | broad ambiguous tasks, multi-file architecture, security/auth/payment ambiguity, unsupported factual/domain claims, frontend/UI implementation beyond tiny exact tweaks, final visual polish or brand/design decisions |
+| `builder-light` | Routine bounded work whose correctness is **locally decidable** — the task plus visible code fully determine the change (clear anchor, established pattern, exact validation): mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes. Multi-file is fine for one concern with a bounded write set. | anything whose correctness depends on implicit cross-module contracts, subtle state/lifecycle/concurrency, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation; security/auth/payment without an explicit contract; UI beyond exact token/class/text swaps |
+| `builder-light-design` | Routine UI within an established design system: components from existing patterns, styling/spacing/copy changes, straightforward responsive/accessibility fixes, polish items with concrete specs. | new visual direction, novel components without a pattern, complex interaction/motion, semantic/declarative modeling, brand decisions, Home Preview tasks |
 | `builder` | **Default for ~90% of bounded local implementation**: code, APIs, tests, tooling, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance. | relation/rule/declarative semantic modeling, visual judgment, or explicitly external/exceptional runtime work |
 | `builder-design` | Direct normal-complexity Fable tier: frontend/UI work plus bounded state/relation behavior, policy/rule composition, selector semantics, and reversible structural conversions with a clear oracle. | procedural API/streaming/lifecycle/serialization integration, high-risk operational correctness, formal/numerical work, advanced visual craft, or vague scope |
 | `builder-heavy` | Exceptional operational work: host/SSH/deploy/network/provider/reload/rollback, or evidenced coordination across multiple live runtime/service/lifecycle boundaries. | ordinary local code, auth/payment, migrations, config, shared files, multi-file changes, broad planning, or vague scope |
 | `builder-ultra` | Bounded exceptional non-frontend correctness work with concrete targets, a stated invariant/acceptance oracle, and evidence of exceptional difficulty: formal proofs/invariants, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or a reproducible `builder-heavy` failure. | vague or unfamiliar scope, generic retries, ordinary integration, broad architecture, routine algorithms, and all frontend/design work |
 | `builder-heavy-design` | Direct Fable/high tier for exceptional visual work or complex semantic/declarative tasks: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations. | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, vague scope, or normal tasks fitting `builder-design` |
 
-Treat `builder-highspeed` as a draft-speed executor. For non-frontend work, `builder` is the default. Choose Fable only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for explicit external operations or evidenced exceptional multi-runtime integration; never because a task is backend, risky, auth/payment, migration, config, shared, or multi-file. Use design tiers when visual judgment or local semantic/declarative modeling dominates. Use `builder-ultra` only for bounded non-frontend formal/numerical/scientific or compound-invariant work with an explicit oracle.
+Route light tiers by error profile, not size: they cover most routine work correctly but err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. The routing question is “is the correct change fully determined by the task plus visible code?”. For non-frontend work needing non-local reasoning, `builder` is the default. Choose Fable only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for explicit external operations or evidenced exceptional multi-runtime integration; never because a task is backend, risky, auth/payment, migration, config, shared, or multi-file. Use design tiers when visual judgment or local semantic/declarative modeling dominates. Use `builder-ultra` only for bounded non-frontend formal/numerical/scientific or compound-invariant work with an explicit oracle.
 
 A decision, verdict, classification, evidence index, or source-of-truth artifact deserves focused review, but does not select `builder-heavy` by itself. Use `validator` or the orchestrator for the verdict; keep implementation tier selection based on the actual execution boundary.
 
@@ -43,7 +44,7 @@ A decision, verdict, classification, evidence index, or source-of-truth artifact
 
 For implementation tasks whose primary work is frontend quality, route to `builder-design` by default:
 - React/Vue/Svelte components, JSX/TSX structure, Tailwind/CSS styling, layout, responsive behavior, accessibility states, ordinary animations, design-system application, and applying most `website-polisher` fixes.
-- Use `builder-highspeed` only for tiny, exact, mechanical UI edits such as a known class/token/text swap in one file.
+- Use `builder-light-design` for routine design-system edits with concrete specs; `builder-light` only for tiny, exact, mechanical UI edits such as a known class/token/text swap.
 - Use `builder-heavy-design` when the task requires exceptional design execution: premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling scenes, immersive sections, distinctive art direction, or when `builder-design` produced acceptable code but not a visually top-tier result.
 - Use `builder-heavy` for frontend only when the task explicitly performs an external operation or coordinates exceptional live runtime boundaries.
 - Use general `builder` only when frontend work is incidental and does not require design judgment.
@@ -65,23 +66,20 @@ Use a builder for:
 - `builder-ultra` tasks that are bounded, non-frontend, invariant/oracle-driven, and demonstrably exceptional beyond heavy;
 - `builder-heavy-design` tasks that are bounded and either exceptionally visual or complex semantic/declarative work.
 
-For `builder-highspeed`, prefer even smaller slices:
-- one file or one module-local concern;
-- explicit target behavior;
-- obvious validation;
-- under ~6 logical implementation steps;
-- no large context retention or exhaustive workflow;
-- no need for aesthetic/product judgment.
+For light tiers (`builder-light`, `builder-light-design`), the slice must be locally decidable:
+- explicit target behavior with a clear anchor or established pattern;
+- obvious, exact validation;
+- no reliance on implicit contracts, subtle semantics, or judgment.
 
-### Highspeed Risk Guardrails
+### Light-Tier Risk Guardrails
 
-When using `builder-highspeed`, prompts must include tighter steering because it drifts sooner and hallucinates routine details more often:
+Light tiers fail differently from strong tiers: a plausible-but-wrong implementation that passes shallow validation. Prompts must include:
 
-- **Verify symbols before use**: instruct it to grep/read existing APIs, package names, endpoints, function parameters, imports, and config keys before relying on them.
-- **No phantom dependencies**: do not let it add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
-- **Short workflows only**: avoid if the task needs 6–8+ ordered steps, broad repo context, or stateful checklist execution.
-- **Simple outputs**: avoid requiring complex structured output from it unless absolutely necessary; use concise reports.
-- **Switch away from highspeed**: use `builder` for normal local implementation; `builder-design` for normal visual or semantic/declarative work; `builder-heavy` only for external operations or exceptional live integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; and `builder-ultra` only when the formal/numerical/scientific invariant-oracle gate is met.
+- **Verify symbols before use**: instruct them to grep/read existing APIs, package names, endpoints, function parameters, imports, and config keys before relying on them.
+- **No phantom dependencies**: do not let them add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
+- **Name the pattern**: point at the concrete file/component that defines “correct” for this change.
+- **Escalate instead of guessing**: they must return `BLOCKED: use builder` / `BLOCKED: use builder-design` when the task turns out to need non-local reasoning or design judgment.
+- **Switch away from light**: use `builder` for normal local implementation needing non-local reasoning; `builder-design` for visual judgment or semantic/declarative work; `builder-heavy` only for external operations or exceptional live integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; and `builder-ultra` only when the formal/numerical/scientific invariant-oracle gate is met.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -110,14 +108,14 @@ Example:
 
 ```ts
 Agent({
-  subagent_type: "builder-highspeed",
+  subagent_type: "builder-light",
   run_in_background: true,
   description: "Task 01 CSS tweak",
-  prompt: "Implement task from /ABSOLUTE/PATH/.pi/plans/TASKS/task_01_builder-highspeed.md. Follow its scope and verification exactly."
+  prompt: "Implement task from /ABSOLUTE/PATH/.pi/plans/TASKS/task_01_builder-light.md. Follow its scope and verification exactly."
 })
 ```
 
-Planner-generated schedules may mix `builder-highspeed`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. For `/plan-heavy`, do not run a builder until its execution envelope exists.
+Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. For `/plan-heavy`, do not run a builder until its execution envelope exists.
 
 ## Direct Mode Prompt
 
@@ -204,7 +202,7 @@ Before spawning builder, verify:
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
 - [ ] Task is small enough for a delegated model.
-- [ ] If using `builder-highspeed`, task is single-file/module-local, under ~6 logical steps, every API/package/symbol can be verified, and any frontend change is a tiny exact mechanical tweak.
+- [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified, and any frontend change is a tiny exact mechanical tweak. If using `builder-light-design`, the design system already answers the design questions.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).
 - [ ] If using `builder-heavy`, task is bounded and dominated by procedural/operational correctness: API/streaming/lifecycle/serialization, migration, cross-service, security, shared-file, or frontend data-flow integration.
 - [ ] Use `builder-ultra` only when **all** are true: (1) task is bounded and non-frontend; (2) target files plus invariant/acceptance oracle are known; (3) it has either intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity **or** a reproducible grounded `builder-heavy` failure. If only (1–2) hold, use `builder-heavy`; if targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
@@ -230,7 +228,7 @@ After builder finishes:
 
 ```ts
 Agent({
-  subagent_type: "builder-highspeed",
+  subagent_type: "builder-light",
   description: "Fix null parser",
   prompt: `
 GOAL
@@ -260,8 +258,8 @@ Do not refactor unrelated parser code.
 ### Two independent tasks
 
 ```ts
-Agent({ subagent_type: "builder-highspeed", run_in_background: true, description: "Email validator", prompt: "...TARGET FILES: src/validators/email.ts..." })
-Agent({ subagent_type: "builder-highspeed", run_in_background: true, description: "Phone validator", prompt: "...TARGET FILES: src/validators/phone.ts..." })
+Agent({ subagent_type: "builder-light", run_in_background: true, description: "Email validator", prompt: "...TARGET FILES: src/validators/email.ts..." })
+Agent({ subagent_type: "builder-light", run_in_background: true, description: "Phone validator", prompt: "...TARGET FILES: src/validators/phone.ts..." })
 ```
 
 ## Anti-Patterns
@@ -272,6 +270,6 @@ Agent({ subagent_type: "builder-highspeed", run_in_background: true, description
 | One builder for UI + API + DB | Split by concern and dependencies |
 | No validation command | Include targeted test or explain why none exists |
 | Broad refactor request | Use planner first |
-| `builder-highspeed` asked to execute a long checklist | Split into small tasks, use `builder`, or use `builder-heavy` when the task is bounded but subtle |
-| `builder-highspeed` allowed to infer APIs/packages | Require grep/package verification before implementation |
+| Subtle state/lifecycle/compat work routed to `builder-light` | Route by decidability, not size: use `builder`, or `builder-heavy` when the task is bounded but operationally complex |
+| A light tier allowed to infer APIs/packages/contracts | Require grep/package verification before implementation |
 | Trusting builder summary only | Check diff and diagnostics |

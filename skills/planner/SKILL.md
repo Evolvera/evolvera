@@ -143,7 +143,7 @@ Apply engineering principles as decisions, not boilerplate:
 Load the builder skill; it is authoritative for tier selection. Defaults:
 
 - normal procedural work → `builder`;
-- tiny exact mechanical work → `builder-highspeed`;
+- routine locally-decidable work (clear anchor, established pattern, exact validation) → `builder-light`; routine design-system UI → `builder-light-design`;
 - complex procedural/integration or any host/external operation → `builder-heavy`;
 - local semantic/declarative model with a clear oracle or visual/UI work → Fable design tier;
 - exceptional formal/numerical/scientific work with an explicit oracle → `builder-ultra`.

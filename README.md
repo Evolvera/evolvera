@@ -113,8 +113,8 @@ Validator → quality gate (testes, segurança, arquitetura)
 
 **Quando pular etapas:**
 - Tarefa trivial (mudar texto, CSS) → faça direto, sem agentes
-- Frontend/UI coding → `builder-design` por padrão; `builder-highspeed` só para tiny token/class/text swaps; `builder-heavy-design` quando exceder o tier visual padrão
-- Tarefa média sem plano formal → `builder` para código geral; `builder-design` quando frontend/qualidade visual importa; `builder-highspeed` só quando mecânica/explícita/single-file
+- Frontend/UI coding → `builder-light-design` para UI rotineira dentro do design system; `builder-design` quando exige julgamento visual; `builder-heavy-design` quando exceder o tier visual padrão
+- Tarefa média sem plano formal → `builder-light` quando a mudança é localmente decidível (âncora clara, padrão existente, validação exata); `builder` quando exige raciocínio não-local; `builder-design` quando frontend/qualidade visual importa
 - Tarefa correctness-sensitive/shared-file → `builder-heavy` + checkpoint/validator
 - Mudança crítica (auth, payment, PII) → builder-heavy ou builder + validator automático
 - Mudança muito extensa (>10 files) → pipeline completa
@@ -354,7 +354,8 @@ Pi/
 │   ├── builder-heavy.md    # Correctness GPT-5.6 Sol medium
 │   ├── builder-heavy-design.md # Visual máximo Claude Fable 5 high
 │   ├── builder-home.md     # Home Preview MiniMax M3
-│   ├── builder-highspeed.md # GPT-5.3 Codex Spark
+│   ├── builder-light.md    # GPT-5.6 Luna medium
+│   ├── builder-light-design.md # Claude Sonnet 5 medium
 │   ├── scout.md            # GPT-5.6 Luna high
 │   ├── scout-highspeed.md  # GPT-5.3 Codex Spark
 │   ├── validator.md        # Geral GPT-5.6 Terra medium
