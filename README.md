@@ -254,19 +254,18 @@ O mesmo harness também é exposto como **tools chamáveis pelo agente** (para o
 
 | Tool | Equivalente | Função |
 |------|-------------|--------|
-| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompts separados para briefers/merge/planner |
+| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompts separados para briefers/planner |
 | `plan_heavy_validate` | `/plan-heavy validate` | valida o plano e escreve `PLAN_HEAVY_VALIDATION.md` |
 | `plan_heavy_envelope` | `/plan-heavy envelope` | gera o `EXECUTION_ENVELOPE` da task |
 
-Fluxo ensemble (5 fases):
+Fluxo ensemble (4 fases):
 
-1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`) coleta `git status`, commits, `.pi/plans`, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com `BRIEF_PROMPT.md`, prompts separados dos briefers e `MERGE_PROMPT.md`. O agente não deve parar aqui.
+1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`, que exige `projectRoot` absoluto) coleta `git status`, commits, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com prompts separados dos briefers. O agente não deve parar aqui.
 2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.6 Sol high) e `plan-briefer-fable` (Claude Fable 5 high) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_fable.md`) — sem tasks, sem DAG.
-3. **Merge** — `plan-brief-merger` (GPT-5.6 Terra high) funde os dois em `BRIEFS/brief_merged.md`, reconciliando e marcando divergências.
-4. **Plano** — `planner-heavy` (GPT-5.6 Sol xhigh) lê `HANDOFF.md` + `brief_merged.md` e escreve `PLAN_FULL.md`, `SCHEDULE.md` e tasks compactas (normalmente 40–90 linhas; sem TODO/TILL-DO duplicado).
-5. **Gate/execução** — `/plan-heavy validate <plan-dir>` aceita o contrato compacto e bloqueia ausência de agente/goal/change/acceptance/validation/checkpoint ou hazards concretos; `/plan-heavy envelope` adiciona o runtime state/recovery/checkpoint que não precisa ser repetido na task.
+3. **Plano** — `planner-heavy` (GPT-5.6 Sol xhigh) lê `HANDOFF.md` + os DOIS briefs, reconcilia divergências explicitamente no `PLAN_FULL.md` e escreve `SCHEDULE.md` e tasks compactas (normalmente 40–90 linhas; sem TODO/TILL-DO duplicado).
+4. **Gate/execução** — `/plan-heavy validate <plan-dir>` aceita o contrato compacto e bloqueia ausência de agente/goal/change/acceptance/validation/checkpoint ou hazards concretos; `/plan-heavy envelope` adiciona o runtime state/recovery/checkpoint que não precisa ser repetido na task.
 
-O merge acontece no nível de **brief (prosa/estratégia)**, fácil e seguro de fundir — nunca no nível de DAG/tasks. O `planner-heavy` continua dono do output estruturado e grounda tudo no repo (brief é guia, repo vence em divergência).
+A reconciliação dos briefs acontece dentro do `planner-heavy` (xhigh), que é quem decide o output estruturado e grounda tudo no repo (brief é guia, repo vence em divergência).
 
 ### `/goal` — Goal Mode
 

@@ -202,25 +202,23 @@ The handoff tool/command only created files. Continue the ensemble automatically
 1. Launch TWO Agent calls in the SAME message with \`run_in_background: true\`:
    - \`subagent_type: "plan-briefer"\`, prompt file: \`${rel("BRIEFS/PROMPT_plan-briefer.md")}\`, output: \`${rel("BRIEFS/brief_gpt.md")}\`
    - \`subagent_type: "plan-briefer-fable"\`, prompt file: \`${rel("BRIEFS/PROMPT_plan-briefer-fable.md")}\`, output: \`${rel("BRIEFS/brief_fable.md")}\`
-2. Wait for both briefers, then run \`plan-brief-merger\`.
-3. Then run \`planner-heavy\`.
-4. Then call \`plan_heavy_validate\`.
+2. Wait for both briefers, then run \`planner-heavy\` — it reads the handoff plus BOTH briefs directly and reconciles them itself.
+3. Then call \`plan_heavy_validate\`.
 
 Normal flow uses Fable. If the Fable launch fails, stop and report the launch error so the orchestrator/user can choose a manual model override outside this prompt.`;
 
-  const mergePrompt = `ENSEMBLE MERGE PHASE — run plan-brief-merger (GPT-5.6 Terra high).
+  const prompt = `Use \`${handoffRel}\` as source of truth. Read BOTH strategy briefs first as strong strategy input:
+- \`${rel("BRIEFS/brief_gpt.md")}\`
+- \`${rel("BRIEFS/brief_fable.md")}\`
 
-- Read \`${rel("BRIEFS/brief_fable.md")}\` and \`${rel("BRIEFS/brief_gpt.md")}\` (and \`${handoffRel}\` for reference).
-- Merge into \`${rel("BRIEFS/brief_merged.md")}\` per the plan-brief-merger system prompt: keep the strongest grounded reasoning from each, reconcile or flag disagreements, carry forward all TO VERIFY. NO task files, NO DAG.`;
-
-  const prompt = `Use \`${handoffRel}\` as source of truth. If \`${rel("BRIEFS/brief_merged.md")}\` exists, read it first as strong strategy input.
+There are always exactly two briefs from different model families. Weigh both, keep the strongest grounded reasoning from each, and decide every disagreement between them explicitly in PLAN_FULL.md; carry forward all TO VERIFY items. The repository evidence wins over either brief. A missing/empty brief is a degraded input: note it in PLAN_FULL.md and proceed with the remaining brief plus the handoff.
 
 Write the plan ecosystem into \`${planDir}\`:
 - PLAN_FULL.md
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. Honor the merged brief's Unresolved Disagreements by deciding each explicitly. KISS means each builder gets a small, clear, independently verifiable outcome; task count is not capped. Every writing task must be intentionally shaped as one selective commit: it owns one implementation outcome, exact write set, validation result, and rollback boundary. Split only at real implementation, write-set, checkpoint, rollback, or validation boundaries. Give every matrix, safety rule, rollback procedure, and evidence package one owner; consumers reference that artifact/verdict instead of repeating it. Do not create builder tasks for PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes that tooling. Route normal-risk general work to builder, frontend/UI quality to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Use builder-highspeed for tiny explicit mechanical/module-local backend, tooling, test, or algorithm tasks; frontend highspeed work is limited to exact token/class/text swaps. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. If \`plan_heavy_validate\` returns BLOCKED, stop and report it; do not resume or reconcile the plan in a loop. After writing files, respond with the plan dir and next command: /plan-heavy validate ${planDir}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. KISS means each builder gets a small, clear, independently verifiable outcome; task count is not capped. Every writing task must be intentionally shaped as one selective commit: it owns one implementation outcome, exact write set, validation result, and rollback boundary. Split only at real implementation, write-set, checkpoint, rollback, or validation boundaries. Give every matrix, safety rule, rollback procedure, and evidence package one owner; consumers reference that artifact/verdict instead of repeating it. Do not create builder tasks for PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes that tooling. Route normal-risk general work to builder, frontend/UI quality to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Use builder-highspeed for tiny explicit mechanical/module-local backend, tooling, test, or algorithm tasks; frontend highspeed work is limited to exact token/class/text swaps. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. If \`plan_heavy_validate\` returns BLOCKED, stop and report it; do not resume or reconcile the plan in a loop. After writing files, respond with the plan dir and next command: /plan-heavy validate ${planDir}.`;
 
   ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
@@ -228,9 +226,8 @@ Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and c
   writeText(join(planDir, "BRIEFS", "BRIEF_PROMPT.md"), briefPrompt);
   writeText(join(planDir, "BRIEFS", "PROMPT_plan-briefer.md"), briefGptPrompt);
   writeText(join(planDir, "BRIEFS", "PROMPT_plan-briefer-fable.md"), briefFablePrompt);
-  writeText(join(planDir, "BRIEFS", "MERGE_PROMPT.md"), mergePrompt);
 
-  return { planDir, handoff, prompt, briefPrompt, mergePrompt };
+  return { planDir, handoff, prompt, briefPrompt };
 }
 
 function readMaybe(path: string): string {
@@ -785,14 +782,14 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
         return;
       }
 
-      const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(ctx.cwd, raw);
+      const { planDir, prompt, briefPrompt } = await createHandoff(ctx.cwd, raw);
       const relativePlanDir = relative(ctx.cwd, planDir);
       ctx.ui.notify(`Plan-heavy handoff created: ${relativePlanDir}`, "info");
-      const flow = `Plan-heavy ensemble flow (5 phases):\n\nIMPORTANT: handoff creation is not completion. Do not answer the user yet; continue by launching the agents below.\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-fable:\n${briefPrompt}\n\n2) MERGE — plan-brief-merger:\n${mergePrompt}\n\n3) PLAN — planner-heavy:\n${prompt}\n\n4) plan_heavy_validate → 5) plan_heavy_envelope per task → builders.`;
+      const flow = `Plan-heavy ensemble flow (4 phases):\n\nIMPORTANT: handoff creation is not completion. Do not answer the user yet; continue by launching the agents below.\n\n1) BRIEFS (parallel) — plan-briefer + plan-briefer-fable:\n${briefPrompt}\n\n2) PLAN — planner-heavy (reads handoff + both briefs):\n${prompt}\n\n3) plan_heavy_validate → 4) plan_heavy_envelope per task → builders.`;
       ctx.ui.setEditorText(flow);
 
       if (ctx.isIdle()) {
-        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`, but this is not done. Continue now: launch \`plan-briefer\` and \`plan-briefer-fable\` in parallel using the prompt files under \`${relativePlanDir}/BRIEFS/\`; then run \`plan-brief-merger\`, \`planner-heavy\`, and \`plan_heavy_validate\`.\n\n${flow}`);
+        pi.sendUserMessage(`Plan-heavy handoff is ready at \`${relativePlanDir}/HANDOFF.md\`, but this is not done. Continue now: launch \`plan-briefer\` and \`plan-briefer-fable\` in parallel using the prompt files under \`${relativePlanDir}/BRIEFS/\`; then run \`planner-heavy\` (it reads both briefs) and \`plan_heavy_validate\`.\n\n${flow}`);
       }
     },
   });
@@ -805,8 +802,8 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
     label: "Plan Heavy: Handoff",
     description:
       "Deterministically collect current repo state (branch, recent commits, git status, dirty files, shared-file hazards) and create a planner-heavy handoff for the ensemble flow. Historical plans are omitted unless the approved goal explicitly names one. " +
-      "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns explicit instructions to continue by launching plan-briefer and plan-briefer-fable in parallel, then plan-brief-merger, planner-heavy, and plan_heavy_validate. Use before planning high-risk/long-horizon work.",
-    promptSnippet: "Use plan_heavy_handoff to start /plan-heavy, then do not stop: launch plan-briefer + plan-briefer-fable in parallel, merge, plan, and validate.",
+      "Creates .pi/plans/<slug>/HANDOFF.md, PLAN_HEAVY_PROMPT.md, and BRIEFS/ prompts. Returns explicit instructions to continue by launching plan-briefer and plan-briefer-fable in parallel, then planner-heavy (which reads both briefs directly), and plan_heavy_validate. Use before planning high-risk/long-horizon work.",
+    promptSnippet: "Use plan_heavy_handoff to start /plan-heavy, then do not stop: launch plan-briefer + plan-briefer-fable in parallel, plan, and validate.",
     parameters: Type.Object({
       goal: Type.String({ description: "Approved goal/scope for the heavy plan." }),
       projectRoot: Type.String({
@@ -823,7 +820,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
         if (!existsSync(root) || !statSync(root).isDirectory()) {
           throw new Error(`projectRoot does not exist or is not a directory: ${root}`);
         }
-        const { planDir, prompt, briefPrompt, mergePrompt } = await createHandoff(root, params.goal);
+        const { planDir, prompt, briefPrompt } = await createHandoff(root, params.goal);
         return {
           content: [
             {
@@ -833,8 +830,7 @@ export default function planHeavyExtension(pi: ExtensionAPI) {
                 `IMPORTANT: this tool only created the handoff. Do not stop or answer the user yet. Immediately continue the ensemble, then call plan_heavy_validate.\n\n` +
                 `=== PHASE 1: BRIEFS (launch plan-briefer + plan-briefer-fable in parallel) ===\n${briefPrompt}\n\n` +
                 `Prompt files:\n- \`${planDir}/BRIEFS/PROMPT_plan-briefer.md\`\n- \`${planDir}/BRIEFS/PROMPT_plan-briefer-fable.md\`\n\n` +
-                `=== PHASE 2: MERGE (launch plan-brief-merger) ===\n${mergePrompt}\n\n` +
-                `=== PHASE 3: PLAN (launch planner-heavy) ===\n${prompt}`,
+                `=== PHASE 2: PLAN (launch planner-heavy — reads handoff + both briefs) ===\n${prompt}`,
             },
           ],
           details: { planDir },
