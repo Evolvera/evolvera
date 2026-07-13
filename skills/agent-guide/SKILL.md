@@ -20,7 +20,9 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 |---|---|---|---|---|
 | Default | `scout`, `builder` | Standard general tier | **default for ~90% of bounded local work**: code, APIs, tests, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance | relation/rule/declarative semantic modeling, visual judgment, or an explicitly external/exceptional runtime operation |
 | Design | `builder-design` | Normal Fable tier | frontend/UI implementation plus bounded normal-complexity state/relation, policy/rule, selector, and reversible structural semantics | procedural API/streaming/lifecycle integration, correctness-heavy operational work, formal/numerical work, advanced visual spectacle |
-| Highspeed | `scout-highspeed`, `builder-highspeed` | Draft-speed tier | very fast bounded retrieval/execution, single-file mechanical edits, rapid non-visual prototypes, backend/tooling/tests, mechanical changes | frontend/UI implementation beyond tiny exact token/class/text swaps, broad ambiguous tasks, 6–8+ step workflows, exhaustive/stateful checklists, large-context tasks, final visual polish, brand/design decisions, factual claims without sources |
+| Light | `builder-light` | Routine general tier (GPT-5.6 Luna medium) | routine bounded work whose correctness is locally decidable: clear anchor, established pattern, exact validation — mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes | anything whose correctness depends on implicit cross-module contracts, subtle state/lifecycle/concurrency, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
+| Light Design | `builder-light-design` | Routine UI tier (Claude Sonnet 5 medium) | routine UI within an established design system: components from existing patterns, styling/spacing/copy, straightforward responsive/accessibility fixes with concrete specs | new visual direction, novel components without a pattern, complex interaction/motion, semantic/declarative modeling, brand decisions |
+| Highspeed | `scout-highspeed` | Draft-speed retrieval tier | very fast bounded retrieval: narrow file discovery, symbol grep, small dependency slices | broad corpus/coverage questions, large-context analysis, any implementation |
 | Heavy | `builder-heavy` | Exceptional operational tier | host/SSH/deploy/network/provider/reload/rollback work, or concrete coordination across multiple live runtime/service/lifecycle boundaries | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
 | Ultra | `builder-ultra` | Exceptional non-frontend correctness tier | bounded tasks with a stated invariant/oracle and demonstrated exceptional difficulty: formal reasoning, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or grounded failure after heavy | vague/unfamiliar scope, generic retry, ordinary integration, broad architecture, routine algorithms, or any frontend/design work |
 | Heavy Design | `builder-heavy-design` | Fable/high implementation tier | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
@@ -142,7 +144,7 @@ Implements atomic code changes. Runs on a small, fast model. Good for 1-2 files,
 ```
 # Direct mode (no planner)
 Agent({
-  subagent_type: "builder-highspeed",
+  subagent_type: "builder-light",
   description: "Fix null check",
   prompt: "In src/utils/parser.ts line 47, add null check. Read the file first. Then: change `return user.name.toUpperCase()` to `return user?.name?.toUpperCase() ?? ''`. Run tests to verify."
 })
@@ -156,18 +158,19 @@ Agent({
 ```
 
 **Rules:**
-- Treat `builder-highspeed` as draft-speed execution: very fast, less capable, shorter-context, and more hallucination-prone than the standard tier. Fast hallucinations can look correct.
+- Route to light tiers by error profile, not size: `builder-light` and `builder-light-design` handle most routine work correctly, but they err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. A plausible-but-wrong light result passes shallow validation, so the routing question is “is the correct change fully determined by the task plus visible code?”, not “is this small?”.
 - For non-frontend work, default to `builder`. Use `builder-heavy` only for an explicit host/external operation or concrete multi-runtime integration that a normal builder cannot safely own. Auth/payment, migration, config, shared files, multiple files, and a high-risk label do not select heavy by themselves. Select a Fable tier only for a local semantic/declarative model with a clear oracle—not merely because the task is unusual or configuration contains rules.
 - Use `builder` for normal-risk procedural implementation: bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, deterministic control flow, and structured integration. Its relative weakness is relation/rule/declarative semantic modeling; route that shape to Fable tiers only when that shape is actually present.
 - Use `builder-design` for normal frontend/UI coding quality and also as a direct first choice for bounded normal-complexity state/relation behavior, policy/rule composition, selector semantics, or reversible structural conversion with a clear oracle.
-- Use `builder-highspeed` for single-file/module-local mechanical edits, rapid non-visual prototypes, utility generation, tests, backend/tooling/infra, algorithms, physics/math, and mechanical refactors. For frontend, use it only for tiny exact token/class/text swaps.
-- Give `builder-highspeed` tighter steering: target files, <=~6 logical steps, exact validation, and required symbol/API/package/endpoint checks before implementation.
+- Use `builder-light` for routine locally-decidable work: mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes. Multi-file is fine when it is one concern with a bounded write set. For frontend, only exact token/class/text swaps.
+- Use `builder-light-design` for routine UI within an established design system: components from existing patterns, styling/spacing/copy, responsive/accessibility fixes with concrete specs. Escalate to `builder-design` when visual judgment is required.
+- Give light tiers explicit anchors: target files, the pattern to follow, exact validation, and required symbol/API/package/endpoint checks before implementation.
 - Use `builder-heavy-design` directly for exceptional visual work or complex tasks dominated by state/relation semantics, policy/selector composition, grammar/template reconstruction, or declarative structure preservation. It does not require a prior GPT failure.
 - Use `builder-heavy` only for host/external execution or evidenced coordination across multiple live runtime/service/lifecycle boundaries. Do not select it merely because code is backend, risky, multi-file, auth/payment, migration, config, API, or shared.
 - Escalate to `builder-ultra` only for bounded non-frontend work with concrete targets, a stated invariant/validation oracle, and demonstrated exceptional difficulty: formal proof obligations, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or a reproducible heavy failure. Vague scope, unfamiliarity, or a generic retry must go to scout/planner, not ultra.
 - For frontend work, route visual hierarchy/layout/motion/accessibility to Fable tiers; use `builder` for bounded local data/API/auth behavior; reserve `builder-heavy` for an external operation or exceptional live integration boundary. For non-visual work, choose by problem shape rather than filename: declarative relation/rule/structure → Fable; normal local procedural work → `builder`. Do not use `builder-ultra` for frontend.
 - A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact needs focused review, but does not select `builder-heavy` by itself. Use `validator` or the orchestrator for the verdict; `builder` may collect evidence.
-- Avoid `builder-highspeed` for real frontend implementation, final frontend polish, brand/design decisions, or vague UI requests; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
+- Avoid light tiers for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
 - Parallelize when files are disjoint.
@@ -190,7 +193,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → `builder-highspeed` when mechanical; `builder` for normal procedural code; `builder-design` for normal visual or semantic/declarative work; `builder-heavy` for complex operational integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; `builder-ultra` only with an explicit oracle and exceptional non-frontend formal/numerical/scientific risk
+- Small focused change → `builder-light` when locally decidable; `builder-light-design` for routine design-system UI; `builder` for normal procedural code; `builder-design` for visual judgment or semantic/declarative work; `builder-heavy` for complex operational integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; `builder-ultra` only with an explicit oracle and exceptional non-frontend formal/numerical/scientific risk
 - Critical (auth, payment) → appropriate builder tier with focused tests; add a validator gate only for a named escape risk that must block dependents — the single final PR review covers the rest
 - Low-risk/mechanical/docs-only task → no separate validator task unless evidence shows a specific escape risk
 
@@ -204,8 +207,8 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
 | Not doing pre-plan before planner | Planner guesses scope, produces bad plans | You pre-plan, user approves, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
-| Letting `builder-highspeed` infer APIs/packages | Produces plausible hallucinations | Require grep/package/symbol verification or use `builder` |
-| Using `builder-highspeed` for long checklists | Context drift after several steps | Split tasks or route to `builder` |
+| Letting a light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require grep/package/symbol verification or route to `builder` |
+| Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
 | Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
 | Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 2–8 parallel micro-scouts or use normal `scout` |
 | Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
