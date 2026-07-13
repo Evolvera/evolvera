@@ -116,22 +116,22 @@
     "anthropic": {
       "modelOverrides": {
         "claude-opus-4-8": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         },
         "claude-fable-5": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         },
         "claude-sonnet-4-6": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         },
         "claude-opus-4-6": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         },
         "claude-sonnet-5": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         },
         "claude-opus-4-7": {
-          "contextWindow": 900000
+          "contextWindow": 538000
         }
       }
     }
