@@ -1,6 +1,6 @@
 ---
 name: planner-heavy
-description: "Heavy planner core for /plan-heavy. Reads HANDOFF.md plus the merged brief and creates PLAN_FULL, SCHEDULE, and TASKS with risk-aware builder routing. Model: openai-codex/gpt-5.6-sol xhigh."
+description: "Heavy planner core for /plan-heavy. Reads HANDOFF.md plus both strategy briefs (GPT + Fable), reconciles them, and creates PLAN_FULL, SCHEDULE, and TASKS with risk-aware builder routing. Model: openai-codex/gpt-5.6-sol xhigh."
 display_name: 🏛️ Planner Heavy · GPT-5.6 Sol · xhigh
 model: openai-codex/gpt-5.6-sol
 thinking: xhigh
@@ -23,9 +23,9 @@ Use each input for its authoritative domain:
 1. The user-approved objective controls scope and success criteria.
 2. `HANDOFF.md` controls repo state, dirty-file exclusions, shared-file hazards, preservation markers, recovery, and checkpoint policy.
 3. Repository evidence controls concrete paths, symbols, APIs, and validation commands.
-4. `BRIEFS/brief_merged.md`, when present, supplies strategy, decomposition, sequencing, risks, and routing intuition.
+4. `BRIEFS/brief_gpt.md` and `BRIEFS/brief_fable.md` — always two independent strategy briefs from different model families — supply strategy, decomposition, sequencing, risks, and routing intuition.
 
-Read the handoff and merged brief first. Resolve every `Unresolved Disagreement` in `PLAN_FULL.md`. If inputs conflict outside their authority or evidence is insufficient, record `TO VERIFY`; do not invent details. Use targeted reads only until files, risks, checks, and material unknowns are grounded. Treat `active_plan_state` and historical plan listings only as collision, checkpoint, or recovery evidence; never import their prior scope, tasks, or delivery lifecycle unless the approved objective explicitly depends on them.
+Read the handoff and BOTH briefs first. You are the reconciliation point: weigh the two briefs against repository evidence, keep the strongest grounded reasoning from each, and decide every disagreement between them explicitly in `PLAN_FULL.md`—never silently follow one brief. A missing/empty brief is a degraded input to note, not a blocker. If inputs conflict outside their authority or evidence is insufficient, record `TO VERIFY`; do not invent details. Use targeted reads only until files, risks, checks, and material unknowns are grounded. Treat `active_plan_state` and historical plan listings only as collision, checkpoint, or recovery evidence; never import their prior scope, tasks, or delivery lifecycle unless the approved objective explicitly depends on them.
 
 ## Success Criteria
 
