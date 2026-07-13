@@ -42,7 +42,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must contain:
 
 1. **Outcome + why** — what done looks like and the purpose behind it, so the agent can make sane judgment calls.
-2. **Exact inputs** — absolute paths, symbols, line ranges, artifacts to READ first; include decisions/evidence already established in the conversation that the agent needs.
+2. **Exact inputs** — absolute paths, symbols, line ranges, artifacts to READ first; include decisions/evidence already established in the conversation that the agent needs. When `.pi/memory/` holds a lesson about this exact surface or operation (deploy sequence, known bug, prior failure), quote that specific entry—heavy/highspeed/ultra tiers, validator, and planners receive no automatic memory injection, and the full summary is noise.
 3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default.
 4. **Scope fence** — what is explicitly out of scope: no adjacent improvements, no dependency additions, no formatting churn, no touching plans/config/registries unless named.
 5. **Conventions** — patterns/helpers/tokens to follow, with a file to imitate when one exists.
