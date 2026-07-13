@@ -32,8 +32,8 @@ export default function userAttentionNotifier(pi: ExtensionAPI) {
 
   pi.on("agent_end", async (_event, ctx) => {
     if (!enabled || ctx.mode !== "tui") return;
-    const title = `${APP_NAME} precisa de você — ${projectName(ctx.cwd)}`;
-    nativeNotify(title, "O chat terminou e está aguardando sua próxima mensagem.");
+    const title = projectName(ctx.cwd);
+    nativeNotify(title, "O agente terminou e está aguardando sua próxima mensagem.");
   });
 
   pi.registerCommand("attention", {
