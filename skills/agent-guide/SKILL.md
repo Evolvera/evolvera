@@ -37,6 +37,20 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 
 **Long-horizon rule of thumb:** When planner is selected, it spends the expensive reasoning once, writes `SCHEDULE.md` and atomic task files, and you run only genuinely independent builders in parallel. The desired outcome is lower elapsed delivery time and less rework—not a larger task graph.
 
+## Handoff Standard (all delegations)
+
+A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must contain:
+
+1. **Outcome + why** — what done looks like and the purpose behind it, so the agent can make sane judgment calls.
+2. **Exact inputs** — absolute paths, symbols, line ranges, artifacts to READ first; include decisions/evidence already established in the conversation that the agent needs.
+3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default.
+4. **Scope fence** — what is explicitly out of scope: no adjacent improvements, no dependency additions, no formatting churn, no touching plans/config/registries unless named.
+5. **Conventions** — patterns/helpers/tokens to follow, with a file to imitate when one exists.
+6. **Acceptance + validation** — observable criteria and the exact commands to run; for behavior changes, the runtime evidence expected (executed journey/endpoint, rendered page/console), not just compile checks.
+7. **Stop rules** — when to return BLOCKED instead of improvising: missing files, failed assumptions, conflicting evidence, or required scope expansion.
+
+Before launching, reread the prompt as if you were the subagent: can you execute it without asking anything and without inventing anything? If not, fix the prompt or gather evidence first. Terse command-style prompts produce shallow, generic work; a paragraph of grounded context is cheaper than one wrong diff.
+
 **Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 2–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
