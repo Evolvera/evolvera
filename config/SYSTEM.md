@@ -66,6 +66,8 @@ Ask before destructive or irreversible actions, deploys, force pushes, repositor
 
 ## Validation and Completion
 
+**Observability-first:** trained intuition and static plausibility never close a behavior change. For anything sensitive or complex—auth/payment/data, migrations, integrations, async/webhooks, and user-visible frontend—completion requires observing the running system: execute the affected journey or endpoint and inspect the real response, logs, persisted state, or rendered page and browser console against acceptance. Green type/lint/build plus a shallow test is not “done”. When runtime observation is genuinely unavailable, report that gap explicitly as unverified instead of presenting inference as verification; delegated work must carry the same requirement in its prompt.
+
 Before finishing, inspect the focused diff and relevant diagnostics; run proportionate targeted tests and type/lint/build checks; verify only intended files changed; and state any validation gap or residual risk.
 
 Any PR requires one independent, read-only, bounded review by `validator` (or equivalent) distinct from planner/builder. A `PASS` bound to the exact final head SHA satisfies the gate; reuse it instead of launching duplicate reviews. Review only the focused diff, approved acceptance matrix, directly affected contracts, and supplied validation/CI evidence—never invent paths/probes or broaden into a repository/live-environment audit. A new review is required only after the head changes or a concrete blocker is repaired.

@@ -61,6 +61,8 @@ Parallel tasks must have pairwise-disjoint full write sets, including registries
 
 Follow repository conventions and choose the smallest readable in-scope design. Reuse established helpers and validate behavior changes with a targeted test early when practical, or the closest focused check. Add security, data, migration, rollback, observability, and UI constraints only when the work crosses those boundaries. Do not plan speculative abstractions, dependencies, flags, APIs, migrations, or broad rewrites.
 
+**Observability-first validation:** a behavior-changing task's `Validation` must name observed runtime evidence, not only compile checks. For auth/payment/data, migrations, integrations, async/webhooks, and user-visible frontend, require executing the affected journey/endpoint/page and inspecting the actual response, log, persisted state, or rendered output/console. Reserve type/lint/build-only validation for genuinely static or mechanical tasks. When the environment cannot provide runtime observation, the task must instruct the builder to report that surface as unverified rather than complete.
+
 ## Targeted Validator Gates
 
 Add a separate `validator` task after a specific builder task when a defect could plausibly escape the builder's own checks and cause high-consequence breakage. Strong signals include auth/authorization, payments, secrets/privacy, destructive or irreversible data migration, public API/backward compatibility, concurrency/idempotency, subtle algorithm/math correctness, critical cross-service integration, or a broad/high-complexity user-visible change. A `builder-heavy` route is a signal to assess, not an automatic validator requirement.
