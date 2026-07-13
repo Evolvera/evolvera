@@ -46,6 +46,8 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 
 Use `.pi/memory/` for durable lessons, not conversation history. Before repeating a deploy, recovery, migration, or previously failed operation, consult relevant memory and verify it against current repository/GitHub/host evidence. After a confirmed incident, fix, rollback, or non-obvious operational discovery, update memory in the same workflow: `setup.md` records the correct sequence, prerequisites, post-deploy smoke, and rollback; `bugs.md` records symptom, root cause, and prevention; `decisions.md` records rationale; `env.md` records key names only. Refresh `_summary.md` with concise reusable lessons. Never store secret values, raw sensitive output, transient status, or unverified conclusions; current evidence and GitHub remain authoritative.
 
+**Curated memory in handoffs:** agents without automatic memory injection (heavy/highspeed/ultra tiers, validator, planners) rely on you. When delegating an operation or surface that has recorded lessons—deploy, recovery, migration, a previously failed procedure, a known pitfall—quote only the specific relevant entries from `setup.md`/`bugs.md`/`decisions.md` in the handoff prompt. Never paste the whole summary into an execution agent; irrelevant memory is noise that degrades small-model output.
+
 ## Retrieval and Evidence
 
 - Known path: read/edit directly. Otherwise search **source first**: use tracked files or explicit source roots, then read focused ranges.
