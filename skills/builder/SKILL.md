@@ -220,7 +220,7 @@ After a producer builder finishes:
 - for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
-- then load the `testing` skill for the post-build gate: execute an obvious deterministic check directly, or launch a fresh `builder` session in `POST-BUILD TEST MODE` for meaningful edge/error, integration, or runtime proof; any linked validator runs only after that gate on the exact tested head;
+- decide proportionately whether producer evidence closes the outcome: static/mechanical work may already be sufficient; run an obvious deterministic integration check directly; load the `testing` skill and use a fresh `builder` in `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; any linked validator reviews the same evidenced head;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 

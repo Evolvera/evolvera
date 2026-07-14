@@ -5,11 +5,11 @@ description: Post-build testing gate for PI delivery. Use after implementation a
 
 # Testing Skill — Post-Build Evidence Gate
 
-Use this skill after a producer builder checkpoint and before any linked validator or final PR review. Testing is a delivery gate, not an agent identity: use the lightest executor that can prove the approved behavior.
+Use this skill when a completed implementation still needs material behavioral, integration, edge/error, or runtime proof before closure or review. Do not invoke it merely because a builder ran: static/mechanical work may already be closed by focused deterministic evidence. Testing is a delivery responsibility, not an agent identity; use the lightest executor that can prove the approved behavior.
 
 ## Core Invariant
 
-The producer builder proves its implementation locally. The post-build gate independently proves the approved outcome on the resulting checkpoint. A builder `COMPLETE` is therefore ready for testing/integration, not automatic completion of the user's outcome.
+The producer builder proves its implementation locally. When the outcome or failure modes warrant additional independence, the post-build gate proves the approved behavior on the resulting checkpoint. A builder `COMPLETE` closes its unit, while the orchestrator decides proportionately whether that evidence closes the user's outcome.
 
 Bind every gate to one exact final head SHA. If the head changes, prior test evidence is stale and the affected gate must run again.
 
@@ -120,13 +120,13 @@ A contract/acceptance defect goes back to planning rather than implementation. T
 
 ## Validator and Ship Ordering
 
-The normal order is:
+When a separate test gate is materially warranted, the order is:
 
 ```text
 producer checkpoint → post-build test gate → validator/review → ready to ship
 ```
 
-The validator reviews the exact tested head and receives the acceptance matrix plus test evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace the test gate or rerun broad passing suites.
+Otherwise focused producer/direct evidence may flow straight to the applicable review or closure. The validator reviews the exact evidenced head and receives the acceptance matrix plus relevant test evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace the test gate or rerun broad passing suites.
 
 Merge/deploy still requires explicit authorization. When shipping includes deployment, perform the approved deploy, post-deploy smoke, and rollback procedure separately; a pre-merge local PASS is not production proof.
 

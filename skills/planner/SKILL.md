@@ -160,8 +160,8 @@ Before builders, read `SCHEDULE.md` and task contracts; ask for user review only
 - Run safe independent groups in concurrent waves according to the builder skill.
 - Create recovery snapshots before modifying existing files.
 - After each verified writing task, create exactly one selective commit and record its hash.
-- After the relevant task or coherent builder wave is checkpointed, load the `testing` skill and run the lightest post-build gate against that exact head: direct deterministic command when sufficient, otherwise a fresh `builder` in `POST-BUILD TEST MODE`; do not add testing-only task files or SCHEDULE rows.
-- A dependent task starts only after its writing dependency is checkpointed, its required post-build test gate passes, and any linked validator records `PASS`. Validator review follows testing and does not replace it.
+- After the relevant task or coherent builder wave is checkpointed, ensure proportionate outcome evidence against that exact head: producer proof may close static/mechanical work; run an obvious deterministic integration check directly; load the `testing` skill and use a fresh `builder` in `POST-BUILD TEST MODE` only when independent scenario selection, edge/error coverage, integration, or runtime observation materially improves confidence. Do not add testing-only task files or SCHEDULE rows.
+- A dependent task starts only after its writing dependency is checkpointed, any materially required post-build proof is satisfied, and any linked validator records `PASS`. Validator review complements rather than replaces behavioral testing.
 - Inspect actual diffs and validation evidence; never trust summaries alone.
 
 ## Stop Rules
