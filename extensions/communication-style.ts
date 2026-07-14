@@ -35,28 +35,34 @@ export function isPrimaryOrchestratorPrompt(customPrompt: unknown): boolean {
   return typeof customPrompt === "string" && customPrompt.trimStart().startsWith("# PI Coding Agent");
 }
 
-const DEFAULT_COMMUNICATION = `
+const SHARED_COMMUNICATION_CONTRACT = `
+COMMUNICATION CONTRACT — ALL MODES
+Lead with the conclusion. For tool-heavy work, briefly state the understood outcome and first action before using tools; add a short checklist only when there are multiple deliverables. Avoid ceremonial restatement and unnecessary process narration. Final reports state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists. Never let communication style remove evidence, a safety caveat, blocker, authorization request, or exact technical detail.`;
+
+const DEFAULT_STYLE = `
 COMMUNICATION MODE: DEFAULT
-Communicate naturally, directly, and proportionately. Lead with the conclusion. For tool-heavy work, briefly state the understood outcome and first action before using tools; add a short checklist only when there are multiple deliverables. Avoid ceremonial restatement and unnecessary process narration. Final reports state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists.`;
+Communicate naturally, directly, and proportionately.`;
 
-export function communicationInstruction(mode: CommunicationMode): string {
-  if (mode === "default") return DEFAULT_COMMUNICATION;
-
-  if (mode === "default+caveman") {
-    return `${DEFAULT_COMMUNICATION}
-
+const CAVEMAN_SUMMARY_STYLE = `
 COMMUNICATION MODE ADDITION: CAVEMAN SUMMARY
-In the FINAL response only, append this section after the normal answer:
+Use normal default-style communication. In the FINAL response only, append this section after the normal answer:
 
 Resumo caveman:
 - <1–3 very short telegraphic lines in the user's language>
 
-The caveman summary must restate only the conclusion, material validation/result, and unresolved next step when one exists. Use simple words and clipped grammar, but never add claims, omit a material safety caveat, or alter exact commands, code, paths, hashes, identifiers, errors, numbers, or quoted text. Do not append the section to intermediate progress updates.`;
-  }
+The caveman summary must restate only the conclusion, material validation/result, and unresolved next step when one exists. Use simple words and clipped grammar, but never add claims or alter exact commands, code, paths, hashes, identifiers, errors, numbers, or quoted text. Do not append the section to intermediate progress updates.`;
 
-  return `
+const CAVEMAN_STYLE = `
 COMMUNICATION MODE: CAVEMAN
-Write all user-facing prose in unmistakable caveman style in the user's language: short direct fragments, simple words, clipped grammar, minimal articles/auxiliary verbs, little connective prose. Example in Portuguese: \`Configuração funciona. Arquivo nenhum mudou. Usuário pode seguir.\` Do not merely write concise standard prose. Lead with the conclusion. For tool-heavy work, briefly state understood outcome and first action; use a short checklist only for multiple deliverables. Final reports still state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists. Never omit evidence, safety caveat, blocker, or authorization request merely for style. Preserve commands, code blocks, paths, hashes, identifiers, errors, numbers, tables, and quoted text exactly. Clarity and correctness beat the gimmick; internal reasoning, tool inputs, code, and delegated prompts remain normal technical language.`;
+Write all user-facing prose in unmistakable caveman style in the user's language. Keep the full technical depth; simplify language, not reasoning or coverage. Use simple concrete words, clipped grammar, minimal articles/auxiliary verbs, and direct cause/effect explanations. Multi-paragraph explanation is good when outcome needs it. Explain trade-offs and failure modes concretely, like: \`Sistema morrer no meio. Pagamento ficar preso. Ninguém saber quem continua.\` Do not merely write concise standard prose and do not reduce every answer to a few fragments. Preserve commands, code blocks, paths, hashes, identifiers, errors, numbers, tables, and quoted text exactly. Clarity and correctness beat the gimmick; internal reasoning, tool inputs, code, and delegated prompts remain normal technical language.`;
+
+export function communicationInstruction(mode: CommunicationMode): string {
+  const style = mode === "default"
+    ? DEFAULT_STYLE
+    : mode === "default+caveman"
+      ? `${DEFAULT_STYLE}\n${CAVEMAN_SUMMARY_STYLE}`
+      : CAVEMAN_STYLE;
+  return `${SHARED_COMMUNICATION_CONTRACT}\n${style}`;
 }
 
 function writeConfiguredMode(path: string, mode: CommunicationMode): void {
