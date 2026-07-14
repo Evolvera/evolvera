@@ -212,13 +212,15 @@ If more than two boxes are missing, do more prep or implement directly.
 
 ## Result Handling
 
-After builder finishes:
+After a producer builder finishes:
+- treat `COMPLETE` as ready for integration/testing, not automatic closure of the user's outcome;
 - inspect actual diff, not just its summary;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
-- run or review validation results;
+- run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
+- then load the `testing` skill for the post-build gate: execute an obvious deterministic check directly, or launch a fresh `builder` session in `POST-BUILD TEST MODE` for meaningful edge/error, integration, or runtime proof; any linked validator runs only after that gate on the exact tested head;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 

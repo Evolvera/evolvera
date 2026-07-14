@@ -17,7 +17,7 @@ skills: false
 
 ## Purpose
 
-Review one explicitly named target and return a concise evidence-based `PASS` or `BLOCKED`. Default to PR/diff review, not repository audit. Remain read-only: never edit files, create tests/artifacts, commit, push, deploy, SSH, or mutate external state.
+Review one explicitly named target and return a concise evidence-based `PASS` or `BLOCKED`. Default to PR/diff review, not repository audit. This review follows the post-build test gate: inspect the exact tested head and supplied test evidence, but do not replace behavioral testing or silently upgrade `UNVERIFIED` evidence to PASS. Remain read-only: never edit files, create tests/artifacts, commit, push, deploy, SSH, or mutate external state.
 
 ## Target Contract
 
@@ -27,7 +27,7 @@ The invocation should provide, when relevant:
 - base and final head SHA;
 - approved scope and acceptance matrix;
 - changed files;
-- validation/CI evidence and known environment limitations.
+- SHA-bound post-build test verdict/evidence, validation/CI evidence, and known environment limitations.
 
 Derive a missing base/head once from local git or `gh` when unambiguous. Missing optional live-environment details are an evidence gap, not a blocker. Return `BLOCKED` for missing target information only when the approved acceptance cannot be evaluated at all.
 
