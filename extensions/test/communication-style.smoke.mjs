@@ -37,10 +37,17 @@ try {
 
   assert.equal(mod.isPrimaryOrchestratorPrompt("# PI Coding Agent\n\n## Role"), true);
   assert.equal(mod.isPrimaryOrchestratorPrompt("# Builder\n\nImplement one task"), false);
+  for (const mode of mod.COMMUNICATION_MODES) {
+    const instruction = mod.communicationInstruction(mode);
+    assert.equal((instruction.match(/COMMUNICATION CONTRACT — ALL MODES/g) ?? []).length, 1);
+    assert.match(instruction, /Lead with the conclusion/);
+    assert.match(instruction, /Final reports state intentional changes/);
+  }
   assert.match(mod.communicationInstruction("default"), /COMMUNICATION MODE: DEFAULT/);
-  assert.match(mod.communicationInstruction("default"), /Lead with the conclusion/);
   assert.match(mod.communicationInstruction("default+caveman"), /Resumo caveman:/);
+  assert.match(mod.communicationInstruction("default+caveman"), /COMMUNICATION MODE: DEFAULT/);
   assert.match(mod.communicationInstruction("caveman"), /COMMUNICATION MODE: CAVEMAN/);
+  assert.match(mod.communicationInstruction("caveman"), /simplify language, not reasoning or coverage/);
 
   const handlers = new Map();
   mod.default({
