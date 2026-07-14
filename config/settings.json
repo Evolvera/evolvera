@@ -11,5 +11,6 @@
     "npm:pi-provider-kimi-code"
   ],
   "hideThinkingBlock": false,
-  "theme": "cyberpsycho"
+  "theme": "cyberpsycho",
+  "communicationMode": "default"
 }
