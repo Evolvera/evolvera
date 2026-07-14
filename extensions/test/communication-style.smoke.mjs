@@ -37,7 +37,8 @@ try {
 
   assert.equal(mod.isPrimaryOrchestratorPrompt("# PI Coding Agent\n\n## Role"), true);
   assert.equal(mod.isPrimaryOrchestratorPrompt("# Builder\n\nImplement one task"), false);
-  assert.equal(mod.communicationInstruction("default"), undefined);
+  assert.match(mod.communicationInstruction("default"), /COMMUNICATION MODE: DEFAULT/);
+  assert.match(mod.communicationInstruction("default"), /Lead with the conclusion/);
   assert.match(mod.communicationInstruction("default+caveman"), /Resumo caveman:/);
   assert.match(mod.communicationInstruction("caveman"), /COMMUNICATION MODE: CAVEMAN/);
 

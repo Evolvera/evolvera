@@ -35,13 +35,18 @@ export function isPrimaryOrchestratorPrompt(customPrompt: unknown): boolean {
   return typeof customPrompt === "string" && customPrompt.trimStart().startsWith("# PI Coding Agent");
 }
 
-export function communicationInstruction(mode: CommunicationMode): string | undefined {
-  if (mode === "default") return undefined;
+const DEFAULT_COMMUNICATION = `
+COMMUNICATION MODE: DEFAULT
+Communicate naturally, directly, and proportionately. Lead with the conclusion. For tool-heavy work, briefly state the understood outcome and first action before using tools; add a short checklist only when there are multiple deliverables. Avoid ceremonial restatement and unnecessary process narration. Final reports state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists.`;
+
+export function communicationInstruction(mode: CommunicationMode): string {
+  if (mode === "default") return DEFAULT_COMMUNICATION;
 
   if (mode === "default+caveman") {
-    return `
-COMMUNICATION MODE: DEFAULT + CAVEMAN SUMMARY
-Keep all normal user-facing communication unchanged: precise, natural, outcome-first, and proportionate. In the FINAL response only, append this section after the normal answer:
+    return `${DEFAULT_COMMUNICATION}
+
+COMMUNICATION MODE ADDITION: CAVEMAN SUMMARY
+In the FINAL response only, append this section after the normal answer:
 
 Resumo caveman:
 - <1–3 very short telegraphic lines in the user's language>
@@ -51,7 +56,7 @@ The caveman summary must restate only the conclusion, material validation/result
 
   return `
 COMMUNICATION MODE: CAVEMAN
-Write all user-facing prose in unmistakable caveman style in the user's language: short direct fragments, simple words, clipped grammar, minimal articles/auxiliary verbs, little connective prose. Example in Portuguese: \`Configuração funciona. Arquivo nenhum mudou. Usuário pode seguir.\` Do not merely write concise standard prose. Keep the answer useful and technically exact. Never omit the conclusion, material evidence, validation result, safety caveat, blocker, authorization request, or next action merely for style. Preserve commands, code blocks, paths, hashes, identifiers, errors, numbers, tables, and quoted text exactly. Clarity and correctness beat the gimmick; internal reasoning, tool inputs, code, and delegated prompts remain normal technical language.`;
+Write all user-facing prose in unmistakable caveman style in the user's language: short direct fragments, simple words, clipped grammar, minimal articles/auxiliary verbs, little connective prose. Example in Portuguese: \`Configuração funciona. Arquivo nenhum mudou. Usuário pode seguir.\` Do not merely write concise standard prose. Lead with the conclusion. For tool-heavy work, briefly state understood outcome and first action; use a short checklist only for multiple deliverables. Final reports still state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists. Never omit evidence, safety caveat, blocker, or authorization request merely for style. Preserve commands, code blocks, paths, hashes, identifiers, errors, numbers, tables, and quoted text exactly. Clarity and correctness beat the gimmick; internal reasoning, tool inputs, code, and delegated prompts remain normal technical language.`;
 }
 
 function writeConfiguredMode(path: string, mode: CommunicationMode): void {
@@ -131,7 +136,6 @@ export default function communicationStyleExtension(pi: ExtensionAPI) {
       mode = "default";
     }
     const instruction = communicationInstruction(mode);
-    if (!instruction) return undefined;
     return { systemPrompt: `${event.systemPrompt}\n\n${instruction}` };
   });
 }
