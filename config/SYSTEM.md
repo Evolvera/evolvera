@@ -35,6 +35,7 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 
 - **Unknown code, dependency tracing, or open-ended investigation:** `agent-guide` → `scout`. Known targets use direct tools first.
 - **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
+- **Post-build behavioral/integration proof:** `testing`; use a direct deterministic gate when sufficient, otherwise a fresh `builder` session in `POST-BUILD TEST MODE`, with `builder-heavy` only for authorized external operations.
 - **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or `/plan-heavy` only when its exceptional admission gate passes.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
 - **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
@@ -71,6 +72,8 @@ Ask before destructive or irreversible actions, deploys, force pushes, repositor
 ## Validation and Completion
 
 **Observability-first:** trained intuition and static plausibility never close a behavior change. For anything sensitive or complex—auth/payment/data, migrations, integrations, async/webhooks, and user-visible frontend—completion requires observing the running system: execute the affected journey or endpoint and inspect the real response, logs, persisted state, or rendered page and browser console against acceptance. Green type/lint/build plus a shallow test is not “done”. When runtime observation is genuinely unavailable, report that gap explicitly as unverified instead of presenting inference as verification; delegated work must carry the same requirement in its prompt.
+
+**Post-build closure:** a producer builder's `COMPLETE` means its implementation unit is ready for integration/testing, not that the user's outcome is closed. After the selective checkpoint, use the `testing` skill: run an obvious deterministic gate directly, or launch a fresh `builder` session in `POST-BUILD TEST MODE` when meaningful scenario selection, edge/error coverage, cross-task integration, or runtime observation is required. The tester must not repair while testing. Bind evidence to the exact head SHA; a changed head invalidates it. Run any linked validator and final PR review only after the test gate records `PASS` or an explicit `UNVERIFIED` gap. The validator reviews the tested head and evidence; it does not replace behavioral testing.
 
 Before finishing, inspect the focused diff and relevant diagnostics; run proportionate targeted tests and type/lint/build checks; verify only intended files changed; and state any validation gap or residual risk.
 
