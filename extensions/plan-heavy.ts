@@ -155,7 +155,7 @@ ${hazards}
 - Block if dirty-file ownership is ambiguous for files a task must touch.
 - Block if a task would modify a large/shared file without preservation markers.
 - Block if safe validation cannot be defined for a correctness-sensitive change.
-- Route high-risk bounded implementation to builder-heavy and assess whether a linked validator successor is warranted by consequence.
+- Route bounded local implementation to builder regardless of a high-risk label; builder-heavy is only for host/external operations or exceptional live multi-runtime coordination. Add a linked validator only for a named escape risk that materially benefits from independent review.
 </stop_rules>
 `;
 
@@ -218,7 +218,7 @@ Write the plan ecosystem into \`${planDir}\`:
 - SCHEDULE.md
 - TASKS/task_NN_<agent>.md
 
-Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. KISS means each builder gets a small, clear, independently verifiable outcome; task count is not capped. Every writing task must be intentionally shaped as one selective commit: it owns one implementation outcome, exact write set, validation result, and rollback boundary. Split only at real implementation, write-set, checkpoint, rollback, or validation boundaries. Give every matrix, safety rule, rollback procedure, and evidence package one owner; consumers reference that artifact/verdict instead of repeating it. Do not create builder tasks for PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes that tooling. Route routine locally-decidable work (clear anchor, established pattern, exact validation) to builder-light, routine design-system UI to builder-light-design, normal-risk general work to builder, frontend/UI needing visual judgment to builder-design, high-risk correctness/integration to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Never route to a light tier when correctness depends on implicit cross-module contracts, subtle state/lifecycle, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation. For selected high-consequence or regression-prone builder tasks, add a separate \`task_NN_validator.md\` linked as the next SCHEDULE dependency; do not add blanket validator tasks, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Every task file MUST contain these sections or validation blocks it: \`**Agent**\` (a supported tier), \`Why\`/\`Goal\`, \`Read\`, \`Change\` with exact CREATE/MODIFY paths, \`Acceptance\`, \`Validation\`, and \`Checkpoint\` with recovery requirement and selective commit scope. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. If \`plan_heavy_validate\` returns BLOCKED, stop and report it; do not resume or reconcile the plan in a loop. After writing files, respond with the plan dir and next command: /plan-heavy validate ${planDir}.`;
+Preserve repo-state hazards, dirty-file exclusions, recovery requirements, and checkpoint commit policy from HANDOFF.md. KISS means prefer the fewest coherent tasks that give each builder a clear, independently verifiable outcome; task count is neither a target nor an artificial cap. Do not split merely for phase labels, risk prose, or duplicated review ceremony. Every writing task must be intentionally shaped as one selective commit: it owns one implementation outcome, exact write set, validation result, and rollback boundary. Split only at real implementation, write-set, checkpoint, rollback, or validation boundaries. Give every matrix, safety rule, rollback procedure, and evidence package one owner; consumers reference that artifact/verdict instead of repeating it. Do not create builder tasks for PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes that tooling. Route routine locally-decidable work (clear anchor, established pattern, exact validation) to builder-light, routine design-system UI to builder-light-design, normal and high-consequence bounded local work to builder, frontend/UI needing visual judgment to builder-design, only host/external operations or exceptional live multi-runtime coordination beyond normal builder capacity to builder-heavy, and exceptional visual craft beyond builder-design to builder-heavy-design. Never route to a light tier when correctness depends on implicit cross-module contracts, subtle state/lifecycle, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation. Producer tasks own focused tests; do not create testing-only tasks. Add a separate \`task_NN_validator.md\` only for a named escape risk that materially benefits from independent review; consolidate gates over coherent serialized boundaries when one evidence suite can safely review them, never pair a validator with every risky-looking task, and use PASS/BLOCKED rather than an empty checkpoint commit for review-only gates. Every task file MUST contain these sections or validation blocks it: \`**Agent**: <supported-tier>\`, \`Why\`/\`Goal\`, \`Read\`, \`Change\` with exact CREATE/MODIFY paths, \`Acceptance\`, \`Validation\`, and \`Checkpoint\` with recovery requirement and selective commit scope. Keep task files compact: no TODO/TILL-DO templates, duplicated context, generic principle boilerplate, dependency prose, or N/A fields; builders and execution envelopes already own that process. If \`plan_heavy_validate\` returns BLOCKED, stop and report it; do not resume or reconcile the plan in a loop. After writing files, respond with the plan dir and next command: /plan-heavy validate ${planDir}.`;
 
   ensureDir(join(planDir, "BRIEFS"));
   writeText(join(planDir, "HANDOFF.md"), handoff);
@@ -516,7 +516,20 @@ function isActiveParallelGroup(value: string): boolean {
 }
 
 function declaredAgent(taskContent: string): string {
-  return taskContent.match(/\*\*Agent\*\*\s*:\s*([a-z0-9-]+)/i)?.[1]?.toLowerCase() ?? "";
+  for (const line of taskContent.split("\n")) {
+    // Accept equivalent Markdown labels: **Agent**: builder,
+    // **Agent:** `builder`, or plain Agent: builder.
+    const normalized = line.replace(/[`*_]/g, "").trim();
+    const match = normalized.match(/^Agent\s*:\s*([a-z0-9-]+)/i);
+    if (match) return match[1].toLowerCase();
+  }
+  return "";
+}
+
+function hasTaskPreservationContract(taskContent: string): boolean {
+  if (hasLabel(taskContent, "Constraints") || hasLabel(taskContent, "Patch Anchors")) return true;
+  const checkpoint = extractSection(taskContent, "Checkpoint");
+  return /\b(?:preserv(?:e|es|ed|ing|ation)|anchor(?:s)?|must survive|unaffected)\b/i.test(checkpoint);
 }
 
 function hasPassBlockedContract(value: string): boolean {
@@ -637,8 +650,8 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
       const base = normalized.split("/").pop() ?? normalized;
       return sharedHazardText.includes(normalized) || (base.length > 3 && sharedHazardText.includes(base));
     });
-    if (!isValidator && modifies && declaredHazard && !hasLabel(content, "Constraints") && !hasLabel(content, "Patch Anchors")) {
-      findings.push(`BLOCKER: ${name} modifies a declared shared-file hazard but has no Constraints or Patch Anchors`);
+    if (!isValidator && modifies && declaredHazard && !hasTaskPreservationContract(content)) {
+      findings.push(`BLOCKER: ${name} modifies a declared shared-file hazard but has no preservation contract or patch anchors`);
     }
 
     const lines = content.split("\n").length;
@@ -710,8 +723,8 @@ function validatePlan(planDir: string): { ok: boolean; report: string } {
           findings.push(`BLOCKER: overlapping target ${target} is not serialized by an explicit dependency between ${a.name} and ${b.name}`);
         }
         for (const record of [a, b]) {
-          if (record.compact && record.modifies && !hasLabel(record.content, "Constraints") && !hasLabel(record.content, "Patch Anchors")) {
-            findings.push(`BLOCKER: ${record.name} overlaps on ${target} but has no Constraints or Patch Anchors`);
+          if (record.compact && record.modifies && !hasTaskPreservationContract(record.content)) {
+            findings.push(`BLOCKER: ${record.name} overlaps on ${target} but has no preservation contract or patch anchors`);
           }
         }
       }

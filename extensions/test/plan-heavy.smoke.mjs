@@ -134,7 +134,7 @@ try {
 `);
   write(path.join(kissAliases, "TASKS", "task_01_builder-heavy.md"), `# Apply bounded change
 
-**Agent**: builder-heavy
+**Agent:** \`builder-heavy\`
 
 ## Change
 - MODIFY \`package.json\` — preserve explanatory pattern \`/.htaccess\`.
@@ -151,7 +151,7 @@ Snapshot MODIFY under \`.pi/recovery/kiss/before/\`. Commit only declared paths.
 `);
   write(path.join(kissAliases, "TASKS", "task_02_validator.md"), `# Review bounded change
 
-**Agent**: validator
+**Agent:** \`validator\`
 
 Read-only review of Task 01; no edits or commits.
 
@@ -261,8 +261,8 @@ Read-only review of Task 01; no edits or commits.
       "| 02 | TASKS/task_02_builder-heavy.md | builder-heavy | pending | 01 | none | ./package.json | required | pending |",
     ],
     tasks: {
-      "task_01_builder-heavy.md": task({ id: "01" }),
-      "task_02_builder-heavy.md": task({ id: "02", target: "./package.json" }),
+      "task_01_builder-heavy.md": task({ id: "01", constraints: false }).replace("Commit scope:", "Preserve manifest anchors. Commit scope:"),
+      "task_02_builder-heavy.md": task({ id: "02", target: "./package.json", constraints: false }).replace("Commit scope:", "Preserve manifest anchors. Commit scope:"),
     },
   });
   await expectValidation(safeOverlap, true);
