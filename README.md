@@ -165,7 +165,7 @@ website-designer → seo-content-writer → planner → builder-design → websi
 
 ### Pesquisa Web
 
-Pesquisa web ampla usa as ferramentas Kimi/Moonshot expostas pelo `pi-provider-kimi-code`: `moonshot_search` para descoberta e `moonshot_fetch` para ler páginas. URLs/PDFs fornecidos também podem ser lidos com `jina_read`.
+Não há ferramenta de descoberta web ampla configurada. URLs/PDFs conhecidos podem ser lidos com `jina_read`; quando uma tarefa depende de descobrir fontes na web e nenhuma URL está fundamentada, o agente deve reportar essa limitação em vez de inventar links.
 
 ---
 
@@ -302,8 +302,8 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 | Intenção detectada | Agente | Exemplos |
 |-------------------|--------|----------|
-| Ler/analisar URL fornecida | `moonshot_fetch` / `jina_read` | "lê essa página", "resume esse PDF" |
-| Pesquisa web ampla | `moonshot_search` | "pesquisa X", "quem é Y?" |
+| Ler/analisar URL fornecida | `jina_read` | "lê essa página", "resume esse PDF" |
+| Pesquisa web ampla | Não configurada | Requer um novo provider/tool de descoberta |
 | Explorar código | `scout` | "como funciona X?" |
 | Planejar feature | `planner` | "planeja a implementação de X" |
 | Planejar quick fix | Pré-plano direto | "corrige X", "troca Y por Z" |

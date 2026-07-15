@@ -7,8 +7,7 @@
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents",
-    "npm:pi-alibaba-models",
-    "npm:pi-provider-kimi-code"
+    "npm:pi-alibaba-models"
   ],
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",

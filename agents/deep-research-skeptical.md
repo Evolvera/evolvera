@@ -1,7 +1,7 @@
 ---
 description: "Deep Research v2 - Skeptical agent. Verifies claims, demands evidence, checks statistics, and flags weak sourcing. Returns structured YAML findings. Model: openai-codex/gpt-5.5."
 display_name: 🟡 DRv2 Skeptical · GPT-5.5 · low
-tools: moonshot_search, moonshot_fetch, jina_read
+tools: jina_read
 model: openai-codex/gpt-5.5
 thinking: low
 max_turns: 15
