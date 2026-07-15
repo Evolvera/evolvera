@@ -51,7 +51,7 @@ Use a lightweight structure:
 [Implementation logic, tradeoffs, commit/rollback/validation boundaries, and ordering constraints at strategy level—never tasks or a DAG.]
 
 ## Risks, Routing, and Validation
-[Material hazards and mitigations; builder-tier principles; checks that prove the approach. Routine locally-decidable work routes to builder-light, routine design-system UI to builder-light-design, normal work to builder, UI needing visual judgment to builder-design, correctness/high-consequence work to builder-heavy, and exceptional visual craft to builder-heavy-design.]
+[Material hazards and mitigations; builder-tier principles; checks that prove the approach. Routine locally-decidable work routes to builder-light, routine design-system UI to builder-light-design, normal and high-consequence bounded local work to builder, UI needing visual judgment to builder-design, only external/live multi-runtime operations beyond normal builder capacity to builder-heavy, and exceptional visual craft to builder-heavy-design.]
 
 ## Open Questions / TO VERIFY
 [Only unknowns that can change implementation, safety, or decomposition.]
