@@ -53,6 +53,9 @@ for skill_dir in "$SCRIPT_DIR"/skills/*/; do
 done
 
 # ── Extensions ────────────────────────────────
+# Remove retired harnesses so updates do not leave stale global commands/tools.
+rm -f "$PI_DIR/extensions/plan-heavy.ts"
+
 if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"

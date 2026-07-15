@@ -35,7 +35,7 @@ Success requires the requested behavior, only intended file changes, preserved p
 
 ## Execution
 
-1. Read the direct task or planner task completely. If supplied, read the `EXECUTION_ENVELOPE` next and treat it as authoritative for runtime state, dirty-file exclusions, edit boundaries, snapshots, checkpoints, and preservation markers.
+1. Read the direct task or planner task completely.
 2. Identify the outcome, targets, success criteria, relevant symbols/contracts, shared-file risks, and validation. Retrieve only evidence needed to implement safely; expand retrieval when data flow, public behavior, a missing dependency, or a validation failure requires it.
 3. Snapshot every existing target before mutation. For large/shared files, also capture line count and required preservation markers.
 4. Apply narrow changes within scope. Prefer exact anchored replacements or append-only additions in shared files; never reconstruct a shared file from memory.
