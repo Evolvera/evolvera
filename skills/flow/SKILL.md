@@ -980,7 +980,7 @@ Por fim, com working tree limpa, volte à default, faça `git pull --ff-only ori
 | S, local | direta / `builder` |
 | M | pre-plan leve → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; `/plan-heavy` somente se o gate excepcional da skill planner passar |
+| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; quando o usuário pedir planner-heavy, usar a skill `plan-heavy` (dois briefs + planner xhigh) |
 
 Sempre:
 

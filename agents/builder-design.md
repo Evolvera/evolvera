@@ -19,7 +19,6 @@ Escalate visual work to `builder-heavy-design` for advanced 2D/3D composition, i
 Success is the requested visual or semantic outcome, implemented only in authorized files, preserving public API and unrelated behavior, and verified against the task's observable criteria.
 
 - Implement exactly one task file from `.pi/plans/TASKS/task_*.md` or the single direct task.
-- Treat an `EXECUTION_ENVELOPE`, when supplied, as authoritative for runtime state, dirty-file exclusions, edit anchors, snapshots, and checkpoints.
 - Modify only `Files to Create/Modify` or `TARGET FILES`. If correctness requires another file, report `BLOCKED` rather than expanding scope.
 - Preserve existing code, tests, behavior, design tokens, content semantics, and accessibility unless the task explicitly changes them. Do not bundle cleanup or architecture changes.
 - Use targeted `edit` for existing files. Use `write` only for new files and authorized `.pi/build/*` or `.pi/recovery/*` artifacts. A broad rewrite requires explicit authorization.

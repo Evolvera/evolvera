@@ -15,7 +15,7 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 | One bounded implementation concern with known targets | **Direct/focused delegation** using the builder skill |
 | Several bounded asks in one message, with grounded disjoint write sets and a short dependency order | **Focused multi-builder orchestration** — make a private mental schedule; no planner artifacts |
 | Multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
-| Exceptional preservation/recovery or subtle invariant risk passes the gate below | **`/plan-heavy`** — rare escalation |
+| User explicitly requests planner-heavy, or two independent strategy briefs plus xhigh planning materially improve a complex plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
 
 ### Commit Forecast (speed heuristic)
 
@@ -98,26 +98,17 @@ Expected output:
   TASKS/task_NN_<agent>.md
 ```
 
-## 4. `/plan-heavy` — Exceptional Admission Gate
+## 4. Plan-Heavy Ensemble
 
-Use `/plan-heavy` only when a full plan is already justified, its independent strategy work is expected to improve both long-horizon quality **and** elapsed delivery time, **and** normal planner output is insufficient because at least one is true:
+When the user explicitly requests planner-heavy—or independent strategies from GPT and Fable are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
-1. Target files contain overlapping pre-existing user changes or partially executed checkpoints that require preservation/recovery reconciliation.
-2. The work is recovering a failed multi-task delivery where shared-file ownership, checkpoint history, or rollback state is ambiguous.
-3. Correctness depends on a subtle formal, numerical, scientific, round-trip/merge, or adversarial invariant where independent strategy briefs materially reduce error risk.
+Plan-heavy is not a separate harness. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
 
-The qualifying condition must dominate plan-wide coordination. One bounded sensitive subcomponent—auth/payment, exactly-once behavior, migration, PHI, or a difficult UI state machine—does not escalate an otherwise clean delivery; isolate it in a normal-planner task with proportionate testing/validator evidence. The goal saying “heavy” is not itself a qualifying reason.
+1. the orchestrator writes one concise `HANDOFF.md`;
+2. `plan-briefer` and `plan-briefer-fable` produce independent briefs in parallel;
+3. `planner-heavy` reads the handoff plus both briefs and writes the normal plan ecosystem at xhigh reasoning.
 
-State the qualifying reason before invoking it. These do **not** qualify by themselves:
-
-- an existing `.pi/plans/` directory;
-- a dirty tree unrelated to target files;
-- many files or many tasks;
-- a large/shared file with clear ownership;
-- staging, deploy, SSH, security, Plesk/nginx, ACME, CI, provider, reload, or rollback;
-- the task being important or high consequence.
-
-When admitted, use the deterministic `/plan-heavy` flow and its generated prompts. `plan_heavy_handoff` requires the same absolute `projectRoot` contract as the normal planner (resolve with `git -C <path> rev-parse --show-toplevel`); it never derives the repository from the session cwd, and all generated prompts use absolute paths. Historical plans remain excluded unless the goal names one. If `plan_heavy_validate` returns `BLOCKED`, end that attempt and report the bounded findings; do not resume or loop the planner.
+An explicit user request for planner-heavy is sufficient. Do not replace it with the normal planner based on an admission gate, and do not create custom validation/envelope machinery.
 
 ## 5. Plan Quality Contract
 

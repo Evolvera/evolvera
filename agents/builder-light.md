@@ -42,7 +42,7 @@ Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs bound
 
 ## Workflow
 
-1. Read the direct task or planner task completely. If provided, read the `EXECUTION_ENVELOPE` next and treat it as authoritative for runtime state, dirty-file exclusions, edit boundaries, snapshots, and checkpoints.
+1. Read the direct task or planner task completely.
 2. Extract the goal, success criteria, targets, preservation markers, constraints, and validation. Read each target and verify relevant symbols, dependencies, tests, and repository patterns. If this reveals the task is not locally decidable, stop with the escalation blocker instead of implementing.
 3. Create a byte-for-byte pre-edit snapshot at `.pi/recovery/{task_id}/before/<relative-path>` only when required: the task or envelope demands it, the target is dirty/untracked or outside git, the file is large/shared/preservation-critical, or the change is a destructive transformation. Otherwise git history plus the selective checkpoint commit is the rollback boundary. If a required snapshot fails, stop `BLOCKED`.
 4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.

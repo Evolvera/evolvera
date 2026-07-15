@@ -78,9 +78,9 @@ git pull
 | **Scout Highspeed** | ⚡ | Explorador rápido para buscas estreitas | GPT-5.3 Codex Spark medium | micro-scouts mecânicos |
 | **Scout** | 🔍 | Explorador cauteloso e coerente | GPT-5.6 Luna high | mapas amplos, evidência e síntese |
 | **Planner** | 🏛️ | Gera PLAN_FULL/SCHEDULE e tasks compactas | GPT-5.6 Sol medium | planejamento normal complexo |
-| **Planner Heavy** | 🏛️ | Core final do `/plan-heavy` | GPT-5.6 Sol xhigh | planos de alto risco |
-| **Plan Briefer** | 🧩 | Brief estratégico GPT | GPT-5.6 Sol high | ensemble `/plan-heavy` |
-| **Plan Briefer (Fable)** | 🧩 | Brief estratégico alternativo | Claude Fable 5 high | ensemble `/plan-heavy` |
+| **Planner Heavy** | 🏛️ | Planner final do ensemble heavy | GPT-5.6 Sol xhigh | plano com duas estratégias prévias |
+| **Plan Briefer** | 🧩 | Brief estratégico GPT | GPT-5.6 Sol high | ensemble plan-heavy |
+| **Plan Briefer (Fable)** | 🧩 | Brief estratégico alternativo | Claude Fable 5 high | ensemble plan-heavy |
 | **Plan Brief Merger** | 🔗 | Reconcilia os dois briefs | GPT-5.6 Terra high | merge de estratégia |
 | **Builder Highspeed** | ⚡ | Edições mecânicas e rápidas | GPT-5.3 Codex Spark xhigh | single-file/tooling/tests |
 | **Builder** | 🔨 | Executor geral normal-risk | GPT-5.6 Luna xhigh | backend/tooling/testes/integração comum |
@@ -223,50 +223,41 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `design-extractor` | Extrai design system a partir de URL usando `jina_read` |
 | `git-research` | Clona repos temporariamente para pesquisa com cleanup automático |
 | `pi-tool-expert` | Guia completo para criar/modificar extensões, tools e MCP |
-| `planner` | Workflow para planejamento multi-file |
+| `planner` | Seleciona planejamento direto, planner normal ou ensemble heavy |
+| `plan-heavy` | Dois briefs paralelos → planner-heavy xhigh → artifacts normais |
 | `project-memory` | Memória persistente por projeto |
 | `scout` | Exploração read-only do codebase |
+| `testing` | Gate pós-build proporcional, direto ou via builder em modo tester |
 | `website-home-preview` | Fluxo autônomo para Home Page premium em `index.html` |
 | `website-pipeline` | Orquestração design → conteúdo → plano → build |
 | `website-stack` | Convenções de stack para websites |
 
-## 🔌 Extensões (7)
+## 🔌 Extensões (8)
 
 | Extensão | O que faz |
 |----------|-----------|
 | `auto-image-clipboard.ts` | Captura imagens do clipboard automaticamente |
+| `communication-style.ts` | Modos default, default+caveman e caveman |
 | `goal-mode.ts` | Adiciona `/goal` para fixar done criteria até concluir ou limpar |
 | `jina-reader.ts` | Lê URLs e PDFs via Jina Reader |
 | `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
-| `plan-heavy.ts` | Harness `/plan-heavy` para handoff determinístico + validação de plano |
 | `project-memory.ts` | Gerencia memória persistente por projeto |
+| `subagent-watchdog.ts` | Interrompe subagentes excedendo limites operacionais |
+| `user-attention-notifier.ts` | Notifica quando o orchestrator principal aguarda o usuário |
 
-### `/plan-heavy` — Planner Harness
+### Plan-heavy — ensemble leve
 
-Use para planejamento long-horizon/high-risk antes de builders. O harness cria um handoff determinístico com repo state, dirty files, hazards e checkpoint policy, depois orienta o uso do `planner-heavy`.
+Plan-heavy usa os mesmos artifacts e a mesma execução do planner normal. A diferença inteira é:
 
-```txt
-/plan-heavy <goal>                         # cria handoff + prompts dos briefers/merge/planner e inicia o ensemble
-/plan-heavy validate <plan-dir>            # valida PLAN_FULL/SCHEDULE/TASKS antes de rodar builders
-/plan-heavy envelope <plan-dir> <task-id>  # cria EXECUTION_ENVELOPE para o builder da task
+```text
+HANDOFF.md do orchestrator
+  → plan-briefer GPT + plan-briefer Fable em paralelo
+  → planner-heavy GPT-5.6 Sol xhigh lê ambos
+  → PLAN_FULL.md + SCHEDULE.md + TASKS/
+  → fluxo normal de builders/testing/validator
 ```
 
-O mesmo harness também é exposto como **tools chamáveis pelo agente** (para orquestração autônoma, sem depender de slash command digitado por humano):
-
-| Tool | Equivalente | Função |
-|------|-------------|--------|
-| `plan_heavy_handoff` | `/plan-heavy <goal>` | coleta repo state e cria `HANDOFF.md` + prompts separados para briefers/planner |
-| `plan_heavy_validate` | `/plan-heavy validate` | valida o plano e escreve `PLAN_HEAVY_VALIDATION.md` |
-| `plan_heavy_envelope` | `/plan-heavy envelope` | gera o `EXECUTION_ENVELOPE` da task |
-
-Fluxo ensemble (4 fases):
-
-1. **Handoff** — `/plan-heavy <goal>` (ou tool `plan_heavy_handoff`, que exige `projectRoot` absoluto) coleta `git status`, commits, dirty files e hazards; cria `HANDOFF.md` + `BRIEFS/` com prompts separados dos briefers. O agente não deve parar aqui.
-2. **Briefs (paralelo)** — `plan-briefer` (GPT-5.6 Sol high) e `plan-briefer-fable` (Claude Fable 5 high) rodam em paralelo, cada um afinado pro guia do seu modelo. Cada um escreve UM brief de estratégia/lógica/conhecimento (`BRIEFS/brief_gpt.md`, `BRIEFS/brief_fable.md`) — sem tasks, sem DAG.
-3. **Plano** — `planner-heavy` (GPT-5.6 Sol xhigh) lê `HANDOFF.md` + os DOIS briefs, reconcilia divergências explicitamente no `PLAN_FULL.md` e escreve `SCHEDULE.md` e tasks compactas (normalmente 40–90 linhas; sem TODO/TILL-DO duplicado).
-4. **Gate/execução** — `/plan-heavy validate <plan-dir>` aceita o contrato compacto e bloqueia ausência de agente/goal/change/acceptance/validation/checkpoint ou hazards concretos; `/plan-heavy envelope` adiciona o runtime state/recovery/checkpoint que não precisa ser repetido na task.
-
-A reconciliação dos briefs acontece dentro do `planner-heavy` (xhigh), que é quem decide o output estruturado e grounda tudo no repo (brief é guia, repo vence em divergência).
+Não existe extensão, slash command, tool de validação, schema harness ou execution envelope específico. O workflow vive nas skills `planner` e `plan-heavy`; o planner-heavy reconcilia os dois briefs diretamente contra evidência do repositório.
 
 ### `/goal` — Goal Mode
 
@@ -349,7 +340,7 @@ Pi/
 │   └── mcp.json            # Configuração dos MCP servers
 ├── agents/                 # 32 agentes (.md)
 │   ├── planner.md          # GPT-5.6 Sol medium; tasks compactas
-│   ├── planner-heavy.md    # GPT-5.6 Sol xhigh /plan-heavy
+│   ├── planner-heavy.md    # GPT-5.6 Sol xhigh ensemble
 │   ├── builder.md          # Executor geral GPT-5.6 Luna xhigh
 │   ├── builder-design.md   # Frontend/UI Claude Fable 5 low
 │   ├── builder-heavy.md    # Correctness GPT-5.6 Sol medium

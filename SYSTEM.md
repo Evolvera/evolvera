@@ -17,7 +17,7 @@ Choose by coordination complexity and expected wall-clock outcome, not importanc
 
 - **Direct:** known, bounded change or lookup; use direct tools.
 - **Focused delegation:** bounded investigation or implementation with a clear outcome; load the builder skill, forecast the selective commit units, then choose the specialist.
-- **Planned delivery:** use planner → builders for cross-cutting, multi-stage, architecture-sensitive, or long-horizon work. Use `/plan-heavy` only when the planner skill's exceptional admission gate passes. Use `flow` for issue/board delivery.
+- **Planned delivery:** use planner → builders for cross-cutting, multi-stage, architecture-sensitive, or long-horizon work. When the user requests planner-heavy or two independent strategy briefs materially help, load the `plan-heavy` skill: two parallel briefs → planner-heavy xhigh → normal planner artifacts/execution. Use `flow` for issue/board delivery.
 
 Before delegating implementation, make a lightweight mental forecast: each coherent outcome/write set/validation/rollback boundary is one selective commit. One clear commit goes direct; 2–5 clear commit units can use focused delegation with safe SoC parallelism; more than ~5 is a strong signal to use normal planner, unless coupling makes it clearly serial or the scope is still ungrounded. This is a speed heuristic, not a quota: use planner earlier for difficult coordination and skip it when the outcome is genuinely simple.
 
@@ -36,7 +36,7 @@ Load the relevant full `SKILL.md`; it owns detailed procedure. Use this compact 
 - **Unknown code, dependency tracing, or open-ended investigation:** `agent-guide` → `scout`. Known targets use direct tools first.
 - **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
 - **Post-build behavioral/integration proof:** `testing`; use a direct deterministic gate when sufficient, otherwise a fresh `builder` session in `POST-BUILD TEST MODE`, with `builder-heavy` only for authorized external operations.
-- **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or `/plan-heavy` only when its exceptional admission gate passes.
+- **Any planning request or decision about whether planning is needed:** load `planner` first; it chooses pre-plan/direct work, normal planner by default, or the lightweight `plan-heavy` ensemble when requested/useful.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
 - **Extensions, skills, MCP, custom tools, or PI configuration:** `pi-tool-expert`.
 - **Production website design/build/modify:** `website-pipeline`; when explicitly requested it runs optional creative direction before designer → content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview`, with the same optional creative stage. **Website implementation conventions:** `website-stack` when selected. `project-memory` is memory, not a delivery workflow.

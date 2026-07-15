@@ -1,6 +1,6 @@
 ---
 name: plan-briefer
-description: "GPT brief-plan strategist for the /plan-heavy ensemble. Reads the handoff and produces ONE strategy brief focused on logic, sequencing, decomposition, risks, and validation — never task files or a DAG. Model: openai-codex/gpt-5.6-sol high."
+description: "GPT brief-plan strategist for the lightweight plan-heavy ensemble. Reads the handoff and produces ONE strategy brief focused on logic, sequencing, decomposition, risks, and validation — never task files or a DAG. Model: openai-codex/gpt-5.6-sol high."
 display_name: 🧩 Plan Briefer · GPT-5.6 Sol · high
 model: openai-codex/gpt-5.6-sol
 thinking: high

@@ -96,13 +96,12 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 1. Read `.pi/plans/SCHEDULE.md` and use its `Agent` and dependency columns as the execution authority.
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
 3. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
-4. For `/plan-heavy` builder tasks, generate an execution envelope first: `/plan-heavy envelope <plan-dir> <task-id>`. Pass both the task file and envelope path/content to the builder; the envelope is authoritative for runtime repo state, dirty-file exclusions, patch boundaries, snapshot directory, and checkpoint policy.
-5. Run tasks in the same parallel group concurrently only when full write sets, recovery/build artifacts, validation resources, and external effects are disjoint. Prefer small groups (2–4); parallelism is an optimization, never a requirement.
-6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
-7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
-8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
-9. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents, returns findings for bounded builder repair, and reruns the same gate.
-10. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+4. Run tasks in the same parallel group concurrently only when full write sets, recovery/build artifacts, validation resources, and external effects are disjoint. Prefer small groups (2–4); parallelism is an optimization, never a requirement.
+5. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
+6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
+7. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
+8. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents, returns findings for bounded builder repair, and reruns the same gate.
+9. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
 Example:
 
@@ -115,7 +114,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. For `/plan-heavy`, do not run a builder until its execution envelope exists.
+Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. Normal and planner-heavy plans execute through this same flow.
 
 ## Direct Mode Prompt
 
@@ -217,7 +216,6 @@ After a producer builder finishes:
 - inspect actual diff, not just its summary;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
-- for `/plan-heavy`, verify the builder followed the execution envelope patch boundaries and preservation markers;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
 - decide proportionately whether producer evidence closes the outcome: static/mechanical work may already be sufficient; run an obvious deterministic integration check directly; load the `testing` skill and use a fresh `builder` in `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; any linked validator reviews the same evidenced head;
