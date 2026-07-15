@@ -106,6 +106,8 @@ Use `/plan-heavy` only when a full plan is already justified, its independent st
 2. The work is recovering a failed multi-task delivery where shared-file ownership, checkpoint history, or rollback state is ambiguous.
 3. Correctness depends on a subtle formal, numerical, scientific, round-trip/merge, or adversarial invariant where independent strategy briefs materially reduce error risk.
 
+The qualifying condition must dominate plan-wide coordination. One bounded sensitive subcomponent—auth/payment, exactly-once behavior, migration, PHI, or a difficult UI state machine—does not escalate an otherwise clean delivery; isolate it in a normal-planner task with proportionate testing/validator evidence. The goal saying “heavy” is not itself a qualifying reason.
+
 State the qualifying reason before invoking it. These do **not** qualify by themselves:
 
 - an existing `.pi/plans/` directory;
