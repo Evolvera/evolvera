@@ -17,9 +17,10 @@ Você (usuário) → PI (roteador inteligente) → Agente correto → Resultado
 ## Instalação
 
 ```bash
-# 1. Clone
-git clone git@github.com:Evolvera/Pi.git
-cd Pi
+# 1. Autentique o GitHub CLI e clone o repositório privado
+gh auth login
+gh repo clone Evolvera/evolvera
+cd evolvera
 
 # 2. Instala tudo
 ./install.sh
@@ -61,7 +62,7 @@ Instale a extensão [PI for VS Code](https://marketplace.visualstudio.com/items?
 ## Atualizar
 
 ```bash
-cd Pi
+cd evolvera
 git pull
 ./install.sh
 ```
