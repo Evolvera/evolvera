@@ -21,7 +21,7 @@ step "Verificando PI"
 
 if ! command -v pi &>/dev/null; then
     echo -e "${YELLOW}[!]${NC} PI não encontrado. Instalando..."
-    npm install -g @mariozechner/pi-coding-agent
+    npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 fi
 info "PI instalado"
 
@@ -78,8 +78,6 @@ if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
     pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
-    pi install npm:pi-provider-kimi-code 2>/dev/null && info "pi-provider-kimi-code" || true
-    pi install npm:pi-xai-oauth 2>/dev/null && info "pi-xai-oauth" || true
 fi
 
 # ── Done ──────────────────────────────────────
