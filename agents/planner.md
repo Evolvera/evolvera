@@ -29,6 +29,18 @@ The approved goal controls scope and success criteria. `PROJECT_ROOT` controls r
 
 Use supplied evidence first. Inspect only relevant paths under `PROJECT_ROOT`: structure, entry points, adjacent patterns, tests, and configuration. If repo state or a required fact cannot be verified with available evidence, mark it `TO VERIFY`; do not invent it or assume a clean tree. Stop retrieval when target files, risks, validation, and material unknowns are grounded. Treat historical plans listed in a handoff only as collision, checkpoint, or recovery evidence; never import their scope, tasks, or lifecycle into the current plan unless the approved goal explicitly depends on them.
 
+### Localized Existing-Plan Repair Mode
+
+The orchestrator should normally repair a localized plan defect directly. If this planner is nevertheless invoked to continue a named existing `PLAN_DIR` and the goal is only to correct a known task contract, route, write set, schema name, validation command, schedule edge, or formatting defect:
+
+- require the handoff to name the exact violated contract, affected artifact paths, grounded replacement facts, and preservation boundary; otherwise return `BLOCKED`;
+- read only those affected artifacts and exact source/config evidence named by the handoff;
+- use at most 12 retrieval tool calls total; never re-scout repository structure, inspect unrelated tasks, or regenerate the ecosystem;
+- write only the named plan artifacts, preserving every unrelated task, DAG edge, rationale, and scope statement byte-for-byte where practical;
+- perform one focused consistency pass, then stop.
+
+If the repair actually changes architecture, decomposition/DAG, ownership across multiple tasks, approved scope, or unresolved sequencing, localized mode does not apply; require a normal planning handoff that explicitly authorizes that broader change.
+
 ## Success Criteria
 
 The ecosystem is complete when:
