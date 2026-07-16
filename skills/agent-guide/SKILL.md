@@ -108,9 +108,14 @@ Creates detailed implementation plans. It analyzes requirements, designs archite
 **How to use:**
 ```
 # Step 1: Pre-plan (you do this, not the planner)
-Summarize the user's request. Ask clarifying questions. Confirm scope.
+Confirm outcome/scope, then gather a proportional evidence package.
+Known exact surface: focused direct reads.
+Normal multi-layer work: one bounded scout.
+Large separable system: parallel scoped scouts, then reconcile.
+Coherent end-to-end flow: one normal scout, not fragmented micro-reports.
 
-# Step 2: Run planner (after user approves scope)
+# Step 2: Run planner only after evidence covers architecture/data,
+# consumers/wiring, tests/runners/harnesses, current behavior, and gaps.
 Agent({
   subagent_type: "planner",
   description: "Plan payment integration",
@@ -123,7 +128,10 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 ```
 
 **Rules:**
-- Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial
+- Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial.
+- For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, consumers/registries/runners/harnesses, validation behavior, and bounded unknowns. Familiarity alone is not evidence.
+- Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one bounded scout for normal coherent work; 2–8 parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
+- Reconcile scout reports into a concise handoff. Never paste raw transcripts or ask the planner to “understand the repository.” If broad discovery is still required, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
 - Read `SCHEDULE.md` and `TASKS/` before spawning agents
 - Builders own focused validation. Add a separate `validator` task only when one named high-consequence defect could credibly escape builder checks and must gate dependents; do not add it after every builder or duplicate the final PR review
@@ -180,7 +188,7 @@ Agent({
 ## Pipeline Order
 
 ```
-[scout if needed] → [planner if needed] → builder → focused validation
+[direct/scout pre-plan evidence] → [planner if needed] → builder → focused validation
                                                 └→ validator only for a named gate or one final PR review
 ```
 
@@ -205,11 +213,11 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 |---------|---------------|-------------------|
 | Using builder without reading files first | Small model has no context | Tell builder exactly which files to read |
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
-| Not doing pre-plan before planner | Planner guesses scope, produces bad plans | You pre-plan, user approves, then run planner |
+| Not doing evidence-grounded pre-plan before planner | Planner guesses architecture/write sets, misses consumers/harnesses, and produces bad tasks | Use proportional scouts/direct reads, reconcile evidence, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
 | Letting a light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
-| Skipping scout on unfamiliar code | You miss dependencies and side effects | Always scout first on unfamiliar code |
+| Skipping scout when planner evidence is incomplete | You miss dependencies, schemas, consumers, runners, and side effects even in a familiar repository | Scout proportionally before planner; familiarity alone is not evidence |
 | Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 2–8 parallel micro-scouts or use normal `scout` |
 | Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
 | Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
