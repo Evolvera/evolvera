@@ -39,11 +39,21 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 
 **Long-horizon rule of thumb:** When planner is selected, it spends the expensive reasoning once, writes `SCHEDULE.md` and atomic task files, and you run only genuinely independent builders in parallel. The desired outcome is lower elapsed delivery time and less rework—not a larger task graph.
 
+## Orchestrator Change-Contract Gate
+
+Before any mutation—direct orchestrator edit/command, delegated builder, planner-driven execution, repair, migration, config, or external operation—the orchestrator owns reconciliation. Scouts collect evidence; planners decompose; builders execute; validators review. None may decide readiness or unresolved product meaning for the orchestrator.
+
+Use the smallest sufficient contract:
+
+- exact trivial/known change: the user request plus focused repository read may be an implicit contract; no artifact or scout ceremony;
+- nontrivial/unfamiliar/cross-cutting/ambiguous change: orient from bounded structure, gather proportional direct/scout evidence, then state outcome, affected capabilities, `PRESERVE | CHANGE | REMOVE` boundary, scope, acceptance, and conflicts before writing/delegating;
+- evidence reveals two behavior-changing interpretations: stop and ask the smallest user decision before mutation.
+
 ## Handoff Standard (all delegations)
 
-A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must contain:
+A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must carry the orchestrator's reconciled contract at proportional detail and contain:
 
-1. **Outcome + why** — what done looks like and the purpose behind it, so the agent can make sane judgment calls.
+1. **Outcome + why** — what done looks like and the purpose behind it, plus affected existing capabilities and their `PRESERVE | CHANGE | REMOVE` boundary when behavior can change.
 2. **Exact inputs** — absolute paths, symbols, line ranges, artifacts to READ first; include decisions/evidence already established in the conversation that the agent needs. When `.pi/memory/` holds a lesson about this exact surface or operation (deploy sequence, known bug, prior failure), quote that specific entry—heavy/highspeed/ultra tiers, validator, and planners receive no automatic memory injection, and the full summary is noise.
 3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default.
 4. **Scope fence** — what is explicitly out of scope: no adjacent improvements, no dependency additions, no formatting churn, no touching plans/config/registries unless named.
