@@ -62,12 +62,12 @@ The Home preview should feel like a premium first screen of a real product/site,
 ## Asset Boundary
 
 AI can produce a static HTML preview, but it cannot produce final brand assets. You may specify:
-- temporary wordmark treatment;
+- temporary wordmark treatment using text/CSS only;
 - logo/image/product screenshot placeholders;
-- CSS gradients, abstract motifs, inline SVG diagrams, simple mock UI panels;
+- CSS gradients, borders, pseudo-elements, shapes, semantic HTML/CSS diagrams, and simple mock UI panels;
 - human asset needs before production.
 
-Do not present placeholder visuals as final logo, final photography, final illustration, real screenshots, real customer proof, or real awards.
+Never invent SVG markup or path data for icons, diagrams, logos, illustrations, or decorative motifs. Inline SVG is allowed only for an exact user/repo-provided asset or an asset actually retrieved from its primary canonical upstream source during this run; record that source in the canonical asset inventory. Library names from memory, “inspired by,” AI-generated, custom, placeholder, or generated labels are not provenance. If no canonical source exists, use text-only controls or HTML/CSS treatments—never emoji or font-glyph substitutes. Do not present placeholder visuals as final logo, final photography, final illustration, real screenshots, real customer proof, or real awards.
 
 ## Output Contract
 
@@ -87,6 +87,14 @@ Write `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md` with this structure:
 - Trust/proof available:
 - Missing proof/assets placeholders:
 - Assumptions made autonomously:
+
+## 1.25 Canonical Asset Inventory
+List every inline SVG candidate the planner may authorize:
+- Asset/use:
+- Exact canonical source: `https://...` or `provided:<path-or-id>`
+- Evidence: user/repo-provided or retrieved from the primary canonical upstream source during this run
+
+If no assets qualify, state `No inline SVG assets authorized.` CSS/HTML-only visuals do not need inventory entries.
 
 ## 1.5 Creative Direction Intake (only if HOME_CREATIVE_DIRECTION.md exists)
 - Creative thesis adopted:
@@ -108,7 +116,7 @@ Write `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md` with this structure:
 - Typography:
 - Section rhythm:
 - Signature visual motif:
-- Asset/placeholder strategy:
+- Asset/placeholder strategy: [identify source-backed inline SVG candidates from the Canonical Asset Inventory; otherwise use text/CSS/HTML placeholders]
 - Trust/proof strategy:
 - Interaction style:
 - Mobile-first strategy: [portrait 390px — hierarchy, stacking, nav, CTA placement, touch targets]
@@ -178,7 +186,7 @@ Include, when suitable:
 - CSS must be inline in `<style>`.
 - JS must be inline and minimal, only if useful.
 - No build step, no framework, no package manager.
-- Prefer CSS shapes/gradients/inline SVG placeholders over external assets.
+- Prefer CSS shapes/gradients and semantic HTML/CSS placeholders over external assets. Inline SVG is permitted only when listed in the Canonical Asset Inventory with exact source evidence; every resulting `<svg>` must carry its `data-asset-source` value.
 - Any image, visual motif, mockup, card stack, or illustration placeholder must stay inside its intended container at both portrait and landscape sizes.
 - If no logo exists, use a tasteful temporary wordmark, not a fake logo.
 - If no imagery exists, use intentional placeholders/motifs, not fake photography.
