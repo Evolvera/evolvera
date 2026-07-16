@@ -51,8 +51,12 @@ TARGET
 - Final head SHA: [checkpoint under test]
 - Changed files: [exact list]
 
+RECONCILED CONTRACT
+- [approved outcome and affected existing capabilities classified PRESERVE/CHANGE/REMOVE]
+
 ACCEPTANCE MATRIX
-- [observable condition → required evidence]
+- [requested observable condition → required evidence]
+- [affected preserved journey → regression/runtime evidence]
 
 READ FIRST
 - [directly affected source/contracts/tests]
@@ -86,8 +90,8 @@ Choose `subagent_type: "builder"` for local testing. Use `builder-heavy` only un
 The testing session must:
 
 1. Verify it is inspecting the requested head SHA and changed surface.
-2. Derive scenarios from the acceptance matrix and visible public/repository contracts—not from how the producer says the code works.
-3. Inspect enough focused code/tests to identify meaningful happy, boundary/error, and integration cases.
+2. Derive scenarios from the reconciled contract, acceptance matrix, pre-change behavior, and visible public/repository contracts—not from how the producer says the code works.
+3. Inspect enough focused code/tests and the base-to-head test diff to identify meaningful happy, boundary/error, integration, and preservation cases. A changed test that merely expects removed behavior is not proof that removal was authorized.
 4. Run bounded, non-destructive checks. Prefer tests that could actually falsify the change; do not rerun broad suites for ceremony.
 5. For sensitive/complex or user-visible behavior, execute the affected journey and inspect the actual response, logs, persisted state, rendered page, or browser console as applicable.
 6. Remain read-only. On failure, preserve exact reproduction evidence and stop.
@@ -111,10 +115,11 @@ Next: <validator | bounded repair | user/environment decision>
 
 On `BLOCKED`:
 
-1. The orchestrator diagnoses the finding and gives a repair builder the exact reproduction and bounded write set.
-2. Commit the verified repair selectively, producing a new head SHA.
-3. Rerun the affected test gate against the new SHA.
-4. After two failed gates without a new hypothesis, stop and re-ground; do not loop automatically.
+1. The orchestrator first classifies the finding. An implementation defect already covered by the reconciled contract may go to a repair builder with exact reproduction and bounded write set. A conflict between gate/task wording and observed existing capability goes back to contract reconciliation and, when intent cannot be evidenced, the user.
+2. Never authorize a repair builder to remove/degrade a capability or rewrite preservation tests merely to satisfy a gate unless the contract explicitly classifies that behavior `CHANGE` or `REMOVE`.
+3. Commit an authorized verified repair selectively, producing a new head SHA.
+4. Rerun the affected test gate against the new SHA.
+5. After two failed gates without a new hypothesis, stop and re-ground; do not loop automatically.
 
 A contract/acceptance defect goes back to planning rather than implementation. The tester never repairs while testing.
 

@@ -107,15 +107,24 @@ Creates detailed implementation plans. It analyzes requirements, designs archite
 
 **How to use:**
 ```
-# Step 1: Pre-plan (you do this, not the planner)
-Confirm outcome/scope, then gather a proportional evidence package.
+# Step 1: Orient before deciding what to investigate
+For nontrivial/unfamiliar systems, inspect bounded file/source structure first.
+Map product roots and likely domain/test/config/docs surfaces without inferring behavior.
+
+# Step 2: Gather proportional evidence
 Known exact surface: focused direct reads.
 Normal multi-layer work: one bounded scout.
 Large separable system: parallel scoped scouts, then reconcile.
 Coherent end-to-end flow: one normal scout, not fragmented micro-reports.
+Label findings KNOWN / INFERRED / UNKNOWN.
 
-# Step 2: Run planner only after evidence covers architecture/data,
-# consumers/wiring, tests/runners/harnesses, current behavior, and gaps.
+# Step 3: Reconcile one planning contract
+User outcome + existing capabilities + PRESERVE/CHANGE/REMOVE + scope
++ material term meanings + acceptance journeys + unresolved conflicts.
+Ask only when a conflict changes product behavior.
+
+# Step 4: Run planner only after contract and evidence are closed enough
+# that planner need not rediscover architecture or choose product semantics.
 Agent({
   subagent_type: "planner",
   description: "Plan payment integration",
@@ -129,9 +138,11 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 
 **Rules:**
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial.
-- For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, consumers/registries/runners/harnesses, validation behavior, and bounded unknowns. Familiarity alone is not evidence.
+- For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, existing capabilities, consumers/registries/runners/harnesses, validation behavior, and bounded unknowns. Familiarity and names alone are not evidence.
+- For nontrivial/unfamiliar systems, structure comes first: inspect bounded roots/file families before deep reads so scout missions follow the repository rather than assumptions.
 - Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one bounded scout for normal coherent work; 2–8 parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
-- Reconcile scout reports into a concise handoff. Never paste raw transcripts or ask the planner to “understand the repository.” If broad discovery is still required, pre-plan is not complete.
+- Reconcile reports into a concise contract and evidence package. Classify claims `KNOWN | INFERRED | UNKNOWN`; classify affected capabilities `PRESERVE | CHANGE | REMOVE` only when user intent/evidence supports it. Never paste raw transcripts or ask planner to “understand the repository.”
+- If two plausible interpretations would preserve versus disable different behavior, stop and ask the user before planner. If broad discovery or product-semantic choice remains, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
 - Read `SCHEDULE.md` and `TASKS/` before spawning agents
 - Builders own focused validation. Add a separate `validator` task only when one named high-consequence defect could credibly escape builder checks and must gate dependents; do not add it after every builder or duplicate the final PR review

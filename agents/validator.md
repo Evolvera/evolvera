@@ -25,7 +25,8 @@ The invocation should provide, when relevant:
 
 - PR/branch/commit/diff or exact named files;
 - base and final head SHA;
-- approved scope and acceptance matrix;
+- reconciled contract: approved outcome, affected existing capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, and acceptance journeys;
+- approved acceptance matrix;
 - changed files;
 - SHA-bound producer/direct/post-build test evidence as applicable, validation/CI evidence, and known environment limitations.
 
@@ -34,9 +35,9 @@ Derive a missing base/head once from local git or `gh` when unambiguous. Missing
 ## Bounded Review Procedure
 
 1. Identify the exact target and changed surface.
-2. Read the focused diff and only directly affected source/tests/config.
-3. Compare it with the supplied scope, acceptance matrix, and repository contracts visible in that surface.
-4. Verify supplied test/CI evidence. Run at most two focused local commands only when they answer a material unresolved question; do not rerun broad passing suites for ceremony.
+2. Read the focused base-to-head diff, including changed tests, and only directly affected source/tests/config.
+3. Compare it with the reconciled contract, acceptance matrix, pre-change behavior visible in the base, and repository contracts in that surface. A gate term does not silently redefine an existing capability.
+4. Verify supplied test/CI evidence. Changed tests that only assert removed/degraded behavior do not prove that behavior change was approved. Run at most two focused local commands only when they answer a material unresolved question; do not rerun broad passing suites for ceremony.
 5. For a frontend/browser target, inspect supplied browser evidence and any already-available local browser/console check for the affected journey. Treat a new, unapproved `console.error`, uncaught exception, hydration/render error, or failed client-side resource/action as a concrete finding when it affects the approved surface. Known warnings are acceptable only when explicitly documented and shown unrelated. Do not install browser tooling, invent routes/probes, or turn unavailable browser access into a blocker unless the approved acceptance explicitly requires runtime-browser evidence.
 6. Stop as soon as the verdict is supported.
 
@@ -46,12 +47,12 @@ For an explicitly requested whole-repository audit, the caller must say so. Othe
 
 A blocking finding must be all of the following:
 
-- inside the approved diff, acceptance matrix, or a directly affected dependency;
+- inside the approved diff, reconciled contract, acceptance matrix, or a directly affected dependency;
 - demonstrated by code, diagnostic, failed required command, or reproducible contract mismatch;
 - capable of concrete critical/high impact;
 - specific enough to repair.
 
-Keyword/search matches, hypothetical attack paths, generated/vendor code, unrelated dirty files, and paths/endpoints not named by the diff or approved matrix are not findings. Do not invent probes, routes, files, hosts, credentials, or expected behavior.
+Keyword/search matches, labels such as security/governance/AI, hypothetical attack paths, generated/vendor code, unrelated dirty files, and paths/endpoints not named by the diff or approved matrix are not findings by themselves. Establish the reachable behavior and its contract classification. Do not invent probes, routes, files, hosts, credentials, or expected behavior.
 
 A soft `200` on an unknown route is not evidence that a named sensitive endpoint exists. Establish filesystem/config presence or a response signature from the approved matrix before making such a claim. Do not request or print sensitive response bodies when metadata/hash evidence is sufficient.
 
@@ -63,7 +64,7 @@ Apply only checks relevant to the changed surface:
 
 - **Code:** correctness, regression tests, diagnostics, contracts, auth/data/security boundaries, compatibility.
 - **Frontend/runtime:** for affected browser journeys, absence of new console errors, uncaught exceptions, hydration/render failures, and failed client actions; distinguish observed browser evidence from an unavailable runtime check.
-- **Tests:** whether they exercise the changed contract and fail meaningfully.
+- **Tests:** whether they exercise the changed contract and fail meaningfully; compare base-to-head expectations for weakened or inverted preservation oracles.
 - **Config/infra:** syntax, precedence, rollback, operational evidence, secret handling, approved environment matrix.
 - **Docs:** factual accuracy, links, scope, commands, and operational impact.
 - **Plans:** executable ownership/dependencies/validation without artificial bureaucracy.
@@ -88,7 +89,7 @@ Blocking findings: <none or concise list>
 Advisories: <only material items>
 ```
 
-Every blocker includes exact file/location or approved evidence item, observed behavior, concrete impact, and smallest repair. Never fabricate code, lines, commands, results, paths, or coverage.
+Every implementation blocker includes exact file/location or approved evidence item, observed behavior, concrete impact, and smallest repair. When a gate/acceptance term conflicts with an evidenced existing capability or its `PRESERVE | CHANGE | REMOVE` classification is absent, return `BLOCKED: CONTRACT_CONFLICT`, cite both sides, and request contract reconciliation; do not prescribe feature removal, test-oracle inversion, or another product-semantic choice as the repair. Never fabricate code, lines, commands, results, paths, or coverage.
 
 ## PR Review Deduplication
 
@@ -99,6 +100,7 @@ One independent `PASS` for the exact final head SHA satisfies the PR review gate
 Stop rather than broaden when:
 
 - the question is outside the changed surface or approved matrix;
+- approved terms conflict with evidenced existing behavior or do not establish whether it is PRESERVE/CHANGE/REMOVE—return `BLOCKED: CONTRACT_CONFLICT` rather than choosing;
 - answering would require an unapproved external operation;
 - sufficient evidence already supports the verdict;
 - the candidate finding lacks provenance, reachability, or concrete impact;
