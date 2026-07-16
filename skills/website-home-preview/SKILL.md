@@ -89,7 +89,7 @@ Use `website-pipeline` for full production websites.
 - Missing facts become labeled preview placeholders, not blockers.
 - Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher-home` pass.
 - Do not fake logos, photos, product screenshots, testimonials, client logos, awards, certifications, metrics, prices, guarantees, or legal claims.
-- If no brand assets exist, use a temporary wordmark plus CSS/inline-SVG motifs/placeholders and label them as preview placeholders.
+- If no brand assets exist, use a temporary text/CSS wordmark plus CSS/semantic-HTML motifs/placeholders and label them as preview placeholders. Never invent SVG markup/path data; inline SVG is allowed only for an exact user/repo-provided asset or an asset actually retrieved from its primary canonical upstream source during this run, with `data-asset-source="https://..."` or `data-asset-source="provided:<path-or-id>"` on every opening `<svg>`. Otherwise use text-only controls or CSS/HTML treatments, never emoji/font glyph substitutes.
 
 ## Compact Strategy Intake
 
@@ -154,7 +154,7 @@ Requirements:
 - No human approval. Make labeled assumptions if details are missing.
 - Design for premium trust: clear first impression, no DIY/template energy, restrained typography/colors, purposeful visuals, clear CTA.
 - Design mobile-first, but specify separate portrait/mobile and desktop/landscape composition strategies. Desktop must not be a stretched mobile layout; mobile must not be a cramped desktop layout.
-- Asset boundary: use provided assets if available; otherwise specify temporary wordmark, CSS/inline-SVG motifs, and placeholders. Do not invent final logo/images/proof.
+- Asset boundary: use provided assets if available; otherwise specify temporary text/CSS wordmark, CSS/semantic-HTML motifs, and placeholders. Do not invent SVG markup/path data, final logo/images/proof. Inventory every inline SVG candidate with its exact canonical `https://...` source or `provided:<path-or-id>` source and evidence that it was user/repo-provided or retrieved from the primary canonical upstream source during this run; if none qualify, explicitly authorize zero inline SVG assets.
 ```
 
 Expected output:
@@ -213,6 +213,8 @@ Requirements:
 - Write .pi/previews/<slug>/HOME_PLAN.md
 - Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
 - Preserve and operationalize the designer's mobile-first + desktop/landscape strategy.
+- Write an Asset Provenance Ledger in HOME_PLAN.md from the designer's canonical asset inventory, using one machine-readable `- data-asset-source: \`<exact source>\`` line per asset, then copy it verbatim into TASK_builder-home.md. Only exact user/repo-provided or primary-canonical-source assets retrieved during this run may be ledger entries. Every allowed `<svg>` must have the ledger's exact `data-asset-source="https://..."` or `data-asset-source="provided:<path-or-id>"`; if no asset qualifies, require zero `<svg>` tags and text/CSS/semantic HTML alternatives.
+- Include this validation command in TASK_builder-home.md: `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`
 - The builder output must be exactly .pi/previews/<slug>/index.html
 - No full project, no package.json, no framework, no build step.
 ```
@@ -238,7 +240,8 @@ Hard constraints:
 - Do not create a project or any extra files.
 - Follow HOME_PLAN.md, TASK_builder-home.md, HOME_CONTENT_PLAN.md, and HOME_DESIGN_OPTIONS.md exactly (plus HOME_CREATIVE_DIRECTION.md if present).
 - Do not choose a new design direction; implement the planner's selected/fused direction.
-- Run the validation commands listed in TASK_builder-home.md.
+- Use only inline SVG assets copied into TASK_builder-home.md's Asset Provenance Ledger. Never invent SVG markup/path data; every allowed `<svg>` needs its exact ledger `data-asset-source`. If the ledger authorizes none, emit zero `<svg>` tags and use text/CSS/semantic HTML alternatives, never emoji/font glyph substitutes.
+- Run the validation commands listed in TASK_builder-home.md, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.
 ```
 
 Expected output:
@@ -299,6 +302,7 @@ Rules:
 - Do not require Next.js, Tailwind config, app/layout, components, or project structure.
 - Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
 - Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, image/visual containment, empty-space balance, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
+- Never propose fabricated SVG markup/path data. Only propose inline SVG changes authorized by HOME_PLAN.md's Asset Provenance Ledger, preserving the exact `data-asset-source`; otherwise propose text/CSS/semantic HTML fixes, never emoji/font glyph substitutes.
 ```
 
 Expected output:
@@ -321,7 +325,8 @@ Hard constraints:
 - Do not create any extra files.
 - Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
 - Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
-- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes.
+- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.
+- Preserve Asset Provenance Ledger restrictions: do not invent SVG markup/path data; use only its exact source-backed inline SVG assets or text/CSS/semantic HTML alternatives.
 - Refresh screenshots after polish using the Visual Snapshot Capture command above.
 ```
 
@@ -349,6 +354,7 @@ Validate:
 - exactly one index.html output, no extra project files required;
 - semantic HTML structure;
 - inline CSS present;
+- `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html` passes; every inline SVG is authorized by HOME_PLAN.md's Asset Provenance Ledger with valid, traceable `data-asset-source`, and no `data:image/svg+xml` exists;
 - responsive layout rules;
 - accessible landmarks/headings/buttons/links;
 - visible focus states;
@@ -361,7 +367,7 @@ Validate:
 - landscape screenshot uses space intentionally and does not look sparse, stretched, generic, misaligned, or full of empty/dead space;
 - images, mockups, card stacks, decorative motifs, and placeholders stay inside intended containers at both portrait and landscape sizes;
 - image/media frames fill, crop, center, or contain deliberately; no asset should sit to one side leaving an accidental white/blank area inside the frame;
-- CTA icons are either omitted/text-only or implemented as clean inline SVG; no emoji/tofu/missing/corrupted glyphs;
+- CTA icons are omitted/text-only unless an exact ledger-authorized source-backed inline SVG is used with valid `data-asset-source`; no emoji/tofu/missing/corrupted glyphs;
 - mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
 - mobile layouts stack cards/logos/galleries when needed; never preserve a desktop grid if it creates cramped cards or lateral scroll;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md;

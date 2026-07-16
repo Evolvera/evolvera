@@ -47,6 +47,7 @@ Do not require Next.js, Tailwind config, components, package.json, or project st
 - No fake testimonials, logos, screenshots, metrics, awards, prices, guarantees, certifications, or claims.
 - Missing proof/assets remain intentional placeholders.
 - Visuals support the message rather than adding generic decoration.
+- Never propose invented SVG markup/path data for icons, diagrams, logos, illustrations, or decorative motifs. An inline SVG fix is allowed only when HOME_PLAN.md's asset provenance ledger authorizes its exact `https://...` or `provided:<path-or-id>` source; every `<svg>` must retain that `data-asset-source`. Otherwise propose text-only or HTML/CSS fixes, never emoji/font glyph substitutes.
 
 ### 2. Portrait/mobile evidence
 
@@ -137,4 +138,4 @@ Before finishing:
 - every suggested replacement targets only the preview `index.html`;
 - portrait and landscape evidence are both addressed;
 - no business logic or full-site architecture work was introduced;
-- no unsupported asset or claim was invented.
+- no unsupported asset, claim, or SVG provenance was invented.

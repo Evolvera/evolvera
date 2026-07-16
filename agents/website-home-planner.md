@@ -50,6 +50,7 @@ The builder task must be specific enough for the `builder-home` agent to generat
 - If `HOME_CREATIVE_DIRECTION.md` exists, ensure the selected/fused direction preserves its required fallbacks and constraints: reduced-motion/static fallback, keyboard/DOM accessibility of the mechanic, mobile/touch behavior, and the performance budget. Record in HOME_PLAN.md how the dominant mechanic and accents are operationalized or why they were downgraded. If absent, plan exactly as usual.
 - Use `HOME_CONTENT_PLAN.md` as the source of truth for copy; only adapt copy when needed for visual fit and preserve its source/placeholder labels.
 - Do not invent unverifiable facts, metrics, awards, prices, certifications, guarantees, or testimonials.
+- Do not invent SVG markup/path data for icons, diagrams, logos, illustrations, or decorative motifs. Inline SVG is allowed only for an exact user/repo-provided asset or an asset actually retrieved from its primary canonical upstream source during this run; record it in HOME_PLAN.md's Asset Provenance Ledger. If no canonical source exists, plan text-only or HTML/CSS alternatives, never emoji/font glyph substitutes.
 - If proof is missing, keep the content writer's tasteful preview placeholders clearly marked.
 - Block only if `HOME_DESIGN_OPTIONS.md` or `HOME_CONTENT_PLAN.md` is missing/unreadable, or the source context is unusable.
 - Keep scope to one Home Page preview.
@@ -65,7 +66,7 @@ Prefer:
 - responsive CSS;
 - mobile-first layout with deliberate desktop/landscape composition, not a simple stretched mobile layout;
 - accessible nav, buttons, forms/CTA states if present;
-- inline SVG/CSS visual motifs;
+- CSS/semantic HTML visual motifs;
 - no external dependencies.
 
 Avoid:
@@ -102,6 +103,14 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Placeholder/proof notes:
 - Source label:
 
+## 3.5 Asset Provenance Ledger
+Carry forward only the designer's Canonical Asset Inventory entries that are authorized for implementation. For each allowed inline SVG, record:
+- Asset/use:
+- data-asset-source: `<exact https://... or provided:<path-or-id> value>` (keep this exact machine-readable field name and one source per line)
+- Canonical-source evidence: user/repo-provided or actually retrieved from the primary canonical upstream source during this run
+
+Do not add, infer, or relabel assets. Library names from memory, “inspired by,” AI-generated, custom, placeholder, and generated labels are not provenance. If no entries qualify, state `No inline SVG assets authorized; builder must emit zero <svg> tags.` Use text-only controls, CSS gradients/borders/pseudo-elements/shapes, or semantic HTML/CSS diagrams instead; never emoji/font glyph substitutes.
+
 ## 4. Visual System
 - Colors:
 - Typography:
@@ -109,7 +118,7 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Mobile grid/card policy: [at 390px, sections must not use multi-column grids if cards become cramped, text wraps awkwardly, or content exceeds the viewport; use one column or a deliberately designed stacked layout instead]
 - Components:
 - Media/visual fit policy: [for every real image, mockup, visual card, or background: aspect-ratio, object-fit/background-size, object-position/background-position, overflow behavior, focal point, and how to avoid accidental blank bands/gutters]
-- Icon policy: [avoid emoji/font-dependent icons in CTAs; use text-only buttons or controlled inline SVG icons with explicit viewBox, size, alignment, and aria-hidden labels]
+- Icon policy: [avoid emoji/font-dependent icons in CTAs; use text-only buttons by default. Inline SVG is allowed only for an exact Asset Provenance Ledger entry and must include its exact `data-asset-source`, explicit viewBox, size, alignment, and aria-hidden labels]
 - Motion/interactions:
 
 ## 5. Responsive Composition Plan
@@ -138,6 +147,7 @@ Use `HOME_CONTENT_PLAN.md` as the source. For each section:
 - Inline JS only if necessary.
 - No build step.
 - No external required assets.
+- No invented SVG markup/path data for icons, diagrams, logos, illustrations, or decorative motifs. Every allowed `<svg>` must use an exact Asset Provenance Ledger asset and carry `data-asset-source="https://..."` or `data-asset-source="provided:<path-or-id>"`.
 - Visual snapshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed for validation.
 ```
 
@@ -181,7 +191,10 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Mobile grids must use `grid-template-columns: 1fr` or safe patterns such as `repeat(auto-fit, minmax(min(100%, 220px), 1fr))`; partner/logo/card grids must wrap inside the viewport, never continue off-screen.
 - Media/visual placeholders must use max-width/aspect-ratio/overflow-safe rules so they do not escape containers on portrait or landscape screenshots.
 - Real images, image placeholders, mockups, and background visuals must define deliberate fit behavior: usually `object-fit: cover; object-position: center;` or `background-size: cover; background-position: center;`. Use `contain` only when the surrounding frame/background is intentionally designed; never leave accidental white/blank gutters.
-- CTA icons must not be emoji or font-dependent glyphs. Use no icon, or a simple inline SVG with explicit `viewBox`, `width`, `height`, `display:block`, `flex:0 0 auto`, and `aria-hidden="true"` when decorative.
+- CTA icons must not be emoji or font-dependent glyphs. Use no icon by default. An inline SVG is allowed only for an exact Asset Provenance Ledger entry and must include its exact `data-asset-source`, `viewBox`, `width`, `height`, `display:block`, `flex:0 0 auto`, and `aria-hidden="true"` when decorative.
+
+## Asset Provenance
+Copy HOME_PLAN.md's Asset Provenance Ledger here verbatim. Builder may use only these assets for inline SVG. Every allowed opening `<svg>` must carry the copied exact `data-asset-source`. If the ledger says no inline SVG assets are authorized, builder must emit zero `<svg>` tags and use text/CSS/semantic HTML alternatives.
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]
@@ -193,7 +206,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Do not rely on a single fluid layout if it makes desktop look stretched or mobile look cramped.
 - For every card/logo/gallery grid, specify the mobile column count and minimum readable card width; default to one column under 640px unless there is enough space for readable cards.
 - For every visual/media card, specify how the asset centers/fills/crops at mobile and desktop breakpoints.
-- For every CTA icon, prefer text-only or inline SVG; never use raw emoji/Unicode brand icons that can render inconsistently.
+- For every CTA icon, use text-only by default. Use an inline SVG only when the exact asset is authorized in HOME_PLAN.md's Asset Provenance Ledger; never use raw emoji/Unicode brand icons that can render inconsistently.
 
 ## Validation
 Run:
@@ -202,6 +215,7 @@ Run:
 - `grep -qi "<style" .pi/previews/<slug>/index.html`
 - `grep -qi "<main" .pi/previews/<slug>/index.html`
 - `grep -qi "prefers-reduced-motion" .pi/previews/<slug>/index.html`
+- `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`
 - `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs .pi/previews/<slug>/index.html .pi/previews/<slug>/screenshots`
 - `test -f .pi/previews/<slug>/screenshots/portrait.png`
 - `test -f .pi/previews/<slug>/screenshots/landscape.png`

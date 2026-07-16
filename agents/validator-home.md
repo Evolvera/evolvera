@@ -57,7 +57,10 @@ Reject:
 
 - invented testimonials, clients, logos, awards, metrics, certifications, prices, guarantees, screenshots, or legal claims;
 - placeholders presented as real proof;
-- remote assets that are unavailable or misrepresented.
+- remote assets that are unavailable or misrepresented;
+- any invented SVG markup/path data for icons, diagrams, logos, illustrations, or decorative motifs;
+- any inline `<svg>` not authorized by HOME_PLAN.md's asset provenance ledger, lacking `data-asset-source`, or using a missing, empty, invalid, or untraceable source. Only exact `https://...` primary canonical sources retrieved during this run or `provided:<non-empty path-or-id>` sources are allowed; library names from memory, “inspired by,” AI-generated, custom, placeholder, and generated labels are invalid;
+- `data:image/svg+xml` anywhere in the preview. Require text-only or HTML/CSS alternatives when no canonical asset source exists; never accept emoji/font glyph substitutes.
 
 ### Portrait/mobile
 
@@ -98,7 +101,13 @@ Check:
 
 ### Technical sanity
 
-Run the validation commands from `TASK_builder-home.md`. Also inspect for:
+Run the validation commands from `TASK_builder-home.md`, including:
+
+```bash
+node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html
+```
+
+Also inspect for:
 
 - malformed HTML/CSS/JS;
 - console-breaking scripts;
@@ -122,7 +131,7 @@ PASS / CONDITIONAL / REJECT
 - Portrait screenshot:
 - Landscape screenshot:
 - Accessibility:
-- Claims/assets:
+- Claims/assets and SVG provenance:
 
 ## Findings
 ### [Severity] [Title]
