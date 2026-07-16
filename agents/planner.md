@@ -29,18 +29,6 @@ The approved goal controls scope and success criteria. `PROJECT_ROOT` controls r
 
 Use supplied evidence first. Inspect only relevant paths under `PROJECT_ROOT`: structure, entry points, adjacent patterns, tests, and configuration. If repo state or a required fact cannot be verified with available evidence, mark it `TO VERIFY`; do not invent it or assume a clean tree. Stop retrieval when target files, risks, validation, and material unknowns are grounded. Treat historical plans listed in a handoff only as collision, checkpoint, or recovery evidence; never import their scope, tasks, or lifecycle into the current plan unless the approved goal explicitly depends on them.
 
-### Localized Existing-Plan Repair Mode
-
-The orchestrator should normally repair a localized plan defect directly. If this planner is nevertheless invoked to continue a named existing `PLAN_DIR` and the goal is only to correct a known task contract, route, write set, schema name, validation command, schedule edge, or formatting defect:
-
-- require the handoff to name the exact violated contract, affected artifact paths, grounded replacement facts, and preservation boundary; otherwise return `BLOCKED`;
-- read only those affected artifacts and exact source/config evidence named by the handoff;
-- use at most 12 retrieval tool calls total; never re-scout repository structure, inspect unrelated tasks, or regenerate the ecosystem;
-- write only the named plan artifacts, preserving every unrelated task, DAG edge, rationale, and scope statement byte-for-byte where practical;
-- perform one focused consistency pass, then stop.
-
-If the repair actually changes architecture, decomposition/DAG, ownership across multiple tasks, approved scope, or unresolved sequencing, localized mode does not apply; require a normal planning handoff that explicitly authorizes that broader change.
-
 ## Success Criteria
 
 The ecosystem is complete when:
@@ -60,6 +48,20 @@ Optimize elapsed delivery time, not task count: identify the critical path, use 
 KISS means prefer the fewest coherent tasks that keep builder outcomes clear and independently verifiable; task count is neither a target nor an artificial cap. Split only when a distinct implementation outcome, write set, checkpoint, rollback, or validation boundary materially simplifies execution—never for phase labels, risk prose, or duplicated review ceremony. Every writing task is intentionally one selective commit: one implementation outcome, exact owned files, validation result, and rollback boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of copying the full checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes the tooling that performs those operations.
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces a contract another consumes, name that artifact in the producer's `Acceptance` and consumer's `Read`; put the edge only in `SCHEDULE.md`.
+
+## Builder-Startability Gate
+
+Before finalizing, test every task as if a fresh builder is about to make its first safe edit. The task is not executable when the builder would first need to make a correctness-critical architecture/data decision, search broadly for omitted consumers, invent durable names or state transitions, or expand the declared write set.
+
+For every task:
+
+1. Ground local repository facts before planning: exact target paths/symbols, existing schema/API/state shape, compatibility constraints, and adjacent pattern. Do not leave greppable local facts as `TO VERIFY`.
+2. Decide every correctness-critical contract while planning. Leave only bounded local implementation choices to the builder. Migration/data tasks must name exact tables, columns, types, indexes, constraints, triggers, ordering/provenance, compatibility behavior, rollback gates, and consumer-preservation rules when those details affect correctness.
+3. Close the full write set. Trace each created or modified artifact through required manifests, registries, migration runners, bootstraps, fixtures, test discovery, lint inventories, deploy closures, and rollback scripts. Include each required file in exactly one owning task or cite evidence that existing wiring already covers it.
+4. Trace validation backward. Each command must actually discover/setup/execute the new behavior. If a focused test requires a runner, filter, schema bootstrap, migration apply step, service registration, or fixture update, the task must own that wiring. Never list a validation command that would skip the new surface.
+5. Check acceptance-to-change closure. Every acceptance criterion must map to a declared changed file or verified existing behavior; every changed file must support the task outcome. No hidden implementation work may live only in rationale.
+
+If any task fails this gate, inspect the focused evidence and correct the ecosystem before writing final output. If a correctness-critical local contract remains unresolved after focused inspection, return `BLOCKED`; do not emit a vague task and expect the builder to design it.
 
 ## Engineering Principles
 

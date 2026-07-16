@@ -13,7 +13,6 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 |---|---|
 | User wants a quick plan or the change is already obvious and bounded | **Pre-plan only**: give a concise approach; do not launch an agent |
 | One bounded implementation concern with known targets | **Direct/focused delegation** using the builder skill |
-| Existing plan has one localized, evidence-grounded defect | **Direct artifact repair** — edit only the named plan/task/schedule files; do not launch or resume a planner |
 | Several bounded asks in one message, with grounded disjoint write sets and a short dependency order | **Focused multi-builder orchestration** — make a private mental schedule; no planner artifacts |
 | Multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
 | User explicitly requests planner-heavy, or two independent strategy briefs plus xhigh planning materially improve a complex plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
@@ -47,18 +46,7 @@ Ask only when missing information materially changes correctness, risk, cost, or
 
 For an unfamiliar codebase, load `agent-guide` + `scout` and gather bounded evidence first. Search source roots/tracked files; exclude generated artifacts and historical plans unless explicitly relevant.
 
-## 3. Existing-Plan Repair Fast Path
-
-When an existing plan has a localized defect and the exact correction is already grounded, repair it directly. Examples: one task has vague schema names, a wrong builder route, an incomplete write set, a missing validation command, one incorrect schedule edge, or a format violation.
-
-- Read the affected plan artifact plus only the exact source/config evidence needed to state the correction.
-- Edit the smallest named artifact set directly; keep unaffected tasks, DAG edges, rationale, and approved scope unchanged.
-- Run focused plan consistency checks after the edit.
-- Do not launch or resume `planner` or `planner-heavy` merely because the file being edited is a plan artifact.
-
-Use a planner again only when the correction changes architecture, task decomposition/DAG, ownership/write-set boundaries across multiple tasks, approved scope, or unresolved sequencing. If the correction cannot be stated precisely from evidence, stop and gather that evidence; do not ask a planner to rediscover the repository under a vague “repair plan” goal.
-
-## 4. Normal Planner — Default Full-Plan Route
+## 3. Normal Planner — Default Full-Plan Route
 
 Use `Agent(subagent_type="planner")` when a full plan ecosystem is useful. Before launch, resolve the repository that owns the requested change—normally with `git -C <known-project-path> rev-parse --show-toplevel`—and create a unique logical output path:
 
@@ -110,7 +98,7 @@ Expected output:
   TASKS/task_NN_<agent>.md
 ```
 
-## 5. Plan-Heavy Ensemble
+## 4. Plan-Heavy Ensemble
 
 When the user explicitly requests planner-heavy—or independent strategies from GPT and Fable are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
@@ -122,7 +110,7 @@ Plan-heavy is not a separate harness. It uses the normal planner's repository-ro
 
 An explicit user request for planner-heavy is sufficient. Do not replace it with the normal planner based on an admission gate, and do not create custom validation/envelope machinery.
 
-## 6. Plan Quality Contract
+## 5. Plan Quality Contract
 
 A good plan reduces builder complexity without expanding scope:
 
@@ -131,6 +119,9 @@ A good plan reduces builder complexity without expanding scope:
 - Split at real implementation, write-set, checkpoint, rollback, or validation boundaries—not to repeat hazards, matrices, or process prose.
 - Optimize for critical path: group only independent, disjoint SoC slices in parallel; serialize shared contracts/external effects; do not manufacture parallelism.
 - `PLAN_FULL.md` owns rationale; `SCHEDULE.md` owns dependencies; task files own execution contracts.
+- **Builder-startability gate:** before accepting the plan, inspect every task as if a fresh builder were about to make its first edit. All correctness-critical decisions, exact target/write files, schema/API/state contracts, patch boundaries, and preservation rules must already be grounded. A builder may choose local implementation details, but must not need to invent architecture, name durable schema objects, rediscover missing consumers, or broaden scope.
+- **Write-set/validation closure:** every new or changed artifact must be wired into every required manifest, registry, runner, bootstrap, fixture, migration harness, lint inventory, or deploy closure. Trace each validation command backward: if it needs registration/config/harness changes, those files belong to an owning task or must be verified as already sufficient. A command that cannot exercise the task's new behavior is not validation.
+- Local repository facts such as paths, symbols, existing schema shapes, counts, registries, and harness behavior are not acceptable `TO VERIFY` items when they are greppable before planning. Runtime/provider/environment facts may remain `TO VERIFY` only with a bounded evidence step before dependent mutation.
 - **Observability-first validation:** every behavior-changing task names evidence from the running system, not only compile checks. For auth/payment/data, migrations, integrations, async/webhooks, and user-visible frontend, the task's validation contract must include executing the affected journey/endpoint and inspecting the observed response, log, persisted state, or rendered page/console. Type/lint/build alone is acceptable only for genuinely static/mechanical tasks; when runtime observation is unavailable, the task must require reporting that gap as unverified rather than complete.
 - PR creation, merge, CI waiting, board/Flow reconciliation, and branch cleanup remain orchestrator steps, not builder tasks.
 - Historical plans, adjacent risks, and optional improvements never expand approved scope.
@@ -143,7 +134,7 @@ Apply engineering principles as decisions, not boilerplate:
 - DYC: document only non-obvious decisions, invariants, failure/rollback behavior, or operations.
 - TDD where practical: targeted regression/characterization test before behavior changes, or the closest focused validation with its limitation.
 
-## 7. Routing and Validation
+## 6. Routing and Validation
 
 Load the builder skill; it is authoritative for tier selection. Defaults:
 
@@ -157,7 +148,7 @@ A server/config file containing rules is not enough to select Fable. Host, SSH, 
 
 Add a linked `validator` task only when a specific producer has a credible high-consequence escape risk. Do not add blanket validators for inventory, docs, mechanical work, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
 
-## 8. Execute the Plan
+## 7. Execute the Plan
 
 Before builders, read `SCHEDULE.md` and task contracts; ask for user review only when implementation scope, cost, or risk is not already approved.
 
@@ -171,4 +162,4 @@ Before builders, read `SCHEDULE.md` and task contracts; ask for user review only
 
 ## Stop Rules
 
-Stop and re-ground when target ownership, required evidence, validation, or rollback cannot be established; when the plan expands approved scope; when a planner produces orchestration bookkeeping as tasks; or when validation is `BLOCKED`. Do not repair a bad plan by adding bureaucracy—correct the smallest violated contract or choose a lighter path.
+Stop and re-ground when target ownership, required evidence, validation, or rollback cannot be established; when the plan expands approved scope; when a planner produces orchestration bookkeeping as tasks; when a builder cannot start safely because the task omitted a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or when validation is `BLOCKED`. A builder discovering such an omission is evidence that the plan failed its builder-startability gate—not permission for the builder to design the missing contract or silently expand its write set. Do not repair a bad plan by adding bureaucracy—re-ground the missing evidence and correct the plan's actual contract.
