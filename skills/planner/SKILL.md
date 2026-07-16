@@ -44,7 +44,29 @@ Establish only what changes the decision:
 
 Ask only when missing information materially changes correctness, risk, cost, or scope **and** cannot be resolved from repository evidence (code, config, tests, git history, docs). If the user already approved an equivalent scope, do not add another approval ceremony merely to launch the planner.
 
-For an unfamiliar codebase, load `agent-guide` + `scout` and gather bounded evidence first. Search source roots/tracked files; exclude generated artifacts and historical plans unless explicitly relevant.
+### Pre-Plan Evidence Gate
+
+Before any full planner or plan-heavy ensemble, build a concise evidence package. Planner must design from grounded system understanding, not perform broad first-pass discovery.
+
+Choose scouting proportionally:
+
+- Exact paths, contracts, consumers, and validation already known from current evidence: use focused direct reads; no ceremonial scout.
+- Normal multi-file or multi-layer feature: use one bounded `scout` mission covering the coherent flow.
+- Large/cross-cutting repository with separable domains: launch 2–8 parallel `scout-highspeed` micro-scouts for independent slices such as entry points/call flow, schema/state, consumers/wiring, and tests/runners/config. Use one normal `scout` afterward only when end-to-end synthesis or contradiction resolution remains necessary.
+- One stateful flow whose semantics cross API, database, retries, webhooks, and tests: prefer one normal `scout`; splitting would lose coherence.
+
+The evidence package must cover, with exact paths/symbols and stated searched scope:
+
+- current entry points and end-to-end behavior;
+- relevant architecture, schemas/data/state contracts, and compatibility constraints;
+- consumers, manifests, registries, runners, bootstraps, fixtures, deploy closure, and rollback surfaces;
+- existing tests/harnesses plus what their commands actually discover and prove;
+- repository/branch/dirty ownership relevant to the write set;
+- external or runtime facts still unresolved, clearly separated from greppable local facts.
+
+Stop scouting when these planning decisions are supported. Do not dump raw scout output into the planner; reconcile findings into a short evidence package and preserve material contradictions/gaps. If the package is incomplete enough that the planner would need to rediscover the repository broadly, do not launch it yet.
+
+Search source roots/tracked files; exclude generated artifacts and historical plans unless explicitly relevant.
 
 ## 3. Normal Planner — Default Full-Plan Route
 
@@ -71,8 +93,8 @@ GOAL / SUCCESS
 SCOPE
 [in / out]
 
-EVIDENCE
-[only relevant files, symbols, scout findings, current behavior]
+PRE-PLAN EVIDENCE
+[reconciled direct/scout findings: exact files/symbols, architecture/data contracts, consumers/wiring, tests/runners/harness behavior, current behavior, searched scope, contradictions, and bounded gaps]
 
 CURRENT STATE
 [branch/status/dirty ownership only when it affects target work]
@@ -87,7 +109,7 @@ STOP IF
 [material unknowns or unsafe boundaries]
 ```
 
-Do not inventory all `.pi/plans/`, dump the repository, or copy generic process text. Include a prior plan only when the approved goal explicitly continues or recovers that named plan. The planner may inspect focused repository evidence, but it must stop when targets, boundaries, validation, and material unknowns are grounded.
+Do not inventory all `.pi/plans/`, dump the repository, paste raw scout transcripts, or copy generic process text. Include a prior plan only when the approved goal explicitly continues or recovers that named plan. The planner may verify supplied evidence with focused reads, but broad architecture/schema/consumer/test-harness discovery belongs before launch. If that pre-plan evidence is materially absent, the planner must return `BLOCKED` instead of spending a long run rediscovering the system.
 
 Expected output:
 

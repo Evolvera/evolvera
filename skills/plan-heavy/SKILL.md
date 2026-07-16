@@ -17,6 +17,12 @@ orchestrator handoff
 
 No custom command, tool, schema validator, execution envelope, or separate harness exists. Do not add one.
 
+## 0. Ground Evidence Before the Ensemble
+
+Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. Large/cross-cutting systems use proportional parallel micro-scouts for independent domains and a normal scout only when end-to-end synthesis or contradiction resolution remains necessary.
+
+Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. Reconcile scout/direct findings into exact paths/symbols, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, repository state, and bounded external gaps. If those facts are still broad unknowns, continue scouting; do not launch the briefers.
+
 ## 1. Establish the Plan Directory
 
 Resolve the repository root from evidence, normally:
@@ -49,8 +55,8 @@ The orchestrator writes `<PLAN_DIR>/HANDOFF.md` directly. Keep it outcome-first 
 ## Required Inputs
 [absolute paths to strategy/design/content artifacts, when any]
 
-## Repository Evidence
-[relevant files, symbols, contracts, tests, current behavior]
+## Pre-Plan Evidence
+[reconciled direct/scout findings: exact files/symbols, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, current behavior, searched scope, contradictions, and bounded gaps]
 
 ## Repository State
 [project root, branch, head, focused status/dirty ownership]
@@ -65,7 +71,7 @@ The orchestrator writes `<PLAN_DIR>/HANDOFF.md` directly. Keep it outcome-first 
 [material unknowns that cannot be safely marked TO VERIFY]
 ```
 
-Do not dump repository inventories, historical plans, generic principles, or harness metadata. Existing design/content artifacts remain inputs; copy or reference them explicitly rather than regenerating them.
+Do not dump repository inventories, raw scout transcripts, historical plans, generic principles, or irrelevant harness metadata. Existing design/content artifacts remain inputs; copy or reference them explicitly rather than regenerating them.
 
 ## 3. Launch Both Briefers in Parallel
 
