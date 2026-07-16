@@ -57,6 +57,18 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     ctx.ui.setStatus(STATUS_KEY, status);
   };
 
+  const notifyEnabled = (
+    ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } },
+    model: ModelIdentity | undefined,
+    automatic = false,
+  ) => {
+    const prefix = automatic ? "Fast Mode ativado automaticamente" : "Fast Mode ativado";
+    ctx.ui.notify(
+      `${prefix}: aproximadamente 1,5× mais rápido e ${creditMultiplierFor(model)} mais consumo de créditos.`,
+      "warning",
+    );
+  };
+
   pi.registerCommand("fast", {
     description: "Toggle OpenAI Codex Fast mode: /fast on | /fast off",
     getArgumentCompletions: async (prefix) => {
@@ -82,10 +94,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
         fastRequestInFlight = false;
         fastRequestAccepted = false;
         updateStatus(ctx);
-        ctx.ui.notify(
-          `Fast Mode ativado: aproximadamente 1,5× mais rápido e ${creditMultiplierFor(model)} mais consumo de créditos.`,
-          "warning",
-        );
+        notifyEnabled(ctx, model);
         return;
       }
 
@@ -103,12 +112,12 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
-    // Fast mode is deliberately opt-in for every PI process/session.
-    enabled = false;
     eligibleModelSelected = isFastEligibleModel(ctx.model);
+    enabled = eligibleModelSelected;
     fastRequestInFlight = false;
     fastRequestAccepted = false;
     updateStatus(ctx);
+    if (enabled) notifyEnabled(ctx, ctx.model, true);
 
     if (ctx.mode !== "tui" || autocompleteInstalled) return;
     autocompleteInstalled = true;
@@ -136,10 +145,12 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
     if (modelChanged) {
+      enabled = eligibleModelSelected;
       fastRequestInFlight = false;
       fastRequestAccepted = false;
     }
     updateStatus(ctx);
+    if (modelChanged && enabled) notifyEnabled(ctx, event.model, true);
   });
 
   pi.on("before_provider_request", (event, ctx) => {
