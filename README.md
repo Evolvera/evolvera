@@ -232,12 +232,13 @@ Busca web paga via MiniMax/ZAI foi removida. Para pesquisa externa, use fontes/U
 | `website-pipeline` | Orquestração design → conteúdo → plano → build |
 | `website-stack` | Convenções de stack para websites |
 
-## 🔌 Extensões (8)
+## 🔌 Extensões (9)
 
 | Extensão | O que faz |
 |----------|-----------|
 | `auto-image-clipboard.ts` | Captura imagens do clipboard automaticamente |
 | `communication-style.ts` | Modos default, default+caveman e caveman |
+| `codex-fast-mode.ts` | `/fast on|off`: Fast tier 1,5× para modelos OpenAI Codex compatíveis |
 | `goal-mode.ts` | Adiciona `/goal` para fixar done criteria até concluir ou limpar |
 | `jina-reader.ts` | Lê URLs e PDFs via Jina Reader |
 | `pi-tool-expert-helper.ts` | Helper para validação de tools/extensões |
