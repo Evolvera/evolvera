@@ -47,6 +47,7 @@ try {
   assert.ok(handlers.has("session_start"));
   assert.ok(handlers.has("model_select"));
   assert.ok(handlers.has("before_provider_request"));
+  assert.ok(handlers.has("after_provider_response"));
 
   let autocompleteFactory;
   const notifications = [];
@@ -100,13 +101,15 @@ try {
   assert.match(notifications.at(-1).message, /1,5× mais rápido/);
   assert.match(notifications.at(-1).message, /2,5× mais consumo/);
   assert.equal(notifications.at(-1).type, "warning");
-  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ Fast 1,5×" });
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡🟡" });
 
   const fastPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
   );
   assert.equal(fastPayload.service_tier, "priority");
+  await handlers.get("after_provider_response")({ status: 200, headers: {} }, ctx);
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡🟢" });
 
   // Switching away hides the option/status and prevents tier injection.
   ctx.model = claude;

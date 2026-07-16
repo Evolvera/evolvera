@@ -46,10 +46,15 @@ export function filterFastCommandSuggestions(
 export default function codexFastModeExtension(pi: ExtensionAPI) {
   let enabled = false;
   let eligibleModelSelected = false;
+  let fastRequestInFlight = false;
+  let fastRequestAccepted = false;
   let autocompleteInstalled = false;
 
   const updateStatus = (ctx: { ui: { setStatus(key: string, text: string | undefined): void } }) => {
-    ctx.ui.setStatus(STATUS_KEY, enabled && eligibleModelSelected ? "⚡ Fast 1,5×" : undefined);
+    const status = enabled && eligibleModelSelected
+      ? fastRequestAccepted ? "⚡🟢" : "⚡🟡"
+      : undefined;
+    ctx.ui.setStatus(STATUS_KEY, status);
   };
 
   pi.registerCommand("fast", {
@@ -74,6 +79,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       if (action === "on") {
         enabled = true;
         eligibleModelSelected = true;
+        fastRequestInFlight = false;
+        fastRequestAccepted = false;
         updateStatus(ctx);
         ctx.ui.notify(
           `Fast Mode ativado: aproximadamente 1,5× mais rápido e ${creditMultiplierFor(model)} mais consumo de créditos.`,
@@ -84,6 +91,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
 
       if (action === "off") {
         enabled = false;
+        fastRequestInFlight = false;
+        fastRequestAccepted = false;
         updateStatus(ctx);
         ctx.ui.notify("Fast Mode desativado. OpenAI Codex voltou ao service tier padrão.", "info");
         return;
@@ -97,6 +106,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     // Fast mode is deliberately opt-in for every PI process/session.
     enabled = false;
     eligibleModelSelected = isFastEligibleModel(ctx.model);
+    fastRequestInFlight = false;
+    fastRequestAccepted = false;
     updateStatus(ctx);
 
     if (ctx.mode !== "tui" || autocompleteInstalled) return;
@@ -121,18 +132,34 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("model_select", (event, ctx) => {
+    const modelChanged = event.previousModel?.provider !== event.model.provider
+      || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
+    if (modelChanged) {
+      fastRequestInFlight = false;
+      fastRequestAccepted = false;
+    }
     updateStatus(ctx);
   });
 
   pi.on("before_provider_request", (event, ctx) => {
     if (!enabled || !isFastEligibleModel(ctx.model)) return undefined;
+    fastRequestInFlight = true;
     return applyFastServiceTier(event.payload);
+  });
+
+  pi.on("after_provider_response", (event, ctx) => {
+    if (!fastRequestInFlight) return;
+    fastRequestInFlight = false;
+    fastRequestAccepted = event.status >= 200 && event.status < 300;
+    updateStatus(ctx);
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
     enabled = false;
     eligibleModelSelected = false;
+    fastRequestInFlight = false;
+    fastRequestAccepted = false;
     updateStatus(ctx);
   });
 }
