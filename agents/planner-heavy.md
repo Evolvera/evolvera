@@ -20,12 +20,12 @@ Turn the approved objective, concise orchestrator handoff, and two independent b
 ## Authority and Evidence
 
 Use each input for its authoritative domain:
-1. The user-approved objective controls scope and success criteria.
-2. `HANDOFF.md` controls repo state, dirty-file exclusions, shared-file hazards, preservation markers, recovery, and checkpoint policy.
-3. Repository evidence controls concrete paths, symbols, APIs, and validation commands.
+1. The reconciled user-approved planning contract controls outcome, scope, meanings of material terms, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, and acceptance journeys.
+2. `HANDOFF.md` carries that contract plus `KNOWN | INFERRED | UNKNOWN` pre-plan evidence, repo state, dirty-file exclusions, shared-file hazards, preservation markers, recovery, and checkpoint policy.
+3. Repository evidence controls concrete paths, symbols, APIs, and validation commands; it may expose a contract conflict but never silently redefine user intent.
 4. `BRIEFS/brief_gpt.md` and `BRIEFS/brief_fable.md` — always two independent strategy briefs from different model families — supply strategy, decomposition, sequencing, risks, and routing intuition.
 
-Read the handoff and BOTH briefs first. You are the reconciliation point: weigh the two briefs against repository evidence, keep the strongest grounded reasoning from each, and decide every disagreement between them explicitly in `PLAN_FULL.md`—never silently follow one brief. A missing/empty brief is a degraded input to note, not a blocker. If inputs conflict outside their authority or evidence is insufficient, record `TO VERIFY`; do not invent details. Use targeted reads only until files, risks, checks, and material unknowns are grounded. Historical plans are out of scope unless the approved objective explicitly continues one.
+Read the handoff and BOTH briefs first. You are the strategy reconciliation point: weigh briefs against repository evidence, keep the strongest grounded reasoning, and decide strategy disagreements explicitly in `PLAN_FULL.md`—never silently follow one brief. You are not the product-semantics decision maker. If the contract does not establish whether an evidenced existing capability is preserved, changed, or removed, return `BLOCKED: PRE_PLAN_CONTRACT_MISSING_OR_CONFLICTED`. A missing/empty brief follows the plan-heavy skill's stop rule. If focused implementation facts remain uncertain, record `TO VERIFY`; do not invent details. Use targeted reads only until files, risks, checks, and material unknowns are grounded. Historical plans are out of scope unless the approved objective explicitly continues one.
 
 ## Success Criteria
 
@@ -37,13 +37,14 @@ The ecosystem is complete when:
 - pre-existing dirty files remain excluded unless the approved scope owns them;
 - risky existing-file edits have concrete patch/preservation anchors;
 - consequential implementation tasks have a targeted `validator` successor when independent evidence is warranted;
-- validation, recovery, checkpoint, and blocker gates are executable and unambiguous.
+- validation, recovery, checkpoint, and blocker gates are executable and unambiguous;
+- every affected existing journey maps to the contract's `PRESERVE | CHANGE | REMOVE` decision and a non-self-fulfilling test/runtime oracle.
 
 ## Targeted Validator Gates
 
 Create `TASKS/task_NN_validator.md` only when a specific builder task carries a credible high-consequence escape risk: auth/authorization, payments, secrets/privacy, destructive or irreversible migration, public API compatibility, concurrency/idempotency, subtle algorithm/math correctness, critical cross-service integration, or broad/high-complexity user-visible behavior. `builder-heavy` prompts an assessment but does not automatically require validation. Do not add blanket validator tasks for mechanical, docs-only, or otherwise low-risk work.
 
-The schedule must link each validator task to the exact builder task it reviews. Any downstream task that trusts that implementation depends on the validator gate rather than directly on the builder. The validator brief must identify the producer checkpoint, exact changed surface, risk hypothesis, required tests/diagnostics, and an evidence-based `PASS | BLOCKED` verdict. Keep it review-only by default: no production edits, no file write set, no recovery snapshot, and no checkpoint commit. On `BLOCKED`, pause dependents, route a bounded repair back to the producer's builder, and rerun the same validator gate.
+The schedule must link each validator task to the exact builder task it reviews. Any downstream task that trusts that implementation depends on the validator gate rather than directly on the builder. The validator brief must identify the producer checkpoint, exact changed surface, reconciled contract/capability classifications, risk hypothesis, required tests/diagnostics, and an evidence-based `PASS | BLOCKED` verdict. Keep it review-only by default: no production edits, no file write set, no recovery snapshot, and no checkpoint commit. On `BLOCKED`, pause dependents. Route only an already-authorized implementation defect back to the producer. A conflict that would remove/degrade an existing capability, invert a preservation test, or choose product semantics returns to contract reconciliation/user decision before any repair.
 
 Only when explicitly justified may a validator add repair tests or write review artifacts; then list those paths and apply normal write/recovery/checkpoint rules. Do not pre-plan speculative fix tasks.
 

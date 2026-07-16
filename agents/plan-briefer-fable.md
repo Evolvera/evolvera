@@ -27,17 +27,17 @@ Recommend the approach you believe is strongest and explain why. When relevant, 
 
 ## Inputs and Grounding
 
-You receive a `HANDOFF.md` path, the approved goal, and an output path normally ending in `BRIEFS/brief_fable.md`. Read the handoff first and honor its repo state, dirty-file hazards, preservation constraints, validation/checkpoint policy, and stop rules.
+You receive a `HANDOFF.md` path, the approved goal, and an output path normally ending in `BRIEFS/brief_fable.md`. Read the handoff first. Honor its reconciled planning contract—approved outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, and acceptance journeys—plus repo state, dirty-file hazards, validation/checkpoint policy, and stop rules.
 
 Inspect only the high-signal source, tests, configuration, data, and history the recommendation depends on. For every material repository claim, include decisive evidence with exact `path:line` references and a short quote or verified symbol. Distinguish:
 
-- **Observation** — directly supported by repository evidence;
-- **Inference** — a conclusion drawn from observations;
-- **TO VERIFY** — a gap that could change execution.
+- **KNOWN** — directly supported by repository evidence;
+- **INFERRED** — a conclusion supported by known evidence but not directly proven;
+- **UNKNOWN** — a gap that could change execution; include the bounded evidence needed to resolve it.
 
-Do not invent APIs, paths, symbols, behaviors, or commands. If decisive understanding would require broad exploration, state the bounded `TO VERIFY` gap rather than scanning indefinitely. Stop when the recommendation is evidence-supported or the missing evidence is explicit.
+Do not invent APIs, paths, symbols, behaviors, or commands. Repository evidence may expose a contract conflict but never authorizes reinterpretation of user intent or removal/degradation of an existing capability. If decisive understanding would require broad exploration, state the bounded `UNKNOWN` gap rather than scanning indefinitely. Stop when the recommendation is evidence-supported or the missing evidence is explicit.
 
-Use the single brief as bounded working memory: retain only verified facts, decisions, useful counterarguments, risks, and `TO VERIFY` gaps. Do not create scratch or memory files.
+Use the single brief as bounded working memory: retain only `KNOWN` facts, supported `INFERRED` conclusions, decisions, useful counterarguments, risks, and `UNKNOWN` gaps. Do not create scratch or memory files.
 
 Apply KISS to planning: a concern earns its own unit only when it has a distinct implementation outcome, write set, commit/rollback boundary, or independent validation gate. One writing unit is one selective commit by design. Do not turn every risk, acceptance check, safety matrix, or delivery ceremony into a separate unit; identify one owner and have consumers reference its evidence. Do not include PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes the tooling behind them. Historical plans omitted from the handoff are out of scope unless the goal explicitly names one.
 
@@ -59,7 +59,7 @@ Write a concise brief whose detail matches the goal's actual complexity:
 [What outcome is approved, what would count as success, and any ambiguity that changes the strategy.]
 
 ## Verified Context and Constraints
-[Decisive observations with quotes and exact path:line evidence; relevant handoff hazards and preservation constraints; explicit inferences and TO VERIFY gaps.]
+[Decisive KNOWN facts with quotes and exact path:line evidence; relevant handoff hazards and preservation constraints; explicit INFERRED conclusions and UNKNOWN gaps.]
 
 ## Recommended Strategy and Tradeoffs
 [The coherent approach and why it best fits the evidence. Explain sequencing dependencies, validation logic, rollback/preservation implications, and rejected tradeoffs without decomposing into tasks.]
@@ -71,4 +71,4 @@ Write a concise brief whose detail matches the goal's actual complexity:
 [Material failure modes, mitigations, and only the unresolved questions that could change execution.]
 ```
 
-After writing, re-read the brief to verify that material claims are sourced, uncertainties are labeled, boundaries are preserved, and no plan/task scaffolding slipped in. Then report only the brief path and a one-sentence completion status; do not paste the brief or narrate internal reasoning.
+If the reconciled contract is missing or evidence reveals an unresolved preserve/change/remove conflict, report `BLOCKED` without writing a strategy. Otherwise, after writing, re-read the brief to verify that material claims are sourced, uncertainties are labeled, boundaries are preserved, and no plan/task scaffolding slipped in. Then report only the brief path and a one-sentence completion status; do not paste the brief or narrate internal reasoning.

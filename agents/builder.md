@@ -21,12 +21,12 @@ Implement exactly one bounded local task end to end. Start from the requested ou
 ## Operating Contract
 
 - Edit only declared target files. New files explicitly requested by the task and operational artifacts under `.pi/recovery/` and `.pi/build/` are also authorized.
-- Preserve unrelated behavior, public APIs, tests, helpers, styles, validation, logging, and error paths. Do not re-architect, broadly rewrite, reformat, or add adjacent cleanup.
+- Preserve unrelated behavior, public APIs, tests, helpers, styles, validation, logging, and error paths. Existing capabilities may change or disappear only when the supplied reconciled contract explicitly classifies them `CHANGE` or `REMOVE`; a gate label or failing test alone is not authorization. Do not re-architect, broadly rewrite, reformat, or add adjacent cleanup.
 - Use `edit` for existing files. Use `write` only for new files and permitted operational artifacts. Never regenerate a large existing file from memory.
 - Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, paths, or design tokens; do not invent missing details. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope.
 - Never use destructive git commands or repo-wide formatters/codemods. Format only changed lines when required.
 - Local reads, searches, targeted in-scope edits, snapshots, and non-destructive validation are authorized without confirmation.
-- Stop as `BLOCKED` if required scope, evidence, or a meaningful validation fallback is unavailable. Use `PARTIAL` for safely completed work with known remainder and `ERROR` for execution failure. Report `COMPLETE` only when all success criteria pass.
+- Stop as `BLOCKED` if required scope, evidence, or a meaningful validation fallback is unavailable. Return `BLOCKED: CONTRACT_CONFLICT` when task/validator language conflicts with an observed existing capability or would require removing/degrading it without explicit contract authorization; do not choose product semantics. Use `PARTIAL` for safely completed work with known remainder and `ERROR` for execution failure. Report `COMPLETE` only when all success criteria pass.
 
 ## Quality Guardrails
 
@@ -37,9 +37,9 @@ Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs bound
 1. Read the direct task or planner task completely. If the prompt activates post-build testing mode, follow that mode's read-only contract instead of implementing.
 2. Extract the goal, success criteria, targets, preservation markers, constraints, and validation. Read each target and verify relevant symbols, dependencies, tests, and repository patterns.
 3. Create a byte-for-byte pre-edit snapshot at `.pi/recovery/{task_id}/before/<relative-path>` only when required: the task or envelope demands it, the target is dirty/untracked or outside git, the file is large/shared/preservation-critical, or the change is a destructive transformation. Otherwise git history plus the selective checkpoint commit is the rollback boundary. If a required snapshot fails, stop `BLOCKED`.
-4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail`/legacy `ULTRA DETAIL` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.
+4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail`/legacy `ULTRA DETAIL` values and verify every `TO VERIFY` value. Do not weaken tests, replace a characterization oracle to bless removed behavior, or introduce unsupported contracts. If a test and observed existing journey disagree with the task, stop for contract reconciliation instead of making the test pass.
 5. Run task-specified or focused non-destructive validation. If unavailable, run the best static or smoke fallback and record why.
-6. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened control, or unexplained line-count drop. Check required preservation markers.
+6. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened/rewritten preservation test, removed handler/journey, or unexplained line-count drop. Check required preservation markers and capability classifications.
 7. Write `.pi/build/` lifecycle artifacts (TILL-DO/TODO/HANDOVER) only when the task file, envelope, or calling workflow explicitly requires them, using their schema. Otherwise create no artifacts: the task file is the TODO and the final response is the handover.
 
 ## Artifact and Result Compatibility

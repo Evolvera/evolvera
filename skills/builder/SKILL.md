@@ -100,8 +100,8 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 5. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
 6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
 7. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
-8. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents, returns findings for bounded builder repair, and reruns the same gate.
-9. If diff review shows accidental deletion, broad rewrite, weakened tests, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+8. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
+9. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
 Example:
 
@@ -140,7 +140,8 @@ TARGET FILES
 
 CONSTRAINTS
 - Follow existing patterns in [file/dir]
-- Preserve existing code/behavior except the explicitly requested change
+- Preserve existing code/behavior except capabilities explicitly classified CHANGE or REMOVE in the reconciled contract
+- Never rewrite characterization/regression expectations to make removal or degradation pass unless that behavior change is explicitly approved
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
@@ -162,6 +163,7 @@ After successful validation, orchestrator will commit only TARGET FILES plus rel
 
 STOP RULES
 - Stop and report BLOCKED if required files are missing, tests cannot be run for environment reasons, or the requested change conflicts with existing behavior.
+- If task/gate semantics would remove or degrade an observed existing capability not explicitly classified CHANGE/REMOVE, report `BLOCKED: CONTRACT_CONFLICT`; do not edit production code or redefine tests.
 - Do not expand scope to adjacent improvements.
 ```
 
@@ -194,7 +196,7 @@ Before spawning builder, verify:
 - [ ] Files to read are listed.
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
-- [ ] Preservation constraints are explicit: what must not be removed/rewritten.
+- [ ] Preservation constraints are explicit: affected existing capabilities are classified PRESERVE/CHANGE/REMOVE, and no test oracle may be rewritten to conceal an unapproved regression.
 - [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
 - [ ] Pre-edit recovery snapshots are required where the task marks them (shared/large/preservation-critical, dirty overlap, destructive transforms).
 - [ ] Validation command/check is included.

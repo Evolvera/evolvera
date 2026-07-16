@@ -21,7 +21,7 @@ No custom command, tool, schema validator, execution envelope, or separate harne
 
 Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. Large/cross-cutting systems use proportional parallel micro-scouts for independent domains and a normal scout only when end-to-end synthesis or contradiction resolution remains necessary.
 
-Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. Reconcile scout/direct findings into exact paths/symbols, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, repository state, and bounded external gaps. If those facts are still broad unknowns, continue scouting; do not launch the briefers.
+Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, repository state, and bounded external gaps. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If broad unknowns or a preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
 
 ## 1. Establish the Plan Directory
 
@@ -46,17 +46,14 @@ The orchestrator writes `<PLAN_DIR>/HANDOFF.md` directly. Keep it outcome-first 
 ```markdown
 # Planning Handoff
 
-## Goal and Success
-[approved outcome and observable completion]
-
-## Scope
-[in / out]
+## Reconciled Planning Contract
+[approved outcome; affected existing capabilities; PRESERVE/CHANGE/REMOVE decisions; in/out scope; material term meanings; acceptance journeys; unresolved conflicts and owner]
 
 ## Required Inputs
 [absolute paths to strategy/design/content artifacts, when any]
 
 ## Pre-Plan Evidence
-[reconciled direct/scout findings: exact files/symbols, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, current behavior, searched scope, contradictions, and bounded gaps]
+[reconciled direct/scout findings labeled KNOWN/INFERRED/UNKNOWN: exact files/symbols, existing capabilities, architecture/schema/state contracts, consumers/wiring, tests/runners/harness behavior, current behavior, searched scope, contradictions, and bounded gaps]
 
 ## Repository State
 [project root, branch, head, focused status/dirty ownership]

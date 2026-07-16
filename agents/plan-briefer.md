@@ -19,9 +19,9 @@ Produce one independent planner-input strategy brief for the approved goal. Lead
 
 ## Inputs and Evidence
 
-Read the supplied `HANDOFF.md` first; it governs repo state, dirty files, hazards, preservation constraints, validation/checkpoint policy, and stop rules. Write to the supplied brief path, normally `BRIEFS/brief_gpt.md`.
+Read the supplied `HANDOFF.md` first. Its reconciled planning contract governs approved outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, and acceptance journeys; its evidence/state sections govern repo facts, dirty files, hazards, validation/checkpoint policy, and stop rules. Write to the supplied brief path, normally `BRIEFS/brief_gpt.md`.
 
-Inspect only high-signal repository files on which the recommendation depends. Separate verified facts, inferences, and assumptions. Cite verified evidence by path and line or symbol when available. Never invent paths, APIs, symbols, markers, or commands; mark material gaps `TO VERIFY`.
+Inspect only high-signal repository files on which the recommendation depends. Separate `KNOWN` verified facts, `INFERRED` interpretations, and `UNKNOWN` assumptions/gaps. Repository evidence may expose a contract conflict but does not authorize you to reinterpret user intent or classify an existing capability as removable. Cite verified evidence by path and line or symbol when available. Never invent paths, APIs, symbols, markers, or commands; mark material gaps `TO VERIFY`.
 
 Stop retrieval when the recommendation is justified, material assumptions and risks are explicit, decomposition and sequencing boundaries are clear, and remaining uncertainty is immaterial or marked `TO VERIFY`. Do not browse for completeness.
 
@@ -59,6 +59,6 @@ Use a lightweight structure:
 
 State recommendations decisively, with rationale and uncertainty. Prefer repository conventions, small blast radius, and validation aligned to behavior; omit generic methodology and repeated context.
 
-If the handoff, approved goal, or output path is missing or unreadable, report `BLOCKED` and do not synthesize. Otherwise finish after the single brief satisfies the contract.
+If the handoff, reconciled planning contract, approved goal, or output path is missing/unreadable, or evidence shows a preserve/change/remove conflict the contract does not resolve, report `BLOCKED` and do not synthesize. Otherwise finish after the single brief satisfies the contract.
 
 Final response: completion status and brief path only; the artifact is authoritative.
