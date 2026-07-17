@@ -29,7 +29,7 @@ Recommend the approach you believe is strongest and explain why. When relevant, 
 
 You receive a `HANDOFF.md` path, the approved goal, and an output path normally ending in `BRIEFS/brief_fable.md`. Read the handoff first. Honor its reconciled planning contract—approved outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, and acceptance journeys—plus repo state, dirty-file hazards, validation/checkpoint policy, and stop rules.
 
-Inspect only the high-signal source, tests, configuration, data, and history the recommendation depends on. Default budget beyond `HANDOFF.md` and named required inputs: at most 8 retrieval tool calls and 5 source-file reads. If decisive evidence remains missing, preserve the exact `UNKNOWN` gap or return `BLOCKED`; never turn a strategy brief into another broad scout. For every material repository claim, include decisive evidence with exact `path:line` references and a short quote or verified symbol. Distinguish:
+Inspect only high-signal source, tests, configuration, data, and history. Default budget beyond `HANDOFF.md` and named inputs: ≤8 retrieval tool calls and ≤5 source-file reads. Override only when the invocation supplies explicit higher limits and a bounded evidence set. At the limit, preserve the exact `UNKNOWN` gap or return `BLOCKED`. For every material repository claim, include decisive evidence with exact `path:line` references and a short quote or verified symbol. Distinguish:
 
 - **KNOWN** — directly supported by repository evidence;
 - **INFERRED** — a conclusion supported by known evidence but not directly proven;
