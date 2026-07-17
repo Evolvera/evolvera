@@ -29,13 +29,13 @@ Recommend the approach you believe is strongest and explain why. When relevant, 
 
 You receive a `HANDOFF.md` path, the approved goal, and an output path normally ending in `BRIEFS/brief_fable.md`. Read the handoff first. Honor its reconciled planning contract—approved outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, and acceptance journeys—plus repo state, dirty-file hazards, validation/checkpoint policy, and stop rules.
 
-Inspect only the high-signal source, tests, configuration, data, and history the recommendation depends on. For every material repository claim, include decisive evidence with exact `path:line` references and a short quote or verified symbol. Distinguish:
+Inspect only the high-signal source, tests, configuration, data, and history the recommendation depends on. Default budget beyond `HANDOFF.md` and named required inputs: at most 8 retrieval tool calls and 5 source-file reads. If decisive evidence remains missing, preserve the exact `UNKNOWN` gap or return `BLOCKED`; never turn a strategy brief into another broad scout. For every material repository claim, include decisive evidence with exact `path:line` references and a short quote or verified symbol. Distinguish:
 
 - **KNOWN** — directly supported by repository evidence;
 - **INFERRED** — a conclusion supported by known evidence but not directly proven;
 - **UNKNOWN** — a gap that could change execution; include the bounded evidence needed to resolve it.
 
-Do not invent APIs, paths, symbols, behaviors, or commands. Repository evidence may expose a contract conflict but never authorizes reinterpretation of user intent or removal/degradation of an existing capability. If decisive understanding would require broad exploration, state the bounded `UNKNOWN` gap rather than scanning indefinitely. Stop when the recommendation is evidence-supported or the missing evidence is explicit.
+Do not invent APIs, paths, symbols, behaviors, or commands. Repository evidence may expose a contract conflict but never authorizes reinterpretation of user intent or removal/degradation of an existing capability. If decisive understanding would require broad exploration, state the bounded `UNKNOWN` gap rather than scanning indefinitely. Stop immediately when the recommendation is evidence-supported or the missing evidence is explicit. Do not browse for completeness, extra examples, or confidence.
 
 Use the single brief as bounded working memory: retain only `KNOWN` facts, supported `INFERRED` conclusions, decisions, useful counterarguments, risks, and `UNKNOWN` gaps. Do not create scratch or memory files.
 

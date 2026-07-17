@@ -49,6 +49,8 @@ Use the smallest sufficient contract:
 - nontrivial/unfamiliar/cross-cutting/ambiguous change: orient from bounded structure, gather proportional direct/scout evidence, then state outcome, affected capabilities, `PRESERVE | CHANGE | REMOVE` boundary, scope, acceptance, and conflicts before writing/delegating;
 - evidence reveals two behavior-changing interpretations: stop and ask the smallest user decision before mutation.
 
+KISS controls time as well as code. Every delegation must answer one bounded decision or produce one coherent artifact. Do not ask an agent to rediscover evidence already grounded, “double-check everything,” or continue after its result can no longer change routing/contract/implementation. Prefer one small evidence wave; after expansion reveals a new material unknown, re-scope once. If mission remains broad, return `PARTIAL` and split only the missing independent slice—never reward a monolithic agent for consuming more context.
+
 ## Handoff Standard (all delegations)
 
 A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must carry the orchestrator's reconciled contract at proportional detail and contain:
