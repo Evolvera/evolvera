@@ -184,11 +184,11 @@ Add a linked `validator` task only when a specific producer has a credible high-
 
 ## 7. Execute the Plan
 
-Before builders, read `SCHEDULE.md` and task contracts once; ask for user review only when implementation scope, cost, or risk is not already approved. Do not launch a planner before each downstream task to “ground” or improve it. A plan is executable as a whole or it failed: if a task lacks a material contract, stop active builders, inspect the remaining tasks for the same omission class, and repair or regenerate the plan once before resuming. Never patch only the blocked task and immediately relaunch its builder.
+Before builders, read `SCHEDULE.md` and task contracts once; ask for user review only when implementation scope, cost, or risk is not already approved. Treat the plan as one executable contract. If a task is materially incomplete, apply the failed-plan stop rule below before any builder resumes; never ground or improve tasks with a planner between execution steps.
 
 - Run dependencies serially.
 - Run safe independent groups in concurrent waves according to the builder skill.
-- Create recovery snapshots before modifying existing files.
+- Create recovery snapshots only when the task/schedule requires them: shared, large, preservation-critical, dirty-overlap, or destructive targets; clean tracked files rely on the selective checkpoint commit.
 - After each verified writing task, create exactly one selective commit and record its hash.
 - After the relevant task or coherent builder wave is checkpointed, ensure proportionate outcome evidence against that exact head: producer proof may close static/mechanical work; run an obvious deterministic integration check directly; load the `testing` skill and use a fresh `builder` in `POST-BUILD TEST MODE` only when independent scenario selection, edge/error coverage, integration, or runtime observation materially improves confidence. Do not add testing-only task files or SCHEDULE rows.
 - A dependent task starts only after its writing dependency is checkpointed, any materially required post-build proof is satisfied, and any linked validator records `PASS`. Validator review complements rather than replaces behavioral testing.
@@ -197,4 +197,4 @@ Before builders, read `SCHEDULE.md` and task contracts once; ask for user review
 
 ## Stop Rules
 
-Stop and re-ground when target ownership, required evidence, validation, or rollback cannot be established; when the plan expands approved scope; when a planner produces orchestration bookkeeping as tasks; when a builder cannot start safely because the task omitted a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or when validation is `BLOCKED`. A builder discovering such an omission is evidence that the plan failed its builder-startability gate—not permission for the builder to design the missing contract, silently expand its write set, or trigger a just-in-time planner marathon. Do not repair a bad plan by adding bureaucracy—re-ground the missing evidence once and correct the actual contract. If another downstream task reveals the same class of omission, stop executing that plan rather than repeating repair cycles.
+Stop and re-ground when ownership, required evidence, validation, or rollback cannot be established; scope expands; orchestration bookkeeping becomes tasks; a task omits a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or validation is `BLOCKED`. Such an omission means the plan failed: stop active builders, inspect remaining tasks for the same defect, and repair or regenerate the ecosystem once. Never let a builder invent the missing contract, expand its write set, patch only the blocked task, or trigger a planner between downstream tasks.

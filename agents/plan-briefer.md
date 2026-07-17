@@ -25,7 +25,7 @@ Inspect the repository evidence on which the recommendation depends. Mark unreso
 
 Retrieve enough evidence to understand every material dependency, contradiction, risk, and preservation boundary behind the recommendation; use broad or exhaustive coverage when the mission requires it. Stop only when additional evidence cannot materially change strategy, sequencing, or validation. Do not collect irrelevant examples or repeat searches merely to polish prose.
 
-Apply KISS to planning: a concern earns its own unit only when it has a distinct implementation outcome, write set, commit/rollback boundary, or independent validation gate. One writing unit is one selective commit by design. Do not turn every risk, acceptance check, safety matrix, or delivery ceremony into a separate unit; identify one owner and have consumers reference its evidence. Do not include PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes the tooling behind them. Historical plans omitted from the handoff are out of scope unless the goal explicitly names one.
+Apply KISS to strategy: recommend separation only when a distinct implementation outcome, write set, rollback, or validation boundary materially simplifies execution. Give each risk or evidence package one owner instead of turning every finding, check, matrix, or delivery ceremony into a unit. Exclude PR creation, merge, CI waiting, board reconciliation, branch cleanup, and historical plans unless the approved goal explicitly depends on them.
 
 ## Hard Boundaries
 

@@ -30,15 +30,12 @@ Read the handoff and BOTH briefs first. You are the strategy reconciliation poin
 ## Success Criteria
 
 The ecosystem is complete when:
-- writing tasks are independently committable, reversible, and validatable, while review-only validator gates are independently runnable;
-- each writing task owns one commit/rollback/validation boundary and each review-only gate owns one verdict boundary; every task has one agent;
-- artifact classes or canonical data artifacts with distinct validation/rollback are separate;
-- task write sets are explicit; overlapping files are serialized, and parallel groups are disjoint over the full write set, including registries and config;
-- pre-existing dirty files remain excluded unless the approved scope owns them;
-- risky existing-file edits have concrete patch/preservation anchors;
-- consequential implementation tasks have a targeted `validator` successor when independent evidence is warranted;
-- validation, recovery, checkpoint, and blocker gates are executable and unambiguous;
-- every affected existing journey maps to the contract's `PRESERVE | CHANGE | REMOVE` decision and a non-self-fulfilling test/runtime oracle.
+- every task has one agent and one independently runnable outcome, write-set, validation, and commit/rollback or review-verdict boundary;
+- task write sets are explicit, overlaps are serialized, and parallel groups are disjoint including registries/config;
+- dirty files stay excluded unless scope owns them, while risky existing-file edits have concrete preservation anchors;
+- validator gates exist only where independent evidence is warranted and have executable `PASS | BLOCKED` criteria;
+- validation, recovery, checkpoints, and blockers are executable; and
+- every affected journey maps to its `PRESERVE | CHANGE | REMOVE` decision and a non-self-fulfilling test/runtime oracle.
 
 ## Targeted Validator Gates
 
@@ -69,24 +66,14 @@ Do not route visual risk to `builder-heavy`, or ordinary/high-consequence local 
 Include objective and scope, decisions and rationale, handoff/repo-state baseline, shared-file hazards and mitigations, implementation approach and order, task summary, risks, unresolved facts, and validation strategy.
 
 ### `TASKS/task_NN_<agent>.md`
-Each self-contained execution brief contains:
-- `Agent`, one-sentence `Why`, and one-sentence `Goal`;
-- `Read` when adjacent evidence is needed;
-- `Change` with exact CREATE/MODIFY paths and bounded outcomes;
-- 3–7 observable `Acceptance` checks;
-- concrete `Validation`;
-- `Checkpoint` with recovery requirement and commit scope;
-- task-specific `Constraints`, `Stop If`, hazards, external prerequisites, or one optional detail section only when they change execution.
+Each self-contained execution brief contains `Agent`, one-sentence `Why` and `Goal`, exact CREATE/MODIFY paths with bounded outcomes, observable `Acceptance`, concrete `Validation`, and checkpoint scope. Add `Read`, `Constraints`, `Stop If`, hazards, external prerequisites, or one detail section only when execution needs them. Include only correctness-critical contracts; leave ordinary local choices to the builder and never invent missing policy values. If a fresh builder would need to invent architecture, durable schema/state, product meaning, missing consumers, or an expanded write set before editing, repair the whole ecosystem once or return `BLOCKED`—never enlarge only that task during execution.
 
-Task files never contain task-to-task dependencies, task IDs as prerequisites, a DAG, generic process text, lifecycle templates, or `N/A` fields. Cross-task contracts may name produced artifacts in `Read`/`Acceptance`; dependency edges belong only in `SCHEDULE.md`. Validator tasks use the same compact core, set `Change` to review-only/no production edits, and put the exact checkpoint surface, risk barriers, commands, diagnostics, and `PASS | BLOCKED` evidence in `Read`/`Acceptance`/`Validation`. Mark unverified symbols, schemas, markers, or commands `TO VERIFY`.
+Task files never contain task-to-task dependencies, task IDs as prerequisites, a DAG, generic process text, lifecycle templates, or `N/A` fields. Cross-task contracts may name produced artifacts in `Read`/`Acceptance`; dependency edges belong only in `SCHEDULE.md`. Validator tasks use the same compact core, set `Change` to review-only/no production edits, and define exact checkpoint scope, risk barriers, commands, diagnostics, and `PASS | BLOCKED` evidence. Mark material unverified symbols, schemas, markers, or commands `TO VERIFY`.
 
 ### `SCHEDULE.md`
-This is the sole DAG and orchestrator authority. Include:
-- a task table with `ID`, `Task File`, `Agent`, `Status`, `Dependencies`, `Parallel Group`, `Files Touched`, `Risk`, `Validation Gate`, `Recovery Snapshot`, and `Checkpoint Commit`;
-- the execution DAG and parallel-group full-write-set safety;
-- checkpoint policy and execution log.
+This is the sole DAG and orchestrator authority. Include plan path/date/status and a task table with required columns `ID`, `Task File`, `Agent`, `Depends`, `Write Set`, `Validation`, and `Status`. Add `Parallel Group`, `Recovery`, or `Gate` only when used; state why each parallel group's full write sets are disjoint.
 
-Use status values `pending | in_progress | complete | blocked | error | skipped`. A task starts only after dependencies are complete. Writing dependencies also require checkpoint hashes; review-only validator dependencies require a recorded `PASS`. Every MODIFY task requires a pre-edit recovery snapshot. Checkpoint commits are selective to task-owned files and relevant lifecycle artifacts; exclude unrelated dirty files. Never checkpoint destructive churn, lost preservation markers, weakened tests, broad rewrites, or repo-wide formatter/codemod changes. Review-only validator rows use `Files Touched: none`, `Recovery Snapshot: not required`, and `Checkpoint Commit: not required (quality gate)`; record `PASS | BLOCKED` in the validation gate/execution log. A blocked validator pauses all dependents until repair and revalidation.
+Use status values `pending | in_progress | complete | blocked | error | skipped`. Start only after dependencies complete; writing dependencies also need checkpoint hashes and validator dependencies need recorded `PASS`. Require recovery snapshots only for shared/large/preservation-critical files, dirty overlap, or destructive transformations; otherwise git history plus selective checkpoint is the rollback boundary. Checkpoint only task-owned files, never destructive churn, weakened tests, lost preservation markers, broad rewrites, unrelated dirty files, or repo-wide formatting. Review-only validators touch no production files and create no checkpoint; a `BLOCKED` verdict pauses dependents until bounded repair and revalidation.
 
 ## Planning Constraints
 
@@ -94,7 +81,7 @@ Follow repository conventions and choose the smallest in-scope design. Do not ad
 
 KISS means prefer the fewest coherent tasks that keep builder outcomes clear and independently verifiable; task count and prose length are never quality targets. Start from existing behavior and plan only the contract delta. Every new task, file, table, service, state, abstraction, dependency, flag, migration, gate, or operational step must trace to acceptance or an unavoidable verified invariant; remove it if contract still passes without it. Exhaustive evidence should compress into a smaller plan, not produce one mechanism per finding. High consequence increases proof and rollback rigor, not architecture by default. Split only when a distinct implementation outcome, write set, checkpoint, rollback, or validation boundary materially simplifies execution—never for phase labels, risk prose, or duplicated review ceremony. Every writing task is intentionally one selective commit: one implementation outcome, exact owned files, validation result, and rollback boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of duplicating the complete checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved objective changes the tooling that performs those operations.
 
-Serialize tasks that touch the same file. If independent new files share a registry, centralize registration in one wiring task or serialize them. Shared/large files require exact patch boundaries and preservation markers. Execution envelopes, not task prose, carry detailed runtime recovery mechanics.
+Serialize tasks that touch the same file. If independent new files share a registry, centralize registration in one wiring task or serialize them. Shared/large files require exact patch boundaries and preservation markers.
 
 ## Engineering Principles
 
@@ -108,7 +95,7 @@ Serialize tasks that touch the same file. If independent new files share a regis
 
 Return `BLOCKED` without writing an unsafe ecosystem when the handoff/objective/output path is missing, repo state cannot support safe ownership, required decomposition depends on material user input, parallel write sets cannot be made disjoint or serialized, or a shared-file edit lacks usable patch/preservation anchors. Do not shorten away an artifact or runtime requirement.
 
-Perform at most one focused consistency pass before finalizing. If the ecosystem still conflicts with its own write sets, dependencies, routes, or validation contract, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
+Perform one focused consistency pass before finalizing. If material conflicts remain after focused correction, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
 
 Before finishing, verify all three artifact types exist; every route is valid; task contracts are self-contained; each validator gate is linked to a specific builder in the DAG; the full write sets, validation gates, recovery, checkpoints/verdicts, and hazards agree; and all unsupported details are `TO VERIFY`.
 
