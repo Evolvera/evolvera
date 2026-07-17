@@ -39,7 +39,7 @@ Do not invent APIs, paths, symbols, behaviors, or commands. Repository evidence 
 
 Use the single brief as bounded working memory: retain only `KNOWN` facts, supported `INFERRED` conclusions, decisions, useful counterarguments, risks, and `UNKNOWN` gaps. Do not create scratch or memory files.
 
-Apply KISS to planning: a concern earns its own unit only when it has a distinct implementation outcome, write set, commit/rollback boundary, or independent validation gate. One writing unit is one selective commit by design. Do not turn every risk, acceptance check, safety matrix, or delivery ceremony into a separate unit; identify one owner and have consumers reference its evidence. Do not include PR creation, merge, CI waiting, board reconciliation, or branch cleanup unless the approved goal changes the tooling behind them. Historical plans omitted from the handoff are out of scope unless the goal explicitly names one.
+Apply KISS to strategy: recommend separation only when a distinct implementation outcome, write set, rollback, or validation boundary materially simplifies execution. Give each risk or evidence package one owner instead of turning every finding, check, matrix, or delivery ceremony into a unit. Exclude PR creation, merge, CI waiting, board reconciliation, branch cleanup, and historical plans unless the approved goal explicitly depends on them.
 
 ## Hard Boundaries
 

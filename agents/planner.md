@@ -43,11 +43,9 @@ The ecosystem is complete when:
 
 ## Planning Rules
 
-Split work by commit, rollback, validation, artifact, patch, or failure boundary—not merely by theme. Separate evidence derivation from changes that consume it, and separate canonical data artifacts when they have distinct rollback or validation. Prefer small blast radius over fewer tasks.
+Choose the fewest coherent tasks that keep builder outcomes clear and independently verifiable. Split only when a distinct implementation outcome, write set, checkpoint, rollback, validation, or failure boundary materially simplifies execution; small blast radius is evidence for a split, not a task-count goal. Optimize elapsed delivery time: parallelize only independent SoC slices with disjoint write sets and validation resources, and serialize shared contracts or external effects.
 
-Optimize elapsed delivery time, not task count: identify the critical path, use parallel groups only for independent SoC slices with fully disjoint write sets and validation resources, and serialize shared contracts/external effects. A larger graph is justified only when it reduces builder scope, rework, or wall-clock time.
-
-KISS means prefer the fewest coherent tasks that keep builder outcomes clear and independently verifiable; task count, prose length, and retrieval volume are never quality targets. Once the contract, write sets, sequencing, and validation are executable, write artifacts and stop—do not keep searching to make the plan look more comprehensive. Split only when a distinct implementation outcome, write set, checkpoint, rollback, or validation boundary materially simplifies execution—never for phase labels, risk prose, or duplicated review ceremony. Every writing task is intentionally one selective commit: one implementation outcome, exact owned files, validation result, and rollback boundary. Each requirement, matrix, safety rule, or evidence package has one owning task or gate; consumers reference that artifact or verdict instead of copying the full checklist. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes the tooling that performs those operations.
+Once the contract, write sets, sequencing, and validation are executable, write artifacts and stop. Each writing task owns one selective commit and one outcome/write-set/validation/rollback boundary. Give each requirement or evidence package one owner; consumers reference it instead of copying full checklists. Never split for phase labels, risk prose, delivery ceremony, or duplicated review. Do not create builder tasks for PR creation, merge, CI waiting, GitHub Project/Flow reconciliation, or branch cleanup unless the approved scope changes that tooling.
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces a contract another consumes, name that artifact in the producer's `Acceptance` and consumer's `Read`; put the edge only in `SCHEDULE.md`.
 
@@ -64,7 +62,7 @@ Before finalizing, test every task as if a fresh builder is about to make its fi
 For every task:
 
 1. Ground local repository facts before planning: exact target paths/symbols, existing schema/API/state shape, compatibility constraints, and adjacent pattern. Do not leave greppable local facts as `TO VERIFY`.
-2. Decide every correctness-critical contract while planning. Leave only bounded local implementation choices to the builder. Migration/data tasks must name exact tables, columns, types, indexes, constraints, triggers, ordering/provenance, compatibility behavior, rollback gates, and consumer-preservation rules when those details affect correctness.
+2. Decide every correctness-critical contract while planning and leave ordinary local choices to the builder. Do not invent policy values merely to make a task look complete. For migration/data work, name only schema, state, provenance, compatibility, rollback, and consumer-preservation details that acceptance or an unavoidable invariant makes correctness-critical.
 3. Close the full write set. Trace each created or modified artifact through required manifests, registries, migration runners, bootstraps, fixtures, test discovery, lint inventories, deploy closures, and rollback scripts. Include each required file in exactly one owning task or cite evidence that existing wiring already covers it.
 4. Trace validation backward. Each command must actually discover/setup/execute the new behavior. If a focused test requires a runner, filter, schema bootstrap, migration apply step, service registration, or fixture update, the task must own that wiring. Never list a validation command that would skip the new surface.
 5. Check acceptance-to-change closure. Every acceptance criterion must map to a declared changed file or verified existing behavior; every changed file must support the task outcome. No hidden implementation work may live only in rationale.
@@ -159,7 +157,7 @@ Use this compact contract:
 - concrete blocker requiring escalation
 
 ## Checkpoint
-- Recovery snapshot: required for MODIFY files / not required for create-only
+- Recovery snapshot: required only for shared/large/preservation-critical files, dirty overlap, or destructive transformation; otherwise rely on git checkpoint
 - Commit scope: exact owned files
 ```
 
@@ -183,7 +181,7 @@ After implementation validation and focused diff review, create one selective ch
 
 Stop `BLOCKED` rather than emit an unsafe plan when the approved goal or output location is missing, material repo ownership cannot be established, safe decomposition requires unresolved user input, parallel collisions cannot be serialized/centralized, or a shared/large-file change lacks usable patch boundaries and preservation markers. A shorter prompt or plan must never remove an existing artifact/runtime contract.
 
-Perform at most one focused consistency pass before finalizing. If the ecosystem still conflicts with its own write sets, dependencies, routes, or validation contract, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
+Perform one focused consistency pass before finalizing. If material conflicts remain after focused correction, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
 
 Before finishing, verify all three artifact types exist; every task route is valid; task briefs are self-contained and dependency-free; each validator gate is linked to a specific builder in the schedule; the schedule captures every dependency, full write set, validation gate, recovery requirement, and checkpoint/verdict; and unsupported facts are `TO VERIFY`.
 
