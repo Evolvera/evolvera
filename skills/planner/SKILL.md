@@ -182,7 +182,7 @@ Add a linked `validator` task only when a specific producer has a credible high-
 
 ## 7. Execute the Plan
 
-Before builders, read `SCHEDULE.md` and task contracts; ask for user review only when implementation scope, cost, or risk is not already approved.
+Before builders, read `SCHEDULE.md` and task contracts once; ask for user review only when implementation scope, cost, or risk is not already approved. Do not launch a planner before each downstream task to “ground” or improve it. A plan is executable as a whole or it failed: if a task lacks a material contract, pause once, re-ground the plan boundary, and resume only after that gap is closed.
 
 - Run dependencies serially.
 - Run safe independent groups in concurrent waves according to the builder skill.
@@ -195,4 +195,4 @@ Before builders, read `SCHEDULE.md` and task contracts; ask for user review only
 
 ## Stop Rules
 
-Stop and re-ground when target ownership, required evidence, validation, or rollback cannot be established; when the plan expands approved scope; when a planner produces orchestration bookkeeping as tasks; when a builder cannot start safely because the task omitted a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or when validation is `BLOCKED`. A builder discovering such an omission is evidence that the plan failed its builder-startability gate—not permission for the builder to design the missing contract or silently expand its write set. Do not repair a bad plan by adding bureaucracy—re-ground the missing evidence and correct the plan's actual contract.
+Stop and re-ground when target ownership, required evidence, validation, or rollback cannot be established; when the plan expands approved scope; when a planner produces orchestration bookkeeping as tasks; when a builder cannot start safely because the task omitted a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or when validation is `BLOCKED`. A builder discovering such an omission is evidence that the plan failed its builder-startability gate—not permission for the builder to design the missing contract, silently expand its write set, or trigger a just-in-time planner marathon. Do not repair a bad plan by adding bureaucracy—re-ground the missing evidence once and correct the actual contract. If another downstream task reveals the same class of omission, stop executing that plan rather than repeating repair cycles.
