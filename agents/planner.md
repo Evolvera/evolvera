@@ -88,7 +88,7 @@ Follow repository conventions and choose the smallest readable in-scope design. 
 
 Add a separate `validator` task after a specific builder task when a defect could plausibly escape the builder's own checks and cause high-consequence breakage. Strong signals include auth/authorization, payments, secrets/privacy, destructive or irreversible data migration, public API/backward compatibility, concurrency/idempotency, subtle algorithm/math correctness, critical cross-service integration, or a broad/high-complexity user-visible change. A `builder-heavy` route is a signal to assess, not an automatic validator requirement.
 
-Do not add validator tasks to every builder, to mechanical/docs-only work, or merely to inflate confidence. Each validator task must:
+Do not add validator tasks to every builder, mechanical/docs-only work, static prompt/config/policy edits with deterministic acceptance, or work selected only because its file is important. Each validator task must:
 - be named `TASKS/task_NN_validator.md` and use `**Agent**: validator`;
 - depend in `SCHEDULE.md` on the exact builder task it reviews; downstream work that trusts the change depends on the validator task, not directly on that builder;
 - identify the producer checkpoint, exact changed surface, risk hypothesis, required tests/diagnostics, and unambiguous `PASS | BLOCKED` evidence;
