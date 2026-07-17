@@ -49,7 +49,7 @@ Use the smallest sufficient contract:
 - nontrivial/unfamiliar/cross-cutting/ambiguous change: orient from bounded structure, gather proportional direct/scout evidence, then state outcome, affected capabilities, `PRESERVE | CHANGE | REMOVE` boundary, scope, acceptance, and conflicts before writing/delegating;
 - evidence reveals two behavior-changing interpretations: stop and ask the smallest user decision before mutation.
 
-KISS controls time as well as code. Every delegation must answer one bounded decision or produce one coherent artifact. Do not ask an agent to rediscover evidence already grounded, “double-check everything,” or continue after its result can no longer change routing/contract/implementation. Prefer one small evidence wave; after expansion reveals a new material unknown, re-scope once. If mission remains broad, return `PARTIAL` and split only the missing independent slice—never reward a monolithic agent for consuming more context.
+Evidence depth and solution complexity are separate. Let scouts gather enough evidence for the real system, including exhaustive coverage when the mission requires it. Orchestrator must reconcile that evidence into a compact contract; planner/builders must not convert every discovered risk, module, or possibility into a task or mechanism. More context should reduce guessing, not enlarge approved implementation.
 
 ## Handoff Standard (all delegations)
 
@@ -65,7 +65,7 @@ A subagent starts with zero context: it has not seen the conversation, the user'
 
 Before launching, reread the prompt as if you were the subagent: can you execute it without asking anything and without inventing anything? If not, fix the prompt or gather evidence first. Terse command-style prompts produce shallow, generic work; a paragraph of grounded context is cheaper than one wrong diff.
 
-**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into 2–8 `scout-highspeed` micro-scouts and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
+**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into independent `scout-highspeed` evidence slices and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -92,12 +92,12 @@ Agent({
 
 **Rules:**
 - Use `scout-highspeed` for micro-scouts: narrow file discovery, symbol grep, test/config inventory, one local dependency slice, algorithms/backend/infra/math-heavy code understanding with tight scope.
-- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split those into 2–8 parallel micro-scouts first, or use normal `scout`.
+- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split independent evidence slices across parallel micro-scouts, or use normal `scout` for coherent coverage.
 - Use `scout` when lower hallucination risk, exhaustive coverage, large-context coherence, or existing scout checkpoint artifacts matter more than speed.
 - Use mixed mode when useful: highspeed scouts for evidence shards, normal scout for synthesis/contradiction resolution.
 - Do not use highspeed scouts for frontend design critique or visual polish; use website/design agents instead.
 - Give scout a **clear question**, not vague tasks.
-- For highspeed scouts, include explicit budget: <=2 tool-call rounds, <=8 tool uses, read <=3 files, return PARTIAL with next splits if broad.
+- Keep each highspeed scout on one narrow evidence slice; return `PARTIAL` with the missing slice when the mission becomes broad or needs coherent cross-file synthesis.
 - Tell it **where to look** (directories, file patterns).
 - Ask for **exact file paths and line numbers**.
 - **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
@@ -152,7 +152,7 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial.
 - For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, existing capabilities, consumers/registries/runners/harnesses, validation behavior, and bounded unknowns. Familiarity and names alone are not evidence.
 - For nontrivial/unfamiliar systems, structure comes first: inspect bounded roots/file families before deep reads so scout missions follow the repository rather than assumptions.
-- Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one bounded scout for normal coherent work; 2–8 parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
+- Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one coherent scout for normal work; parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
 - Reconcile reports into a concise contract and evidence package. Classify claims `KNOWN | INFERRED | UNKNOWN`; classify affected capabilities `PRESERVE | CHANGE | REMOVE` only when user intent/evidence supports it. Never paste raw transcripts or ask planner to “understand the repository.”
 - If two plausible interpretations would preserve versus disable different behavior, stop and ask the user before planner. If broad discovery or product-semantic choice remains, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
@@ -164,10 +164,10 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 ## builder — Focused Execution
 
 **What it does:**  
-Implements atomic code changes. Runs on a small, fast model. Good for 1-2 files, single concern.
+Implements one coherent bounded change. File count does not define complexity; contract and coupling do.
 
 **When to use:**
-- Focused change (1-2 files, one concern)
+- Focused change with one coherent outcome and bounded write set
 - Planner already generated `TASKS/` files
 - Change is mechanical and well-scoped
 
@@ -241,7 +241,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Letting a light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
 | Skipping scout when planner evidence is incomplete | You miss dependencies, schemas, consumers, runners, and side effects even in a familiar repository | Scout proportionally before planner; familiarity alone is not evidence |
-| Asking one highspeed scout a broad corpus/coverage question | It burns context, hits turn limits, or returns shallow partials | Split into 2–8 parallel micro-scouts or use normal `scout` |
+| Asking one highspeed scout a broad corpus/coverage question | It returns fragmented or shallow evidence | Split independent slices across parallel micro-scouts or use normal `scout` for coherent coverage |
 | Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
 | Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
 
