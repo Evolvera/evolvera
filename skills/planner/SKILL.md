@@ -180,7 +180,7 @@ Load the builder skill; it is authoritative for tier selection. Defaults:
 
 A server/config file containing rules is not enough to select Fable. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.
 
-Add a linked `validator` task only when a specific producer has a credible high-consequence escape risk. Do not add blanket validators for inventory, docs, mechanical work, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
+Add a linked `validator` task only when a specific producer has a named credible high-consequence escape risk. Do not add validators for inventory, docs, static prompt/config/policy edits with deterministic acceptance, mechanical work, file importance, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
 
 ## 7. Execute the Plan
 

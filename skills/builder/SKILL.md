@@ -38,7 +38,7 @@ Success means:
 
 Route light tiers by error profile, not size: they cover most routine work correctly but err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. The routing question is “is the correct change fully determined by the task plus visible code?”. For non-frontend work needing non-local reasoning, `builder` is the default. Choose Fable only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for explicit external operations or evidenced exceptional multi-runtime integration; never because a task is backend, risky, auth/payment, migration, config, shared, or multi-file. Use design tiers when visual judgment or local semantic/declarative modeling dominates. Use `builder-ultra` only for bounded non-frontend formal/numerical/scientific or compound-invariant work with an explicit oracle.
 
-A decision, verdict, classification, evidence index, or source-of-truth artifact deserves focused review, but does not select `builder-heavy` by itself. Use `validator` or the orchestrator for the verdict; keep implementation tier selection based on the actual execution boundary.
+A decision, verdict, classification, evidence index, or source-of-truth artifact needs separate `validator` review only for a named consequential escape risk. Static locally-decidable changes close with producer proof plus orchestrator diff review; file authority or importance alone selects neither `validator` nor `builder-heavy`.
 
 ### Shape-Based Routing
 
@@ -220,7 +220,7 @@ After a producer builder finishes:
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
-- decide proportionately whether producer evidence closes the outcome: static/mechanical work may already be sufficient; run an obvious deterministic integration check directly; load the `testing` skill and use a fresh `builder` in `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; any linked validator reviews the same evidenced head;
+- decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add tester or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly; use `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; a validator runs only for an already-linked named escape risk or final PR gate;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 
