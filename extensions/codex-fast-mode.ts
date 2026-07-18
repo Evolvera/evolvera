@@ -60,11 +60,9 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   const notifyEnabled = (
     ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } },
     model: ModelIdentity | undefined,
-    automatic = false,
   ) => {
-    const prefix = automatic ? "Fast Mode ativado automaticamente" : "Fast Mode ativado";
     ctx.ui.notify(
-      `${prefix}: aproximadamente 1,5× mais rápido e ${creditMultiplierFor(model)} mais consumo de créditos.`,
+      `Fast Mode ativado: aproximadamente 1,5× mais rápido e ${creditMultiplierFor(model)} mais consumo de créditos.`,
       "warning",
     );
   };
@@ -113,11 +111,10 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     eligibleModelSelected = isFastEligibleModel(ctx.model);
-    enabled = eligibleModelSelected;
+    enabled = false;
     fastRequestInFlight = false;
     fastRequestAccepted = false;
     updateStatus(ctx);
-    if (enabled) notifyEnabled(ctx, ctx.model, true);
 
     if (ctx.mode !== "tui" || autocompleteInstalled) return;
     autocompleteInstalled = true;
@@ -145,12 +142,11 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
     if (modelChanged) {
-      enabled = eligibleModelSelected;
+      enabled = false;
       fastRequestInFlight = false;
       fastRequestAccepted = false;
     }
     updateStatus(ctx);
-    if (modelChanged && enabled) notifyEnabled(ctx, event.model, true);
   });
 
   pi.on("before_provider_request", (event, ctx) => {
