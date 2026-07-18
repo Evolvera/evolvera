@@ -94,7 +94,7 @@ Os instaladores fixam a baseline compatível `@earendil-works/pi-coding-agent@0.
 |--------|-------|--------|--------|-------------|
 | **Scout Highspeed** | ⚡ | Explorador rápido para buscas estreitas | GPT-5.3 Codex Spark medium | micro-scouts mecânicos |
 | **Scout** | 🔍 | Explorador cauteloso e coerente | GPT-5.6 Luna high | mapas amplos, evidência e síntese |
-| **Planner** | 🏛️ | Gera PLAN_FULL/SCHEDULE e tasks compactas | GPT-5.6 Sol medium | planejamento normal complexo |
+| **Planner** | 🏛️ | Gera PLAN_FULL/SCHEDULE e tasks compactas | GPT-5.6 Sol high | planejamento normal complexo |
 | **Planner Heavy** | 🏛️ | Planner final do ensemble heavy | GPT-5.6 Sol xhigh | plano com duas estratégias prévias |
 | **Plan Briefer** | 🧩 | Brief estratégico GPT | GPT-5.6 Sol high | ensemble plan-heavy |
 | **Plan Briefer (Fable)** | 🧩 | Brief estratégico alternativo | Claude Fable 5 high | ensemble plan-heavy |
@@ -331,7 +331,7 @@ O PI detecta automaticamente o que você quer e usa o agente correto:
 
 | Modelo | Agentes | Reasoning effort |
 |--------|---------|------------------|
-| **GPT-5.6 Sol** | Planner (medium), Planner Heavy (xhigh), Plan Briefer (high), Builder Heavy (medium), SEO Content Writer (medium) | medium / high / xhigh |
+| **GPT-5.6 Sol** | Planner (high), Planner Heavy (xhigh), Plan Briefer (high), Builder Heavy (medium), SEO Content Writer (medium) | medium / high / xhigh |
 | **GPT-5.6 Terra** | Plan Brief Merger, Validator | high / medium |
 | **GPT-5.6 Luna** | Builder, Scout, Deep Research Auditor/Finalizer | xhigh / high |
 | **GPT-5.5** | Agentes de Deep Research não migrados | medium / low |
@@ -357,7 +357,7 @@ Pi/
 │   ├── AGENTS.md           # Regras de roteamento dos agentes
 │   └── mcp.json            # Configuração dos MCP servers
 ├── agents/                 # 32 agentes (.md)
-│   ├── planner.md          # GPT-5.6 Sol medium; tasks compactas
+│   ├── planner.md          # GPT-5.6 Sol high; tasks compactas
 │   ├── planner-heavy.md    # GPT-5.6 Sol xhigh ensemble
 │   ├── builder.md          # Executor geral GPT-5.6 Luna xhigh
 │   ├── builder-design.md   # Frontend/UI Claude Fable 5 low

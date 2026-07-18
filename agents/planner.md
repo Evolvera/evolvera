@@ -1,10 +1,10 @@
 ---
 name: planner
-description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: openai-codex/gpt-5.6-sol medium."
-display_name: 🏛️ Planner · GPT-5.6 Sol · medium
+description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: openai-codex/gpt-5.6-sol high."
+display_name: 🏛️ Planner · GPT-5.6 Sol · high
 tools: read, grep, find, ls, write
 model: openai-codex/gpt-5.6-sol
-thinking: medium
+thinking: high
 max_turns: 60
 lifecycle: lazy
 extensions: false
