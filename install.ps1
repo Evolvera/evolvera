@@ -5,11 +5,15 @@ $ErrorActionPreference = "Stop"
 
 # Colors
 $GREEN = "Green"
-$YELLOW = "Yellow"
 $CYAN = "Cyan"
 
+$PI_CODING_AGENT_VERSION = $env:PI_CODING_AGENT_VERSION
+if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.80.10" }
+$PI_XAI_OAUTH_VERSION = $env:PI_XAI_OAUTH_VERSION
+if (-not $PI_XAI_OAUTH_VERSION) { $PI_XAI_OAUTH_VERSION = "1.3.6" }
+$MIN_NODE_VERSION = [version]"22.19.0"
+
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
-function Warn($message) { Write-Host "[!] $message" -ForegroundColor $YELLOW }
 function Step($name) { Write-Host "`n--- $name ---" -ForegroundColor $CYAN }
 
 # Paths
@@ -20,12 +24,21 @@ $PI_DIR = Join-Path $env:USERPROFILE ".pi\agent"
 # -- PI ---------------------------------------------------
 Step "Verificando PI"
 
-$piCmd = Get-Command pi -ErrorAction SilentlyContinue
-if (-not $piCmd) {
-    Warn "PI nao encontrado. Instalando..."
-    npm install -g @mariozechner/pi-coding-agent
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCmd) { throw "Node.js nao encontrado. Instale Node 22.19.0 ou superior." }
+$nodeVersion = [version]((& node --version).Trim().TrimStart("v"))
+if ($nodeVersion -lt $MIN_NODE_VERSION) {
+    throw ("Node " + $nodeVersion + " nao suportado. Use NVM para instalar Node 22.19.0 ou superior.")
 }
-Info "PI instalado"
+Info ("Node " + $nodeVersion + " compativel")
+
+Info ("Garantindo @earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION + "...")
+npm install -g ("@earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION)
+if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do PI." }
+
+$piCmd = Get-Command pi -ErrorAction SilentlyContinue
+if (-not $piCmd) { throw "PI nao encontrado apos a instalacao." }
+Info ("PI " + $PI_CODING_AGENT_VERSION + " instalado")
 
 # -- Diretorios -------------------------------------------
 Step "Preparando diretorios"
@@ -126,8 +139,9 @@ if ($piCmd) {
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
 
-    Info "pi-xai-oauth..."
-    & pi install npm:pi-xai-oauth 2>$null
+    Info ("pi-xai-oauth@" + $PI_XAI_OAUTH_VERSION + "...")
+    & pi install ("npm:pi-xai-oauth@" + $PI_XAI_OAUTH_VERSION)
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do pi-xai-oauth." }
 
 }
 

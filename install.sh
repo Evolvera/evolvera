@@ -6,12 +6,13 @@ set -e
 # ──────────────────────────────────────────────
 
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.80.10}"
+MIN_NODE_VERSION="22.19.0"
 
 info() { echo -e "${GREEN}[✓]${NC} $1"; }
 step() { echo -e "\n${CYAN}── $1 ──${NC}"; }
@@ -19,11 +20,21 @@ step() { echo -e "\n${CYAN}── $1 ──${NC}"; }
 # ── PI ────────────────────────────────────────
 step "Verificando PI"
 
-if ! command -v pi &>/dev/null; then
-    echo -e "${YELLOW}[!]${NC} PI não encontrado. Instalando..."
-    npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-fi
-info "PI instalado"
+command -v node &>/dev/null || { echo "Node.js não encontrado. Instale Node $MIN_NODE_VERSION ou superior." >&2; exit 1; }
+node -e '
+const current = process.versions.node.split(".").map(Number);
+const minimum = process.argv[1].split(".").map(Number);
+for (let i = 0; i < 3; i++) {
+  if (current[i] > minimum[i]) process.exit(0);
+  if (current[i] < minimum[i]) process.exit(1);
+}
+' "$MIN_NODE_VERSION" || { echo "Node $(node --version) não suportado. Instale Node $MIN_NODE_VERSION ou superior." >&2; exit 1; }
+info "Node $(node --version) compatível"
+
+info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
+npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
+command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
+info "PI $PI_CODING_AGENT_VERSION instalado"
 
 # ── Diretórios ────────────────────────────────
 step "Preparando diretórios"

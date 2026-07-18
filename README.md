@@ -16,6 +16,8 @@ Você (usuário) → PI (roteador inteligente) → Agente correto → Resultado
 
 ## Instalação
 
+Requer Node.js `>=22.19.0`. Versões anteriores da linha 22, como `22.12.0`, não atendem ao `engines` do PI `0.80.10`.
+
 ```bash
 # 1. Autentique o GitHub CLI e clone o repositório privado
 gh auth login
@@ -33,17 +35,21 @@ pi
 ### Windows
 
 ```powershell
-# 1. Clone o repositório
-git clone git@github.com:Evolvera/Pi.git
-cd Pi
+# 1. Se usa NVM, selecione uma versão compatível do Node
+nvm install 22.19.0
+nvm use 22.19.0
 
-# 2. Se necessário, habilite execução de scripts
+# 2. Clone o repositório
+gh repo clone Evolvera/evolvera
+cd evolvera
+
+# 3. Se necessário, habilite execução de scripts
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
-# 3. Execute o instalador
+# 4. Execute o instalador
 .\install.ps1
 
-# 4. Faça login no modelo de IA
+# 5. Faça login no modelo de IA
 pi
 /login
 ```
@@ -59,13 +65,24 @@ O `/login` pede a API key e salva automaticamente. Pronto, já pode usar.
 
 Instale a extensão [PI for VS Code](https://marketplace.visualstudio.com/items?itemName=pi0.pi-vscode) para usar o PI direto no editor.
 
+> **Compatibilidade:** no `pi-vscode` 0.0.9, não use **Upgrade Pi and Packages**. Esse comando instala `@mariozechner/pi-coding-agent`, substitui o fork `@earendil-works/pi-coding-agent` usado por esta configuração e pode quebrar `pi-xai-oauth`. Atualize pelo repositório e execute o instalador da plataforma.
+
 ## Atualizar
 
 ```bash
+# Linux/macOS
 cd evolvera
 git pull
 ./install.sh
 ```
+
+```powershell
+# Windows
+git pull
+.\install.ps1
+```
+
+Os instaladores fixam a baseline compatível `@earendil-works/pi-coding-agent@0.80.10`; no Windows, `pi-xai-oauth@1.3.6` também é fixado. As variáveis `PI_CODING_AGENT_VERSION` e `PI_XAI_OAUTH_VERSION` permitem override explícito para testes controlados.
 
 ---
 
@@ -405,6 +422,27 @@ npm config set globalconfig ~/npm-global/etc/npmrc
 # Depois tente novamente
 pi
 ```
+
+### PI quebra após "Upgrade Pi and Packages" no VS Code
+
+**Causa:** o updater do `pi-vscode` 0.0.9 instala a família `@mariozechner`, incompatível com os aliases `@earendil-works` usados por `pi-xai-oauth`. Node abaixo de `22.19.0` também não é suportado pela baseline atual.
+
+**Recuperação no Windows:**
+
+```powershell
+nvm install 22.19.0
+nvm use 22.19.0
+npm uninstall -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent@0.80.10
+
+$pkg = "$HOME\.pi\agent\node_modules\pi-xai-oauth"
+Rename-Item $pkg "$pkg.disabled" -ErrorAction SilentlyContinue
+pi remove npm:pi-xai-oauth
+pi install npm:pi-xai-oauth@1.3.6
+Remove-Item "$pkg.disabled" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Depois, abra uma nova janela do terminal/VS Code e execute `pi --version`.
 
 ---
 
