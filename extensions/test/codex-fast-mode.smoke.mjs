@@ -89,17 +89,26 @@ try {
   let suggestions = await wrapped.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
   assert.deepEqual(suggestions.items.map((item) => item.value), ["model"]);
 
-  // Selecting a compatible GPT enables Fast automatically and warns about cost.
+  // Selecting a compatible GPT exposes the command but keeps Fast off by default.
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
-  assert.match(notifications.at(-1).message, /ativado automaticamente/);
+  assert.equal(notifications.length, 0);
+  assert.equal(statuses.at(-1).text, undefined);
+  suggestions = await wrapped.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
+  assert.deepEqual(suggestions.items.map((item) => item.value), ["fast", "model"]);
+  const defaultPayload = await handlers.get("before_provider_request")(
+    { payload: { model: gpt56.id, service_tier: "default" } },
+    ctx,
+  );
+  assert.equal(defaultPayload, undefined);
+
+  // Manual on injects the priority tier and reports request acceptance.
+  await commandOptions.get("fast").handler("on", ctx);
+  assert.match(notifications.at(-1).message, /^Fast Mode ativado:/);
   assert.match(notifications.at(-1).message, /1,5× mais rápido/);
   assert.match(notifications.at(-1).message, /2,5× mais consumo/);
   assert.equal(notifications.at(-1).type, "warning");
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡🟡" });
-  suggestions = await wrapped.getSuggestions(["/"], 0, 1, { signal: new AbortController().signal });
-  assert.deepEqual(suggestions.items.map((item) => item.value), ["fast", "model"]);
-
   const fastPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -108,13 +117,10 @@ try {
   await handlers.get("after_provider_response")({ status: 200, headers: {} }, ctx);
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡🟢" });
 
-  // Manual off remains effective until another compatible GPT selection.
   await commandOptions.get("fast").handler("off", ctx);
   assert.equal(statuses.at(-1).text, undefined);
   const manuallyOff = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
   assert.equal(manuallyOff, undefined);
-  await commandOptions.get("fast").handler("on", ctx);
-  assert.match(notifications.at(-1).message, /^Fast Mode ativado:/);
 
   // Switching away hides the option/status and prevents tier injection.
   ctx.model = claude;
@@ -130,22 +136,19 @@ try {
   assert.match(notifications.at(-1).message, /only for supported OpenAI Codex models/);
 
   ctx.model = gpt56;
+  const notificationCount = notifications.length;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
-  assert.match(notifications.at(-1).message, /ativado automaticamente/);
-  const automaticallyOnAgain = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
-  assert.equal(automaticallyOnAgain.service_tier, "priority");
-  await commandOptions.get("fast").handler("off", ctx);
-  assert.match(notifications.at(-1).message, /desativado/);
+  assert.equal(notifications.length, notificationCount);
   assert.equal(statuses.at(-1).text, undefined);
-  const offPayload = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
-  assert.equal(offPayload, undefined);
+  const switchedBackPayload = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
+  assert.equal(switchedBackPayload, undefined);
 
-  // A new session that starts on GPT also defaults to Fast on.
+  // A new session that starts on GPT also defaults to Fast off.
   await handlers.get("session_start")({ reason: "new" }, ctx);
-  assert.match(notifications.at(-1).message, /ativado automaticamente/);
-  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡🟡" });
+  assert.equal(notifications.length, notificationCount);
+  assert.equal(statuses.at(-1).text, undefined);
   const newSessionPayload = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
-  assert.equal(newSessionPayload.service_tier, "priority");
+  assert.equal(newSessionPayload, undefined);
 
   console.log("codex-fast-mode smoke: PASS");
 } finally {
