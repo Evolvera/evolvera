@@ -50,17 +50,17 @@ Before any full planner or plan-heavy ensemble, build a concise evidence package
 
 For nontrivial/unfamiliar repositories, orient before deep retrieval: inspect bounded file/source structure without opening implementation bodies, identify product roots and likely domain/test/config/docs surfaces, and record only candidate areas—not behavior conclusions. Use that map to choose scouting proportionally:
 
-- Exact paths, contracts, consumers, and validation already known from current evidence: use focused direct reads; no ceremonial scout.
+- Exact paths, semantic relationships, affected-artifact closure, and validation already known from current evidence: use focused direct reads; no ceremonial scout.
 - Normal multi-file or multi-layer feature: use one bounded `scout` mission covering the coherent flow.
-- Large/cross-cutting repository with separable domains: launch one parallel `scout-highspeed` micro-scout per independent slice, such as entry points/call flow, schema/state, consumers/wiring, and tests/runners/config. Use one normal `scout` afterward only when end-to-end synthesis or contradiction resolution remains necessary.
+- Large/cross-cutting repository with separable domains: launch one parallel `scout-highspeed` micro-scout per observed independent slice, such as entry flow, state/structure relationships, affected-artifact closure, and validation/execution boundaries. Use one normal `scout` afterward only when end-to-end synthesis or contradiction resolution remains necessary.
 - One stateful flow whose semantics cross API, database, retries, webhooks, and tests: prefer one normal `scout`; splitting would lose coherence.
 
 The evidence package must cover, with exact paths/symbols and stated searched scope:
 
 - current entry points, product boundaries, existing capabilities, and end-to-end behavior;
-- relevant architecture, schemas/data/state contracts, and compatibility constraints;
-- consumers, manifests, registries, runners, bootstraps, fixtures, deploy closure, and rollback surfaces;
-- existing tests/harnesses plus what their commands actually discover and prove;
+- relevant architecture and behavior/data/configuration/state/structure relationships;
+- for each intended outcome, the semantic unit being changed and its affected-artifact closure across direct and indirect relationships, including duplicated, embedded, adapted, derived, generated, registered, or runtime-loaded forms when they exist;
+- existing validation surfaces plus what their commands actually discover, configure, execute, and prove;
 - repository/branch/dirty ownership relevant to the write set;
 - external or runtime facts still unresolved, clearly separated from greppable local facts.
 
@@ -104,7 +104,7 @@ RECONCILED PLANNING CONTRACT
 [approved outcome; existing affected capabilities; PRESERVE/CHANGE/REMOVE decisions; in/out scope; material term meanings; acceptance journeys; unresolved conflicts and owner]
 
 PRE-PLAN EVIDENCE
-[reconciled direct/scout findings labeled KNOWN/INFERRED/UNKNOWN: exact files/symbols, architecture/data contracts, consumers/wiring, tests/runners/harness behavior, current behavior, searched scope, contradictions, and bounded gaps]
+[reconciled direct/scout findings labeled KNOWN/INFERRED/UNKNOWN: exact files/symbols, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, evidenced affected-artifact closure, validation behavior, searched scope, contradictions, and bounded gaps]
 
 CURRENT STATE
 [branch/status/dirty ownership only when it affects target work]
@@ -119,7 +119,7 @@ STOP IF
 [material unknowns or unsafe boundaries]
 ```
 
-Do not inventory all `.pi/plans/`, dump the repository, paste raw scout transcripts, or copy generic process text. Include a prior plan only when the approved goal explicitly continues or recovers that named plan. The planner may verify supplied evidence with focused reads, but broad architecture/schema/consumer/test-harness discovery belongs before launch. If the reconciled contract or pre-plan evidence is materially absent, contradictory, or leaves planner to classify existing behavior as preserve/remove, planner must return `BLOCKED` instead of rediscovering the system or choosing product semantics.
+Do not inventory all `.pi/plans/`, dump the repository, paste raw scout transcripts, or copy generic process text. Include a prior plan only when the approved goal explicitly continues or recovers that named plan. The planner may verify supplied evidence with focused reads, but broad first-pass system, impact, dependency, or validation-infrastructure discovery belongs before launch. If the reconciled contract or pre-plan evidence is materially absent, contradictory, or leaves planner to classify existing behavior as preserve/remove, planner must return `BLOCKED` instead of rediscovering the system or choosing product semantics.
 
 Expected output:
 
@@ -151,9 +151,10 @@ A good plan reduces builder complexity without expanding scope:
 - Split at real implementation, write-set, checkpoint, rollback, or validation boundaries—not to repeat hazards, matrices, or process prose.
 - Optimize for critical path: group only independent, disjoint SoC slices in parallel; serialize shared contracts/external effects; do not manufacture parallelism.
 - `PLAN_FULL.md` owns rationale; `SCHEDULE.md` owns dependencies; task files own execution contracts.
-- **Builder-startability gate:** before accepting the plan, inspect every task as if a fresh builder were about to make its first edit. All correctness-critical decisions, exact target/write files, schema/API/state contracts, patch boundaries, and preservation rules must already be grounded in the reconciled planning contract. A builder may choose local implementation details, but must not need to invent architecture, name durable schema objects, reinterpret user intent, classify an existing capability as removable, rediscover missing consumers, or broaden scope.
-- **Checkpoint-compatibility gate:** every intermediate writing checkpoint must keep all affected compile, typecheck, schema-generation, and import-resolution boundaries internally valid. A shared contract change that would invalidate any current consumer until a later task makes the decomposition invalid: combine producer and required consumer updates, or use a verified backward-compatible intermediate state. Never defer build/type restoration downstream. Each task names the applicable deterministic compatibility gate, or the closest focused proof plus the explicit gap when no gate exists.
-- **Write-set/validation closure:** every new or changed artifact must be wired into every required manifest, registry, runner, bootstrap, fixture, migration harness, lint inventory, or deploy closure. Trace each validation command backward: if it needs registration/config/harness changes, those files belong to an owning task or must be verified as already sufficient. A command that cannot exercise the task's new behavior is not validation.
+- **Builder-startability gate:** before accepting the plan, inspect every task as if a fresh builder were about to make its first edit. All correctness-critical decisions, exact target/write files, relevant invariants, patch boundaries, and preservation rules must already be grounded in the reconciled planning contract. A builder may choose local implementation details, but must not need to invent durable design, reinterpret user intent, classify an existing capability as removable, discover an omitted affected artifact or dependency relationship, or broaden scope.
+- **Impact-closure gate:** derive impact before declaring a task's write set. Identify the smallest semantic unit changed, then derive its complete affected-artifact closure from repository evidence. Trace semantic relationships rather than only imports, references, or filenames; include indirect, duplicated, embedded, adapted, derived, generated, registered, and runtime-loaded forms when present. Every affected artifact belongs to exactly one task or has cited evidence that it remains valid without modification. These forms are non-exhaustive examples, not a category checklist.
+- **Intermediate-validity gate:** every writing checkpoint must keep all affected deterministic validity and compatibility boundaries intact. If a planned change would leave any existing artifact, behavior, or executable path invalid until a later task, own the required updates together or use an evidenced compatible intermediate state. Never defer restoration downstream. Each task names the applicable deterministic gate, or the closest focused proof plus the explicit gap when none exists.
+- **Acceptance/write-set closure:** replay every acceptance criterion against the exact write set and evidenced current state. Name the artifacts and relationships that establish the behavior before and after the change. If acceptance requires an undeclared artifact, unresolved dependency relationship, or hidden implementation work, reject the task. Trace validation backward from the observable result; every artifact required to discover, configure, execute, or observe the result belongs to a task or must be evidenced as already sufficient. A command that can pass while skipping the changed surface is not validation.
 - **Minimum-solution gate:** begin from existing behavior and plan only the delta required by the reconciled contract. Every proposed task, table, service, state, abstraction, dependency, flag, migration, gate, or operational step must trace to one acceptance criterion or unavoidable verified invariant. If removing it still satisfies contract and validation, remove it. High risk normally increases evidence/validation, not architecture.
 - **Evidence compression:** exhaustive discovery may produce many facts and risks; assign only implementation-relevant ones. Do not turn each finding into code, a task, a state, a validator, or future-proofing. Task briefs state correctness-critical contracts and leave ordinary local implementation to builders instead of becoming implementation encyclopedias.
 - Local repository facts such as paths, symbols, existing schema shapes, counts, registries, and harness behavior are not acceptable `TO VERIFY` items when they are greppable before planning. Runtime/provider/environment facts may remain `TO VERIFY` only with a bounded evidence step before dependent mutation.
@@ -198,4 +199,4 @@ Before builders, read `SCHEDULE.md` and task contracts once; ask for user review
 
 ## Stop Rules
 
-Stop and re-ground when ownership, required evidence, validation, or rollback cannot be established; scope expands; orchestration bookkeeping becomes tasks; a task omits a correctness-critical decision, target, consumer, registry, runner, harness, or executable validation path; or validation is `BLOCKED`. Such an omission means the plan failed: stop active builders, inspect remaining tasks for the same defect, and repair or regenerate the ecosystem once. Never let a builder invent the missing contract, expand its write set, patch only the blocked task, or trigger a planner between downstream tasks.
+Stop and re-ground when ownership, affected-artifact closure, required evidence, validation, or rollback cannot be established; scope expands; orchestration bookkeeping becomes tasks; a task omits a correctness-critical decision, artifact, dependency relationship, or executable validation path; or validation is `BLOCKED`. Such an omission means the plan failed: stop active builders, inspect remaining tasks for the same defect, and repair or regenerate the ecosystem once. Never let a builder invent the missing invariant, expand its write set, patch only the blocked task, or trigger a planner between downstream tasks.
