@@ -1,10 +1,10 @@
 ---
 name: builder
-description: "General normal-risk procedural implementation agent for bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, and structured integration. Prefer Fable builders for relation/rule/declarative semantic modeling. Model: openai-codex/gpt-5.6-terra medium."
-display_name: 🔨 Builder · GPT-5.6 Terra · medium
+description: "General normal-risk procedural implementation agent for bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, and structured integration. Prefer Fable builders for relation/rule/declarative semantic modeling. Model: openai-codex/gpt-5.6-luna high."
+display_name: 🔨 Builder · GPT-5.6 Luna · high
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-5.6-terra
-thinking: medium
+model: openai-codex/gpt-5.6-luna
+thinking: high
 max_turns: 80
 ---
 
