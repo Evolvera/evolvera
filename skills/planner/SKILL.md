@@ -132,7 +132,7 @@ Expected output:
 
 ## 4. Plan-Heavy Ensemble
 
-When the user explicitly requests planner-heavy—or independent strategies from GPT and Fable are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
+When the user explicitly requests planner-heavy—or two independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
 Plan-heavy is not a separate harness. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
 
@@ -177,10 +177,10 @@ Load the builder skill; it is authoritative for tier selection. Defaults:
 - normal procedural work → `builder`;
 - routine locally-decidable work (clear anchor, established pattern, exact validation) → `builder-light`; routine design-system UI → `builder-light-design`;
 - complex procedural/integration or any host/external operation → `builder-heavy`;
-- local semantic/declarative model with a clear oracle or visual/UI work → Fable design tier;
+- local semantic/declarative model with a clear oracle or visual/UI work → design tier;
 - exceptional formal/numerical/scientific work with an explicit oracle → `builder-ultra`.
 
-A server/config file containing rules is not enough to select Fable. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.
+A server/config file containing rules is not enough to select a design tier. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.
 
 Add a linked `validator` task only when a specific producer has a named credible high-consequence escape risk. Do not add validators for inventory, docs, static prompt/config/policy edits with deterministic acceptance, mechanical work, file importance, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
 

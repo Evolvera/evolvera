@@ -5,7 +5,7 @@ description: Lightweight ensemble planning workflow. Use when the user explicitl
 
 # Plan Heavy — Two Briefs, Then XHigh Planner
 
-Plan-heavy is the normal planner workflow with one deliberate upgrade: two different model families independently brief the problem before `planner-heavy` writes the final plan at xhigh reasoning.
+Plan-heavy is the normal planner workflow with one deliberate upgrade: two isolated briefer sessions independently analyze the problem before `planner-heavy` writes the final plan at xhigh reasoning.
 
 ```text
 orchestrator handoff
@@ -86,7 +86,7 @@ Each prompt must be self-contained and include:
 - no task files, DAG, implementation, or edits outside its one output file;
 - repository evidence wins; unresolved facts become `TO VERIFY`.
 
-The briefs should disagree honestly when their model-specific judgment differs. Do not ask them to converge.
+The briefs should disagree honestly when their independently derived judgment differs. Do not ask them to converge.
 
 ## 4. Launch Planner Heavy
 
