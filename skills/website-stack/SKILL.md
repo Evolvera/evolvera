@@ -1,6 +1,6 @@
 ---
 name: website-stack
-description: "Standard technical stack for website projects — Next.js App Router, Tailwind CSS v3, Framer Motion, shadcn/ui. Provides file structure, npm packages, setup order, code conventions, and critical configuration rules. Activated by planner/builder in website context."
+description: "Standard technical stack for website projects — Next.js App Router, Tailwind CSS v3, conditional Motion for React, shadcn/ui. Provides file structure, npm packages, setup order, code conventions, and critical configuration rules. Activated by planner/builder in website context."
 ---
 
 # Website Stack
@@ -16,7 +16,7 @@ Load this skill when you are in a website or landing-page implementation context
 - **Framework**: Next.js 14+ (App Router)
 - **Styling**: Tailwind CSS v3 + PostCSS + Autoprefixer
 - **UI Components**: shadcn/ui (Radix UI primitives + Tailwind)
-- **Animation**: Framer Motion
+- **Animation**: CSS/web-platform first; Motion for React only when the selected mechanic justifies it
 - **Icons**: Lucide React
 - **Fonts**: next/font/google
 - **Images**: next/image
@@ -46,7 +46,7 @@ components/
   shared/             # Reusable non-shadcn components
 lib/
   utils.ts            # cn() utility from shadcn
-  animations.ts       # Reusable Framer Motion variants
+  animations.ts       # Reusable animation definitions, only when needed
 public/
   images/             # Static images
   fonts/              # Self-hosted fonts (if needed)
@@ -64,7 +64,7 @@ next.config.js        # Static export config if needed
    npm install tailwindcss@^3 postcss autoprefixer
    npx tailwindcss init -p
    ```
-4. Install animation library: `npm install framer-motion`
+4. If the selected mechanic cannot be implemented cleanly with CSS/web-platform primitives, install Motion for React: `npm install motion`; import React APIs from `motion/react` (for example, `import { motion } from "motion/react"`). Do not add an animation dependency by default.
 5. Install icons: `npm install lucide-react`
 6. Install utility: `npm install clsx tailwind-merge` (shadcn already installs)
 
@@ -77,7 +77,7 @@ Install as needed via CLI. Common set:
 
 ## Code Conventions
 
-- **"use client"** ONLY on components using Framer Motion, browser APIs, or React hooks that require client boundary.
+- **"use client"** ONLY on components using Motion for React, browser APIs, or React hooks that require client boundary.
 - Server Components by default for static sections (better performance).
 - Use `next/image` for ALL images. Provide width, height, and alt text.
 - Use `next/font/google` for fonts. NEVER use `<link>` to Google Fonts in `<head>`.
@@ -97,5 +97,5 @@ Install as needed via CLI. Common set:
 - WCAG AA contrast minimum.
 - Focus-visible rings on all interactive elements.
 - aria-label on icon-only buttons.
-- prefers-reduced-motion: disable Framer Motion animations.
+- prefers-reduced-motion: provide a deliberate static or reduced-motion composition for all animation.
 - Touch targets ≥ 44px.
