@@ -1,23 +1,19 @@
 ---
 name: creative-catalog
-description: Curated catalog of creative web interaction patterns (scrollytelling, kinetic type, media scrub, view transitions, WebGL stages, editorial collage, and more) for content-fit art direction. Use before or during website design when the brief justifies a distinctive interactive experience. Selection is index-first; creativity never sacrifices usability, accessibility, or Core Web Vitals.
+description: Post-design WHAT-pattern catalog for website-creative (scrollytelling, kinetic type, media scrub, view transitions, WebGL stages, editorial collage, and more). Selection is index-first; creativity never sacrifices usability, accessibility, or Core Web Vitals.
 ---
 
 # Creative Catalog
 
-A curated catalog of 12 creative interaction patterns for websites. Each pattern documents what it communicates, when it fits, the content/assets it demands, its guardrails, and its performance/complexity cost — so an agent can choose creativity that serves the content instead of decorating it.
+A curated catalog of 12 creative interaction patterns for websites. It selects **what** a designed experience should do; `creative-toolkit` separately selects **how** to implement it. Each pattern documents what it communicates, when it fits, the content/assets it demands, its guardrails, and its performance/complexity cost — so creativity serves the content instead of decorating it.
 
 Creativity here means **content-fit art direction**: the mechanic must make the message clearer, the brand more specific, or the task easier. It is never a substitute for hierarchy, navigation, or working forms.
 
 ## Activation
 
-Use this skill when:
+Use this skill primarily when the `website-creative` agent has a completed design direction and must select a post-design WHAT pattern for a brief that explicitly justifies a distinctive, immersive, editorial, or interactive experience. A designer or polisher may consult it only for grounded guardrails around an already requested mechanic.
 
-- The `website-creative` agent runs (its primary consumer).
-- A website brief explicitly asks for a distinctive, immersive, editorial, or interactive experience.
-- A designer/polisher needs grounded guardrails for a creative mechanic already requested by the user.
-
-Do **not** activate for routine marketing sites where standard sections plus restrained motion fully serve the brief. Recommending *no* catalog pattern is a valid, often correct outcome.
+Do **not** activate before design direction exists or for routine marketing sites where standard sections plus restrained motion fully serve the brief. Recommending *no* catalog pattern is a valid, often correct outcome.
 
 ## Selective Retrieval (index-first)
 
