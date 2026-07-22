@@ -1,9 +1,9 @@
 ---
 name: website-designer
-description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: openai-codex/gpt-5.6-sol medium."
-display_name: 🎨 Website Designer · GPT-5.6 Sol · medium
+description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: alibaba-plan/qwen3.8-max-preview medium."
+display_name: 🎨 Website Designer · Qwen 3.8 Max Preview · medium
 tools: read, grep, find, ls, bash, write
-model: openai-codex/gpt-5.6-sol
+model: alibaba-plan/qwen3.8-max-preview
 thinking: medium
 max_turns: 40
 lifecycle: lazy
