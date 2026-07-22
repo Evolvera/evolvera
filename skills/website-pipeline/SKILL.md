@@ -1,6 +1,6 @@
 ---
 name: website-pipeline
-description: "Production website workflow with strategy intake, optional creative direction on explicit request, designer, content, planner, builder, polish, and validation."
+description: "Production website workflow with strategy intake, designer, optional post-design creative direction on explicit request, content, planner, builder, polish, and validation."
 ---
 
 # Website Pipeline — Premium Website Workflow
@@ -11,8 +11,8 @@ For website projects, the pipeline has a **different order** from the generic `s
 
 ```txt
 Strategy Intake (orchestrator)
-  → [website-creative, optional — explicit creative/experimental request only]
   → website-designer
+  → [website-creative, optional — explicit creative activation only]
   → seo-content-writer
   → planner
   → builder-design (default UI tier)
@@ -23,12 +23,12 @@ Strategy Intake (orchestrator)
 | Step | Owner | Produces | Notes |
 |------|-------|----------|-------|
 | 0 | **Orchestrator** | `.pi/plans/WEBSITE_BRIEF.md` | Ask only the missing strategy/asset questions that materially affect the website. |
-| 0.5 | **website-creative** (optional) | `.pi/plans/CREATIVE_DIRECTION.md` | Only when the user explicitly asks for a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led site. No extra approval gate. |
-| 1 | **website-designer** | `.pi/plans/DESIGN_PLAN.md` | Visual spec, trust hierarchy, design tokens, UX hierarchy, animations, asset placeholders. |
-| 2 | **seo-content-writer** | `.pi/plans/CONTENT_PLAN.md` | Copy, proof framing, meta tags, schema markup. Reads DESIGN_PLAN.md + WEBSITE_BRIEF.md. |
+| 1 | **website-designer** | `.pi/plans/DESIGN_PLAN.md` | Baseline visual/UX system, trust and conversion hierarchy, tokens, responsive/accessibility rules, asset direction, and Creative Opportunity Map. |
+| 1.5 | **website-creative** (optional) | `.pi/plans/CREATIVE_DIRECTION.md` | Only after the designer, on explicit creative activation; emits a mapped additive addendum or `DESIGN_CONFLICT`, never a redesign. |
+| 2 | **seo-content-writer** | `.pi/plans/CONTENT_PLAN.md` | Copy, proof framing, meta tags, schema markup. Reads DESIGN_PLAN.md + WEBSITE_BRIEF.md; mechanics remain mediated by design intent. |
 | 3 | **planner** | `PLAN_FULL.md` + `SCHEDULE.md` + `TASKS/` | Reads WEBSITE_BRIEF + DESIGN_PLAN + CONTENT_PLAN. Then get user approval. |
-| 4 | **builder-design / builder / builder-heavy-design / builder-heavy** | Code implementation | `builder-design` is the default UI tier; follows SCHEDULE.md and builder routing rules. |
-| 5 | **website-polisher** | `.pi/plans/POLISH_PLAN.md` | Premium trust audit + visual refinements + states + a11y. |
+| 4 | **builder-design / builder / builder-heavy-design / builder-heavy** | Code implementation | `builder-design` is the default UI tier; reads design/content plus any mapped additive addendum, follows SCHEDULE.md and builder routing rules, and preserves design authority. |
+| 5 | **website-polisher** | `.pi/plans/POLISH_PLAN.md` | Premium trust audit + visual refinements + states + a11y; directly audits any optional additive addendum without overriding design/content. |
 | 6 | **validator** | Quality gate | Compilation, types, accessibility, no unsupported claims, responsive behavior. |
 
 ## Step 0 — Strategy Intake for the Orchestrator
@@ -145,9 +145,9 @@ When intake is useful, write `.pi/plans/WEBSITE_BRIEF.md` before launching the d
 - Open questions:
 ```
 
-## Step 0.5 — Optional Creative Direction (`website-creative`)
+## Optional Post-Design Creative Addendum (`website-creative`)
 
-Activate ONLY when the user **explicitly** asks for a creative, experimental, immersive, editorial, art-directed, unconventional, or interaction-led site. Do **not** infer creative mode from generic words like "premium", "modern", or "beautiful". Do not add an approval gate and do not re-ask the user — if the request qualifies, launch it directly after Strategy Intake/WEBSITE_BRIEF and before `website-designer`.
+Activate ONLY when the user **explicitly** asks for a creative, experimental, immersive, editorial, art-directed, unconventional, interaction-led, personality-led, or motion-led site. Do **not** infer creative mode from generic words like "premium", "modern", or "beautiful". Do not add an approval gate and do not re-ask the user. If the request qualifies, run `website-designer` first, then launch `website-creative` with the completed `.pi/plans/DESIGN_PLAN.md`.
 
 Launch prompt for `website-creative`:
 
@@ -155,18 +155,20 @@ Launch prompt for `website-creative`:
 MODE: full
 PLAN_ROOT: [absolute full-site plan root]
 STRATEGY_BRIEF: [absolute WEBSITE_BRIEF.md path]
+DESIGN_ARTIFACT: [absolute <PLAN_ROOT>/DESIGN_PLAN.md path]
 
-Load /skill:creative-catalog and write exactly:
+Read DESIGN_ARTIFACT first. Load /skill:creative-catalog and /skill:creative-toolkit.
+Write exactly:
 <PLAN_ROOT>/CREATIVE_DIRECTION.md
 
-Select one dominant creative mechanic plus at most two accents, with asset fit and usability/performance/mobile/reduced-motion/static-fallback guardrails.
+Select catalog WHAT first, then toolkit HOW/WHEN. Emit only a mapped additive interaction addendum for existing page/section/component zones, or report `DESIGN_CONFLICT` against a named design anchor. Preserve design/content authority, asset provenance, normal scroll, semantic DOM, keyboard/touch parity, visible focus, responsive behavior, reduced-motion/static fallback, and p75 LCP ≤ 2.5s / INP ≤ 200ms / CLS ≤ 0.1.
 ```
 
-**What CREATIVE_DIRECTION.md owns:** the expressive thesis — one dominant creative mechanic, max two accents, asset fit, and its guardrails (usability, performance, mobile, reduced motion, static fallback). Creative means expressive fit, never hiding navigation, CTAs, forms, proof, or content.
+**What `DESIGN_PLAN.md` owns:** UX, trust/conversion hierarchy, design tokens, layout, content intent, responsive behavior, accessibility, asset direction, and designer-owned baseline motion plus the Creative Opportunity Map.
 
-**What it does NOT own:** the UX system, design tokens, responsive hierarchy, accessibility, trust, and conversion — those remain the designer's final responsibility. The designer may adapt or downgrade a mechanic for usability, asset, or brand constraints, but must record why in DESIGN_PLAN.md.
+**What `CREATIVE_DIRECTION.md` owns:** only an optional additive mapped mechanic, its one purpose class per intervention, asset/tool provenance, storyboard, and implementation/review guardrails. It never rewrites design/content authority. A conflicting mechanic is downgraded/rejected or reported as `DESIGN_CONFLICT`.
 
-When creative mode is not activated, the pipeline behaves exactly as before — no CREATIVE_DIRECTION.md is produced or expected.
+When creative mode is not activated, the pipeline behaves exactly as before — no `CREATIVE_DIRECTION.md` is produced or expected.
 
 ## Premium Website Quality Rubric
 
@@ -220,7 +222,7 @@ Use this checklist throughout design, polish, and validation. Premium means **cl
 
 ## CRITICAL Rules
 
-1. **Planner MUST receive WEBSITE_BRIEF.md when it exists, plus BOTH `DESIGN_PLAN.md` and `CONTENT_PLAN.md`** before generating tasks. When `CREATIVE_DIRECTION.md` exists, the planner receives it as well.
+1. **Planner MUST receive WEBSITE_BRIEF.md when it exists, plus BOTH `DESIGN_PLAN.md` and `CONTENT_PLAN.md`** before generating tasks. When the optional post-design `CREATIVE_DIRECTION.md` exists, the planner receives it as a mapped additive addendum and must not let it override the design artifact.
 2. **Do NOT run planner before content is ready** — seo-content-writer must finish first.
 3. **website-polisher runs AFTER the selected builder tier**, not before — it refines what's already built.
 4. **designer does NOT write final copy** — placeholders only, marked as `[SEO Content Writer — purpose: ...]`.
@@ -228,8 +230,8 @@ Use this checklist throughout design, polish, and validation. Premium means **cl
 6. **content writer must label proof/claims** as source-backed, inferred, or placeholder-needed.
 7. **builder must not turn placeholders into fake facts**.
 8. **polisher must audit premium trust**, not only colors/spacing.
-9. **website-creative runs only on explicit user request for a creative/experimental site** — never inferred, never gated behind an extra approval, never asked twice.
-10. **When `CREATIVE_DIRECTION.md` exists**: designer reads and translates it (adapting/downgrading with recorded rationale); polisher and validator check that the creative intent and its fallbacks (reduced motion, mobile, static) survived implementation. The SEO writer continues through DESIGN_PLAN.md and need not independently reinterpret effects.
+9. **website-creative runs only on an explicit creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led request** — never inferred from generic premium/modern/beautiful wording, never gated behind an extra approval, never asked twice.
+10. **When `CREATIVE_DIRECTION.md` exists**: planner, builder, polisher, and validator check its mapped additive mechanics, one-purpose-class interventions, provenance, and fallbacks against `DESIGN_PLAN.md`; none may override design/content authority. The SEO writer continues through `DESIGN_PLAN.md` and does not independently reinterpret mechanics.
 
 ## Builder Routing for Website Implementation
 
@@ -251,9 +253,9 @@ Include this in the prompt whenever possible:
 
 ```txt
 Read .pi/plans/WEBSITE_BRIEF.md if it exists.
-Read .pi/plans/CREATIVE_DIRECTION.md if it exists: translate its dominant mechanic and accents
-into a coherent, usable design system; adapt or downgrade a mechanic only for usability/asset/brand
-constraints and record why in DESIGN_PLAN.md.
+Design the baseline system first: UX/trust/conversion hierarchy, tokens, layout, responsive behavior,
+accessibility, asset direction, baseline motion, and a Creative Opportunity Map. Do not read or
+translate a pre-designer creative direction.
 Design for premium trust using the Website Pipeline rubric:
 - intentional first impression;
 - purposeful assets/graphics;
@@ -287,8 +289,9 @@ Include:
 
 ```txt
 In addition to visual polish, run the Premium Website Quality Rubric.
-If .pi/plans/CREATIVE_DIRECTION.md exists, verify the creative intent survived implementation
-and its reduced-motion/mobile/static fallbacks work.
+Read .pi/plans/CREATIVE_DIRECTION.md when present as an optional post-design additive addendum.
+Verify each mapped intervention against DESIGN_PLAN.md, its purpose class, provenance, and
+reduced-motion/mobile/static fallbacks; report DESIGN_CONFLICT instead of overriding the design.
 Flag anything that creates DIY/template energy, weak trust, unclear CTA, unsupported claims, inaccessible interactions, or fragile client editability.
 Produce exact old_string/new_string fixes when code-level fixes are possible; otherwise note the issue as a strategy/content/asset blocker.
 ```
@@ -299,10 +302,10 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 |-----------|--------|
 | User already has a complete brief | Skip intake, write or reuse WEBSITE_BRIEF.md from provided context. |
 | User wants quick autonomous preview | Use `/skill:website-home-preview` instead of full pipeline. |
-| User already has DESIGN_PLAN.md | Skip designer (and website-creative), start with seo-content-writer. |
-| User did not explicitly ask for a creative/experimental site | Skip website-creative; run the standard pipeline. |
-| User already has CREATIVE_DIRECTION.md | Skip website-creative, pass it to the designer. |
-| User already has both plans | Skip designer + writer, go straight to planner. |
+| User already has DESIGN_PLAN.md | Skip designer; if creative activation is explicit, run the optional post-design website-creative stage, then start with seo-content-writer. |
+| User did not explicitly ask for a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led site | Skip website-creative; run the standard pipeline. |
+| User already has CREATIVE_DIRECTION.md | Skip website-creative and pass the addendum to planner/builder/polisher/validator; do not send it back as designer intake. |
+| User already has both plans | Skip designer + writer. If creative activation is explicit and no CREATIVE_DIRECTION.md exists, run website-creative against DESIGN_PLAN.md before planner; otherwise go straight to planner. |
 | Small visual tweak (1 page, <5 components) | Skip planner, use direct builder-design. |
 | No design changes, only copy update | Skip designer, update CONTENT_PLAN.md directly. |
 
@@ -311,8 +314,8 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | Step | Skills to Load |
 |------|---------------|
 | Strategy Intake | This skill; no agent required. |
-| website-creative (optional) | `/skill:creative-catalog` for creative mechanics. |
-| website-designer | `/skill:design-catalog` for brand references; reads `CREATIVE_DIRECTION.md` when present. |
+| website-creative (optional post-design) | `/skill:creative-catalog` then `/skill:creative-toolkit`; official toolkit URLs only via `jina_read` for shortlisted tools. |
+| website-designer | `/skill:design-catalog` for brand references; owns baseline motion and the Creative Opportunity Map. |
 | seo-content-writer | Reads WEBSITE_BRIEF.md and DESIGN_PLAN.md. |
 | planner | `/skill:website-stack` for tech conventions. |
 | builder-design / builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. |

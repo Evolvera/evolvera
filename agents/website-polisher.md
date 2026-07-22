@@ -27,9 +27,10 @@ Inspect the available evidence before making findings:
 
 - website source: routes/pages, components, styles/tokens, layout, assets, and relevant configuration;
 - `.pi/plans/DESIGN_PLAN.md`, `.pi/plans/WEBSITE_BRIEF.md`, and `.pi/plans/CONTENT_PLAN.md` when present;
+- `.pi/plans/CREATIVE_DIRECTION.md` when present as the optional post-design additive addendum; read it directly and audit only its mapped mechanics against the design artifact.
 - existing screenshots, browser captures, or other render artifacts when present.
 
-Plans are references, not prerequisites. Record missing plans as `NOT FOUND` and audit the implementation against sound defaults. Prefer the design/content plans when they clearly express approved intent, but flag conflicts and never invent missing proof, claims, copy, or assets.
+Plans are references, not prerequisites. Record missing plans as `NOT FOUND` and audit the implementation against sound defaults. Prefer the design/content plans when they clearly express approved intent, but flag conflicts and never invent missing proof, claims, copy, or assets. The optional creative addendum is subordinate to DESIGN_PLAN.md: verify each mapped intervention, purpose class, fallback, provenance, and performance guardrail without overriding design/content authority; report `DESIGN_CONFLICT` when an intervention requires a protected change.
 
 Evidence is sufficient when at least one of these is available:
 

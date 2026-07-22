@@ -1,6 +1,6 @@
 ---
 name: website-home-preview
-description: Autonomous one-page Home preview workflow with optional creative direction on explicit request, design, content, planning, static build, polish, screenshots, and validation.
+description: Autonomous one-page Home preview workflow with design first, optional post-design creative direction on explicit request, content, planning, static build, polish, screenshots, and validation.
 ---
 
 # Website Home Preview Skill
@@ -13,8 +13,8 @@ The full website pipeline builds a real project. This flow builds only a **premi
 
 ```txt
 Compact Strategy Intake (orchestrator, no approval gate)
-  → website-creative (OPTIONAL — only when briefing explicitly requests creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led direction)
   → website-home-designer
+  → website-creative (OPTIONAL post-design — only when briefing explicitly requests creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led direction)
   → seo-content-writer-home (HOME_PREVIEW_MODE)
   → website-home-planner
   → builder-home
@@ -84,7 +84,7 @@ Use `website-pipeline` for full production websites.
 - Screenshot files are allowed only as validation artifacts under `.pi/previews/<slug>/screenshots/`.
 - No Next.js, React, Tailwind build, shadcn, package manager, or build step.
 - No human approval gate (including the optional creative stage).
-- The `website-creative` stage is optional: it runs only on explicit creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led briefings; otherwise skip it and the flow is unchanged.
+- The `website-creative` stage is optional and post-design: it runs only on explicit creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led briefings, after `website-home-designer`; otherwise skip it and the flow is unchanged.
 - Do not ask the user to choose a design option; the planner chooses.
 - Missing facts become labeled preview placeholders, not blockers.
 - Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher-home` pass.
@@ -107,32 +107,6 @@ Before launching agents, the orchestrator should extract from the user's briefin
 
 Do not ask a long questionnaire for previews. Ask only if there is no usable business/project context.
 
-## Step 0.5 — Creative Director (Optional)
-
-Run `website-creative` **only** when the user's briefing explicitly requests a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led direction. Generic "premium/modern/beautiful" does **not** activate this step. No approval gate; when skipped, the flow continues exactly as before and no `HOME_CREATIVE_DIRECTION.md` exists.
-
-Prompt template:
-
-```txt
-HOME_PREVIEW_MODE
-PREVIEW_ROOT: [absolute project path]/.pi/previews/<slug>
-USER_BRIEFING: [USER BRIEFING]
-
-Create the creative direction for a one-page static Home preview. Never ask for approval or clarification in this mode; use labeled assumptions when needed.
-
-Load /skill:creative-catalog and write exactly:
-<PREVIEW_ROOT>/HOME_CREATIVE_DIRECTION.md
-
-You own: the interaction/art-direction thesis; one dominant mechanic plus at most two accent mechanics; asset/content fit; mobile/touch behavior; keyboard/DOM accessibility of the mechanic; reduced-motion/static fallback; and a performance budget.
-You do NOT own: final design options, copy, the plan, or code. No approval gate; make labeled assumptions.
-```
-
-Expected output (only when activated):
-
-```txt
-.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md
-```
-
 ## Step 1 — Home Designer
 
 Launch `website-home-designer`.
@@ -146,7 +120,7 @@ Create an autonomous Home Page preview design for this briefing:
 
 Requirements:
 - Output directory: .pi/previews/<slug>/
-- If .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it and build your 3 options around/adapting its thesis; record any usability/asset-driven downgrade. If absent, proceed exactly as usual.
+- Establish the baseline design first, including the Creative Opportunity Map with existing expressive zones, protected zones, and static-preview-safe base motion language. Do not read a pre-design creative direction; if a later addendum exists, it must map to this artifact.
 - Write .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
 - Create exactly 3 high-quality design directions and a recommended direction.
 - Use design-catalog references when useful.
@@ -161,6 +135,34 @@ Expected output:
 
 ```txt
 .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+```
+
+## Step 1.5 — Post-Design Creative Director (Optional)
+
+Run `website-creative` **only** when the user's briefing explicitly requests a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led direction. Generic "premium/modern/beautiful" does **not** activate this step. First complete `HOME_DESIGN_OPTIONS.md`; then, with no approval gate, run the optional addendum stage. When skipped, the flow continues exactly as before and no `HOME_CREATIVE_DIRECTION.md` exists.
+
+Prompt template:
+
+```txt
+HOME_PREVIEW_MODE
+PREVIEW_ROOT: [absolute project path]/.pi/previews/<slug>
+USER_BRIEFING: [USER BRIEFING]
+DESIGN_ARTIFACT: [absolute <PREVIEW_ROOT>/HOME_DESIGN_OPTIONS.md path]
+
+Read DESIGN_ARTIFACT first. Create a post-design additive creative addendum for a one-page static Home preview. Never ask for approval or clarification in this mode; use labeled assumptions when needed.
+
+Load /skill:creative-catalog and /skill:creative-toolkit and write exactly:
+<PREVIEW_ROOT>/HOME_CREATIVE_DIRECTION.md
+
+Select catalog WHAT first, then toolkit HOW/WHEN. Map every proposed intervention to an existing Home page/section/component, exactly one purpose class (orientation | continuity | state feedback | emphasis | narrative), and a user/brand purpose. Preserve the design artifact's hierarchy, tokens, content, layout, accessibility, responsive behavior, asset provenance, normal scroll, and conversion behavior. Report DESIGN_CONFLICT against a named design anchor instead of redesigning.
+Home is native-only: use native CSS/HTML/JS or no tool; Motion, GSAP, Three.js, packages, frameworks, and external runtimes are prohibited. Preserve static content, keyboard/touch parity, visible focus, reduced-motion/static fallback, and p75 LCP ≤ 2.5s / INP ≤ 200ms / CLS ≤ 0.1.
+You do NOT own: final design options, copy, the plan, or code. No approval gate; make labeled assumptions.
+```
+
+Expected output (only when activated):
+
+```txt
+.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md
 ```
 
 ## Step 2 — Home Content Writer
@@ -182,7 +184,7 @@ Write:
 - .pi/previews/<slug>/HOME_CONTENT_PLAN.md
 
 Rules:
-- Consume any creative direction only through the content intent already expressed in HOME_DESIGN_OPTIONS.md; do not read HOME_CREATIVE_DIRECTION.md directly or design effects/interactions.
+- Use HOME_DESIGN_OPTIONS.md as the sole visual/content-intent source. Do not read HOME_CREATIVE_DIRECTION.md or design effects/interactions; the planner maps that optional post-design addendum after copy is complete.
 - Scope is one Home Page preview only.
 - No human approval gate; do not ask for approval.
 - Fill copy autonomously using source-backed facts, inferred assumptions, and clearly labeled preview placeholders.
@@ -207,7 +209,7 @@ Prompt template:
 Read .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md and .pi/previews/<slug>/HOME_CONTENT_PLAN.md, then create the autonomous execution plan for a single-file Home Page preview.
 
 Requirements:
-- If .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it and ensure the selected/fused direction preserves its required fallbacks and constraints (reduced-motion/static fallback, keyboard/DOM access, mobile/touch behavior, performance budget).
+- If the optional post-design .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it after HOME_DESIGN_OPTIONS.md and carry only its mapped additive mechanics into HOME_PLAN.md and TASK_builder-home.md. Preserve named design anchors, reduced-motion/static fallback, keyboard/DOM access, mobile/touch behavior, normal scroll, native-only Home constraints, and performance budget; report DESIGN_CONFLICT instead of redesigning.
 - Choose or fuse the best design direction without asking the user.
 - Use HOME_CONTENT_PLAN.md as the source of truth for copy.
 - Write .pi/previews/<slug>/HOME_PLAN.md
@@ -238,8 +240,9 @@ Implement the task in .pi/previews/<slug>/TASK_builder-home.md.
 Hard constraints:
 - Create or replace only .pi/previews/<slug>/index.html
 - Do not create a project or any extra files.
-- Follow HOME_PLAN.md, TASK_builder-home.md, HOME_CONTENT_PLAN.md, and HOME_DESIGN_OPTIONS.md exactly (plus HOME_CREATIVE_DIRECTION.md if present).
-- Do not choose a new design direction; implement the planner's selected/fused direction.
+- Follow HOME_PLAN.md, TASK_builder-home.md, HOME_CONTENT_PLAN.md, and HOME_DESIGN_OPTIONS.md exactly (plus the optional post-design HOME_CREATIVE_DIRECTION.md addendum if present).
+- Do not choose a new design direction; implement the planner's selected/fused direction and only the addendum's mapped mechanics in named existing zones.
+- Preserve the design artifact's hierarchy, tokens, content, layout, accessibility, normal scroll, keyboard/touch parity, visible focus, reduced-motion/static fallback, and native-only Home boundary; do not resolve a DESIGN_CONFLICT by redesigning.
 - Use only inline SVG assets copied into TASK_builder-home.md's Asset Provenance Ledger. Never invent SVG markup/path data; every allowed `<svg>` needs its exact ledger `data-asset-source`. If the ledger authorizes none, emit zero `<svg>` tags and use text/CSS/semantic HTML alternatives, never emoji/font glyph substitutes.
 - Run the validation commands listed in TASK_builder-home.md, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.
 ```
@@ -302,6 +305,7 @@ Rules:
 - Do not require Next.js, Tailwind config, app/layout, components, or project structure.
 - Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
 - Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, image/visual containment, empty-space balance, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
+- Read HOME_CREATIVE_DIRECTION.md directly when present as an optional post-design addendum. Audit each mapped intervention against HOME_DESIGN_OPTIONS.md, HOME_PLAN.md, its single purpose class, provenance, native-only boundary, and fallback; report DESIGN_CONFLICT rather than overriding design authority.
 - Never propose fabricated SVG markup/path data. Only propose inline SVG changes authorized by HOME_PLAN.md's Asset Provenance Ledger, preserving the exact `data-asset-source`; otherwise propose text/CSS/semantic HTML fixes, never emoji/font glyph substitutes.
 ```
 
@@ -371,7 +375,7 @@ Validate:
 - mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
 - mobile layouts stack cards/logos/galleries when needed; never preserve a desktop grid if it creates cramped cards or lateral scroll;
 - visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md;
-- when HOME_CREATIVE_DIRECTION.md exists: the creative intent (dominant mechanic + accents) is present AND a usable reduced-motion/static fallback works.
+- when HOME_CREATIVE_DIRECTION.md exists: the mapped additive creative intent (dominant mechanic + accents) is present in named design zones, each intervention has one purpose class, and a usable reduced-motion/static fallback works without changing design authority.
 
 If you write a report, write .pi/previews/<slug>/REVIEW.md.
 Return PASS, CONDITIONAL, or REJECT with concrete fixes.

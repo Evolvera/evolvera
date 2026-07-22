@@ -17,7 +17,7 @@ skills: true
 
 You produce the full-site copy plan that pairs with `.pi/plans/DESIGN_PLAN.md` in this pipeline:
 
-`strategy intake → website-designer → seo-content-writer → planner → builder-design (default UI tier) → website-polisher → validator`
+`strategy intake → website-designer → [website-creative, optional post-design addendum] → seo-content-writer → planner → builder-design (default UI tier) → website-polisher → validator`
 
 Your deliverable is `.pi/plans/CONTENT_PLAN.md`. Do not write code or implementation tasks. The planner and builder must be able to implement every required page, section, state, and SEO field without inventing copy.
 
@@ -36,6 +36,8 @@ The plan is complete when:
 Keep all required facts, decisions, caveats, and next actions. Trim repeated value propositions, optional background, generic SEO advice, unsupported superlatives, boilerplate benefits, and marketing filler first.
 
 ## Inputs and autonomy
+
+The design artifact remains the source of truth for visual intent. Any optional post-design creative addendum is consumed downstream through the design/content handoff; do not independently reinterpret mechanics or alter design authority.
 
 Read:
 - `.pi/plans/DESIGN_PLAN.md`;

@@ -149,13 +149,14 @@ This includes:
 
 ## Website Content Generation
 
-The website construction chain has a **clear separation of concerns** between visual design and content:
+The website construction chain has a **clear separation of concerns** between baseline visual design, optional additive creative direction, and content:
 
 ### Responsibility Split
 
 | Responsibility | Agent | Output |
 |---------------|-------|--------|
-| Visual design (colors, typography, layout, components) | `website-designer` | `DESIGN_PLAN.md` |
+| Baseline visual design (colors, typography, layout, components, UX, trust, responsive behavior, accessibility, baseline motion) | `website-designer` | `DESIGN_PLAN.md` with Creative Opportunity Map |
+| Optional additive creative direction (mapped mechanics and guardrails only) | `website-creative` | `CREATIVE_DIRECTION.md` or `HOME_CREATIVE_DIRECTION.md` addendum |
 | All website copy (headlines, body, CTAs, microcopy, meta tags, alt text, schema) | `seo-content-writer` | `CONTENT_PLAN.md` |
 | Visual website implementation | `builder-design` | Reads both `DESIGN_PLAN.md` + `CONTENT_PLAN.md`; escalate per `/skill:builder` |
 | UI/UX polish | `website-polisher` | Reads both plans + code |
@@ -163,17 +164,17 @@ The website construction chain has a **clear separation of concerns** between vi
 
 ### How It Works
 
-1. **Designer** produces `DESIGN_PLAN.md` with content fields marked as placeholders: `[SEO Content Writer — purpose: primary value proposition]`
-2. **SEO Content Writer** reads `DESIGN_PLAN.md`, generates all copy in `CONTENT_PLAN.md`, and pauses for human approval
-3. **Builder** reads both plans and implements the full website with correct copy
-4. **Polisher** audits both design and content for consistency
-5. **Validator** verifies implementation matches both plans
+1. **Designer** produces the baseline `DESIGN_PLAN.md`, owns the UX/trust/conversion system and baseline motion, and maps existing expressive and protected zones for any later addendum. Content fields remain placeholders: `[SEO Content Writer — purpose: primary value proposition]`
+2. On explicit creative activation only, **website-creative** reads the completed design artifact and emits a mapped additive `CREATIVE_DIRECTION.md` or reports `DESIGN_CONFLICT`; it does not redesign the baseline.
+3. **SEO Content Writer** reads `DESIGN_PLAN.md` and the strategy brief, generates all copy in `CONTENT_PLAN.md`, does not independently reinterpret mechanics, and preserves the existing human approval pause before planning/building.
+4. **Planner/Builder** reads the baseline design, content, and optional addendum; implementation preserves design authority and re-verifies addendum provenance and fallbacks.
+5. **Polisher/Validator** audit the implementation against design/content authority plus any mapped additive mechanics and their fallbacks.
 
 ### When to Use Each Agent
 
 | Use Case | Agent(s) |
 |----------|----------|
-| New website from scratch | Full chain: `website-designer` → `seo-content-writer` → `planner` → `builder-design` → `website-polisher` → `builder-design` → `validator` |
+| New website from scratch | Full chain: `website-designer` → optional `website-creative` addendum → `seo-content-writer` → `planner` → `builder-design` → `website-polisher` → `builder-design` → `validator` |
 | Design only (no implementation) | `website-designer` only |
 | Content only (DESIGN_PLAN.md already exists) | `seo-content-writer` only |
 | Implement visual website work from existing plans | `builder-design` by default; escalate per `/skill:builder` |
