@@ -1,9 +1,9 @@
 ---
 name: builder-light-design
-description: "Light visual implementation agent for routine UI work within an established design system: standard components from existing patterns, styling/spacing/layout adjustments, copy changes, and straightforward responsive/accessibility fixes. Escalate to builder-design when visual judgment or semantic/declarative modeling dominates. Model: anthropic/claude-sonnet-5 medium."
-display_name: 🖌️ Builder Light Design · Claude Sonnet 5 · medium
+description: "Light visual implementation agent for routine UI work within an established design system: standard components from existing patterns, styling/spacing/layout adjustments, copy changes, and straightforward responsive/accessibility fixes. Escalate to builder-design when visual judgment or semantic/declarative modeling dominates. Model: openai-codex/gpt-5.6-luna medium."
+display_name: 🖌️ Builder Light Design · GPT-5.6 Luna · medium
 tools: read, grep, find, ls, bash, write, edit
-model: anthropic/claude-sonnet-5
+model: openai-codex/gpt-5.6-luna
 thinking: medium
 max_turns: 80
 ---
