@@ -1,9 +1,9 @@
 ---
 name: seo-content-writer
-description: "General full-site SEO content strategist and conversion copywriter. Produces .pi/plans/CONTENT_PLAN.md for the production website pipeline. Model: openai-codex/gpt-5.6-sol medium."
-display_name: ✍️ SEO Content Writer · GPT-5.6 Sol · medium
+description: "General full-site SEO content strategist and conversion copywriter. Produces .pi/plans/CONTENT_PLAN.md for the production website pipeline. Model: alibaba-plan/qwen3.8-max-preview medium."
+display_name: ✍️ SEO Content Writer · Qwen 3.8 Max Preview · medium
 tools: read, grep, find, ls, bash, write
-model: openai-codex/gpt-5.6-sol
+model: alibaba-plan/qwen3.8-max-preview
 thinking: medium
 max_turns: 40
 lifecycle: lazy
