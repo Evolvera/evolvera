@@ -27,7 +27,7 @@ Given:
 ```txt
 .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
 .pi/previews/<slug>/HOME_CONTENT_PLAN.md
-.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md   # optional; read only if present
+.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md   # optional post-design additive addendum; read only if present after design options
 ```
 
 Create:
@@ -47,7 +47,7 @@ The builder task must be specific enough for the `builder-home` agent to generat
 
 - No human-in-the-loop. Do not ask for approval.
 - Choose one design direction or fuse options; record the decision.
-- If `HOME_CREATIVE_DIRECTION.md` exists, ensure the selected/fused direction preserves its required fallbacks and constraints: reduced-motion/static fallback, keyboard/DOM accessibility of the mechanic, mobile/touch behavior, and the performance budget. Record in HOME_PLAN.md how the dominant mechanic and accents are operationalized or why they were downgraded. If absent, plan exactly as usual.
+- If the optional post-design `HOME_CREATIVE_DIRECTION.md` exists, consume it only after `HOME_DESIGN_OPTIONS.md`; carry its mapped additive mechanics into HOME_PLAN.md and the builder task without redesigning or overriding the design artifact. Preserve reduced-motion/static fallback, keyboard/DOM accessibility, mobile/touch behavior, normal scroll, native-only Home constraints, and the performance budget. Record any downgrade or `DESIGN_CONFLICT` against the named design anchor. If absent, plan exactly as usual.
 - Use `HOME_CONTENT_PLAN.md` as the source of truth for copy; only adapt copy when needed for visual fit and preserve its source/placeholder labels.
 - Do not invent unverifiable facts, metrics, awards, prices, certifications, guarantees, or testimonials.
 - Do not invent SVG markup/path data for icons, diagrams, logos, illustrations, or decorative motifs. Inline SVG is allowed only for an exact user/repo-provided asset or an asset actually retrieved from its primary canonical upstream source during this run; record it in HOME_PLAN.md's Asset Provenance Ledger. If no canonical source exists, plan text-only or HTML/CSS alternatives, never emoji/font glyph substitutes.
@@ -84,7 +84,7 @@ Write `.pi/previews/<slug>/HOME_PLAN.md`:
 
 ## 1. Decision
 - Selected direction:
-- Creative direction handling (only if HOME_CREATIVE_DIRECTION.md exists): [mechanic/accents preserved or downgraded + fallback/constraint preservation]
+- Post-design creative addendum handling (only if HOME_CREATIVE_DIRECTION.md exists): [mapped additive mechanic/accents preserved or downgraded + named design anchor, fallback, and constraint preservation]
 - Why this direction wins:
 - Borrowed elements from other options:
 - Assumptions made:
@@ -163,7 +163,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 
 ## Read First
 - `.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md`
-- `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` if present
+- `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` if present (optional post-design additive addendum; read after HOME_DESIGN_OPTIONS.md)
 - `.pi/previews/<slug>/HOME_CONTENT_PLAN.md`
 - `.pi/previews/<slug>/HOME_PLAN.md`
 
@@ -198,6 +198,8 @@ Copy HOME_PLAN.md's Asset Provenance Ledger here verbatim. Builder may use only 
 
 ## Implementation Instructions
 [Concrete section-by-section instructions from HOME_PLAN]
+
+If the optional `HOME_CREATIVE_DIRECTION.md` addendum exists, implement only its mapped additive mechanics in the named existing zones and purpose classes from HOME_PLAN.md. Do not rewrite the selected design, hierarchy, tokens, content, layout, accessibility, or conversion behavior; preserve native CSS/HTML/JS, normal scroll, keyboard/touch parity, and the reduced-motion/static fallback.
 
 ## Responsive Implementation Requirements
 - Implement mobile styles first.

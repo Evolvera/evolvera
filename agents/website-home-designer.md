@@ -36,7 +36,6 @@ The artifact must give the planner enough design direction to choose and impleme
 - If details are missing, make tasteful, labeled assumptions.
 - Block only if there is no usable business/project context at all.
 - Use the design catalog when useful; prefer concrete real-world references over generic adjectives.
-- If `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` exists, read it first and build all 3 options around/adapting its interaction/art-direction thesis (dominant mechanic + accents). You keep design autonomy: you may downgrade or adapt the mechanic for usability or asset reality, but record any such downgrade and its reason in the artifact. Do not redefine the creative thesis; do not design copy. If the file is absent, proceed exactly as usual.
 - Design only one Home Page, not a full site.
 - Do not write code.
 - Do not write final implementation tasks; `website-home-planner` owns the builder handoff.
@@ -96,11 +95,11 @@ List every inline SVG candidate the planner may authorize:
 
 If no assets qualify, state `No inline SVG assets authorized.` CSS/HTML-only visuals do not need inventory entries.
 
-## 1.5 Creative Direction Intake (only if HOME_CREATIVE_DIRECTION.md exists)
-- Creative thesis adopted:
-- Dominant mechanic + accents carried into options:
-- Usability/asset-driven downgrades and why:
-- Fallback/constraints preserved (reduced motion, keyboard, touch, performance):
+## 1.5 Creative Opportunity Map (designer-owned)
+- Existing expressive zones: [specific Home sections/components where a later additive mechanic could reinforce orientation, continuity, state feedback, emphasis, or narrative]
+- protected zones: [Home hierarchy, content, tokens, layout, accessibility, navigation, CTAs, forms, and proof that a later addendum must not rewrite]
+- base motion language: [static-preview-safe baseline motion and composed reduced-motion behavior]
+- Opportunity constraints: [single self-contained index.html, native CSS/HTML/JS only, responsive, keyboard/touch, normal scroll, and performance conditions]
 
 ## 2. Design Reference Scan
 - Primary catalog/reference considered:
@@ -198,5 +197,5 @@ Include, when suitable:
 After writing the file, respond with:
 
 ```txt
-Created .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md with 3 design directions and a recommended Home Page direction. Ready for website-home-planner.
+Created .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md with 3 design directions and a recommended Home Page direction. Ready for the optional post-design website-creative addendum when explicitly activated; otherwise ready for website-home-planner.
 ```
