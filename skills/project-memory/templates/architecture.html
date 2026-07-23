@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Self-contained semantic-zoom architecture memory viewer">
+  <title>Architecture memory</title>
+  <style>
+    :root{color-scheme:dark;--ink:#edf3f6;--muted:#8d9aa3;--faint:#66737c;--bg:#070b0e;--panel:#0d1317;--panel2:#111a20;--line:#253039;--line2:#34434d;--cyan:#64d9d0;--cyan2:#153d3b;--amber:#e7b66b;--violet:#9da7ff;--rose:#f0808f;--green:#85d6a0;--shadow:0 20px 70px #0008;--radius:14px}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{background:radial-gradient(ellipse 70% 45% at 50% -10%,#163038 0,transparent 65%),linear-gradient(#080d10,#06090b);overflow-x:hidden}button,input{font:inherit}button{color:inherit}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}.app{min-height:100vh;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+    .mast{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;padding:24px clamp(18px,3vw,42px) 18px;border-bottom:1px solid #1d282f;background:#090e12cc;backdrop-filter:blur(16px)}.kicker{display:flex;align-items:center;gap:9px;color:var(--cyan);font:700 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase}.kicker:before{content:"";width:18px;height:1px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}h1{margin:8px 0 4px;font-size:clamp(25px,3vw,43px);line-height:1.02;letter-spacing:-.045em}.subhead{display:flex;gap:9px 15px;flex-wrap:wrap;color:var(--muted);font-size:12px}.subhead code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.confidence{display:inline-flex;align-items:center;gap:6px}.confidence:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 9px currentColor}.confidence.known:before{background:var(--green)}.confidence.unknown:before{background:var(--rose)}.counts{align-self:center;display:flex;gap:1px;padding:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}.count{min-width:72px;padding:10px 12px;background:#0d1418;text-align:center}.count b{display:block;font-size:17px;letter-spacing:-.04em}.count span{color:var(--muted);font:9px/1.2 ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}
+    .navrow{display:flex;align-items:center;gap:12px;padding:0 clamp(18px,3vw,42px);border-bottom:1px solid var(--line);background:#0b1014}.tabs{display:flex;min-width:0;overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{position:relative;flex:none;padding:15px 13px;border:0;background:none;color:var(--muted);font-size:12px;white-space:nowrap;cursor:pointer}.tab:hover{color:var(--ink)}.tab[aria-selected="true"]{color:var(--ink)}.tab[aria-selected="true"]:after{content:"";position:absolute;inset:auto 10px -1px;height:2px;background:var(--cyan);box-shadow:0 -3px 12px #64d9d080}.search-wrap{position:relative;margin-left:auto;flex:0 1 270px}.search{width:100%;height:34px;padding:0 34px 0 12px;color:var(--ink);background:#080d10;border:1px solid var(--line);border-radius:8px}.search::placeholder{color:var(--faint)}.search-mark{position:absolute;right:11px;top:8px;color:var(--faint);font-size:12px}.search-results{position:absolute;z-index:20;top:39px;right:0;width:min(360px,90vw);max-height:320px;overflow:auto;padding:6px;background:#0c1216;border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow)}.search-results[hidden]{display:none}.search-result{display:block;width:100%;padding:9px;border:0;border-radius:7px;background:none;text-align:left;cursor:pointer}.search-result:hover,.search-result:focus{background:#172127}.search-result small{display:block;color:var(--muted)}
+    .workspace{min-height:0;display:grid;grid-template-columns:245px minmax(420px,1fr) 292px;padding:14px;gap:10px}.rail,.detail{min-height:0;overflow:auto;background:linear-gradient(160deg,#10171c,#0b1115);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 15px 45px #0003}.panel-head{position:sticky;top:0;z-index:2;padding:15px 16px 12px;background:#0e1519ee;border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}.panel-head h2{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.12em}.panel-head p{margin:4px 0 0;color:var(--muted);font-size:11px}.flow-list{padding:8px}.flow-card{width:100%;margin:0 0 6px;padding:11px;border:1px solid transparent;border-radius:9px;background:#11191e;text-align:left;cursor:pointer}.flow-card:hover{border-color:var(--line2);background:#151f25}.flow-card.active{border-color:#64d9d066;background:#132423;box-shadow:inset 2px 0 var(--cyan)}.flow-card strong{display:block;font-size:12px}.flow-card span{display:flex;justify-content:space-between;margin-top:5px;color:var(--muted);font:9px ui-monospace,monospace;text-transform:uppercase}.empty{padding:25px 16px;color:var(--muted);text-align:center}.empty strong{display:block;margin-bottom:5px;color:var(--ink)}
+    .stage{position:relative;min-height:520px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background-color:#080d10;background-image:linear-gradient(#18222955 1px,transparent 1px),linear-gradient(90deg,#18222955 1px,transparent 1px),radial-gradient(circle at 50% 35%,#10282a80,transparent 45%);background-size:28px 28px,28px 28px,auto;box-shadow:inset 0 0 80px #0008;touch-action:none}.graph{display:block;width:100%;height:100%;min-height:520px}.graph .edge{fill:none;stroke:#53636d;stroke-width:1.2;vector-effect:non-scaling-stroke;opacity:.55}.graph .edge.active{stroke:var(--cyan);stroke-width:2;opacity:1;filter:drop-shadow(0 0 4px #64d9d088)}.graph .edge.dim,.graph .node.dim{opacity:.12}.graph .node{cursor:pointer;transition:opacity .18s ease}.graph .node rect{fill:#111a20;stroke:#3a4953;stroke-width:1;vector-effect:non-scaling-stroke}.graph .node:hover rect,.graph .node.selected rect{stroke:var(--cyan);fill:#142525;filter:drop-shadow(0 0 8px #64d9d04d)}.graph .node.actor rect{fill:#211e17;stroke:#7e6844}.graph .node.data rect{fill:#18192a;stroke:#6269a5}.graph .node.external rect{stroke:#87636b;stroke-dasharray:5 3}.graph text{pointer-events:none;fill:var(--ink);font:12px ui-sans-serif,system-ui}.graph .meta{fill:var(--muted);font:8px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}.graph .badge-bg{fill:#21323a;stroke:none}.graph .badge-text{fill:var(--cyan);font:8px ui-monospace,monospace}.stage-tools{position:absolute;z-index:3;top:12px;left:12px;display:flex;align-items:center;gap:5px;padding:5px;background:#0a1014e8;border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 24px #0005}.tool{min-width:30px;height:29px;padding:0 9px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer}.tool:hover{background:#192329;border-color:var(--line2)}.lod{padding:0 7px;color:var(--cyan);font:700 9px ui-monospace,monospace;letter-spacing:.08em}.notice{position:absolute;z-index:3;left:12px;bottom:12px;max-width:min(560px,calc(100% - 150px));padding:7px 10px;color:#bdc8ce;background:#0a1014e8;border:1px solid var(--line);border-radius:7px;font-size:10px;box-shadow:0 8px 20px #0005}.notice:empty{display:none}.minimap{position:absolute;right:12px;bottom:12px;width:116px;height:76px;background:#080d10e8;border:1px solid var(--line2);border-radius:8px}.legend{position:absolute;right:12px;top:12px;display:flex;gap:9px;padding:7px 9px;background:#0a1014e8;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:9px}.legend i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:2px;background:var(--cyan)}.legend span:nth-child(2) i{background:var(--amber)}.legend span:nth-child(3) i{background:var(--violet)}
+    .detail-body{padding:14px}.detail-body h3{margin:0 0 3px;font-size:18px;letter-spacing:-.02em}.eyebrow{color:var(--cyan);font:9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}.description{color:#bdc7cc}.facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:14px 0;background:var(--line)}.fact{padding:9px;background:#0e1519}.fact b{display:block;color:var(--muted);font:8px ui-monospace,monospace;text-transform:uppercase}.fact span{font-size:11px}.section-title{margin:18px 0 7px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font:9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}.link-row,.step-row,.evidence-row,.gap-row{display:block;width:100%;margin-bottom:6px;padding:9px;background:#11191e;border:1px solid #202c33;border-radius:8px;color:#cad4d9;text-align:left;font-size:11px}.link-row[role=button]{cursor:pointer}.link-row[role=button]:hover{border-color:var(--cyan)}.step-row b{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:7px;border-radius:50%;background:var(--cyan2);color:var(--cyan);font:9px ui-monospace,monospace}.step-row small,.evidence-row small,.gap-row small{display:block;margin-top:4px;color:var(--muted)}.gap-row.open{border-left:2px solid var(--rose)}.tree-alt{margin-top:17px;border-top:1px solid var(--line)}.tree-alt summary{padding:13px 0;color:var(--muted);cursor:pointer;font-size:11px}.tree-list{display:grid;gap:4px}.tree-item{width:100%;padding:7px 8px;border:0;border-radius:6px;background:#11191e;text-align:left;font-size:10px;cursor:pointer}.tree-item:hover{background:#18242a}.tree-item[data-level="1"]{padding-left:18px}.tree-item[data-level="2"]{padding-left:28px}.tree-item[data-level="3"]{padding-left:38px}.print-summary{display:none}
+    @media(max-width:1050px){.workspace{grid-template-columns:210px minmax(400px,1fr)}.detail{grid-column:1/-1;max-height:none}.detail-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}.detail-body>.description,.detail-body>.facts,.detail-body>.eyebrow,.detail-body>h3{grid-column:1/-1}}
+    @media(max-width:720px){.mast{grid-template-columns:1fr;padding:18px}.counts{width:100%;overflow:auto}.count{flex:1;min-width:66px}.navrow{display:block;padding:0 12px 10px}.search-wrap{margin:0;max-width:none}.workspace{display:flex;width:100%;min-width:0;flex-direction:column;padding:8px}.stage,.rail,.detail{width:100%;min-width:0}.rail{max-height:190px}.stage{order:-1;min-height:57vh}.graph{min-height:57vh}.legend{display:none}.detail-body{display:block}.minimap{width:92px;height:60px}.notice{max-width:calc(100% - 115px);overflow-wrap:anywhere}.tab{padding:12px 10px}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+    @media print{body{background:#fff;color:#111}.mast,.navrow,.rail,.stage,.detail{display:none}.app{display:block}.print-summary{display:block;padding:24px;font:12px/1.5 system-ui}.print-summary h1{font-size:25px}.print-summary table{width:100%;border-collapse:collapse}.print-summary th,.print-summary td{padding:6px;border:1px solid #bbb;text-align:left}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="mast">
+      <div><div class="kicker">Architecture memory / schema v1</div><h1 id="project-name">Architecture</h1><div class="subhead" id="snapshot-meta"></div></div>
+      <div class="counts" id="counts" aria-label="Architecture record counts"></div>
+    </header>
+    <div class="navrow">
+      <nav class="tabs" role="tablist" aria-label="Architecture views" id="tabs"><button class="tab" type="button" role="tab">Overview</button><button class="tab" type="button" role="tab">Architecture</button><button class="tab" type="button" role="tab">User Flows</button><button class="tab" type="button" role="tab">Data Flows</button><button class="tab" type="button" role="tab">Runtime</button><button class="tab" type="button" role="tab">Delivery</button><button class="tab" type="button" role="tab">Evidence & Gaps</button></nav>
+      <div class="search-wrap"><label class="sr-only" for="search" style="position:absolute;clip:rect(0,0,0,0)">Search architecture</label><input class="search" id="search" type="search" autocomplete="off" placeholder="Search components, flows, evidence…"><span class="search-mark" aria-hidden="true">⌕</span><div class="search-results" id="search-results" hidden></div></div>
+    </div>
+    <main class="workspace">
+      <aside class="rail" aria-label="Flows"><div class="panel-head"><h2 id="rail-title">Flows</h2><p id="rail-summary"></p></div><div class="flow-list" id="flow-list"></div></aside>
+      <section class="stage" aria-label="Interactive architecture map">
+        <div class="stage-tools" aria-label="Map controls"><button class="tool" id="zoom-out" type="button" aria-label="Zoom out">−</button><span class="lod" id="lod">L0 LANDSCAPE</span><button class="tool" id="zoom-in" type="button" aria-label="Zoom in">+</button><button class="tool" id="fit" type="button">Fit</button><button class="tool" id="reset" type="button">Reset</button></div>
+        <div class="legend" aria-label="Legend"><span><i></i>component</span><span><i></i>actor</span><span><i></i>data</span></div>
+        <svg class="graph" id="graph" role="img" aria-labelledby="graph-title"><title id="graph-title">Semantic zoom architecture graph</title><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#53636d"></path></marker></defs><g id="viewport"><g id="edges"></g><g id="nodes"></g></g></svg>
+        <svg class="minimap" id="minimap" aria-label="Map overview"></svg><div class="notice" id="notice" role="status"></div>
+      </section>
+      <aside class="detail" aria-label="Selection details"><div class="panel-head"><h2>Inspector</h2><p>Evidence stays here, away from the map.</p></div><div class="detail-body" id="detail-body"></div></aside>
+    </main>
+  </div>
+  <section class="print-summary" id="print-summary"></section>
+  <script type="application/json" id="architecture-data">__ARCHITECTURE_DATA__</script>
+  <script>
+  (() => {
+    'use strict';
+    const data = JSON.parse(document.getElementById('architecture-data').textContent);
+    const $ = id => document.getElementById(id);
+    const SVG = 'http://www.w3.org/2000/svg';
+    const tabs = ['Overview','Architecture','User Flows','Data Flows','Runtime','Delivery','Evidence & Gaps'];
+    const lodNames = ['LANDSCAPE','SYSTEMS','MODULES','INTERNALS'];
+    const state = { tab:'Overview', selected:null, selectedType:null, scale:.68, x:30, y:38, dragging:false, moved:false };
+    const entity = new Map([...data.actors,...data.components,...data.dataObjects].map(x=>[x.id,x]));
+    const component = new Map(data.components.map(x=>[x.id,x]));
+    const relationship = new Map(data.relationships.map(x=>[x.id,x]));
+    const evidence = new Map(data.evidence.map(x=>[x.id,x]));
+    const flowMap = new Map(data.flows.map(x=>[x.id,x]));
+    const allRecords = [...data.actors,...data.components,...data.dataObjects,...data.relationships,...data.flows,...data.evidence,...data.gaps];
+    let positions = new Map(), graphBounds = {w:800,h:500}, pointer = null;
+
+    function el(tag, cls, text){ const node=document.createElement(tag); if(cls)node.className=cls; if(text!==undefined)node.textContent=String(text); return node; }
+    function svg(tag, attrs={}){ const node=document.createElementNS(SVG,tag); for(const [k,v] of Object.entries(attrs))node.setAttribute(k,String(v)); return node; }
+    function appendText(parent, text, cls, attrs={}){ const node=svg('text',{...attrs,class:cls||''}); node.textContent=text; parent.appendChild(node); return node; }
+    function clear(node){ while(node.firstChild)node.removeChild(node.firstChild); }
+    function confidenceClass(value){ return ['known','inferred','unknown'].includes(value)?value:'unknown'; }
+    function currentLod(){ return state.scale<.8?0:state.scale<1.15?1:state.scale<1.7?2:3; }
+    function flowTypes(){ return state.tab==='User Flows'?['user']:state.tab==='Data Flows'?['data']:state.tab==='Runtime'?['runtime','failure']:state.tab==='Delivery'?['build','deploy']:null; }
+    function activeFlows(){ const types=flowTypes(); return data.flows.filter(f=>!types||types.includes(f.type)); }
+    function ancestors(id){ const ids=[]; let item=component.get(id); while(item&&item.parentId){ ids.push(item.parentId); item=component.get(item.parentId); } return ids; }
+    function selectedFlow(){ return state.selectedType==='flow'?flowMap.get(state.selected):null; }
+    function flowEntityIds(flow){ const ids=new Set([...(flow?.actorIds||[]),...(flow?.entrypointIds||[])]); for(const step of flow?.steps||[])for(const id of step.componentIds||[])ids.add(id); for(const step of flow?.steps||[])for(const id of step.dataObjectIds||[])ids.add(id); return ids; }
+    function selectedPath(){ const ids=flowEntityIds(selectedFlow()); if(state.selectedType==='entity'&&state.selected)ids.add(state.selected); for(const id of [...ids])for(const parent of ancestors(id))ids.add(parent); return ids; }
+    function nearestVisible(id, visible, lod){ if(visible.has(id))return id; let item=component.get(id); while(item?.parentId){ if(visible.has(item.parentId))return item.parentId; item=component.get(item.parentId); } if(lod===3&&entity.has(id))return id; return null; }
+
+    function renderHeader(){
+      $('project-name').textContent=data.project.name;
+      document.title=`${data.project.name} — Architecture memory`;
+      const meta=$('snapshot-meta'); clear(meta);
+      const items=[['HEAD',data.snapshot.sourceHead==='UNKNOWN'?'UNKNOWN':data.snapshot.sourceHead.slice(0,8)],['VERIFIED',data.snapshot.lastVerifiedAt],['SCOPE',data.snapshot.scope]];
+      for(const [label,value] of items){ const span=el('span'); const code=el('code','',`${label} · `); span.append(code,document.createTextNode(value)); meta.appendChild(span); }
+      const conf=el('span',`confidence ${confidenceClass(data.snapshot.confidence)}`,data.snapshot.confidence); meta.appendChild(conf);
+      const counts=$('counts'); clear(counts); for(const [label,value] of [['components',data.components.length],['links',data.relationships.length],['flows',data.flows.length],['evidence',data.evidence.length]]){const box=el('div','count');box.append(el('b','',value),el('span','',label));counts.appendChild(box)}
+    }
+    function renderTabs(){ const host=$('tabs');clear(host);for(const name of tabs){const b=el('button','tab',name);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(state.tab===name));b.addEventListener('click',()=>{state.tab=name;state.selected=null;state.selectedType=null;renderAll()});host.appendChild(b)} }
+    function renderFlows(){
+      const host=$('flow-list'), flows=activeFlows();clear(host);$('rail-title').textContent=state.tab==='Evidence & Gaps'?'Evidence index':'Flows';
+      $('rail-summary').textContent=state.tab==='Evidence & Gaps'?`${data.evidence.length} facts · ${data.gaps.filter(g=>g.status==='open').length} open gaps`:`${flows.length} in this view`;
+      if(state.tab==='Evidence & Gaps'){
+        if(!data.evidence.length&&!data.gaps.length)host.appendChild(emptyState('No evidence or gaps','Add repository-backed evidence or an explicit question.'));
+        for(const item of [...data.evidence,...data.gaps]){const b=el('button','flow-card');b.type='button';b.append(el('strong','',item.claim||item.title),el('span','',item.path||item.status));b.addEventListener('click',()=>select(item.id,item.claim?'evidence':'gap'));host.appendChild(b)}
+        return;
+      }
+      if(!flows.length){host.appendChild(emptyState('No flows in this view','The source map can remain sparse until evidence is available.'));return}
+      for(const flow of flows){const b=el('button',`flow-card${state.selected===flow.id?' active':''}`);b.type='button';b.append(el('strong','',flow.name));const row=el('span');row.append(el('i','',flow.type),el('i','',`${flow.steps.length} steps`));b.appendChild(row);b.addEventListener('click',()=>select(flow.id,'flow'));host.appendChild(b)}
+    }
+    function emptyState(title,copy){const box=el('div','empty');box.append(el('strong','',title),document.createTextNode(copy));return box}
+
+    function visibleGraph(){
+      const lod=currentLod(), path=selectedPath(), max=innerWidth<720?70:180, candidates=[];
+      for(const actor of data.actors)candidates.push({...actor,_type:'actor',level:0});
+      for(const item of data.components)if(item.level<=lod||path.has(item.id))candidates.push({...item,_type:'component'});
+      if(lod===3)for(const item of data.dataObjects)candidates.push({...item,_type:'data',level:3}); else for(const item of data.dataObjects)if(path.has(item.id))candidates.push({...item,_type:'data',level:3});
+      candidates.sort((a,b)=>Number(path.has(b.id))-Number(path.has(a.id))||(a.level??0)-(b.level??0)||a.id.localeCompare(b.id));
+      const keep=candidates.slice(0,max), visible=new Set(keep.map(x=>x.id));
+      const edges=[], grouped=new Map(); let hiddenEdges=0;
+      for(const rel of data.relationships){const from=nearestVisible(rel.fromId,visible,lod),to=nearestVisible(rel.toId,visible,lod);if(!from||!to||from===to){hiddenEdges++;continue}const key=`${from}|${to}`;if(grouped.has(key)){grouped.get(key).count++;grouped.get(key).ids.push(rel.id)}else grouped.set(key,{...rel,fromId:from,toId:to,count:1,ids:[rel.id]})}
+      edges.push(...[...grouped.values()].sort((a,b)=>a.id.localeCompare(b.id)));
+      return {nodes:keep,edges,lod,hiddenNodes:Math.max(0,candidates.length-keep.length)+data.components.filter(x=>x.level>lod&&!path.has(x.id)).length+(lod<3?data.dataObjects.filter(x=>!path.has(x.id)).length:0),hiddenEdges,path};
+    }
+    function layoutGraph(nodes){
+      const byParent=new Map(), nodeMap=new Map(nodes.map(n=>[n.id,n]));
+      for(const node of nodes){const parent=node._type==='component'&&node.parentId&&nodeMap.has(node.parentId)?node.parentId:'__root__';if(!byParent.has(parent))byParent.set(parent,[]);byParent.get(parent).push(node)}
+      for(const list of byParent.values())list.sort((a,b)=>a.id.localeCompare(b.id));
+      let row=0;positions=new Map();
+      function walk(node,depth){const children=byParent.get(node.id)||[];if(!children.length){positions.set(node.id,{x:60+depth*245,y:42+row++*92});return}const start=row;for(const child of children)walk(child,depth+1);const ys=children.map(x=>positions.get(x.id).y);positions.set(node.id,{x:60+depth*245,y:(Math.min(...ys)+Math.max(...ys))/2});if(row===start)row++}
+      const roots=byParent.get('__root__')||[];for(const root of roots)walk(root,root._type==='data'?3:root.level||0);
+      graphBounds={w:Math.max(780,...[...positions.values()].map(p=>p.x+225)),h:Math.max(470,42+Math.max(row,1)*92)};
+    }
+    function edgePath(a,b){const x1=a.x+190,y1=a.y+29,x2=b.x,y2=b.y+29,m=x1+(x2-x1)/2;return `M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`}
+    function renderGraph(){
+      const model=visibleGraph();layoutGraph(model.nodes);const edgeHost=$('edges'),nodeHost=$('nodes');clear(edgeHost);clear(nodeHost);
+      const flow=selectedFlow(), activeRel=new Set((flow?.steps||[]).flatMap(s=>s.relationshipIds||[])), activeEntities=flowEntityIds(flow);
+      for(const edge of model.edges){const a=positions.get(edge.fromId),b=positions.get(edge.toId);if(!a||!b)continue;const isActive=edge.ids.some(id=>activeRel.has(id))||Boolean(flow&&activeEntities.has(edge.fromId)&&activeEntities.has(edge.toId));const dim=Boolean(flow&&!isActive);const path=svg('path',{d:edgePath(a,b),class:`edge${isActive?' active':''}${dim?' dim':''}`,'marker-end':'url(#arrow)','data-id':edge.id});const title=svg('title');title.textContent=`${edge.name}${edge.count>1?` · ${edge.count} aggregated relationships`:''}`;path.appendChild(title);edgeHost.appendChild(path)}
+      for(const node of model.nodes){const p=positions.get(node.id),isActive=!flow||activeEntities.has(node.id)||model.path.has(node.id),g=svg('g',{class:`node ${node._type}${node.kind==='external'?' external':''}${state.selected===node.id?' selected':''}${!isActive?' dim':''}`,transform:`translate(${p.x} ${p.y})`,tabindex:'0',role:'button','aria-label':`${node.name}, ${node.kind}`,'data-id':node.id});g.appendChild(svg('rect',{width:190,height:58,rx:9}));appendText(g,(node.name||node.id).slice(0,26),'',{x:13,y:24});appendText(g,`${node._type} · ${node.kind}`.toUpperCase(),'meta',{x:13,y:43});const hidden=data.components.filter(x=>x.parentId===node.id&&x.level>model.lod).length;if(hidden){g.appendChild(svg('rect',{x:151,y:9,width:29,height:16,rx:8,class:'badge-bg'}));appendText(g,`+${hidden}`,'badge-text',{x:158,y:20})}g.addEventListener('click',()=>select(node.id,'entity'));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(node.id,'entity')}});nodeHost.appendChild(g)}
+      $('notice').textContent=model.hiddenNodes||model.hiddenEdges?`${model.hiddenNodes} nodes and ${model.hiddenEdges} relationships hidden or aggregated at L${model.lod}. Zoom in or select a path for detail.`:'';
+      $('lod').textContent=`L${model.lod} ${lodNames[model.lod]}`;applyTransform();renderMinimap(model);renderTree(model.nodes);
+    }
+    function applyTransform(){ $('viewport').setAttribute('transform',`translate(${state.x} ${state.y}) scale(${state.scale})`) }
+    function renderMinimap(model){const host=$('minimap');clear(host);host.setAttribute('viewBox',`0 0 ${graphBounds.w} ${graphBounds.h}`);for(const edge of model.edges){const a=positions.get(edge.fromId),b=positions.get(edge.toId);if(a&&b)host.appendChild(svg('line',{x1:a.x+190,y1:a.y+29,x2:b.x,y2:b.y+29,stroke:'#33434c','stroke-width':Math.max(2,graphBounds.w/250)}))}for(const node of model.nodes){const p=positions.get(node.id);host.appendChild(svg('rect',{x:p.x,y:p.y,width:190,height:58,rx:5,fill:state.selected===node.id?'#64d9d0':'#52626b'}))}}
+    function fitGraph(){const box=$('graph').getBoundingClientRect();state.scale=Math.max(.35,Math.min(.78,(box.width-50)/graphBounds.w,(box.height-50)/graphBounds.h));state.x=(box.width-graphBounds.w*state.scale)/2;state.y=(box.height-graphBounds.h*state.scale)/2;renderGraph()}
+    function setZoom(next,cx,cy){const old=state.scale;state.scale=Math.max(.38,Math.min(2.25,next));const box=$('graph').getBoundingClientRect(),x=cx??box.width/2,y=cy??box.height/2;state.x=x-(x-state.x)*(state.scale/old);state.y=y-(y-state.y)*(state.scale/old);renderGraph()}
+    function centerOn(id){const p=positions.get(id);if(!p)return;const box=$('graph').getBoundingClientRect();state.x=box.width/2-(p.x+95)*state.scale;state.y=box.height/2-(p.y+29)*state.scale;applyTransform()}
+
+    function addSection(host,title,items,renderer){if(!items.length)return;host.appendChild(el('div','section-title',title));for(const item of items)host.appendChild(renderer(item))}
+    function detailRecord(item,type){
+      const host=$('detail-body');clear(host);host.append(el('div','eyebrow',type),el('h3','',item.name||item.title||item.claim||item.id));if(item.description)host.appendChild(el('p','description',item.description));
+      const facts=el('div','facts');for(const [k,v] of [['ID',item.id],['Kind',item.kind||item.type||item.status||'evidence'],['Confidence',item.confidence||'n/a'],['Level',item.level??'n/a']]){const box=el('div','fact');box.append(el('b','',k),el('span','',v));facts.appendChild(box)}host.appendChild(facts);
+      if(type==='flow'){
+        addSection(host,'Ordered path',item.steps||[],step=>{const row=el('div','step-row');row.append(el('b','',step.order),document.createTextNode(step.action));const meta=[step.input&&`in: ${step.input}`,step.output&&`out: ${step.output}`,step.stateChange&&`state: ${step.stateChange}`].filter(Boolean).join(' · ');if(meta)row.appendChild(el('small','',meta));return row});
+        addSection(host,'Outcomes',item.outcomes||[],x=>el('div','link-row',x));addSection(host,'Failure modes',item.failureModes||[],x=>el('div','link-row',x));
+      }
+      if(type==='entity'){
+        const links=data.relationships.filter(r=>r.fromId===item.id||r.toId===item.id);addSection(host,'Relationships',links,r=>{const other=entity.get(r.fromId===item.id?r.toId:r.fromId);const row=el('button','link-row',`${r.kind} · ${other?.name||'unknown'}`);row.type='button';row.setAttribute('role','button');row.addEventListener('click',()=>select(other?.id,'entity'));return row});
+        const related=data.flows.filter(f=>flowEntityIds(f).has(item.id));addSection(host,'Flows',related,f=>{const row=el('button','link-row',f.name);row.type='button';row.addEventListener('click',()=>select(f.id,'flow'));return row});
+      }
+      const ids=new Set(item.evidenceIds||[]);if(type==='entity')for(const r of data.relationships)if((r.fromId===item.id||r.toId===item.id))for(const id of r.evidenceIds||[])ids.add(id);
+      addSection(host,'Evidence',[...ids].map(id=>evidence.get(id)).filter(Boolean),ev=>{const row=el('div','evidence-row',ev.claim);row.appendChild(el('small','',`${ev.path}${ev.symbol?` · ${ev.symbol}`:''}${ev.startLine?`:${ev.startLine}`:''}`));return row});
+      const gaps=data.gaps.filter(g=>(g.evidenceIds||[]).some(id=>ids.has(id)));addSection(host,'Related gaps',gaps,g=>{const row=el('div',`gap-row ${g.status}`,g.title);row.appendChild(el('small','',`${g.status} · ${g.question}`));return row});
+      addTreeShell(host);
+    }
+    function renderDetail(){
+      if(state.selectedType==='flow'&&flowMap.has(state.selected)){detailRecord(flowMap.get(state.selected),'flow');return}
+      if(state.selectedType==='entity'&&entity.has(state.selected)){detailRecord(entity.get(state.selected),'entity');return}
+      if(state.selectedType==='evidence'&&evidence.has(state.selected)){detailRecord(evidence.get(state.selected),'evidence');return}
+      if(state.selectedType==='gap'){const gap=data.gaps.find(x=>x.id===state.selected);if(gap){detailRecord(gap,'gap');return}}
+      const host=$('detail-body');clear(host);host.append(el('div','eyebrow','Map status'),el('h3','',data.snapshot.scope),el('p','description',data.project.description||'Select a node or flow to inspect its relationships and evidence.'));
+      const facts=el('div','facts');for(const [k,v] of [['Head',data.snapshot.sourceHead==='UNKNOWN'?'UNKNOWN':data.snapshot.sourceHead.slice(0,8)],['Confidence',data.snapshot.confidence],['Open gaps',data.gaps.filter(g=>g.status==='open').length],['Schema',data.schemaVersion]]){const box=el('div','fact');box.append(el('b','',k),el('span','',v));facts.appendChild(box)}host.appendChild(facts);
+      addSection(host,'Open questions',data.gaps.filter(g=>g.status==='open'),g=>{const row=el('div','gap-row open',g.title);row.appendChild(el('small','',g.question));return row});addTreeShell(host);
+    }
+    function addTreeShell(host){const details=el('details','tree-alt');details.appendChild(el('summary','','Keyboard tree alternative'));const list=el('div','tree-list');list.id='tree-list';list.setAttribute('role','tree');details.appendChild(list);host.appendChild(details)}
+    function renderTree(nodes){const host=$('tree-list');if(!host)return;clear(host);for(const node of nodes){const b=el('button','tree-item',node.name);b.type='button';b.dataset.level=String(node.level||0);b.setAttribute('role','treeitem');b.setAttribute('aria-level',String((node.level||0)+1));b.addEventListener('click',()=>select(node.id,'entity'));host.appendChild(b)}}
+    function select(id,type){state.selected=id;state.selectedType=type;if(type==='flow'){const f=flowMap.get(id);const tabByType={user:'User Flows',data:'Data Flows',runtime:'Runtime',failure:'Runtime',build:'Delivery',deploy:'Delivery'};if(f&&state.tab==='Evidence & Gaps')state.tab=tabByType[f.type]||'Architecture'}if(type==='entity'&&state.tab==='Evidence & Gaps')state.tab='Architecture';renderAll();if(type==='entity')centerOn(id)}
+
+    function setupSearch(){
+      const input=$('search'),results=$('search-results');input.addEventListener('input',()=>{const q=input.value.trim().toLowerCase();clear(results);if(!q){results.hidden=true;return}const matches=allRecords.filter(x=>[x.name,x.title,x.claim,x.id,x.description,x.path].filter(Boolean).join(' ').toLowerCase().includes(q)).slice(0,18);if(!matches.length)results.appendChild(el('div','empty','No matching architecture records.'));for(const item of matches){const type=flowMap.has(item.id)?'flow':entity.has(item.id)?'entity':evidence.has(item.id)?'evidence':'gap';const b=el('button','search-result',item.name||item.title||item.claim||item.id);b.type='button';b.appendChild(el('small','',`${type} · ${item.id}`));b.addEventListener('click',()=>{input.value='';results.hidden=true;if(type==='evidence'||type==='gap')state.tab='Evidence & Gaps';else if(type==='flow'){const f=flowMap.get(item.id),map={user:'User Flows',data:'Data Flows',runtime:'Runtime',failure:'Runtime',build:'Delivery',deploy:'Delivery'};state.tab=map[f.type]}else state.tab='Architecture';if(type==='entity'&&component.has(item.id)){state.scale=Math.max(state.scale,[.68,.95,1.3,1.85][component.get(item.id).level])}select(item.id,type)});results.appendChild(b)}results.hidden=false});input.addEventListener('keydown',e=>{if(e.key==='Escape'){input.value='';results.hidden=true}});document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))results.hidden=true})
+    }
+    function setupGraphControls(){
+      $('zoom-in').addEventListener('click',()=>setZoom(state.scale*1.42));$('zoom-out').addEventListener('click',()=>setZoom(state.scale/1.42));$('fit').addEventListener('click',fitGraph);$('reset').addEventListener('click',()=>{state.selected=null;state.selectedType=null;state.scale=.68;state.x=30;state.y=38;renderAll()});
+      const graph=$('graph');graph.addEventListener('wheel',e=>{e.preventDefault();const r=graph.getBoundingClientRect();setZoom(state.scale*(e.deltaY<0?1.12:.89),e.clientX-r.left,e.clientY-r.top)},{passive:false});
+      graph.addEventListener('pointerdown',e=>{pointer={id:e.pointerId,x:e.clientX,y:e.clientY,ox:state.x,oy:state.y};state.dragging=true;state.moved=false;graph.setPointerCapture(e.pointerId)});graph.addEventListener('pointermove',e=>{if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;if(Math.abs(dx)+Math.abs(dy)>3)state.moved=true;state.x=pointer.ox+dx;state.y=pointer.oy+dy;applyTransform()});graph.addEventListener('pointerup',e=>{if(pointer?.id===e.pointerId){pointer=null;state.dragging=false}});
+      graph.addEventListener('keydown',e=>{const amount=e.shiftKey?60:24;if(e.key==='ArrowLeft')state.x+=amount;else if(e.key==='ArrowRight')state.x-=amount;else if(e.key==='ArrowUp')state.y+=amount;else if(e.key==='ArrowDown')state.y-=amount;else return;e.preventDefault();applyTransform()});
+    }
+    function renderPrint(){const host=$('print-summary');clear(host);host.append(el('h1','',`${data.project.name} — architecture summary`),el('p','',`${data.snapshot.scope} · ${data.snapshot.confidence} · ${data.snapshot.lastVerifiedAt}`));const table=el('table'),head=el('tr');for(const x of ['Surface','Count'])head.appendChild(el('th','',x));table.appendChild(head);for(const [name,count] of [['Actors',data.actors.length],['Components',data.components.length],['Data objects',data.dataObjects.length],['Relationships',data.relationships.length],['Flows',data.flows.length],['Evidence',data.evidence.length],['Open gaps',data.gaps.filter(g=>g.status==='open').length]]){const row=el('tr');row.append(el('td','',name),el('td','',count));table.appendChild(row)}host.appendChild(table)}
+    function renderAll(){renderHeader();renderTabs();renderFlows();renderDetail();renderGraph();renderPrint()}
+    setupSearch();setupGraphControls();renderAll();
+  })();
+  </script>
+</body>
+</html>
