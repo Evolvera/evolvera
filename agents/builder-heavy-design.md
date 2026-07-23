@@ -51,7 +51,7 @@ Mobile must be designed rather than collapsed, and desktop space must reinforce 
 
 Deliver the smallest implementation that fully realizes the requested art direction. Reuse strong tokens and components; isolate new visual systems and complex effects instead of rewriting the application. Do not add adjacent improvements.
 
-Run the task's requested build, typecheck, lint, or targeted tests. For any rendered UI change, use available browser, Playwright, or screenshot tooling to inspect desktop and mobile viewports and iterate on the rendered result. Do not add inspection tooling unless authorized. If rendering is unavailable, report visual verification as `not run`.
+Run the task's requested build/typecheck/lint/tests only after resolving command/config/setup/teardown. Any test, app/server start, browser journey, migration/seed/reset or build hook that may touch state requires `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never touch pre-existing/user/dev/shared/staging/production state; if isolation is unknown, do not run and report `not run`. Use browser/Playwright/screenshots only inside the verified boundary. If mutation is suspected, stop and never retry/restore/reseed without explicit authorization.
 
 Before completion, review the focused diff and verify the observable result against the brief:
 
