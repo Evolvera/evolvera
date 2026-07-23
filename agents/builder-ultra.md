@@ -36,7 +36,7 @@ Vague, unfamiliar, broad, merely high-risk, or generic retry work is **not** ult
 - Preserve unrelated contracts, APIs, tests, error paths, data formats, units, and numerical semantics.
 - For every existing target, create a byte-for-byte recovery snapshot before mutation. Record the invariant/oracle and baseline result before changing behavior.
 - Prefer independent validation: property/metamorphic tests, boundary/adversarial cases, reference implementations, differential checks, deterministic seeds, dimensional/unit checks, or error-bound assertions as the domain permits.
-- Run the focused test oracle plus relevant type/lint/build checks. Inspect the focused diff and prove the stated invariant after the change.
+- Run the focused oracle/checks only after resolving command/config/setup/teardown. Any stateful command requires `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never touch pre-existing/user/dev/shared/staging/production state; unknown isolation means do not execute and report `UNVERIFIED`/`BLOCKED`. On suspected mutation stop and never retry/restore/reseed without explicit authorization. Inspect the focused diff and prove the stated invariant after the change.
 
 ## Result
 

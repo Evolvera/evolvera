@@ -167,6 +167,19 @@ STOP RULES
 - Do not expand scope to adjacent improvements.
 ```
 
+## Stateful Validation Safety
+
+Before the orchestrator or any builder runs a test, app/server start, E2E flow, migration, seed, reset, fuzz/load/security check, or build hook that may touch state:
+
+1. resolve the literal command and inspect package/task indirection, runner config, env precedence, global setup/teardown, fixtures, migrations/seeds, and cleanup;
+2. enumerate every reachable DB/schema, directory, bucket, queue/topic, cache namespace, search index, emulator/device store, and external service;
+3. classify the command `NO_STATEFUL_RESOURCES` or every resource `DISPOSABLE_VERIFIED | NONDISPOSABLE | UNKNOWN`;
+4. run only when every resource is uniquely created/owned by the run, synthetic/empty by contract, scoped against fallback, and teardown cannot escape its namespace.
+
+`localhost`, local/dev, `.env.test`, `NODE_ENV=test`, a `test` name, Docker, transactions, mocks with fallback, and backups are not proof. Never let cleanup/reset/truncate/drop/delete/migrations touch a resource that predates the run or contains user/dev/shared/staging/production data. If proof is missing, use static validation and report `UNVERIFIED`/`BLOCKED`; observability does not override data safety. If mutation is suspected, stop immediately and do not retry, restore, reseed, or recreate data without explicit authorization.
+
+Every delegated prompt containing a potentially stateful command must include `STATEFUL RESOURCE PROOF`: resolved command; setup/teardown files inspected; sanitized resource identities; run-ownership evidence; destructive hooks; protected-resource boundary; egress/credentials; teardown; and required postcheck. The receiving agent must independently verify it before execution.
+
 ## Parallelization
 
 Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
@@ -200,6 +213,7 @@ Before spawning builder, verify:
 - [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
 - [ ] Pre-edit recovery snapshots are required where the task marks them (shared/large/preservation-critical, dirty overlap, destructive transforms).
 - [ ] Validation command/check is included.
+- [ ] Every potentially stateful validation has `STATEFUL RESOURCE PROOF`; `UNKNOWN` or pre-existing data means the command will not run.
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
 - [ ] Task is small enough for a delegated model.
@@ -220,7 +234,7 @@ After a producer builder finishes:
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
-- decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add tester or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly; use `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; a validator runs only for an already-linked named escape risk or final PR gate;
+- decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add tester or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; use `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; a validator runs only for an already-linked named escape risk or final PR gate;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 

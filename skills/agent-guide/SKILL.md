@@ -60,8 +60,8 @@ A subagent starts with zero context: it has not seen the conversation, the user'
 3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default.
 4. **Scope fence** — what is explicitly out of scope: no adjacent improvements, no dependency additions, no formatting churn, no touching plans/config/registries unless named.
 5. **Conventions** — patterns/helpers/tokens to follow, with a file to imitate when one exists.
-6. **Acceptance + validation** — observable criteria and the exact commands to run; for behavior changes, the runtime evidence expected (executed journey/endpoint, rendered page/console), not just compile checks.
-7. **Stop rules** — when to return BLOCKED instead of improvising: missing files, failed assumptions, conflicting evidence, or required scope expansion.
+6. **Acceptance + validation** — observable criteria and exact commands; for behavior changes, the runtime evidence expected, not just compile checks. For any command that may start application code or touch a database/schema, filesystem, bucket, queue/topic, cache, search index, emulator/device state, or external service, include `STATEFUL RESOURCE PROOF`: resolved command/config/hooks, sanitized identities, `NO_STATEFUL_RESOURCES` or all-`DISPOSABLE_VERIFIED`, unique run ownership, synthetic data, no fallback, destructive-hook confinement, egress/credentials, teardown, and protected-resource postcheck. `localhost`, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof; absent/unknown proof means do not execute.
+7. **Stop rules** — when to return BLOCKED instead of improvising: missing files, failed assumptions, conflicting evidence, required scope expansion, or unproven stateful-resource isolation. On suspected mutation, stop; never retry/restore/reseed without explicit authorization.
 
 Before launching, reread the prompt as if you were the subagent: can you execute it without asking anything and without inventing anything? If not, fix the prompt or gather evidence first. Terse command-style prompts produce shallow, generic work; a paragraph of grounded context is cheaper than one wrong diff.
 
@@ -256,3 +256,4 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 - [ ] Bounded and well-defined? If yes → direct tools or one builder
 - [ ] Did I choose default vs highspeed based on task fit?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?
+- [ ] For every potentially stateful command, did I prove run-owned disposable resources and forbid execution on `UNKNOWN`/pre-existing/user/dev/shared/staging/production state?

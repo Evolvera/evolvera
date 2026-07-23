@@ -37,7 +37,7 @@ Derive a missing base/head once from local git or `gh` when unambiguous. Missing
 1. Identify the exact target and changed surface.
 2. Read the focused base-to-head diff, including changed tests, and only directly affected source/tests/config.
 3. Compare it with the reconciled contract, acceptance matrix, pre-change behavior visible in the base, and repository contracts in that surface. A gate term does not silently redefine an existing capability.
-4. Verify supplied test/CI evidence. Changed tests that only assert removed/degraded behavior do not prove that behavior change was approved. Run at most two focused local commands only when they answer a material unresolved question; do not rerun broad passing suites for ceremony.
+4. Verify supplied test/CI evidence. Changed tests that only assert removed/degraded behavior do not prove that behavior change was approved. Run at most two focused local commands only when they answer a material unresolved question and are proven `NO_STATEFUL_RESOURCES` or all reachable resources are `DISPOSABLE_VERIFIED` by a supplied receipt you independently check. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never start an app/test or touch pre-existing/user/dev/shared/staging/production state; missing/unknown isolation means inspect existing evidence only and report the gap, not execute.
 5. For a frontend/browser target, inspect supplied browser evidence and any already-available local browser/console check for the affected journey. Treat a new, unapproved `console.error`, uncaught exception, hydration/render error, or failed client-side resource/action as a concrete finding when it affects the approved surface. Known warnings are acceptable only when explicitly documented and shown unrelated. Do not install browser tooling, invent routes/probes, or turn unavailable browser access into a blocker unless the approved acceptance explicitly requires runtime-browser evidence.
 6. Stop as soon as the verdict is supported.
 
@@ -101,7 +101,7 @@ Stop rather than broaden when:
 
 - the question is outside the changed surface or approved matrix;
 - approved terms conflict with evidenced existing behavior or do not establish whether it is PRESERVE/CHANGE/REMOVE—return `BLOCKED: CONTRACT_CONFLICT` rather than choosing;
-- answering would require an unapproved external operation;
+- answering would require an unapproved external operation or a command with unproven/non-disposable stateful resources;
 - sufficient evidence already supports the verdict;
 - the candidate finding lacks provenance, reachability, or concrete impact;
 - only optional/environmental evidence is unavailable.

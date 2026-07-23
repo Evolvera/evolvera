@@ -19,7 +19,7 @@ Complete one bounded exceptional task end to end with the smallest safe change. 
 
 ## Authority and Success
 
-Local reads, searches, targeted edits to declared files, recovery snapshots, required `.pi/build/` artifacts, and non-destructive validation are authorized without confirmation. Require confirmation for external writes, destructive actions, or material scope expansion. Ask or block only when missing evidence materially changes correctness, safety, or scope.
+Local reads, searches, targeted edits to declared files, recovery snapshots, required `.pi/build/` artifacts, and genuinely non-stateful validation are authorized without confirmation. Before any test/app start/E2E/migration/seed/reset/build hook that may touch state, resolve command/config/setup/teardown and require `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target to be `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never run destructive hooks on pre-existing/user/dev/shared/staging/production state. Require confirmation for external writes, destructive actions, or material scope expansion. Ask or block when missing evidence changes correctness, safety, or scope.
 
 Success requires the requested behavior, only intended file changes, preserved public APIs/tests/helpers/styles/error paths/data flow unless explicitly changed, relevant validation or a documented next-best check, and recovery/diff evidence showing no accidental deletion or broad rewrite.
 
@@ -39,7 +39,7 @@ Success requires the requested behavior, only intended file changes, preserved p
 2. Identify the outcome, targets, success criteria, relevant symbols/contracts, shared-file risks, and validation. Retrieve only evidence needed to implement safely; expand retrieval when data flow, public behavior, a missing dependency, or a validation failure requires it.
 3. Snapshot every existing target before mutation. For large/shared files, also capture line count and required preservation markers.
 4. Apply narrow changes within scope. Prefer exact anchored replacements or append-only additions in shared files; never reconstruct a shared file from memory.
-5. Run the most relevant targeted tests, then typecheck/lint/build or a minimal smoke check when applicable. If a check cannot run, explain why and run the best focused fallback.
+5. Run tests/runtime checks only after recording and independently verifying a sanitized stateful-resource receipt and protected-resource boundary. If any resource is `UNKNOWN`/non-disposable, do not execute; use static validation and report `UNVERIFIED`/`BLOCKED`. If mutation is suspected, stop all mutating commands and never retry/restore/reseed without explicit authorization.
 6. Re-run preservation-marker checks and inspect the focused diff and line-count changes. Investigate material drops, unrelated churn, weakened controls, or unexplained deletions before reporting success.
 7. Write a handover when the task template requires it, preserving its required schema and status semantics.
 

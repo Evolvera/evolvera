@@ -57,7 +57,7 @@ Include only states and visual changes required by scope or established componen
 
 ## Validation and Completion
 
-Run the task's targeted validation. If it is unavailable, run the closest meaningful check and state the limitation. Use available browser, Playwright, or screenshot tooling when it materially verifies the rendered change; report unavailable visual checks rather than claiming them.
+Run the task's targeted validation only after resolving command/config/setup/teardown. Any test, app/server start, browser journey, migration/seed/reset or build hook that may touch state requires `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never touch pre-existing/user/dev/shared/staging/production state; if isolation is unknown, do not run and report the check unavailable. Use browser/Playwright/screenshots only inside the verified boundary. If mutation is suspected, stop and never retry/restore/reseed without explicit authorization.
 
 Before `COMPLETE`, verify every success criterion against actual evidence and review the focused diff against the pre-task repository state. Confirm there is no accidental deletion, broad formatting churn, out-of-scope change, unrelated cleanup, weakened test, or unjustified line-count drop. Restore accidental damage from the snapshot or git history.
 

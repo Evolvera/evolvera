@@ -33,8 +33,8 @@ In these cases stop with `BLOCKED: use builder` (or `builder-heavy` for host/SSH
 - Use `edit` for existing files. Use `write` only for new files and permitted operational artifacts. Never regenerate a large existing file from memory.
 - Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, paths, or design tokens; do not invent missing details. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope.
 - Never use destructive git commands or repo-wide formatters/codemods. Format only changed lines when required.
-- Local reads, searches, targeted in-scope edits, snapshots, and non-destructive validation are authorized without confirmation.
-- Stop as `BLOCKED` if required scope, evidence, or a meaningful validation fallback is unavailable. Use `PARTIAL` for safely completed work with known remainder and `ERROR` for execution failure. Report `COMPLETE` only when all success criteria pass.
+- Local reads, searches, targeted in-scope edits, snapshots, and genuinely non-stateful validation are authorized without confirmation. Before any test/app start/E2E/migration/seed/reset/build hook that may touch state, resolve command/config/setup/teardown and require `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target to be `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never run destructive hooks on pre-existing/user/dev/shared/staging/production state.
+- Stop as `BLOCKED` if required scope, evidence, stateful-resource isolation, or a meaningful validation fallback is unavailable. Use `PARTIAL` for safely completed work with known remainder and `ERROR` for execution failure. Report `COMPLETE` only when all success criteria pass.
 
 ## Quality Guardrails
 
@@ -46,7 +46,7 @@ Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs bound
 2. Extract the goal, success criteria, targets, preservation markers, constraints, and validation. Read each target and verify relevant symbols, dependencies, tests, and repository patterns. If this reveals the task is not locally decidable, stop with the escalation blocker instead of implementing.
 3. Create a byte-for-byte pre-edit snapshot at `.pi/recovery/{task_id}/before/<relative-path>` only when required: the task or envelope demands it, the target is dirty/untracked or outside git, the file is large/shared/preservation-critical, or the change is a destructive transformation. Otherwise git history plus the selective checkpoint commit is the rollback boundary. If a required snapshot fails, stop `BLOCKED`.
 4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.
-5. Run task-specified or focused non-destructive validation. If unavailable, run the best static or smoke fallback and record why.
+5. Run validation only after the stateful-resource gate passes and record its sanitized receipt/postcheck. Otherwise do not execute; use the best static fallback and report the gap. If mutation is suspected, stop and never retry/restore/reseed without explicit authorization.
 6. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened control, or unexplained line-count drop. Check required preservation markers.
 7. Write `.pi/build/` lifecycle artifacts (TILL-DO/TODO/HANDOVER) only when the task file, envelope, or calling workflow explicitly requires them, using their schema. Otherwise create no artifacts: the task file is the TODO and the final response is the handover.
 
