@@ -72,7 +72,7 @@
     function selectedFlow(){ return state.selectedType==='flow'?flowMap.get(state.selected):null; }
     function flowEntityIds(flow){ const ids=new Set([...(flow?.actorIds||[]),...(flow?.entrypointIds||[])]); for(const step of flow?.steps||[])for(const id of step.componentIds||[])ids.add(id); for(const step of flow?.steps||[])for(const id of step.dataObjectIds||[])ids.add(id); return ids; }
     function selectedPath(){ const ids=flowEntityIds(selectedFlow()); if(state.selectedType==='entity'&&state.selected)ids.add(state.selected); for(const id of [...ids])for(const parent of ancestors(id))ids.add(parent); return ids; }
-    function nearestVisible(id, visible, lod){ if(visible.has(id))return id; let item=component.get(id); while(item?.parentId){ if(visible.has(item.parentId))return item.parentId; item=component.get(item.parentId); } if(lod===3&&entity.has(id))return id; return null; }
+    function nearestVisible(id, visible, lod, overflowIds, overflowId){ if(visible.has(id))return id;if(overflowIds.has(id))return overflowId;let item=component.get(id);while(item?.parentId){if(visible.has(item.parentId))return item.parentId;if(overflowIds.has(item.parentId))return overflowId;item=component.get(item.parentId)}if(lod===3&&entity.has(id))return id;return null; }
 
     function renderHeader(){
       $('project-name').textContent=data.project.name;
@@ -102,12 +102,15 @@
       for(const actor of data.actors)candidates.push({...actor,_type:'actor',level:0});
       for(const item of data.components)if(item.level<=lod||path.has(item.id))candidates.push({...item,_type:'component'});
       if(lod===3)for(const item of data.dataObjects)candidates.push({...item,_type:'data',level:3}); else for(const item of data.dataObjects)if(path.has(item.id))candidates.push({...item,_type:'data',level:3});
-      candidates.sort((a,b)=>Number(path.has(b.id))-Number(path.has(a.id))||(a.level??0)-(b.level??0)||a.id.localeCompare(b.id));
-      const keep=candidates.slice(0,max), visible=new Set(keep.map(x=>x.id));
+      candidates.sort((a,b)=>(a.level??0)-(b.level??0)||a.id.localeCompare(b.id));
+      const priority=candidates.filter(x=>path.has(x.id)),ordinary=candidates.filter(x=>!path.has(x.id));
+      let keep,overflowIds=new Set(),overflowId=null,overflowCount=0;
+      if(priority.length>max){overflowId='__selected_path_overflow__';const retained=priority.slice(0,Math.max(1,max-1));overflowIds=new Set(priority.slice(retained.length).map(x=>x.id));overflowCount=overflowIds.size;keep=[...retained,{id:overflowId,name:`${overflowCount} selected path nodes`,kind:'aggregate',level:lod,confidence:'unknown',evidenceIds:[],_type:'aggregate'}]}else keep=[...priority,...ordinary.slice(0,Math.max(0,max-priority.length))];
+      const visible=new Set(keep.map(x=>x.id));
       const edges=[], grouped=new Map(); let hiddenEdges=0;
-      for(const rel of data.relationships){const from=nearestVisible(rel.fromId,visible,lod),to=nearestVisible(rel.toId,visible,lod);if(!from||!to||from===to){hiddenEdges++;continue}const key=`${from}|${to}`;if(grouped.has(key)){grouped.get(key).count++;grouped.get(key).ids.push(rel.id)}else grouped.set(key,{...rel,fromId:from,toId:to,count:1,ids:[rel.id]})}
+      for(const rel of data.relationships){const from=nearestVisible(rel.fromId,visible,lod,overflowIds,overflowId),to=nearestVisible(rel.toId,visible,lod,overflowIds,overflowId);if(!from||!to||from===to){hiddenEdges++;continue}const key=`${from}|${to}`;if(grouped.has(key)){grouped.get(key).count++;grouped.get(key).ids.push(rel.id)}else grouped.set(key,{...rel,fromId:from,toId:to,count:1,ids:[rel.id]})}
       edges.push(...[...grouped.values()].sort((a,b)=>a.id.localeCompare(b.id)));
-      return {nodes:keep,edges,lod,hiddenNodes:Math.max(0,candidates.length-keep.length)+data.components.filter(x=>x.level>lod&&!path.has(x.id)).length+(lod<3?data.dataObjects.filter(x=>!path.has(x.id)).length:0),hiddenEdges,path};
+      return {nodes:keep,edges,lod,hiddenNodes:Math.max(0,candidates.length-keep.length)+data.components.filter(x=>x.level>lod&&!path.has(x.id)).length+(lod<3?data.dataObjects.filter(x=>!path.has(x.id)).length:0),hiddenEdges,path,overflowCount};
     }
     function layoutGraph(nodes){
       const byParent=new Map(), nodeMap=new Map(nodes.map(n=>[n.id,n]));
@@ -124,7 +127,7 @@
       const flow=selectedFlow(), activeRel=new Set((flow?.steps||[]).flatMap(s=>s.relationshipIds||[])), activeEntities=flowEntityIds(flow);
       for(const edge of model.edges){const a=positions.get(edge.fromId),b=positions.get(edge.toId);if(!a||!b)continue;const isActive=edge.ids.some(id=>activeRel.has(id))||Boolean(flow&&activeEntities.has(edge.fromId)&&activeEntities.has(edge.toId));const dim=Boolean(flow&&!isActive);const path=svg('path',{d:edgePath(a,b),class:`edge${isActive?' active':''}${dim?' dim':''}`,'marker-end':'url(#arrow)','data-id':edge.id});const title=svg('title');title.textContent=`${edge.name}${edge.count>1?` · ${edge.count} aggregated relationships`:''}`;path.appendChild(title);edgeHost.appendChild(path)}
       for(const node of model.nodes){const p=positions.get(node.id),isActive=!flow||activeEntities.has(node.id)||model.path.has(node.id),g=svg('g',{class:`node ${node._type}${node.kind==='external'?' external':''}${state.selected===node.id?' selected':''}${!isActive?' dim':''}`,transform:`translate(${p.x} ${p.y})`,tabindex:'0',role:'button','aria-label':`${node.name}, ${node.kind}`,'data-id':node.id});g.appendChild(svg('rect',{width:190,height:58,rx:9}));appendText(g,(node.name||node.id).slice(0,26),'',{x:13,y:24});appendText(g,`${node._type} · ${node.kind}`.toUpperCase(),'meta',{x:13,y:43});const hidden=data.components.filter(x=>x.parentId===node.id&&x.level>model.lod).length;if(hidden){g.appendChild(svg('rect',{x:151,y:9,width:29,height:16,rx:8,class:'badge-bg'}));appendText(g,`+${hidden}`,'badge-text',{x:158,y:20})}g.addEventListener('click',()=>select(node.id,'entity'));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(node.id,'entity')}});nodeHost.appendChild(g)}
-      $('notice').textContent=model.hiddenNodes||model.hiddenEdges?`${model.hiddenNodes} nodes and ${model.hiddenEdges} relationships hidden or aggregated at L${model.lod}. Zoom in or select a path for detail.`:'';
+      $('notice').textContent=model.hiddenNodes||model.hiddenEdges||model.overflowCount?`${model.hiddenNodes} nodes and ${model.hiddenEdges} relationships hidden or aggregated at L${model.lod}.${model.overflowCount?` ${model.overflowCount} selected path nodes aggregated; all ordered steps remain in the Inspector.`:''} Zoom in or select a path for detail.`:'';
       $('lod').textContent=`L${model.lod} ${lodNames[model.lod]}`;applyTransform();renderMinimap(model);renderTree(model.nodes);
     }
     function applyTransform(){ $('viewport').setAttribute('transform',`translate(${state.x} ${state.y}) scale(${state.scale})`) }
