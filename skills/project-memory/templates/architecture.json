@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "unknown-project",
+    "name": "Unknown project",
+    "description": "Starter architecture memory awaiting an evidence-backed repository scan."
+  },
+  "snapshot": {
+    "sourceHead": "UNKNOWN",
+    "generatedAt": "2026-07-18T00:00:00.000Z",
+    "lastVerifiedAt": "2026-07-18T00:00:00.000Z",
+    "scope": "Initial architecture scan pending",
+    "confidence": "unknown"
+  },
+  "actors": [],
+  "components": [],
+  "dataObjects": [],
+  "relationships": [],
+  "flows": [],
+  "evidence": [],
+  "gaps": [
+    {
+      "id": "initial-architecture-scan",
+      "title": "Initial architecture scan required",
+      "status": "open",
+      "impact": "Architecture surfaces, relationships, flows, and evidence are not yet known.",
+      "question": "Which repository-backed actors, components, data objects, relationships, and flows should populate this map?",
+      "evidenceIds": []
+    }
+  ]
+}
