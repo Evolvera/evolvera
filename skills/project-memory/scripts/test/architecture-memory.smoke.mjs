@@ -63,6 +63,7 @@ try {
   check(!/(?:src|href)=["'](?:https?:)?\/\//i.test(html)&&!/@import\s+url/i.test(html),'HTML has no external assets');
   check(!html.includes('__ARCHITECTURE_DATA__'),'HTML has no unresolved data placeholder');
   check(html.includes('visibleGraph')&&html.includes('hidden or aggregated'),'HTML includes semantic disclosure and visible-budget notice');
+  check(html.includes('__selected_path_overflow__')&&html.includes('selected path nodes aggregated'),'HTML keeps selected paths within budget through explicit aggregation');
 
   const hostile=clone(rich);hostile.project.description='safe prefix </script><script>globalThis.pwned=true</script> suffix';
   const hostilePath=join(temp,'hostile.json'),hostileOut=join(temp,'hostile.html');await writeFile(hostilePath,JSON.stringify(hostile));const hostileHtml=(await renderArchitectureFile(hostilePath,hostileOut)).html;

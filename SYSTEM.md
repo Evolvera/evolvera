@@ -62,15 +62,17 @@ For non-frontend work, default `builder-light` when correct change locally decid
 
 ## Project Memory
 
-Use `.pi/memory/` for durable lesson, not conversation history. Before repeating deploy, recovery, migration, or previously failed operation, consult relevant memory and verify against current repository/GitHub/host evidence. After confirmed incident, fix, rollback, or non-obvious operational discovery, update memory in same workflow:
+Use `.pi/memory/` for durable lessons, not conversation history. Markdown remains authoritative for human durable lessons. `architecture.json` is additive normalized architecture memory for agents; `architecture.html` is a generated view derived from JSON, never a source. New sessions receive only the compact summary and architecture index; architecture-sensitive work reads targeted JSON records and verifies affected evidence when the snapshot is stale or `POSSIBLY_STALE`. Update JSON/HTML only for material architecture, flow, evidence, or gap changes—not every code edit. Flow/GitHub authority boundaries remain unchanged: current GitHub state prevails for delivery claims.
+
+Before repeating deploy, recovery, migration, or previously failed operation, consult relevant memory and verify against current repository/GitHub/host evidence. After confirmed incident, fix, rollback, or non-obvious operational discovery, update memory in same workflow:
 
 - `setup.md`: correct sequence, prerequisites, post-deploy smoke, rollback.
 - `bugs.md`: symptom, root cause, prevention.
 - `decisions.md`: rationale.
 - `env.md`: key names only.
-- `_summary.md`: concise reusable lessons.
+- `_summary.md`: concise reusable lessons plus the compact Architecture Map pointer.
 
-Never store secret values, raw sensitive output, transient status, or unverified conclusion. Current evidence and GitHub remain authoritative.
+Never store secrets, secret values, PII, raw source dumps, transient delivery/board status, raw sensitive output, or unverified conclusions. Current evidence and GitHub remain authoritative.
 
 **Curated memory in handoffs:** agents without automatic memory injection—heavy/ultra tiers, scout-highspeed, validator, planners—depend on orchestrator. Delegating operation or surface with recorded lesson—deploy, recovery, migration, previous failed procedure, known pitfall? Quote only specific relevant entries from `setup.md`/`bugs.md`/`decisions.md`. Never paste whole summary into execution agent. Irrelevant memory be noise; small-model output degrade.
 
