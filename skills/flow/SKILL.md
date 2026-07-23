@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Transform a backlog into an approved GitHub Project with issues plus an adaptive project plan, schedule, and issue DAG under .pi/flow/, then ship safely through the kanban with one branch per issue. Works for one PI/executor by default and exposes optional safe parallel groups without requiring parallel execution. Always scouts first, proposes before acting, and requires explicit user approval for external or material changes.
+description: Transform a backlog into an approved GitHub Project with issues plus an adaptive plan/DAG, then ship safely through the kanban with one branch and isolated worktree per concurrent issue. Supports autonomous new-chat re-entry: reconciles Project, issues, claims, PRs, remote branches, local worktrees, dependencies, and shared hazards to recommend safe parallel work without requiring the user to repeat context. Always scouts first, proposes before acting, and requires explicit user approval for external or material changes.
 ---
 
 # Flow — Backlog → Issues → Ship
@@ -10,7 +10,7 @@ Skill operacional para transformar uma lista grande de implementação em issues
 **Regra de ouro:** o Flow quase sempre roda em **projeto existente** (não greenfield). Antes de perguntar ou criar issues, **entenda o repo com scouts por módulo**. Depois proponha, tire dúvidas, e só avance com **OK explícito** do usuário.
 
 ```txt
-Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:flow”)
+Entrada (lista / “segue o projeto X” / “próxima issue” / “qual dá para fazer em paralelo?” / “só /skill:flow”)
   → Educar se faltar contexto (não inventar backlog)
   → Permission gate GitHub
   → Ler o kanban atual (issues + labels + PRs)  
@@ -37,7 +37,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 - Quer issues reais no GitHub ligadas ao repo
 - Quer prioridade + effort estimados a partir do estado atual do sistema
 - Quer loop de entrega issue-a-issue até PR
-- Diz **“segue o projeto X”**, **“continua o board”**, **“próxima issue”**, **“o que tem ready?”**
+- Diz **“segue o projeto X”**, **“continua o board”**, **“próxima issue”**, **“o que tem ready?”**, **“qual dá para fazer em paralelo?”** ou **“pega outra sem conflitar”**
 - Faltam permissões e precisa de checklist genérico pro usuário repassar a quem administra o repo/org
 - Usuário chama `/skill:flow` com pouco ou nenhum input — **ainda assim a skill deve educar e guiar**
 
@@ -53,13 +53,16 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “só /skill:
 6. **One concern per gate** — não misture “aprova as 20 issues” com “escolhe stack” na mesma pergunta confusa; separe decisões.
 7. **Read the board first** — em continue/próxima, leia issues+labels+PRs+branches antes de codar.
 8. **1 issue = 1 branch off default** — atualize o kanban **na hora** de cada transição (ready → in progress → in review → done). Nunca reutilize branch de outra issue.
-9. **WIP = 1** por executor (default) — termine ou estacione com transparência antes de puxar outro card.
-10. **GitHub é autoridade, local é cache** — precedência: **GitHub Project Status (quando configurado) → estado das issues/PRs + branches remotas atuais → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura remota nova sempre substitui estado local antigo; nunca trate cache local como claim ou lock.
+9. **WIP = 1 por `FLOW_EXECUTOR_ID`** (default) — vários executores podem trabalhar em paralelo somente com IDs distintos, claims remotos inequívocos, branches/worktrees exclusivas, capacidade aprovada e ausência comprovada de hazards. O login GitHub sozinho não distingue dois chats/agentes da mesma conta.
+10. **GitHub é autoridade; worktree é evidência local; cache continua cache** — precedência: **GitHub Project Status → issue/assignee + claim marker + PR → branch remota/SHA → worktrees desta máquina → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura remota/local nova substitui estado antigo. Worktree prova checkout, não processo vivo; cache, chat e idade nunca são claim, lock ou autorização de takeover.
 11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
 12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na default branch. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
 13. **Project/Kanban é obrigatório para delivery Flow** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. Depois, adicionar cada issue como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo se o usuário pedir explicitamente esse modo excepcional. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
-14. **DAG adaptativo, solo-first** — todo backlog criado pelo Flow ganha um plano e schedule de issues sob `.pi/flow/<project-slug>/`. O DAG ordena dependências, waves, gates e oportunidades de paralelo, mas nunca exige múltiplos executores: um único PI percorre os nós `ready` em ordem topológica, respeitando WIP=1. Paralelismo é otimização opcional, só com autorização, executores/worktrees separados e ausência de hazards compartilhados.
+14. **DAG adaptativo, solo-first e parallel-aware** — todo backlog criado pelo Flow ganha um plano e schedule de issues sob `.pi/flow/<project-slug>/`. O DAG ordena dependências, waves, gates e oportunidades de paralelo, mas nunca exige múltiplos executores. Paralelismo é opcional e só admite nós `ready` com dependências satisfeitas, write/validation scopes fundamentados, recursos exclusivos livres, claims distintos e worktrees isoladas.
 15. **Sem duplicar issues localmente** — título, body, ACs, status, assignee, branch, PR e comentários vivem no GitHub. `INDEX.md` mantém somente links/identidades estáveis; `PLAN.md`, `SCHEDULE.md` e `DAG.json` guardam estratégia e dependências. Estado operacional continua sendo relido do remoto e cacheado apenas em `STATE.md`.
+16. **Parallel re-entry é autônomo** — em chat novo, “qual issue dá para fazer em paralelo?” exige re-entry completo sem pedir ao usuário para recontar contexto: descobrir repo/Project, reconciliar toda evidência remota, inventariar todas as worktrees locais, ler DAG e calcular candidatos. Pergunte apenas por autoridade destrutiva/material ou ambiguidade que a evidência não resolve.
+17. **Claim exclusivo antes de agent** — implementação paralela nunca começa apenas porque o card está `Ready`. O orquestrador reserva primeiro a branch remota determinística com create-ref exclusivo, registra `FLOW_EXECUTOR_ID`, cria worktree dedicada, move o card e verifica todas as pós-condições; só então entrega esse path ao worker.
+18. **Sem falsa certeza de atividade** — diga `worker active` somente quando o orquestrador atual conhece o runtime. Fora disso, reporte `claim active`, `branch present` ou `worktree present`. Ausência local pode significar outra máquina; tempo parado nunca autoriza auto-reclaim.
 
 ---
 
@@ -529,15 +532,15 @@ Use um `project-slug` estável para o Project; em projeto de um único repo ele 
 - Mode: solo-first; parallel groups are optional
 
 ## Wave 0
-| Node | Issue | Depends on | Route | Parallel group | Shared surfaces | Dependency gate |
-|------|-------|------------|-------|----------------|-----------------|-----------------|
-| BE-02 | OWNER/BACKEND#12 | — | planner | baseline | .github/workflows | merged-default |
-| APP-00 | OWNER/APP#3 | — | planner | baseline | app tests | merged-default |
+| Node | Issue | Depends on | Route | Parallel group | Write scopes | Exclusive resources | Validation resources | Dependency gate |
+|------|-------|------------|-------|----------------|--------------|---------------------|----------------------|-----------------|
+| BE-02 | OWNER/BACKEND#12 | — | planner | baseline | .github/workflows | CI workflow | github-actions | merged-default |
+| APP-00 | OWNER/APP#3 | — | planner | baseline | app tests | app test fixtures | app-test-runtime | merged-default |
 
 ## Wave 1
-| Node | Issue | Depends on | Route | Parallel group | Shared surfaces | Dependency gate |
-|------|-------|------------|-------|----------------|-----------------|-----------------|
-| BE-03 | OWNER/BACKEND#13 | BE-02 | planner | — | auth, database | merged-default |
+| Node | Issue | Depends on | Route | Parallel group | Write scopes | Exclusive resources | Validation resources | Dependency gate |
+|------|-------|------------|-------|----------------|--------------|---------------------|----------------------|-----------------|
+| BE-03 | OWNER/BACKEND#13 | BE-02 | planner | — | src/auth, db/migrations | auth contract, database schema | test database | merged-default |
 
 ## Replan log
 - Revision 1 — initial approved graph
@@ -573,7 +576,9 @@ Use um `project-slug` estável para o Project; em projeto de um único repo ele 
       "wave": 0,
       "parallelGroup": "baseline",
       "route": "planner",
-      "sharedSurfaces": [".github/workflows"],
+      "writeScopes": [".github/workflows"],
+      "exclusiveResources": ["ci-workflow"],
+      "validationResources": ["github-actions"],
       "dependencyGate": "merged-default"
     }
   }
@@ -586,9 +591,9 @@ Regras do DAG:
 2. GitHub mantém a issue completa e todo estado dinâmico; não grave status/assignee/branch/PR em `INDEX.md` ou `DAG.json`.
 3. Dependência só é satisfeita quando a evidência remota exigida pelo gate existir; por default, upstream `done` significa PR merged na default + issue fechada/status coerente.
 4. Um executor solo escolhe um nó `ready` por vez na wave topológica mais antiga; `parallelGroup` é apenas uma oportunidade, nunca uma exigência.
-5. Múltiplos executores só podem usar nós paralelos após OK aplicável, worktrees/branches distintos e checagem de `sharedSurfaces`, migrations, lockfiles e contratos compartilhados.
+5. Múltiplos executores só podem usar nós paralelos após OK aplicável e o protocolo obrigatório em `references/parallel-execution.md`. Cada candidato precisa de `writeScopes`, `exclusiveResources` e `validationResources` fundamentados. Campos ausentes ou independência incerta significam **serializar**, não adivinhar.
 6. Quando evidência de execução revelar nova dependência, split, issue, gate de validação, hazard ou ordem necessária, proponha a revisão. Mudança material de escopo, prioridade, dependência, wave ou composição de issues exige OK explícito **antes** de escrever a nova revision em `PLAN.md`/`SCHEDULE.md`/`DAG.json` e antes de qualquer mutação externa correspondente. Ajuste não material pode ser registrado com evidência e revision log.
-7. `SCHEDULE.md` e `DAG.json` devem concordar em nós, dependências, waves e revision. Divergência bloqueia novo pull até reconciliação; não recrie issues para “consertar” o cache.
+7. `SCHEDULE.md` e `DAG.json` devem concordar em nós, dependências, waves, revision, write scopes e recursos exclusivos/de validação. Divergência bloqueia novo pull até reconciliação; não recrie issues para “consertar” o cache.
 
 Depois de criar, reporte distribuição e **pergunte**:
 
@@ -600,18 +605,20 @@ Espere OK de novo se for implementar.
 
 ## Phase 6 — Re-entry + ler o kanban como engenheiro (obrigatório)
 
-Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser **"segue"**, **"continua"**, **"próxima"** — reconstrua a entrega pelo GitHub. A ordem de autoridade é:
+Antes de puxar qualquer issue — inclusive em chat novo ou quando o user disser **"segue"**, **"continua"**, **"próxima"** ou **"qual dá para fazer em paralelo?"** — reconstrua a entrega sem pedir ao usuário para repetir contexto. A ordem de autoridade é:
 
 1. **GitHub Project Status** — obrigatório para delivery criado pelo Flow; labels só são fallback temporário para histórico/migração aprovada;
-2. **issue/PR no GitHub + branches no remote atual**;
-3. cache local `.pi/flow/<project-slug>/`;
-4. `.pi/memory/` e contexto do chat.
+2. **issue/assignee + claim marker + PR no GitHub**;
+3. **branches remotas e SHAs atuais**;
+4. **todas as worktrees locais desta máquina**;
+5. cache local `.pi/flow/<project-slug>/`;
+6. `.pi/memory/` e contexto do chat.
 
-Conflito é resolvido pela fonte mais alta. Uma leitura remota nova sempre invalida fatos locais antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente.
+Conflito é reconciliado entre as fontes, nunca apagado pela primeira que parece conveniente. Uma leitura remota/local nova invalida fatos antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente. Worktree local ausente não libera claim remoto: o trabalho pode estar em outra máquina.
 
 ### 6.0 Re-entry remoto: fast path vs completo
 
-**Fast path (mesma sessão):** se o executor já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia apenas a issue WIP, seu PR e o head da branch (`gh issue view`, `gh pr view`, `git ls-remote`). Se tudo confere com o cache, prossiga. Qualquer divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo.
+**Fast path (mesma sessão, uma issue):** se o executor já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a worktree atribuída**. Se tudo confere, prossiga. Qualquer pedido de paralelo, cálculo de nova candidata, divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo. Parallel re-entry nunca usa fast path.
 
 **Re-entry completo** — execute nesta ordem no início de um chat novo, antes de puxar issue diferente, e após anomalia/handoff:
 
@@ -642,14 +649,25 @@ gh api --paginate "repos/$OWNER/$REPO/issues?state=all&per_page=100" \
 gh api --paginate "repos/$OWNER/$REPO/pulls?state=all&per_page=100" \
   --jq '.[] | {number,title,state,draft,head:.head.ref,base:.base.ref,merged_at,closed_at,html_url}'
 
+# Claims Flow de todos os chats/máquinas visíveis no GitHub.
+gh api --paginate "repos/$OWNER/$REPO/issues/comments?per_page=100" \
+  --jq '.[] | select(.body | contains("<!-- pi-flow-claim:v1")) | {issue_url,html_url,user:.user.login,created_at,updated_at,body}'
+
 # Inventarie todas as branches do remote; depois classifique Flow, legacy e anomalias.
 # Filtrar só `flow/#*` pode esconder WIP antigo/não conforme.
 git ls-remote --heads origin
 
-git status --short
-git branch --show-current
-git rev-parse HEAD
+# Inventarie o checkout canônico e TODAS as worktrees desta máquina.
+ROOT=$(git rev-parse --show-toplevel)
+git -C "$ROOT" status --short
+git -C "$ROOT" branch --show-current
+git -C "$ROOT" rev-parse HEAD
+git -C "$ROOT" worktree list --porcelain
+# Para cada path retornado, colete branch, HEAD, upstream, status e origin conforme
+# `references/parallel-execution.md`; descoberta nunca limpa, remove, troca ou edita worktree.
 ```
+
+Quando a intenção mencionar paralelo, múltiplos chats/agentes ou outra issue simultânea, leia `references/parallel-execution.md` **antes** de classificar candidatos. Essa referência é obrigatória para recomendação e execução paralela; não peça ao usuário contexto que Project/issues/claims/PRs/branches/worktrees/DAG conseguem reconstruir.
 
 Project discovery:
 
@@ -700,21 +718,28 @@ Confirme as duas igualdades antes de usar Project como autoridade; truncamento d
 ```md
 # Flow State — OWNER/REPO
 
-- Authority: GitHub (Project Status when configured, then issue/PR/remote branches)
+- Authority: Project → issue/claim/PR → remote branch → local worktree → cache
 - Repo: OWNER/REPO
 - Remote: origin — https://github.com/OWNER/REPO.git
-- Default branch: main
-- Active issue: #123 | none
-- Executor login: octocat
-- Assignee/claim: octocat | unclaimed | ambiguous: login-a,login-b
-- Branch: flow/#123-short-slug | none
-- PR: #456 — https://github.com/OWNER/REPO/pull/456 — OPEN | CLOSED | MERGED | none
-- Stage: backlog | ready | claiming | in-progress | in-review | blocked | done | anomaly | idle
-- Remote head SHA: <40-char SHA> | none
-- Last verified at: 2026-07-09T12:00:00Z
+- Default: main@<40-char SHA>
+- GitHub login: octocat
+- Approved parallel capacity: 1 | N
+- Last full re-entry: 2026-07-09T12:00:00Z
+
+## Reconciled active claims
+| Issue | Executor ID | Assignee | Stage | Branch@remote SHA | Claim | PR | Worktree | Dirty | Classification |
+|---|---|---|---|---|---|---|---|---|---|
+| #123 | pi-... | octocat | in-progress | flow/#123-work@... | unique | none | present-local | no | active |
+
+## Canonical checkout
+- Branch@SHA: main@...
+- Tree: clean | dirty: <owned paths summarized>
+
+## Anomalies
+- none | partial/ambiguous/orphan/stale-candidate evidence
 ```
 
-Escreva apenas fatos verificados. `STATE.md` pode ser apagado e reconstruído sem perda remota; nunca use sua presença como exclusão mútua.
+Escreva apenas fatos verificados. A tabela inclui **todos** os claims ativos conhecidos, não somente o chat atual. Use `worker active` apenas quando o runtime atual prova isso; caso contrário use `claim active`/`worktree present`. `STATE.md` pode ser apagado e reconstruído sem perda remota; nunca use sua presença como exclusão mútua.
 
 ### 6.2 Classificar o board reconciliado
 
@@ -722,7 +747,7 @@ Escreva apenas fatos verificados. `STATE.md` pode ser apagado e reconstruído se
 |--------|---------------------|-----------|
 | **backlog** | Project/label backlog | Capturado, ainda **não** está pronto pra puxar |
 | **ready** | Project/label ready; sem claim conflitante | Definition of Ready ok |
-| **in progress** | assignee executor + branch remota única `flow/#N-*` + Project/label coerente | Claim visível e implementação ativa |
+| **in progress** | Project/label + assignee + claim marker `FLOW_EXECUTOR_ID` + branch remota única coerentes; worktree reconciliada quando local | Claim remoto visível; só chame implementação de ativa se o runtime atual também for conhecido |
 | **in review** | PR aberto com head da issue/base default + Project/label coerente | Esperando review/checks |
 | **done** | PR correspondente com `mergedAt != null`, issue fechada e status coerente | Entregue |
 
@@ -733,13 +758,17 @@ Issue fechada ou PR fechado sem merge **não** implica done.
 | Evidência remota | Classificação e ação segura |
 |------------------|-----------------------------|
 | `ready` + branch `flow/#N-*` | Claim incompleto. Verifique assignee/PR; se é do executor e não há conflito, complete `in-progress`; senão reporte e não puxe. |
-| `in-progress` sem branch remota | Claim quebrado. Pare implementação; releia assignee/PR. Complete branch somente se o executor é dono e não há trabalho divergente; caso contrário marque/reporte `anomaly`. |
+| `in-progress` sem branch remota | Claim quebrado. Pare implementação; releia assignee/marker/PR. Complete branch somente se o `FLOW_EXECUTOR_ID` reconciliado é dono inequívoco e não há trabalho divergente; caso contrário marque/reporte `anomaly`. |
 | PR aberto com label/status errado | PR prevalece para o estágio; verifique head/base e então corrija para `in-review`, confirmando pós-condição. |
 | PR merged + issue/status stale | Verifique `mergedAt` e vínculo; feche issue se não auto-fechou, remova status stale e marque done. |
 | PR closed, `mergedAt=null` | Não é done. Classifique `blocked`/`anomaly`; decida com usuário se reabrir ou criar PR substituto. |
 | Issue closed sem PR merged | Não é done. Preserve o close e reporte motivo/anomalia; reabra/retome somente após decisão explícita, mas não aplique `done` sem PR merged. |
 | 2+ branches `flow/#N-*` ou 2+ PRs da issue | Ambíguo. Não escolha nem apague; liste URLs/SHAs/owners e peça decisão/handoff. |
-| vários assignees ou assignee ≠ executor | Outro dono/claim ambíguo. Não puxe; exija handoff explícito no GitHub e nova reconciliação. |
+| vários assignees ou assignee ≠ owner reconciliado | Outro dono/claim ambíguo. Não puxe; exija handoff explícito no GitHub e nova reconciliação. |
+| branch/claim remoto sem worktree local | `reserved-remote`; pode estar em outra máquina. Não libere nem duplique. |
+| worktree local de issue sem claim/branch/status coerentes | `partial-claim` ou `orphan`; não edite, não remova e não ofereça a issue. |
+| 2+ worktrees na mesma branch/issue ou uma worktree divergente | `ambiguous`; bloqueie os envolvidos e reporte paths resumidos, branches e SHAs. |
+| claim aparentemente antigo sem atividade observável | `stale-candidate`, nunca livre por idade. Takeover requer handoff/decisão GitHub-visível e nova reconciliação. |
 
 Nunca corrija anomalia com force push, reset destrutivo ou deleção silenciosa de branch remota. Após qualquer reparo, releia as fontes afetadas e só então atualize caches.
 
@@ -770,7 +799,8 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - [ ] Priority + effort estimados com evidência
 - [ ] Dependências resolvidas **ou** explicitamente aceitas
 - [ ] Não é XL sem split (XL volta pro backlog como epics filhos)
-- [ ] Não conflita com issue/PR já abertos no mesmo pedaço
+- [ ] Não conflita com issue/PR/claim/branch/worktree já ativos no mesmo pedaço
+- [ ] Para paralelo: `writeScopes`, recursos exclusivos e recursos de validação estão fundamentados; qualquer independência desconhecida força serialização
 - [ ] Impacto de regressão mapeado: jornadas/contratos anteriores, testes existentes e comandos obrigatórios estão identificados
 - [ ] Para features existentes afetadas, a baseline de caracterização já passa na default branch ou há uma issue predecessora explícita que a estabelecerá
 
@@ -778,7 +808,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 
 #### `in progress` — WIP real
 
-- No máximo **1 issue in progress por executor** (default)
+- No máximo **1 issue in progress por `FLOW_EXECUTOR_ID`** (default)
 - **Obrigatório:** branch dedicada já criada a partir da default
 - Status no GitHub atualizado **no momento** em que a branch nasce / o trabalho começa — não no fim do dia
 - Comentário curto na issue com branch + intenção ajuda o board humano
@@ -796,9 +826,35 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - **Obrigatório:** PR correspondente com `mergedAt != null`; issue fechada isoladamente nunca basta
 - Não deixe issue open com label done, nem PR merged com status in-progress
 
-### 6.5 Como “assistir” o board e o DAG (triagem contínua)
+### 6.5 Parallel re-entry autônomo em chat novo
 
-Em todo “continua / próxima / segue o projeto”:
+Trate estas intenções como operação de primeira classe:
+
+```text
+"qual issue dá para fazer em paralelo?"
+"o que posso pegar sem conflitar com o que já está rodando?"
+"pega outra issue em paralelo"
+```
+
+Não peça resumo do chat anterior. Faça sozinho:
+
+1. resolver o repo pelo cwd/remote e rodar **re-entry completo**, nunca fast path;
+2. carregar `references/parallel-execution.md`;
+3. reconstruir a tabela de todos os Project items, claims, assignees, PRs, branches remotas e worktrees locais;
+4. ler `PLAN.md`/`SCHEDULE.md`/`DAG.json` depois do remoto e verificar revision/consistência; se ausentes, derivar somente o mínimo necessário das issues e do código para avaliar candidatas, sem recriar backlog nem inventar dependências;
+5. identificar todo WIP remoto e local, inclusive de outros `FLOW_EXECUTOR_ID`s e claims sem worktree local;
+6. filtrar nós `Ready` por dependências satisfeitas, capacidade, write scopes, contratos, generators, migrations/lockfiles e recursos de validação compartilhados;
+7. classificar cada candidata como `ADMIT`, `SERIALIZE`, `BLOCKED` ou `UNKNOWN`; `UNKNOWN` nunca entra em paralelo;
+8. ordenar as `ADMIT` pela wave topológica mais antiga, prioridade, capacidade de destravar e menor hazard; escolher uma recomendação principal;
+9. responder com o que já está ocupado, por que a recomendação é independente, branch/worktree planejadas e evidência que ainda limita confiança.
+
+Pergunta somente informativa (`qual dá?`) não muta GitHub nem cria worktree. Pedido imperativo (`pega a melhor em paralelo`, `pode puxar essa`) autoriza **uma** candidata recomendada, mas anuncie issue/executor/branch/worktree e repita a checagem imediatamente antes do claim. Mudança material, takeover, cleanup destrutivo ou capacidade não aprovada continua exigindo OK.
+
+Se nenhuma candidata for comprovadamente independente, diga isso e recomende a próxima serial; nunca fabrique paralelismo para satisfazer o pedido.
+
+### 6.6 Como “assistir” o board e o DAG (triagem contínua)
+
+Em todo “continua / próxima / segue o projeto / qual dá para fazer em paralelo?”:
 
 1. **Ler colunas e evidência remota** (6.0)
 2. **Reconciliar `SCHEDULE.md` + `DAG.json`** com as issues reais; o DAG fornece ordem/dependências, nunca substitui o status remoto
@@ -807,10 +863,12 @@ Em todo “continua / próxima / segue o projeto”:
    - `in review` sem PR
    - `ready` com deps abertas ou gate upstream ainda não merged na default
    - nó/issue ausente, dependência circular ou divergência `SCHEDULE.md` ↔ `DAG.json`
-   - 2+ `in progress` pro mesmo executor sem OK de paralelo
+   - 2+ `in progress` para o mesmo `FLOW_EXECUTOR_ID`
+   - claim/branch sem worktree local (`reserved-remote`, não automaticamente erro) ou worktree sem claim coerente (`partial/orphan`)
+   - branch igual em múltiplas worktrees, worktree detached/dirty inesperada ou canonical checkout sendo usado como worker paralelo
    - working tree suja em branch errada
    - issue P0 parada enquanto P3 está in progress
-4. **Calcular nós executáveis agora**: status remoto `ready`, dependências satisfeitas e nenhum hazard incompatível com WIP atual
+4. **Calcular nós executáveis agora**: status remoto `ready`, dependências satisfeitas, nenhum claim prévio e nenhum hazard de path/contrato/recurso incompatível com **qualquer** WIP reconciliado
 5. **Sugerir a próxima** com raciocínio de engenheiro e posição no DAG (não só o menor número)
 6. **Pedir OK** se o user não autorizou o pull nesta mensagem
 7. Só então puxar
@@ -823,7 +881,7 @@ Ordem de pull default (um PI/executor):
 4. Dentro da mesma wave: `priority:p0` → `priority:p1` → demais; entre iguais, effort menor → número
 5. Se **nada** executável: atualizar/refinar o plano ou promover backlog que passe DoR — **não** code do backlog cru
 
-Se houver vários nós no mesmo `parallelGroup`, reporte a oportunidade, mas execute apenas um por vez no modo solo. Paralelismo só entra com autorização e isolamento explícitos; o schedule continua válido sem ele.
+Se houver vários nós no mesmo `parallelGroup`, isso é apenas hipótese. Para paralelo, aplique a matriz `ADMIT | SERIALIZE | BLOCKED | UNKNOWN` de `references/parallel-execution.md`; mesmo grupo sem independência comprovada continua serial. No modo solo, execute um por vez.
 
 ```md
 ## Board read — OWNER/REPO
@@ -836,41 +894,46 @@ Se houver vários nós no mesmo `parallelGroup`, reporte a oportunidade, mas exe
 
 Anomalies: ...
 Next recommended: #<N> — why: ...
-Branch plan: `flow/#N-slug` off `main`
+Branch plan: `flow/#N-work` off `main`
 OK to pull?
 ```
 
 ---
 
-## Phase 7 — Uma issue = uma branch (hard rule)
+## Phase 7 — Uma issue = uma branch + workspace exclusivo (hard rule)
 
-### 7.1 Política de branch e claim cross-chat
+Execução solo pode usar a branch Flow no checkout canônico. Qualquer segunda issue simultânea exige o protocolo completo de `references/parallel-execution.md`; nesse modo, o checkout canônico coordena e cada issue trabalha somente em sua worktree dedicada.
+
+### 7.1 Política de branch, worktree e claim cross-chat/cross-machine
 
 | Regra | Detalhe |
 |-------|---------|
-| 1 issue → 1 branch | Nunca misture duas issues na mesma branch |
-| Base | Sempre a **default branch remota atualizada** (`origin/main`, `origin/master`, …) |
-| Nome | Determinístico: `flow/#<N>-<short-slug>` (título em lowercase ASCII, não alfanumérico → `-`, trim, primeiros 40 chars) |
-| Claim | Assignee único no GitHub **mais** branch remota determinística; nenhum deles isoladamente é lock |
-| WIP | 1 issue por executor; resolva/estacione o WIP remoto atual antes de puxar outra |
-| Sujo | Mudanças de outra issue bloqueiam troca; stash/commit/descartar só com OK |
-| Cleanup | Branch local só depois do merge verificado; nunca delete branch remota silenciosamente |
+| 1 issue → 1 branch | Nunca misture duas issues na mesma branch; branch remota determinística é a reserva exclusiva da issue |
+| Workspace | No máximo uma worktree local por branch/issue nesta máquina; execução paralela nunca edita o checkout canônico |
+| Base | Sempre a **default branch remota atualizada** (`origin/main`, `origin/master`, …), com SHA registrado no claim |
+| Nome | Novos claims usam `flow/#<N>-work`, estável pelo número e independente de rename do título; branches históricas `flow/#<N>-<slug>` continuam reconhecidas, nunca duplicadas |
+| Executor | `FLOW_EXECUTOR_ID` único e estável por issue; login GitHub sozinho não separa chats/agentes |
+| Claim | Project/assignee + marker + branch remota + worktree local quando aplicável; nenhum sinal isolado é lock suficiente |
+| WIP | 1 issue por `FLOW_EXECUTOR_ID`; capacidade total e wave paralela precisam estar autorizadas |
+| Sujo | Dirty state pertence à worktree onde foi observado; outro executor nunca stasha/commita/descarta |
+| Cleanup | Worktree/branch local só depois do merge/done verificado e tree limpa; nunca delete branch remota silenciosamente |
 
-Antes do claim, complete a Phase 6, classifique **todas** as branches remotas e procure qualquer `refs/heads/flow/#N-*`, branch legacy ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição; registre-a como candidata/anomalia somente quando issue, PR, commit ou convenção do repo estabelecer relação. Se já há branch/PR ligada, reconcilie e retome; não crie outra. Não puxe se outro login é assignee, se há múltiplos assignees, ou se outro WIP pertence ao executor.
+Antes do claim, complete a Phase 6, inventarie **todas** as worktrees locais, classifique **todas** as branches remotas e procure qualquer `refs/heads/flow/#N-*`, claim marker, branch legacy ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição; registre-a como candidata/anomalia somente quando issue, PR, commit ou convenção do repo estabelecer relação. Se já há branch/PR ligada, reconcilie e retome; não crie outra. Não puxe se outro login/marker é dono, se há múltiplos assignees/markers, ou se o `FLOW_EXECUTOR_ID` proposto já tem WIP.
 
-Handoff exige evidência explícita no GitHub (assignee trocado e comentário/decisão identificável), árvore segura e nova reconciliação. Multi-assignee é `ambiguous`, não colaboração implícita: pare até ficar um executor responsável ou o usuário documentar uma política diferente.
+Handoff exige evidência explícita no GitHub (assignee/marker atualizado e comentário/decisão identificável), árvore segura e nova reconciliação. Multi-assignee ou multi-marker é `ambiguous`, não colaboração implícita: pare até ficar um `FLOW_EXECUTOR_ID` responsável ou o usuário documentar uma política diferente.
 
-### 7.2 Claim como transição + verificação de pós-condição
+### 7.2 Claim solo como transição + verificação de pós-condição
 
-Git e GitHub não oferecem uma transação única. Prefira publicar primeiro a branch determinística, que torna a intenção visível, e só então editar assignee/status. Quando o user autorizar `#N`:
+Este snippet vale somente quando não existe execução paralela nem pedido de nova issue simultânea. Git e GitHub não oferecem uma transação única. Prefira publicar primeiro a branch determinística, que torna a intenção visível, e só então editar assignee/status. Quando o user autorizar `#N`:
 
 ```bash
 DEFAULT=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
 EXECUTOR=$(gh api user -q .login)
-SLUG="<slug-determinístico-do-título>"
-BRANCH="flow/#<N>-${SLUG}"
+FLOW_EXECUTOR_ID=${FLOW_EXECUTOR_ID:-primary}
+BRANCH="flow/#<N>-work"
 
 git fetch --prune origin
+DEFAULT_SHA=$(git rev-parse "origin/$DEFAULT")
 git status --short                         # deve estar seguro para trocar
 # Pare se issue, assignee, PR ou `git ls-remote` mostrar claim/conflito.
 git ls-remote --heads origin "refs/heads/flow/#<N>-*"
@@ -882,7 +945,11 @@ git push -u origin "$BRANCH"              # sem force; deve reportar `[new branc
 gh issue edit <N> --add-assignee "$EXECUTOR" \
   --remove-label "status:ready" --remove-label "status:backlog" \
   --add-label "status:in-progress"
-gh issue comment <N> --body "Flow: **in progress** on \`$BRANCH\` (base: \`$DEFAULT\`, executor: \`$EXECUTOR\`)."
+gh issue comment <N> --body "$(cat <<EOF
+<!-- pi-flow-claim:v1 issue=<N> executor=$FLOW_EXECUTOR_ID branch=$BRANCH base=$DEFAULT_SHA -->
+Flow: **in progress** on \`$BRANCH\` from \`$DEFAULT@$DEFAULT_SHA\` (executor ID: \`$FLOW_EXECUTOR_ID\`, GitHub: \`$EXECUTOR\`).
+EOF
+)"
 ```
 
 Se o push não reportar criação de branch nova (por exemplo, outro chat venceu a corrida e o resultado foi `Everything up-to-date`), trate a branch como preexistente: pare e reconcilie, mesmo que o SHA seja igual. Se houver Project, atualize seu Status para `In progress` na mesma transição operacional usando os IDs resolvidos na Phase 6:
@@ -892,22 +959,36 @@ gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
   --field-id "$STATUS_FIELD_ID" --single-select-option-id "$IN_PROGRESS_OPTION_ID"
 ```
 
-Rode `flow_project_items` e confirme o valor do item; nunca presuma sucesso pelo exit code isolado. Depois **releia** issue, Project, branch remota e PRs: a pós-condição é assignee único=`$EXECUTOR`, branch remota única no SHA esperado, nenhum PR/claim conflitante e Status/label `in-progress`. Só então grave `STATE.md` com `lastVerifiedAt`; atualize `INDEX.md` apenas se a identidade/URL da issue ou Project mudou. Depois comece a editar código.
+Rode `flow_project_items` e confirme o valor do item; nunca presuma sucesso pelo exit code isolado. Depois **releia** issue, claim marker, Project, branch remota, worktree atual e PRs: a pós-condição é assignee único=`$EXECUTOR`, executor ID=`$FLOW_EXECUTOR_ID`, branch remota única no SHA esperado, nenhum PR/claim conflitante e Status/label `in-progress`. Só então grave `STATE.md` com `lastVerifiedAt`; atualize `INDEX.md` apenas se a identidade/URL da issue ou Project mudou. Depois comece a editar código.
 
 Se qualquer passo falhar: **pare**, releia o remoto inteiro e complete somente a parte ausente quando a propriedade continuar inequívoca. Caso contrário registre/reporte exatamente branch, assignees, status, SHA e erro. Não tente “rollback” apagando branch remota nem sobrescreva trabalho do usuário.
 
-### 7.3 Durante o trabalho e builders
+### 7.3 Claim e lançamento paralelos
 
-- Commits e validação final acontecem **só** na branch Flow ativa da issue.
+Para uma segunda issue simultânea, **não use** o checkout/push do snippet solo. Leia e execute `references/parallel-execution.md` integralmente. Resumo vinculante:
+
+1. rodar parallel re-entry completo e produzir a matriz `ADMIT | SERIALIZE | BLOCKED | UNKNOWN`;
+2. gerar `FLOW_EXECUTOR_ID` sem pedir nome ao usuário;
+3. reservar cada branch remotamente, uma por vez, via GitHub create-ref; HTTP 422 perde a corrida e força reconciliação;
+4. criar uma worktree nova rastreando exatamente essa branch, fora do checkout canônico e de outras worktrees;
+5. registrar marker/assignee/Project Status e verificar branch, SHA, worktree, executor e unicidade;
+6. entregar ao agent somente o path da worktree, ownership/hazards e stop conditions; nunca o mandar editar o checkout canônico;
+7. lançar workers apenas depois que **todas** as linhas admitidas tiverem claims verificados; falha parcial bloqueia apenas a linha afetada e exige recomputar a wave antes de substituí-la.
+
+Claims são serializados; implementação pode ser paralela. O orquestrador continua dono de GitHub, integração, transições e cleanup.
+
+### 7.4 Durante o trabalho e builders
+
+- Commits e validação final acontecem **só** na branch Flow e worktree atribuídas à issue.
 - Antes de retomar edição em chat novo e antes de cada push, faça fetch da branch e compare seu SHA remoto com `Remote head SHA` verificado no `STATE.md`. Se o remoto avançou inesperadamente, outro chat/processo publicou trabalho: pare, reconcilie e não faça rebase/merge automático nem sobrescreva.
 - Push é sempre normal, nunca force; rejeição non-fast-forward é uma barreira de concorrência e exige nova reconciliação.
-- Builders operam por default na branch ativa, **sem isolamento por worktree**.
-- Se isolamento for realmente necessário, declare-o antes: o builder não pode publicar a branch de worktree como branch Flow; transfira commits explicitamente para a branch `flow/#N-*` (por cherry-pick não destrutivo), valide novamente nela e confira o SHA remoto antes do PR.
+- Em modo solo, builders operam na branch Flow ativa do checkout canônico. Em modo paralelo, cada worker recebe uma worktree dedicada já na própria branch `flow/#N-*`; nenhum worker vê ou toca outro workspace.
+- O handoff declara se o worker pode apenas editar/testar, também commitar, ou também fazer push. Ausência de autorização significa não commitar/pushar. O orquestrador verifica diff, ownership, SHA local/remoto e validação antes de qualquer publicação.
 - Escopo extra vira nova issue no backlog; não misture concerns.
 - Após push, blocker, handoff ou mudança de SHA/stage, releia a evidência afetada e atualize `STATE.md`; `INDEX.md` não acompanha transições.
 - Se bloquear, comente e represente o status acordado; nunca suma com o card ou libere claim apenas no cache local.
 
-### 7.4 PR + in review como transição verificada
+### 7.5 PR + in review como transição verificada
 
 Rode a validação relevante na branch Flow e publique sem force. Antes de criar, confirme que não existe PR para o mesmo head/issue. **Para qualquer PR**, obtenha um único review independente pelo agente `validator`, distinto de planner/builder e estritamente read-only. Passe de uma vez: base/head SHA, diff/files, escopo e matriz aprovados, CI/testes já executados e limitações conhecidas. O review fica limitado a esse material; não autoriza SSH/probes externos, paths inventados, varredura do repo ou repetição cerimonial de suítes. Um `PASS` independente já emitido para o mesmo head SHA satisfaz o gate — não lance outro review final. Novo review só após mudança do head ou correção material de blocker concreto. Não mova para `in-review` com blocker comprovado no escopo.
 
@@ -948,7 +1029,7 @@ flow_project_items
 
 Releia o PR e a issue: URL/número existem, `headRefName=$BRANCH`, `baseRefName=$DEFAULT`, head SHA é o validado, PR está aberto no draft/review state acordado, checks/validação estão registrados e label/Project dizem `in-review`. Review approvals continuam obrigatórios conforme proteção/política; Flow não faz merge automático. Falha de qualquer pós-condição volta para reconciliação, não para criar PR duplicado. Atualize os caches após verificação.
 
-### 7.5 Merge, done e limpeza como transições verificadas
+### 7.6 Merge, done e limpeza como transições verificadas
 
 Depois do merge autorizado ter ocorrido, prove-o remotamente antes de marcar done:
 
@@ -969,7 +1050,7 @@ flow_project_items
 
 Releia issue/Project/PR e somente então atualize `STATE.md` para `done`; o status permanece exclusivamente no GitHub, não em `INDEX.md`/`DAG.json`.
 
-Por fim, com working tree limpa, volte à default, faça `git pull --ff-only origin "$DEFAULT"` e remova apenas a branch **local** com `git branch -d "$BRANCH"`. Não esconda falha de cleanup, não force delete e não delete branch remota sem autorização/política explícita. Volte à Phase 6 antes de recomendar outra issue.
+Por fim, no modo solo e com working tree limpa, volte à default, faça `git pull --ff-only origin "$DEFAULT"` e remova apenas a branch **local** com `git branch -d "$BRANCH"`. No modo paralelo, siga a checagem de cleanup de `references/parallel-execution.md`: prove merge/done, worktree limpa, HEAD esperado e nenhum worker conhecido antes de `git worktree remove`; depois use somente `git branch -d`. Não esconda falha, não use `--force`, não prune como atalho e não delete branch remota sem autorização/política explícita. Volte à Phase 6 antes de recomendar outra issue.
 
 ---
 
@@ -986,14 +1067,15 @@ Sempre:
 
 1. `agent-guide` antes de subagents
 2. Scout extra se a issue exigir entendimento novo
-3. Antes de editar, mapear o impacto de regressão: testes, contratos, jornadas e issues anteriores na mesma superfície
-4. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
-5. Planner quando L/complexa
-6. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
-7. Antes de abrir **qualquer PR**, garantir um único `PASS` independente de `validator` para o head SHA final; reutilizar PASS existente desse SHA e nunca relançar por metadado opcional ou falso positivo fora da matriz
-8. Registrar comandos, resultados e parecer bounded no PR; se uma camada exigida não rodar, declarar motivo, risco e próxima ação
-9. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita
-10. Planos em `.pi/plans/` referenciando `#N`
+3. Em paralelo, todo planner/scout/builder/tester recebe apenas a worktree da issue e seu contrato de ownership; nenhum agent pode editar o checkout canônico ou workspace alheio
+4. Antes de editar, mapear o impacto de regressão: testes, contratos, jornadas e issues anteriores na mesma superfície
+5. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
+6. Planner quando L/complexa
+7. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
+8. Antes de abrir **qualquer PR**, garantir um único `PASS` independente de `validator` para o head SHA final; reutilizar PASS existente desse SHA e nunca relançar por metadado opcional ou falso positivo fora da matriz
+9. Registrar comandos, resultados e parecer bounded no PR; se uma camada exigida não rodar, declarar motivo, risco e próxima ação
+10. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita
+11. Planos em `.pi/plans/` referenciando `#N`
 
 A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.
 
@@ -1009,19 +1091,20 @@ Quando o user **não** manda lista nova, e sim continuidade:
 
 ```txt
 "segue o projeto", "continua o board", "próxima issue",
-"manda ver no repo X", "o que tem ready?"
+"manda ver no repo X", "o que tem ready?",
+"qual dá para fazer em paralelo?", "pega outra sem conflitar"
 ```
 
 ### Playbook
 
 1. `cd` / confirmar repo X (path ou `owner/name`)
 2. Permission gate leve (`gh issue list` ok?)
-3. Rodar **re-entry remoto completo** (Phase 6): fetch/prune, Project, issues, PRs all-state, branches remotas, branch/tree local
-4. Classificar/reparar ou reportar anomalias; retomar primeiro o WIP inequívoco do executor
+3. Rodar **re-entry completo** (Phase 6): fetch/prune, Project, issues, claim markers, PRs all-state, branches remotas e todas as worktrees locais
+4. Classificar/reparar ou reportar anomalias; em pedido solo, retomar primeiro o WIP inequívoco do executor; em pedido paralelo, preservar todo WIP e calcular somente candidatas independentes
 5. Só agora ler/reconstruir `STATE.md`, `INDEX.md` e `PROJECT_MAP.md`, e reconciliar `PLAN.md`/`SCHEDULE.md`/`DAG.json`; artefato ausente/stale nunca recria backlog
 6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA e next recommended
-7. Se user já disse “continua / manda / próxima” na mesma frase → isso conta como OK pra **uma** issue recomendada (ainda diga qual e o que fará)
-8. Reconciliar novamente a candidata imediatamente antes do claim; puxar só se assignee/branch/PR permitirem
+7. Se user já disse “continua / manda / próxima” na mesma frase → isso conta como OK pra **uma** issue recomendada. “Qual dá em paralelo?” é apenas análise; “pega a melhor em paralelo” autoriza uma claim paralela após anunciar a candidata e a worktree planejada
+8. Reconciliar novamente a candidata imediatamente antes do claim; puxar só se assignee/claim/branch/PR/worktrees/hazards permitirem
 9. Executar cada transição com pós-condição verificada, atualizar caches e shippar
 10. Após done verificado, voltar à Phase 6 e oferecer a seguinte
 
@@ -1044,16 +1127,19 @@ Resume report compacto obrigatório:
 ```md
 ## Flow resume — OWNER/REPO
 - Remote verified at: 2026-07-09T12:00:00Z
-- Authority read: Project <number|not configured>; issues/PRs; remote branches
+- Authority read: Project <number|not configured>; issues/claims/PRs; remote branches; all local worktrees
 - Board: backlog=… ready=… in-progress=… in-review=… done=…
 - Plan/DAG: revision=…; schedule=consistent|diverged; current wave=…; executable nodes=…
-- Executor / WIP: login — #N | none
-- Claim evidence: assignee=…; branch=flow/#N-…@<sha> | none
+- Executor / WIP: `<FLOW_EXECUTOR_ID>` / login — #N | none
+- Claim evidence: marker=…; assignee=…; branch=flow/#N-work@<sha>; worktree=present-local|reserved-remote|none
 - PR evidence: #P <url> — OPEN|CLOSED|MERGED; head/base=…/…; checks/review=…
-- Local: branch=…; tree=clean|dirty (paths summarized)
+- Canonical local: branch@SHA=…; tree=clean|dirty (owned paths summarized)
+- Reconciled claims/worktrees: active=… reserved-remote=… partial/ambiguous/orphan/stale-candidate=…
 - Anomalies repaired/open: ...
 - Next: resume #N | recommend #M (awaiting OK unless already authorized)
 ```
+
+Quando houver mais de um claim/WIP, use também a tabela obrigatória **Flow parallel resume** de `references/parallel-execution.md`; um resumo de issue única não pode esconder outros executores/worktrees.
 
 Artefatos:
 
@@ -1081,9 +1167,12 @@ Pare / eduque / pergunte quando:
 - Lista ambígua no que é “implementar agora”
 - Dúvida material sem OK (escopo, prioridade, split XL, auth/pay/security)
 - Effort XL sem critério de split
-- Working tree suja com mudanças de **outra** issue/branch
-- Tentativa de reusar branch de issue A pra issue B
-- Board inconsistente (in progress sem branch), claim multi-assignee, branch/PR duplicado ou handoff ambíguo
+- Qualquer worktree suja com mudanças de ownership desconhecido ou de **outra** issue/branch
+- Tentativa de reusar branch ou worktree de issue A para issue B
+- Board inconsistente, claim marker/assignee/branch/worktree divergentes, branch/PR/worktree duplicados ou handoff ambíguo
+- Candidata paralela com `writeScopes`, recurso exclusivo, recurso de validação ou independência `UNKNOWN`
+- Claim remoto sem worktree local sendo tratado como livre, ou takeover baseado apenas em idade/inatividade aparente
+- Capacidade paralela não aprovada ou `FLOW_EXECUTOR_ID` já com WIP
 - Recuperação exigiria force push, reset destrutivo, deleção remota silenciosa ou enfraquecer aprovação/review
 - Duas falhas de create/PR sem hipótese nova
 
@@ -1098,11 +1187,14 @@ Pare / eduque / pergunte quando:
 - Pular REVIEW GATE
 - Duplicar issues já abertas
 - Codar direto do **backlog** sem passar por **ready**
-- Dois cards in progress na mesma branch
-- Confiar em `git branch -a` ou `STATE.md` como prova do remoto
+- Dois cards in progress na mesma branch, worktree ou `FLOW_EXECUTOR_ID`
+- Confiar em `git branch -a`, worktree isolada, chat ou `STATE.md` como prova completa do estado
 - Chamar transições git+GitHub de “atômicas” ou seguir após pós-condição falhar
 - Esquecer de mover e verificar Project/label quando cria branch/PR
-- Publicar branch de worktree do builder como branch Flow
+- Lançar worker paralelo antes de claim remoto + worktree + status terem pós-condições verificadas
+- Dar ao worker paralelo o checkout canônico, outra worktree ou autoridade GitHub/cleanup não declarada
+- Assumir que worktree presente significa processo vivo ou que worktree ausente significa claim livre
+- Paralelizar só porque paths parecem diferentes, ignorando contratos, generators, lockfiles, migrations e recursos de validação
 - Pular planner em L/XL
 - Done sem PR correspondente, merge verificado, review/checks e status reconciliado
 - Engolir erro de permissão
@@ -1122,13 +1214,21 @@ Pare / eduque / pergunte quando:
 7. Perguntar se puxa o primeiro nó executável
 
 ### B) Continuar projeto / board
-1. Confirmar repo/Project e executar re-entry remoto completo
-2. Reconciliar Project + issues/PRs + branches remotas + `PLAN.md`/`SCHEDULE.md`/`DAG.json`
+1. Confirmar repo/Project e executar re-entry completo
+2. Reconciliar Project + issues/claims/PRs + branches remotas + todas as worktrees + `PLAN.md`/`SCHEDULE.md`/`DAG.json`
 3. Retomar WIP próprio ou recomendar 1 nó executável da wave topológica mais antiga
 4. OK (explícito ou “continua/próxima”)
-5. Claim verificado: branch remota + assignee + `in progress`
+5. Claim verificado: executor marker + branch remota + assignee + worktree aplicável + `in progress`
 6. Implement → validar → PR verificado → `in review` → merge verificado → `done`
 7. Atualizar `STATE.md`; replanejar DAG somente se evidência mudou estratégia/dependências; voltar ao board
+
+### C) Chat novo → descobrir trabalho paralelo sem contexto repetido
+1. Resolver repo pelo cwd e rodar parallel re-entry completo
+2. Ler `references/parallel-execution.md` e inventariar board, claims, PRs, branches e todas as worktrees
+3. Reconciliar DAG/dependências e construir matriz de colisão com todo WIP
+4. Recomendar a melhor candidata `ADMIT`, ou dizer que nada é paralelizável com segurança
+5. Em “pega a melhor”, repetir preflight, gerar executor ID, reservar branch via create-ref, criar worktree e verificar claim antes do agent
+6. Integrar PRs em ordem determinística e revalidar os restantes após cada merge
 
 ### Comando mental
 
@@ -1138,6 +1238,9 @@ User: [lista] — cria issues e vamos uma a uma
 
 /skill:flow
 User: segue o projeto X / próxima issue
+
+/skill:flow
+User: qual issue dá para fazer em paralelo com o que já está sendo trabalhado?
 ```
 
-Ordem sagrada: **reler GitHub remoto → reconciliar `PLAN/SCHEDULE/DAG` sem duplicar issues → evidência do repo → propor → OK → claim de 1 issue / 1 branch → verificar cada transição → replanejar só com evidência → voltar ao board**.
+Ordem sagrada: **reler GitHub remoto + todas as worktrees locais → reconciliar Project/issues/claims/PRs/branches + `PLAN/SCHEDULE/DAG` → provar independência ou serializar → propor → OK aplicável → claim exclusivo de 1 issue / 1 branch / 1 worktree / 1 executor → verificar cada transição → integrar e revalidar após cada merge → voltar ao board**.
