@@ -167,6 +167,18 @@ STOP RULES
 - Do not expand scope to adjacent improvements.
 ```
 
+## Migration Naming and Generation
+
+Before creating any migration file:
+
+1. inspect the repository's migration tool/config and the actual migration directories;
+2. compare multiple existing filenames, including the latest ordered entries, to derive the exact prefix, timestamp timezone/precision, separator, casing, suffix, extension, and ordering convention;
+3. prefer the project's official migration generator when one exists and verify its output before accepting the write set;
+4. require a fresh unique monotonic name under the evidenced convention—never hardcode or reuse a timestamp such as `202607241402`, invent a new pattern, or rename/reorder historical migrations without explicit authorization;
+5. stop `BLOCKED` when repository evidence conflicts, the generator is unavailable and naming cannot be proven, or the proposed name collides.
+
+Builder prompts for migration work must name the inspected convention evidence and the expected filename shape; “create a migration” alone is not a complete naming contract.
+
 ## Stateful Validation Safety
 
 Before the orchestrator or any builder runs a test, app/server start, E2E flow, migration, seed, reset, fuzz/load/security check, or build hook that may touch state:
