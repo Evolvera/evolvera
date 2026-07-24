@@ -7,6 +7,12 @@
 - **Prevention:** use Node `>=22.19.0`, run the repository installers, keep the tested Earendil/xAI pair aligned, and avoid the VS Code upgrade button until upstream detects the installed package instead of hardcoding one.
 - **Upstream tracking:** `pithings/pi-vscode#15` already records the hardcoded wrong-package behavior.
 
+## Planner accepted an invalid intermediate checkpoint
+
+- **Symptom:** a builder correctly returned `BLOCKED` because its isolated task could not pass the plan's deterministic gate; artifacts needed to restore validity had been deferred to a later task even though the final combined state was plausible.
+- **Root cause:** bounded scout completion was treated as semantic coverage proof, and the planner checked final acceptance without proving affected-artifact closure or replaying the gate against the exact repository state after each task alone.
+- **Prevention:** complete impact claims require a coverage receipt with semantic anchors, searched relationship paths/scope, candidate dispositions, and explicit gaps. Every writing task carries a proportional proof of closure, checkpoint validity, and acceptance reachability, followed by one counterexample attempt. Any unresolved greppable candidate or dependency on later restoration blocks planning; do not encode the incident's artifact types as a fixed checklist.
+
 ## Test suite deleted development data
 
 - **Symptom:** a validation run executed an API suite against the same local database holding user-created development records; suite cleanup removed those records and follow-up repair activity risked further divergence.

@@ -21,7 +21,7 @@ No custom command, tool, schema validator, execution envelope, or separate harne
 
 Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. Large/cross-cutting systems use proportional parallel micro-scouts for independent domains and a normal scout only when end-to-end synthesis or contradiction resolution remains necessary.
 
-Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, evidenced affected-artifact closure, validation behavior, repository state, and bounded external gaps. Closure is semantic rather than an import graph or fixed category list. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If broad unknowns or a preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
+Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, validation behavior, repository state, and bounded external gaps. Any complete affected-artifact closure claim must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed `AFFECTED | UNAFFECTED` dispositions, and unresolved candidates; relationship paths derive from repository evidence rather than a fixed category list. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If a greppable candidate, broad unknown, or preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
 
 ## 1. Establish the Plan Directory
 
@@ -114,7 +114,8 @@ Review the generated artifacts exactly as with the normal planner:
 
 - objective and scope match approval;
 - tasks have one agent, exact write set derived from evidenced affected-artifact closure, acceptance, validation, and rollback boundary;
-- every acceptance criterion can be satisfied without undeclared artifacts or unresolved dependency relationships;
+- every writing task has a proportional proof receipt covering semantic delta, closure evidence, exact post-task checkpoint validity, and acceptance path, including affected `PRESERVE | CHANGE | REMOVE` journeys with non-self-fulfilling oracles;
+- one counterexample pass found no affected relation, preserved journey, acceptance path, or validity boundary requiring an undeclared artifact or later restoration;
 - shared files are serialized;
 - parallel groups are genuinely disjoint;
 - no speculative tasks, delivery ceremony, or validator-per-risk inflation;

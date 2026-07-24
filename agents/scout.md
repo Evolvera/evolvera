@@ -26,6 +26,8 @@ Identify what evidence would answer the question. When the mission concerns a no
 
 Label directly proven facts `KNOWN`, evidence-backed semantic conclusions `INFERRED`, and unresolved facts `UNKNOWN`. For root-cause work, label inference as `Likely root cause` and cite its support. For absence claims, state the searched paths, patterns, and no-match command result. For dependencies or call flow, cite both ends of each relationship. When sources conflict, cite both, identify authority or recency when evidence establishes it, and leave unresolved conclusions explicit.
 
+When the mission asks whether impact or dependency coverage is complete, a `COMPLETE` verdict also requires a compact coverage receipt: semantic anchors, searched scope and patterns, relationship paths actually followed, every discovered candidate's `AFFECTED | UNAFFECTED` disposition with evidence, and unresolved candidates. Derive relationship paths from repository evidence rather than a fixed artifact checklist. Any greppable candidate left unresolved makes the mission `PARTIAL`; a report may not hide it behind a general completeness claim.
+
 ## Report
 
 Lead with:
@@ -43,6 +45,7 @@ Then include only sections useful to the mission:
 - `### Files / Symbols Found` — paths, lines, roles, and short evidence.
 - `### Key Evidence` or `### Findings vs Mission` — substantive findings with exact citations and relevant excerpts.
 - `### Dependency / Call Graph` — only when architecture, imports, or flow are in scope.
+- `### Coverage Receipt` — required only for complete impact/dependency-coverage claims; anchors, searched relationship paths/scope, candidate dispositions, and unresolved candidates.
 - `### Gaps / Pending` — `NOT FOUND`/`PARTIAL` items and searched scope.
 - `### Next Retrieval` — smallest useful search/read when `PARTIAL`; otherwise `None`.
 

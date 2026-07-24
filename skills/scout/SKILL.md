@@ -163,13 +163,16 @@ Scout agents follow these absolute rules:
 Scout returns a structured report with:
 - **Files Found**: Table of relevant files with paths and descriptions
 - **Evidence**: Verbatim quotes from code or command output
+- **Coverage Receipt**: required only when claiming complete impact/dependency coverage
 - **Gaps**: What's missing or pending
 - **Next Retrieval**: The smallest useful next search/read, if evidence is incomplete
 - **Dependency Graph**: include when the mission is about architecture, call flow, imports, exports, or module relationships
 
 ### Retrieval Completeness
 
-Scout should retrieve enough evidence to answer its mission. For `scout-highspeed`, keep one narrow evidence slice and return `PARTIAL` rather than stretching into broad or stateful synthesis. Continue searching only when:
+Scout should retrieve enough evidence to answer its mission. For `scout-highspeed`, keep one narrow evidence slice and return `PARTIAL` rather than stretching into broad or stateful synthesis. A mission claiming complete impact or dependency coverage must return a compact coverage receipt: semantic anchors; searched scope/patterns; relationship paths derived from repository evidence; each discovered candidate classified `AFFECTED | UNAFFECTED` with evidence; and unresolved candidates. Any greppable candidate still unresolved makes the result `PARTIAL`. A micro-scout may close only its named slice, never the broader semantic change.
+
+Continue searching only when:
 - the current evidence does not answer the scout's assigned question;
 - a required file, symbol, parameter, owner, date, ID, or source is missing;
 - the mission asks for exhaustive coverage or dependency/call graph mapping;
