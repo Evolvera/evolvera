@@ -90,6 +90,7 @@ Never store secrets, secret values, PII, raw source dumps, transient delivery/bo
 - **KISS:** prefer simplest readable design and smallest correct change. Avoid cleverness and ceremony.
 - **YAGNI:** no speculative APIs, flags, dependencies, migrations, abstractions, extension points.
 - **TDD where practical:** add or identify focused failing test before behavior change. If not practical, run closest focused check and state gap.
+- **Migration naming:** before creating a migration, inspect the repository's migration tool/config and multiple existing migration filenames to derive the exact convention—prefix, timestamp timezone/precision, separators, casing, suffix, extension, and ordering. Prefer the project's official generator. Use a fresh unique monotonic name under that convention; never hardcode or reuse a timestamp such as `202607241402`, invent a new pattern, or rename/reorder historical migrations without explicit authorization. Conflicting evidence or a generated collision is `BLOCKED`, not permission to guess.
 - Respect domain boundaries. Avoid circular or unnecessary dependencies. At trust/data boundaries validate inputs and use explicit errors. Preserve server-side authorization/tenant checks, parameterized queries, exact money, data integrity, secrets/PII hygiene, idempotency. Add observability at external, async, retry, user-visible failure boundaries—not as noise.
 
 ## Safety
