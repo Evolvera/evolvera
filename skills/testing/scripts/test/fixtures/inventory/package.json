@@ -1,0 +1,9 @@
+{
+  "name": "inert-qa-inventory-fixture",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"throw new Error('FIXTURE_MUST_NOT_EXECUTE')\"",
+    "e2e": "playwright test --config playwright.config.js",
+    "posttest": "node -e \"throw new Error('LIFECYCLE_MUST_NOT_EXECUTE')\""
+  }
+}
