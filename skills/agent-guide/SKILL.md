@@ -57,7 +57,7 @@ A subagent starts with zero context: it has not seen the conversation, the user'
 
 1. **Outcome + why** — what done looks like and the purpose behind it, plus affected existing capabilities and their `PRESERVE | CHANGE | REMOVE` boundary when behavior can change.
 2. **Exact inputs** — absolute paths, symbols, line ranges, artifacts to READ first; include decisions/evidence already established in the conversation that the agent needs. When `.pi/memory/` holds a lesson about this exact surface or operation (deploy sequence, known bug, prior failure), quote that specific entry—heavy/highspeed/ultra tiers, validator, and planners receive no automatic memory injection, and the full summary is noise.
-3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default.
+3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default. For nontrivial semantic changes, derive it from a compact coverage receipt—semantic anchors, searched relationship paths/scope, discovered candidates and their evidence-backed disposition—not from a confident completeness label.
 4. **Scope fence** — what is explicitly out of scope: no adjacent improvements, no dependency additions, no formatting churn, no touching plans/config/registries unless named.
 5. **Conventions** — patterns/helpers/tokens to follow, with a file to imitate when one exists.
 6. **Acceptance + validation** — observable criteria and exact commands; for behavior changes, the runtime evidence expected, not just compile checks. For any command that may start application code or touch a database/schema, filesystem, bucket, queue/topic, cache, search index, emulator/device state, or external service, include `STATEFUL RESOURCE PROOF`: resolved command/config/hooks, sanitized identities, `NO_STATEFUL_RESOURCES` or all-`DISPOSABLE_VERIFIED`, unique run ownership, synthetic data, no fallback, destructive-hook confinement, egress/credentials, teardown, and protected-resource postcheck. `localhost`, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof; absent/unknown proof means do not execute.
@@ -150,13 +150,13 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 
 **Rules:**
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial.
-- For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, existing capabilities, consumers/registries/runners/harnesses, validation behavior, and bounded unknowns. Familiarity and names alone are not evidence.
+- For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, existing capabilities, semantic relationships, validation behavior, and bounded unknowns. Any claim that affected-artifact coverage is complete must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed dispositions, and unresolved candidates. Familiarity, names, and a scout `COMPLETE` label alone are not evidence.
 - For nontrivial/unfamiliar systems, structure comes first: inspect bounded roots/file families before deep reads so scout missions follow the repository rather than assumptions.
 - Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one coherent scout for normal work; parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
 - Reconcile reports into a concise contract and evidence package. Classify claims `KNOWN | INFERRED | UNKNOWN`; classify affected capabilities `PRESERVE | CHANGE | REMOVE` only when user intent/evidence supports it. Never paste raw transcripts or ask planner to “understand the repository.”
 - If two plausible interpretations would preserve versus disable different behavior, stop and ask the user before planner. If broad discovery or product-semantic choice remains, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
-- Read `SCHEDULE.md` and `TASKS/` before spawning agents
+- Read `SCHEDULE.md` and `TASKS/` before spawning agents. Reject the ecosystem if a task's acceptance or deterministic gate needs an undeclared artifact, unresolved relationship, or later task to restore validity; require an evidenced compatible transition or one coherent checkpoint.
 - Builders own focused validation. Add a separate `validator` task only when one named high-consequence defect could credibly escape builder checks and must gate dependents; do not add it after every builder or duplicate the final PR review
 
 ---
@@ -236,7 +236,8 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 |---------|---------------|-------------------|
 | Using builder without reading files first | Small model has no context | Tell builder exactly which files to read |
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
-| Not doing evidence-grounded pre-plan before planner | Planner guesses architecture/write sets, misses consumers/harnesses, and produces bad tasks | Use proportional scouts/direct reads, reconcile evidence, then run planner |
+| Treating a scout verdict as coverage proof | `COMPLETE` can answer a bounded mission while leaving semantic relationships unresolved | Require a coverage receipt with anchors, searched relationship paths/scope, candidate dispositions, and explicit gaps |
+| Not doing evidence-grounded pre-plan before planner | Planner guesses architecture/write sets, misses affected artifacts/validation wiring, and produces bad tasks | Use proportional scouts/direct reads, reconcile evidence, then run planner |
 | Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
 | Letting a light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |

@@ -27,7 +27,7 @@ Find one narrow slice of repository evidence quickly and return a mergeable read
 
 ## Scope Boundary
 
-Keep the mission to one narrow evidence slice. Batch independent discovery, then read the highest-signal evidence. If the mission expands into exhaustive coverage, multiple independent threads, or a coherent cross-file model, return `PARTIAL` with searched scope and the missing evidence so the orchestrator can use normal `scout` or split the mission.
+Keep the mission to one narrow evidence slice. Batch independent discovery, then read the highest-signal evidence. If the mission expands into exhaustive coverage, multiple independent threads, or a coherent cross-file model, return `PARTIAL` with searched scope and the missing evidence so the orchestrator can use normal `scout` or split the mission. A narrow slice may report its own searched anchors, relationship path, candidates, and dispositions, but it must never promote that slice into complete impact closure for a broader semantic change.
 
 ## Evidence
 
