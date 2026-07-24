@@ -1,21 +1,21 @@
 ---
 name: testing
-description: Post-build testing gate for PI delivery. Use after implementation and before validator/review to choose the lightest reliable proof: direct deterministic checks, a fresh builder session in POST-BUILD TEST MODE for local/adversarial/runtime verification, or builder-heavy for authorized external-host testing. Produces SHA-bound PASS/BLOCKED/UNVERIFIED evidence without adding a tester agent or changing planner task schemas.
+description: Post-build QA evidence gate for PI delivery. Use after implementation when material behavioral, integration, edge/error, browser, or runtime proof requires the dedicated qa agent. Select exactly CORE or FULL and produce SHA-, level-, and scope-bound PASS/BLOCKED/UNVERIFIED evidence. Direct deterministic closure remains outside QA.
 ---
 
-# Testing Skill — Post-Build Evidence Gate
+# Testing Skill — Two-Level QA Evidence Gate
 
-Use this skill when a completed implementation still needs material behavioral, integration, edge/error, or runtime proof before closure or review. Do not invoke it merely because a builder ran: static/mechanical work may already be closed by focused deterministic evidence. Testing is a delivery responsibility, not an agent identity; use the lightest executor that can prove the approved behavior.
+Use this skill when a completed implementation still needs material independent behavioral, integration, edge/error, browser, or runtime proof before closure or review. Exactly one dedicated agent, `qa`, executes delegated QA at exactly one level: `CORE` or `FULL`. Direct deterministic closure is outside QA, not a third level.
 
 ## Core Invariant
 
-The producer builder proves its implementation locally. When the outcome or failure modes warrant additional independence, the post-build gate proves the approved behavior on the resulting checkpoint. A builder `COMPLETE` closes its unit, while the orchestrator decides proportionately whether that evidence closes the user's outcome.
+The producer proves its implementation locally. The orchestrator closes static/mechanical work directly when deterministic evidence is sufficient. When independent QA materially improves confidence, it selects one level, creates a self-contained handoff from `templates/qa-handoff.md`, and launches a fresh `qa` session against one exact checkpoint.
 
-Bind every gate to one exact final head SHA. If the head changes, prior test evidence is stale and the affected gate must run again.
+Bind every QA receipt to the exact final head SHA, selected level, and declared claim scope. If the head changes, prior evidence is stale and affected QA must run again. `CORE PASS` is bounded to its declared CORE scope and never means product-wide or full-stack PASS. `FULL PASS` requires every acceptance-required surface to be safely exercised; browser claims require a real browser.
 
 ## Stateful Test-Resource Gate — Before Any Runtime Command
 
-Tests are application code and may truncate tables, reset schemas, run migrations/seeds, delete files, drain queues, overwrite buckets, clear caches, or call third parties. `read-only tester` describes source edits; it does **not** make a command non-mutating.
+Tests are application code and may truncate tables, reset schemas, run migrations/seeds, delete files, drain queues, overwrite buckets, clear caches, or call third parties. Source-read-only QA describes edits; it does **not** make a command non-mutating.
 
 Before any test, app/server start, E2E journey, migration, seed, reset, fuzz/load/security check, or build lifecycle hook that may touch state, the orchestrator must resolve and inspect:
 
@@ -34,117 +34,72 @@ Only `NO_STATEFUL_RESOURCES` or an all-`DISPOSABLE_VERIFIED` resource set may ex
 
 Record a sanitized receipt before execution: command resolution, config/hook files inspected, resource type and non-secret identity, ownership creation evidence, destructive hooks, synthetic data source, egress policy, and teardown boundary. After execution, verify protected resources were unreachable/unchanged and cleanup affected only run-owned resources. If unexpected mutation is suspected, stop immediately; preserve exact evidence and do not retry, continue, restore, reseed, or recreate user data without explicit authorization.
 
-## Choose the Lightest Gate
+## Select Direct Closure or One QA Level
 
-### 1. Direct orchestrator gate
+### Direct closure — outside QA
 
-Use direct commands when all are true:
+Use direct orchestrator commands when the exact deterministic command and indirection are known, no scenario/runtime judgment is needed, the resource gate is satisfied, and the result is unambiguous. Typical examples are parser/config validation, docs checks, typecheck for a type-only change, or an already-known focused unit command. This is closure without QA and is not a level.
 
-- the exact deterministic command is already known and its script/config indirection has been resolved;
-- no scenario design, integration judgment, browser/runtime journey, or external host is needed;
-- it is proven `NO_STATEFUL_RESOURCES`, or every reachable resource is `DISPOSABLE_VERIFIED`;
-- the result is locally observable and unambiguous.
-
-Typical examples: targeted unit test, typecheck for a type-only change, parser/config validation, docs link check, or a known build command. Do not launch an agent merely to execute one obvious command.
-
-### 2. Fresh `builder` testing session
-
-Use a fresh `builder` session when proving the result requires choosing meaningful cases, checking edge/error paths, integrating outputs from multiple tasks, or observing a local endpoint/runtime/browser journey. The same builder type may test, but never reuse the producer's agent session: fresh context reduces self-confirmation.
-
-The tester is read-only by default: it may inspect code/diff and run non-destructive commands, but must not fix production code, edit tests/config, commit, push, deploy, or broaden scope. Missing regression coverage becomes a concrete gap or repair task; it is not silently authored during the gate.
-
-### 3. `builder-heavy` testing session
-
-Use `builder-heavy` only when the gate itself requires an authorized external operation: SSH, live host/service, GPU/runtime process, deploy/reload, provider/network interaction, or rollback/smoke on an external environment. Quote only relevant project-memory lessons in the handoff. Testing importance or risk alone does not select heavy.
-
-## Testing Prompt Contract
-
-A delegated testing prompt must be self-contained and begin with the exact marker `POST-BUILD TEST MODE`. Include:
+The static inventory utility may expose candidates without executing target code:
 
 ```text
-POST-BUILD TEST MODE
-
-OUTCOME TO PROVE
-[Approved user-visible/system behavior, not the producer's implementation story.]
-
-TARGET
-- Repository: [absolute project root]
-- Base SHA: [pre-change SHA]
-- Final head SHA: [checkpoint under test]
-- Changed files: [exact list]
-
-RECONCILED CONTRACT
-- [approved outcome and affected existing capabilities classified PRESERVE/CHANGE/REMOVE]
-
-ACCEPTANCE MATRIX
-- [requested observable condition → required evidence]
-- [affected preserved journey → regression/runtime evidence]
-
-READ FIRST
-- [directly affected source/contracts/tests]
-
-PRODUCER EVIDENCE
-- [commands/results already reported; evidence only, not truth]
-
-TEST RESOURCES / CONSTRAINTS
-- [approved commands, local endpoint/browser/runtime, fixtures, ports, environment]
-- [forbidden data/environments/actions]
-
-STATEFUL RESOURCE PROOF
-- Command resolution: [literal command plus package/task indirection]
-- Runner/setup/teardown inspected: [exact files]
-- Classification: NO_STATEFUL_RESOURCES | resource-by-resource DISPOSABLE_VERIFIED
-- Resources: [type + sanitized identity + unique run ownership evidence]
-- Destructive hooks: [none or exact hooks confined to owned resource]
-- Protected boundary: [dev/user/shared/staging/production resources proven unreachable]
-- Egress/credentials: [none or exact test-only scope]
-- Teardown: [owned namespace only]
-- Do not edit source, tests, config, plans, memory, or git history.
-- Do not trust the producer summary; derive checks from acceptance and repository contracts.
-- Prefer the smallest checks that can falsify the implementation.
-
-REQUIRED COVERAGE
-- happy path;
-- directly affected error/boundary path;
-- named regression or integration seam;
-- runtime observation when acceptance requires it.
-
-STOP RULES
-- Do not repair failures.
-- Do not invent unavailable routes, hosts, credentials, fixtures, or expected behavior.
-- Return UNVERIFIED when required evidence is genuinely unavailable.
+node skills/testing/scripts/inventory-qa-surfaces.mjs <target-directory>
 ```
 
-Choose `subagent_type: "builder"` for local testing. Use `builder-heavy` only under the external-operation rule above.
+Its `static-read-only` output is discovery only. It never proves command safety, disposability, coverage, or PASS.
 
-## Tester Behavior
+### CORE
 
-The testing session must:
+Select `CORE` when independent scenario selection is useful but the claim can remain explicitly bounded: focused behavior, boundary/error, contract, component, or preservation evidence. Load `references/core-qa.md` only. Simulation and mocks may contribute only when labeled partial/CORE evidence. CORE never claims the product, full stack, deployment, or real-browser behavior passed.
 
-1. Verify it is inspecting the requested head SHA and changed surface.
-2. Derive scenarios from the reconciled contract, acceptance matrix, pre-change behavior, and visible public/repository contracts—not from how the producer says the code works.
-3. Inspect enough focused code/tests and the base-to-head test diff to identify meaningful happy, boundary/error, integration, and preservation cases. A changed test that merely expects removed behavior is not proof that removal was authorized.
-4. Before every runtime command, verify the supplied stateful-resource receipt against the actual command/config. If absent, stale, `UNKNOWN`, `NONDISPOSABLE`, or contradicted by fallback/destructive hooks, do not execute; return `UNVERIFIED` with the exact missing proof.
-5. Run bounded checks only inside the verified disposable boundary. Prefer tests that could actually falsify the change; do not rerun broad suites for ceremony.
-6. For sensitive/complex or user-visible behavior, execute the affected journey only when its complete client/server state path is disposable, then inspect the actual response, logs, persisted state, rendered page, or browser console as applicable.
-7. Remain source-read-only. On test failure preserve reproduction evidence and stop; on suspected data mutation stop all mutating commands and invoke the incident rule above.
-8. Report one SHA-bound verdict:
+### FULL
+
+Select `FULL` when acceptance materially requires every named integrated runtime surface, such as a real browser, API/auth/session, persistence, async processing, logs, or state transitions. Load `references/full-qa.md` only. A required browser claim needs a real browser; jsdom/component simulation and mocked critical paths are partial evidence. BrowserContext isolates browser state, not backend resources.
+
+If any required FULL surface is unsafe or unavailable, keep the selected level and return `UNVERIFIED`; never downgrade the claim after seeing the gap. External/live operations are outside default QA and remain forbidden unless separately and explicitly authorized by the user and system policy.
+
+## QA Handoff Contract
+
+Use `templates/qa-handoff.md`. The handoff must state outcome, exact repository/base/head, selected `CORE | FULL` level, declared claim scope, reconciled `PRESERVE | CHANGE | REMOVE` contract, acceptance-to-evidence matrix, changed files and focused reads, producer evidence as leads, exact command/resource boundary, browser requirement, and harness phase if explicitly authorized.
+
+Launch only `subagent_type: "qa"`. There is no builder testing compatibility mode, second QA identity, or third level.
+
+## QA Behavior and Verdict
+
+The fresh `qa` session must:
+
+1. Verify the requested head SHA and changed surface.
+2. Load this skill plus only the selected level reference.
+3. Derive meaningful happy, boundary/error, integration, and preservation cases from acceptance, pre-change behavior, and repository contracts—not producer narrative.
+4. Inspect focused source/tests and base-to-head test changes. Changed tests or snapshots do not authorize capability removal or oracle weakening.
+5. Independently verify the stateful-resource receipt before every runtime command. Missing, stale, `UNKNOWN`, `NONDISPOSABLE`, fixed/shared/pre-existing, fallback-ambiguous, or contradicted proof means no execution and `UNVERIFIED` for required evidence.
+6. Run only bounded falsifiable checks inside the verified boundary. Preserve the first failure; pass-after-retry is flaky and cannot become clean `PASS`. Coverage is diagnostic, never a universal threshold.
+7. Observe actual response, browser, logs, persistence, async result, and state only where required by the selected level and safe boundary. A real browser is mandatory for browser claims.
+8. Remain source-read-only and never repair while testing. On suspected mutation, stop and apply the incident rule above.
+9. Return exactly one receipt:
 
 ```markdown
-## TEST VERDICT: PASS | BLOCKED | UNVERIFIED
+## QA VERDICT: PASS | BLOCKED | UNVERIFIED
 Target: <base>..<final head SHA>
-Acceptance exercised: <matrix items>
-Checks: <commands/journeys and observed results>
+Level: CORE | FULL
+Declared scope: <bounded claim>
+Acceptance exercised: <matrix items and evidence>
+Checks: <commands/journeys and first observations>
 Stateful resource receipt: <NO_STATEFUL_RESOURCES or sanitized DISPOSABLE_VERIFIED evidence>
 Protected-resource postcheck: <unchanged/unreachable evidence>
-Failures: <none or exact reproducible mismatch>
-Evidence gaps: <none or exact unavailable requirement>
-Next: <validator | bounded repair | user/environment decision>
+Browser evidence: <real browser | simulated/mocked partial evidence | not required>
+Failures: <none or exact reproducible mismatch; first failure and retry history retained>
+Evidence gaps: <none or exact unavailable/unsafe requirement>
+Next: <validator | bounded repair | fresh QA after harness checkpoint | user/environment decision>
 ```
 
-- `PASS`: required acceptance was exercised with sufficient evidence.
-- `BLOCKED`: a concrete reproducible mismatch exists; return it to a bounded repair builder.
-- `UNVERIFIED`: no defect is proven, but required evidence could not be obtained. Never convert this to PASS.
+- `PASS`: all acceptance required by the selected level and declared scope was safely exercised. A `CORE PASS` remains bounded to CORE scope.
+- `BLOCKED`: a concrete reproducible mismatch exists; return it for classification and possible bounded repair.
+- `UNVERIFIED`: no defect is proven, but required evidence was unavailable or unsafe. Never convert this, a mock, or simulation into PASS.
+
+## FULL Harness Construction Exception
+
+Harness construction is an internal FULL phase only. It requires explicit project authorization, an exact test-only write set, transparent dependency/network permissions, and a new selective checkpoint. The harness-building `qa` session may write only that set, must not alter product code or bless behavior by rewriting tests, and stops after reporting exact changed files and static evidence. It cannot run/certify its own harness or issue a final verdict. A new fresh source-read-only `qa` session bound to the new SHA owns final execution and `PASS | BLOCKED | UNVERIFIED`. See `references/full-qa.md`.
 
 ## Repair Loop
 
@@ -156,24 +111,24 @@ On `BLOCKED`:
 4. Rerun the affected test gate against the new SHA.
 5. After two failed gates without a new hypothesis, stop and re-ground; do not loop automatically.
 
-A contract/acceptance defect goes back to planning rather than implementation. The tester never repairs while testing.
+A contract/acceptance defect goes back to planning rather than implementation. The `qa` session never repairs while testing.
 
 ## Validator and Ship Ordering
 
 When a separate test gate is materially warranted, the order is:
 
 ```text
-producer checkpoint → post-build test gate → validator/review → ready to ship
+producer checkpoint → selected CORE/FULL QA gate → validator/review → ready to ship
 ```
 
-Otherwise focused producer/direct evidence may flow straight to the applicable review or closure. The validator reviews the exact evidenced head and receives the acceptance matrix plus relevant test evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace the test gate or rerun broad passing suites.
+Otherwise focused producer/direct evidence may flow straight to the applicable review or closure. The validator reviews the exact evidenced head and receives the acceptance matrix plus relevant QA evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace materially required QA or rerun broad passing suites.
 
 Merge/deploy still requires explicit authorization. When shipping includes deployment, perform the approved deploy, post-deploy smoke, and rollback procedure separately; a pre-merge local PASS is not production proof.
 
 ## Proportionality Rules
 
-- Static/mechanical/docs-only changes usually use a direct gate and no delegated tester.
-- One integrated gate may cover a coherent builder wave; do not create one testing session per file/task when the same acceptance journey covers them together.
-- Use a fresh builder tester for behavior, boundaries, cross-task integration, or runtime observation—not as blanket ceremony.
+- Static/mechanical/docs-only changes usually use direct closure and no delegated QA.
+- One QA gate may cover a coherent builder wave; do not create one session per file/task when the same acceptance journey covers them together.
+- Use a fresh `qa` session at CORE or FULL only when independent behavior, boundaries, cross-task integration, browser, or runtime observation materially improves confidence.
 - A linked validator remains selective for named escape risk; every PR still receives one final independent validator review under the global contract.
-- Do not create new task files, SCHEDULE rows, commits, or lifecycle artifacts solely to represent the testing gate. Record the verdict in the existing execution log/report or PR evidence.
+- Do not create new task files, SCHEDULE rows, commits, or lifecycle artifacts solely to represent QA. Record the verdict in the existing execution log/report or PR evidence.
