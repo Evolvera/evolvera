@@ -246,7 +246,7 @@ After a producer builder finishes:
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
-- decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add tester or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; use `POST-BUILD TEST MODE` only when independent edge/error, integration, or runtime proof materially improves confidence; a validator runs only for an already-linked named escape risk or final PR gate;
+- decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add QA or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; when independent edge/error, integration, browser, or runtime proof materially improves confidence, load `testing`, select `CORE` or `FULL`, and launch one fresh dedicated `qa` session against the exact checkpoint; a validator runs only for an already-linked named escape risk or final PR gate;
 - if builder returns empty/no-op, retry once with a smaller prompt or switch model;
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 

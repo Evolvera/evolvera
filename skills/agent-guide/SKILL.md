@@ -1,11 +1,11 @@
 ---
 name: agent-guide
-description: Mandatory pre-flight skill. Load BEFORE using scout, planner, or builder. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
+description: Mandatory pre-flight skill. Load BEFORE using scout, planner, builder, or qa. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
 ---
 
 # Agent Guide — How to Use Subagents
 
-> **LOAD THIS SKILL FIRST** before using `scout`, `planner`, or `builder`.  
+> **LOAD THIS SKILL FIRST** before using `scout`, `planner`, `builder`, or `qa`.
 > Using subagents without these instructions causes context overload, poor results, and wasted tokens.
 
 ## Runtime Identity
@@ -26,6 +26,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 | Heavy | `builder-heavy` | Exceptional operational tier | host/SSH/deploy/network/provider/reload/rollback work, or concrete coordination across multiple live runtime/service/lifecycle boundaries | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
 | Ultra | `builder-ultra` | Exceptional non-frontend correctness tier | bounded tasks with a stated invariant/oracle and demonstrated exceptional difficulty: formal reasoning, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or grounded failure after heavy | vague/unfamiliar scope, generic retry, ordinary integration, broad architecture, routine algorithms, or any frontend/design work |
 | Heavy Design | `builder-heavy-design` | Exceptional design tier (GPT-5.6 Sol medium) | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
+| QA | `qa` | Dedicated evidence tier (GPT-5.6 Sol high) | fresh SHA-bound post-build behavioral evidence at exactly `CORE` or `FULL`; default source-read-only | implementation/repair, direct static closure, live/external operations, or a third QA level |
 
 **Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
@@ -208,17 +209,27 @@ Agent({
 
 ---
 
+## qa — Dedicated Post-Build Evidence
+
+Use `qa` only through the `testing` skill when independent behavioral evidence materially improves confidence. Direct deterministic closure stays outside QA. Select exactly `CORE` for a declared bounded claim or `FULL` when all acceptance-required runtime surfaces must be safely exercised; a real browser is required for browser claims. Launch one fresh `qa` session against the exact checkpoint with the self-contained handoff template. Default QA is source-read-only and returns only SHA-/level-/scope-bound `PASS | BLOCKED | UNVERIFIED`.
+
+An explicitly authorized FULL harness-construction phase may write only an exact test-only set, stops for a new checkpoint, and cannot certify itself. A fresh read-only `qa` session on the new SHA owns the verdict. Never create QA-only task/SCHEDULE ceremony, route QA through a builder, treat mocks/jsdom as FULL browser evidence, or execute against fixed/shared/unknown resources.
+
+---
+
 ## Pipeline Order
 
 ```
 [direct/scout pre-plan evidence] → [planner if needed] → builder → focused validation
-                                                └→ validator only for a named gate or one final PR review
+                                                          ├→ qa CORE/FULL only when materially required
+                                                          └→ validator only for a named gate or one final PR review
 ```
 
 1. **scout** only when bounded evidence is missing.
 2. **planner** only when the planner skill selects it; normal planner is the default full-plan route.
 3. **builder tier** executes and validates its bounded task.
-4. **validator** is exceptional during implementation, plus one independent bounded review for a final PR head SHA.
+4. **qa** runs at CORE or FULL only when materially required after the producer checkpoint; direct static closure skips it.
+5. **validator** is exceptional during implementation, plus one independent bounded review for a final PR head SHA.
 
 For a selected planner gate, the schedule edge is authoritative: `builder checkpoint → validator PASS → dependent task`. Do not add a validator merely because a task changed config, touched staging, or is important. A `PASS` covering the complete final PR diff at its exact head SHA satisfies the PR review gate; never launch a duplicate review for that SHA.
 
@@ -257,4 +268,5 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 - [ ] Bounded and well-defined? If yes → direct tools or one builder
 - [ ] Did I choose default vs highspeed based on task fit?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?
+- [ ] If material post-build QA is needed, did I load `testing`, select exactly CORE or FULL, and hand one fresh `qa` session the exact SHA/scope/acceptance/resources?
 - [ ] For every potentially stateful command, did I prove run-owned disposable resources and forbid execution on `UNKNOWN`/pre-existing/user/dev/shared/staging/production state?
