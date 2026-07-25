@@ -120,7 +120,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. Normal and planner-heavy plans execute through this same flow.
+Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. Normal and plan-heavy ensemble plans execute through this same flow.
 
 ## Direct Mode Prompt
 

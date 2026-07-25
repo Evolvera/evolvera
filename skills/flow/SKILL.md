@@ -1065,7 +1065,7 @@ Por fim, no modo solo e com working tree limpa, volte à default, faça `git pul
 | S, local | direta / `builder` |
 | M | pre-plan leve → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; quando o usuário pedir planner-heavy, usar a skill `plan-heavy` (dois briefs + planner xhigh) |
+| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; quando o usuário pedir o ensemble plan-heavy, usar a skill `plan-heavy` (dois briefs + uma sessão nova de planner xhigh) |
 
 Sempre:
 

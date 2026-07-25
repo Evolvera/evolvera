@@ -15,7 +15,7 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 | One bounded implementation concern with known targets | **Direct/focused delegation** using the builder skill |
 | Several bounded asks in one message, with grounded disjoint write sets and a short dependency order | **Focused multi-builder orchestration** — make a private mental schedule; no planner artifacts |
 | Multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
-| User explicitly requests planner-heavy, or two independent strategy briefs plus xhigh planning materially improve a complex plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
+| User explicitly requests the plan-heavy ensemble, or two independent strategy briefs plus xhigh planning materially improve a complex plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
 
 ### Commit Forecast (speed heuristic)
 
@@ -134,15 +134,15 @@ Each writing task contains a proportional `Proof` section with its semantic delt
 
 ## 4. Plan-Heavy Ensemble
 
-When the user explicitly requests planner-heavy—or two independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
+When the user explicitly requests the plan-heavy ensemble—or two independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
-Plan-heavy is not a separate harness. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
+Plan-heavy is not a separate harness or planner agent. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
 
 1. the orchestrator writes one concise `HANDOFF.md`;
 2. `plan-briefer` and `plan-briefer-fable` produce independent briefs in parallel;
-3. `planner-heavy` reads the handoff plus both briefs and writes the normal plan ecosystem at xhigh reasoning.
+3. a fresh `planner` session reads the handoff plus both briefs, reconciles them, and writes the normal plan ecosystem at xhigh reasoning.
 
-An explicit user request for planner-heavy is sufficient. Do not replace it with the normal planner based on an admission gate, and do not create custom validation/envelope machinery.
+An explicit user request for the plan-heavy ensemble is sufficient. Do not downgrade it to a single unbriefed planner run based on an admission gate, and do not create custom validation/envelope machinery.
 
 ## 5. Plan Quality Contract
 
