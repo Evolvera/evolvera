@@ -1,16 +1,16 @@
 ---
 name: plan-heavy
-description: Lightweight ensemble planning workflow. Use when the user explicitly asks for planner-heavy or when the planner skill decides two independent strategy briefs plus an xhigh final planner will materially improve a complex plan. Adds only two parallel briefers before planner-heavy; uses the same artifacts and execution flow as the normal planner, with no custom harness, validator, envelope, or extension.
+description: Lightweight ensemble planning workflow. Use when the user explicitly asks for the plan-heavy ensemble or when the planner skill decides two independent strategy briefs plus an xhigh final planner will materially improve a complex plan. Adds only two parallel briefers before a fresh normal planner synthesis; uses the same artifacts and execution flow as normal planning, with no custom harness, validator, envelope, or agent.
 ---
 
 # Plan Heavy — Two Briefs, Then XHigh Planner
 
-Plan-heavy is the normal planner workflow with one deliberate upgrade: two isolated briefer sessions independently analyze the problem before `planner-heavy` writes the final plan at xhigh reasoning.
+Plan-heavy is the normal planner workflow with one deliberate upgrade: two isolated briefer sessions independently analyze the problem before a fresh `planner` session reconciles them and writes the final plan at xhigh reasoning.
 
 ```text
 orchestrator handoff
   → plan-briefer + plan-briefer-fable (parallel)
-  → planner-heavy (reads both directly)
+  → fresh planner xhigh synthesis (reads both directly)
   → normal PLAN_FULL / SCHEDULE / TASKS
   → normal builder/testing/validator execution
 ```
@@ -88,15 +88,16 @@ Each prompt must be self-contained and include:
 
 The briefs should disagree honestly when their independently derived judgment differs. Do not ask them to converge.
 
-## 4. Launch Planner Heavy
+## 4. Launch the Final Planner
 
-After both brief files exist, launch `planner-heavy` with a self-contained prompt containing:
+After both brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis` so the plan-heavy watchdog remains scoped to this ensemble. Give it a self-contained prompt containing:
 
+- explicit identification that this is plan-heavy synthesis;
 - approved outcome;
 - absolute `PROJECT_ROOT` and `PLAN_DIR`;
 - absolute paths to `HANDOFF.md`, `brief_gpt.md`, and `brief_fable.md`;
 - absolute paths to required strategy/design/content artifacts;
-- instruction to read both briefs directly, reconcile disagreements against repository evidence, and write only:
+- instruction to read the handoff and both briefs first, reconcile disagreements against repository evidence, and write only:
 
 ```text
 <PLAN_DIR>/PLAN_FULL.md

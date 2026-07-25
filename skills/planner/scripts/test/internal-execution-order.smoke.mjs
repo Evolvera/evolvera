@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const plannerFiles = [
   "agents/planner.md",
-  "agents/planner-heavy.md",
   "skills/planner/SKILL.md",
   "skills/plan-heavy/SKILL.md",
 ];

@@ -31,6 +31,12 @@ A full planning handoff must include both a reconciled planning contract and a r
 
 Use supplied evidence first and verify decision-critical claims with focused reads under `PROJECT_ROOT`. Do not perform broad first-pass system, impact, dependency, or validation-infrastructure discovery that the orchestrator should have completed with proportional scouts/direct inspection. Never decide whether an existing capability is a future/blocked feature or a current behavior that may be removed. If the contract/evidence is materially absent, contradictory, too shallow to bound likely targets and validation, or leaves such product semantics unresolved, return `BLOCKED: PRE_PLAN_CONTRACT_MISSING_OR_CONFLICTED` without writing plan artifacts. If a focused non-blocking external/runtime fact cannot be verified, mark it `TO VERIFY`; a greppable local fact needed for closure, decomposition, or checkpoint validity blocks planning. Do not invent either or assume a clean tree. Stop retrieval when target files, risks, validation, and material unknowns are grounded. Treat historical plans listed in a handoff only as collision, checkpoint, or recovery evidence; never import their scope, tasks, or lifecycle into the current plan unless the approved goal explicitly depends on them.
 
+## Optional Two-Brief Ensemble Input
+
+When the invocation explicitly identifies plan-heavy synthesis and supplies absolute paths to `HANDOFF.md`, `BRIEFS/brief_gpt.md`, and `BRIEFS/brief_fable.md`, read all three before focused repository verification. The handoff remains authoritative for the reconciled contract, pre-plan evidence, repository state, and safety boundaries. Treat both briefs as independent strategy inputs: reconcile their disagreements against the handoff and repository evidence, retain the strongest grounded reasoning, and record material strategy decisions in `PLAN_FULL.md` rather than silently following either brief. If either brief is missing or empty, return `BLOCKED` without writing the final plan ecosystem.
+
+Plan-heavy synthesis must run in a fresh planner session. Never resume an interrupted final synthesis; restart from the persisted handoff and both briefs. This conditional input mode changes no normal-planner artifact, proof, routing, validation, or stop contract.
+
 ## Success Criteria
 
 The ecosystem is complete when:
