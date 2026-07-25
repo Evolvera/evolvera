@@ -1,83 +1,29 @@
-# Builder TODO — Task {task_id}
+# TODO — <task-id>
 
-**Task**: `TASKS/task_{task_id}_{agent}.md`
-**Started**: [ISO timestamp]
-**Last Updated**: [ISO timestamp]
-**Tool Call Budget**: ~25 calls remaining: ~20
+Mirror the task's `## Internal Execution Order` without adding scope. Create only after every TILL-DO gate is `PASS`. Update at coherent phase boundaries.
 
----
+## Phase {phase-id}: {phase-name}
 
-## Progress
+- Outcome: [bounded phase outcome]
+- Primary authorized files/symbols: [exact targets]
+- Material prerequisite: [evidence/dependency, or none]
+- Local exit evidence: [observable check/result]
+- Status: `pending | in_progress | complete | blocked`
+- Changed files: [exact paths, or none]
+- Notes/blocker: [concise factual state, if needed]
 
-| Metric | Value |
-|--------|-------|
-| Total Steps | [N] |
-| Completed | [N] |
-| Remaining | [N] |
-| Progress | [X%] |
+[Repeat the phase block for each ordered phase in the task.]
 
----
+## Execution state / resume source
 
-## Pending Steps
+- Completed phase(s): [exact phase IDs/names, or none]
+- Current phase: [exact phase ID/name, or none]
+- Next phase: [exact phase ID/name, or none]
+- Changed files across task: [exact paths, or none]
+- Validation/evidence passed: [checks/results]
+- Validation/evidence pending: [checks/results]
+- Recovery root/snapshots: [paths or not required]
+- Blocker/risk: [none or concise details]
+- Overall status: `pending | in_progress | complete | blocked`
 
-1. [ ] **Step 1**: [Specific action from task's TODO Template]
-   - **Files**: [list]
-   - **Expected Result**: [what should change]
-   - **Started**: [time]
-   - **Completed**: [time]
-
-2. [ ] **Step 2**: [Specific action from task's TODO Template]
-   - **Files**: [list]
-   - **Expected Result**: [what should change]
-   - **Started**: [time]
-   - **Completed**: [time]
-
-3. [ ] **Step 3**: [Specific action from task's TODO Template]
-   - **Files**: [list]
-   - **Expected Result**: [what should change]
-   - **Started**: [time]
-   - **Completed**: [time]
-
-4. [ ] **Step N**: [Specific action from task's TODO Template]
-   - **Files**: [list]
-   - **Expected Result**: [what should change]
-   - **Started**: [time]
-   - **Completed**: [time]
-
----
-
-## Completed Steps
-
-*(None yet — will be populated as steps complete)*
-
-1. ✅ **Step X**: [Completed step name]
-   - **Completed**: [ISO timestamp]
-   - **Files Modified**: [list]
-
----
-
-## Current Status
-
-| Field | Value |
-|-------|-------|
-| **Status** | pending | in_progress | complete | partial | blocked |
-| **Current Step** | Step N |
-| **Next Action** | [Specific next action] |
-| **Files Modified** | [count] |
-| **Files Created** | [count] |
-| **Files Read** | [count] |
-
----
-
-## Checkpoint (for resume)
-
-If interrupted, resume from:
-
-**Last Completed**: Step [N] — [step name]
-**Next To Do**: Step [N+1] — [step name]
-
----
-
-## Notes
-
-[Any notes during execution — unexpected findings, alternative approaches tried, etc.]
+On resume, verify this file against repository status and focused diff evidence, then continue from the first incomplete phase. TILL-DO/TODO remain transient execution state and are excluded from the selective product commit unless explicitly tracked.

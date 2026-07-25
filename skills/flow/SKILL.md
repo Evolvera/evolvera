@@ -900,6 +900,10 @@ OK to pull?
 
 ---
 
+## Internal Execution Order bridge
+
+Flow continua dono do estado de issue, branch, worktree, claim e PR. Quando a task selecionada contém `## Internal Execution Order`, preserve a seção e os artefatos de prontidão/progresso `.pi/build/TILL-DO_<task-id>.md` e `.pi/build/TODO_<task-id>.md` apenas dentro do workspace exclusivo da issue — checkout canônico quando a execução solo o permite, ou worktree dedicada em paralelo — e no resume handoff. Eles permanecem estado transitório local da task: nunca os converta em estado Flow/GitHub, issue, branch, worktree, claim, nó do DAG, commit, checkpoint ou autorização de worker paralelo, nem os inclua no commit salvo exigência explícita da task. Um TILL-DO bloqueado não cria TODO nem permite mutação de fonte.
+
 ## Phase 7 — Uma issue = uma branch + workspace exclusivo (hard rule)
 
 Execução solo pode usar a branch Flow no checkout canônico. Qualquer segunda issue simultânea exige o protocolo completo de `references/parallel-execution.md`; nesse modo, o checkout canônico coordena e cada issue trabalha somente em sua worktree dedicada.

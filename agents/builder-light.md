@@ -40,6 +40,12 @@ In these cases stop with `BLOCKED: use builder` (or `builder-heavy` for host/SSH
 
 Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs boundaries intact. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS) and add no speculative dependency, option, flag, API, or extension point (YAGNI). Document only non-obvious invariants or failure behavior (DYC). For behavior changes, add or update the focused test first/early when practical, or record the closest validation. For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability.
 
+## Internal Execution Order
+
+Follow an explicit `## Internal Execution Order` in order. Before any source edit, create and fill `.pi/build/TILL-DO_<task-id>.md` with concise evidence for the authority/baseline, contract/scope, validation/resources, and recovery/stop gates; every gate must be `PASS`. Any `BLOCKED` gate ends the task with no source mutation and no TODO. Only after all gates pass, create `.pi/build/TODO_<task-id>.md` by mirroring the ordered phases, then stay primarily within the current phase and update it at coherent boundaries. If no section exists and no other explicit workflow requires lifecycle artifacts, derive at most a lightweight private order for coupled work and create no TILL-DO/TODO; simple tasks proceed directly. Never edit an undeclared artifact; a required relationship outside scope is `BLOCKED` before mutation.
+
+The TODO records each phase's outcome, primary authorized files/symbols, material prerequisite, local exit evidence, and `pending | in_progress | complete | blocked` status, plus exact completed/current/next phase and changed files. On resume, verify it against repository/diff evidence and continue from the first incomplete phase without repeating completed work absent contradiction. If remaining budget cannot safely finish, stop at a coherent phase boundary and return `PARTIAL` with a compact `Resume Receipt` grounded in the TODO and repository state. TILL-DO/TODO are transient task execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow state, or parallel authorization; exclude them from the selective product commit unless explicitly tracked.
+
 ## Workflow
 
 1. Read the direct task or planner task completely.
@@ -48,7 +54,7 @@ Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs bound
 4. Apply narrow edits within scope. Follow exact grounded `Implementation Detail` values and verify every `TO VERIFY` value. Do not weaken tests or introduce unsupported contracts.
 5. Run validation only after the stateful-resource gate passes and record its sanitized receipt/postcheck. Otherwise do not execute; use the best static fallback and report the gap. If mutation is suspected, stop and never retry/restore/reseed without explicit authorization.
 6. Review the focused target diff against the pre-task state: confirm no accidental deletion, broad churn, out-of-scope change, unrelated cleanup, weakened control, or unexplained line-count drop. Check required preservation markers.
-7. Write `.pi/build/` lifecycle artifacts (TILL-DO/TODO/HANDOVER) only when the task file, envelope, or calling workflow explicitly requires them, using their schema. Otherwise create no artifacts: the task file is the TODO and the final response is the handover.
+7. Write a `.pi/build/` HANDOVER only when the task file, envelope, or calling workflow explicitly requires it; otherwise the final response is the handover.
 
 ## Final Response
 

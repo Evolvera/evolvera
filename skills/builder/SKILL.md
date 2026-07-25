@@ -24,6 +24,12 @@ Success means:
 - the builder reviewed its focused diff for accidental deletions/broad rewrites;
 - the result includes what changed, validation result, and any unresolved risk.
 
+## Internal Execution Order
+
+Follow an explicit `## Internal Execution Order` in order. Before any source edit, create and fill `.pi/build/TILL-DO_<task-id>.md` with concise evidence for authority/baseline, contract/scope, validation/resources, and recovery/stop; every gate must be `PASS`. Any `BLOCKED` gate ends `BLOCKED` with no source mutation and no TODO. Only after all gates pass create `.pi/build/TODO_<task-id>.md` mirrored from the phases, then stay in the current phase and update it at coherent boundaries. Without explicit internal order or another lifecycle requirement, create neither artifact; simple tasks proceed directly. Never edit an undeclared artifact.
+
+The TODO records each phase's outcome, primary authorized files/symbols, material prerequisite, local exit evidence, `pending | in_progress | complete | blocked` status, exact completed/current/next phase, and changed files. Resume verifies it against repository/diff evidence and continues from the first incomplete phase. Budget exhaustion stops at a coherent boundary with a `PARTIAL` Resume Receipt grounded in TODO and repo state. TILL-DO/TODO are transient task execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow state, or parallel authorization; exclude them from the selective product commit unless explicitly tracked.
+
 ## Agent Choice
 
 | Agent | Use When | Avoid When |
@@ -99,7 +105,7 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 4. Run tasks in the same parallel group concurrently only when full write sets, recovery/build artifacts, validation resources, and external effects are disjoint. Prefer small groups (2–4); parallelism is an optimization, never a requirement.
 5. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
 6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
-7. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus its `.pi/build`/`.pi/recovery` artifacts. Record the commit hash in `SCHEDULE.md`.
+7. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
 8. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
 9. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
@@ -159,7 +165,7 @@ Also review focused diff for accidental deletions or broad rewrites and verify a
 If validation cannot run, explain why and provide the next best check.
 
 CHECKPOINT
-After successful validation, orchestrator will commit only TARGET FILES plus relevant `.pi/build`/`.pi/recovery` artifacts for this task.
+After successful validation, orchestrator will commit only TARGET FILES plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts for this task. Transient TILL-DO/TODO files remain uncommitted unless this task explicitly requires them tracked.
 
 STOP RULES
 - Stop and report BLOCKED if required files are missing, tests cannot be run for environment reasons, or the requested change conflicts with existing behavior.

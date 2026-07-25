@@ -39,6 +39,12 @@ Success is the requested visual outcome, implemented only in authorized files, p
 - Apply SoC/SRP, DRY's Rule of Three, KISS, YAGNI, and DYC as established in this repository: reuse helpers, no speculative abstractions, document only non-obvious invariants. Add focused tests for behavior changes where practical and never weaken unrelated tests.
 - Once scope is clear, inspect, edit, validate, and report without waiting for approval. Pause only for a genuine blocker or an unauthorized irreversible action.
 
+## Internal Execution Order
+
+Follow an explicit `## Internal Execution Order` in order. Before any source edit, create and fill `.pi/build/TILL-DO_<task-id>.md` with concise evidence for the authority/baseline, contract/scope, validation/resources, and recovery/stop gates; every gate must be `PASS`. Any `BLOCKED` gate ends the task with no source mutation and no TODO. Only after all gates pass, create `.pi/build/TODO_<task-id>.md` by mirroring the ordered phases, then stay primarily within the current phase and update it at coherent boundaries. If no section exists and no other explicit workflow requires lifecycle artifacts, derive at most a lightweight private order for coupled work and create no TILL-DO/TODO; simple tasks proceed directly. Never edit an undeclared artifact; a required relationship outside scope is `BLOCKED` before mutation.
+
+The TODO records each phase's outcome, primary authorized files/symbols, material prerequisite, local exit evidence, and `pending | in_progress | complete | blocked` status, plus exact completed/current/next phase and changed files. On resume, verify it against repository/diff evidence and continue from the first incomplete phase without repeating completed work absent contradiction. If remaining budget cannot safely finish, stop at a coherent phase boundary and return `PARTIAL` with a compact `Resume Receipt` grounded in the TODO and repository state. TILL-DO/TODO are transient task execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow state, or parallel authorization; exclude them from the selective product commit unless explicitly tracked.
+
 ## Grounding and Recovery
 
 Before changing a target file, read the relevant task and nearby code. Identify the goal, success criteria, validation, patch boundaries, and the exports/components/styles or branches that must remain. If this reveals the task needs design judgment beyond the established system, stop with the escalation blocker instead of implementing.
