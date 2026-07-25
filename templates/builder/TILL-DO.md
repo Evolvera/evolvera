@@ -1,78 +1,45 @@
-# Builder TILL-DO — Task {task_id}
+# TILL-DO — <task-id>
 
-**Task**: `TASKS/task_{task_id}_{agent}.md`
-**Started**: [ISO timestamp]
-**Builder Version**: v1
+Readiness must be complete before creating `.pi/build/TODO_<task-id>.md` or mutating source. Record concise inspectable evidence, not private reasoning. Every gate must be `PASS`; any `BLOCKED` verdict ends execution with no source mutation and no TODO.
 
----
+## 1. Authority / baseline — `PASS | BLOCKED`
 
-## ⚠️ Gates (ALL MUST PASS BEFORE IMPLEMENTATION)
+- Exact task and authority: [task path/envelope and relevant contract]
+- Owning repository/worktree: [resolved root and worktree/ownership evidence]
+- Base/current SHA and status: [SHA; scoped status]
+- Dependencies/checkpoints: [verdict and evidence]
+- Pre-existing dirty exclusions: [paths that must remain untouched]
+- Evidence: [reads/commands/results]
 
-**RULE**: Do NOT modify any files until ALL gates below are validated with evidence.
+## 2. Contract / scope — `PASS | BLOCKED`
 
----
+- Required outcome and acceptance: [concise contract]
+- Authorized CREATE: [exact paths or none]
+- Authorized MODIFY: [exact paths or none]
+- READ-ONLY: [exact paths or none]
+- Primary phase assignment: [target → ordered phase, where practical]
+- Relationship/closure verdict: [no unresolved greppable relationship or undeclared required artifact]
+- Evidence: [reads/searches/results]
 
-## Gate 1: Prerequisite Files Exist
+## 3. Validation / resources — `PASS | BLOCKED`
 
-- [ ] **PREREQUISITE FILE EXISTS**: `path/to/file.ts`
-  - **Evidence**: [ls or read result]
-  
-- [ ] **PREREQUISITE FILE EXISTS**: `path/to/other.ts`
-  - **Evidence**: [ls or read result]
+- Exact validation commands: [commands]
+- Resolved execution: [entrypoints, config, hooks, fixtures, fallbacks, teardown, credentials/egress where applicable]
+- Resource verdict: `NO_STATEFUL_RESOURCES | DISPOSABLE_VERIFIED | BLOCKED`
+- Resource evidence: [identities, isolation/ownership, fallback and teardown evidence, or why no stateful resources exist]
 
----
+## 4. Recovery / stop — `PASS | BLOCKED`
 
-## Gate 2: Success Criteria Understood
+- Recovery root/snapshots: [required paths and availability, or not required with reason]
+- Approval/destructive boundaries: [known limits]
+- Stop conditions/blockers: [none, or exact blocker]
+- Evidence: [reads/commands/results]
 
-By starting implementation, I confirm I understand ALL success criteria:
+## Readiness verdict
 
-- [ ] **CRITERION 1**: [Verbatim from task's Success Criteria section]
-- [ ] **CRITERION 2**: [Verbatim from task's Success Criteria section]
-- [ ] **CRITERION 3**: [Verbatim from task's Success Criteria section]
-
----
-
-## Gate 3: Scope Defined
-
-I will ONLY modify these files (no others):
-
-### Files to CREATE
-- `src/components/New.tsx` — [description]
-
-### Files to MODIFY
-- `src/app/Existing.tsx` — [description]
-
-### Files to READ (no modification)
-- `src/app/layout.tsx` — [reason]
-
----
-
-## Gate 4: No Blockers Identified
-
-- [ ] **No missing dependencies**: All imports exist or will be created in this task
-- [ ] **No conflicting files**: None of my modifications overlap with other parallel tasks
-- [ ] **Environment ready**: [Any environment checks]
-
----
-
-## Gate Validation Summary
-
-| Gate | Status | Evidence |
-|------|--------|----------|
-| 1. Prerequisite Files | ✅ / ❌ | [N files verified] |
-| 2. Success Criteria | ✅ / ❌ | [N criteria confirmed] |
-| 3. Scope Defined | ✅ / ❌ | [N files in scope] |
-| 4. No Blockers | ✅ / ❌ | [Any blockers?] |
-
-**If ALL Gates ✅**: Proceed to create `.pi/build/TODO_{task_id}.md`
-
-**If ANY Gate ❌**: STOP. Write HANDOVER_{task_id} with `status: BLOCKED` and include:
-- Which gate failed
-- Why it failed
-- Suggested resolution
-
----
-
-## Notes
-
-[Any builder notes during gate validation]
+- Authority / baseline: `PASS | BLOCKED`
+- Contract / scope: `PASS | BLOCKED`
+- Validation / resources: `PASS | BLOCKED`
+- Recovery / stop: `PASS | BLOCKED`
+- Overall: `PASS | BLOCKED`
+- Next action: [create TODO from ordered phases, or return BLOCKED without source mutation]

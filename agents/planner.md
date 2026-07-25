@@ -49,6 +49,12 @@ Once the contract, write sets, sequencing, and validation are executable, write 
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces an artifact another depends on, name it in the producing task's `Acceptance` and the dependent task's `Read`; put the edge only in `SCHEDULE.md`.
 
+## Internal Execution Order
+
+Add this optional section only when one writing task spans dependent semantic regions and explicit order materially reduces context switching, contradictory edits, repeated discovery, or restart cost. Omit it for simple, local, or homogeneous tasks; file count alone never activates it. Derive compact phases from repository-evidenced dependencies. Each phase names its bounded outcome, primary authorized files/symbols, material prerequisite, and local exit evidence; assign each changed target one primary mutation phase where practical.
+
+Whenever the section is present, the task contract must require the builder—never the planner—to create and fill `.pi/build/TILL-DO_<task-id>.md` before TODO creation or source mutation, with evidence-backed `PASS | BLOCKED` gates for authority/baseline, contract/scope, validation/resources, and recovery/stop. Only all-`PASS` readiness permits `.pi/build/TODO_<task-id>.md`, mirrored from the ordered phases; any blocked gate returns `BLOCKED` with no source mutation and no misleading TODO. TILL-DO/TODO are transient execution state, not tasks, task IDs, DAG nodes, commits, checkpoints, claims, branches, worktrees, Flow/GitHub state, parallel authorization, independent validity boundaries, or completion claims, and are excluded from the selective product commit unless explicitly tracked. Internal order never weakens the exact write set, closure proof, resource safety, acceptance, stop rules, or final validation.
+
 ## Minimum-Solution Gate
 
 Start from existing behavior and design only the delta required by the reconciled contract. For every proposed task, file, table, service, state, abstraction, dependency, flag, migration, gate, or operational step, identify the acceptance criterion or unavoidable verified invariant that requires it. If the contract still passes without it, remove it. Prefer extending an established path over creating a parallel subsystem. High consequence increases proof and rollback rigor; it does not automatically require more architecture.

@@ -60,6 +60,12 @@ For each implementation task, assign exactly one of:
 
 Do not route visual risk to `builder-heavy`, or ordinary/high-consequence local code to a heavy tier. Split collection from adjudication when their consequence differs. Producer tasks own focused tests; do not create testing-only tasks. Add validator gates only for a named escape risk requiring independent review, and consolidate gates over coherent serialized boundaries when the same evidence suite can review them safely—never pair a validator with every risky-looking task.
 
+## Internal Execution Order
+
+Add this optional section only when one writing task spans dependent semantic regions and explicit order materially reduces context switching, contradictory edits, repeated discovery, or restart cost. Omit it for simple, local, or homogeneous tasks; file count alone never activates it. Derive compact phases from repository-evidenced dependencies. Each phase names its bounded outcome, primary authorized files/symbols, material prerequisite, and local exit evidence; assign each changed target one primary mutation phase where practical.
+
+Whenever the section is present, the task contract must require the builder—never the planner—to create and fill `.pi/build/TILL-DO_<task-id>.md` before TODO creation or source mutation, with evidence-backed `PASS | BLOCKED` gates for authority/baseline, contract/scope, validation/resources, and recovery/stop. Only all-`PASS` readiness permits `.pi/build/TODO_<task-id>.md`, mirrored from the ordered phases; any blocked gate returns `BLOCKED` with no source mutation and no misleading TODO. TILL-DO/TODO are transient execution state, not tasks, task IDs, DAG nodes, commits, checkpoints, claims, branches, worktrees, Flow/GitHub state, parallel authorization, independent validity boundaries, or completion claims, and are excluded from the selective product commit unless explicitly tracked. Internal order never weakens the exact write set, closure proof, resource safety, acceptance, stop rules, or final validation.
+
 ## Artifact Contract
 
 ### `PLAN_FULL.md`
