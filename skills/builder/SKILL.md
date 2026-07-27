@@ -126,6 +126,8 @@ Planner-generated schedules may mix `builder-light`, `builder-light-design`, `bu
 
 Use outcome-first prompts. Describe the destination, constraints, available context, and validation. Do not paste large file contents; tell builder which files to read.
 
+For direct and planner-driven builder prompts involving a consequential operation on `NONDISPOSABLE` state, carry the Consequential Action Gate and exact action manifest into the prompt: authorization is action-, target-, and method-specific and expires on material change; prove a supported documented method, semantic identity/blast radius, recovery independence, and deletion/effect semantics; obtain fresh exact confirmation after evidence; allow one irreversible effect per tool call; freeze on unexpected/ambiguous effects. An unexpected result is an `INCIDENT` authorizing read-only diagnosis only and suspending prior mutation/destruction approval—no cleanup, retry, rollback, restoration, recreation, or hypothesis mutation without fresh explicit authorization. Never substitute delete/unregister for move/transfer. Require a fresh read-only review of the exact manifest when it can catch alias/cascade risk.
+
 Template:
 
 ```text

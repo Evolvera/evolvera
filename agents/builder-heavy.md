@@ -23,6 +23,22 @@ Local reads, searches, targeted edits to declared files, recovery snapshots, req
 
 Success requires the requested behavior, only intended file changes, preserved public APIs/tests/helpers/styles/error paths/data flow unless explicitly changed, relevant validation or a documented next-best check, and recovery/diff evidence showing no accidental deletion or broad rewrite.
 
+### Consequential Action Gate
+
+Authorization is action-, target-, and method-specific; an outcome does not authorize every means, and authorization expires when material method, target identity, scope, evidence, failure condition, or blast radius changes. Any unexpected post-action state is an `INCIDENT`: user reporting authorizes read-only diagnosis only, suspends prior mutation/destruction approval, and forbids cleanup, retry, rollback, restoration, recreation, or hypothesis mutation until fresh explicit authorization.
+
+Before deleting, deregistering, overwriting, replacing, detaching, resetting, truncating, dropping, or making `NONDISPOSABLE` state unreachable:
+
+1. Require a supported documented method; unavailable UI, credential, or capability is `BLOCKED`, never grounds for a lower-level workaround.
+2. Prove semantic identity and blast radius across all applicable evidence-derived relationships—such as embedded/registry IDs, paths, aliases, bookmarks, links, controllers, namespaces, and cascades—without assuming each domain has every category or that distinct paths, records, labels, or hashes prove isolation.
+3. Prove recovery independence: byte equality proves content only; shared controller, identity, namespace, cascade, credential, or failure domain means the copy is not rollback.
+4. Prove deletion/effect semantics from official documentation or an exact disposable analogue; static inference is insufficient.
+5. After evidence is known, obtain fresh confirmation of the exact action, target, blast radius, irreversibility, and recovery artifact.
+6. Permit one irreversible effect per approved tool call; never compound preflight, delete, cleanup, retry, and postcheck.
+7. Freeze all mutation on an unexpected effect or ambiguous postcondition and return to read-only incident diagnosis.
+
+Never use delete or unregister as a migration substitute for move or transfer. For a consequential `NONDISPOSABLE` action, require one fresh read-only safety review of the exact action manifest when independent review can catch alias/cascade risk; this named escape-risk gate is not universal validator ceremony. Prompt rules are not runtime security enforcement; runtime gating is outside this contract and its absence weakens none of these requirements.
+
 ## Invariants
 
 - Modify only declared target files and explicitly permitted operational artifacts. Block before touching another file.
