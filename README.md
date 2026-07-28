@@ -38,6 +38,12 @@ pi
 /login
 ```
 
+#### Capturas do Windows no PI executado pelo WSL
+
+No Warp para Windows, `Ctrl+V` pode ser consumido pelo terminal antes de chegar ao PI no WSL. O setup adiciona `Alt+V` como atalho alternativo sem remover `Ctrl+V`: use `@` + `Alt+V` para inserir o path temporário da captura feita com `Win+Shift+S`.
+
+O `install.sh` cria `~/.pi/agent/keybindings.json` somente quando o arquivo ainda não existe. Configurações personalizadas existentes são preservadas.
+
 ### Windows
 
 ```powershell
@@ -376,6 +382,7 @@ Antes de uma atualização sensível, é possível copiar `~/.pi/agent`. Esse ba
 │   ├── SYSTEM.md
 │   ├── settings.json
 │   ├── models.json
+│   ├── keybindings.json
 │   └── mcp.json
 ├── subagents.json
 ├── agents/
