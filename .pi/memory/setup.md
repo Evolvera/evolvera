@@ -11,5 +11,5 @@
 ## Windows screenshots in Warp/WSL
 
 - For PI running inside WSL under Warp for Windows, use `Alt+V` to paste a screenshot captured with `Win+Shift+S`; `@` before the shortcut remains optional.
-- A fresh `./install.sh` setup installs both `Ctrl+V` and `Alt+V` for `app.clipboard.pasteImage`. If `~/.pi/agent/keybindings.json` already exists, the installer preserves it unchanged; add `alt+v` manually when that customized file does not already contain the alias.
+- Under WSL, a fresh `./install.sh` setup installs both `Ctrl+V` and `Alt+V` for `app.clipboard.pasteImage`. On macOS and native Linux, the installer does not create this file and PI defaults remain in effect. If `~/.pi/agent/keybindings.json` already exists, including as a symlink, the installer preserves it unchanged; add `alt+v` manually when that customized file does not already contain the alias.
 - Smoke-check the live flow after `/reload`: `Win+Shift+S` → optional `@` → `Alt+V` should insert an accessible `/tmp/pi-clipboard-<uuid>.png` path.

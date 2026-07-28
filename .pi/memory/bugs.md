@@ -4,7 +4,7 @@
 
 - **Symptom:** after `Win+Shift+S`, pressing Warp's normal paste shortcut in PI running inside WSL inserts no screenshot path.
 - **Root cause:** the PI clipboard backend can read the Windows image through `powershell.exe`, but Warp may consume image-only `Ctrl+V`/`Ctrl+Shift+V` before PI receives its `app.clipboard.pasteImage` action. PI sees WSL as Linux and therefore defaults that action to `Ctrl+V` rather than the native-Windows `Alt+V`.
-- **Prevention:** preserve `Ctrl+V` and add `Alt+V` as an alias through `keybindings.json`. Do not reimplement the PowerShell clipboard bridge or remove the optional `@` file-reference workflow. The repository installer must not overwrite an existing customized global keybindings file.
+- **Prevention:** under WSL only, preserve `Ctrl+V` and add `Alt+V` as an alias through `keybindings.json`. The repository installer must not create this file on macOS or native Linux, and must not overwrite an existing customized file or symlink. Do not reimplement the PowerShell clipboard bridge or remove the optional `@` file-reference workflow; this addresses terminal key delivery, not every terminal or image decoding.
 
 ## VS Code upgrade replaces the required PI fork
 

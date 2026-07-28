@@ -48,12 +48,14 @@ for f in settings.json models.json SYSTEM.md; do
 done
 
 if [ -f "$SCRIPT_DIR/config/keybindings.json" ]; then
-    if [ -e "$PI_DIR/keybindings.json" ] || [ -L "$PI_DIR/keybindings.json" ]; then
-        info "keybindings.json ja existe - preservado"
-    else
-        cp "$SCRIPT_DIR/config/keybindings.json" "$PI_DIR/keybindings.json"
-        info "keybindings.json"
-    fi
+    keybindings_status="$("$SCRIPT_DIR/scripts/install-wsl-keybindings.sh" \
+        "$SCRIPT_DIR/config/keybindings.json" "$PI_DIR/keybindings.json")"
+    case "$keybindings_status" in
+        installed) info "keybindings.json" ;;
+        preserved) info "keybindings.json ja existe - preservado" ;;
+        skipped) : ;;
+        *) echo "Status inesperado ao instalar keybindings.json." >&2; exit 1 ;;
+    esac
 fi
 
 [ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"

@@ -40,9 +40,9 @@ pi
 
 #### Capturas do Windows no PI executado pelo WSL
 
-No Warp para Windows, `Ctrl+V` pode ser consumido pelo terminal antes de chegar ao PI no WSL. O setup adiciona `Alt+V` como atalho alternativo sem remover `Ctrl+V`: use `@` + `Alt+V` para inserir o path temporário da captura feita com `Win+Shift+S`.
+No Warp para Windows, `Ctrl+V` pode ser consumido pelo terminal antes de chegar ao PI no WSL. Sob WSL, o setup adiciona `Alt+V` como atalho alternativo sem remover `Ctrl+V`: use `@` + `Alt+V` para inserir o path temporário da captura feita com `Win+Shift+S`.
 
-O `install.sh` cria `~/.pi/agent/keybindings.json` somente quando o arquivo ainda não existe. Configurações personalizadas existentes são preservadas.
+O `install.sh` instala `~/.pi/agent/keybindings.json` somente sob WSL e somente quando o destino ainda não existe. No macOS e no Linux nativo, o instalador não cria esse arquivo e os padrões do PI permanecem inalterados. Configurações personalizadas existentes, inclusive links simbólicos, são preservadas. Isso trata a entrega do atalho pelo terminal ao PI; não é uma correção para todo terminal.
 
 ### Windows
 
