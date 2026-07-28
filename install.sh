@@ -47,6 +47,15 @@ for f in settings.json models.json SYSTEM.md; do
     [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
 done
 
+if [ -f "$SCRIPT_DIR/config/keybindings.json" ]; then
+    if [ -e "$PI_DIR/keybindings.json" ] || [ -L "$PI_DIR/keybindings.json" ]; then
+        info "keybindings.json ja existe - preservado"
+    else
+        cp "$SCRIPT_DIR/config/keybindings.json" "$PI_DIR/keybindings.json"
+        info "keybindings.json"
+    fi
+fi
+
 [ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"
 cp "$SCRIPT_DIR"/themes/*.json "$PI_DIR/themes/" 2>/dev/null && info "temas"
 
