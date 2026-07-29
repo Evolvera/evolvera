@@ -23,7 +23,26 @@ Usuário
 - npm disponível no `PATH`;
 - credencial para pelo menos um provider de IA.
 
-A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.80.10`.
+A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.82.1`.
+
+### Node com fnm (Linux e macOS)
+
+Antes de executar `./install.sh` em um shell novo, instale e persista o fnm, selecione o alvo validado e confirme o Node. O alvo localmente validado é o fnm 22.22.3:
+
+```bash
+# Adicione a saída do instalador ao shell quando solicitado
+curl -fsSL https://fnm.vercel.app/install | bash
+# ~/.zshrc (macOS):
+eval "$(fnm env --use-on-cd --shell zsh)"
+# ~/.bashrc (Linux):
+eval "$(fnm env --use-on-cd --shell bash)"
+fnm install 22.22.3
+fnm default 22.22.3
+fnm use 22.22.3
+node --version  # v22.22.3
+```
+
+Abra um shell novo, confirme `node --version` como `v22.22.3` e só então execute `./install.sh`.
 
 ### Linux e macOS
 
@@ -128,15 +147,14 @@ Isso significa que mudar `config/mcp.json` não substitui automaticamente o MCP 
 
 ### Diferenças de plataforma
 
-O Windows também instala `pi-provider-kimi-code` e fixa `pi-xai-oauth@1.3.6`. Os dois valores de baseline podem ser sobrescritos explicitamente para testes controlados:
+O Windows também instala `pi-provider-kimi-code`. A baseline do PI pode ser sobrescrita explicitamente para testes controlados:
 
 ```bash
-PI_CODING_AGENT_VERSION=0.80.10 ./install.sh
+PI_CODING_AGENT_VERSION=0.82.1 ./install.sh
 ```
 
 ```powershell
-$env:PI_CODING_AGENT_VERSION = "0.80.10"
-$env:PI_XAI_OAUTH_VERSION = "1.3.6"
+$env:PI_CODING_AGENT_VERSION = "0.82.1"
 .\install.ps1
 ```
 
@@ -244,6 +262,15 @@ website
 ```
 
 Agentes não substituem o PI principal: o orquestrador continua responsável por escopo, integração, revisão do diff, validação e entrega.
+
+### Política Anthropic
+
+Os modelos Anthropic nativos com janela de contexto de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5 mantém 128K). As rotas aprovadas para Opus 5 são:
+
+- `agents/builder-design.md` — `anthropic/claude-opus-5`, `medium`;
+- `agents/builder-heavy-design.md` — `anthropic/claude-opus-5`, `high`;
+- `agents/website-designer.md` — `anthropic/claude-opus-5`, `xhigh`;
+- `agents/plan-briefer-fable.md` — `anthropic/claude-opus-5`, `high`.
 
 ### Descobrir a configuração ativa
 
@@ -457,7 +484,7 @@ Reinstale o fork compatível e rode novamente o instalador do harness:
 
 ```bash
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.80.10
+npm install -g @earendil-works/pi-coding-agent@0.82.1
 ./install.sh
 ```
 
@@ -465,7 +492,7 @@ Windows:
 
 ```powershell
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.80.10
+npm install -g @earendil-works/pi-coding-agent@0.82.1
 .\install.ps1
 ```
 

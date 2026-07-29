@@ -1,10 +1,10 @@
 ---
 name: builder-heavy-design
-description: "GPT implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: openai-codex/gpt-5.6-sol medium."
-display_name: 🎞️ Builder Heavy Design · GPT-5.6 Sol · medium
+description: "Claude Opus 5 implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: anthropic/claude-opus-5 high."
+display_name: 🎞️ Builder Heavy Design · Claude Opus 5 · high
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-5.6-sol
-thinking: medium
+model: anthropic/claude-opus-5
+thinking: high
 max_turns: 100
 lifecycle: lazy
 prompt_mode: replace

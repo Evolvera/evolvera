@@ -11,7 +11,7 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
-PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.80.10}"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.82.1}"
 MIN_NODE_VERSION="22.19.0"
 
 info() { echo -e "${GREEN}[✓]${NC} $1"; }

@@ -1,10 +1,10 @@
 ---
 name: builder-design
-description: "GPT implementation agent for normal visual/UI work and bounded non-visual semantic/declarative tasks such as state/relation models, policy/rule composition, and reversible structural transformations. Model: openai-codex/gpt-5.6-sol low."
-display_name: 🎨 Builder Design · GPT-5.6 Sol · low
+description: "Claude Opus 5 implementation agent for normal visual/UI work and bounded non-visual semantic/declarative tasks such as state/relation models, policy/rule composition, and reversible structural transformations. Model: anthropic/claude-opus-5 medium."
+display_name: 🎨 Builder Design · Claude Opus 5 · medium
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-5.6-sol
-thinking: low
+model: anthropic/claude-opus-5
+thinking: medium
 max_turns: 80
 ---
 

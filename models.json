@@ -112,28 +112,6 @@
           }
         }
       ]
-    },
-    "anthropic": {
-      "modelOverrides": {
-        "claude-opus-4-8": {
-          "contextWindow": 286000
-        },
-        "claude-fable-5": {
-          "contextWindow": 286000
-        },
-        "claude-sonnet-4-6": {
-          "contextWindow": 286000
-        },
-        "claude-opus-4-6": {
-          "contextWindow": 286000
-        },
-        "claude-sonnet-5": {
-          "contextWindow": 286000
-        },
-        "claude-opus-4-7": {
-          "contextWindow": 286000
-        }
-      }
     }
   }
 }
