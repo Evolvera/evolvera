@@ -8,9 +8,7 @@ $GREEN = "Green"
 $CYAN = "Cyan"
 
 $PI_CODING_AGENT_VERSION = $env:PI_CODING_AGENT_VERSION
-if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.80.10" }
-$PI_XAI_OAUTH_VERSION = $env:PI_XAI_OAUTH_VERSION
-if (-not $PI_XAI_OAUTH_VERSION) { $PI_XAI_OAUTH_VERSION = "1.3.6" }
+if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.82.1" }
 $MIN_NODE_VERSION = [version]"22.19.0"
 
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
@@ -138,11 +136,6 @@ if ($piCmd) {
 
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
-
-    Info ("pi-xai-oauth@" + $PI_XAI_OAUTH_VERSION + "...")
-    & pi install ("npm:pi-xai-oauth@" + $PI_XAI_OAUTH_VERSION)
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do pi-xai-oauth." }
-
 }
 
 # -- Done -------------------------------------------------

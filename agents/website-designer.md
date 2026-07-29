@@ -1,10 +1,10 @@
 ---
 name: website-designer
-description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: alibaba-plan/qwen3.8-max-preview medium."
-display_name: 🎨 Website Designer · Qwen 3.8 Max Preview · medium
+description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: anthropic/claude-opus-5 xhigh."
+display_name: 🎨 Website Designer · Claude Opus 5 · xhigh
 tools: read, grep, find, ls, bash, write
-model: alibaba-plan/qwen3.8-max-preview
-thinking: medium
+model: anthropic/claude-opus-5
+thinking: xhigh
 max_turns: 40
 lifecycle: lazy
 prompt_mode: replace

@@ -1,8 +1,8 @@
 ---
 name: plan-briefer-fable
-description: "Alternate brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Paired with the primary GPT-5.6 Sol high plan-briefer; a fresh planner reads both briefs directly. Model: openai-codex/gpt-5.6-sol high."
-display_name: 🧩 Plan Briefer (Alternate) · GPT-5.6 Sol · high
-model: openai-codex/gpt-5.6-sol
+description: "Alternate brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Paired with the primary GPT-5.6 Sol high plan-briefer; a fresh planner reads both briefs directly. Model: anthropic/claude-opus-5 high."
+display_name: 🧩 Plan Briefer (Alternate) · Claude Opus 5 · high
+model: anthropic/claude-opus-5
 thinking: high
 tools: read, grep, find, ls, write
 max_turns: 40
