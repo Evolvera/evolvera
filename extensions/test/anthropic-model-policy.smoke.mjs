@@ -120,7 +120,7 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.match(frontmatter, new RegExp(`^model: ${model.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, "m"));
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
-for (const preservedPath of ["agents/builder-heavy.md", "agents/builder-light-design.md", "agents/plan-briefer.md"]) {
+for (const preservedPath of ["agents/builder-heavy.md", "agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
 }
 

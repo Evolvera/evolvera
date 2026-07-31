@@ -49,7 +49,7 @@ Modes are ceilings, never quotas:
 | deep | <= 32 | <= 4 |
 | maximum | <= 100 | <= `ceil(100 / runtime maxConcurrent)` |
 
-Read the current runtime concurrency setting; never edit it. This repository currently caps concurrency at 8, so maximum means at most 8 simultaneous Agent calls and at most 13 waves—not 100 simultaneous calls. Use fewer missions when evidence warrants fewer. One mission equals one perspective/shard. Every mission must state: ID, one question, why material, exact mirror scope, evidence required, route (`scout-highspeed`, `scout`, or pre-approved `validator` only where applicable), and stop conditions. Use highspeed only for narrow retrieval. Use normal scout for coherent semantic perspectives or broad state. Do not split merely to fill capacity.
+Read the current runtime concurrency setting; never edit it. This repository currently caps concurrency at 8, so maximum means at most 8 simultaneous Agent calls and at most 13 waves—not 100 simultaneous calls. Use fewer missions when evidence warrants fewer. One mission equals one perspective/shard. Every mission must state: ID, one question, why material, exact mirror scope, evidence required, route (`scout`, or pre-approved `validator` only where applicable), and stop conditions. Use narrowly scoped scout missions for retrieval shards and one coherent scout for semantic perspectives or broad state. Do not split merely to fill capacity.
 
 ## Literal approval proposal
 

@@ -52,7 +52,7 @@ For nontrivial/unfamiliar repositories, orient before deep retrieval: inspect bo
 
 - Exact paths, semantic relationships, affected-artifact closure, and validation already known from current evidence: use focused direct reads; no ceremonial scout.
 - Normal multi-file or multi-layer feature: use one bounded `scout` mission covering the coherent flow.
-- Large/cross-cutting repository with separable domains: launch one parallel `scout-highspeed` micro-scout per observed independent slice, such as entry flow, state/structure relationships, affected-artifact closure, and validation/execution boundaries. Use one normal `scout` afterward only when end-to-end synthesis or contradiction resolution remains necessary.
+- Large/cross-cutting repository with separable domains: launch one parallel scoped `scout` mission per observed independent slice, such as entry flow, state/structure relationships, affected-artifact closure, and validation/execution boundaries. Use one synthesis `scout` afterward only when end-to-end synthesis or contradiction resolution remains necessary.
 - One stateful flow whose semantics cross API, database, retries, webhooks, and tests: prefer one normal `scout`; splitting would lose coherence.
 
 The evidence package must cover, with exact paths/symbols and stated searched scope:
@@ -134,13 +134,13 @@ Each writing task contains a proportional `Proof` section with its semantic delt
 
 ## 4. Plan-Heavy Ensemble
 
-When the user explicitly requests the plan-heavy ensemble—or two independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
+When the user explicitly requests the plan-heavy ensemble—or independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
 Plan-heavy is not a separate harness or planner agent. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
 
 1. the orchestrator writes one concise `HANDOFF.md`;
-2. `plan-briefer` and `plan-briefer-fable` produce independent briefs in parallel;
-3. a fresh `planner` session reads the handoff plus both briefs, reconciles them, and writes the normal plan ecosystem at xhigh reasoning.
+2. `plan-briefer`, `plan-briefer-fable`, and `plan-briefer-gpt55` produce independent briefs in parallel;
+3. a fresh `planner` session—launched with the `anthropic/claude-fable-5` xhigh model override—reads the handoff plus all briefs, reconciles them, and writes the normal plan ecosystem.
 
 An explicit user request for the plan-heavy ensemble is sufficient. Do not downgrade it to a single unbriefed planner run based on an admission gate, and do not create custom validation/envelope machinery.
 
@@ -178,10 +178,9 @@ Apply engineering principles as decisions, not boilerplate:
 Load the builder skill; it is authoritative for tier selection. Defaults:
 
 - normal procedural work → `builder`;
-- routine locally-decidable work (clear anchor, established pattern, exact validation) → `builder-light`; routine design-system UI → `builder-light-design`;
-- complex procedural/integration or any host/external operation → `builder-heavy`;
-- local semantic/declarative model with a clear oracle or visual/UI work → design tier;
-- exceptional formal/numerical/scientific work with an explicit oracle → `builder-ultra`.
+- routine locally-decidable work (clear anchor, established pattern, exact validation) → `builder-light`;
+- complex procedural/integration, any host/external operation, or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`;
+- local semantic/declarative model with a clear oracle, routine design-system UI, or visual/UI work → design tier.
 
 A server/config file containing rules is not enough to select a design tier. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.
 

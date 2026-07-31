@@ -1,16 +1,16 @@
 ---
 name: plan-heavy
-description: Lightweight ensemble planning workflow. Use when the user explicitly asks for the plan-heavy ensemble or when the planner skill decides two independent strategy briefs plus an xhigh final planner will materially improve a complex plan. Adds only two parallel briefers before a fresh normal planner synthesis; uses the same artifacts and execution flow as normal planning, with no custom harness, validator, envelope, or agent.
+description: Lightweight ensemble planning workflow. Use when the user explicitly asks for the plan-heavy ensemble or when the planner skill decides independent strategy briefs plus a Claude Fable 5 xhigh final planner will materially improve a complex plan. Adds only three parallel briefers before a fresh normal planner synthesis; uses the same artifacts and execution flow as normal planning, with no custom harness, validator, envelope, or agent.
 ---
 
-# Plan Heavy — Two Briefs, Then XHigh Planner
+# Plan Heavy — Three Briefs, Then Fable XHigh Planner
 
-Plan-heavy is the normal planner workflow with one deliberate upgrade: two isolated briefer sessions independently analyze the problem before a fresh `planner` session reconciles them and writes the final plan at xhigh reasoning.
+Plan-heavy is the normal planner workflow with one deliberate upgrade: three isolated briefer sessions independently analyze the problem before a fresh `planner` session—launched with a `anthropic/claude-fable-5` xhigh model override—reconciles them and writes the final plan.
 
 ```text
 orchestrator handoff
-  → plan-briefer + plan-briefer-fable (parallel)
-  → fresh planner xhigh synthesis (reads both directly)
+  → plan-briefer + plan-briefer-fable + plan-briefer-gpt55 (parallel)
+  → fresh planner synthesis on Claude Fable 5 xhigh (reads all briefs directly)
   → normal PLAN_FULL / SCHEDULE / TASKS
   → normal builder/testing/validator execution
 ```
@@ -21,7 +21,7 @@ No custom command, tool, schema validator, execution envelope, or separate harne
 
 Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. Large/cross-cutting systems use proportional parallel micro-scouts for independent domains and a normal scout only when end-to-end synthesis or contradiction resolution remains necessary.
 
-Do not spend two strategy briefs and an xhigh planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, validation behavior, repository state, and bounded external gaps. Any complete affected-artifact closure claim must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed `AFFECTED | UNAFFECTED` dispositions, and unresolved candidates; relationship paths derive from repository evidence rather than a fixed category list. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If a greppable candidate, broad unknown, or preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
+Do not spend three strategy briefs and an xhigh planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, validation behavior, repository state, and bounded external gaps. Any complete affected-artifact closure claim must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed `AFFECTED | UNAFFECTED` dispositions, and unresolved candidates; relationship paths derive from repository evidence rather than a fixed category list. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If a greppable candidate, broad unknown, or preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
 
 ## 1. Establish the Plan Directory
 
@@ -70,12 +70,13 @@ The orchestrator writes `<PLAN_DIR>/HANDOFF.md` directly. Keep it outcome-first 
 
 Do not dump repository inventories, raw scout transcripts, historical plans, generic principles, or irrelevant harness metadata. Existing design/content artifacts remain inputs; copy or reference them explicitly rather than regenerating them.
 
-## 3. Launch Both Briefers in Parallel
+## 3. Launch the Briefers in Parallel
 
-Launch both agents in one message with `run_in_background: true`:
+Launch all three agents in one message with `run_in_background: true`:
 
 - `plan-briefer` → writes `<PLAN_DIR>/BRIEFS/brief_gpt.md`
 - `plan-briefer-fable` → writes `<PLAN_DIR>/BRIEFS/brief_fable.md`
+- `plan-briefer-gpt55` → writes `<PLAN_DIR>/BRIEFS/brief_gpt55.md`
 
 Each prompt must be self-contained and include:
 
@@ -90,14 +91,18 @@ The briefs should disagree honestly when their independently derived judgment di
 
 ## 4. Launch the Final Planner
 
-After both brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis` so the plan-heavy watchdog remains scoped to this ensemble. Give it a self-contained prompt containing:
+After all three brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis` so the plan-heavy watchdog remains scoped to this ensemble, and with the model override `model: "anthropic/claude-fable-5"` plus `thinking: "xhigh"` in the Agent call. The normal planner agent stays on its default model for every non-ensemble plan.
+
+Claude Fable 5 prompt rules for this launch (per Anthropic first-party guidance): keep the delegated prompt concise and boundary-first — Fable follows brief instructions well and over-prescriptive prompts degrade output; state the reason behind the goal, not only the request; place the long inputs (handoff and brief paths) before the final instruction; require that progress and completion claims be grounded in actual tool results; and never instruct it to echo, transcribe, or explain its internal reasoning in the response — decisions recorded in `PLAN_FULL.md` are work product, not reasoning extraction.
+
+Give it a self-contained prompt containing:
 
 - explicit identification that this is plan-heavy synthesis;
-- approved outcome;
+- approved outcome and why it matters;
 - absolute `PROJECT_ROOT` and `PLAN_DIR`;
-- absolute paths to `HANDOFF.md`, `brief_gpt.md`, and `brief_fable.md`;
+- absolute paths to `HANDOFF.md`, `brief_gpt.md`, `brief_fable.md`, and `brief_gpt55.md`;
 - absolute paths to required strategy/design/content artifacts;
-- instruction to read the handoff and both briefs first, reconcile disagreements against repository evidence, and write only:
+- instruction to read the handoff and all briefs first, reconcile disagreements against repository evidence, and write only:
 
 ```text
 <PLAN_DIR>/PLAN_FULL.md
@@ -107,7 +112,7 @@ After both brief files exist, launch a fresh `planner` session—never resume a 
 
 Use normal planner semantics: fewest coherent tasks, one selective commit per writing task, exact write sets, disjoint parallel groups, focused validation, and selective validator gates only for named escape risks. Add `## Internal Execution Order` only when one writing task spans dependent semantic regions and explicit order materially reduces context switching, contradictory edits, repeated discovery, or restart cost; omit it for simple/local/homogeneous work; file count alone never activates it. Derive compact repository-evidenced phases with bounded outcome, primary authorized files/symbols, material prerequisite, and local exit evidence. The task must require the builder—not the planner—to fill `.pi/build/TILL-DO_<task-id>.md` before TODO or source mutation with evidence-backed `PASS | BLOCKED` authority/baseline, contract/scope, validation/resources, and recovery/stop gates. Only all `PASS` permits `.pi/build/TODO_<task-id>.md` mirrored from those phases; any blocked gate returns `BLOCKED` with no source mutation or TODO. These transient artifacts are not tasks, IDs, DAG nodes, issues, claims, branches, worktrees, Flow/GitHub state, commits, checkpoints, validity boundaries, or parallel authorization and stay out of the selective product commit unless explicitly tracked. Existing scope, closure, resource safety, acceptance, stop, and validation rules remain controlling. `builder-heavy` remains reserved for host/external operations or exceptional live multi-runtime coordination.
 
-If one brief is missing or empty, stop and report the failed briefer instead of silently degrading the explicitly requested ensemble.
+If any brief is missing or empty, stop and report the failed briefer instead of silently degrading the explicitly requested ensemble.
 
 ## 5. Orchestrator Review and Execution
 

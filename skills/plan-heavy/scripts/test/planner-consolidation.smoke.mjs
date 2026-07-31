@@ -33,19 +33,27 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await
 
 assert.match(planner, /model: openai-codex\/gpt-5\.6-sol/);
 assert.match(planner, /thinking: xhigh/);
-assert.match(planner, /## Optional Two-Brief Ensemble Input/);
-assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md/);
+assert.match(planner, /## Optional Ensemble Brief Input/);
+assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
-assert.match(planner, /either brief is missing or empty[\s\S]*`BLOCKED`/i);
+assert.match(planner, /any brief is missing or empty[\s\S]*`BLOCKED`/i);
 assert.match(planner, /fresh planner session[\s\S]*Never resume/i);
+
+const briefer55 = await read("agents/plan-briefer-gpt55.md");
+assert.match(briefer55, /^name: plan-briefer-gpt55$/m);
+assert.match(briefer55, /^model: openai-codex\/gpt-5\.5$/m);
+assert.match(briefer55, /^thinking: high$/m);
+assert.match(briefer55, /brief_gpt55\.md/);
 
 assert.match(planHeavy, /launch a fresh `planner` session/i);
 assert.match(planHeavy, new RegExp(finalDescription));
-assert.match(planHeavy, /read the handoff and both briefs first/i);
-assert.match(planHeavy, /If one brief is missing or empty[\s\S]*stop/i);
-assert.match(plannerSkill, /fresh `planner` session reads the handoff plus both briefs, reconciles them/i);
+assert.match(planHeavy, /anthropic\/claude-fable-5/);
+assert.match(planHeavy, /plan-briefer-gpt55/);
+assert.match(planHeavy, /read the handoff and all briefs first/i);
+assert.match(planHeavy, /If any brief is missing or empty[\s\S]*stop/i);
+assert.match(plannerSkill, /reads the handoff plus all briefs, reconciles them/i);
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
-assert.match(system, /two parallel briefs → a fresh planner xhigh synthesis/i);
+assert.match(system, /three parallel briefs → a fresh planner synthesis on Claude Fable 5 xhigh/i);
 
 assert.match(watchdog, /const TARGET_AGENT = "planner"/);
 assert.match(watchdog, new RegExp(`const PLAN_HEAVY_DESCRIPTION = "${finalDescription}"`));

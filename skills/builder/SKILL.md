@@ -5,7 +5,7 @@ description: Use the builder agent to implement focused code changes. Builder ru
 
 # Builder Skill — Focused Code Execution
 
-Builder is a delegated implementation family. Use `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, or `builder-heavy-design` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
+Builder is a delegated implementation family. Use `builder-light`, `builder`, `builder-design`, `builder-heavy`, or `builder-heavy-design` based on task fit. All builders need bounded, verifiable prompts with explicit preservation and validation.
 
 ## Goal
 
@@ -35,14 +35,12 @@ The TODO records each phase's outcome, primary authorized files/symbols, materia
 | Agent | Use When | Avoid When |
 |---|---|---|
 | `builder-light` | Routine bounded work whose correctness is **locally decidable** — the task plus visible code fully determine the change (clear anchor, established pattern, exact validation): mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes. Multi-file is fine for one concern with a bounded write set. | anything whose correctness depends on implicit cross-module contracts, subtle state/lifecycle/concurrency, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation; security/auth/payment without an explicit contract; UI beyond exact token/class/text swaps |
-| `builder-light-design` | Routine UI within an established design system: components from existing patterns, styling/spacing/copy changes, straightforward responsive/accessibility fixes, polish items with concrete specs. | new visual direction, novel components without a pattern, complex interaction/motion, semantic/declarative modeling, brand decisions, Home Preview tasks |
 | `builder` | **Default for ~90% of bounded local implementation**: code, APIs, tests, tooling, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance. | relation/rule/declarative semantic modeling, visual judgment, or explicitly external/exceptional runtime work |
-| `builder-design` | Direct normal-complexity design tier: frontend/UI work plus bounded state/relation behavior, policy/rule composition, selector semantics, and reversible structural conversions with a clear oracle. | procedural API/streaming/lifecycle/serialization integration, high-risk operational correctness, formal/numerical work, advanced visual craft, or vague scope |
-| `builder-heavy` | Exceptional operational work: host/SSH/deploy/network/provider/reload/rollback, or evidenced coordination across multiple live runtime/service/lifecycle boundaries. | ordinary local code, auth/payment, migrations, config, shared files, multi-file changes, broad planning, or vague scope |
-| `builder-ultra` | Bounded exceptional non-frontend correctness work with concrete targets, a stated invariant/acceptance oracle, and evidence of exceptional difficulty: formal proofs/invariants, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or a reproducible `builder-heavy` failure. | vague or unfamiliar scope, generic retries, ordinary integration, broad architecture, routine algorithms, and all frontend/design work |
+| `builder-design` | Direct normal-complexity design tier: frontend/UI work, routine design-system application, plus bounded state/relation behavior, policy/rule composition, selector semantics, and reversible structural conversions with a clear oracle. | procedural API/streaming/lifecycle/serialization integration, high-risk operational correctness, formal/numerical work, advanced visual craft, or vague scope |
+| `builder-heavy` | Exceptional operational or correctness work: host/SSH/deploy/network/provider/reload/rollback, evidenced coordination across multiple live runtime/service/lifecycle boundaries, or bounded non-frontend work with concrete targets, a stated invariant/acceptance oracle, and evidence of exceptional formal/numerical/scientific/round-trip/adversarial difficulty. | ordinary local code, auth/payment, migrations, config, shared files, multi-file changes, broad planning, or vague scope |
 | `builder-heavy-design` | Direct exceptional design tier for visual work or complex semantic/declarative tasks: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations. | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, vague scope, or normal tasks fitting `builder-design` |
 
-Route light tiers by error profile, not size: they cover most routine work correctly but err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. The routing question is “is the correct change fully determined by the task plus visible code?”. For non-frontend work needing non-local reasoning, `builder` is the default. Choose a design tier only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for explicit external operations or evidenced exceptional multi-runtime integration; never because a task is backend, risky, auth/payment, migration, config, shared, or multi-file. Use design tiers when visual judgment or local semantic/declarative modeling dominates. Use `builder-ultra` only for bounded non-frontend formal/numerical/scientific or compound-invariant work with an explicit oracle.
+Route light tiers by error profile, not size: they cover most routine work correctly but err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. The routing question is “is the correct change fully determined by the task plus visible code?”. For non-frontend work needing non-local reasoning, `builder` is the default. Choose a design tier only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for explicit external operations, evidenced exceptional multi-runtime integration, or bounded non-frontend formal/numerical/scientific/compound-invariant work with an explicit oracle; never because a task is backend, risky, auth/payment, migration, config, shared, or multi-file. Use design tiers when visual judgment or local semantic/declarative modeling dominates.
 
 A decision, verdict, classification, evidence index, or source-of-truth artifact needs separate `validator` review only for a named consequential escape risk. Static locally-decidable changes close with producer proof plus orchestrator diff review; file authority or importance alone selects neither `validator` nor `builder-heavy`.
 
@@ -50,7 +48,7 @@ A decision, verdict, classification, evidence index, or source-of-truth artifact
 
 For implementation tasks whose primary work is frontend quality, route to `builder-design` by default:
 - React/Vue/Svelte components, JSX/TSX structure, Tailwind/CSS styling, layout, responsive behavior, accessibility states, ordinary animations, design-system application, and applying most `website-polisher` fixes.
-- Use `builder-light-design` for routine design-system edits with concrete specs; `builder-light` only for tiny, exact, mechanical UI edits such as a known class/token/text swap.
+- Route routine design-system edits to `builder-design`; use `builder-light` only for tiny, exact, mechanical UI edits such as a known class/token/text swap.
 - Use `builder-heavy-design` when the task requires exceptional design execution: premium website craft, advanced motion, CSS/SVG/Canvas/3D-feeling scenes, immersive sections, distinctive art direction, or when `builder-design` produced acceptable code but not a visually top-tier result.
 - Use `builder-heavy` for frontend only when the task explicitly performs an external operation or coordinates exceptional live runtime boundaries.
 - Use general `builder` only when frontend work is incidental and does not require design judgment.
@@ -58,8 +56,7 @@ For implementation tasks whose primary work is frontend quality, route to `build
 For non-visual work, a design tier is a valid direct route:
 - use `builder-design` for bounded normal-complexity state/relation semantics, policy/rule composition, selectors, or reversible structural conversions;
 - use `builder-heavy-design` for complex grammar/template reconstruction, state/relation systems, policy/selector engines, or structure-preserving declarative transformations;
-- prefer `builder` for bounded local procedural work; select `builder-heavy` only for explicit external execution or exceptional live multi-runtime coordination;
-- prefer `builder-ultra` when the core obligation is formal proof, numerical stability/error bounds, physics/math/science, or compound invariants rather than domain semantics.
+- prefer `builder` for bounded local procedural work; select `builder-heavy` for explicit external execution, exceptional live multi-runtime coordination, or a core obligation of formal proof, numerical stability/error bounds, physics/math/science, or compound invariants rather than domain semantics.
 
 ## When to Use Builder
 
@@ -68,11 +65,10 @@ Use a builder for:
 - planner-generated task files;
 - mechanical changes with clear target behavior;
 - `builder-design` tasks that are bounded and either visual/UI-led or normal-complexity semantic/declarative work;
-- `builder-heavy` tasks that are bounded and procedurally complex/integration-sensitive enough to need stronger reasoning;
-- `builder-ultra` tasks that are bounded, non-frontend, invariant/oracle-driven, and demonstrably exceptional beyond heavy;
+- `builder-heavy` tasks that are bounded and either procedurally complex/integration-sensitive enough to need stronger reasoning or invariant/oracle-driven exceptional correctness work;
 - `builder-heavy-design` tasks that are bounded and either exceptionally visual or complex semantic/declarative work.
 
-For light tiers (`builder-light`, `builder-light-design`), the slice must be locally decidable:
+For `builder-light`, the slice must be locally decidable:
 - explicit target behavior with a clear anchor or established pattern;
 - obvious, exact validation;
 - no reliance on implicit contracts, subtle semantics, or judgment.
@@ -85,7 +81,7 @@ Light tiers fail differently from strong tiers: a plausible-but-wrong implementa
 - **No phantom dependencies**: do not let them add packages unless the task explicitly asks for a new dependency or existing manifests prove the package is already used.
 - **Name the pattern**: point at the concrete file/component that defines “correct” for this change.
 - **Escalate instead of guessing**: they must return `BLOCKED: use builder` / `BLOCKED: use builder-design` when the task turns out to need non-local reasoning or design judgment.
-- **Switch away from light**: use `builder` for normal local implementation needing non-local reasoning; `builder-design` for visual judgment or semantic/declarative work; `builder-heavy` only for external operations or exceptional live integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; and `builder-ultra` only when the formal/numerical/scientific invariant-oracle gate is met.
+- **Switch away from light**: use `builder` for normal local implementation needing non-local reasoning; `builder-design` for visual judgment or semantic/declarative work; `builder-heavy` for external operations, exceptional live integration, or a met formal/numerical/scientific invariant-oracle gate; and `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics.
 
 Do not use builder when:
 - one small `edit` block would solve it faster;
@@ -120,7 +116,7 @@ Agent({
 })
 ```
 
-Planner-generated schedules may mix `builder-light`, `builder-light-design`, `builder`, `builder-design`, `builder-heavy`, `builder-ultra`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. Normal and plan-heavy ensemble plans execute through this same flow.
+Planner-generated schedules may mix `builder-light`, `builder`, `builder-design`, `builder-heavy`, `builder-heavy-design`, and selective `validator` gates. Always use the `Agent` value in `SCHEDULE.md` and the task file header. Writing tasks use one selective checkpoint commit by default; review-only validator tasks use a recorded verdict and no empty commit. Normal and plan-heavy ensemble plans execute through this same flow.
 
 ## Direct Mode Prompt
 
@@ -237,10 +233,9 @@ Before spawning builder, verify:
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
 - [ ] Task is small enough for a delegated model.
-- [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified, and any frontend change is a tiny exact mechanical tweak. If using `builder-light-design`, the design system already answers the design questions.
+- [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).
-- [ ] If using `builder-heavy`, task is bounded and dominated by procedural/operational correctness: API/streaming/lifecycle/serialization, migration, cross-service, security, shared-file, or frontend data-flow integration.
-- [ ] Use `builder-ultra` only when **all** are true: (1) task is bounded and non-frontend; (2) target files plus invariant/acceptance oracle are known; (3) it has either intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity **or** a reproducible grounded `builder-heavy` failure. If only (1–2) hold, use `builder-heavy`; if targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
+- [ ] If using `builder-heavy`, task is bounded and dominated by an explicit external/host operation, exceptional live multi-runtime coordination, or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
 - [ ] If using `builder-heavy-design`, task is bounded and either exceptionally design-sensitive with grounded visual criteria or complex semantic/declarative work with a clear state/relation/rule/grammar/structure oracle.
 
 If more than two boxes are missing, do more prep or implement directly.
