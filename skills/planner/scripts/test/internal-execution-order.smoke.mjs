@@ -14,9 +14,7 @@ const builderPrompts = [
   "agents/builder-light.md",
   "agents/builder-heavy.md",
   "agents/builder-design.md",
-  "agents/builder-light-design.md",
   "agents/builder-heavy-design.md",
-  "agents/builder-ultra.md",
 ];
 const builderSkills = ["skills/builder/SKILL.md", "skills/agent-guide/SKILL.md"];
 const flowPath = "skills/flow/SKILL.md";
@@ -76,7 +74,7 @@ for (const path of [...builderPrompts, ...builderSkills]) {
   requireMatch(path, /transient[^.\n]*(execution state|task-local execution state)/i, "artifacts must be transient execution state");
   requireMatch(path, /selective product commit/i, "artifacts must be excluded from product commit by default");
 }
-assert.equal(builderPrompts.length, 7, "smoke must cover all seven builder prompts");
+assert.equal(builderPrompts.length, 5, "smoke must cover all five builder prompts");
 const builderSkill = texts.get("skills/builder/SKILL.md");
 assert.doesNotMatch(
   builderSkill,

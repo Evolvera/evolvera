@@ -76,6 +76,10 @@ if ($themes) {
 }
 
 # -- Agents -----------------------------------------------
+$retiredAgents = @("planner-heavy.md", "builder-ultra.md", "builder-light-design.md", "scout-highspeed.md", "deep-research-finalizer.md", "deep-search-master.md")
+foreach ($retired in $retiredAgents) {
+    Remove-Item (Join-Path $PI_DIR "agents\$retired") -Force -ErrorAction SilentlyContinue
+}
 $agents = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "agents") -Filter "*.md" -ErrorAction SilentlyContinue
 if ($agents) {
     $dest = Join-Path $PI_DIR "agents"

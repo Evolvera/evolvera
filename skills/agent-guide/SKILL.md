@@ -21,10 +21,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 | Default | `scout`, `builder` | Standard general tier | **default for ~90% of bounded local work**: code, APIs, tests, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance | relation/rule/declarative semantic modeling, visual judgment, or an explicitly external/exceptional runtime operation |
 | Design | `builder-design` | Normal design tier (Claude Opus 5 medium) | frontend/UI implementation plus bounded normal-complexity state/relation, policy/rule, selector, and reversible structural semantics | procedural API/streaming/lifecycle integration, correctness-heavy operational work, formal/numerical work, advanced visual spectacle |
 | Light | `builder-light` | Routine general tier (GPT-5.6 Luna medium) | routine bounded work whose correctness is locally decidable: clear anchor, established pattern, exact validation — mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes | anything whose correctness depends on implicit cross-module contracts, subtle state/lifecycle/concurrency, serialization compatibility, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
-| Light Design | `builder-light-design` | Routine UI tier (GPT-5.6 Luna medium) | routine UI within an established design system: components from existing patterns, styling/spacing/copy, straightforward responsive/accessibility fixes with concrete specs | new visual direction, novel components without a pattern, complex interaction/motion, semantic/declarative modeling, brand decisions |
-| Highspeed | `scout-highspeed` | Draft-speed retrieval tier | very fast bounded retrieval: narrow file discovery, symbol grep, small dependency slices | broad corpus/coverage questions, large-context analysis, any implementation |
-| Heavy | `builder-heavy` | Exceptional operational tier | host/SSH/deploy/network/provider/reload/rollback work, or concrete coordination across multiple live runtime/service/lifecycle boundaries | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
-| Ultra | `builder-ultra` | Exceptional non-frontend correctness tier | bounded tasks with a stated invariant/oracle and demonstrated exceptional difficulty: formal reasoning, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or grounded failure after heavy | vague/unfamiliar scope, generic retry, ordinary integration, broad architecture, routine algorithms, or any frontend/design work |
+| Heavy | `builder-heavy` | Exceptional operational/correctness tier (GPT-5.6 Terra xhigh) | host/SSH/deploy/network/provider/reload/rollback work, concrete coordination across multiple live runtime/service/lifecycle boundaries, or bounded non-frontend work with a stated invariant/oracle and demonstrated exceptional formal/numerical/scientific difficulty | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
 | Heavy Design | `builder-heavy-design` | Exceptional design tier (Claude Opus 5 high) | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
 | QA | `qa` | Dedicated evidence tier (GPT-5.6 Sol high) | fresh SHA-bound post-build behavioral evidence at exactly `CORE` or `FULL`; default source-read-only | implementation/repair, direct static closure, live/external operations, or a third QA level |
 
@@ -69,7 +66,7 @@ Before launching, reread the prompt as if you were the subagent: can you execute
 
 **Builder internal order and resume:** A prompt containing `## Internal Execution Order` must require the builder, before any source edit, to fill `.pi/build/TILL-DO_<task-id>.md` with concise evidence and `PASS | BLOCKED` verdicts for authority/baseline, contract/scope, validation/resources, and recovery/stop. Only all `PASS` permits `.pi/build/TODO_<task-id>.md`, mirrored from the phases; any blocked gate ends `BLOCKED` with no source mutation and no TODO. The builder updates phase outcome, authorized targets, prerequisite, exit evidence, status, completed/current/next phase, and changed files at coherent boundaries; resume verifies these against repo/diff evidence and continues from the first incomplete phase. Without explicit internal order or another lifecycle requirement, simple tasks create neither artifact. TILL-DO/TODO are transient task-local execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow/GitHub state, or parallel authorization, and stay out of the selective product commit unless explicitly tracked. Newly exposed undeclared scope remains `BLOCKED` before mutation.
 
-**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into independent `scout-highspeed` evidence slices and run them in parallel. If splitting would lose cross-file coherence, use normal `scout`. For broad work, prefer mixed mode: highspeed for inventory/grep shards, normal scout for synthesis. While scouts run, keep doing useful direct inspection instead of waiting idly.
+**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into independent scoped `scout` missions and run them in parallel. If splitting would lose cross-file coherence, use one coherent `scout`. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -88,20 +85,17 @@ Read-only exploration. It reads files, greps, finds patterns, maps dependencies,
 **How to use:**
 ```
 Agent({
-  subagent_type: "scout-highspeed",
+  subagent_type: "scout",
   description: "Investigate auth bug",
   prompt: "Find why JWT validation fails for admin users. Check src/auth/, src/middleware/, and any recent commits. Return exact file paths, line numbers, and the root cause."
 })
 ```
 
 **Rules:**
-- Use `scout-highspeed` for micro-scouts: narrow file discovery, symbol grep, test/config inventory, one local dependency slice, algorithms/backend/infra/math-heavy code understanding with tight scope.
-- Do not give `scout-highspeed` broad prompts like "map tests corpus", "map coverage", "inventory all methods", or "scan entire repo". Split independent evidence slices across parallel micro-scouts, or use normal `scout` for coherent coverage.
-- Use `scout` when lower hallucination risk, exhaustive coverage, large-context coherence, or existing scout checkpoint artifacts matter more than speed.
-- Use mixed mode when useful: highspeed scouts for evidence shards, normal scout for synthesis/contradiction resolution.
-- Do not use highspeed scouts for frontend design critique or visual polish; use website/design agents instead.
+- Keep each scout on one coherent mission; split genuinely independent angles into parallel scoped scouts and synthesize the evidence yourself.
+- Use one coherent `scout` when exhaustive coverage, contradiction resolution, or large-context coherence matters; fragmented independent reports can miss cross-file contradictions.
+- Do not use scouts for frontend design critique or visual polish; use website/design agents instead.
 - Give scout a **clear question**, not vague tasks.
-- Keep each highspeed scout on one narrow evidence slice; return `PARTIAL` with the missing slice when the mission becomes broad or needs coherent cross-file synthesis.
 - Tell it **where to look** (directories, file patterns).
 - Ask for **exact file paths and line numbers**.
 - **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
@@ -193,19 +187,18 @@ Agent({
 ```
 
 **Rules:**
-- Route to light tiers by error profile, not size: `builder-light` and `builder-light-design` handle most routine work correctly, but they err precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. A plausible-but-wrong light result passes shallow validation, so the routing question is “is the correct change fully determined by the task plus visible code?”, not “is this small?”.
+- Route `builder-light` by error profile, not size: it handles most routine work correctly, but it errs precisely where `builder`/`builder-heavy` would not — implicit contracts, subtle semantics, ambiguity. A plausible-but-wrong light result passes shallow validation, so the routing question is “is the correct change fully determined by the task plus visible code?”, not “is this small?”.
 - For non-frontend work, default to `builder`. Use `builder-heavy` only for an explicit host/external operation or concrete multi-runtime integration that a normal builder cannot safely own. Auth/payment, migration, config, shared files, multiple files, and a high-risk label do not select heavy by themselves. Select a design tier only for a local semantic/declarative model with a clear oracle—not merely because the task is unusual or configuration contains rules.
 - Use `builder` for normal-risk procedural implementation: bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, deterministic control flow, and structured integration. Its relative weakness is relation/rule/declarative semantic modeling; route that shape to design tiers only when that shape is actually present.
 - Use `builder-design` for normal frontend/UI coding quality and also as a direct first choice for bounded normal-complexity state/relation behavior, policy/rule composition, selector semantics, or reversible structural conversion with a clear oracle.
 - Use `builder-light` for routine locally-decidable work: mechanical/multi-spot edits, utilities, tests, tooling, pattern-following endpoints, config, reproduced bug fixes. Multi-file is fine when it is one concern with a bounded write set. For frontend, only exact token/class/text swaps.
-- Use `builder-light-design` for routine UI within an established design system: components from existing patterns, styling/spacing/copy, responsive/accessibility fixes with concrete specs. Escalate to `builder-design` when visual judgment is required.
+- Route routine design-system UI to `builder-design`; `builder-light` handles only exact token/class/text swaps.
 - Give light tiers explicit anchors: target files, the pattern to follow, exact validation, and required symbol/API/package/endpoint checks before implementation.
 - Use `builder-heavy-design` directly for exceptional visual work or complex tasks dominated by state/relation semantics, policy/selector composition, grammar/template reconstruction, or declarative structure preservation. It does not require a prior GPT failure.
-- Use `builder-heavy` only for host/external execution or evidenced coordination across multiple live runtime/service/lifecycle boundaries. Do not select it merely because code is backend, risky, multi-file, auth/payment, migration, config, API, or shared.
-- Escalate to `builder-ultra` only for bounded non-frontend work with concrete targets, a stated invariant/validation oracle, and demonstrated exceptional difficulty: formal proof obligations, numerical stability/error bounds, difficult physics/math/science, round-trip/diff/merge semantics, adversarial counterexamples, or a reproducible heavy failure. Vague scope, unfamiliarity, or a generic retry must go to scout/planner, not ultra.
-- For frontend work, route visual hierarchy/layout/motion/accessibility to design tiers; use `builder` for bounded local data/API/auth behavior; reserve `builder-heavy` for an external operation or exceptional live integration boundary. For non-visual work, choose by problem shape rather than filename: declarative relation/rule/structure → design tier; normal local procedural work → `builder`. Do not use `builder-ultra` for frontend.
+- Use `builder-heavy` for host/external execution, evidenced coordination across multiple live runtime/service/lifecycle boundaries, or bounded non-frontend work with concrete targets, a stated invariant/validation oracle, and demonstrated exceptional formal/numerical/scientific difficulty. Do not select it merely because code is backend, risky, multi-file, auth/payment, migration, config, API, or shared; vague scope or a generic retry goes to scout/planner.
+- For frontend work, route visual hierarchy/layout/motion/accessibility to design tiers; use `builder` for bounded local data/API/auth behavior; reserve `builder-heavy` for an external operation or exceptional live integration boundary. For non-visual work, choose by problem shape rather than filename: declarative relation/rule/structure → design tier; normal local procedural work → `builder`.
 - A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact needs separate `validator` review only when one named consequential ambiguity or escape risk could survive producer proof. For a static locally-decidable artifact, focused orchestrator diff review closes it. Authority or importance alone selects neither `validator` nor `builder-heavy`; `builder` may collect evidence.
-- Avoid light tiers for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
+- Avoid `builder-light` for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
 - Parallelize when files are disjoint.
@@ -238,7 +231,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
-- Small focused change → `builder-light` when locally decidable; `builder-light-design` for routine design-system UI; `builder` for normal procedural code; `builder-design` for visual judgment or semantic/declarative work; `builder-heavy` for complex operational integration; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics; `builder-ultra` only with an explicit oracle and exceptional non-frontend formal/numerical/scientific risk
+- Small focused change → `builder-light` when locally decidable; `builder` for normal procedural code; `builder-design` for visual judgment, routine design-system UI, or semantic/declarative work; `builder-heavy` for complex operational integration or exceptional non-frontend formal/numerical/scientific risk with an explicit oracle; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics
 - Critical (auth, payment) → appropriate builder tier with focused tests; add a validator gate only for a named escape risk that must block dependents — the single final PR review covers the rest
 - Low-risk/mechanical/docs-only task → no separate validator task unless evidence shows a specific escape risk
 
@@ -256,9 +249,8 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Letting a light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
 | Skipping scout when planner evidence is incomplete | You miss dependencies, schemas, consumers, runners, and side effects even in a familiar repository | Scout proportionally before planner; familiarity alone is not evidence |
-| Asking one highspeed scout a broad corpus/coverage question | It returns fragmented or shallow evidence | Split independent slices across parallel micro-scouts or use normal `scout` for coherent coverage |
-| Splitting when coherence is required | Independent reports can miss contradictions | Use normal `scout`, or mixed mode with `scout` synthesis |
-| Asking one scout a broad multi-part question | Small model misses nuance and burns tokens | Split into focused scouts when separable; otherwise use normal `scout` |
+| Splitting when coherence is required | Independent reports can miss contradictions | Use one coherent `scout` for synthesis |
+| Asking one scout a broad multi-part question | The agent misses nuance and burns tokens | Split into focused parallel scouts when separable; otherwise use one coherent `scout` |
 
 ---
 
@@ -269,7 +261,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 - [ ] Do I know which files are involved? If not → scout
 - [ ] Real coordination complexity (dependencies, architecture, sequencing)? If yes → planner skill
 - [ ] Bounded and well-defined? If yes → direct tools or one builder
-- [ ] Did I choose default vs highspeed based on task fit?
+- [ ] Did I scope each scout to one coherent mission and parallelize only independent angles?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?
 - [ ] If material post-build QA is needed, did I load `testing`, select exactly CORE or FULL, and hand one fresh `qa` session the exact SHA/scope/acceptance/resources?
 - [ ] For every potentially stateful command, did I prove run-owned disposable resources and forbid execution on `UNKNOWN`/pre-existing/user/dev/shared/staging/production state?

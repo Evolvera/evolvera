@@ -241,7 +241,7 @@ Use the Builder Skill routing rules when planner/orchestrator assigns implementa
 - `builder-heavy-design` is the parent escalation tier for exceptional website design quality: premium visual craft, advanced motion, CSS/SVG/Canvas/3D-feeling visuals, immersive hero sections, distinctive art direction, and visual rescue when `builder-design` is functional but not premium enough.
 - `builder` handles normal-risk non-design implementation around the website (tooling, tests, integrations) when visual judgment is not primary.
 - `builder-heavy` is **not** the design-quality tier. Use it for backend/logic/math/correctness/integration complexity: shared-file hazards, migrations, auth/payment/security-adjacent flows, subtle state/data correctness, complex tests, and preservation-critical work.
-- `builder-light-design` handles routine design-system website edits (existing patterns, concrete specs); `builder-light` only for tiny exact mechanical swaps.
+- `builder-design` also handles routine design-system website edits (existing patterns, concrete specs); `builder-light` only for tiny exact mechanical swaps.
 
 For website plans, every task should explain why its selected builder fits the risk: normal UI quality, ultimate visual quality, correctness/integration, or mechanical speed.
 

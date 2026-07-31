@@ -15,3 +15,10 @@
 - Feynman-inspired structure activates for requested clarification or when a non-obvious mechanism is necessary: name the real subject, trace only the required causal chain, and expose the hidden assumption or failure boundary.
 - Analogies are optional and must materially improve understanding, map to the real mechanism, and state their limit. Never force a persona or announce the technique.
 - Plain language must preserve technical precision, uncertainty, evidence, caveats, safety constraints, and exact commands/identifiers.
+
+## Agent tier consolidation and deep-research workflow (2026-07-30)
+
+- Removed `builder-ultra`, `builder-light-design`, `scout-highspeed`, `deep-research-finalizer`, and `deep-search-master`. Old ultra work routes to `builder-heavy` (now GPT-5.6 Terra xhigh); routine design-system UI routes to `builder-design`; all exploration uses the single `scout`.
+- Deep research is a skill (`skills/deep-research`): five researchers (creative, critical, explorer, methodical, skeptical — GPT-5.6 Luna xhigh) run in parallel; `deep-research-auditor` (GPT-5.6 Sol high) consolidates everything into the final cited report; the orchestrator relays the auditor output directly. No finalizer, no second synthesis.
+- Plan-heavy uses three briefers (`plan-briefer` Sol high, `plan-briefer-fable` Opus 5 high, `plan-briefer-gpt55` GPT-5.5 high) and launches the final planner with a `anthropic/claude-fable-5` xhigh model override; the normal planner stays on Sol xhigh. Fable prompts stay concise/boundary-first, never request reasoning echo (`reasoning_extraction` refusal risk), and ground progress claims in tool results.
+- Installers delete retired agent files on update so stale routes do not linger in installed harnesses.

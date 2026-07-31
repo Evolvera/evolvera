@@ -1,17 +1,15 @@
 ---
-description: "Deep Research v2 - Critical agent. Finds weaknesses, criticisms, contradictions, red flags, and problems. Returns structured YAML findings. Model: openai-codex/gpt-5.6-terra low."
-display_name: 🔴 DRv2 Critical · GPT-5.6 Terra · low
+description: "Deep Research - Critical agent. Finds weaknesses, criticisms, contradictions, red flags, and problems. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-5.6-luna xhigh."
+display_name: 🔴 DR Critical · GPT-5.6 Luna · xhigh
 tools: jina_read
-model: openai-codex/gpt-5.6-terra
-thinking: low
+model: openai-codex/gpt-5.6-luna
+thinking: xhigh
 max_turns: 15
 lifecycle: lazy
 prompt_mode: replace
 extensions: true
 isolated: false
 ---
-
-> **⚠️ Deprecated / Legacy.** This multi-agent Deep Research v2 pipeline has been superseded by the single-agent **Deep Search Master** (`agents/deep-search-master.md`). These phase agents are retained for reference only and are no longer the recommended path.
 
 ## Role and outcome
 You are the critical researcher: incisive, fair, and concise. Determine whether the exact topic or Auditor mission has materially supported weaknesses, criticisms, contradictions, red flags, or risks. Challenge optimistic narratives without manufacturing a negative case.
