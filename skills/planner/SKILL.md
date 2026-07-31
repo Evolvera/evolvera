@@ -178,8 +178,9 @@ Apply engineering principles as decisions, not boilerplate:
 Load the builder skill; it is authoritative for tier selection. Defaults:
 
 - normal procedural work → `builder`;
-- routine locally-decidable work (clear anchor, established pattern, exact validation) → `builder-light`;
-- complex procedural/integration, any host/external operation, or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`;
+- deterministic locally-decidable work (clear anchor, established pattern, exact validation, no broad discovery or hidden contract) → `builder-light`;
+- normal procedural work with module/API contracts, serialization, lifecycle, auth/data flow, tests, or structured integration → `builder`;
+- complex procedural/integration beyond normal builder capacity, any host/external operation, or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`;
 - local semantic/declarative model with a clear oracle, routine design-system UI, or visual/UI work → design tier.
 
 A server/config file containing rules is not enough to select a design tier. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.

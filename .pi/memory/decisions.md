@@ -22,3 +22,9 @@
 - Deep research is a skill (`skills/deep-research`): five researchers (creative, critical, explorer, methodical, skeptical — GPT-5.6 Luna xhigh) run in parallel; `deep-research-auditor` (GPT-5.6 Sol high) consolidates everything into the final cited report; the orchestrator relays the auditor output directly. No finalizer, no second synthesis.
 - Plan-heavy uses three briefers (`plan-briefer` Sol high, `plan-briefer-fable` Opus 5 high, `plan-briefer-gpt55` GPT-5.5 high) and launches the final planner with a `anthropic/claude-fable-5` xhigh model override; the normal planner stays on Sol xhigh. Fable prompts stay concise/boundary-first, never request reasoning echo (`reasoning_extraction` refusal risk), and ground progress claims in tool results.
 - Installers delete retired agent files on update so stale routes do not linger in installed harnesses.
+
+## Builder routing separates model size, effort, and task shape (2026-07-30)
+
+- `builder-light` is the cheap deterministic execution tier: `openai-codex/gpt-5.3-codex-spark` at `medium`. Use it only when the correct edit is locally decidable from the task plus visible code, with exact anchors and validation; broad discovery, hidden contracts, auth/data-flow judgment, lifecycle, serialization, or ambiguity route to `builder`.
+- `builder` remains the normal development tier: `openai-codex/gpt-5.6-luna` at `high`. It owns bounded local implementation that needs ordinary module/API contract understanding, tests, serialization, lifecycle, migrations, auth/payment/data flow, and structured integration.
+- `builder-heavy` remains the exceptional boundary tier: `openai-codex/gpt-5.6-terra` at `xhigh`. It owns host/external/live runtime operations and bounded exceptional formal/numerical/scientific correctness with an explicit oracle. Importance, shared files, auth, migration, or file count alone do not select heavy.
