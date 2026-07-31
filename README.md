@@ -338,7 +338,7 @@ O PI deve investigar o repositório antes de fazer perguntas factuais que o cód
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
 
-Durante uma execução ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo continua através de retries e compactações automáticas e é limpo somente quando o agente fica ocioso.
+Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
 O `/goal` usa um avaliador Anthropic autenticado e não possui fallback para outro provider. Sem Anthropic disponível, o comando informa o bloqueio e não ativa o objetivo.
 

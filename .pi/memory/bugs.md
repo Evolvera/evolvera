@@ -30,3 +30,9 @@
 - **Symptom:** during an authorized move to external storage, opening a byte-identical `.utm` copy created a second registry entry. Deleting the original entry through UTM then removed both the internal and external bundles and cleared both registry entries.
 - **Root cause:** UTM assigned different registry UUIDs to the two entries, but both bundles retained the same embedded VM UUID. Registry-path separation and stopped-state evidence did not prove deletion isolation; UTM treated the duplicate bundles as one VM identity.
 - **Prevention:** never use UTM `delete` as migration cutover when a copied bundle shares the embedded VM UUID, even if UTM shows separate registry UUIDs and paths. Use UTM's documented visual `Move` action on the sole registered original, or first prove deletion behavior against a disposable synthetic VM. A validated external copy is recovery evidence, not proof that deleting either registry entry is isolated. On accidental deletion, stop writes, detach the affected image, preserve a byte-identical sparsebundle copy, and perform recovery only against that copy with explicit authorization.
+
+## Working timer measured the whole PI run instead of the current response
+
+- **Symptom:** the TUI showed stale durations such as `Working for 15h 59m 1s` after the assistant had already answered, because the timer did not reset for each response.
+- **Root cause:** the first `working-time.ts` implementation started on `agent_start` and cleared on `agent_settled`; in long-lived/resumed sessions `agent_settled` can fail to represent the visible response boundary.
+- **Prevention:** measure the visible assistant response with `turn_start` → `turn_end`. Reset defensively on every `turn_start`, clear the interval and restore the default working message on `turn_end` and `session_shutdown`, and keep tests on fake in-memory timers.
