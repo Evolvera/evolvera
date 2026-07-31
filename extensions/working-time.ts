@@ -47,22 +47,27 @@ export function registerWorkingTime(
     if (interval !== undefined) runtime.clearInterval(interval);
     interval = undefined;
     startedAt = undefined;
+    const targetContext = ctx ?? activeContext;
     activeContext = undefined;
-    ctx?.ui.setWorkingMessage();
+    targetContext?.ui.setWorkingMessage();
   };
 
-  pi.on("agent_start", async (_event, ctx) => {
-    if (ctx.mode !== "tui" || !ctx.hasUI || startedAt !== undefined) return;
+  const startTurn = (ctx: ExtensionContext) => {
+    if (ctx.mode !== "tui" || !ctx.hasUI) return;
 
+    stop(ctx);
     startedAt = runtime.now();
     activeContext = ctx;
     render();
     interval = runtime.setInterval(render, UPDATE_INTERVAL_MS);
     interval.unref?.();
+  };
+
+  pi.on("turn_start", async (_event, ctx) => {
+    startTurn(ctx);
   });
 
-  pi.on("agent_settled", async (_event, ctx) => {
-    if (!ctx.isIdle()) return;
+  pi.on("turn_end", async (_event, ctx) => {
     stop(ctx);
   });
 

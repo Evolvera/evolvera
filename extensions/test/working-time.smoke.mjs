@@ -28,35 +28,32 @@ const fakePi = {
   },
 };
 let now = 10_000;
-let intervalCount = 0;
-let clearCount = 0;
-let intervalCallback;
-const timer = { unrefCalled: false, unref() { this.unrefCalled = true; } };
+const intervals = [];
+const cleared = [];
 const runtime = {
   now: () => now,
   setInterval(callback, intervalMs) {
     assert.equal(intervalMs, 1_000);
-    intervalCount += 1;
-    intervalCallback = callback;
+    const timer = { callback, unrefCalled: false, unref() { this.unrefCalled = true; } };
+    intervals.push(timer);
     return timer;
   },
   clearInterval(handle) {
-    assert.equal(handle, timer);
-    clearCount += 1;
+    cleared.push(handle);
   },
 };
 mod.registerWorkingTime(fakePi, runtime);
 
-assert.ok(handlers.has("agent_start"));
-assert.ok(handlers.has("agent_settled"));
+assert.ok(handlers.has("turn_start"));
+assert.ok(handlers.has("turn_end"));
 assert.ok(handlers.has("session_shutdown"));
+assert.equal(handlers.has("agent_start"), false);
+assert.equal(handlers.has("agent_settled"), false);
 
 const messages = [];
-let idle = false;
 const ctx = {
   mode: "tui",
   hasUI: true,
-  isIdle: () => idle,
   ui: {
     setWorkingMessage(message) {
       messages.push(message);
@@ -64,39 +61,37 @@ const ctx = {
   },
 };
 
-await handlers.get("agent_start")({}, ctx);
+await handlers.get("turn_start")({ turnIndex: 1, timestamp: now }, ctx);
 assert.equal(messages.at(-1), "Working for 0s");
-assert.equal(intervalCount, 1);
-assert.equal(timer.unrefCalled, true);
+assert.equal(intervals.length, 1);
+assert.equal(intervals[0].unrefCalled, true);
 
 now += 3_661_000;
-intervalCallback();
+intervals[0].callback();
 assert.equal(messages.at(-1), "Working for 1h 1m 1s");
 
-// Low-level retries emit another agent_start; the continuous timer must not reset.
-await handlers.get("agent_start")({}, ctx);
-assert.equal(intervalCount, 1);
-now += 1_000;
-intervalCallback();
-assert.equal(messages.at(-1), "Working for 1h 1m 2s");
-
-// Do not stop if another run was started before the settled hook executes.
-await handlers.get("agent_settled")({}, ctx);
-assert.equal(clearCount, 0);
-
-idle = true;
-await handlers.get("agent_settled")({}, ctx);
-assert.equal(clearCount, 1);
+await handlers.get("turn_end")({ turnIndex: 1, message: {}, toolResults: [] }, ctx);
+assert.deepEqual(cleared, [intervals[0]]);
 assert.equal(messages.at(-1), undefined);
 
-// A later independent task starts a fresh timer.
+// A new assistant response starts a fresh zeroed timer.
 now = 20_000;
-idle = false;
-await handlers.get("agent_start")({}, ctx);
-assert.equal(intervalCount, 2);
+await handlers.get("turn_start")({ turnIndex: 2, timestamp: now }, ctx);
+assert.equal(intervals.length, 2);
 assert.equal(messages.at(-1), "Working for 0s");
+now += 1_000;
+intervals[1].callback();
+assert.equal(messages.at(-1), "Working for 1s");
+
+// A defensive duplicate turn_start clears the previous interval and resets elapsed time.
+now = 30_000;
+await handlers.get("turn_start")({ turnIndex: 3, timestamp: now }, ctx);
+assert.equal(intervals.length, 3);
+assert.deepEqual(cleared, [intervals[0], intervals[1]]);
+assert.equal(messages.at(-1), "Working for 0s");
+
 await handlers.get("session_shutdown")({}, ctx);
-assert.equal(clearCount, 2);
+assert.deepEqual(cleared, [intervals[0], intervals[1], intervals[2]]);
 assert.equal(messages.at(-1), undefined);
 
 const headlessMessages = [];
@@ -106,7 +101,7 @@ const headlessCtx = {
   hasUI: false,
   ui: { setWorkingMessage: (message) => headlessMessages.push(message) },
 };
-await handlers.get("agent_start")({}, headlessCtx);
+await handlers.get("turn_start")({ turnIndex: 4, timestamp: now }, headlessCtx);
 assert.deepEqual(headlessMessages, []);
 
 console.log("working-time smoke: PASS");
