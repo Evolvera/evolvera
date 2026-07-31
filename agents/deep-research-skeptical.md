@@ -4,7 +4,7 @@ display_name: 🟡 DR Skeptical · GPT-5.6 Luna · xhigh
 tools: jina_read
 model: openai-codex/gpt-5.6-luna
 thinking: xhigh
-max_turns: 15
+max_turns: 45
 lifecycle: lazy
 prompt_mode: replace
 extensions: true
