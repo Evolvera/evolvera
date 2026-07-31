@@ -43,6 +43,12 @@ assert.equal(
 );
 requireMatch("SYSTEM.md", /internal order[\s\S]{0,180}TILL-DO[\s\S]{0,180}(before|prior to)[\s\S]{0,80}TODO[\s\S]{0,80}(editing|source)/i, "missing concise global readiness rule");
 requireMatch("SYSTEM.md", /simple tasks[^.\n]*artifact-free/i, "simple tasks must remain artifact-free by default");
+requireMatch("agents/builder-light.md", /^model: openai-codex\/gpt-5\.3-codex-spark$/m, "builder-light must use Spark medium");
+requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light must remain medium effort");
+requireMatch("agents/builder.md", /^model: openai-codex\/gpt-5\.6-luna$/m, "builder must use Luna");
+requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
+requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-5\.6-terra$/m, "builder-heavy must use Terra");
+requireMatch("agents/builder-heavy.md", /^thinking: xhigh$/m, "builder-heavy must remain xhigh effort");
 
 for (const path of plannerFiles) {
   requireMatch(path, /Internal Execution Order/i, "missing ordered-task contract");
