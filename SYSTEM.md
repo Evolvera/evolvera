@@ -52,7 +52,7 @@ Load relevant full `SKILL.md`. Skill own detailed procedure. Compact routing:
 - **Focused implementation or builder-tier choice:** `agent-guide` → `builder`.
 - **Post-build behavioral/integration proof:** `testing`. Direct deterministic closure enough? Keep it outside QA. Otherwise select exactly `CORE` or `FULL` and launch one fresh dedicated `qa` session against the exact checkpoint; default QA is source-read-only and external/live operations remain forbidden.
 - **Any planning request or decision whether planning needed:** load `planner` first. Planner choose pre-plan/direct work, normal planner by default, or lightweight `plan-heavy` ensemble when requested/useful.
-- **Deep external/web research:** `deep-research`. Five parallel researchers, then the auditor consolidate one final cited report the orchestrator relay directly.
+- **Deep external/web research:** `deep-research`. Six parallel researchers—including a public official-API/data ETL specialist—then the auditor consolidate one final cited report the orchestrator relay directly.
 - **GitHub issues, Project/Kanban, branch-per-issue delivery:** `flow`.
 - **Extensions, skills, MCP, custom tools, PI configuration:** `pi-tool-expert`.
 - **Production website design/build/modify:** `website-pipeline`. The production flow runs `website-designer` first; the Home flow runs `website-home-designer` first; either then optionally runs `website-creative` only on explicit creative activation, then content → planner → builder → polish → validator. **One static Home preview only:** `website-home-preview` uses that Home-first ordering. **Website implementation conventions:** `website-stack` when selected. `project-memory` be memory, not delivery workflow.

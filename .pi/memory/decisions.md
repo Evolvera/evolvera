@@ -28,3 +28,9 @@
 - `builder-light` is the cheap deterministic execution tier: `openai-codex/gpt-5.3-codex-spark` at `medium`. Use it only when the correct edit is locally decidable from the task plus visible code, with exact anchors and validation; broad discovery, hidden contracts, auth/data-flow judgment, lifecycle, serialization, or ambiguity route to `builder`.
 - `builder` remains the normal development tier: `openai-codex/gpt-5.6-luna` at `high`. It owns bounded local implementation that needs ordinary module/API contract understanding, tests, serialization, lifecycle, migrations, auth/payment/data flow, and structured integration.
 - `builder-heavy` remains the exceptional boundary tier: `openai-codex/gpt-5.6-terra` at `xhigh`. It owns host/external/live runtime operations and bounded exceptional formal/numerical/scientific correctness with an explicit oracle. Importance, shared files, auth, migration, or file count alone do not select heavy.
+
+## Deep research supports public structured-data ETL (2026-07-30)
+
+- Added `deep-research-data` (GPT-5.6 Luna xhigh, 45 turns) for official public APIs, open datasets, downloadable CSV/JSON/XLSX, reproducible temporary ETL, and data-provenance-aware findings.
+- The five perspective researchers now also have `jina_read, bash, write` and must consider structured retrieval when it materially improves their angle. Their external access is read-only public `GET`/`HEAD`; any script/payload lives only in a unique `mktemp -d` directory under `/tmp`, with no credentials, project data, package installs, mutating requests, access-control bypass, or writes outside the run-owned temporary directory.
+- Deep research now launches six parallel researchers. The auditor must verify API/dataset query, fields, units, population/geography, period/revision, formula, rounding, and methodology before retaining data-derived aggregates.
