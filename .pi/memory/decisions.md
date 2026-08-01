@@ -57,3 +57,8 @@
 
 - The `openai-codex` mappings for `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` explicitly map Pi `max` to upstream `max`, in addition to `xhigh`. This exposes the documented maximum reasoning level without changing any agent's configured default effort.
 - `config/models.json` is the installer source; it is copied to the installed runtime as `~/.pi/agent/models.json`. The repository-root `models.json` mirrors that runtime configuration for source consistency.
+
+## Heavy builder and plan-heavy final planner routing (2026-07-30)
+
+- `builder-heavy` now uses `openai-codex/gpt-5.6-luna` with `max`, while retaining its exceptional operational/live-boundary and invariant/oracle-driven correctness scope. The route change does not broaden what qualifies for heavy.
+- There is no standalone `planner-heavy` agent after the planning-agent consolidation. The `plan-heavy` workflow launches the existing `planner` agent with its unchanged `agents/planner.md` prompt and overrides only the model/effort to `openai-codex/gpt-5.6-sol` + `max`. Normal planner runs remain Sol xhigh. This preserves one planner prompt and one artifact contract.

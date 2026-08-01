@@ -1065,7 +1065,7 @@ Por fim, no modo solo e com working tree limpa, volte à default, faça `git pul
 | S, local | direta / `builder` |
 | M | pre-plan leve → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; quando o usuário pedir o ensemble plan-heavy, usar a skill `plan-heavy` (três briefs + uma sessão nova de planner em Claude Fable 5 xhigh) |
+| Alto risco | `planner` → menor builder adequado + gates seletivos; heavy somente para operação externa ou integração excepcional; quando o usuário pedir o ensemble plan-heavy, usar a skill `plan-heavy` (três briefs + uma sessão nova de planner usando o prompt original em GPT-5.6 Sol max) |
 
 Sempre:
 

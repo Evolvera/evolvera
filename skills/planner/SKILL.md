@@ -140,7 +140,7 @@ Plan-heavy is not a separate harness or planner agent. It uses the normal planne
 
 1. the orchestrator writes one concise `HANDOFF.md`;
 2. `plan-briefer`, `plan-briefer-fable`, and `plan-briefer-gpt55` produce independent briefs in parallel;
-3. a fresh `planner` session—launched with the `anthropic/claude-fable-5` xhigh model override—reads the handoff plus all briefs, reconciles them, and writes the normal plan ecosystem.
+3. a fresh `planner` session—using its unchanged original prompt with the `openai-codex/gpt-5.6-sol` max-effort model override—reads the handoff plus all briefs, reconciles them, and writes the normal plan ecosystem.
 
 An explicit user request for the plan-heavy ensemble is sufficient. Do not downgrade it to a single unbriefed planner run based on an admission gate, and do not create custom validation/envelope machinery.
 

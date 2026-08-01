@@ -1,16 +1,16 @@
 ---
 name: plan-heavy
-description: Lightweight ensemble planning workflow. Use when the user explicitly asks for the plan-heavy ensemble or when the planner skill decides independent strategy briefs plus a Claude Fable 5 xhigh final planner will materially improve a complex plan. Adds only three parallel briefers before a fresh normal planner synthesis; uses the same artifacts and execution flow as normal planning, with no custom harness, validator, envelope, or agent.
+description: Lightweight ensemble planning workflow. Use when the user explicitly asks for the plan-heavy ensemble or when the planner skill decides independent strategy briefs plus a GPT-5.6 Sol max final planner will materially improve a complex plan. Adds only three parallel briefers before a fresh normal planner synthesis; uses the same artifacts and execution flow as normal planning, with no custom harness, validator, envelope, or agent.
 ---
 
-# Plan Heavy — Three Briefs, Then Fable XHigh Planner
+# Plan Heavy — Three Briefs, Then Sol Max Planner
 
-Plan-heavy is the normal planner workflow with one deliberate upgrade: three isolated briefer sessions independently analyze the problem before a fresh `planner` session—launched with a `anthropic/claude-fable-5` xhigh model override—reconciles them and writes the final plan.
+Plan-heavy is the normal planner workflow with one deliberate upgrade: three isolated briefer sessions independently analyze the problem before a fresh `planner` session—using the same `agents/planner.md` prompt with an `openai-codex/gpt-5.6-sol` max-effort model override—reconciles them and writes the final plan.
 
 ```text
 orchestrator handoff
   → plan-briefer + plan-briefer-fable + plan-briefer-gpt55 (parallel)
-  → fresh planner synthesis on Claude Fable 5 xhigh (reads all briefs directly)
+  → fresh planner synthesis on GPT-5.6 Sol max (reads all briefs directly)
   → normal PLAN_FULL / SCHEDULE / TASKS
   → normal builder/testing/validator execution
 ```
@@ -91,7 +91,7 @@ The briefs should disagree honestly when their independently derived judgment di
 
 ## 4. Launch the Final Planner
 
-After all three brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis` so the plan-heavy watchdog remains scoped to this ensemble, and with the model override `model: "anthropic/claude-fable-5"` plus `thinking: "xhigh"` in the Agent call. The normal planner agent stays on its default model for every non-ensemble plan.
+After all three brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis` so the plan-heavy watchdog remains scoped to this ensemble, using the unchanged prompt from `agents/planner.md` with the model override `model: "openai-codex/gpt-5.6-sol"` plus `thinking: "max"` in the Agent call. The normal planner agent stays on its default model and `xhigh` effort for every non-ensemble plan.
 
 Claude Fable 5 prompt rules for this launch (per Anthropic first-party guidance): keep the delegated prompt concise and boundary-first — Fable follows brief instructions well and over-prescriptive prompts degrade output; state the reason behind the goal, not only the request; place the long inputs (handoff and brief paths) before the final instruction; require that progress and completion claims be grounded in actual tool results; and never instruct it to echo, transcribe, or explain its internal reasoning in the response — decisions recorded in `PLAN_FULL.md` are work product, not reasoning extraction.
 
