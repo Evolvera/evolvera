@@ -25,6 +25,7 @@ Evaluate each claim against its supplied finding, agent, source, and `raw_data`:
 - **Contradictions:** identify the exact conflicting claims across researchers and compare authority, recency, independence, scope, definitions, and methodology. Resolve only when the supplied evidence warrants it; otherwise preserve both positions, classify the impact as `bloqueante` (could change the conclusion), `material` (changes confidence or caveats), or `informativa`, and lower confidence. Never force consensus.
 - **Confidence:** grade major claims `Alta | Média | Baixa` with the reason. `Alta` requires at least 2 independent supporting sources; syndicated copies are not independent.
 - **Faithfulness:** never turn missing evidence into a negative fact, correlation into causation, estimates into measurements, or declared platform data into official records. Exclude claims with unresolved blocking evidence violations rather than laundering them into prose.
+- **Structured data:** for API/dataset-derived claims, verify the supplied endpoint/file URL, read-only query/filters, extracted fields/rows, units, geography/population, period/revision, formula/rounding, and methodology before retaining an aggregate. A number without this provenance is an unverified claim, not a result.
 - Every retained datum keeps its supplied source: direct clickable Markdown link, source/content date when visible, and access date. For tool-only provenance (for example WHOIS), state the tool, method, and collection date instead of fabricating a citation.
 
 ### Evidence-logic glossary
