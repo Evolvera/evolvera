@@ -33,15 +33,24 @@ Define before launching:
 
 One message, all six with `run_in_background: true`, agents: `deep-research-creative`, `deep-research-critical`, `deep-research-explorer`, `deep-research-methodical`, `deep-research-skeptical`, `deep-research-data`.
 
-Each prompt must be self-contained: exact topic/question, why it matters, time window, grounded starting URLs, official API/dataset candidates when known, and domain constraints. Each researcher returns exactly one YAML findings document per its agent contract; do not ask them to write persistent project files or converge with each other.
+Each prompt must be self-contained: exact topic/question, why it matters, time window, grounded starting URLs, official API/dataset candidates when known, and domain constraints. Each perspective researcher returns exactly one YAML findings document per its agent contract; do not ask it to write persistent project files or converge with another researcher.
 
-The five perspective researchers may use compact temporary ETL when structured evidence materially improves their assigned angle. The `data` researcher is the specialist for official public APIs/datasets: explicitly ask it to retrieve and normalize the smallest necessary data slice, verify methodology/units/periods, and record query/field/filter/formula provenance. All researcher ETL is read-only and temporary: public `GET`/`HEAD`, unique `mktemp -d` directory under `${TMPDIR:-/tmp}`, no credentials/project data/package installs, no writes outside that temporary directory, and no bypassing access controls or rate limits.
+Before launching the data researcher, create one unique research directory and exact persistent ETL path:
+
+```text
+RESEARCH_DIR=<PROJECT_ROOT>/.pi/research/<slug>
+ETL_DIR=<RESEARCH_DIR>/etl
+```
+
+Pass absolute `PROJECT_ROOT`, `RESEARCH_DIR`, and `ETL_DIR` to `deep-research-data`. `ETL_DIR` is the data researcher's only authorized persistent write set. It must be new/empty and the data agent must create exactly `pipeline.py`, `derived.json`, and `manifest.json` there when structured data is successfully used. It still returns one YAML findings document; the orchestrator saves that response as `findings/data.yaml`. The data agent never writes the narrative final report.
+
+The five perspective researchers may use compact temporary ETL when structured evidence materially improves their assigned angle. The `data` researcher is the specialist for official public APIs/datasets: explicitly ask it to retrieve and normalize the smallest necessary data slice, verify methodology/units/periods, create/re-run the ETL package, and record query/field/filter/formula provenance. Perspective-researcher ETL remains temporary. The data specialist may persist only its three ETL artifacts in supplied `ETL_DIR`. All retrieval is read-only public `GET`/`HEAD`, with unique `mktemp -d` scratch under `${TMPDIR:-/tmp}`, no credentials/project data/package installs, no writes beyond declared ETL artifacts and scratch, and no bypassing access controls or rate limits.
 
 ## 3. Consolidate with the Auditor
 
-Collect the six YAML outputs. Save each to `<PROJECT_ROOT>/.pi/research/<slug>/findings/<agent>.yaml` and pass absolute paths, or pass the YAML inline when the total is small.
+Collect the six YAML outputs. Save each to `<RESEARCH_DIR>/findings/<agent>.yaml`; the data YAML must retain its `etl_artifacts` paths. Pass absolute finding paths to the auditor rather than inlining large structured outputs.
 
-Launch `deep-research-auditor` with: the exact topic/question, the decision context, all findings (paths or inline), the count of researchers that reported, the data provenance/ETL context when supplied, and the required report language. The auditor adjudicates evidence, resolves or preserves contradictions, and returns the final cited Markdown report as its message.
+Launch `deep-research-auditor` with: the exact topic/question, decision context, all finding paths, the count of researchers that reported, and—for the data researcher—the absolute `ETL_DIR`, `pipeline.py`, `derived.json`, and `manifest.json` paths. The auditor reads the ETL package, verifies that its manifest/provenance supports retained aggregates, adjudicates evidence, resolves or preserves contradictions, and returns the final cited Markdown report as its message. The final report cites official sources from the manifest/findings, not local artifact paths.
 
 ## 4. Deliver
 
