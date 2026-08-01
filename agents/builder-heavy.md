@@ -1,10 +1,10 @@
 ---
 name: builder-heavy
-description: "Exceptional procedural/external-operation executor. Use for host/SSH/deploy/network/provider/reload/rollback work, concrete multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. Model: openai-codex/gpt-5.6-terra xhigh."
-display_name: 🧠 Builder Heavy · GPT-5.6 Terra · xhigh
+description: "Exceptional procedural/external-operation executor. Use for host/SSH/deploy/network/provider/reload/rollback work, concrete multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. Model: openai-codex/gpt-5.6-luna max."
+display_name: 🧠 Builder Heavy · GPT-5.6 Luna · max
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-5.6-terra
-thinking: xhigh
+model: openai-codex/gpt-5.6-luna
+thinking: max
 max_turns: 100
 lifecycle: lazy
 prompt_mode: replace

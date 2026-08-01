@@ -47,13 +47,15 @@ assert.match(briefer55, /brief_gpt55\.md/);
 
 assert.match(planHeavy, /launch a fresh `planner` session/i);
 assert.match(planHeavy, new RegExp(finalDescription));
-assert.match(planHeavy, /anthropic\/claude-fable-5/);
+assert.match(planHeavy, /openai-codex\/gpt-5\.6-sol/);
+assert.match(planHeavy, /thinking: `max`|thinking: "max"/);
+assert.match(planHeavy, /unchanged prompt from `agents\/planner\.md`/);
 assert.match(planHeavy, /plan-briefer-gpt55/);
 assert.match(planHeavy, /read the handoff and all briefs first/i);
 assert.match(planHeavy, /If any brief is missing or empty[\s\S]*stop/i);
 assert.match(plannerSkill, /reads the handoff plus all briefs, reconciles them/i);
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
-assert.match(system, /three parallel briefs → a fresh planner synthesis on Claude Fable 5 xhigh/i);
+assert.match(system, /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt on GPT-5\.6 Sol max/i);
 
 assert.match(watchdog, /const TARGET_AGENT = "planner"/);
 assert.match(watchdog, new RegExp(`const PLAN_HEAVY_DESCRIPTION = "${finalDescription}"`));
