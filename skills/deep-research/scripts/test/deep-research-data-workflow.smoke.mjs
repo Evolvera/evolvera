@@ -28,6 +28,9 @@ assert.match(skill, /RESEARCH_DIR=<PROJECT_ROOT>\/\.pi\/research\/<slug>/);
 assert.match(skill, /ETL_DIR=<RESEARCH_DIR>\/etl/);
 assert.match(skill, /exactly `pipeline\.py`, `derived\.json`, and `manifest\.json`/);
 assert.match(skill, /data agent never writes the narrative final report/i);
+assert.match(skill, /build the \*\*Data → Information → Knowledge\*\* chain/);
+assert.match(skill, /distinguish measurement, comparison, inference, and recommendation/);
+assert.match(skill, /correlation never establishes causation/i);
 assert.match(skill, /final report cites official sources.*not local artifact paths/i);
 assert.match(skill, /no credentials\/project data\/package installs/i);
 
@@ -39,6 +42,9 @@ assert.match(dataAgent, /^tools: jina_read, bash, write, read$/m);
 assert.match(dataAgent, /official public APIs, open datasets, downloadable CSV\/JSON\/XLSX/i);
 assert.match(dataAgent, /read-only retrieval: `GET`\/`HEAD`/);
 assert.match(dataAgent, /mktemp -d/);
+assert.match(dataAgent, /## Data → Information → Knowledge discipline/);
+assert.match(dataAgent, /No conclusion may bypass the pyramid/);
+assert.match(dataAgent, /separate \*\*measurement\*\*[\s\S]*\*\*comparison\*\*[\s\S]*\*\*inference\*\*[\s\S]*\*\*recommendation\*\*/);
 assert.match(dataAgent, /absolute, unique, project-owned `ETL_DIR`/);
 assert.match(dataAgent, /Create exactly these durable ETL artifacts in `ETL_DIR`.*`pipeline\.py`, `derived\.json`, and `manifest\.json`/s);
 assert.match(dataAgent, /Execute the pipeline once against the public source/);
@@ -47,10 +53,15 @@ assert.match(dataAgent, /Never send authentication, cookies, tokens, API keys, P
 assert.match(dataAgent, /etl_artifacts:/);
 assert.match(dataAgent, /pipeline_path: null/);
 assert.match(dataAgent, /manifest_path: null/);
+assert.match(dataAgent, /knowledge_conclusions:/);
+assert.match(dataAgent, /data_lineage:/);
+assert.match(dataAgent, /interpretation_boundary: null/);
 assert.match(dataAgent, /agent_id: "data"/);
 
 assert.match(auditor, /ETL_DIR\/pipeline\.py/);
 assert.match(auditor, /read the supplied `pipeline\.py`, `derived\.json`, and `manifest\.json`/);
+assert.match(auditor, /Verify the \*\*Data → Information → Knowledge\*\* chain/);
+assert.match(auditor, /Reject causal wording unless the supplied evidence supports causation/);
 assert.match(auditor, /Cite the official source URL, never a local ETL artifact path/);
 
 for (let index = 0; index < workers.length; index += 1) {
