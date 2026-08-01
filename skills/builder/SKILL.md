@@ -97,13 +97,14 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 
 1. Read `.pi/plans/SCHEDULE.md` and use its `Agent` and dependency columns as the execution authority.
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
-3. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
-4. Run tasks in the same parallel group concurrently only when full write sets, recovery/build artifacts, validation resources, and external effects are disjoint. Prefer small groups (2–4); parallelism is an optimization, never a requirement.
-5. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
-6. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
-7. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
-8. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
-9. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+3. Before launching a task with more than 20 declared changed paths or three or more semantic regions, verify its `Proof` contains a grounded Wide-Task Receipt. It must show compatibility seams/cuts attempted and either a safe split or exact checkpoint evidence for atomicity. Missing or generic claims such as coupling, one typecheck/checkpoint, internal phases, or stronger model are `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`; never let one builder absorb an unproven wide scope.
+4. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
+5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. Prefer groups of 2–4; do not start one member and wait while another independent member is already ready.
+6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
+7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
+8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
+9. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
+10. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
 
 Example:
 
@@ -200,7 +201,9 @@ Every delegated prompt containing a potentially stateful command must include `S
 
 Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
 
-For focused delegation, default to one builder. Parallelize independent implementation slices by SoC—component/module, API endpoint, test suite, configuration surface—only when it genuinely reduces scope per builder and write sets are provably disjoint. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
+For one coherent non-wide outcome, default to one builder. A direct or planner-driven assignment with more than 20 declared changed paths or three or more semantic regions must first pass the Wide-Task Parallelization Gate: seek repository-supported compatibility seams and safe fan-out; if it remains atomic, require the exact Wide-Task Receipt. Internal phases or a stronger model do not satisfy this gate.
+
+Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, or configuration surface—with focused tests traveling alongside the production slice they verify. At each wave, launch all safe ready members together rather than serially dispatching independent work. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
 
 Run builders in parallel only when:
 - full write sets are disjoint, including registries, manifests, lockfiles, generated/recovery/build artifacts, and shared configuration;
@@ -232,7 +235,7 @@ Before spawning builder, verify:
 - [ ] Every potentially stateful validation has `STATEFUL RESOURCE PROOF`; `UNKNOWN` or pre-existing data means the command will not run.
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
-- [ ] Task is small enough for a delegated model.
+- [ ] Task is small enough for a delegated model; if it declares more than 20 changed paths or spans three or more semantic regions, its grounded Wide-Task Receipt proves the split or exact atomicity, otherwise stop `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`.
 - [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified narrowly, no broad discovery/contract judgment is required, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).
 - [ ] If using `builder-heavy`, task is bounded and dominated by an explicit external/host operation, exceptional live multi-runtime coordination, or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
