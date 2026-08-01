@@ -34,3 +34,9 @@
 - Added `deep-research-data` (GPT-5.6 Luna xhigh, 45 turns) for official public APIs, open datasets, downloadable CSV/JSON/XLSX, reproducible temporary ETL, and data-provenance-aware findings.
 - The five perspective researchers now also have `jina_read, bash, write` and must consider structured retrieval when it materially improves their angle. Their external access is read-only public `GET`/`HEAD`; any script/payload lives only in a unique `mktemp -d` directory under `/tmp`, with no credentials, project data, package installs, mutating requests, access-control bypass, or writes outside the run-owned temporary directory.
 - Deep research now launches six parallel researchers. The auditor must verify API/dataset query, fields, units, population/geography, period/revision, formula, rounding, and methodology before retaining data-derived aggregates.
+
+## Deep-research data keeps reproducible ETL artifacts (2026-07-30)
+
+- For a structured-data investigation, the orchestrator creates one unique `<PROJECT_ROOT>/.pi/research/<slug>/etl` directory and passes it as the data agent's exact persistent write set. The data agent writes only `pipeline.py`, `derived.json`, and `manifest.json` there, and returns YAML whose `etl_artifacts` points to those files; the orchestrator writes the YAML separately as `findings/data.yaml`.
+- `pipeline.py` is read-only, standard-library-first reproduction logic; `derived.json` contains only the retained normalized rows/series/aggregates; `manifest.json` records public source/query, retrieval/schema/units/period/methodology, transforms, hashes when practical, and reproduction command. Raw payloads remain temporary rather than persistent.
+- The data agent never writes the narrative report. The auditor reads the data YAML and ETL package, excludes unsupported aggregates, and cites the official source URL rather than local artifacts in the final report.
