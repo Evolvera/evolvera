@@ -46,3 +46,9 @@
 - The data agent is an evidence-bound analyst, not merely an API/ETL executor. Raw public records stay temporary; `manifest.json` preserves their retrieval identity and schema. `derived.json` is the documented information layer, with stable selectors and metric/transform scope.
 - A `knowledge_conclusions` YAML item is retained only when it traces to finding IDs and exact derived-data selector/transformation, separates measurement/comparison/inference/recommendation, states confidence, interpretation boundary, caveats, and decision relevance. Correlation or a descriptive trend never supports causal wording.
 - The auditor must verify the complete Data → Information → Knowledge chain and exclude any aggregate or conclusion whose lineage, scope, or causal claim is unsupported.
+
+## Deep-research data analyst is Terra xhigh and selectively invoked (2026-07-30)
+
+- `deep-research-data` uses `openai-codex/gpt-5.6-terra` with `xhigh` and 70 turns because it owns bounded, reproducible data-analysis/ETL work rather than generic web research.
+- Deep Research always launches the five perspective researchers in parallel. It adds the data analyst in that same wave only when exact official quantities, a time series/segmentation/reconciliation/join/calculation, quantitative verification, or a reproducible API/dataset chain materially changes the bounded answer. Qualitative/discovery questions and claims resolved by cited primary prose do not invoke it.
+- The invocation decision is recorded in the auditor handoff; ETL artifacts exist and are audited only when the analyst ran.
