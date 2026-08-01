@@ -48,6 +48,7 @@
           "reasoning": true,
           "thinkingLevelMap": {
             "xhigh": "xhigh",
+            "max": "max",
             "minimal": "low"
           },
           "input": [
@@ -71,6 +72,7 @@
           "reasoning": true,
           "thinkingLevelMap": {
             "xhigh": "xhigh",
+            "max": "max",
             "minimal": "low"
           },
           "input": [
@@ -94,6 +96,7 @@
           "reasoning": true,
           "thinkingLevelMap": {
             "xhigh": "xhigh",
+            "max": "max",
             "minimal": "low"
           },
           "input": [
