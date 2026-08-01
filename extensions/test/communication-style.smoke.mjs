@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
+const systemPrompt = readFileSync(path.join(root, "SYSTEM.md"), "utf8");
+const mirroredSystemPrompt = readFileSync(path.join(root, "config", "SYSTEM.md"), "utf8");
 const sandbox = mkdtempSync(path.join(tmpdir(), "communication-style-smoke-"));
+
+assert.equal(systemPrompt, mirroredSystemPrompt, "SYSTEM mirrors must remain byte-identical");
+assert.match(systemPrompt, /When closing a completed change for the user, explain the outcome naturally/);
+assert.match(systemPrompt, /Include a concise `Before → Now` behavioral\/contract contrast/);
+assert.match(systemPrompt, /contrast is additive context, never a replacement for the complete outcome explanation/);
 
 function writeJson(file, value) {
   mkdirSync(path.dirname(file), { recursive: true });
