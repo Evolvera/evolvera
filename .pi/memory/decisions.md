@@ -40,3 +40,9 @@
 - For a structured-data investigation, the orchestrator creates one unique `<PROJECT_ROOT>/.pi/research/<slug>/etl` directory and passes it as the data agent's exact persistent write set. The data agent writes only `pipeline.py`, `derived.json`, and `manifest.json` there, and returns YAML whose `etl_artifacts` points to those files; the orchestrator writes the YAML separately as `findings/data.yaml`.
 - `pipeline.py` is read-only, standard-library-first reproduction logic; `derived.json` contains only the retained normalized rows/series/aggregates; `manifest.json` records public source/query, retrieval/schema/units/period/methodology, transforms, hashes when practical, and reproduction command. Raw payloads remain temporary rather than persistent.
 - The data agent never writes the narrative report. The auditor reads the data YAML and ETL package, excludes unsupported aggregates, and cites the official source URL rather than local artifacts in the final report.
+
+## Deep-research data agent follows a Data → Information → Knowledge pyramid (2026-07-30)
+
+- The data agent is an evidence-bound analyst, not merely an API/ETL executor. Raw public records stay temporary; `manifest.json` preserves their retrieval identity and schema. `derived.json` is the documented information layer, with stable selectors and metric/transform scope.
+- A `knowledge_conclusions` YAML item is retained only when it traces to finding IDs and exact derived-data selector/transformation, separates measurement/comparison/inference/recommendation, states confidence, interpretation boundary, caveats, and decision relevance. Correlation or a descriptive trend never supports causal wording.
+- The auditor must verify the complete Data → Information → Knowledge chain and exclude any aggregate or conclusion whose lineage, scope, or causal claim is unsupported.
