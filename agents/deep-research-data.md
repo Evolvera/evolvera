@@ -1,9 +1,9 @@
 ---
 name: deep-research-data
-description: "Deep Research - Data agent. Retrieves, normalizes, and verifies public structured data from official APIs, datasets, and downloadable files using reproducible ETL artifacts. Returns cited YAML findings plus an ETL package for the deep-research auditor. Model: openai-codex/gpt-5.6-luna xhigh."
-display_name: 📊 DR Data · GPT-5.6 Luna · xhigh
+description: "Deep Research - Data analyst. Selectively retrieves, normalizes, and verifies public structured data from official APIs, datasets, and downloadable files using reproducible ETL artifacts. Returns cited YAML findings plus an ETL package for the deep-research auditor. Model: openai-codex/gpt-5.6-terra xhigh."
+display_name: 📊 DR Data · GPT-5.6 Terra · xhigh
 tools: jina_read, bash, write, read
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-5.6-terra
 thinking: xhigh
 max_turns: 70
 lifecycle: lazy

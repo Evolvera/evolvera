@@ -18,16 +18,19 @@ const [skill, system, systemMirror, dataAgent, auditor, ...workerTexts] = await 
 ]);
 
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
-assert.match(system, /Six parallel researchers—including a public official-API\/data ETL specialist/i);
-assert.match(skill, /Six Researchers, One Auditor/);
+assert.match(system, /Launch five perspective researchers in parallel; add the Terra xhigh public official-API\/data ETL specialist only when/i);
+assert.match(skill, /Five Perspectives, Optional Data Analyst, One Auditor/);
 assert.match(skill, /deep-research-data/);
-assert.match(skill, /all six with `run_in_background: true`/);
+assert.match(skill, /Data-analyst invocation gate/);
+assert.match(skill, /Launch `deep-research-data` only when structured-data work is materially needed/);
+assert.match(skill, /Do \*\*not\*\* launch it for qualitative\/discovery research/);
+assert.match(skill, /add `deep-research-data` to that \*\*same parallel wave\*\*/);
 assert.match(skill, /public `GET`\/`HEAD`/);
 assert.match(skill, /unique `mktemp -d` scratch/);
 assert.match(skill, /RESEARCH_DIR=<PROJECT_ROOT>\/\.pi\/research\/<slug>/);
 assert.match(skill, /ETL_DIR=<RESEARCH_DIR>\/etl/);
 assert.match(skill, /exactly `pipeline\.py`, `derived\.json`, and `manifest\.json`/);
-assert.match(skill, /data agent never writes the narrative final report/i);
+assert.match(skill, /data analyst never writes the narrative final report/i);
 assert.match(skill, /build the \*\*Data → Information → Knowledge\*\* chain/);
 assert.match(skill, /distinguish measurement, comparison, inference, and recommendation/);
 assert.match(skill, /correlation never establishes causation/i);
@@ -35,9 +38,10 @@ assert.match(skill, /final report cites official sources.*not local artifact pat
 assert.match(skill, /no credentials\/project data\/package installs/i);
 
 assert.match(dataAgent, /^name: deep-research-data$/m);
-assert.match(dataAgent, /^model: openai-codex\/gpt-5\.6-luna$/m);
+assert.match(dataAgent, /^model: openai-codex\/gpt-5\.6-terra$/m);
 assert.match(dataAgent, /^thinking: xhigh$/m);
 assert.match(dataAgent, /^max_turns: 70$/m);
+assert.match(dataAgent, /^display_name: 📊 DR Data · GPT-5\.6 Terra · xhigh$/m);
 assert.match(dataAgent, /^tools: jina_read, bash, write, read$/m);
 assert.match(dataAgent, /official public APIs, open datasets, downloadable CSV\/JSON\/XLSX/i);
 assert.match(dataAgent, /read-only retrieval: `GET`\/`HEAD`/);
