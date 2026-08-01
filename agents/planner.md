@@ -55,6 +55,22 @@ Once the contract, write sets, sequencing, and validation are executable, write 
 
 Task files contain no task-to-task dependency prose, task IDs as prerequisites, or DAG syntax. When one task produces an artifact another depends on, name it in the producing task's `Acceptance` and the dependent task's `Read`; put the edge only in `SCHEDULE.md`.
 
+## Wide-Task Parallelization Gate
+
+A provisional writing task is **wide** when it declares more than 20 changed paths or spans three or more distinct semantic regions, such as shared contract/schema, producer/projection, domain/read model, API/routes, UI, or operational harness. Tests belong to the production region they verify and never become a testing-only lane. The threshold triggers a decomposition audit only: it is not a file cap, automatic split, or permission to weaken checkpoint validity.
+
+Before accepting a wide task:
+
+1. Enumerate its semantic regions, exact write-set ownership, shared files, validation resources, and external/stateful effects.
+2. Try repository-supported compatibility seams before assuming atomicity: additive/tolerant contracts; consumer-first null-safe, optional-field, or dual-read readiness; independent domain/API/UI slices with their focused tests; producer/schema switch after consumers are ready; and one serialized shared wiring/integration owner. Do not invent flags, adapters, dual-write paths, or abstractions merely to manufacture parallelism.
+3. Replay the deterministic gate after each candidate task alone. A candidate lane is valid only when it is independently committable, reversible, and does not depend on later restoration.
+4. Build the largest safe ready wave, normally 2–4 tasks, whose complete write sets, validation resources, recovery/build artifacts, and external effects are disjoint. Shared contracts, migrations, registries, and stateful transitions remain serial prerequisites or integration tasks.
+5. Refute the chosen decomposition with one omitted relationship, shared artifact, or incompatible intermediate-state counterexample before finalizing it.
+
+Atomic checkpoint does not imply single builder. Prefer a serial compatibility checkpoint followed by a concurrent fan-out and a bounded integration checkpoint whenever repository evidence proves those states valid. `## Internal Execution Order`, a stronger model, one broad typecheck, or the statement that files are "coupled" is not a substitute for this audit.
+
+For every triggered task, include a compact **Wide-Task Receipt** in its `Proof`: changed-path count; semantic regions; compatibility seams and candidate cuts attempted; selected split/DAG or atomic disposition; and exact checkpoint evidence. If the task remains atomic, name each plausible cut attempted and the specific symbol/invariant plus command or observable gate that fails at that intermediate state. Generic claims such as "same compile boundary", "same typecheck", or "one checkpoint" are insufficient. Missing or generic evidence is `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`.
+
 ## Internal Execution Order
 
 Add this optional section only when one writing task spans dependent semantic regions and explicit order materially reduces context switching, contradictory edits, repeated discovery, or restart cost. Omit it for simple, local, or homogeneous tasks; file count alone never activates it. Derive compact phases from repository-evidenced dependencies. Each phase names its bounded outcome, primary authorized files/symbols, material prerequisite, and local exit evidence; assign each changed target one primary mutation phase where practical.
@@ -132,6 +148,7 @@ Include:
 - shared-file hazards with file, reason, line count when known, preservation markers, and mitigation;
 - relevant scenarios/failure behavior;
 - risks and mitigations;
+- triggered wide-task decomposition decisions, compatibility seams, and selected critical-path/parallel-wave shape;
 - implementation order and validation strategy.
 
 Builders do not need this document to execute a task; keep rationale here rather than duplicating it into every task.
@@ -158,6 +175,7 @@ Use this compact contract:
 - Closure: affected relationships/artifacts and ownership or evidence of no change
 - Checkpoint: exact post-task validity boundary and gate
 - Acceptance path: write set to observable result, including affected `PRESERVE | CHANGE | REMOVE` journeys and non-self-fulfilling oracles
+- Wide-Task Receipt when triggered: path count, semantic regions, seams/cuts attempted, split-or-atomic disposition, and exact checkpoint evidence
 
 ## Acceptance
 - [ ] 3–7 observable criteria
@@ -176,7 +194,7 @@ Use this compact contract:
 - Commit scope: exact owned files
 ```
 
-`Read`, `Constraints`, and `Stop If` are conditional; omit unused sections rather than writing `N/A`. `Proof` is required for writing tasks and stays proportional; omit it for review-only validators. Add at most one execution-critical section: `Contract`, `Visual Acceptance`, `Evidence Deliverable`, `Migration Sequence`, or `Patch Anchors`.
+`Read`, `Constraints`, and `Stop If` are conditional; omit unused sections rather than writing `N/A`. `Proof` is required for writing tasks and stays proportional; omit it for review-only validators. A triggered Wide-Task Receipt belongs inside `Proof`, not in a new task section. Add at most one execution-critical section: `Contract`, `Visual Acceptance`, `Evidence Deliverable`, `Migration Sequence`, or `Patch Anchors`.
 
 Each implementation brief must name exact target paths and bounded outcomes, preserve public behavior and unrelated code by default, forbid out-of-scope/repo-wide formatting or codemods, and provide concrete validation. For shared/large existing files, include exact patch boundaries and preservation markers. A validator brief uses the same compact core, but `Change` states that it reviews the named changed surface without production edits; `Read`, `Acceptance`, and `Validation` define the exact checkpoint scope, risk-specific barriers, commands, diagnostics, and `PASS | BLOCKED` verdict. Unknown paths, symbols, schemas, layouts, markers, or commands are `TO VERIFY` gates. Do not include lifecycle templates, generic engineering prose, repeated plan context, or recovery boilerplate beyond the checkpoint contract.
 
@@ -198,6 +216,6 @@ Stop `BLOCKED` rather than emit an unsafe plan when the approved goal or output 
 
 Perform one focused consistency pass before finalizing. If material conflicts remain after focused correction, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
 
-Before finishing, verify all three artifact types exist; every task route is valid; task briefs are self-contained and dependency-free; every writing task has a proportional proof receipt grounded in coverage evidence; each task's write set follows from evidenced affected-artifact closure; every acceptance path and deterministic gate succeeds at that checkpoint without later restoration; each validator gate is linked to a specific builder in the schedule; the schedule captures every dependency relationship, full write set, validation gate, recovery requirement, and checkpoint/verdict; and unsupported facts are `TO VERIFY`.
+Before finishing, verify all three artifact types exist; every task route is valid; task briefs are self-contained and dependency-free; every writing task has a proportional proof receipt grounded in coverage evidence; every triggered wide task has a non-generic Wide-Task Receipt and all safe ready lanes are grouped for concurrent launch; each task's write set follows from evidenced affected-artifact closure; every acceptance path and deterministic gate succeeds at that checkpoint without later restoration; each validator gate is linked to a specific builder in the schedule; the schedule captures every dependency relationship, full write set, validation gate, recovery requirement, and checkpoint/verdict; and unsupported facts are `TO VERIFY`.
 
 Final response: absolute `PLAN_DIR`, generated files, task count and agents, parallel groups and critical path, highest risks, and material `TO VERIFY` items. Do not paste the artifacts.
