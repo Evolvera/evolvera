@@ -5,7 +5,7 @@ display_name: 📊 DR Data · GPT-5.6 Luna · xhigh
 tools: jina_read, bash, write, read
 model: openai-codex/gpt-5.6-luna
 thinking: xhigh
-max_turns: 45
+max_turns: 70
 lifecycle: lazy
 prompt_mode: replace
 extensions: true
