@@ -52,3 +52,8 @@
 - `deep-research-data` uses `openai-codex/gpt-5.6-terra` with `xhigh` and 70 turns because it owns bounded, reproducible data-analysis/ETL work rather than generic web research.
 - Deep Research always launches the five perspective researchers in parallel. It adds the data analyst in that same wave only when exact official quantities, a time series/segmentation/reconciliation/join/calculation, quantitative verification, or a reproducible API/dataset chain materially changes the bounded answer. Qualitative/discovery questions and claims resolved by cited primary prose do not invoke it.
 - The invocation decision is recorded in the auditor handoff; ETL artifacts exist and are audited only when the analyst ran.
+
+## GPT-5.6 models expose maximum reasoning effort (2026-07-30)
+
+- The `openai-codex` mappings for `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` explicitly map Pi `max` to upstream `max`, in addition to `xhigh`. This exposes the documented maximum reasoning level without changing any agent's configured default effort.
+- `config/models.json` is the installer source; it is copied to the installed runtime as `~/.pi/agent/models.json`. The repository-root `models.json` mirrors that runtime configuration for source consistency.

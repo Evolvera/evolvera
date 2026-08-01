@@ -88,6 +88,11 @@ const modelsConfig = JSON.parse(read("config/models.json"));
 const runtimeModelsConfig = JSON.parse(read("models.json"));
 assert.equal(Object.hasOwn(modelsConfig.providers, "anthropic"), false);
 assert.deepEqual(runtimeModelsConfig, modelsConfig);
+const gpt56CodexModels = modelsConfig.providers["openai-codex"].models.filter(({ id }) => id.startsWith("gpt-5.6-"));
+assert.deepEqual(gpt56CodexModels.map(({ id }) => id), ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
+for (const model of gpt56CodexModels) {
+  assert.equal(model.thinkingLevelMap.max, "max", `${model.id} must expose max reasoning effort`);
+}
 
 const expectedRoutes = {
   "agents/builder-design.md": { thinking: "medium" },
