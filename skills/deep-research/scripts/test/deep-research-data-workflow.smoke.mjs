@@ -28,7 +28,7 @@ assert.match(skill, /no credentials\/project data\/package installs/i);
 assert.match(dataAgent, /^name: deep-research-data$/m);
 assert.match(dataAgent, /^model: openai-codex\/gpt-5\.6-luna$/m);
 assert.match(dataAgent, /^thinking: xhigh$/m);
-assert.match(dataAgent, /^max_turns: 45$/m);
+assert.match(dataAgent, /^max_turns: 70$/m);
 assert.match(dataAgent, /^tools: jina_read, bash, write, read$/m);
 assert.match(dataAgent, /official public APIs, open datasets, downloadable CSV\/JSON\/XLSX/i);
 assert.match(dataAgent, /read-only retrieval: `GET`\/`HEAD`/);
