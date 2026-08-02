@@ -24,16 +24,27 @@ Invoke `Agent(subagent_type="scout")` in these situations:
 
 Direct `grep`/`read` comes first; delegate only what direct tools cannot answer cheaply. Default to **one coherent scout**. After bounded structural orientation, fan out only when it exposes two or more independent evidence questions that can advance the same planning contract without waiting on one another. Create a compact **Scout Fan-out Map** in the orchestrator's evidence notes before launch; it is not a plan artifact, task, write-set proof, or parallel authorization.
 
-For each shard, record:
+Inventory every product/client/runtime root in scope before the map. A root cannot be silently pruned because of its name, platform, or presumed legacy status: assign a candidate or record direct evidence for `INACTIVE | LEGACY | OUT_OF_SCOPE`; otherwise it remains `UNKNOWN`.
+
+For each candidate, record:
 - **ID and decision question** — one answer the planner needs, not a broad topic;
 - **primary semantic boundary** — the behavior/contract/state/validation concern it owns;
-- **source scope and explicit overlap** — roots/patterns to search and any named bridge file/symbol another shard may also read;
+- **source scope and explicit overlap** — roots/patterns to search and any named bridge file/symbol another candidate may also read;
 - **required handoff** — exact paths/symbols, upstream/downstream anchors, candidate dispositions, validation/resource facts, or bounded gap the synthesis needs;
+- **admission** — `ADMIT` (independent and ready now), `DEFER` (depends on another result), `MERGE` (must remain with a causal neighbor), or `SYNTHESIS` (cross-shard reconciliation after evidence exists);
 - **stop condition** — when it returns `COMPLETE` or `PARTIAL` instead of expanding.
 
-Launch every map-admitted ready shard together in one message with `run_in_background: true`. Use normally 2–4 scouts; go beyond four only when every additional shard is independently material, source-disjoint or has a named overlap, and can be reconciled without another broad discovery pass. The runtime `maxConcurrent` setting is a ceiling, never a target. A directory, file count, or generic test-only lookup does not justify a shard; focused tests travel with the production concern they verify unless runner/resource safety is itself an independent question. Never split when one result determines the next search, one causal state model must stay coherent, exhaustive closure or contradiction resolution needs one context, or the shards would duplicate retrieval.
+### Capacity and Shard-Breadth Gate
 
-After the wave, reconcile a compact **Seam Synthesis**: each shard's semantic unit and evidence, cross-shard upstream/downstream anchors, shared or serial surfaces, validation/resource facts, candidate `AFFECTED | UNAFFECTED` dispositions, contradictions, and gaps. A scout shard accelerates evidence retrieval; it never proves a task boundary, write-set isolation, valid checkpoint, or builder parallelism. If a result exposes a missing relation, launch one focused follow-up in the next wave only when its question is now bounded; otherwise use one synthesis scout.
+Take a capacity snapshot before launch: effective background `maxConcurrent` after any project override, currently active background agents, and free slots. Launch every ready `ADMIT` candidate up to free slots in one message with `run_in_background: true`; do not impose an arbitrary 2–4 cap or leave a slot idle while an independent `ADMIT` candidate is ready. If more candidates are admissible than slots, choose a full source-scoped wave that maximizes decision coverage, record the deferred candidates, and recompute after the wave. The configured cap limits normal background agents; it is a ceiling, not a reason to manufacture shards.
+
+A provisional candidate spanning three or more independent semantic regions triggers a **Shard-Breadth Audit**. This is not an automatic split or region cap: split only at a repository-supported semantic seam, or record the exact causal state/contract/contradiction that requires one coherent scout. Generic labels such as “backend”, “frontend”, “full system”, or “all tests” are not coupling evidence. A directory, file count, or generic test-only lookup also does not justify a shard; focused tests travel with the production concern they verify unless runner/resource safety is itself an independent question. Never split when one result determines the next search, one causal state model must stay coherent, exhaustive closure or contradiction resolution needs one context, or the shards would duplicate retrieval.
+
+After the wave, reconcile a compact **Seam Synthesis**: root inventory; capacity/admission disposition; each shard's semantic unit and evidence; cross-shard upstream/downstream anchors; shared or serial surfaces; validation/resource facts; candidate `AFFECTED | UNAFFECTED` dispositions; contradictions; and gaps. A scout shard accelerates evidence retrieval; it never proves a task boundary, write-set isolation, valid checkpoint, or builder parallelism. If a result exposes a missing relation, launch one focused follow-up in the next wave only when its question is now bounded; otherwise use one synthesis scout.
+
+### Whole-System Reconnaissance
+
+For a request to understand an entire frontend, backend, and product purpose, do not assign one broad backend scout, one broad client scout, and one premature purpose scout. Inventory all versioned/executable roots first—such as API, web, native/mobile, landing, workers, shared contracts, and operational/test harnesses when present—then admit each independent flow/domain/client boundary that can be investigated now. A purpose or behavior reconciliation across those roots is normally `SYNTHESIS`; a bounded documentation/claims inventory may be `ADMIT`. Broad repositories can legitimately fill all available background slots when the map proves independent questions.
 
 ### Use one coherent scout when splitting would lose coherence
 
@@ -57,16 +68,17 @@ Agent({
 
 ### Use parallel scoped scouts for independent angles
 
-First make the compact map, for example:
+First make the compact map. This small example admits three scouts; it is not a concurrency cap.
 
-| Shard | Decision question | Boundary / scope | Required handoff |
-|---|---|---|---|
-| `entry-consumers` | Which entry points and consumers observe the behavior? | `<consumer-root>`, consumer tests; named shared-contract overlap | callers, UI/API contracts, focused tests |
-| `domain-contract` | Which domain state and contract fields govern it? | `<domain-root>`, `<shared-contract-root>`; named overlap | invariants, producer/consumer anchors, affected candidates |
-| `runner-safety` | Can the relevant validation run without touching protected state? | test scripts/config only | command, setup/teardown, resources, destructive hooks |
+| Candidate | Admission | Decision question | Boundary / scope | Required handoff |
+|---|---|---|---|---|
+| `entry-consumers` | `ADMIT` | Which entry points and consumers observe the behavior? | `<consumer-root>`, consumer tests; named shared-contract overlap | callers, UI/API contracts, focused tests |
+| `domain-contract` | `ADMIT` | Which domain state and contract fields govern it? | `<domain-root>`, `<shared-contract-root>`; named overlap | invariants, producer/consumer anchors, affected candidates |
+| `runner-safety` | `ADMIT` | Can the relevant validation run without touching protected state? | test scripts/config only | command, setup/teardown, resources, destructive hooks |
+| `purpose-reconciliation` | `SYNTHESIS` | Which implemented journeys support or contradict product claims? | cross-root bridge evidence after the `ADMIT` wave | confirmed purpose, contradictions, gaps |
 
 ```ts
-// Run every ready shard together, in one assistant message.
+// This map admits three. For a broader map, launch every ready ADMIT candidate up to free capacity in this same message.
 Agent({ subagent_type: "scout", run_in_background: true, description: "Map entry consumers", prompt: "SCOUT FAN-OUT SHARD\nID: entry-consumers\nQUESTION: Which entry points and consumers observe the approved behavior?\nBOUNDARY: entry/consumer flow only.\nAREA: <consumer-root> and <consumer-test-root>; read <shared-contract-root> only at named overlap symbols.\nHANDOFF: paths/symbols, upstream/downstream anchors, focused tests, and gaps.\nSTOP: Return PARTIAL if the answer requires domain-state semantics outside this boundary." })
 Agent({ subagent_type: "scout", run_in_background: true, description: "Map domain contract", prompt: "SCOUT FAN-OUT SHARD\nID: domain-contract\nQUESTION: Which domain state and contract fields govern the approved behavior?\nBOUNDARY: producer/domain contract only.\nAREA: <domain-root> and <shared-contract-root>; read consumer callers only at named overlap symbols.\nHANDOFF: invariants, producer/consumer anchors, candidate artifacts, and gaps.\nSTOP: Return PARTIAL if entry behavior is required beyond the named overlap." })
 Agent({ subagent_type: "scout", run_in_background: true, description: "Inspect runner safety", prompt: "SCOUT FAN-OUT SHARD\nID: runner-safety\nQUESTION: What does the relevant validation command configure and reach?\nBOUNDARY: runner/config/resource evidence only.\nAREA: <package-manifest>, <test-config-root>, and setup/teardown.\nHANDOFF: command path, resource identities, destructive hooks, and gaps.\nSTOP: Return PARTIAL if runtime execution is required." })
@@ -81,7 +93,7 @@ Agent({ subagent_type: "scout", run_in_background: true, description: "Inspect r
 get_subagent_result({ agent_id: "[id1]", wait: true })
 ```
 
-Reconcile the Seam Synthesis yourself. Launch one final synthesis scout only if a cross-shard bridge or contradiction remains unresolved after focused direct reads.
+Reconcile the Seam Synthesis yourself. Launch a final `SYNTHESIS` scout only if a cross-shard bridge or contradiction remains unresolved after focused direct reads.
 
 ## When NOT to Use
 
@@ -185,7 +197,7 @@ User Request
             │
             ├── One coherent concern ──→ Single scout
             │
-            └── Independent evidence questions ──→ Scout Fan-out Map → 2–4 ready scoped scouts
+            └── Independent evidence questions ──→ root inventory + Fan-out Map → all ready ADMIT scouts up to free capacity
                     │
                     ├── Main model continues direct inspection while scouts run
                     │
@@ -194,7 +206,7 @@ User Request
 
 ### Parallel Decomposition Guide
 
-Use these as candidate questions only after orientation; do not instantiate every column or split by artifact category alone. Attach focused tests to the semantic concern they verify. A separate validation shard is justified only when runner/config/resource safety has an independent answer.
+Use these as candidate questions only after root inventory and the Shard-Breadth Audit; do not instantiate every column or split by artifact category alone. Attach focused tests to the semantic concern they verify. A separate validation shard is justified only when runner/config/resource safety has an independent answer. Cross-root purpose reconciliation is `SYNTHESIS`, not an initial `ADMIT` shard.
 
 | Mission Type | Candidate independent question | Required handoff | Keep coherent when |
 |-------------|--------------------------------|------------------|--------------------|
