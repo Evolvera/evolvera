@@ -19,7 +19,7 @@ No custom command, tool, schema validator, execution envelope, or separate harne
 
 ## 0. Ground Evidence Before the Ensemble
 
-Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. Large/cross-cutting systems use proportional parallel micro-scouts for independent domains and a normal scout only when end-to-end synthesis or contradiction resolution remains necessary.
+Complete the planner skill's Pre-Plan Evidence Gate before writing `HANDOFF.md`. Exact small surfaces may use direct reads. Normal coherent work usually uses one bounded scout. After bounded structure orientation exposes two or more independent evidence questions, create a Scout Fan-out Map and launch every ready 2–4 scoped scout in one concurrent wave; each shard needs a question, semantic boundary, source scope/explicit overlap, handoff, and stop condition. Reconcile the resulting Seam Synthesis before the briefers. Keep one normal scout when an end-to-end state model, exhaustive closure, or contradiction resolution needs shared context; fan-out shards are evidence only, never tasks or parallel authorization.
 
 Do not spend three strategy briefs and a max-effort planner on first-pass repository discovery. For nontrivial/unfamiliar systems, inspect bounded file/source structure first, then choose scouts from observed product/domain boundaries. Reconcile findings as `KNOWN | INFERRED | UNKNOWN` into exact paths/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, validation behavior, repository state, and bounded external gaps. Any complete affected-artifact closure claim must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed `AFFECTED | UNAFFECTED` dispositions, and unresolved candidates; relationship paths derive from repository evidence rather than a fixed category list. Convert this into one contract stating user outcome, affected capabilities classified `PRESERVE | CHANGE | REMOVE`, scope, material term meanings, acceptance journeys, and unresolved conflicts. If a greppable candidate, broad unknown, or preserve/remove semantic conflict remains, continue discovery or ask the user; do not launch the briefers.
 
@@ -53,7 +53,7 @@ The orchestrator writes `<PLAN_DIR>/HANDOFF.md` directly. Keep it outcome-first 
 [absolute paths to strategy/design/content artifacts, when any]
 
 ## Pre-Plan Evidence
-[reconciled direct/scout findings labeled KNOWN/INFERRED/UNKNOWN: exact files/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, evidenced affected-artifact closure, validation behavior, searched scope, contradictions, and bounded gaps]
+[reconciled direct/scout findings labeled KNOWN/INFERRED/UNKNOWN: exact files/symbols, existing capabilities, current behavior, relevant behavior/data/configuration/state/structure relationships, semantic units being changed, evidenced affected-artifact closure, validation behavior, searched scope, contradictions, and bounded gaps; include the Scout Fan-out Map and Seam Synthesis when multiple scouts ran]
 
 ## Repository State
 [project root, branch, head, focused status/dirty ownership]

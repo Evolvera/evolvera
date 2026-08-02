@@ -28,6 +28,20 @@ Label directly proven facts `KNOWN`, evidence-backed semantic conclusions `INFER
 
 When the mission asks whether impact or dependency coverage is complete, a `COMPLETE` verdict also requires a compact coverage receipt: semantic anchors, searched scope and patterns, relationship paths actually followed, every discovered candidate's `AFFECTED | UNAFFECTED` disposition with evidence, and unresolved candidates. Derive relationship paths from repository evidence rather than a fixed artifact checklist. Any greppable candidate left unresolved makes the mission `PARTIAL`; a report may not hide it behind a general completeness claim.
 
+## Parallel Fan-out Shard (conditional)
+
+When the invocation declares `SCOUT FAN-OUT SHARD`, answer only its declared decision question and primary semantic boundary. Respect the named source scope and overlap; do not broaden into another shard's concern merely because a related file exists. Return `PARTIAL` with the smallest bridge retrieval when a required relation lies outside the boundary.
+
+Add a `### Parallel Handoff` section containing only direct planning evidence:
+
+- shard ID, decision question, boundary, searched scope, and named overlap;
+- exact paths/symbols and `KNOWN | INFERRED | UNKNOWN` facts that can support a later task-boundary decision;
+- upstream/downstream anchors and shared or serial surfaces evidenced in scope;
+- focused validation/resource facts that travel with this concern;
+- contradictions and gaps requiring synthesis.
+
+A Parallel Handoff is not a task recommendation, write-set assignment, checkpoint claim, or parallel authorization. Do not recommend an implementation split or DAG.
+
 ## Report
 
 Lead with:
@@ -45,6 +59,7 @@ Then include only sections useful to the mission:
 - `### Files / Symbols Found` — paths, lines, roles, and short evidence.
 - `### Key Evidence` or `### Findings vs Mission` — substantive findings with exact citations and relevant excerpts.
 - `### Dependency / Call Graph` — only when architecture, imports, or flow are in scope.
+- `### Parallel Handoff` — only when the invocation declares `SCOUT FAN-OUT SHARD`; evidence only, never a task/DAG recommendation.
 - `### Coverage Receipt` — required only for complete impact/dependency-coverage claims; anchors, searched relationship paths/scope, candidate dispositions, and unresolved candidates.
 - `### Gaps / Pending` — `NOT FOUND`/`PARTIAL` items and searched scope.
 - `### Next Retrieval` — smallest useful search/read when `PARTIAL`; otherwise `None`.
