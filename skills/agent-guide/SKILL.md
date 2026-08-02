@@ -25,7 +25,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 | Heavy Design | `builder-heavy-design` | Exceptional design tier (Claude Opus 5 high) | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
 | QA | `qa` | Dedicated evidence tier (GPT-5.6 Sol high) | fresh SHA-bound post-build behavioral evidence at exactly `CORE` or `FULL`; default source-read-only | implementation/repair, direct static closure, live/external operations, or a third QA level |
 
-**Implication:** The more you **break down** a question into small, parallel sub-tasks, the better your results:
+**Implication:** When a question has proven independent boundaries, breaking it into small, parallel sub-tasks improves results:
 - **Lower total token cost** — many tiny scouts/builders cost less than one giant monolithic run
 - **Faster wall-clock time** — independent agents run in parallel
 - **Higher per-agent quality** — each agent gets a crisp, bounded question it can actually answer well
@@ -66,7 +66,7 @@ Before launching, reread the prompt as if you were the subagent: can you execute
 
 **Builder internal order and resume:** A prompt containing `## Internal Execution Order` must require the builder, before any source edit, to fill `.pi/build/TILL-DO_<task-id>.md` with concise evidence and `PASS | BLOCKED` verdicts for authority/baseline, contract/scope, validation/resources, and recovery/stop. Only all `PASS` permits `.pi/build/TODO_<task-id>.md`, mirrored from the phases; any blocked gate ends `BLOCKED` with no source mutation and no TODO. The builder updates phase outcome, authorized targets, prerequisite, exit evidence, status, completed/current/next phase, and changed files at coherent boundaries; resume verifies these against repo/diff evidence and continues from the first incomplete phase. Without explicit internal order or another lifecycle requirement, simple tasks create neither artifact. TILL-DO/TODO are transient task-local execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow/GitHub state, or parallel authorization, and stay out of the selective product commit unless explicitly tracked. Newly exposed undeclared scope remains `BLOCKED` before mutation.
 
-**Scout rule of thumb:** If a scout prompt feels like it is asking for "understand everything about X", first decide whether decomposition preserves quality. If yes, split it into independent scoped `scout` missions and run them in parallel. If splitting would lose cross-file coherence, use one coherent `scout`. While scouts run, keep doing useful direct inspection instead of waiting idly.
+**Scout fan-out rule:** After bounded structural orientation, if two or more independent evidence questions can advance planning without waiting on each other, write a compact `Scout Fan-out Map` before launch: per shard, decision question, primary semantic boundary, source scope/explicit overlap, required handoff, and stop condition. Launch the 2–4 ready shards together in one message with `run_in_background: true`; do not wait on a non-gating shard. Source folders, file count, and generic test-only lookup do not make a shard; tests follow the production concern unless runner/resource safety is the independent question. A shard is evidence routing, not a task, write-set proof, or parallel authorization. When one causal state model, exhaustive closure, or contradiction needs shared context, keep one coherent scout instead. After a wave, reconcile bridge anchors, shared/serial surfaces, validation/resource facts, candidate dispositions, contradictions, and gaps before planner; use a synthesis scout only if direct reconciliation cannot resolve them. While scouts run, keep doing useful direct inspection instead of waiting idly.
 
 ---
 
@@ -98,7 +98,7 @@ Agent({
 - Give scout a **clear question**, not vague tasks.
 - Tell it **where to look** (directories, file patterns).
 - Ask for **exact file paths and line numbers**.
-- **Prefer many small parallel scouts over one big scout.** If your question has multiple independent angles (e.g. "How does auth work?" + "How does billing work?"), launch separate scouts in parallel instead of cramming everything into one prompt.
+- **Use a mapped parallel wave, not an arbitrary swarm.** When orientation proves 2+ independent questions, launch the ready 2–4 scouts together from a Scout Fan-out Map; each owns a semantic question and source boundary, while named overlaps are reconciled afterward. If one question depends on another's result, keep it in a later wave or use one coherent scout.
 - **Do useful parent work while scouts run**: read high-signal files, grep exact symbols, inspect tests/config/logs, and build hypotheses to validate against scout reports.
 
 ---
@@ -124,7 +124,7 @@ Map product roots and likely domain/test/config/docs surfaces without inferring 
 # Step 2: Gather proportional evidence
 Known exact surface: focused direct reads.
 Normal multi-layer work: one bounded scout.
-Large separable system: parallel scoped scouts, then reconcile.
+Independent evidence questions after orientation: create a Scout Fan-out Map, launch ready 2–4 scoped scouts together, then reconcile seams.
 Coherent end-to-end flow: one normal scout, not fragmented micro-reports.
 Label findings KNOWN / INFERRED / UNKNOWN.
 
@@ -150,7 +150,7 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 - Do a lightweight pre-plan before planner — get user approval when scope/cost/risk is non-trivial.
 - For every full planner run, gather enough direct/scout evidence that the planner receives exact paths/symbols, architecture/data contracts, existing capabilities, semantic relationships, validation behavior, and bounded unknowns. Any claim that affected-artifact coverage is complete must carry semantic anchors, searched relationship paths/scope, discovered candidates, evidence-backed dispositions, and unresolved candidates. Familiarity, names, and a scout `COMPLETE` label alone are not evidence.
 - For nontrivial/unfamiliar systems, structure comes first: inspect bounded roots/file families before deep reads so scout missions follow the repository rather than assumptions.
-- Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one coherent scout for normal work; parallel micro-scouts for genuinely independent domains in a large repository; normal scout synthesis when cross-domain contradictions or one end-to-end state model matter.
+- Scale scouting to the system: no ceremonial scout for an already grounded exact surface; one coherent scout for normal work; after orientation, a Scout Fan-out Map and one 2–4-scout wave for genuinely independent questions; normal scout synthesis only when direct seam reconciliation leaves cross-domain contradictions or one end-to-end state model unresolved.
 - Reconcile reports into a concise contract and evidence package. Classify claims `KNOWN | INFERRED | UNKNOWN`; classify affected capabilities `PRESERVE | CHANGE | REMOVE` only when user intent/evidence supports it. Never paste raw transcripts or ask planner to “understand the repository.”
 - If two plausible interpretations would preserve versus disable different behavior, stop and ask the user before planner. If broad discovery or product-semantic choice remains, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
@@ -261,7 +261,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 - [ ] Do I know which files are involved? If not → scout
 - [ ] Real coordination complexity (dependencies, architecture, sequencing)? If yes → planner skill
 - [ ] Bounded and well-defined? If yes → direct tools or one builder
-- [ ] Did I scope each scout to one coherent mission and parallelize only independent angles?
+- [ ] Did I scope each scout to one coherent mission and, for a parallel wave, record a Scout Fan-out Map with independent questions, semantic boundaries, source overlaps, handoffs, and stop conditions?
 - [ ] Did I tell the builder what to read, patterns to follow, and how to verify?
 - [ ] If material post-build QA is needed, did I load `testing`, select exactly CORE or FULL, and hand one fresh `qa` session the exact SHA/scope/acceptance/resources?
 - [ ] For every potentially stateful command, did I prove run-owned disposable resources and forbid execution on `UNKNOWN`/pre-existing/user/dev/shared/staging/production state?

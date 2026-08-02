@@ -5,7 +5,7 @@ description: Use the scout agent for codebase exploration, file discovery, and e
 
 # Scout Skill — Codebase Exploration Agent
 
-> **⚡ EFFICIENCY FIRST**: There is one scout agent. Give it one coherent mission. When a mission has genuinely independent angles, **split it into parallel scoped scouts** and synthesize their evidence yourself.
+> **⚡ EFFICIENCY FIRST**: There is one scout role, not one active session. Give each session one coherent mission. When bounded structure evidence proves genuinely independent angles, use a mapped parallel wave and synthesize the evidence before planning.
 
 ## When to Use
 
@@ -20,9 +20,20 @@ Invoke `Agent(subagent_type="scout")` in these situations:
 | **Debug — find root cause** | "Where is this error thrown?" "What code path leads here?" |
 | **Verify patterns** | "Does this project use clsx or classnames?" "Is there a cn() utility?" |
 
-### Parallelism and Separation of Concerns
+### Scout Fan-out Gate
 
-Direct `grep`/`read` comes first; delegate only what direct tools cannot answer cheaply. Default to **one coherent scout**. Use parallel scoped scouts only when the mission has genuinely independent questions with disjoint search surfaces—routes vs data/model vs tests vs configuration. Launch an additional scout only when a result exposes a required missing dependency, not to "cover more ground". Never split to fill concurrency slots, when one result determines the next search, when evidence must be reconciled as one model, or when splitting duplicates retrieval. Launch a parallel group in one message with `run_in_background: true`, then synthesize its evidence once.
+Direct `grep`/`read` comes first; delegate only what direct tools cannot answer cheaply. Default to **one coherent scout**. After bounded structural orientation, fan out only when it exposes two or more independent evidence questions that can advance the same planning contract without waiting on one another. Create a compact **Scout Fan-out Map** in the orchestrator's evidence notes before launch; it is not a plan artifact, task, write-set proof, or parallel authorization.
+
+For each shard, record:
+- **ID and decision question** — one answer the planner needs, not a broad topic;
+- **primary semantic boundary** — the behavior/contract/state/validation concern it owns;
+- **source scope and explicit overlap** — roots/patterns to search and any named bridge file/symbol another shard may also read;
+- **required handoff** — exact paths/symbols, upstream/downstream anchors, candidate dispositions, validation/resource facts, or bounded gap the synthesis needs;
+- **stop condition** — when it returns `COMPLETE` or `PARTIAL` instead of expanding.
+
+Launch every map-admitted ready shard together in one message with `run_in_background: true`. Use normally 2–4 scouts; go beyond four only when every additional shard is independently material, source-disjoint or has a named overlap, and can be reconciled without another broad discovery pass. The runtime `maxConcurrent` setting is a ceiling, never a target. A directory, file count, or generic test-only lookup does not justify a shard; focused tests travel with the production concern they verify unless runner/resource safety is itself an independent question. Never split when one result determines the next search, one causal state model must stay coherent, exhaustive closure or contradiction resolution needs one context, or the shards would duplicate retrieval.
+
+After the wave, reconcile a compact **Seam Synthesis**: each shard's semantic unit and evidence, cross-shard upstream/downstream anchors, shared or serial surfaces, validation/resource facts, candidate `AFFECTED | UNAFFECTED` dispositions, contradictions, and gaps. A scout shard accelerates evidence retrieval; it never proves a task boundary, write-set isolation, valid checkpoint, or builder parallelism. If a result exposes a missing relation, launch one focused follow-up in the next wave only when its question is now bounded; otherwise use one synthesis scout.
 
 ### Use one coherent scout when splitting would lose coherence
 
@@ -46,14 +57,22 @@ Agent({
 
 ### Use parallel scoped scouts for independent angles
 
+First make the compact map, for example:
+
+| Shard | Decision question | Boundary / scope | Required handoff |
+|---|---|---|---|
+| `entry-consumers` | Which entry points and consumers observe the behavior? | `<consumer-root>`, consumer tests; named shared-contract overlap | callers, UI/API contracts, focused tests |
+| `domain-contract` | Which domain state and contract fields govern it? | `<domain-root>`, `<shared-contract-root>`; named overlap | invariants, producer/consumer anchors, affected candidates |
+| `runner-safety` | Can the relevant validation run without touching protected state? | test scripts/config only | command, setup/teardown, resources, destructive hooks |
+
 ```ts
-// Run all at once, in one assistant message, with run_in_background: true
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find unit tests", prompt: "MISSION: Find unit test files only. AREA: tests/unit, src/**/*.test.*" })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find fixtures", prompt: "MISSION: Find fixtures/helpers only. AREA: tests, fixtures, src" })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find coverage config", prompt: "MISSION: Find coverage scripts/config only. AREA: package.json, vitest.*, jest.*, nyc.*, .github" })
+// Run every ready shard together, in one assistant message.
+Agent({ subagent_type: "scout", run_in_background: true, description: "Map entry consumers", prompt: "SCOUT FAN-OUT SHARD\nID: entry-consumers\nQUESTION: Which entry points and consumers observe the approved behavior?\nBOUNDARY: entry/consumer flow only.\nAREA: <consumer-root> and <consumer-test-root>; read <shared-contract-root> only at named overlap symbols.\nHANDOFF: paths/symbols, upstream/downstream anchors, focused tests, and gaps.\nSTOP: Return PARTIAL if the answer requires domain-state semantics outside this boundary." })
+Agent({ subagent_type: "scout", run_in_background: true, description: "Map domain contract", prompt: "SCOUT FAN-OUT SHARD\nID: domain-contract\nQUESTION: Which domain state and contract fields govern the approved behavior?\nBOUNDARY: producer/domain contract only.\nAREA: <domain-root> and <shared-contract-root>; read consumer callers only at named overlap symbols.\nHANDOFF: invariants, producer/consumer anchors, candidate artifacts, and gaps.\nSTOP: Return PARTIAL if entry behavior is required beyond the named overlap." })
+Agent({ subagent_type: "scout", run_in_background: true, description: "Inspect runner safety", prompt: "SCOUT FAN-OUT SHARD\nID: runner-safety\nQUESTION: What does the relevant validation command configure and reach?\nBOUNDARY: runner/config/resource evidence only.\nAREA: <package-manifest>, <test-config-root>, and setup/teardown.\nHANDOFF: command path, resource identities, destructive hooks, and gaps.\nSTOP: Return PARTIAL if runtime execution is required." })
 
 // While scouts run, keep working:
-// - read obvious high-signal files
+// - read obvious high-signal bridge files
 // - run targeted grep/find commands
 // - inspect tests/logs/configs
 // - form hypotheses to validate against scout reports
@@ -62,7 +81,7 @@ Agent({ subagent_type: "scout", run_in_background: true, description: "Find cove
 get_subagent_result({ agent_id: "[id1]", wait: true })
 ```
 
-When independent evidence shards still need cross-file synthesis, reconcile them yourself or launch one final synthesis scout with the collected evidence and focused reads.
+Reconcile the Seam Synthesis yourself. Launch one final synthesis scout only if a cross-shard bridge or contradiction remains unresolved after focused direct reads.
 
 ## When NOT to Use
 
@@ -98,7 +117,7 @@ Agent({
 Scout agents follow these absolute rules:
 
 1. **READ-ONLY BY CAPABILITY** — Uses only `read`, `grep`, `find`, and `ls`; never modifies, creates, executes, or edits files and never creates checkpoints. If command output is required, it returns `PARTIAL` with the exact command for the orchestrator.
-2. **NO OPINIONS** — Only reports findings, never suggests improvements unless explicitly asked for analysis
+2. **NO UNGROUNDED DESIGN** — Only reports findings. A fan-out handoff may identify observed boundaries, bridges, shared surfaces, and gaps, but never recommends a task, DAG, write set, or implementation split
 3. **NO ASSUMPTIONS** — Says "NOT FOUND" if no evidence exists and states searched scope
 4. **QUOTE EXACTLY** — Copies relevant source text verbatim when quoting code
 5. **EVIDENCE-BASED** — Every claim backed by file evidence
@@ -113,6 +132,7 @@ Scout returns a structured report with:
 - **Gaps**: What's missing or pending
 - **Next Retrieval**: The smallest useful next search/read, if evidence is incomplete
 - **Dependency Graph**: include when the mission is about architecture, call flow, imports, exports, or module relationships
+- **Parallel Handoff**: only when the prompt declares `SCOUT FAN-OUT SHARD`; state shard ID/question/boundary, direct evidence usable by planning, cross-shard anchors/overlap, shared or serial surfaces, validation/resource facts, and gaps—never a task recommendation
 
 ### Retrieval Completeness
 
@@ -165,30 +185,33 @@ User Request
             │
             ├── One coherent concern ──→ Single scout
             │
-            └── Independent concerns ──→ One parallel scoped scout per independent slice
+            └── Independent evidence questions ──→ Scout Fan-out Map → 2–4 ready scoped scouts
                     │
                     ├── Main model continues direct inspection while scouts run
                     │
-                    └── Collect + reconcile results ──→ Hand to planner/builder
+                    └── Seam Synthesis + focused bridge reads ──→ Hand to planner/builder
 ```
 
 ### Parallel Decomposition Guide
 
-| Mission Type | Scout 1 | Scout 2 | Scout 3 | Scout 4 |
-|-------------|---------|---------|---------|---------|
-| **Feature** | Entry points & call graph | Data models & schemas | Tests & patterns | Config & git history |
-| **Bug Fix** | Error trace & affected code | Related data flow | Tests for area | Recent changes |
-| **Refactor** | Module boundary & exports | Internal dependencies | Tests & coverage | Consumers of module |
-| **New Feature** | Adjacent features | Data layer & models | Test infrastructure | Config & env |
+Use these as candidate questions only after orientation; do not instantiate every column or split by artifact category alone. Attach focused tests to the semantic concern they verify. A separate validation shard is justified only when runner/config/resource safety has an independent answer.
+
+| Mission Type | Candidate independent question | Required handoff | Keep coherent when |
+|-------------|--------------------------------|------------------|--------------------|
+| **Feature** | Entry/consumer behavior; domain/contract state; independently material runner safety | interfaces, invariants, focused tests, resource facts | one state transition crosses all three |
+| **Bug Fix** | Error origin/consumer; independent persistence or transport boundary; isolated test-runner facts | causal anchors, candidate dispositions, reproduction limits | root cause needs one causal timeline |
+| **Refactor** | External consumers; internal module boundary; independent registration/runtime loading | imports/calls, shared bridges, preservation tests | one compatibility contract governs all consumers |
+| **New Feature** | Adjacent established behavior; data/contract constraints; independently material configuration boundary | reusable patterns, invariants, affected candidates | product semantics or rollout state is unresolved |
 
 ## Examples
 
-### Example 1: Auth discovery with parallel scoped scouts
+### Example 1: Auth discovery with a mapped parallel wave
 ```
-// Launch together, not sequentially
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find auth routes", prompt: "MISSION: Find auth route/endpoint files only. AREA: src, app, pages, routes. Return paths/symbols/evidence or PARTIAL next splits." })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find token logic", prompt: "MISSION: Find JWT/session/token helper files only. AREA: src, lib, server. Return paths/symbols/evidence or PARTIAL next splits." })
-Agent({ subagent_type: "scout", run_in_background: true, description: "Find auth tests", prompt: "MISSION: Find auth-related tests only. AREA: tests, src. Return paths/symbols/evidence or PARTIAL next splits." })
+// Orientation found independent entry/consumer, token-contract, and runner-safety questions.
+// Launch together, not sequentially; tests follow the owning entry or token concern.
+Agent({ subagent_type: "scout", run_in_background: true, description: "Map auth consumers", prompt: "SCOUT FAN-OUT SHARD\nID: auth-consumers\nQUESTION: Which routes and UI/API consumers use the auth result?\nBOUNDARY: auth entry/consumer behavior and its focused tests.\nAREA: <auth-entry-root>, <consumer-root>, <focused-auth-test-root>.\nHANDOFF: paths, symbols, consumer contracts, tests, gaps." })
+Agent({ subagent_type: "scout", run_in_background: true, description: "Map token contract", prompt: "SCOUT FAN-OUT SHARD\nID: token-contract\nQUESTION: Which session/JWT fields and validations govern auth semantics?\nBOUNDARY: token contract and persistence helpers.\nAREA: <auth-domain-root>, <session-helper-root>; named route overlap only.\nHANDOFF: invariants, producer/consumer anchors, candidate artifacts, gaps." })
+Agent({ subagent_type: "scout", run_in_background: true, description: "Inspect auth runner", prompt: "SCOUT FAN-OUT SHARD\nID: auth-runner\nQUESTION: What config and resources does auth validation reach?\nBOUNDARY: test runner/setup/teardown only.\nAREA: <package-manifest>, <test-config-root>, <auth-setup-root>.\nHANDOFF: command path, resource facts, destructive hooks, gaps." })
 ```
 
 ### Example 2: Payment flow needs one coherent scout
