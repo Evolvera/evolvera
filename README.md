@@ -127,7 +127,7 @@ Os instaladores:
 3. criam os diretórios do runtime;
 4. copiam a configuração versionada para `~/.pi/agent`;
 5. copiam agentes, skills, extensões e temas;
-6. instalam os packages PI configurados;
+6. instalam os packages PI configurados, incluindo Goal Mode e memória observacional;
 7. criam `mcp.json` somente quando ele ainda não existe.
 
 ### O que é sobrescrito
@@ -227,7 +227,7 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `agents/*.md` | Definições dos subagentes: modelo, thinking, ferramentas e contrato operacional. |
 | `skills/*/SKILL.md` | Procedimentos carregados quando o tipo de tarefa exige aquele workflow. |
 | `extensions/*.ts` | Comandos, ferramentas e hooks executados pelo runtime PI. |
-| `config/settings.json` | Provider/modelo padrão, thinking, tema e packages. |
+| `config/settings.json` | Provider/modelo padrão, thinking, tema, packages e política da memória observacional. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
 | `config/mcp.json` | Configuração inicial de MCP; atualmente fornece `context7`. |
@@ -337,10 +337,14 @@ O PI deve investigar o repositório antes de fazer perguntas factuais que o cód
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
+| `/om:status` | Mostrar memória observacional, contadores e próximo compact. |
+| `/om:view` ou `/om:view full` | Mostrar a memória ativa ou o ledger completo da branch. |
 
 Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
 O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão limita a oito continuações automáticas e pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
+
+`pi-observational-memory` registra observações e reflexões durante sessões longas. Quando o PI compacta, a extensão substitui o resumo padrão por memória com IDs de evidência; o agente pode chamar `recall(<id>)` para recuperar a fonte de uma observação ou reflexão na branch atual. Os workers usam o modelo ativo da sessão em `low`, portanto criam chamadas adicionais ao modelo. O trigger da extensão fica em 99% para não preemptar o limite nativo: o PI continua respeitando a janela do modelo — atualmente 300k para GPT e 450k para Claude — com a reserva de resposta configurada.
 
 ## Atualizar
 

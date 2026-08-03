@@ -108,6 +108,7 @@ if command -v pi &>/dev/null; then
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
     pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
+    pi install npm:pi-observational-memory@3.0.3 2>/dev/null && info "pi-observational-memory" || true
 fi
 
 # ── Done ──────────────────────────────────────
