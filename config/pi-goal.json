@@ -1,0 +1,9 @@
+{
+  "continuationLimits": {
+    "automaticTurns": 8,
+    "noProgressTurns": 3
+  },
+  "experimental": {
+    "goals": false
+  }
+}
