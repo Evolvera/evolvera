@@ -43,7 +43,7 @@ mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin,theme
 # ── Configs ───────────────────────────────────
 step "Instalando configuração"
 
-for f in settings.json models.json SYSTEM.md; do
+for f in settings.json models.json SYSTEM.md pi-goal.json; do
     [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
 done
 
@@ -77,6 +77,7 @@ done
 # ── Extensions ────────────────────────────────
 # Remove retired harnesses so updates do not leave stale global commands/tools.
 rm -f "$PI_DIR/extensions/plan-heavy.ts"
+rm -f "$PI_DIR/extensions/goal-mode.ts"
 
 # Remove retired agents so updates do not leave stale routes.
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md
@@ -106,6 +107,7 @@ if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
     pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
+    pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
 fi
 
 # ── Done ──────────────────────────────────────

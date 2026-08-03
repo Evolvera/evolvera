@@ -53,7 +53,7 @@ Info ($dirs.Count.ToString() + " diretorios")
 # -- Configs ----------------------------------------------
 Step "Instalando configuracao"
 
-$configs = @("settings.json", "models.json", "SYSTEM.md", "AGENTS.md")
+$configs = @("settings.json", "models.json", "SYSTEM.md", "AGENTS.md", "pi-goal.json")
 foreach ($f in $configs) {
     $src = Join-Path $SCRIPT_DIR "config\$f"
     $dst = Join-Path $PI_DIR $f
@@ -100,6 +100,7 @@ foreach ($skillDir in $skillDirs) {
 }
 
 # -- Extensions -------------------------------------------
+Remove-Item (Join-Path $PI_DIR "extensions\goal-mode.ts") -Force -ErrorAction SilentlyContinue
 $extensions = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "extensions") -Filter "*.ts" -ErrorAction SilentlyContinue
 if ($extensions) {
     $dest = Join-Path $PI_DIR "extensions"
@@ -137,6 +138,9 @@ if ($piCmd) {
 
     Info "pi-alibaba-models..."
     & pi install npm:pi-alibaba-models 2>$null
+
+    Info "pi-goal..."
+    & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
 
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null

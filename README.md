@@ -134,13 +134,13 @@ Os instaladores:
 
 Ao executar novamente o instalador, arquivos com o mesmo nome nestas superfícies são atualizados pela versão do repositório:
 
-- `settings.json`, `models.json`, `SYSTEM.md` e `subagents.json`;
+- `settings.json`, `models.json`, `SYSTEM.md`, `subagents.json` e `pi-goal.json`;
 - `agents/*.md`;
 - conteúdo das skills versionadas;
 - `extensions/*.ts`;
 - temas versionados.
 
-O instalador não apaga genericamente arquivos antigos que não existem mais no repositório. O instalador Linux/macOS remove explicitamente apenas a extensão aposentada `plan-heavy.ts`.
+O instalador não apaga genericamente arquivos antigos que não existem mais no repositório. Ambos os instaladores removem explicitamente a extensão aposentada `goal-mode.ts`; o instalador Linux/macOS também remove `plan-heavy.ts`.
 
 ### O que é preservado
 
@@ -340,7 +340,7 @@ O PI deve investigar o repositório antes de fazer perguntas factuais que o cód
 
 Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
-O `/goal` usa um avaliador Anthropic autenticado e não possui fallback para outro provider. Sem Anthropic disponível, o comando informa o bloqueio e não ativa o objetivo.
+O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão limita a oito continuações automáticas e pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
 
 ## Atualizar
 
