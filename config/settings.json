@@ -8,8 +8,21 @@
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents",
     "npm:pi-alibaba-models",
-    "npm:@narumitw/pi-goal@0.43.0"
+    "npm:@narumitw/pi-goal@0.43.0",
+    "npm:pi-observational-memory@3.0.3"
   ],
+  "observational-memory": {
+    "observeAfterTokens": 10000,
+    "reflectAfterTokens": 20000,
+    "compactAfterTokens": 81000,
+    "compactAfterTokensMode": "ratio",
+    "compactAfterTokensRatio": 0.99,
+    "observationsPoolMaxTokens": 20000,
+    "observationsPoolTargetTokens": 10000,
+    "agentMaxTurns": 16,
+    "passive": false,
+    "debugLog": false
+  },
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",
   "communicationMode": "default"

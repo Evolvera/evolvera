@@ -142,6 +142,9 @@ if ($piCmd) {
     Info "pi-goal..."
     & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
 
+    Info "pi-observational-memory..."
+    & pi install npm:pi-observational-memory@3.0.3 2>$null
+
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
 }
