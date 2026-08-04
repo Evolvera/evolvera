@@ -90,3 +90,5 @@ Required: `id`, `title`, `status`, `impact`, `question`, `evidenceIds`. Status i
 ## Generation and safety
 
 The renderer validates before writing. It places one safely escaped JSON payload in one `<script type="application/json">` element and includes no external assets, fonts, packages, or runtime. Literal `</script>` sequences are escaped so source text cannot terminate the data element. The resulting viewer uses deterministic hierarchy layout and progressive disclosure; it does not replace the normalized JSON as input for agents.
+
+The generated viewer uses semantic focus with a persistent breadcrumb and current-context identity. Entering a component reveals its direct descendants, and drill-in/out is reversible one hierarchy level at a time without losing that identity. Spatial zoom may reveal local detail or trigger an explicit semantic drill at stable thresholds, but must never silently change context or remove the visible hierarchy identity.
