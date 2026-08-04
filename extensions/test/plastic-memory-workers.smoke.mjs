@@ -1,0 +1,112 @@
+import assert from "node:assert/strict";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import path from "node:path";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
+const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
+const jiti = createJiti(import.meta.url, { moduleCache: false });
+const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
+const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
+const runner = await jiti.import(path.join(root, "plastic-memory/workers/runner.ts"));
+const observer = await jiti.import(path.join(root, "plastic-memory/workers/observer.ts"));
+const reflector = await jiti.import(path.join(root, "plastic-memory/workers/reflector.ts"));
+const promoter = await jiti.import(path.join(root, "plastic-memory/workers/promoter.ts"));
+const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
+
+const binding = { sessionId: ids.sessionDigest("workers-smoke", { generation: 1 }), generation: 1, branchId: "main" };
+let next = 0;
+const entries = [];
+function message(role, tokenCount, text) {
+  const entry = { type: "message", id: `e${++next}`, parentId: entries.at(-1)?.id ?? null, message: { role, content: [{ type: "text", text }] }, tokenCount };
+  entries.push(entry);
+  return entry;
+}
+const old = message("user", 7_000_000, "historical prefix must never be sent");
+message("assistant", 1, "historical answer");
+const currentUser = message("user", 50_000, "current goal: preserve the exact bounded snapshot");
+const currentAssistant = message("assistant", 50_000, "current terminal answer");
+const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const calls = [];
+let failureMode = false;
+const runtime = {
+  modelRegistry: {
+    find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
+    async getProviderAuth(provider) { assert.equal(provider, "openai-codex"); return { apiKey: "fake-only" }; },
+  },
+  async agentLoop(prompts, context, config, signal) {
+    assert.equal(config.model, model);
+    assert.equal(config.thinking, "medium");
+    assert.equal(config.maxTurns, 8);
+    assert.equal(config.maxToolCalls, 4);
+    calls.push({ role: context.role, prompt: prompts[0].content[0].text });
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (failureMode) return { noManifest: true };
+    if (context.role === "observer") {
+      const snapshot = request.snapshot;
+      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
+      return { coverageManifest: manifest, observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: snapshot.span.sourceEntryIds }] };
+    }
+    if (context.role === "reflector") {
+      const snapshot = request.snapshot;
+      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
+      return { coverageManifest: manifest, reflections: [{ content: "durable pattern", supportingObservationIds: request.observations.map((item) => item.id) }] };
+    }
+    return { proposal: "proposal", repositoryEvidence: ["extensions/plastic-memory/workers"] };
+  },
+};
+
+for (const role of ["observer", "reflector", "compactor", "project-promoter"]) {
+  assert.deepEqual(runner.ROLE_CONFIGS[role], { model: "openai-codex/gpt-5.6-luna", thinking: "medium", maxTurns: 8, maxToolCalls: 4, maxRuntimeMs: 60_000 });
+  const resolved = await runner.resolveLunaRole(role, runtime);
+  assert.equal(resolved.contextWindow, 200_000);
+}
+const snapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: [currentUser, currentAssistant], activeEntryIds: [currentUser.id, currentAssistant.id], maxTokens: 100_000 });
+assert.equal(snapshot.status, "ready");
+assert.equal(snapshot.tokenCount, 100_000);
+const observed = await observer.runObserver({ binding, snapshot, sourceEntries: [currentUser, currentAssistant], runtime });
+assert.equal(observed.ok, true);
+assert.equal(observed.manifestValid, true);
+assert.equal(observed.record.data.span.sourceDigest, snapshot.span.sourceDigest);
+const reflected = await reflector.runReflector({ binding, snapshot, observations: observed.observations, runtime });
+assert.equal(reflected.ok, true);
+assert.equal(reflected.record.data.span.sourceDigest, snapshot.span.sourceDigest);
+
+const appended = [];
+const scheduler = schedulerModule.createCycleScheduler();
+const scheduleInput = { binding, branchEntries: entries, bootstrap: { activeEntryIds: [currentUser.id, currentAssistant.id], historicalPrefixIds: [old.id], historicalGap: "historical-unindexed" }, records: [], runtime, append: (entry) => appended.push(entry) };
+const first = await scheduler.trigger(scheduleInput);
+assert.equal(first.status, "closed");
+assert.equal(first.cycle.data.sourceEntryIds.length, 2);
+assert.equal(calls.filter((call) => call.role === "observer").length, 2);
+assert.equal(calls.filter((call) => call.prompt.includes(old.id)).length, 0, "historical prefix must not enter worker request");
+const repeated = await scheduler.trigger({ ...scheduleInput, records: appended });
+assert.equal(repeated.status, "skipped");
+assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeated triggers must not hot-loop a closed snapshot");
+assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
+
+// Missing/reordered manifests fail closed and permit only one automatic retry.
+failureMode = true;
+const retryAppended = [];
+const retryScheduler = schedulerModule.createCycleScheduler();
+const retryInput = { ...scheduleInput, records: [], append: (entry) => retryAppended.push(entry) };
+assert.equal((await retryScheduler.trigger(retryInput)).status, "failed");
+assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "failed");
+assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
+assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
+failureMode = false;
+
+const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", sourceDigest: snapshot.span.sourceDigest.slice(0, 24), projectSnapshot: { summary: "bounded", activeIndex: "{}" }, explicitRequest: true, runtime });
+assert.equal(explicitPromotion.ok, true);
+assert.equal(explicitPromotion.proposalOnly, true);
+assert.equal(explicitPromotion.record.customType, "plastic.project.proposal.recorded");
+
+const staleRuntime = { ...runtime, agentLoop: async (_prompts, _context, _config, signal) => await new Promise((resolve) => signal.addEventListener("abort", () => resolve({ coverageManifest: {} }), { once: true })) };
+const staleAppended = [];
+const staleScheduler = schedulerModule.createCycleScheduler();
+const stalePromise = staleScheduler.trigger({ ...scheduleInput, runtime: staleRuntime, records: [], append: (entry) => staleAppended.push(entry) });
+staleScheduler.shutdown();
+assert.equal((await stalePromise).status, "stale");
+assert.equal(staleAppended.some((entry) => entry.customType === "plastic.cycle.closed"), false);
+
+console.log("PLASTIC_MEMORY_WORKERS: PASS (four Luna-medium roles, one-shot 100k closure, exact manifests, retries, legacy exclusion, stale abort, proposal-only promotion)");
