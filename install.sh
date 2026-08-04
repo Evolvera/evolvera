@@ -13,6 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
 PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.82.1}"
 MIN_NODE_VERSION="22.19.0"
+same_root=false
 
 info() { echo -e "${GREEN}[✓]${NC} $1"; }
 step() { echo -e "\n${CYAN}── $1 ──${NC}"; }
@@ -39,13 +40,17 @@ info "PI $PI_CODING_AGENT_VERSION instalado"
 # ── Diretórios ────────────────────────────────
 step "Preparando diretórios"
 mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin,themes}
+if [ "$SCRIPT_DIR" -ef "$PI_DIR" ]; then
+    same_root=true
+fi
 
 # ── Configs ───────────────────────────────────
 step "Instalando configuração"
 
-for f in settings.json models.json SYSTEM.md pi-goal.json; do
-    [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
-done
+if [ "$same_root" = false ]; then
+    for f in models.json SYSTEM.md pi-goal.json; do
+        [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
+    done
 
 if [ -f "$SCRIPT_DIR/config/keybindings.json" ]; then
     keybindings_status="$("$SCRIPT_DIR/scripts/install-wsl-keybindings.sh" \
@@ -58,9 +63,11 @@ if [ -f "$SCRIPT_DIR/config/keybindings.json" ]; then
     esac
 fi
 
-[ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"
-cp "$SCRIPT_DIR"/themes/*.json "$PI_DIR/themes/" 2>/dev/null && info "temas"
+    [ -f "$SCRIPT_DIR/subagents.json" ] && cp "$SCRIPT_DIR/subagents.json" "$PI_DIR/subagents.json" && info "subagents.json"
+    cp "$SCRIPT_DIR"/themes/*.json "$PI_DIR/themes/" 2>/dev/null && info "temas"
+fi
 
+if [ "$same_root" = false ]; then
 # ── Agents ────────────────────────────────────
 cp "$SCRIPT_DIR"/agents/*.md "$PI_DIR/agents/" 2>/dev/null
 info "$(ls "$SCRIPT_DIR"/agents/*.md 2>/dev/null | wc -l | tr -d ' ') agentes"
@@ -86,19 +93,28 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
+if [ -d "$SCRIPT_DIR/extensions/plastic-memory" ]; then
+    cp -r "$SCRIPT_DIR/extensions/plastic-memory" "$PI_DIR/extensions/"
+    info "plastic-memory"
+fi
+fi
 
 # ── MCP (só cria se não existe) ──────────────
 step "MCP Servers"
 
-if [ ! -f "$PI_DIR/mcp.json" ]; then
-    if [ -f "$SCRIPT_DIR/config/mcp.json" ]; then
-        cp "$SCRIPT_DIR/config/mcp.json" "$PI_DIR/mcp.json"
-        info "mcp.json copiado de config/"
+if [ "$same_root" = false ]; then
+    if [ ! -f "$PI_DIR/mcp.json" ]; then
+        if [ -f "$SCRIPT_DIR/config/mcp.json" ]; then
+            cp "$SCRIPT_DIR/config/mcp.json" "$PI_DIR/mcp.json"
+            info "mcp.json copiado de config/"
+        else
+            info "config/mcp.json nao encontrado - pulando"
+        fi
     else
-        info "config/mcp.json nao encontrado - pulando"
+        info "mcp.json ja existe - preservado"
     fi
 else
-    info "mcp.json ja existe - preservado"
+    info "origem e destino iguais - recursos preservados"
 fi
 
 # ── PI Packages ─────────────────────────────
@@ -108,7 +124,14 @@ if command -v pi &>/dev/null; then
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
     pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
-    pi install npm:pi-observational-memory@3.0.3 2>/dev/null && info "pi-observational-memory" || true
+fi
+
+# Activating settings is intentionally the final staging write.
+if [ "$same_root" = false ]; then
+    cp "$SCRIPT_DIR/config/settings.json" "$PI_DIR/settings.json"
+    info "settings.json"
+else
+    info "origem e destino iguais - settings.json preservado"
 fi
 
 # ── Done ──────────────────────────────────────

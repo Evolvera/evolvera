@@ -18,6 +18,7 @@ function Step($name) { Write-Host "`n--- $name ---" -ForegroundColor $CYAN }
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $SCRIPT_DIR) { $SCRIPT_DIR = $PWD.Path }
 $PI_DIR = Join-Path $env:USERPROFILE ".pi\agent"
+$sameRoot = $false
 
 # -- PI ---------------------------------------------------
 Step "Verificando PI"
@@ -48,64 +49,80 @@ foreach ($dir in $dirs) {
         New-Item -ItemType Directory -Path $path -Force | Out-Null
     }
 }
+$sameRoot = [StringComparer]::OrdinalIgnoreCase.Equals(
+    [IO.Path]::GetFullPath($SCRIPT_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar),
+    [IO.Path]::GetFullPath($PI_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar))
 Info ($dirs.Count.ToString() + " diretorios")
 
 # -- Configs ----------------------------------------------
 Step "Instalando configuracao"
 
-$configs = @("settings.json", "models.json", "SYSTEM.md", "AGENTS.md", "pi-goal.json")
-foreach ($f in $configs) {
-    $src = Join-Path $SCRIPT_DIR "config\$f"
-    $dst = Join-Path $PI_DIR $f
-    if (Test-Path $src) {
-        Copy-Item $src $dst -Force
-        Info $f
+if (-not $sameRoot) {
+    $configs = @("models.json", "SYSTEM.md", "AGENTS.md", "pi-goal.json")
+    foreach ($f in $configs) {
+        $src = Join-Path $SCRIPT_DIR "config\$f"
+        $dst = Join-Path $PI_DIR $f
+        if (Test-Path $src) {
+            Copy-Item $src $dst -Force
+            Info $f
+        }
+    }
+
+    $subagentsSrc = Join-Path $SCRIPT_DIR "subagents.json"
+    if (Test-Path $subagentsSrc) {
+        Copy-Item $subagentsSrc (Join-Path $PI_DIR "subagents.json") -Force
+        Info "subagents.json"
+    }
+
+    $themes = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "themes") -Filter "*.json" -ErrorAction SilentlyContinue
+    if ($themes) {
+        Copy-Item $themes.FullName (Join-Path $PI_DIR "themes") -Force
+        Info ($themes.Count.ToString() + " temas")
     }
 }
 
-$subagentsSrc = Join-Path $SCRIPT_DIR "subagents.json"
-if (Test-Path $subagentsSrc) {
-    Copy-Item $subagentsSrc (Join-Path $PI_DIR "subagents.json") -Force
-    Info "subagents.json"
-}
-
-$themes = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "themes") -Filter "*.json" -ErrorAction SilentlyContinue
-if ($themes) {
-    Copy-Item $themes.FullName (Join-Path $PI_DIR "themes") -Force
-    Info ($themes.Count.ToString() + " temas")
-}
-
-# -- Agents -----------------------------------------------
-$retiredAgents = @("planner-heavy.md", "builder-ultra.md", "builder-light-design.md", "scout-highspeed.md", "deep-research-finalizer.md", "deep-search-master.md")
-foreach ($retired in $retiredAgents) {
-    Remove-Item (Join-Path $PI_DIR "agents\$retired") -Force -ErrorAction SilentlyContinue
-}
-$agents = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "agents") -Filter "*.md" -ErrorAction SilentlyContinue
-if ($agents) {
-    $dest = Join-Path $PI_DIR "agents"
-    Copy-Item $agents.FullName $dest -Force
-    Info ($agents.Count.ToString() + " agentes")
-}
-
-# -- Skills -----------------------------------------------
-$skillDirs = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "skills") -Directory -ErrorAction SilentlyContinue
-foreach ($skillDir in $skillDirs) {
-    $name = $skillDir.Name
-    $dest = Join-Path $PI_DIR "skills\$name"
-    if (-not (Test-Path $dest)) {
-        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+if (-not $sameRoot) {
+    # -- Agents -----------------------------------------------
+    $retiredAgents = @("planner-heavy.md", "builder-ultra.md", "builder-light-design.md", "scout-highspeed.md", "deep-research-finalizer.md", "deep-search-master.md")
+    foreach ($retired in $retiredAgents) {
+        Remove-Item (Join-Path $PI_DIR "agents\$retired") -Force -ErrorAction SilentlyContinue
     }
-    Copy-Item (Join-Path $skillDir.FullName "*") $dest -Recurse -Force
-    Info "Skill: $name"
+    $agents = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "agents") -Filter "*.md" -ErrorAction SilentlyContinue
+    if ($agents) {
+        $dest = Join-Path $PI_DIR "agents"
+        Copy-Item $agents.FullName $dest -Force
+        Info ($agents.Count.ToString() + " agentes")
+    }
 }
 
-# -- Extensions -------------------------------------------
-Remove-Item (Join-Path $PI_DIR "extensions\goal-mode.ts") -Force -ErrorAction SilentlyContinue
-$extensions = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "extensions") -Filter "*.ts" -ErrorAction SilentlyContinue
-if ($extensions) {
-    $dest = Join-Path $PI_DIR "extensions"
-    Copy-Item $extensions.FullName $dest -Force
-    Info ($extensions.Count.ToString() + " extensoes")
+if (-not $sameRoot) {
+    # -- Skills -----------------------------------------------
+    $skillDirs = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "skills") -Directory -ErrorAction SilentlyContinue
+    foreach ($skillDir in $skillDirs) {
+        $name = $skillDir.Name
+        $dest = Join-Path $PI_DIR "skills\$name"
+        if (-not (Test-Path $dest)) {
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        }
+        Copy-Item (Join-Path $skillDir.FullName "*") $dest -Recurse -Force
+        Info "Skill: $name"
+    }
+}
+
+if (-not $sameRoot) {
+    # -- Extensions -------------------------------------------
+    Remove-Item (Join-Path $PI_DIR "extensions\goal-mode.ts") -Force -ErrorAction SilentlyContinue
+    $extensions = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "extensions") -Filter "*.ts" -ErrorAction SilentlyContinue
+    if ($extensions) {
+        $dest = Join-Path $PI_DIR "extensions"
+        Copy-Item $extensions.FullName $dest -Force
+        Info ($extensions.Count.ToString() + " extensoes")
+    }
+    $plasticMemory = Join-Path $SCRIPT_DIR "extensions\plastic-memory"
+    if (Test-Path $plasticMemory) {
+        Copy-Item $plasticMemory (Join-Path $PI_DIR "extensions") -Recurse -Force
+        Info "plastic-memory"
+    }
 }
 
 # -- MCP Servers ------------------------------------------
@@ -114,7 +131,9 @@ Step "MCP Servers"
 $mcpPath = Join-Path $PI_DIR "mcp.json"
 $mcpSrc = Join-Path $SCRIPT_DIR "config\mcp.json"
 
-if (-not (Test-Path $mcpPath)) {
+if ($sameRoot) {
+    Info "origem e destino iguais - recursos preservados"
+} elseif (-not (Test-Path $mcpPath)) {
     if (Test-Path $mcpSrc) {
         Copy-Item $mcpSrc $mcpPath -Force
         Info "mcp.json copiado de config/"
@@ -142,11 +161,16 @@ if ($piCmd) {
     Info "pi-goal..."
     & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
 
-    Info "pi-observational-memory..."
-    & pi install npm:pi-observational-memory@3.0.3 2>$null
-
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
+}
+
+# Activating settings is intentionally the final staging write.
+if (-not $sameRoot) {
+    Copy-Item (Join-Path $SCRIPT_DIR "config\settings.json") (Join-Path $PI_DIR "settings.json") -Force
+    Info "settings.json"
+} else {
+    Info "origem e destino iguais - settings.json preservado"
 }
 
 # -- Done -------------------------------------------------
