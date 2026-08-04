@@ -5,7 +5,7 @@ display_name: 🔨 Builder · GPT-5.6 Luna · high
 tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-5.6-luna
 thinking: high
-max_turns: 80
+max_turns: 120
 ---
 
 # Builder — Normal-Risk Task Executor

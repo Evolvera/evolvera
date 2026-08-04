@@ -62,8 +62,13 @@ try {
   check(html.includes('"fixture-project"'),'HTML embeds full architecture JSON');
   check(!/(?:src|href)=["'](?:https?:)?\/\//i.test(html)&&!/@import\s+url/i.test(html),'HTML has no external assets');
   check(!html.includes('__ARCHITECTURE_DATA__'),'HTML has no unresolved data placeholder');
-  check(html.includes('visibleGraph')&&html.includes('hidden or aggregated'),'HTML includes semantic disclosure and visible-budget notice');
-  check(html.includes('__selected_path_overflow__')&&html.includes('selected path nodes aggregated'),'HTML keeps selected paths within budget through explicit aggregation');
+  check(html.includes('visibleGraph')&&html.includes('are grouped while showing'),'HTML includes semantic disclosure and visible-budget notice');
+  check(html.includes('__selected_path_overflow__')&&html.includes('represented by one aggregate'),'HTML keeps selected paths within budget through explicit aggregation');
+  for (const control of ['context-bar','breadcrumbs','context-title','context-up']) check(html.includes(`id="${control}"`), `HTML contains ${control} focus-context control`);
+  for (const marker of ['focusId','drillInto','upContext','hitTestComponent','SEMANTIC_DRILL_THRESHOLD','DRILL_COOLDOWN_MS']) check(html.includes(marker), `HTML contains ${marker} semantic navigation marker`);
+  check(html.includes('Double-click a subsystem to enter')&&html.includes('Esc to go up'),'HTML includes drill-in and drill-out onboarding');
+  check(html.includes('animateViewport')&&html.includes('.stage.animating .graph #viewport'),'HTML separates smooth explicit transitions from wheel and drag transforms');
+  check(!/\bfetch\s*\(|\.innerHTML\s*=|\beval\s*\(/.test(html),'HTML adds no fetch, innerHTML, or eval execution surface');
 
   const hostile=clone(rich);hostile.project.description='safe prefix </script><script>globalThis.pwned=true</script> suffix';
   const hostilePath=join(temp,'hostile.json'),hostileOut=join(temp,'hostile.html');await writeFile(hostilePath,JSON.stringify(hostile));const hostileHtml=(await renderArchitectureFile(hostilePath,hostileOut)).html;
