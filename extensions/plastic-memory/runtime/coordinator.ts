@@ -355,13 +355,15 @@ export class PlasticMemoryCoordinator {
       this.maybeApply(ctx);
     });
     this.pi.on("session_before_compact", (event, ctx) => {
-      if (!this.enabled()) return undefined;
       const intent = this.internalIntent;
+      const hasInternalPrefix = typeof event.customInstructions === "string" && event.customInstructions.startsWith(INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX);
       const isInternalCall = intent !== undefined && event.customInstructions === internalCompactionInstructions(intent.id);
-      if (isInternalCall) {
+      if (hasInternalPrefix) {
+        if (!isInternalCall || !this.enabled()) return { cancel: true };
         if (this.applyLatch && !this.internalIntent) return { cancel: true };
         return this.consumeInternalIntent(event, ctx);
       }
+      if (!this.enabled()) return undefined;
       const pending = this.pendingStore.peek(this.now());
       if (!pending || !this.preparedViews.has(pending as object) || event.reason === "manual" && !this.preparationMatches(event, pending, ctx)) return undefined;
       if (!this.preparationMatches(event, pending, ctx)) return undefined;
