@@ -65,9 +65,19 @@ For non-frontend work, use `builder-light` only when the correct change is local
 
 ## Project Memory
 
-Use `.pi/memory/` for durable lessons, not conversation history. Markdown remains authoritative for human durable lessons. `architecture.json` is additive normalized architecture memory for agents; `architecture.html` is a generated view derived from JSON, never a source. New sessions receive only the compact summary and architecture index; architecture-sensitive work reads targeted JSON records and verifies affected evidence when the snapshot is stale or `POSSIBLY_STALE`. Update JSON/HTML only for material architecture, flow, evidence, or gap changes—not every code edit. Flow/GitHub authority boundaries remain unchanged: current GitHub state prevails for delivery claims.
+Use `.pi/memory/` for durable lessons, not conversation history. Canonical project/chunk Markdown is the authority for project facts; derived projections never replace it. `architecture.json` is normalized and architecture-authoritative, while `architecture.html` is a generated view only.
 
-Before repeating deploy, recovery, migration, or previously failed operation, consult relevant memory and verify against current repository/GitHub/host evidence. After confirmed incident, fix, rollback, or non-obvious operational discovery, update memory in same workflow:
+When the plastic owner is active, the session receives only bounded projections: root summary 8k chars, active chunk index 4k, and optional architecture index 4k. Full chunks are never auto-injected: use the explicit `memory_recall` tool with an exact ID, or bounded `memory_search` for lookup metadata/snippets.
+
+The four runtime roles are `observer`, `reflector`, `compactor`, and `project-promoter`, each Luna medium. The 10k/20k values are inspection edge triggers, not cadence. Each cycle uses one exact contiguous completed-turn snapshot (at most about 100k tokens) and no multipart cycle; it allows one automatic retry. Compaction is identity-based: six completed cycles form the stride, the oldest two are compacted, and the latest four are retained. Detached output applies only after the host is settled and idle with no pending messages and passes branch/identity guards. Invalid or nonmatching internal attempts cancel; ordinary no-match manual, threshold, or overflow requests preserve the host's native fallback. Do not infer live quality from these mechanisms.
+
+Architecture-sensitive work must verify `snapshot` state and affected `evidenceIds`/paths/relationships; validate `architecture.json` before rendering `architecture.html`, and never use the HTML as authority.
+
+Canonical publication, migration, and historical backfill are explicit and bounded. Update canonical Markdown and derived projections only through an explicit supported publication path; absent that path, do not invent writes or provider calls. Legacy flat memory remains read-only compatibility with its marker; historical coverage is `historical-unindexed` until an explicit report-first, cursor-bounded backfill proves a completed-turn window.
+
+For Flow work, current GitHub state is the authority for delivery. Missing or stale memory never authorizes recreating a board, issue, branch, or PR, assuming remote state, or overwriting it. Preserve secret, credential, and PII hygiene.
+
+Before repeating deploy, recovery, migration, or previously failed operation, consult relevant memory and verify against current repository/GitHub/host evidence. After a confirmed incident, fix, rollback, or non-obvious operational discovery, update only the appropriate durable lesson when an explicit supported path exists:
 
 - `setup.md`: correct sequence, prerequisites, post-deploy smoke, rollback.
 - `bugs.md`: symptom, root cause, prevention.
@@ -77,7 +87,7 @@ Before repeating deploy, recovery, migration, or previously failed operation, co
 
 Never store secrets, secret values, PII, raw source dumps, transient delivery/board status, raw sensitive output, or unverified conclusions. Current evidence and GitHub remain authoritative.
 
-**Curated memory in handoffs:** agents without automatic memory injection—heavy tiers, validator, planners—depend on orchestrator. Delegating operation or surface with recorded lesson—deploy, recovery, migration, previous failed procedure, known pitfall? Quote only specific relevant entries from `setup.md`/`bugs.md`/`decisions.md`. Never paste whole summary into execution agent. Irrelevant memory be noise; small-model output degrade.
+**Curated memory in handoffs:** agents without automatic memory injection—heavy tiers, validator, planners—depend on orchestrator. Delegating operation or surface with recorded lesson—deploy, recovery, migration, previous failed procedure, known pitfall—quote only specific relevant entries from `setup.md`/`bugs.md`/`decisions.md`. Never paste whole summary into execution agent. Irrelevant memory is noise; small-model output should remain lean.
 
 ## Retrieval and Evidence
 
