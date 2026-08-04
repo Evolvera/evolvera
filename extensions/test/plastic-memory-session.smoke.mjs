@@ -85,6 +85,34 @@ assert.equal(folded.observations.length, 1, "first valid legacy observation only
 assert.equal(folded.reflections.length, 1);
 assert.deepEqual(ledger.normalSourceEntries(folded.branch, boot.record.data), activeContext.filter(ledger.isSourceEntry));
 assert.equal(ledger.normalSourceEntries(folded.branch, boot.record.data).some((entry) => entry.id === c1.id), false);
+
+// A bootstrap boundary keeps its original active window and admits later current-branch descendants.
+function branchMessage(id, parentId, role, text) {
+  return { type: "message", id, parentId, message: { role, content: [{ type: "text", text }] }, tokenCount: 1 };
+}
+const resumedBootstrapRecord = { type: "custom", id: "bootstrap-reproduction", parentId: c5.id, customType: types.PLASTIC_BOOTSTRAP_RECORDED, data: boot.record.data };
+const resumedUser = branchMessage("resumed-user", resumedBootstrapRecord.id, "user", "new current-branch request");
+const resumedAnswer = branchMessage("resumed-answer", resumedUser.id, "assistant", "new current-branch answer");
+const forkDescendant = branchMessage("fork-descendant", c5.id, "user", "off-branch request");
+const resumedBranch = ledger.resolveCurrentBranch(
+  [...folded.branch, resumedBootstrapRecord, forkDescendant, resumedUser, resumedAnswer], resumedAnswer.id,
+);
+assert.deepEqual(ledger.normalSourceEntries(resumedBranch, boot.record.data).map((entry) => entry.id), [
+  c4.id, c5.id, resumedUser.id, resumedAnswer.id,
+]);
+assert.equal(ledger.normalSourceEntries(resumedBranch, boot.record.data).some((entry) => entry.id === forkDescendant.id), false);
+assert.deepEqual(ledger.normalSourceEntries(resumedBranch, { ...boot.record.data, activeEntryIds: ["missing-active"] }), []);
+assert.deepEqual(ledger.normalSourceEntries(resumedBranch, { ...boot.record.data, historicalPrefixIds: [c4.id, c1.id] }), []);
+
+// Empty-active legacy bootstraps still exclude their recorded history and admit later descendants.
+const emptyBootstrap = { ...boot.record.data, compactionEntryId: undefined, activeEntryIds: [], activeStartId: undefined, activeEndId: undefined, historicalPrefixIds: [c1.id, c2.id] };
+const emptyBootstrapRecord = { type: "custom", id: "empty-bootstrap", parentId: c2.id, customType: types.PLASTIC_BOOTSTRAP_RECORDED, data: emptyBootstrap };
+const emptyDescendant = branchMessage("empty-descendant", emptyBootstrapRecord.id, "user", "post-bootstrap request");
+const emptyAnswer = branchMessage("empty-answer", emptyDescendant.id, "assistant", "post-bootstrap answer");
+const emptyBranch = ledger.resolveCurrentBranch([c1, c2, emptyBootstrapRecord, emptyDescendant, emptyAnswer], emptyAnswer.id);
+assert.deepEqual(ledger.normalSourceEntries(emptyBranch, emptyBootstrap).map((entry) => entry.id), [emptyDescendant.id, emptyAnswer.id]);
+assert.equal(ledger.normalSourceEntries(emptyBranch, emptyBootstrap).some((entry) => entry.id === c1.id || entry.id === c2.id), false);
+
 assert.equal(ledger.foldLedger([...entries, forkOnly], { leafId: "fork-only" }).branch.at(-1).id, "fork-only");
 
 // A fitting 100k contiguous snapshot has one identity, one opportunity, and no fan-out.

@@ -189,13 +189,64 @@ export function foldLedger(entries: SessionEntry[], options: { leafId?: string |
   };
 }
 
-/** Select only the explicitly bootstrapped active window; historical gaps cannot re-enter normal work. */
+/** Select the active window and current-branch descendants without reopening the historical gap. */
 export function normalSourceEntries(branch: SessionEntry[], bootstrap?: BootstrapData): SessionEntry[] {
-  if (!bootstrap) return [];
-  const allowed = new Set(bootstrap.activeEntryIds);
-  const selected = sourceEntries(branch).filter((entry) => hasId(entry) && allowed.has(entry.id));
-  if (selected.length !== bootstrap.activeEntryIds.filter((id) => branch.some((entry) => entry.id === id && isSourceEntry(entry))).length) return [];
-  return selected;
+  if (!bootstrap || bootstrap.historicalGap !== "historical-unindexed") return [];
+
+  const branchPositions = new Map<string, number>();
+  for (const [index, entry] of branch.entries()) {
+    if (!hasId(entry) || branchPositions.has(entry.id)) return [];
+    branchPositions.set(entry.id, index);
+  }
+  const sources = sourceEntries(branch);
+  const sourceById = new Map<string, SessionEntry>();
+  for (const entry of sources) {
+    if (!hasId(entry) || sourceById.has(entry.id)) return [];
+    sourceById.set(entry.id, entry);
+  }
+
+  const activeIds = bootstrap.activeEntryIds;
+  const historicalIds = bootstrap.historicalPrefixIds;
+  const allRecordedIds = new Set<string>();
+  for (const id of [...historicalIds, ...activeIds]) {
+    if (allRecordedIds.has(id) || !sourceById.has(id)) return [];
+    allRecordedIds.add(id);
+  }
+  if (bootstrap.compactionEntryId && !branchPositions.has(bootstrap.compactionEntryId)) return [];
+
+  const historicalPositions = historicalIds.map((id) => branchPositions.get(id) as number);
+  const activePositions = activeIds.map((id) => branchPositions.get(id) as number);
+  if (historicalPositions.some((position, index) => index > 0 && position <= historicalPositions[index - 1])) return [];
+  if (activePositions.some((position, index) => index > 0 && position <= activePositions[index - 1])) return [];
+  if (activeIds.length > 0) {
+    if (bootstrap.activeStartId && bootstrap.activeStartId !== activeIds[0]) return [];
+    if (bootstrap.activeEndId && bootstrap.activeEndId !== activeIds.at(-1)) return [];
+    if (historicalPositions.some((position) => position >= activePositions[0])) return [];
+  } else {
+    if (bootstrap.activeStartId || bootstrap.activeEndId || historicalIds.length === 0) return [];
+  }
+
+  let boundary = activePositions.at(-1) ?? historicalPositions.at(-1);
+  if (boundary === undefined) return [];
+  const sameIds = (left: unknown, right: string[]): boolean => Array.isArray(left)
+    && left.length === right.length && left.every((id, index) => id === right[index]);
+  const bootstrapPosition = [...branch].reverse().findIndex((entry) => {
+    const data = customData(entry);
+    return entry.customType === "plastic.bootstrap.recorded" && data
+      && (bootstrap.sessionId === undefined || data.sessionId === bootstrap.sessionId)
+      && (bootstrap.generation === undefined || data.generation === bootstrap.generation)
+      && (bootstrap.branchId === undefined || data.branchId === bootstrap.branchId)
+      && (bootstrap.activeDigest === undefined || data.activeDigest === bootstrap.activeDigest)
+      && sameIds(data.activeEntryIds, activeIds) && sameIds(data.historicalPrefixIds, historicalIds);
+  });
+  if (bootstrapPosition >= 0) {
+    boundary = branch.length - 1 - bootstrapPosition;
+    if (activePositions.some((position) => position >= boundary)
+      || historicalPositions.some((position) => position >= boundary)) return [];
+  }
+  const activeSet = new Set(activeIds);
+  return sources.filter((entry) => activeSet.has(entry.id as string)
+    || (branchPositions.get(entry.id as string) as number) > boundary);
 }
 
 export function acceptsBoundRecord(entry: unknown, context: SessionBinding): boolean {
