@@ -19,12 +19,12 @@ export const ROLE_CONFIGS: Readonly<Record<PlasticMemoryRole, RoleConfig>> = Obj
 });
 
 export type LunaModel = { provider?: string; id?: string; contextWindow?: number; maxTokens?: number; [key: string]: unknown };
-export type RoleAuth = { apiKey?: string; headers?: Record<string, string>; [key: string]: unknown };
+export type RoleAuth = { apiKey?: string; headers?: Record<string, string>; env?: Record<string, string>; [key: string]: unknown };
 export type RoleRegistry = {
   find?: (provider: string, model: string) => LunaModel | undefined;
   getModel?: (provider: string, model: string) => LunaModel | undefined;
   getProviderAuth?: (provider: string) => Promise<RoleAuth | undefined> | RoleAuth | undefined;
-  getApiKeyAndHeaders?: (model: LunaModel) => Promise<{ ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string }>;
+  getApiKeyAndHeaders?: (model: LunaModel) => Promise<{ ok: true; apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> } | { ok: false; error: string }>;
 };
 export type AgentLoop = (prompts: unknown[], context: Record<string, unknown>, config: Record<string, unknown>, signal: AbortSignal) => unknown;
 export type RunnerRuntime = {
@@ -72,7 +72,7 @@ async function authFor(runtime: RunnerRuntime, model: LunaModel): Promise<RoleAu
   }
   if (runtime.modelRegistry.getApiKeyAndHeaders) {
     const result = await runtime.modelRegistry.getApiKeyAndHeaders(model);
-    return result.ok ? { apiKey: result.apiKey, headers: result.headers } : undefined;
+    return result.ok ? { apiKey: result.apiKey, headers: result.headers, env: result.env } : undefined;
   }
   return undefined;
 }
@@ -156,6 +156,7 @@ export async function runBoundedRole(input: {
       model: resolved.model,
       apiKey: resolved.auth.apiKey,
       headers: resolved.auth.headers,
+      env: resolved.auth.env,
       maxTurns: resolved.config.maxTurns,
       maxToolCalls: resolved.config.maxToolCalls,
       maxTokens: Math.min(resolved.model.maxTokens ?? 16_384, 16_384),

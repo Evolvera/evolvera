@@ -104,15 +104,17 @@ try {
   assert.equal(hookNames(full.root).filter((name) => name === "session_before_compact").length + full.bridge.hooks.size, 1);
   assert.equal(hookNames(full.root).filter((name) => name === "before_agent_start").length + full.bridge.hooks.size, 1);
 
-  // The source repository is OM-configured evidence: loading the real entries
-  // is inert for plastic and leaves the legacy bridge as the only project hook.
+  // The checked-in source configuration enables plastic-memory. Loading the
+  // real entries must therefore give the root full ownership and keep the
+  // legacy project bridge inert.
   process.chdir(repositoryRoot);
   const sourceRootPi = fakePi();
   const sourceBridgePi = fakePi();
   await (await jiti.import(path.join(repositoryRoot, "extensions/plastic-memory/index.ts"))).default(sourceRootPi);
   (await jiti.import(path.join(repositoryRoot, "extensions/project-memory.ts"))).default(sourceBridgePi);
-  assertInertRoot({ root: sourceRootPi.calls }, "source OM root");
-  assert.deepEqual(hookNames(sourceBridgePi.calls), ["before_agent_start"], "source OM bridge");
+  assert.equal(sourceRootPi.calls.tools.length, 2, "source plastic root tools");
+  assert.equal(sourceRootPi.calls.hooks.has("session_before_compact"), true, "source plastic root compaction hook");
+  assert.deepEqual(hookNames(sourceBridgePi.calls), [], "source plastic bridge");
 
   const proposalCommand = full.root.commands.find(([name]) => name === "memory:propose")[1];
   const unavailableProposal = await proposalCommand.handler("{}", { ui: { notify() {} } });

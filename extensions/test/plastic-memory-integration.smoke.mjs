@@ -10,6 +10,7 @@ const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_m
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const projection = await jiti.import(path.join(root, "plastic-memory/compaction/projection.ts"));
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
+const runnerRuntimeModule = await jiti.import(path.join(root, "plastic-memory/runtime/runner-runtime.ts"));
 const pendingModule = await jiti.import(path.join(root, "plastic-memory/compaction/pending.ts"));
 
 function entry(id, parentId, role = "user") {
@@ -57,6 +58,54 @@ const ambiguous = projection.projectPlasticContext({
 });
 assert.equal(ambiguous.status, "blocked");
 assert.equal(ambiguous.removed, 0);
+
+// Full-mode scheduling crosses the adapter boundary without a provider: fake
+// registry/auth/complete calls produce valid observer and reflector outputs,
+// and the coordinator closes one plastic cycle from the current host branch.
+const cycleModel = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const cycleCalls = [];
+const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
+  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return cycleModel; },
+  async getApiKeyAndHeaders(model) { assert.equal(model, cycleModel); return { ok: true, apiKey: "cycle-fake", headers: { "x-cycle": "fake" }, env: { CYCLE_FAKE: "yes" } }; },
+}, async (model, context, options) => {
+  cycleCalls.push({ model, context, options });
+  const request = JSON.parse(context.messages[0].content[0].text);
+  const manifest = { ...request.binding, snapshotId: request.snapshot.snapshotId, cycleId: request.snapshot.cycleId, ...request.snapshot.span };
+  if (context.systemPrompt.startsWith("Extract durable")) {
+    return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, observations: [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.snapshot.span.sourceEntryIds }] }) }] };
+  }
+  return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
+});
+assert.ok(cycleRuntime);
+const ownerEntries = [{ ...entry("O1", undefined), tokenCount: 1 }, { ...entry("O2", "O1", "assistant"), tokenCount: 1 }];
+let customId = 0;
+const ownerHandlers = new Map();
+const ownerPi = {
+  on(type, handler) { ownerHandlers.set(type, handler); },
+  appendEntry(customType, data) {
+    const parentId = ownerEntries.at(-1)?.id;
+    ownerEntries.push({ type: "custom", id: `OC${++customId}`, parentId, customType, data });
+  },
+};
+const ownerSessionManager = {
+  getSessionId: () => "aaaaaaaaaaaaaaaaaaaaaaaa",
+  getLeafId: () => ownerEntries.at(-1)?.id,
+  getEntries: () => ownerEntries,
+  getBranch: () => ownerEntries,
+  buildContextEntries: () => ownerEntries,
+};
+const ownerCtx = { sessionManager: ownerSessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {} };
+const ownerCoordinator = coordinatorModule.registerPlasticMemoryCoordinator(ownerPi, { enabled: true, runtime: cycleRuntime, now: () => 1_000 });
+await ownerHandlers.get("session_start")({ type: "session_start", reason: "startup" }, ownerCtx);
+ownerHandlers.get("turn_end")({ type: "turn_end" }, ownerCtx);
+
+for (let attempt = 0; attempt < 20 && !ownerEntries.some((item) => item.customType === "plastic.cycle.closed"); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+assert.equal(ownerEntries.some((item) => item.customType === "plastic.observations.recorded"), true);
+assert.equal(ownerEntries.some((item) => item.customType === "plastic.reflections.recorded"), true);
+assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.closed"), true);
+assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel]);
+assert.equal(cycleCalls.every((call) => call.options.cacheRetention === "none" && call.options.apiKey === "cycle-fake" && call.options.env.CYCLE_FAKE === "yes"), true);
+ownerCoordinator.shutdown("cycle-test");
 
 // Registration is direct and provider-free: the coordinator only asks Pi for
 // public session/context/lifecycle callbacks and does not register a provider.
