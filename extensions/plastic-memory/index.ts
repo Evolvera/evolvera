@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,18 +80,21 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   const resolved = readPlasticMemorySettings();
   if (resolvePlasticMemoryOwnerModeFromResolved(resolved) !== "full") return;
 
-  const [coordinatorModule, contextModule, toolsModule, commandsModule, recallModule, searchModule] = await Promise.all([
+  const [coordinatorModule, contextModule, toolsModule, commandsModule, recallModule, searchModule, runnerRuntimeModule] = await Promise.all([
     import("./runtime/coordinator.ts"),
     import("./project/context.ts"),
     import("./runtime/tools.ts"),
     import("./runtime/commands.ts"),
     import("./session/recall.ts"),
     import("./project/search.ts"),
+    import("./runtime/runner-runtime.ts"),
   ]);
   const { assembleProjectContext } = contextModule;
   let currentProjectCwd: string | undefined;
+  let currentContext: ExtensionContext | undefined;
   const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, {
     config: resolved.config,
+    runtime: () => currentContext ? runnerRuntimeModule.createPiRunnerRuntime(currentContext.modelRegistry) : undefined,
     projectSnapshot: () => {
       if (!currentProjectCwd) return {};
       const memoryRoot = join(currentProjectCwd, ".pi", "memory");
@@ -101,6 +104,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
 
   pi.on("before_agent_start", (_event, ctx) => {
     const { cwd, memoryRoot } = currentMemoryRoot(ctx);
+    currentContext = ctx;
     currentProjectCwd = cwd;
     const project = assembleProjectContext(memoryRoot, { architectureRoot: memoryRoot, repositoryRoot: cwd });
     prependProjectContext(ctx, project.block);

@@ -9,6 +9,7 @@ const jiti = createJiti(import.meta.url, { moduleCache: false });
 const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const runner = await jiti.import(path.join(root, "plastic-memory/workers/runner.ts"));
+const runnerRuntime = await jiti.import(path.join(root, "plastic-memory/runtime/runner-runtime.ts"));
 const observer = await jiti.import(path.join(root, "plastic-memory/workers/observer.ts"));
 const reflector = await jiti.import(path.join(root, "plastic-memory/workers/reflector.ts"));
 const promoter = await jiti.import(path.join(root, "plastic-memory/workers/promoter.ts"));
@@ -55,6 +56,41 @@ const runtime = {
     return { proposal: "proposal", repositoryEvidence: ["extensions/plastic-memory/workers"] };
   },
 };
+
+const adapterCalls = [];
+const adapterRegistry = {
+  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
+  async getApiKeyAndHeaders(receivedModel) {
+    assert.equal(receivedModel, model);
+    return { ok: true, apiKey: "adapter-key", headers: { "x-test": "adapter" }, env: { ADAPTER_TEST: "yes" } };
+  },
+};
+const piRuntime = runnerRuntime.createPiRunnerRuntime(adapterRegistry, async (receivedModel, context, options) => {
+  adapterCalls.push({ receivedModel, context, options });
+  return { content: [{ type: "text", text: "adapter text" }, { type: "thinking", thinking: "not returned" }] };
+});
+assert.ok(piRuntime, "valid Pi model registry creates a worker runtime");
+const adapterSignal = new AbortController().signal;
+const adapterResult = await runner.runBoundedRole({ role: "observer", prompt: "adapter worker message", systemPrompt: "adapter system prompt", runtime: piRuntime, signal: adapterSignal, inputTokens: 1 });
+assert.equal(adapterResult.ok, true);
+assert.equal(adapterResult.response, "adapter text", "complete text content is consumable by the existing runner");
+assert.equal(adapterCalls.length, 1);
+assert.equal(adapterCalls[0].receivedModel, model, "complete receives the configured Luna model from modelRegistry");
+assert.equal(adapterCalls[0].context.systemPrompt, "adapter system prompt");
+assert.equal(adapterCalls[0].context.messages[0].role, "user");
+assert.equal(adapterCalls[0].context.messages[0].content[0].text, "adapter worker message");
+assert.equal(adapterCalls[0].options.apiKey, "adapter-key");
+assert.deepEqual(adapterCalls[0].options.headers, { "x-test": "adapter" });
+assert.deepEqual(adapterCalls[0].options.env, { ADAPTER_TEST: "yes" });
+assert.equal(adapterCalls[0].options.cacheRetention, "none");
+assert.equal(adapterCalls[0].options.maxTokens, 16_000);
+assert.equal(adapterCalls[0].options.signal.aborted, false);
+assert.match(adapterCalls[0].options.sessionId, /^[0-9a-f-]{36}$/u);
+const authFailureRuntime = runnerRuntime.createPiRunnerRuntime({ find: () => model, getApiKeyAndHeaders: async () => ({ ok: false, error: "fake auth failure" }) }, async () => ({ content: [] }));
+assert.equal((await runner.resolveLunaRole("observer", authFailureRuntime)).reason, "auth-unavailable");
+const modelFailureRuntime = runnerRuntime.createPiRunnerRuntime({ find: () => undefined, getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "unused" }) }, async () => ({ content: [] }));
+assert.equal((await runner.resolveLunaRole("observer", modelFailureRuntime)).reason, "model-unavailable");
+assert.equal(runnerRuntime.createPiRunnerRuntime({ find: () => model }), undefined, "invalid registry fails closed");
 
 for (const role of ["observer", "reflector", "compactor", "project-promoter"]) {
   assert.deepEqual(runner.ROLE_CONFIGS[role], { model: "openai-codex/gpt-5.6-luna", thinking: "medium", maxTurns: 8, maxToolCalls: 4, maxRuntimeMs: 60_000 });
