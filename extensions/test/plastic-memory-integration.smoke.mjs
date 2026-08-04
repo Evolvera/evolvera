@@ -82,8 +82,9 @@ await handlers.get("session_shutdown")({ type: "session_shutdown", reason: "quit
 assert.equal(coordinator.getGeneration(), 2);
 
 // The host forwards customInstructions unchanged to session_before_compact.
-// Exercise the coordinator's live intent boundary directly so former static,
-// wrong, and stale values remain native/manual fallback rather than internal.
+// Exercise the coordinator's live intent boundary directly so private-prefix
+// values cancel unless they are the exact live nonce, while ordinary manual
+// custom instructions retain native fallback.
 function makeNonceProbe() {
   const probeHandlers = new Map();
   const probePi = {
@@ -138,6 +139,12 @@ function makeNonceProbe() {
 }
 const nonceProbe = makeNonceProbe();
 await nonceProbe.start();
+assert.deepEqual(nonceProbe.beforeCompact({
+  customInstructions: "\u0000plastic-memory:internal-compaction:no-live-intent",
+  reason: "manual",
+  preparation: { firstKeptEntryId: "missing", tokensBefore: 1 },
+  branchEntries: nonceProbe.branch,
+}), { cancel: true }, "private-prefix compaction without a live intent must cancel");
 nonceProbe.branch.push(entry("N1", undefined), entry("N2", "N1", "assistant"));
 nonceProbe.stagePending();
 nonceProbe.settle();
@@ -159,9 +166,14 @@ const preparation = { firstKeptEntryId: "N1", tokensBefore: 1 };
 const eventFor = (customInstructions) => ({ customInstructions, reason: "manual", preparation, branchEntries: nonceProbe.branch });
 const formerStatic = "Apply the already-prepared plastic-memory summary only when the guarded hook accepts the exact host cut.";
 const wrongNonce = `${realNonce.slice(0, realNonce.lastIndexOf(":") + 1)}wrong`;
-for (const [label, customInstructions] of [["former static", formerStatic], ["wrong nonce", wrongNonce], ["stale nonce", firstNonce]]) {
-  assert.equal(nonceProbe.beforeCompact(eventFor(customInstructions)), undefined, `${label} must remain native/manual fallback`);
+assert.equal(nonceProbe.beforeCompact(eventFor(formerStatic)), undefined, "ordinary manual custom instructions must remain native fallback");
+let nativeFallbackCount = 0;
+for (const [label, customInstructions] of [["wrong nonce", wrongNonce], ["stale nonce", firstNonce]]) {
+  const result = nonceProbe.beforeCompact(eventFor(customInstructions));
+  assert.deepEqual(result, { cancel: true }, `${label} must cancel rather than native-fallback`);
+  if (result === undefined) nativeFallbackCount += 1;
 }
+assert.equal(nativeFallbackCount, 0, "private-prefix nonce attempts must never native-fallback");
 
 // Re-stage fresh state and verify only the exact live nonce consumes it. A
 // second synchronous event with that nonce is cancelled before a second append.
