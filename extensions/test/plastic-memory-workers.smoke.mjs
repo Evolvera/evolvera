@@ -109,8 +109,9 @@ assert.equal(reflected.ok, true);
 assert.equal(reflected.record.data.span.sourceDigest, snapshot.span.sourceDigest);
 
 const appended = [];
+const lifecycleEvents = [];
 const scheduler = schedulerModule.createCycleScheduler();
-const scheduleInput = { binding, branchEntries: entries, bootstrap: { activeEntryIds: [currentUser.id, currentAssistant.id], historicalPrefixIds: [old.id], historicalGap: "historical-unindexed" }, records: [], runtime, append: (entry) => appended.push(entry) };
+const scheduleInput = { binding, branchEntries: entries, bootstrap: { activeEntryIds: [currentUser.id, currentAssistant.id], historicalPrefixIds: [old.id], historicalGap: "historical-unindexed" }, records: [], runtime, append: (entry) => appended.push(entry), lifecycleReporter: (event) => lifecycleEvents.push(event) };
 const first = await scheduler.trigger(scheduleInput);
 assert.equal(first.status, "closed");
 assert.equal(first.cycle.data.sourceEntryIds.length, 2);
@@ -120,6 +121,7 @@ const repeated = await scheduler.trigger({ ...scheduleInput, records: appended }
 assert.equal(repeated.status, "skipped");
 assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeated triggers must not hot-loop a closed snapshot");
 assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
+assert.deepEqual(lifecycleEvents.filter((event) => event.phase === "observer"), [{ phase: "observer", status: "started", tokenCount: 100_000 }]);
 
 // Missing/reordered manifests fail closed and permit only one automatic retry.
 failureMode = true;
@@ -130,6 +132,9 @@ assert.equal((await retryScheduler.trigger(retryInput)).status, "failed");
 assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "failed");
 assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
 assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
+assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 2);
+assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 3);
+assert.equal(lifecycleEvents.every((event) => event.reason === undefined || event.reason.length <= 120), true);
 failureMode = false;
 
 const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", sourceDigest: snapshot.span.sourceDigest.slice(0, 24), projectSnapshot: { summary: "bounded", activeIndex: "{}" }, explicitRequest: true, runtime });

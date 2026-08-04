@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, type PlasticMemoryConfig } from "../config.ts";
-import { digestParts } from "../common/safety.ts";
+import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { acknowledgeCompaction, type CompactionEntry } from "../compaction/engine.ts";
 import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
@@ -15,7 +15,7 @@ import {
   type SessionBinding,
   type SessionEntry,
 } from "../session/types.ts";
-import { createCycleScheduler, type SchedulerIdentity } from "../workers/scheduler.ts";
+import { createCycleScheduler, type SchedulerIdentity, type SchedulerLifecycleEvent } from "../workers/scheduler.ts";
 import type { RunnerRuntime } from "../workers/runner.ts";
 import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
 
@@ -82,6 +82,10 @@ function bootstrapFor(branch: SessionEntry[], binding: SessionBinding): Bootstra
   const folded = foldLedger(branch, { context: binding });
   return folded.latestBootstrap;
 }
+function safeNoticeReason(value: unknown): string {
+  const source = typeof value === "string" ? value : String(value ?? "worker did not complete");
+  return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 120) || "worker did not complete";
+}
 function edgeBootstrap(bootstrap: BootstrapData, cycles: readonly CycleClosedData[]): BootstrapData {
   const latest = cycles.at(-1);
   if (!latest || latest.sourceEntryIds.length === 0) return bootstrap;
@@ -116,6 +120,7 @@ export class PlasticMemoryCoordinator {
   private readonly scheduler = createCycleScheduler();
   private readonly pendingStore = createPendingStore();
   private readonly preparedViews = new WeakMap<object, { summary: string; details: unknown }>();
+  private readonly reportedPreparations = new WeakSet<object>();
   private generation = 0;
   private branchId = "";
   private settled = false;
@@ -203,6 +208,33 @@ export class PlasticMemoryCoordinator {
     this.append({ customType: record.customType, data: record.data });
   }
 
+  private reportLifecycle(ctx: ExtensionContext, event: SchedulerLifecycleEvent): void {
+    if (!ctx.hasUI || typeof ctx.ui?.notify !== "function") return;
+    const reason = event.reason === undefined ? "" : ` — ${safeNoticeReason(event.reason)}`;
+    let message: string;
+    if (event.phase === "observer" && event.status === "started") {
+      const tokens = Math.max(0, Math.round(event.tokenCount ?? 0)).toLocaleString();
+      message = `Plastic memory: observer running on ~${tokens}-token snapshot`;
+    } else if (event.phase === "observer" && event.status === "no-observations") {
+      message = "Plastic memory: observer returned no observations";
+    } else if (event.status === "failed") {
+      message = `Plastic memory: ${event.phase} failed${reason}`;
+    } else if (event.status === "skipped") {
+      message = `Plastic memory: ${event.phase} skipped${reason}`;
+    } else if (event.status === "prepared") {
+      message = "Plastic memory: compaction prepared";
+    } else if (event.status === "applied") {
+      message = "Plastic memory: compaction applied";
+    } else {
+      return;
+    }
+    try {
+      ctx.ui.notify(message, event.status === "started" || event.status === "prepared" || event.status === "applied" ? "info" : "warning");
+    } catch {
+      // UI observability must never change worker or compaction behavior.
+    }
+  }
+
   private schedule(ctx: ExtensionContext): void {
     if (!this.enabled()) return;
     const runtime = this.runtimeFor();
@@ -222,6 +254,7 @@ export class PlasticMemoryCoordinator {
       runtime,
       append: (record: { customType: string; data: unknown }) => this.appendWorkerRecord(ctx, record),
       currentIdentity: () => this.currentIdentity(ctx),
+      lifecycleReporter: (event: SchedulerLifecycleEvent) => this.reportLifecycle(ctx, event),
       compaction: {
         engine: {
           branchEntries,
@@ -245,6 +278,10 @@ export class PlasticMemoryCoordinator {
         if (!compacted.ok || !compacted.prepared) return;
         if (this.generation !== binding.generation || this.branchId !== binding.branchId) return;
         this.priorState = compacted.prepared.rendered.state;
+        if (!this.reportedPreparations.has(compacted.prepared.pending as object)) {
+          this.reportedPreparations.add(compacted.prepared.pending as object);
+          this.reportLifecycle(ctx, { phase: "compaction", status: "prepared" });
+        }
         this.preparedViews.set(compacted.prepared.pending as object, {
           summary: compacted.prepared.rendered.summary,
           details: compacted.prepared.rendered.details,
@@ -326,16 +363,18 @@ export class PlasticMemoryCoordinator {
         onComplete: () => {
           if (this.generation === pending.binding.generation) this.applyLatch = undefined;
         },
-        onError: () => {
+        onError: (error: unknown) => {
           if (this.generation === pending.binding.generation) {
             this.applyLatch = undefined;
             this.internalIntent = undefined;
+            this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
           }
         },
       });
-    } catch {
+    } catch (error) {
       this.applyLatch = undefined;
       this.internalIntent = undefined;
+      this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -401,6 +440,7 @@ export class PlasticMemoryCoordinator {
       }, activeEntryIds, this.now());
       if (!acknowledged) return;
       this.append(acknowledged.record);
+      this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
       this.inFlightPending = undefined;
       this.applyLatch = undefined;
       this.internalIntent = undefined;
