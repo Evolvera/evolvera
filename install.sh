@@ -11,7 +11,7 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
-PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.82.1}"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.83.0}"
 MIN_NODE_VERSION="22.19.0"
 same_root=false
 
@@ -122,7 +122,7 @@ step "PI Packages"
 if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
-    pi install npm:pi-alibaba-models 2>/dev/null && info "pi-alibaba-models" || true
+    pi install npm:pi-alibaba-models@1.0.14 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
 fi
 

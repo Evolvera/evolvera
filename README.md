@@ -23,7 +23,7 @@ Usuário
 - npm disponível no `PATH`;
 - credencial para pelo menos um provider de IA.
 
-A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.82.1`.
+A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.83.0`.
 
 ### Node com fnm (Linux e macOS)
 
@@ -511,7 +511,7 @@ Reinstale o fork compatível e rode novamente o instalador do harness:
 
 ```bash
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.82.1
+npm install -g @earendil-works/pi-coding-agent@0.83.0
 ./install.sh
 ```
 
@@ -519,7 +519,7 @@ Windows:
 
 ```powershell
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.82.1
+npm install -g @earendil-works/pi-coding-agent@0.83.0
 .\install.ps1
 ```
 

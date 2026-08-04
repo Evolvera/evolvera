@@ -8,7 +8,7 @@ $GREEN = "Green"
 $CYAN = "Cyan"
 
 $PI_CODING_AGENT_VERSION = $env:PI_CODING_AGENT_VERSION
-if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.82.1" }
+if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.83.0" }
 $MIN_NODE_VERSION = [version]"22.19.0"
 
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
@@ -156,7 +156,7 @@ if ($piCmd) {
     & pi install npm:@tintinweb/pi-subagents 2>$null
 
     Info "pi-alibaba-models..."
-    & pi install npm:pi-alibaba-models 2>$null
+    & pi install npm:pi-alibaba-models@1.0.14 2>$null
 
     Info "pi-goal..."
     & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
