@@ -1,8 +1,9 @@
 import { digestParts } from "../common/safety.ts";
-import { sourceDigest } from "../session/ledger.ts";
+import { foldLedger, sourceDigest } from "../session/ledger.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { isTerminalAssistantEntry } from "../session/cycles.ts";
 import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type SessionBinding, type SessionEntry } from "../session/types.ts";
+import { renderSessionSummary } from "../session/render-summary.ts";
 import { extractCycleSourceFacts, verifyCycleSourceDigest, type CycleSourceFacts } from "./extract.ts";
 import { makePendingCompaction, PendingStore, type PendingBranch, type PendingCompaction } from "./pending.ts";
 import { projectSnapshot, renderVerifiedCompaction, verifyRenderedCompaction, type CumulativeState, type LunaRequest, type ProjectSnapshot, type RenderedCompaction } from "./render.ts";
@@ -139,7 +140,9 @@ export function prepareSemanticCompaction(input: EngineInput): EngineResult {
   }
   let rendered: RenderedCompaction;
   try {
-    rendered = renderVerifiedCompaction(cycleFacts, input.priorState, project, input.compact);
+    const currentBranch = foldLedger(input.branchEntries, { leafId: input.branchEntries.at(-1)?.id, context: input.binding }).branch;
+    const sessionIndex = renderSessionSummary(currentBranch, { leafId: currentBranch.at(-1)?.id, binding: input.binding });
+    rendered = renderVerifiedCompaction(cycleFacts, input.priorState, project, input.compact, sessionIndex);
   } catch (error) {
     return { eligible: false, reason: error instanceof Error ? error.message : String(error) };
   }
