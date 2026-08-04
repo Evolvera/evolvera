@@ -126,21 +126,23 @@ Os instaladores:
 2. instalam a versão configurada de `@earendil-works/pi-coding-agent`;
 3. criam os diretórios do runtime;
 4. copiam a configuração versionada para `~/.pi/agent`;
-5. copiam agentes, skills, extensões e temas;
-6. instalam os packages PI configurados, incluindo Goal Mode e memória observacional;
-7. criam `mcp.json` somente quando ele ainda não existe.
+5. copiam agentes, skills, extensões normais e temas, incluindo a árvore `extensions/plastic-memory/` recursivamente;
+6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); a configuração versionada descreve `plastic-memory`, não `pi-observational-memory`;
+7. criam `mcp.json` somente quando ele ainda não existe;
+8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados.
 
-### O que é sobrescrito
+### Ativação, colisões e atualização
 
-Ao executar novamente o instalador, arquivos com o mesmo nome nestas superfícies são atualizados pela versão do repositório:
+A ativação é deferred e collision-aware. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito.
+
+Ao executar novamente o instalador, os recursos versionados são preparados primeiro e a configuração ativadora é escrita por último:
 
 - `settings.json`, `models.json`, `SYSTEM.md`, `subagents.json` e `pi-goal.json`;
-- `agents/*.md`;
-- conteúdo das skills versionadas;
-- `extensions/*.ts`;
+- agents e skills versionados;
+- arquivos de extensão no nível raiz e a árvore `extensions/plastic-memory/` descoberta recursivamente;
 - temas versionados.
 
-O instalador não apaga genericamente arquivos antigos que não existem mais no repositório. Ambos os instaladores removem explicitamente a extensão aposentada `goal-mode.ts`; o instalador Linux/macOS também remove `plan-heavy.ts`.
+A configuração ativa em `~/.pi/agent/settings.json` só muda quando o instalador é executado. Arquivos ou diretórios antigos do package OM que já estejam no destino ficam inertes; o instalador não os apaga nem desinstala genericamente. A atualização não promete nem executa migração de memória.
 
 ### O que é preservado
 
@@ -153,14 +155,14 @@ Isso significa que mudar `config/mcp.json` não substitui automaticamente o MCP 
 
 ### Diferenças de plataforma
 
-O Windows também instala `pi-provider-kimi-code`. A baseline do PI pode ser sobrescrita explicitamente para testes controlados:
+O Windows também instala `pi-provider-kimi-code`. Os scripts usam `@earendil-works/pi-coding-agent@0.83.0` por padrão; a baseline pode ser sobrescrita explicitamente para testes controlados:
 
 ```bash
-PI_CODING_AGENT_VERSION=0.82.1 ./install.sh
+PI_CODING_AGENT_VERSION=0.83.0 ./install.sh
 ```
 
 ```powershell
-$env:PI_CODING_AGENT_VERSION = "0.82.1"
+$env:PI_CODING_AGENT_VERSION = "0.83.0"
 .\install.ps1
 ```
 
@@ -226,8 +228,9 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `config/SYSTEM.md` | Política global, segurança, workflow e regras de roteamento instaladas como `~/.pi/agent/SYSTEM.md`. |
 | `agents/*.md` | Definições dos subagentes: modelo, thinking, ferramentas e contrato operacional. |
 | `skills/*/SKILL.md` | Procedimentos carregados quando o tipo de tarefa exige aquele workflow. |
-| `extensions/*.ts` | Comandos, ferramentas e hooks executados pelo runtime PI. |
-| `config/settings.json` | Provider/modelo padrão, thinking, tema, packages e política da memória observacional. |
+| `extensions/` | Comandos, ferramentas e hooks executados pelo runtime PI; inclui arquivos flat e a árvore recursiva `extensions/plastic-memory/`. |
+| `extensions/project-memory.ts` | Bridge context-only de compatibilidade para a superfície flat de memória. |
+| `config/settings.json` | Provider/modelo padrão, thinking, tema, packages e configuração `plastic-memory`; não ativa o package OM. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
 | `config/mcp.json` | Configuração inicial de MCP; atualmente fornece `context7`. |
@@ -337,18 +340,26 @@ O PI deve investigar o repositório antes de fazer perguntas factuais que o cód
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
-| `/om:status` | Mostrar memória observacional, contadores e próximo compact. |
-| `/om:view` ou `/om:view full` | Mostrar a memória ativa ou o ledger completo da branch. |
+| `/memory:status` | Mostrar estado e modo da memória de projeto. |
+| `/memory:view` ou `/memory:view full` | Mostrar bloco de contexto injetado (resumo/índices). |
+| `/om:status` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:status`. |
+| `/om:view` ou `/om:view full` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:view`. |
 
 Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
 O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão limita a oito continuações automáticas e pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
 
-`pi-observational-memory` registra observações e reflexões durante sessões longas. Quando o PI compacta, a extensão substitui o resumo padrão por memória com IDs de evidência; o agente pode chamar `recall(<id>)` para recuperar a fonte de uma observação ou reflexão na branch atual. Os workers usam o modelo ativo da sessão em `low`, portanto criam chamadas adicionais ao modelo. O trigger da extensão fica em 99% para não preemptar o limite nativo: o PI continua respeitando a janela do modelo — atualmente 300k para GPT e 450k para Claude — com a reserva de resposta configurada.
+As operações canônicas usam `memory_recall` (ID exato `pm:p:`/`pm:c:`) e `memory_search` (filtros bounded; metadados/snippets). `/memory:status` e `/memory:view [visible|full]` mostram status/contexto, com aliases `/om:status` e `/om:view [visible|full]`. No root checked-in, `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill` e `/memory:retry` retornam `unavailable`: não publicam, não migram, não executam backfill/retry e não chamam provider.
+
+A segurança semântica é conservadora: cada ciclo é um turno concluído contíguo de até aproximadamente 100k tokens, sem multipart e com no máximo uma retry automática; 10k/20k são gatilhos de inspeção. Seis ciclos fechados usam stride por identidade, compactando os dois mais antigos e preservando os quatro mais recentes. Resultado detached só aplica após `settled`/idle, sem mensagens pendentes e com guardas do host; tentativa interna inválida ou não correspondente cancela. No-match manual, threshold ou overflow preserva o fallback nativo. Isso não é alegação de qualidade live.
+
+Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas ferramentas acima. `pi-observational-memory` permanece somente como compatibilidade legacy; se houver package OM efetivo, ou configuração plastic inválida/ausente/desabilitada, o plastic-memory fica bridge context-only sem hooks full. O modo flat-only permanece legado com marcador; o histórico pré-plastic fica `historical-unindexed` até backfill explícito report-first, cursor-bounded, de uma janela de turno concluído por vez, com pausa/retoma/retry e recovery-safe. O root atual não expõe seus comandos de autoridade.
 
 ## Atualizar
 
-Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash.
+Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash. O instalador prepara agentes, skills, extensões (inclusive `extensions/plastic-memory/`) e demais recursos primeiro; grava a configuração ativadora por último. Assim, uma colisão ou configuração inválida não habilita hooks full parcialmente. O `settings.json` ativo só é substituído durante a execução do instalador.
+
+A atualização não remove sessões, histórico, dados append-only ou dados de projeto, e não apaga diretórios antigos de packages; arquivos OM remanescentes ficam inertes. Não há instrução de cutover ou migração nesta atualização.
 
 Linux/macOS:
 
@@ -386,7 +397,7 @@ git worktree remove ../evolvera-rollback
 
 No Windows, execute `install.ps1` dentro do worktree.
 
-Isso reinstala a revisão escolhida no runtime local sem reescrever o histórico do repositório. Uma execução futura do instalador na branch atual aplica novamente a versão nova.
+Isso reinstala a revisão escolhida no runtime local sem reescrever o histórico do repositório. O rollback restaura a combinação anterior de recursos e `settings.json` por staging com configuração por último; não exige apagar sessões, histórico, dados append-only/de projeto ou diretórios de packages. Uma execução futura do instalador na branch atual aplica novamente a versão nova.
 
 ### Reverter uma mudança compartilhada
 
@@ -421,6 +432,9 @@ Antes de uma atualização sensível, é possível copiar `~/.pi/agent`. Esse ba
 ├── agents/
 ├── skills/
 ├── extensions/
+│   ├── plastic-memory/
+│   ├── project-memory.ts      # bridge context-only
+│   └── *.ts                   # extensões flat legadas/atuais
 ├── themes/
 ├── interface/
 └── docs/
