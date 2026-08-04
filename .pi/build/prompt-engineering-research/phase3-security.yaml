@@ -1,0 +1,96 @@
+agent_id: "orchestrator-phase3"
+tema: "Prompt-engineering production security and temporal provenance validation"
+data_coleta: "2026-07-18"
+missao_id: "M001-M003"
+missao_cumprida: true
+justificativa_missao: "Recovered direct OWASP, Anthropic, OpenAI, and NIST evidence for security boundaries. Future-dated page metadata is explicitly rejected as publication/access evidence. No runtime is claimed to be certified; the permanent skill will require target-specific held-out and adversarial validation before consequential promotion."
+findings:
+  - id: "V001"
+    claim: "Prompt injection cannot be treated as solved by prompt wording, RAG, or fine-tuning; production mitigation requires defense in depth and constrained agency."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "OWASP states: 'research shows that [RAG and fine-tuning] do not fully mitigate prompt injection vulnerabilities' and 'it is unclear if there are fool-proof methods of prevention for prompt injection.' It recommends least privilege, human approval for high-risk actions, segregation of external content, deterministic validation, and adversarial testing."
+    source_url: "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+    source_type: "OWASP GenAI security guidance"
+    source_date: "LLM01:2025"
+    access_method: "jina_read direct URL"
+    context: "Accessed 2026-07-18. This supports a skill-level security boundary, not certification of any specific application."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "V002"
+    claim: "First-party OpenAI safety guidance recommends adversarial testing and human review, especially for high-stakes uses and code generation."
+    claim_type: "fact"
+    confidence: "medium"
+    raw_data: "OpenAI page states: 'We recommend red-teaming your application to ensure it’s robust to adversarial input' and 'Wherever possible, we recommend having a human review outputs before they are used in practice. This is especially critical in high-stakes domains, and for code generation.'"
+    source_url: "https://platform.openai.com/docs/guides/safety-best-practices"
+    source_type: "first-party provider documentation"
+    source_date: null
+    access_method: "jina_read direct URL"
+    context: "Accessed during this task on 2026-07-18. Jina displayed a future publication timestamp of 2026-07-22; that metadata is invalid for the task cutoff and is discarded. Content is retained as provider guidance with unverified publication date."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "V003"
+    claim: "Long-context many-shot examples can weaken safety behavior; adding more demonstrations is not monotonically safe."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Anthropic reports: 'simply including a very large number of faux dialogues preceding the final question ... jailbreaks the model' and concludes that longer context windows enable a new class of jailbreaking vulnerabilities. It also reports that a fine-tuning mitigation delayed rather than eliminated the jailbreak."
+    source_url: "https://www.anthropic.com/research/many-shot-jailbreaking"
+    source_type: "first-party security research"
+    source_date: "2024"
+    access_method: "jina_read direct URL"
+    context: "Accessed 2026-07-18. The demonstrated model/task safety scope is specific; the reusable implication is to adversarially test long-context and many-shot prompts rather than assuming examples only help."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "V004"
+    claim: "Generative-AI prompt systems should be treated as risk-managed products across design, development, use, and evaluation, not as isolated text artifacts."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "NIST states that AI RMF is intended to improve incorporation of trustworthiness considerations into the 'design, development, use, and evaluation' of AI products, services, and systems, and identifies the Generative AI Profile released July 26, 2024 as proposing actions for generative-AI risk management."
+    source_url: "https://www.nist.gov/itl/ai-risk-management-framework"
+    source_type: "official standards/risk-management body"
+    source_date: "AI RMF 1.0 released 2023-01-26; GenAI Profile released 2024-07-26"
+    access_method: "jina_read direct URL"
+    context: "Accessed 2026-07-18. NIST provides risk-management framing, not a model-specific prompt recipe."
+    contradictions_expected: []
+    debunks_finding_id: null
+inferences_made:
+  - id: "VI001"
+    based_on: ["V001", "V002", "V003", "V004"]
+    inference_text: "The permanent skill may provide security methods only as required controls and test obligations. It must explicitly state that prompts do not establish a trust boundary; untrusted content, tool permissions, approvals, deterministic validation, monitoring, and runtime red-team tests live outside prompt prose."
+    confidence: "high"
+    caveats: "No specific runtime was tested in this research, so the guide cannot claim that any application is secure."
+  - id: "VI002"
+    based_on: ["V001", "V002"]
+    inference_text: "A generic skill can require a target-specific adversarial and held-out evaluation gate without reporting that gate as already passed. Promotion remains BLOCKED or UNVERIFIED until the actual provider/model/API/prompt/tool runtime is exercised."
+    confidence: "high"
+    caveats: "Test corpus, thresholds, and attack classes must be selected for the concrete application and risk."
+gaps_identified:
+  - "No concrete production runtime was supplied, so no provider/model-specific red-team suite or promotion result exists."
+  - "The OpenAI safety page exposed future-dated metadata; publication date remains unverified and must not be cited as 2026-07-22 in the final guide."
+  - "The tested OpenAI prompt-injection URL returned 404; absence of that route is not evidence that OpenAI lacks additional guidance."
+sources_accessed:
+  - url: "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+    status: "success"
+    content_type: "security guidance"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://platform.openai.com/docs/guides/safety-best-practices"
+    status: "success_with_invalid_future_metadata"
+    content_type: "first-party provider documentation"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://platform.openai.com/docs/guides/prompt-injection"
+    status: "404"
+    content_type: "first-party documentation route"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://www.anthropic.com/research/many-shot-jailbreaking"
+    status: "success"
+    content_type: "first-party security research"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://www.nist.gov/itl/ai-risk-management-framework"
+    status: "success"
+    content_type: "official risk-management framework page"
+    date_accessed: "2026-07-18"
+    attempts: 1

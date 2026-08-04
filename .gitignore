@@ -22,3 +22,12 @@ alibaba-cloud-models.cache.json
 
 # User-specific PI settings
 settings.json
+
+# Runtime state deste harness (equivalentes versionados ficam em config/)
+pi-goal.json
+models-store.json
+trust.json
+
+# Backups locais
+*.bak-*
+.pi/backup-settings-*.json

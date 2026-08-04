@@ -1,0 +1,33 @@
+DevData migration receipt — BLOCKED
+Date: 2026-07-27
+
+Destination
+- Sparsebundle: /Volumes/Mac_JH_SSD/DevData.sparsebundle
+- Mounted volume: /Volumes/DevData (APFS, disk8s1, UUID F4BD8EF6-A43B-4373-86C7-4CEEA1DC2128)
+- The sparsebundle must be mounted before Android or UTM use. Manual mount command:
+  hdiutil attach -nobrowse -mountpoint /Volumes/DevData /Volumes/Mac_JH_SSD/DevData.sparsebundle
+- No auto-mount automation was created.
+
+Pre-mutation source baseline (all APFS /dev/disk3s5; sources were real directories, not symlinks)
+- /Users/j.henrique/Library/Android/sdk: 138791 entries, 118248 regular files, 91 symlinks, 16471552 KiB logical, 16208635 KiB allocated.
+- /Users/j.henrique/.android/avd: 97 entries, 74 regular files, 0 symlinks, 23791820 KiB logical, 23916449 KiB allocated.
+- /Users/j.henrique/Library/Containers/com.utmapp.UTM/Data/Documents/Linux.utm: 6 entries, 4 regular files, 0 symlinks, 29530012 KiB logical, 30312026 KiB allocated. Source config.plist passed plutil -lint.
+
+Copy method
+- A streaming bsdtar pax copy was used with documented mac metadata, ACL, xattr, hard-link, and sparse-file options. No source was renamed, deleted, or modified.
+
+Validation result: BLOCKED — do not use destination copies as canonical data.
+- SDK validation stopped before checksum comparison because destination counts and logical size do not match source:
+  source:      138791 entries, 118248 regular files, 91 symlinks, 16471552 KiB logical, 16208635 KiB allocated
+  destination: 138784 entries, 118241 regular files, 91 symlinks, 16113660 KiB logical, 16208560 KiB allocated
+- The mismatch is 7 entries / 7 regular files and 357892 KiB logical. Per stop rules, no retry, source rename, symlink cutover, UTM registration, UTM source change, or deletion was performed.
+- AVD and UTM destination trees were copied but were not validated or accepted after the SDK mismatch. Destination UTM plist was not re-linted after the stop.
+- No timestamped internal backups were created. All three original internal paths remain canonical and intact.
+
+Protection and current state
+- ColimaData and Colima/Lima were not inspected, changed, stopped, or reused.
+- DevData remains mounted with the unaccepted copied data retained as mismatch evidence. Do not delete or overwrite any of it without an explicit recovery plan.
+- Last post-copy destination space observation: /Volumes/DevData 66 GiB used / 84 GiB available; /Volumes/Mac_JH_SSD 683 GiB used / 249 GiB available. Internal Data was not changed by this attempt.
+
+Next safe action
+- Diagnose the exact seven missing SDK paths using read-only source/destination comparison, then obtain explicit authorization for a non-destructive recovery/copy strategy. Do not perform Android or UTM cutover until all validation requirements pass.

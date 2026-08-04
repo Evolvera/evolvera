@@ -1,0 +1,90 @@
+validation_memo:
+  tema: "Best-supported prompt-engineering methods for production LLM systems"
+  data_auditoria: "2026-07-18"
+  total_findings_recebidos: 38
+  total_sources_recebidos: 37
+
+violacoes_glossario:
+  - codigo: "LOG-03"
+    finding_id: "F001"
+    agent: "methodical"
+    descricao: "OpenAI guidance repeated by multiple agents is one first-party source, authoritative for OpenAI but not independent cross-provider triangulation."
+    severidade: "material"
+    correcao: "Present it as OpenAI-specific guidance and a hypothesis to validate elsewhere, never as a universal rule."
+  - codigo: "LOG-03"
+    finding_id: "F001"
+    agent: "explorer"
+    descricao: "The supplied excerpt supports model/snapshot differences but not every Responses API, cache, deprecation, and output-access subclaim included in the finding."
+    severidade: "material"
+    correcao: "Retain only directly supported claims or require current exact-API verification at execution time."
+  - codigo: "LOG-05"
+    finding_id: "F004"
+    agent: "methodical"
+    descricao: "Historical academic prompting results do not establish current-model behavior."
+    severidade: "material"
+    correcao: "Keep them as scoped historical evidence and require revalidation on the target model/version."
+
+contradicoes:
+  - id: "C001"
+    descricao: "Provider guidance differs on context and instruction ordering; no fixed universal order is supported."
+    implicacao: "material: layout must follow exact model/API guidance and evaluation."
+    resolvida: true
+    missao_fase3: null
+  - id: "C002"
+    descricao: "Explicit chain-of-thought benchmark gains conflict with current reasoning-model guidance that may use hidden/internal thinking."
+    implicacao: "material: never universally force or expose chain-of-thought."
+    resolvida: true
+    missao_fase3: null
+  - id: "C003"
+    descricao: "Several agents/pages report 2026-07-22 metadata although the task cutoff is 2026-07-18."
+    implicacao: "material: future dates cannot be used as verified publication/access evidence."
+    resolvida: false
+    missao_fase3: "M001"
+
+gaps_triangulacao:
+  - claim_id: "methodical:F001"
+    problema: "OpenAI page metadata is temporally inconsistent and repeated citations are not independent."
+    recomendacao: "Discard future date metadata and retain content with unverified publication date."
+  - claim_id: "explorer:F001"
+    problema: "No concrete runtime identity was supplied."
+    recomendacao: "Require provider, maker, host, endpoint/API, exact model/snapshot, SDK/API version, and enabled features before authoring."
+  - claim_id: "methodical:F010"
+    problema: "Structured Outputs evidence is OpenAI-specific."
+    recomendacao: "Prefer native schema constraints only when the exact provider/model/API supports them and validate semantic correctness separately."
+  - claim_id: "methodical:F004"
+    problema: "CoT, self-consistency, ReAct, IRCoT, and long-context findings are scoped to tested models/tasks."
+    recomendacao: "Treat each as a candidate method with target-specific quality, cost, latency, and safety evaluation."
+  - claim_id: "skeptical:F004"
+    problema: "Provider guidance supports evals and pinning but not a complete statistical promotion protocol."
+    recomendacao: "Define held-out regression and promotion gates as engineering policy, not sourced universal fact."
+  - claim_id: "explorer:F006-F008"
+    problema: "xAI, DeepSeek, and Qwen official prompting guidance was not recovered."
+    recomendacao: "Report UNKNOWN and do not import another provider's syntax; locate current maker/host docs at execution time."
+  - claim_id: "critical:package-zero-findings"
+    problema: "Critical research returned zero findings because retrieval failed."
+    recomendacao: "Do not claim exhaustive security coverage; require target-specific prompt-injection/tool/refusal/truncation/schema tests."
+
+plano_validacao:
+  - missao_id: "M001"
+    objetivo: "Resolve temporal provenance."
+    instrucao: "Discard future-dated metadata; mark publication date unverified unless an official history supports it."
+    agente_ideal: "methodical"
+    criterio_sucesso: "No 2026-07-22 metadata is presented as evidence available on 2026-07-18."
+    max_turnos: 3
+  - missao_id: "M002"
+    objetivo: "Establish minimum security boundary."
+    instrucao: "Recover authoritative prompt-injection evidence and require target-runtime adversarial validation without claiming it already passed."
+    agente_ideal: "critical"
+    criterio_sucesso: "The guide states prompts are not a trust boundary and blocks security claims until runtime tests exist."
+    max_turnos: 3
+  - missao_id: "M003"
+    objetivo: "Define a held-out promotion gate."
+    instrucao: "Require the exact runtime and a fixed baseline/variant comparison measuring quality, cost, latency, and failures."
+    agente_ideal: "methodical"
+    criterio_sucesso: "Promotion is conditional on target-specific evidence rather than claimed as completed."
+    max_turnos: 3
+
+conclusao_auditor:
+  status_geral: "bloqueado"
+  justificativa: "The reusable core is supportable with explicit caveats, but future-dated metadata and missing security evidence block an exhaustive permanent production claim until Phase 3 correction."
+  confianca_maxima_permitida: "medium"

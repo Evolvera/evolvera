@@ -1,0 +1,403 @@
+---
+name: website-home-preview
+description: Autonomous one-page Home preview workflow with optional creative direction on explicit request, design, content, planning, static build, polish, screenshots, and validation.
+---
+
+# Website Home Preview Skill
+
+Use this skill when the user asks for a website/landing preview, Home Page mockup, or visual direction and wants **one high-quality static `index.html`**, not a full production project.
+
+## Core Idea
+
+The full website pipeline builds a real project. This flow builds only a **premium Home Page preview**.
+
+```txt
+Compact Strategy Intake (orchestrator, no approval gate)
+  → website-creative (OPTIONAL — only when briefing explicitly requests creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led direction)
+  → website-home-designer
+  → seo-content-writer-home (HOME_PREVIEW_MODE)
+  → website-home-planner
+  → builder-home
+  → visual snapshot capture (portrait + landscape)
+  → website-polisher-home
+  → builder-home applies polish
+  → visual snapshot refresh
+  → validator-home
+  → builder-home fixes only if validator-home blocks
+  → visual snapshot refresh
+  → validator-home final check
+```
+
+No human approval gates between steps. The flow is autonomous from briefing to `index.html` unless the briefing is unusable. If key facts are missing, use labeled assumptions and placeholders rather than interrupting.
+
+## Output Standard
+
+All artifacts live in one predictable directory:
+
+```txt
+.pi/previews/<slug>/
+├── HOME_CREATIVE_DIRECTION.md  # optional website-creative output
+├── HOME_DESIGN_OPTIONS.md
+├── HOME_CONTENT_PLAN.md    # seo-content-writer-home output
+├── HOME_PLAN.md
+├── TASK_builder-home.md
+├── index.html
+├── screenshots/
+│   ├── portrait.png
+│   ├── landscape.png
+│   └── VISUAL_SNAPSHOT.md
+├── HOME_POLISH_PLAN.md     # website-polisher-home output
+└── REVIEW.md              # validator-home output if it writes one
+```
+
+Final user-visible output:
+
+```txt
+.pi/previews/<slug>/index.html
+```
+
+## When to Use
+
+Use this flow for:
+
+- “faz uma home preview”
+- “quero ver como ficaria o site”
+- “gera um index.html bonito”
+- “faz uma landing só pra preview”
+- “sem projeto completo por enquanto”
+- “quero aprovar direção visual/copy antes de construir tudo”
+
+Do **not** use this flow for:
+
+- production-ready Next.js projects;
+- multi-page websites;
+- real forms/integrations/auth/CMS;
+- deploy-ready codebases;
+- existing app refactors.
+
+Use `website-pipeline` for full production websites.
+
+## Non-Negotiables
+
+- One Home Page only.
+- One final website HTML file only.
+- Screenshot files are allowed only as validation artifacts under `.pi/previews/<slug>/screenshots/`.
+- No Next.js, React, Tailwind build, shadcn, package manager, or build step.
+- No human approval gate (including the optional creative stage).
+- The `website-creative` stage is optional: it runs only on explicit creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led briefings; otherwise skip it and the flow is unchanged.
+- Do not ask the user to choose a design option; the planner chooses.
+- Missing facts become labeled preview placeholders, not blockers.
+- Same quality bar as the full website pipeline: premium design, real design references, dedicated conversion copy, responsive layout, accessibility, hover/focus states, and a dedicated `website-polisher-home` pass.
+- Do not fake logos, photos, product screenshots, testimonials, client logos, awards, certifications, metrics, prices, guarantees, or legal claims.
+- If no brand assets exist, use a temporary wordmark plus CSS/inline-SVG motifs/placeholders and label them as preview placeholders.
+
+## Compact Strategy Intake
+
+Before launching agents, the orchestrator should extract from the user's briefing or infer with labels:
+
+- Business/product in one sentence
+- Audience
+- Primary CTA
+- First 5-second belief
+- Visual mood/reference preferences
+- Available brand assets: logo, colors, fonts, photos, screenshots, icons, illustrations
+- Available proof: testimonials, clients, numbers, credentials, case studies
+- Missing assets/proof that must remain placeholders
+- Any claims/compliance constraints
+
+Do not ask a long questionnaire for previews. Ask only if there is no usable business/project context.
+
+## Step 0.5 — Creative Director (Optional)
+
+Run `website-creative` **only** when the user's briefing explicitly requests a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led direction. Generic "premium/modern/beautiful" does **not** activate this step. No approval gate; when skipped, the flow continues exactly as before and no `HOME_CREATIVE_DIRECTION.md` exists.
+
+Prompt template:
+
+```txt
+HOME_PREVIEW_MODE
+PREVIEW_ROOT: [absolute project path]/.pi/previews/<slug>
+USER_BRIEFING: [USER BRIEFING]
+
+Create the creative direction for a one-page static Home preview. Never ask for approval or clarification in this mode; use labeled assumptions when needed.
+
+Load /skill:creative-catalog and write exactly:
+<PREVIEW_ROOT>/HOME_CREATIVE_DIRECTION.md
+
+You own: the interaction/art-direction thesis; one dominant mechanic plus at most two accent mechanics; asset/content fit; mobile/touch behavior; keyboard/DOM accessibility of the mechanic; reduced-motion/static fallback; and a performance budget.
+You do NOT own: final design options, copy, the plan, or code. No approval gate; make labeled assumptions.
+```
+
+Expected output (only when activated):
+
+```txt
+.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md
+```
+
+## Step 1 — Home Designer
+
+Launch `website-home-designer`.
+
+Prompt template:
+
+```txt
+Create an autonomous Home Page preview design for this briefing:
+
+[USER BRIEFING]
+
+Requirements:
+- Output directory: .pi/previews/<slug>/
+- If .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it and build your 3 options around/adapting its thesis; record any usability/asset-driven downgrade. If absent, proceed exactly as usual.
+- Write .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- Create exactly 3 high-quality design directions and a recommended direction.
+- Use design-catalog references when useful.
+- Scope is only one Home Page, not a full site.
+- No human approval. Make labeled assumptions if details are missing.
+- Design for premium trust: clear first impression, no DIY/template energy, restrained typography/colors, purposeful visuals, clear CTA.
+- Design mobile-first, but specify separate portrait/mobile and desktop/landscape composition strategies. Desktop must not be a stretched mobile layout; mobile must not be a cramped desktop layout.
+- Asset boundary: use provided assets if available; otherwise specify temporary wordmark, CSS/inline-SVG motifs, and placeholders. Do not invent final logo/images/proof.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+```
+
+## Step 2 — Home Content Writer
+
+Run the existing `seo-content-writer-home` in Home Preview Mode.
+
+Prompt template:
+
+```txt
+HOME_PREVIEW_MODE
+
+Create autonomous Home Page content for this preview.
+
+Read:
+- .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- User briefing: [USER BRIEFING]
+
+Write:
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+
+Rules:
+- Consume any creative direction only through the content intent already expressed in HOME_DESIGN_OPTIONS.md; do not read HOME_CREATIVE_DIRECTION.md directly or design effects/interactions.
+- Scope is one Home Page preview only.
+- No human approval gate; do not ask for approval.
+- Fill copy autonomously using source-backed facts, inferred assumptions, and clearly labeled preview placeholders.
+- Do not invent metrics, awards, testimonials, client names/logos, certifications, prices, guarantees, legal claims, or product outcomes.
+- Include nav labels, section copy, CTA text, microcopy, alt text, FAQ copy when useful, metadata, and schema notes suitable for one static index.html.
+- Preserve proof placeholders from HOME_DESIGN_OPTIONS.md instead of turning them into fake facts.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/HOME_CONTENT_PLAN.md
+```
+
+## Step 3 — Home Planner
+
+Launch `website-home-planner` after design and content artifacts exist.
+
+Prompt template:
+
+```txt
+Read .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md and .pi/previews/<slug>/HOME_CONTENT_PLAN.md, then create the autonomous execution plan for a single-file Home Page preview.
+
+Requirements:
+- If .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it and ensure the selected/fused direction preserves its required fallbacks and constraints (reduced-motion/static fallback, keyboard/DOM access, mobile/touch behavior, performance budget).
+- Choose or fuse the best design direction without asking the user.
+- Use HOME_CONTENT_PLAN.md as the source of truth for copy.
+- Write .pi/previews/<slug>/HOME_PLAN.md
+- Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
+- Preserve and operationalize the designer's mobile-first + desktop/landscape strategy.
+- The builder output must be exactly .pi/previews/<slug>/index.html
+- No full project, no package.json, no framework, no build step.
+```
+
+Expected outputs:
+
+```txt
+.pi/previews/<slug>/HOME_PLAN.md
+.pi/previews/<slug>/TASK_builder-home.md
+```
+
+## Step 4 — Builder Home Executes Planner Task
+
+Use only the dedicated `builder-home` agent for the Home Preview build step. Its job is not to redesign the page or choose a new direction; it follows `.pi/previews/<slug>/HOME_PLAN.md` and `.pi/previews/<slug>/TASK_builder-home.md` exactly and produces the single static `index.html`.
+
+Prompt template:
+
+```txt
+Implement the task in .pi/previews/<slug>/TASK_builder-home.md.
+
+Hard constraints:
+- Create or replace only .pi/previews/<slug>/index.html
+- Do not create a project or any extra files.
+- Follow HOME_PLAN.md, TASK_builder-home.md, HOME_CONTENT_PLAN.md, and HOME_DESIGN_OPTIONS.md exactly (plus HOME_CREATIVE_DIRECTION.md if present).
+- Do not choose a new design direction; implement the planner's selected/fused direction.
+- Run the validation commands listed in TASK_builder-home.md.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/index.html
+```
+
+## Step 5 — Visual Snapshot Capture
+
+Capture screenshots in both portrait and landscape so agents can evaluate the page visually, not only from code.
+
+Run from the repository root:
+
+```bash
+node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs \
+  .pi/previews/<slug>/index.html \
+  .pi/previews/<slug>/screenshots
+```
+
+Expected outputs:
+
+```txt
+.pi/previews/<slug>/screenshots/portrait.png     # 390x844 viewport, full page
+.pi/previews/<slug>/screenshots/landscape.png    # 1440x900 viewport, full page
+.pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md
+```
+
+If Playwright/Chromium is unavailable, the script tries to install Chromium once through `npx playwright install chromium`. If screenshot capture still fails, keep going only if the user asked for best-effort preview; otherwise stop with a clear browser/sandbox blocker.
+
+## Step 6 — Website Polisher
+
+Run the existing `website-polisher-home` in Home Preview Mode.
+
+Prompt template:
+
+```txt
+HOME_PREVIEW_MODE
+
+Audit the static Home preview at .pi/previews/<slug>/index.html.
+
+Read:
+- .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md if present
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+- .pi/previews/<slug>/HOME_PLAN.md
+- .pi/previews/<slug>/index.html
+- .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md if present
+- .pi/previews/<slug>/screenshots/portrait.png if image reading is supported
+- .pi/previews/<slug>/screenshots/landscape.png if image reading is supported
+
+Write:
+- .pi/previews/<slug>/HOME_POLISH_PLAN.md
+
+Rules:
+- READ-ONLY: do not edit index.html.
+- Audit only .pi/previews/<slug>/index.html.
+- Do not require Next.js, Tailwind config, app/layout, components, or project structure.
+- Produce exact old_string/new_string fixes targeting only .pi/previews/<slug>/index.html.
+- Focus on premium trust and visual quality: intentional first impression, no DIY/template energy, clear CTA, proof/claim integrity, purposeful assets, hierarchy, spacing, rhythm, typography, colors, shadows, gradients, mobile-first responsive behavior, distinct desktop/landscape composition, image/visual containment, empty-space balance, hover/focus states, accessibility, reduced motion, touch targets, and portrait/landscape screenshot issues.
+```
+
+Expected output:
+
+```txt
+.pi/previews/<slug>/HOME_POLISH_PLAN.md
+```
+
+## Step 7 — Builder Home Applies Polish
+
+Run `builder-home` once to apply the polish plan.
+
+Prompt template:
+
+```txt
+Apply the polish fixes from .pi/previews/<slug>/HOME_POLISH_PLAN.md.
+
+Hard constraints:
+- Modify only .pi/previews/<slug>/index.html
+- Do not create any extra files.
+- Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
+- Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
+- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes.
+- Refresh screenshots after polish using the Visual Snapshot Capture command above.
+```
+
+## Step 8 — Validator
+
+Use the existing `validator-home` with static-preview scope.
+
+Prompt template:
+
+```txt
+Validate the static Home preview at .pi/previews/<slug>/index.html.
+
+Read:
+- .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
+- .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md if present
+- .pi/previews/<slug>/HOME_CONTENT_PLAN.md
+- .pi/previews/<slug>/HOME_PLAN.md
+- .pi/previews/<slug>/HOME_POLISH_PLAN.md
+- .pi/previews/<slug>/index.html
+- .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md
+- .pi/previews/<slug>/screenshots/portrait.png
+- .pi/previews/<slug>/screenshots/landscape.png
+
+Validate:
+- exactly one index.html output, no extra project files required;
+- semantic HTML structure;
+- inline CSS present;
+- responsive layout rules;
+- accessible landmarks/headings/buttons/links;
+- visible focus states;
+- reduced-motion handling;
+- polish plan was applied or explicitly justified;
+- no fake unsupported factual claims presented as facts;
+- no fake logos/photos/product screenshots/client marks/testimonials/awards/metrics presented as real;
+- clear first impression and primary CTA;
+- portrait screenshot has no horizontal/lateral scroll, no content wider than the viewport, no clipped/off-canvas cards/logos/visuals, no grids continuing past the right edge, no squeezed tiny mobile card grids, no accidental blank gutters inside image/media frames, unreadable text, broken stacking, hidden primary CTA, broken CTA icons, or inaccessible tap targets;
+- landscape screenshot uses space intentionally and does not look sparse, stretched, generic, misaligned, or full of empty/dead space;
+- images, mockups, card stacks, decorative motifs, and placeholders stay inside intended containers at both portrait and landscape sizes;
+- image/media frames fill, crop, center, or contain deliberately; no asset should sit to one side leaving an accidental white/blank area inside the frame;
+- CTA icons are either omitted/text-only or implemented as clean inline SVG; no emoji/tofu/missing/corrupted glyphs;
+- mobile and desktop feel intentionally designed for their viewports while sharing the same brand system;
+- mobile layouts stack cards/logos/galleries when needed; never preserve a desktop grid if it creates cramped cards or lateral scroll;
+- visual/content alignment with HOME_PLAN.md and HOME_CONTENT_PLAN.md;
+- when HOME_CREATIVE_DIRECTION.md exists: the creative intent (dominant mechanic + accents) is present AND a usable reduced-motion/static fallback works.
+
+If you write a report, write .pi/previews/<slug>/REVIEW.md.
+Return PASS, CONDITIONAL, or REJECT with concrete fixes.
+```
+
+## Step 9 — Autonomous Fix Loop
+
+If validator-home returns:
+
+| Verdict | Action |
+|---|---|
+| PASS | Stop and report the preview path. |
+| CONDITIONAL | Run `builder-home` once with validator-home fixes, refresh screenshots, then validate again. |
+| REJECT | Run `builder-home` once if fixes are concrete and within `index.html`; refresh screenshots, then validate again. Otherwise stop blocked with reason. |
+
+Maximum fix attempts: **1**. After one failed fix attempt, stop and report the blocker.
+
+## Final Response Format
+
+```txt
+Home preview created: .pi/previews/<slug>/index.html
+Artifacts:
+- HOME_CREATIVE_DIRECTION.md if generated
+- HOME_DESIGN_OPTIONS.md
+- HOME_CONTENT_PLAN.md
+- HOME_PLAN.md
+- TASK_builder-home.md
+- HOME_POLISH_PLAN.md
+- screenshots/portrait.png
+- screenshots/landscape.png
+- screenshots/VISUAL_SNAPSHOT.md
+- REVIEW.md if generated
+Validation: PASS/CONDITIONAL/REJECT
+Notes: [only important assumptions or blockers]
+```

@@ -1,0 +1,14 @@
+# Recovery manifest
+
+Snapshots capture the pre-edit working-tree bytes.
+
+     465 agents/planner.md
+     125 agents/planner-heavy.md
+      86 agents/plan-briefer.md
+      73 agents/plan-brief-merger.md
+     749 total
+
+e9f480b7adaf5bbf93ad4803d5172ed582e9c07c878481ba441ad5651338b8f3  agents/planner.md
+765ec1872c7a17a184780f5b590c76fbd381934338fe9391c453a368c482fa8a  agents/planner-heavy.md
+4ed5d655b4a6c27c0ca47b837a82c7c892919197a64a94219303b062e40372ab  agents/plan-briefer.md
+eab364a320c5afbbc16249e48ba439c7233dd9a8fe14f6bc45bcab3c5abaa93c  agents/plan-brief-merger.md

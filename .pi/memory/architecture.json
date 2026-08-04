@@ -1,0 +1,2517 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "evolvera-pi",
+    "name": "Evolvera PI",
+    "description": "Evidence-backed architecture of the reusable PI Coding Agent harness and local PI Studio.",
+    "repository": "https://github.com/Evolvera/evolvera"
+  },
+  "snapshot": {
+    "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782",
+    "generatedAt": "2026-07-23T19:17:57Z",
+    "lastVerifiedAt": "2026-07-23T19:17:57Z",
+    "scope": "Tracked harness control plane, workflows, runtime extensions, PI Studio, installation, and documented external boundaries; excludes sessions, caches, plans, recovery artifacts, backups, secrets, and live delivery state.",
+    "confidence": "known"
+  },
+  "actors": [
+    {
+      "id": "engineer",
+      "name": "Engineer",
+      "kind": "person",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "pi-orchestrator",
+      "name": "PI orchestrator",
+      "kind": "system",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "scout-agent",
+      "name": "Scout agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "planner-agent",
+      "name": "Planner agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-agent",
+      "name": "Builder agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "validator-agent",
+      "name": "Validator agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "github-platform",
+      "name": "GitHub platform",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "model-provider",
+      "name": "Model provider",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "context7-mcp",
+      "name": "Context7 MCP",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "vscode-host",
+      "name": "VS Code host",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "evolvera-pi-harness",
+      "name": "Evolvera PI harness",
+      "kind": "domain",
+      "level": 0,
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-harness"
+      ]
+    },
+    {
+      "id": "external-ecosystem",
+      "name": "External ecosystem",
+      "kind": "external",
+      "level": 0,
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "orchestration-control-plane",
+      "name": "Orchestration control plane",
+      "kind": "service",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "workflow-skill-library",
+      "name": "Workflow skill library",
+      "kind": "library",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "runtime-extension-platform",
+      "name": "Runtime extension platform",
+      "kind": "service",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "project-memory-system",
+      "name": "Project memory system",
+      "kind": "datastore",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "pi-studio-interface",
+      "name": "PI Studio interface",
+      "kind": "client",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-readme"
+      ]
+    },
+    {
+      "id": "installation-distribution-system",
+      "name": "Installation and distribution",
+      "kind": "deploy",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    },
+    {
+      "id": "github-service",
+      "name": "GitHub service",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "model-provider-services",
+      "name": "Model provider services",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "context7-service",
+      "name": "Context7 service",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "vscode-client",
+      "name": "VS Code client",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    },
+    {
+      "id": "request-routing-policy",
+      "name": "Request routing policy",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "change-contract-gate",
+      "name": "Change-contract gate",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "delegated-agent-runtime",
+      "name": "Delegated agent runtime",
+      "kind": "worker",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "orchestration-closure",
+      "name": "Orchestration closure",
+      "kind": "service",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "agent-definition-routing",
+      "name": "Agent definition routing",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "subagent-executor",
+      "name": "Subagent executor",
+      "kind": "worker",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "concurrency-governor",
+      "name": "Concurrency governor",
+      "kind": "service",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "subagent-concurrency"
+      ]
+    },
+    {
+      "id": "self-contained-handoff",
+      "name": "Self-contained handoff",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "scout-workflow",
+      "name": "Scout workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "planner-workflow",
+      "name": "Planner workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-workflow",
+      "name": "Builder workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "testing-validation-workflow",
+      "name": "Testing and validation workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "flow-issue-delivery",
+      "name": "Flow issue delivery",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-production-pipeline",
+      "name": "Website production pipeline",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    },
+    {
+      "id": "research-evaluation-workflows",
+      "name": "Research and evaluation workflows",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "plan-artifact-ecosystem",
+      "name": "Plan artifact ecosystem",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "planner-workflow",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "post-build-test-gate",
+      "name": "Post-build test gate",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "testing-validation-workflow",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "flow-reentry-claim",
+      "name": "Flow re-entry and claim",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "flow-issue-delivery",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-stage-chain",
+      "name": "Website stage chain",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "website-production-pipeline",
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    },
+    {
+      "id": "prompt-finetune-audit-workflows",
+      "name": "Prompt, fine-tune, and audit workflows",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "research-evaluation-workflows",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "pi-core-runtime",
+      "name": "PI core runtime",
+      "kind": "service",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "extension-suite",
+      "name": "Extension suite",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "runtime-configuration",
+      "name": "Runtime configuration",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "subagent-package",
+      "name": "Subagent package",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "mcp-adapter",
+      "name": "MCP adapter",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "runtime-persistence",
+      "name": "Runtime persistence",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-history"
+      ]
+    },
+    {
+      "id": "project-memory-hook",
+      "name": "Project memory hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-extension"
+      ]
+    },
+    {
+      "id": "goal-mode-hook",
+      "name": "Goal mode hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-harness"
+      ]
+    },
+    {
+      "id": "communication-style-hook",
+      "name": "Communication style hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "tool-extension-suite",
+      "name": "Tool extension suite",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "user-input-notification-hooks",
+      "name": "User input and notification hooks",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "subagent-watchdog-hook",
+      "name": "Subagent watchdog hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "watchdog-extension"
+      ]
+    },
+    {
+      "id": "markdown-memory-store",
+      "name": "Markdown memory store",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-map-store",
+      "name": "Architecture map store",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-validator",
+      "name": "Architecture validator",
+      "kind": "service",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-view-renderer",
+      "name": "Architecture view renderer",
+      "kind": "build",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "semantic-zoom-viewer",
+      "name": "Semantic zoom viewer",
+      "kind": "client",
+      "level": 3,
+      "parentId": "architecture-view-renderer",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "studio-server",
+      "name": "Studio server",
+      "kind": "service",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-routes"
+      ]
+    },
+    {
+      "id": "studio-web-client",
+      "name": "Studio web client",
+      "kind": "client",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-client"
+      ]
+    },
+    {
+      "id": "studio-rpc-session",
+      "name": "Studio RPC session",
+      "kind": "service",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "versioned-checkout",
+      "name": "Versioned checkout",
+      "kind": "build",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    },
+    {
+      "id": "platform-installers",
+      "name": "Platform installers",
+      "kind": "deploy",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "installed-global-runtime",
+      "name": "Installed global runtime",
+      "kind": "deploy",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    }
+  ],
+  "dataObjects": [
+    {
+      "id": "global-system-policy",
+      "name": "Global system policy",
+      "kind": "policy",
+      "ownerIds": [
+        "orchestration-control-plane"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "agent-definitions",
+      "name": "Agent definitions",
+      "kind": "configuration",
+      "ownerIds": [
+        "delegated-agent-runtime"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "skill-contracts",
+      "name": "Skill contracts",
+      "kind": "contracts",
+      "ownerIds": [
+        "workflow-skill-library"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "reconciled-change-contract",
+      "name": "Reconciled change contract",
+      "kind": "contract",
+      "ownerIds": [
+        "change-contract-gate"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "scout-evidence-report",
+      "name": "Scout evidence report",
+      "kind": "report",
+      "ownerIds": [
+        "scout-workflow"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "plan-ecosystem",
+      "name": "Plan ecosystem",
+      "kind": "artifacts",
+      "ownerIds": [
+        "plan-artifact-ecosystem"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-task-checkpoint",
+      "name": "Builder task and checkpoint",
+      "kind": "checkpoint",
+      "ownerIds": [
+        "builder-workflow"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "validation-verdict",
+      "name": "Validation verdict",
+      "kind": "verdict",
+      "ownerIds": [
+        "post-build-test-gate"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "markdown-memory",
+      "name": "Markdown memory",
+      "kind": "documents",
+      "ownerIds": [
+        "markdown-memory-store"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "normalized-architecture-json",
+      "name": "Normalized architecture JSON",
+      "kind": "document",
+      "ownerIds": [
+        "architecture-map-store"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "generated-architecture-html",
+      "name": "Generated architecture HTML",
+      "kind": "document",
+      "ownerIds": [
+        "architecture-view-renderer"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "runtime-settings-model-catalog",
+      "name": "Runtime settings and model catalog",
+      "kind": "configuration",
+      "ownerIds": [
+        "runtime-configuration"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "mcp-configuration",
+      "name": "MCP configuration",
+      "kind": "configuration",
+      "ownerIds": [
+        "mcp-adapter"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "session-jsonl-history",
+      "name": "Session JSONL history",
+      "kind": "history",
+      "ownerIds": [
+        "runtime-persistence"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-history"
+      ]
+    },
+    {
+      "id": "rpc-command",
+      "name": "RPC command",
+      "kind": "message",
+      "ownerIds": [
+        "studio-rpc-session"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "rpc-event",
+      "name": "RPC event",
+      "kind": "event",
+      "ownerIds": [
+        "studio-rpc-session"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "github-delivery-records",
+      "name": "GitHub issue and PR delivery records",
+      "kind": "record-type",
+      "ownerIds": [
+        "flow-issue-delivery"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-stage-artifacts",
+      "name": "Website stage artifacts",
+      "kind": "artifacts",
+      "ownerIds": [
+        "website-stage-chain"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "engineer-uses-orchestrator",
+      "name": "Engineer uses PI",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "pi-orchestrator",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-harness"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "engineer-uses-studio",
+      "name": "Engineer uses Studio",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "studio-web-client",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "studio-readme"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "engineer-uses-vscode",
+      "name": "Engineer uses VS Code",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "vscode-client",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-vscode"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-uses-routing",
+      "name": "Orchestrator uses routing",
+      "kind": "uses",
+      "fromId": "pi-orchestrator",
+      "toId": "request-routing-policy",
+      "dataObjectIds": [
+        "global-system-policy"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-uses-contract-gate",
+      "name": "Orchestrator reconciles contract",
+      "kind": "uses",
+      "fromId": "pi-orchestrator",
+      "toId": "change-contract-gate",
+      "dataObjectIds": [
+        "reconciled-change-contract"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-scout-agent",
+      "name": "Orchestrator calls scout-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "scout-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "agent-guide-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-planner-agent",
+      "name": "Orchestrator calls planner-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "planner-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-builder-agent",
+      "name": "Orchestrator calls builder-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "builder-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-observes-validation",
+      "name": "Orchestrator observes verdict",
+      "kind": "observes",
+      "fromId": "pi-orchestrator",
+      "toId": "validation-verdict",
+      "dataObjectIds": [
+        "validation-verdict"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planner-reads-evidence",
+      "name": "Planner reads evidence",
+      "kind": "reads",
+      "fromId": "planner-workflow",
+      "toId": "scout-evidence-report",
+      "dataObjectIds": [
+        "scout-evidence-report"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planner-builds-artifacts",
+      "name": "Planner builds artifacts",
+      "kind": "builds",
+      "fromId": "planner-workflow",
+      "toId": "plan-ecosystem",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "builder-reads-task",
+      "name": "Builder reads bounded task",
+      "kind": "reads",
+      "fromId": "builder-workflow",
+      "toId": "plan-ecosystem",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "builder-writes-checkpoint",
+      "name": "Builder writes checkpoint",
+      "kind": "writes",
+      "fromId": "builder-workflow",
+      "toId": "builder-task-checkpoint",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-observes-checkpoint",
+      "name": "Validator observes checkpoint",
+      "kind": "observes",
+      "fromId": "post-build-test-gate",
+      "toId": "builder-task-checkpoint",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-writes-verdict",
+      "name": "Validator writes verdict",
+      "kind": "writes",
+      "fromId": "post-build-test-gate",
+      "toId": "validation-verdict",
+      "dataObjectIds": [
+        "validation-verdict"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-uses-github",
+      "name": "Flow uses GitHub",
+      "kind": "uses",
+      "fromId": "flow-issue-delivery",
+      "toId": "github-service",
+      "dataObjectIds": [
+        "github-delivery-records"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-calls-planner",
+      "name": "Flow calls planner",
+      "kind": "calls",
+      "fromId": "flow-issue-delivery",
+      "toId": "planner-workflow",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-calls-builder",
+      "name": "Flow calls builder",
+      "kind": "calls",
+      "fromId": "flow-issue-delivery",
+      "toId": "builder-workflow",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "website-calls-stages",
+      "name": "Website pipeline calls stage chain",
+      "kind": "calls",
+      "fromId": "website-production-pipeline",
+      "toId": "website-stage-chain",
+      "dataObjectIds": [
+        "website-stage-artifacts"
+      ],
+      "evidenceIds": [
+        "website-pipeline"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-reads-markdown",
+      "name": "Memory hook reads Markdown",
+      "kind": "reads",
+      "fromId": "project-memory-hook",
+      "toId": "markdown-memory",
+      "dataObjectIds": [
+        "markdown-memory"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-reads-json",
+      "name": "Memory hook reads architecture",
+      "kind": "reads",
+      "fromId": "project-memory-hook",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-augments-orchestrator",
+      "name": "Memory hook augments prompt",
+      "kind": "publishes",
+      "fromId": "project-memory-hook",
+      "toId": "pi-orchestrator",
+      "dataObjectIds": [
+        "markdown-memory",
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-workflow-writes-json",
+      "name": "Memory workflow writes JSON",
+      "kind": "writes",
+      "fromId": "project-memory-system",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-observes-json",
+      "name": "Validator observes JSON",
+      "kind": "observes",
+      "fromId": "architecture-validator",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "renderer-builds-html",
+      "name": "Renderer builds HTML",
+      "kind": "builds",
+      "fromId": "architecture-view-renderer",
+      "toId": "generated-architecture-html",
+      "dataObjectIds": [
+        "normalized-architecture-json",
+        "generated-architecture-html"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "studio-client-calls-server",
+      "name": "Browser calls server",
+      "kind": "calls",
+      "fromId": "studio-web-client",
+      "toId": "studio-server",
+      "dataObjectIds": [
+        "rpc-command"
+      ],
+      "evidenceIds": [
+        "studio-client"
+      ],
+      "confidence": "known",
+      "protocol": "HTTP"
+    },
+    {
+      "id": "studio-session-calls-core",
+      "name": "RPC session calls PI core",
+      "kind": "calls",
+      "fromId": "studio-rpc-session",
+      "toId": "pi-core-runtime",
+      "dataObjectIds": [
+        "rpc-command"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known",
+      "protocol": "JSONL stdio"
+    },
+    {
+      "id": "studio-server-publishes-events",
+      "name": "Server publishes events",
+      "kind": "publishes",
+      "fromId": "studio-server",
+      "toId": "studio-web-client",
+      "dataObjectIds": [
+        "rpc-event"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known",
+      "protocol": "SSE"
+    },
+    {
+      "id": "installer-deploys-runtime",
+      "name": "Installer deploys runtime",
+      "kind": "deploys",
+      "fromId": "platform-installers",
+      "toId": "installed-global-runtime",
+      "dataObjectIds": [
+        "runtime-settings-model-catalog",
+        "agent-definitions",
+        "skill-contracts"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "installer-reads-checkout",
+      "name": "Installer reads checkout",
+      "kind": "reads",
+      "fromId": "platform-installers",
+      "toId": "versioned-checkout",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-install"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-reads-config",
+      "name": "PI core reads runtime config",
+      "kind": "reads",
+      "fromId": "pi-core-runtime",
+      "toId": "runtime-configuration",
+      "dataObjectIds": [
+        "runtime-settings-model-catalog"
+      ],
+      "evidenceIds": [
+        "runtime-settings"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-calls-model-provider",
+      "name": "PI core calls models",
+      "kind": "calls",
+      "fromId": "pi-core-runtime",
+      "toId": "model-provider-services",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "runtime-settings"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-uses-subagents",
+      "name": "PI core uses subagents",
+      "kind": "uses",
+      "fromId": "pi-core-runtime",
+      "toId": "subagent-package",
+      "dataObjectIds": [
+        "agent-definitions"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-uses-mcp",
+      "name": "PI core uses MCP adapter",
+      "kind": "uses",
+      "fromId": "pi-core-runtime",
+      "toId": "mcp-adapter",
+      "dataObjectIds": [
+        "mcp-configuration"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "mcp-uses-context7",
+      "name": "MCP adapter uses Context7",
+      "kind": "uses",
+      "fromId": "mcp-adapter",
+      "toId": "context7-service",
+      "dataObjectIds": [
+        "mcp-configuration"
+      ],
+      "evidenceIds": [
+        "mcp-context7"
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "vscode-calls-runtime",
+      "name": "VS Code calls PI runtime",
+      "kind": "calls",
+      "fromId": "vscode-client",
+      "toId": "pi-core-runtime",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-vscode"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "runtime-writes-history",
+      "name": "Runtime writes session history",
+      "kind": "writes",
+      "fromId": "pi-core-runtime",
+      "toId": "session-jsonl-history",
+      "dataObjectIds": [
+        "session-jsonl-history"
+      ],
+      "evidenceIds": [
+        "studio-history"
+      ],
+      "confidence": "known"
+    }
+  ],
+  "flows": [
+    {
+      "id": "terminal-request-flow",
+      "name": "Terminal request to closure",
+      "type": "user",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "orchestration-control-plane"
+      ],
+      "steps": [
+        {
+          "id": "terminal-request-flow-step-1",
+          "order": 1,
+          "action": "Engineer starts PI",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [
+            "engineer-uses-orchestrator"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "terminal-request-flow-step-2",
+          "order": 2,
+          "action": "Request routes",
+          "componentIds": [
+            "request-routing-policy"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-routing"
+          ],
+          "dataObjectIds": [
+            "global-system-policy"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-3",
+          "order": 3,
+          "action": "Contract is reconciled",
+          "componentIds": [
+            "change-contract-gate"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-contract-gate"
+          ],
+          "dataObjectIds": [
+            "reconciled-change-contract"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-4",
+          "order": 4,
+          "action": "Bounded work executes",
+          "componentIds": [
+            "delegated-agent-runtime"
+          ],
+          "relationshipIds": [
+            "orchestrator-calls-builder-agent"
+          ],
+          "dataObjectIds": [
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-5",
+          "order": 5,
+          "action": "Validation closes outcome",
+          "componentIds": [
+            "orchestration-closure"
+          ],
+          "relationshipIds": [
+            "orchestrator-observes-validation"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Validated result returned to engineer"
+      ],
+      "failureModes": [
+        "Unresolved contract or validation blocks closure"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planned-delivery-flow",
+      "name": "Evidence-backed planned delivery",
+      "type": "build",
+      "actorIds": [
+        "pi-orchestrator",
+        "scout-agent",
+        "planner-agent",
+        "builder-agent",
+        "validator-agent"
+      ],
+      "entrypointIds": [
+        "scout-workflow"
+      ],
+      "steps": [
+        {
+          "id": "planned-delivery-flow-step-1",
+          "order": 1,
+          "action": "Scout gathers evidence",
+          "componentIds": [
+            "scout-workflow"
+          ],
+          "relationshipIds": [
+            "orchestrator-calls-scout-agent"
+          ],
+          "dataObjectIds": [
+            "scout-evidence-report"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-2",
+          "order": 2,
+          "action": "Orchestrator reconciles contract",
+          "componentIds": [
+            "change-contract-gate"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-contract-gate"
+          ],
+          "dataObjectIds": [
+            "reconciled-change-contract"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-3",
+          "order": 3,
+          "action": "Planner creates ecosystem",
+          "componentIds": [
+            "plan-artifact-ecosystem"
+          ],
+          "relationshipIds": [
+            "planner-reads-evidence",
+            "planner-builds-artifacts"
+          ],
+          "dataObjectIds": [
+            "scout-evidence-report",
+            "plan-ecosystem"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-4",
+          "order": 4,
+          "action": "Builder executes bounded task",
+          "componentIds": [
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "builder-reads-task",
+            "builder-writes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem",
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-5",
+          "order": 5,
+          "action": "Test gate reviews checkpoint",
+          "componentIds": [
+            "post-build-test-gate"
+          ],
+          "relationshipIds": [
+            "validator-observes-checkpoint",
+            "validator-writes-verdict"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-6",
+          "order": 6,
+          "action": "Orchestrator closes",
+          "componentIds": [
+            "orchestration-closure"
+          ],
+          "relationshipIds": [
+            "orchestrator-observes-validation"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Checkpoint and verdict support closure"
+      ],
+      "failureModes": [
+        "Missing evidence, contract conflict, or failing verdict pauses delivery"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "project-memory-update-flow",
+      "name": "Project memory update",
+      "type": "data",
+      "actorIds": [
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "project-memory-system"
+      ],
+      "steps": [
+        {
+          "id": "project-memory-update-flow-step-1",
+          "order": 1,
+          "action": "Read repository evidence",
+          "componentIds": [
+            "project-memory-system"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "markdown-memory"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-2",
+          "order": 2,
+          "action": "Update narrative and JSON",
+          "componentIds": [
+            "markdown-memory-store",
+            "architecture-map-store"
+          ],
+          "relationshipIds": [
+            "memory-workflow-writes-json"
+          ],
+          "dataObjectIds": [
+            "markdown-memory",
+            "normalized-architecture-json"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-3",
+          "order": 3,
+          "action": "Validate JSON",
+          "componentIds": [
+            "architecture-validator"
+          ],
+          "relationshipIds": [
+            "validator-observes-json"
+          ],
+          "dataObjectIds": [
+            "normalized-architecture-json"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-4",
+          "order": 4,
+          "action": "Render HTML",
+          "componentIds": [
+            "architecture-view-renderer"
+          ],
+          "relationshipIds": [
+            "renderer-builds-html"
+          ],
+          "dataObjectIds": [
+            "generated-architecture-html"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-5",
+          "order": 5,
+          "action": "Update summary",
+          "componentIds": [
+            "markdown-memory-store"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "markdown-memory"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-6",
+          "order": 6,
+          "action": "Inject index next session",
+          "componentIds": [
+            "project-memory-hook"
+          ],
+          "relationshipIds": [
+            "memory-hook-reads-markdown",
+            "memory-hook-reads-json",
+            "memory-hook-augments-orchestrator"
+          ],
+          "dataObjectIds": [
+            "markdown-memory",
+            "normalized-architecture-json"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Validated JSON, derived HTML, and next-session index"
+      ],
+      "failureModes": [
+        "Invalid JSON blocks rendering and summary checkpoint"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "install-update-flow",
+      "name": "Install or update harness",
+      "type": "deploy",
+      "actorIds": [
+        "engineer"
+      ],
+      "entrypointIds": [
+        "versioned-checkout"
+      ],
+      "steps": [
+        {
+          "id": "install-update-flow-step-1",
+          "order": 1,
+          "action": "Checkout provides versioned assets",
+          "componentIds": [
+            "versioned-checkout"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        },
+        {
+          "id": "install-update-flow-step-2",
+          "order": 2,
+          "action": "Installer checks platform and copies assets",
+          "componentIds": [
+            "platform-installers"
+          ],
+          "relationshipIds": [
+            "installer-reads-checkout"
+          ],
+          "dataObjectIds": [
+            "runtime-settings-model-catalog",
+            "agent-definitions",
+            "skill-contracts"
+          ]
+        },
+        {
+          "id": "install-update-flow-step-3",
+          "order": 3,
+          "action": "Installer deploys global runtime",
+          "componentIds": [
+            "installed-global-runtime"
+          ],
+          "relationshipIds": [
+            "installer-deploys-runtime"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "install-update-flow-step-4",
+          "order": 4,
+          "action": "Fresh terminal or reload activates assets",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        }
+      ],
+      "outcomes": [
+        "Installed runtime reflects checkout"
+      ],
+      "failureModes": [
+        "Version mismatch, missing Node, or package install failure stops update"
+      ],
+      "evidenceIds": [
+        "readme-install"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "studio-rpc-interface-flow",
+      "name": "PI Studio RPC interface",
+      "type": "user",
+      "actorIds": [
+        "engineer"
+      ],
+      "entrypointIds": [
+        "studio-web-client"
+      ],
+      "steps": [
+        {
+          "id": "studio-rpc-interface-flow-step-1",
+          "order": 1,
+          "action": "Browser bootstraps projects",
+          "componentIds": [
+            "studio-web-client",
+            "studio-server"
+          ],
+          "relationshipIds": [
+            "studio-client-calls-server"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-2",
+          "order": 2,
+          "action": "Engineer selects project",
+          "componentIds": [
+            "studio-web-client"
+          ],
+          "relationshipIds": [
+            "engineer-uses-studio"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-3",
+          "order": 3,
+          "action": "Server spawns pi --mode rpc",
+          "componentIds": [
+            "studio-server",
+            "studio-rpc-session"
+          ],
+          "relationshipIds": [
+            "studio-session-calls-core"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-4",
+          "order": 4,
+          "action": "Command writes to stdin",
+          "componentIds": [
+            "studio-rpc-session"
+          ],
+          "relationshipIds": [
+            "studio-session-calls-core"
+          ],
+          "dataObjectIds": [
+            "rpc-command"
+          ]
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-5",
+          "order": 5,
+          "action": "Server emits SSE event",
+          "componentIds": [
+            "studio-server"
+          ],
+          "relationshipIds": [
+            "studio-server-publishes-events"
+          ],
+          "dataObjectIds": [
+            "rpc-event"
+          ]
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-6",
+          "order": 6,
+          "action": "Browser updates UI",
+          "componentIds": [
+            "studio-web-client"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "rpc-event"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Interactive project-scoped PI session"
+      ],
+      "failureModes": [
+        "Spawn, malformed RPC, or connection failure surfaces as process/error events"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-issue-delivery-flow",
+      "name": "GitHub issue delivery policy",
+      "type": "build",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator",
+        "github-platform"
+      ],
+      "entrypointIds": [
+        "flow-issue-delivery"
+      ],
+      "steps": [
+        {
+          "id": "flow-issue-delivery-flow-step-1",
+          "order": 1,
+          "action": "Re-enter from GitHub authority",
+          "componentIds": [
+            "flow-reentry-claim"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-2",
+          "order": 2,
+          "action": "Use approved issue and DAG",
+          "componentIds": [
+            "flow-issue-delivery"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-3",
+          "order": 3,
+          "action": "Claim exclusive branch and worktree",
+          "componentIds": [
+            "flow-reentry-claim"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-4",
+          "order": 4,
+          "action": "Plan and build",
+          "componentIds": [
+            "planner-workflow",
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "flow-calls-planner",
+            "flow-calls-builder"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem",
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-5",
+          "order": 5,
+          "action": "Review delivery",
+          "componentIds": [
+            "testing-validation-workflow"
+          ],
+          "relationshipIds": [
+            "validator-observes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-6",
+          "order": 6,
+          "action": "Merge and close status",
+          "componentIds": [
+            "flow-issue-delivery"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Policy-compliant merged delivery and coherent GitHub status"
+      ],
+      "failureModes": [
+        "No approval, ambiguous claim, hazard, or failed review blocks progress"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "website-production-flow",
+      "name": "Website production pipeline",
+      "type": "build",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "website-production-pipeline"
+      ],
+      "steps": [
+        {
+          "id": "website-production-flow-step-1",
+          "order": 1,
+          "action": "Capture strategy",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-2",
+          "order": 2,
+          "action": "Design baseline",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-3",
+          "order": 3,
+          "action": "Optionally add explicit creative direction",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-4",
+          "order": 4,
+          "action": "Write content",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-5",
+          "order": 5,
+          "action": "Plan implementation",
+          "componentIds": [
+            "planner-workflow"
+          ],
+          "relationshipIds": [
+            "planner-builds-artifacts"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-6",
+          "order": 6,
+          "action": "Build website",
+          "componentIds": [
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "builder-writes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-7",
+          "order": 7,
+          "action": "Polish result",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-8",
+          "order": 8,
+          "action": "Validate quality",
+          "componentIds": [
+            "testing-validation-workflow"
+          ],
+          "relationshipIds": [
+            "validator-writes-verdict"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Accessible, responsive, evidence-backed website delivery"
+      ],
+      "failureModes": [
+        "Missing assets, unsupported claims, design conflict, or failed validation blocks closure"
+      ],
+      "evidenceIds": [
+        "website-pipeline"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "mcp-tool-flow",
+      "name": "Lazy MCP tool call",
+      "type": "runtime",
+      "actorIds": [
+        "pi-orchestrator",
+        "context7-mcp"
+      ],
+      "entrypointIds": [
+        "runtime-configuration"
+      ],
+      "steps": [
+        {
+          "id": "mcp-tool-flow-step-1",
+          "order": 1,
+          "action": "Runtime reads MCP configuration",
+          "componentIds": [
+            "runtime-configuration"
+          ],
+          "relationshipIds": [
+            "core-reads-config"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-2",
+          "order": 2,
+          "action": "PI core invokes adapter",
+          "componentIds": [
+            "pi-core-runtime",
+            "mcp-adapter"
+          ],
+          "relationshipIds": [
+            "core-uses-mcp"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-3",
+          "order": 3,
+          "action": "Adapter lazily starts Context7 process",
+          "componentIds": [
+            "mcp-adapter",
+            "context7-service"
+          ],
+          "relationshipIds": [
+            "mcp-uses-context7"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-4",
+          "order": 4,
+          "action": "Tool result returns to orchestrator",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        }
+      ],
+      "outcomes": [
+        "Context7 tool result returned through adapter"
+      ],
+      "failureModes": [
+        "Package internals and process behavior are inferred outside this repository"
+      ],
+      "evidenceIds": [
+        "mcp-context7"
+      ],
+      "confidence": "inferred"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "system-policy",
+      "path": "SYSTEM.md",
+      "startLine": 1,
+      "endLine": 115,
+      "claim": "Global policy assigns outcome ownership, evidence-first routing, bounded delegation, validation, memory, and safety to the PI orchestrator.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-harness",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 28,
+      "claim": "README describes Evolvera PI as a shared terminal and VS Code harness whose principal PI remains responsible for the result.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-surfaces",
+      "path": "README.md",
+      "startLine": 140,
+      "endLine": 213,
+      "claim": "README defines system prompt, agents, skills, extensions, runtime settings, subagents, MCP, project artifacts, and routing responsibilities.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-vscode",
+      "path": "README.md",
+      "startLine": 100,
+      "endLine": 139,
+      "claim": "README documents VS Code entry commands and the external bridge capabilities.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-install",
+      "path": "README.md",
+      "startLine": 48,
+      "endLine": 99,
+      "claim": "README documents versioned checkout deployment into the global runtime and preservation/overwrite behavior.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-update",
+      "path": "README.md",
+      "startLine": 271,
+      "endLine": 322,
+      "claim": "README documents update, reload, and rollback from versioned checkouts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "unix-installer",
+      "path": "install.sh",
+      "startLine": 13,
+      "endLine": 109,
+      "claim": "Unix installer validates Node, installs PI, copies configuration/agents/skills/extensions/themes, preserves existing MCP config, and installs PI packages.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "windows-installer",
+      "path": "install.ps1",
+      "startLine": 8,
+      "endLine": 160,
+      "claim": "Windows installer performs the platform-equivalent runtime deployment and package installation.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "runtime-settings",
+      "path": "config/settings.json",
+      "startLine": 1,
+      "endLine": 15,
+      "claim": "Runtime settings select provider/model/thinking/theme and declare installed packages.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "subagent-concurrency",
+      "path": "subagents.json",
+      "startLine": 1,
+      "endLine": 3,
+      "claim": "Subagent package concurrency is configured with maxConcurrent 8.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "mcp-context7",
+      "path": "config/mcp.json",
+      "startLine": 1,
+      "endLine": 12,
+      "claim": "MCP configuration declares a lazy Context7 server launched through npx.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "memory-extension",
+      "path": "extensions/project-memory.ts",
+      "startLine": 1,
+      "endLine": 186,
+      "claim": "Project-memory extension reads Markdown summary and normalized architecture JSON, compares Git HEAD, and injects a compact index before agent start.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "watchdog-extension",
+      "path": "extensions/subagent-watchdog.ts",
+      "startLine": 1,
+      "endLine": 165,
+      "claim": "Subagent watchdog adds lifecycle guards, notifications, stop RPC, and resume policy for planner-heavy.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "agent-guide-contract",
+      "path": "skills/agent-guide/SKILL.md",
+      "startLine": 1,
+      "endLine": 259,
+      "claim": "Agent guide defines delegation tiers, reconciled change-contract gate, self-contained handoffs, and scout/planner/builder roles.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "planner-contract",
+      "path": "skills/planner/SKILL.md",
+      "startLine": 1,
+      "endLine": 203,
+      "claim": "Planner workflow defines evidence intake, reconciled contracts, normalized plan artifacts, scheduling, and execution gates.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "builder-contract",
+      "path": "skills/builder/SKILL.md",
+      "startLine": 1,
+      "endLine": 291,
+      "claim": "Builder workflow defines bounded target ownership, tier routing, checkpoint expectations, validation, and stop rules.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "testing-contract",
+      "path": "skills/testing/SKILL.md",
+      "startLine": 1,
+      "endLine": 179,
+      "claim": "Testing workflow defines SHA-bound post-build evidence, stateful-resource gates, and PASS/BLOCKED/UNVERIFIED verdicts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "flow-contract",
+      "path": "skills/flow/SKILL.md",
+      "startLine": 1,
+      "endLine": 180,
+      "claim": "Flow defines GitHub-first re-entry, approval gates, issue/DAG delivery, exclusive claims, branch/worktree isolation, review, and closure policy.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "flow-artifacts",
+      "path": "skills/flow/SKILL.md",
+      "startLine": 520,
+      "endLine": 600,
+      "claim": "Flow defines durable Project plan, schedule, DAG, and index artifacts while excluding dynamic delivery state from memory.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "website-pipeline",
+      "path": "skills/website-pipeline/SKILL.md",
+      "startLine": 1,
+      "endLine": 45,
+      "claim": "Website pipeline orders strategy, design, optional creativity, content, planning, building, polishing, and validation.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "memory-skill",
+      "path": "skills/project-memory/SKILL.md",
+      "startLine": 1,
+      "endLine": 130,
+      "claim": "Project-memory skill defines Markdown narrative, normalized JSON, derived HTML, initial scan, validation, rendering, and summary injection.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-readme",
+      "path": "interface/README.md",
+      "startLine": 1,
+      "endLine": 65,
+      "claim": "PI Studio is a local workspace web interface with per-project sessions, JSONL history, streaming RPC, Docker option, and fake-RPC smoke testing.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-server-session",
+      "path": "interface/server.mjs",
+      "startLine": 235,
+      "endLine": 393,
+      "claim": "PI Studio server spawns pi --mode rpc, writes JSON commands to stdin, parses stdout, and broadcasts RPC events over SSE.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-server-routes",
+      "path": "interface/server.mjs",
+      "startLine": 512,
+      "endLine": 689,
+      "claim": "PI Studio server exposes bootstrap, project open, events, command, history, and session routes.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-client",
+      "path": "interface/public/app.js",
+      "startLine": 218,
+      "endLine": 342,
+      "claim": "Studio browser bootstraps projects, opens a project, subscribes to SSE, sends RPC commands, and submits prompts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-history",
+      "path": "interface/server.mjs",
+      "startLine": 410,
+      "endLine": 489,
+      "claim": "Studio reads per-project JSONL session history from the global agent sessions directory.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "interface-docker-pin",
+      "path": "interface/Dockerfile",
+      "startLine": 1,
+      "endLine": 16,
+      "claim": "PI Studio container installs @earendil-works/pi-coding-agent version 0.80.3.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "interface-dockerfile-version-drift",
+      "title": "PI Studio Docker version drift",
+      "status": "open",
+      "impact": "Container baseline can differ from README and installers.",
+      "question": "Should interface/Dockerfile move from PI 0.80.3 to the documented 0.80.10 baseline?",
+      "evidenceIds": [
+        "interface-docker-pin",
+        "readme-install"
+      ]
+    },
+    {
+      "id": "mcp-adapter-internals",
+      "title": "MCP adapter internals are external",
+      "status": "accepted",
+      "impact": "The map can evidence configuration and package use, but not adapter implementation details.",
+      "question": "Which exact lifecycle and transport semantics does the external pi-mcp-adapter package implement?",
+      "evidenceIds": [
+        "mcp-context7",
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "vscode-bridge-source-external",
+      "title": "VS Code bridge source is external",
+      "status": "accepted",
+      "impact": "Only documented entry points and bridge capabilities are represented.",
+      "question": "How does the external VS Code extension implement its bridge to the PI runtime?",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    },
+    {
+      "id": "live-delivery-state-excluded",
+      "title": "Live delivery state is intentionally excluded",
+      "status": "accepted",
+      "impact": "Architecture memory describes record types and policy, not current boards, claims, issues, or PR status.",
+      "question": "Current delivery state must be read from GitHub during Flow re-entry, not this snapshot.",
+      "evidenceIds": [
+        "flow-contract",
+        "flow-artifacts"
+      ]
+    }
+  ]
+}

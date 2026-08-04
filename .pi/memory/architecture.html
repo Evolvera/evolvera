@@ -1,0 +1,2715 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Self-contained semantic-zoom architecture memory viewer">
+  <title>Architecture memory</title>
+  <style>
+    :root{color-scheme:dark;--ink:#edf3f6;--muted:#8d9aa3;--faint:#66737c;--bg:#070b0e;--panel:#0d1317;--panel2:#111a20;--line:#253039;--line2:#34434d;--cyan:#64d9d0;--cyan2:#153d3b;--amber:#e7b66b;--violet:#9da7ff;--rose:#f0808f;--green:#85d6a0;--shadow:0 20px 70px #0008;--radius:14px}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{background:radial-gradient(ellipse 70% 45% at 50% -10%,#163038 0,transparent 65%),linear-gradient(#080d10,#06090b);overflow-x:hidden}button,input{font:inherit}button{color:inherit}button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}.app{min-height:100vh;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
+    .mast{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;padding:13px clamp(18px,3vw,42px) 11px;border-bottom:1px solid #1d282f;background:#090e12cc;backdrop-filter:blur(16px)}.kicker{display:flex;align-items:center;gap:8px;color:var(--cyan);font:700 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase}.kicker:before{content:"";width:14px;height:1px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}h1{margin:4px 0 3px;font-size:clamp(20px,2.3vw,30px);line-height:1.05;letter-spacing:-.035em}.subhead{display:flex;gap:7px 12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.subhead code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.confidence{display:inline-flex;align-items:center;gap:6px}.confidence:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 9px currentColor}.confidence.known:before{background:var(--green)}.confidence.unknown:before{background:var(--rose)}.counts{align-self:center;display:flex;gap:1px;padding:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;opacity:.82}.count{min-width:61px;padding:6px 8px;background:#0d1418;text-align:center}.count b{display:block;font-size:14px;letter-spacing:-.03em}.count span{color:var(--muted);font:8px/1.2 ui-monospace,monospace;text-transform:uppercase;letter-spacing:.07em}
+    .navrow{display:flex;align-items:center;gap:12px;padding:0 clamp(18px,3vw,42px);border-bottom:1px solid var(--line);background:#0b1014}.tabs{display:flex;min-width:0;overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{position:relative;flex:none;padding:15px 13px;border:0;background:none;color:var(--muted);font-size:12px;white-space:nowrap;cursor:pointer}.tab:hover{color:var(--ink)}.tab[aria-selected="true"]{color:var(--ink)}.tab[aria-selected="true"]:after{content:"";position:absolute;inset:auto 10px -1px;height:2px;background:var(--cyan);box-shadow:0 -3px 12px #64d9d080}.search-wrap{position:relative;margin-left:auto;flex:0 1 270px}.search{width:100%;height:34px;padding:0 34px 0 12px;color:var(--ink);background:#080d10;border:1px solid var(--line);border-radius:8px}.search::placeholder{color:var(--faint)}.search-mark{position:absolute;right:11px;top:8px;color:var(--faint);font-size:12px}.search-results{position:absolute;z-index:20;top:39px;right:0;width:min(360px,90vw);max-height:320px;overflow:auto;padding:6px;background:#0c1216;border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow)}.search-results[hidden]{display:none}.search-result{display:block;width:100%;padding:9px;border:0;border-radius:7px;background:none;text-align:left;cursor:pointer}.search-result:hover,.search-result:focus{background:#172127}.search-result small{display:block;color:var(--muted)}
+    .workspace{min-height:0;display:grid;grid-template-columns:245px minmax(420px,1fr) 292px;padding:14px;gap:10px}.rail,.detail{min-height:0;overflow:auto;background:linear-gradient(160deg,#10171c,#0b1115);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 15px 45px #0003}.panel-head{position:sticky;top:0;z-index:2;padding:15px 16px 12px;background:#0e1519ee;border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}.panel-head h2{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.12em}.panel-head p{margin:4px 0 0;color:var(--muted);font-size:11px}.flow-list{padding:8px}.flow-card{width:100%;margin:0 0 6px;padding:11px;border:1px solid transparent;border-radius:9px;background:#11191e;text-align:left;cursor:pointer}.flow-card:hover{border-color:var(--line2);background:#151f25}.flow-card.active{border-color:#64d9d066;background:#132423;box-shadow:inset 2px 0 var(--cyan)}.flow-card strong{display:block;font-size:12px}.flow-card span{display:flex;justify-content:space-between;margin-top:5px;color:var(--muted);font:9px ui-monospace,monospace;text-transform:uppercase}.empty{padding:25px 16px;color:var(--muted);text-align:center}.empty strong{display:block;margin-bottom:5px;color:var(--ink)}
+    .stage{position:relative;min-height:520px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background-color:#080d10;background-image:linear-gradient(#18222955 1px,transparent 1px),linear-gradient(90deg,#18222955 1px,transparent 1px),radial-gradient(circle at 50% 35%,#10282a80,transparent 45%);background-size:28px 28px,28px 28px,auto;box-shadow:inset 0 0 80px #0008;touch-action:none}.context-bar{position:absolute;z-index:5;inset:12px 140px auto 12px;max-width:680px;padding:11px 13px;background:#0a1014f2;border:1px solid var(--line2);border-radius:11px;box-shadow:0 10px 30px #0005}.breadcrumbs{display:flex;gap:5px;align-items:center;overflow:auto;color:var(--muted);font-size:10px}.breadcrumb{padding:2px 4px;border:0;background:none;color:var(--muted);cursor:pointer}.breadcrumb[aria-current="page"]{color:var(--cyan)}.context-main{display:flex;align-items:center;gap:12px;margin-top:5px}.context-title{margin:0;font-size:18px}.context-copy{margin:1px 0 0;color:var(--muted);font-size:10px}.context-up{margin-left:auto;white-space:nowrap}.context-tools{display:flex;align-items:center;gap:5px;margin-top:8px}.context-hint{margin-left:6px;color:var(--faint);font-size:9px}.graph{display:block;width:100%;height:100%;min-height:520px}.graph #viewport{transition:none}.stage.animating .graph #viewport{transition:transform .24s cubic-bezier(.2,.75,.25,1)}.stage.dragging .graph #viewport{transition:none}.graph .edge{fill:none;stroke:#53636d;stroke-width:1.2;vector-effect:non-scaling-stroke;opacity:.55}.graph .edge.active{stroke:var(--cyan);stroke-width:2;opacity:1;filter:drop-shadow(0 0 4px #64d9d088)}.graph .edge.dim,.graph .node.dim{opacity:.12}.graph .node{cursor:pointer;transition:opacity .18s ease}.graph .node rect{fill:#111a20;stroke:#3a4953;stroke-width:1;vector-effect:non-scaling-stroke}.graph .node:hover rect,.graph .node.selected rect{stroke:var(--cyan);fill:#142525;filter:drop-shadow(0 0 8px #64d9d04d)}.graph .node.actor rect{fill:#211e17;stroke:#7e6844}.graph .node.data rect{fill:#18192a;stroke:#6269a5}.graph .node.external rect{stroke:#87636b;stroke-dasharray:5 3}.graph text{pointer-events:none;fill:var(--ink);font:12px ui-sans-serif,system-ui}.graph .meta{fill:var(--muted);font:8px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}.graph .badge-bg{fill:#21323a;stroke:none}.graph .badge-text{fill:var(--cyan);font:8px ui-monospace,monospace}.stage-tools{display:flex;align-items:center;gap:5px}.tool{min-width:30px;height:29px;padding:0 9px;border:1px solid transparent;border-radius:6px;background:transparent;cursor:pointer}.tool:hover{background:#192329;border-color:var(--line2)}.lod{padding:0 7px;color:var(--cyan);font:700 9px ui-monospace,monospace;letter-spacing:.08em}.notice{position:absolute;z-index:3;left:12px;bottom:12px;max-width:min(560px,calc(100% - 150px));padding:7px 10px;color:#bdc8ce;background:#0a1014e8;border:1px solid var(--line);border-radius:7px;font-size:10px;box-shadow:0 8px 20px #0005}.notice:empty{display:none}.minimap{position:absolute;right:12px;bottom:12px;width:116px;height:76px;background:#080d10e8;border:1px solid var(--line2);border-radius:8px}.legend{position:absolute;right:12px;top:12px;display:flex;gap:9px;padding:7px 9px;background:#0a1014e8;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:9px}.legend i{display:inline-block;width:7px;height:7px;margin-right:4px;border-radius:2px;background:var(--cyan)}.legend span:nth-child(2) i{background:var(--amber)}.legend span:nth-child(3) i{background:var(--violet)}
+    .detail-body{padding:14px}.detail-body h3{margin:0 0 3px;font-size:18px;letter-spacing:-.02em}.eyebrow{color:var(--cyan);font:9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}.description{color:#bdc7cc}.facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:14px 0;background:var(--line)}.fact{padding:9px;background:#0e1519}.fact b{display:block;color:var(--muted);font:8px ui-monospace,monospace;text-transform:uppercase}.fact span{font-size:11px}.section-title{margin:18px 0 7px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font:9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}.link-row,.step-row,.evidence-row,.gap-row{display:block;width:100%;margin-bottom:6px;padding:9px;background:#11191e;border:1px solid #202c33;border-radius:8px;color:#cad4d9;text-align:left;font-size:11px}.link-row[role=button]{cursor:pointer}.link-row[role=button]:hover{border-color:var(--cyan)}.step-row b{display:inline-grid;place-items:center;width:20px;height:20px;margin-right:7px;border-radius:50%;background:var(--cyan2);color:var(--cyan);font:9px ui-monospace,monospace}.step-row small,.evidence-row small,.gap-row small{display:block;margin-top:4px;color:var(--muted)}.gap-row.open{border-left:2px solid var(--rose)}.tree-alt{margin-top:17px;border-top:1px solid var(--line)}.tree-alt summary{padding:13px 0;color:var(--muted);cursor:pointer;font-size:11px}.tree-list{display:grid;gap:4px}.tree-item{width:100%;padding:7px 8px;border:0;border-radius:6px;background:#11191e;text-align:left;font-size:10px;cursor:pointer}.tree-item:hover{background:#18242a}.tree-item[data-level="1"]{padding-left:18px}.tree-item[data-level="2"]{padding-left:28px}.tree-item[data-level="3"]{padding-left:38px}.print-summary{display:none}
+    @media(max-width:1050px){.workspace{grid-template-columns:210px minmax(400px,1fr)}.detail{grid-column:1/-1;max-height:none}.detail-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}.detail-body>.description,.detail-body>.facts,.detail-body>.eyebrow,.detail-body>h3{grid-column:1/-1}}
+    @media(max-width:720px){.mast{grid-template-columns:1fr;padding:14px 18px}.context-bar{inset:8px 8px auto}.context-main{align-items:flex-start}.context-hint{display:none}.counts{width:100%;overflow:auto}.count{flex:1;min-width:66px}.navrow{display:block;padding:0 12px 10px}.search-wrap{margin:0;max-width:none}.workspace{display:flex;width:100%;min-width:0;flex-direction:column;padding:8px}.stage,.rail,.detail{width:100%;min-width:0}.rail{max-height:190px}.stage{order:-1;min-height:57vh}.graph{min-height:57vh}.legend{display:none}.detail-body{display:block}.minimap{width:92px;height:60px}.notice{max-width:calc(100% - 115px);overflow-wrap:anywhere}.tab{padding:12px 10px}}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+    @media print{body{background:#fff;color:#111}.mast,.navrow,.rail,.stage,.detail{display:none}.app{display:block}.print-summary{display:block;padding:24px;font:12px/1.5 system-ui}.print-summary h1{font-size:25px}.print-summary table{width:100%;border-collapse:collapse}.print-summary th,.print-summary td{padding:6px;border:1px solid #bbb;text-align:left}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="mast">
+      <div><div class="kicker">Architecture memory / schema v1</div><h1 id="project-name">Architecture</h1><div class="subhead" id="snapshot-meta"></div></div>
+      <div class="counts" id="counts" aria-label="Architecture record counts"></div>
+    </header>
+    <div class="navrow">
+      <nav class="tabs" role="tablist" aria-label="Architecture views" id="tabs"><button class="tab" type="button" role="tab">Overview</button><button class="tab" type="button" role="tab">Architecture</button><button class="tab" type="button" role="tab">User Flows</button><button class="tab" type="button" role="tab">Data Flows</button><button class="tab" type="button" role="tab">Runtime</button><button class="tab" type="button" role="tab">Delivery</button><button class="tab" type="button" role="tab">Evidence & Gaps</button></nav>
+      <div class="search-wrap"><label class="sr-only" for="search" style="position:absolute;clip:rect(0,0,0,0)">Search architecture</label><input class="search" id="search" type="search" autocomplete="off" placeholder="Search components, flows, evidence…"><span class="search-mark" aria-hidden="true">⌕</span><div class="search-results" id="search-results" hidden></div></div>
+    </div>
+    <main class="workspace">
+      <aside class="rail" aria-label="Flows"><div class="panel-head"><h2 id="rail-title">Flows</h2><p id="rail-summary"></p></div><div class="flow-list" id="flow-list"></div></aside>
+      <section class="stage" aria-label="Interactive architecture map">
+        <div class="context-bar" id="context-bar">
+          <nav class="breadcrumbs" id="breadcrumbs" aria-label="Architecture context"></nav>
+          <div class="context-main"><div><h2 class="context-title" id="context-title">All architecture</h2><p class="context-copy" id="context-copy" aria-live="polite">Overview · showing systems</p></div><button class="tool context-up" id="context-up" type="button" hidden>Up one level <span aria-hidden="true">· Esc</span></button></div>
+          <div class="context-tools"><div class="stage-tools" aria-label="Map controls"><button class="tool" id="zoom-out" type="button" aria-label="Zoom out">−</button><span class="lod" id="lod">Overview</span><button class="tool" id="zoom-in" type="button" aria-label="Zoom in">+</button><button class="tool" id="fit" type="button">Fit</button><button class="tool" id="reset" type="button">Home</button></div><span class="context-hint" id="context-hint">Scroll to zoom · Double-click a subsystem to enter · Esc to go up</span></div>
+        </div>
+        <div class="legend" aria-label="Legend"><span><i></i>component</span><span><i></i>actor</span><span><i></i>data</span></div>
+        <svg class="graph" id="graph" role="img" aria-labelledby="graph-title"><title id="graph-title">Semantic zoom architecture graph</title><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#53636d"></path></marker></defs><g id="viewport"><g id="edges"></g><g id="nodes"></g></g></svg>
+        <svg class="minimap" id="minimap" aria-label="Map overview"></svg><div class="notice" id="notice" role="status"></div>
+      </section>
+      <aside class="detail" aria-label="Selection details"><div class="panel-head"><h2>Inspector</h2><p>Evidence stays here, away from the map.</p></div><div class="detail-body" id="detail-body"></div></aside>
+    </main>
+  </div>
+  <section class="print-summary" id="print-summary"></section>
+  <script type="application/json" id="architecture-data">{
+  "schemaVersion": 1,
+  "project": {
+    "id": "evolvera-pi",
+    "name": "Evolvera PI",
+    "description": "Evidence-backed architecture of the reusable PI Coding Agent harness and local PI Studio.",
+    "repository": "https://github.com/Evolvera/evolvera"
+  },
+  "snapshot": {
+    "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782",
+    "generatedAt": "2026-07-23T19:17:57Z",
+    "lastVerifiedAt": "2026-07-23T19:17:57Z",
+    "scope": "Tracked harness control plane, workflows, runtime extensions, PI Studio, installation, and documented external boundaries; excludes sessions, caches, plans, recovery artifacts, backups, secrets, and live delivery state.",
+    "confidence": "known"
+  },
+  "actors": [
+    {
+      "id": "engineer",
+      "name": "Engineer",
+      "kind": "person",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "pi-orchestrator",
+      "name": "PI orchestrator",
+      "kind": "system",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "scout-agent",
+      "name": "Scout agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "planner-agent",
+      "name": "Planner agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-agent",
+      "name": "Builder agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "validator-agent",
+      "name": "Validator agent",
+      "kind": "agent",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "github-platform",
+      "name": "GitHub platform",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "model-provider",
+      "name": "Model provider",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "context7-mcp",
+      "name": "Context7 MCP",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "vscode-host",
+      "name": "VS Code host",
+      "kind": "external-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "evolvera-pi-harness",
+      "name": "Evolvera PI harness",
+      "kind": "domain",
+      "level": 0,
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-harness"
+      ]
+    },
+    {
+      "id": "external-ecosystem",
+      "name": "External ecosystem",
+      "kind": "external",
+      "level": 0,
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "orchestration-control-plane",
+      "name": "Orchestration control plane",
+      "kind": "service",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "workflow-skill-library",
+      "name": "Workflow skill library",
+      "kind": "library",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "runtime-extension-platform",
+      "name": "Runtime extension platform",
+      "kind": "service",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "project-memory-system",
+      "name": "Project memory system",
+      "kind": "datastore",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "pi-studio-interface",
+      "name": "PI Studio interface",
+      "kind": "client",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-readme"
+      ]
+    },
+    {
+      "id": "installation-distribution-system",
+      "name": "Installation and distribution",
+      "kind": "deploy",
+      "level": 1,
+      "parentId": "evolvera-pi-harness",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    },
+    {
+      "id": "github-service",
+      "name": "GitHub service",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "model-provider-services",
+      "name": "Model provider services",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "context7-service",
+      "name": "Context7 service",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "vscode-client",
+      "name": "VS Code client",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    },
+    {
+      "id": "request-routing-policy",
+      "name": "Request routing policy",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "change-contract-gate",
+      "name": "Change-contract gate",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "delegated-agent-runtime",
+      "name": "Delegated agent runtime",
+      "kind": "worker",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "orchestration-closure",
+      "name": "Orchestration closure",
+      "kind": "service",
+      "level": 2,
+      "parentId": "orchestration-control-plane",
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "agent-definition-routing",
+      "name": "Agent definition routing",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "subagent-executor",
+      "name": "Subagent executor",
+      "kind": "worker",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "concurrency-governor",
+      "name": "Concurrency governor",
+      "kind": "service",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "subagent-concurrency"
+      ]
+    },
+    {
+      "id": "self-contained-handoff",
+      "name": "Self-contained handoff",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "delegated-agent-runtime",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "scout-workflow",
+      "name": "Scout workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "planner-workflow",
+      "name": "Planner workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-workflow",
+      "name": "Builder workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "testing-validation-workflow",
+      "name": "Testing and validation workflow",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "flow-issue-delivery",
+      "name": "Flow issue delivery",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-production-pipeline",
+      "name": "Website production pipeline",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    },
+    {
+      "id": "research-evaluation-workflows",
+      "name": "Research and evaluation workflows",
+      "kind": "library",
+      "level": 2,
+      "parentId": "workflow-skill-library",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "plan-artifact-ecosystem",
+      "name": "Plan artifact ecosystem",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "planner-workflow",
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "post-build-test-gate",
+      "name": "Post-build test gate",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "testing-validation-workflow",
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "flow-reentry-claim",
+      "name": "Flow re-entry and claim",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "flow-issue-delivery",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-stage-chain",
+      "name": "Website stage chain",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "website-production-pipeline",
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    },
+    {
+      "id": "prompt-finetune-audit-workflows",
+      "name": "Prompt, fine-tune, and audit workflows",
+      "kind": "domain",
+      "level": 3,
+      "parentId": "research-evaluation-workflows",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "pi-core-runtime",
+      "name": "PI core runtime",
+      "kind": "service",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "extension-suite",
+      "name": "Extension suite",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "runtime-configuration",
+      "name": "Runtime configuration",
+      "kind": "domain",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "subagent-package",
+      "name": "Subagent package",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "mcp-adapter",
+      "name": "MCP adapter",
+      "kind": "library",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "runtime-persistence",
+      "name": "Runtime persistence",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "runtime-extension-platform",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-history"
+      ]
+    },
+    {
+      "id": "project-memory-hook",
+      "name": "Project memory hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-extension"
+      ]
+    },
+    {
+      "id": "goal-mode-hook",
+      "name": "Goal mode hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-harness"
+      ]
+    },
+    {
+      "id": "communication-style-hook",
+      "name": "Communication style hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "tool-extension-suite",
+      "name": "Tool extension suite",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "user-input-notification-hooks",
+      "name": "User input and notification hooks",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "subagent-watchdog-hook",
+      "name": "Subagent watchdog hook",
+      "kind": "service",
+      "level": 3,
+      "parentId": "extension-suite",
+      "confidence": "known",
+      "evidenceIds": [
+        "watchdog-extension"
+      ]
+    },
+    {
+      "id": "markdown-memory-store",
+      "name": "Markdown memory store",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-map-store",
+      "name": "Architecture map store",
+      "kind": "datastore",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-validator",
+      "name": "Architecture validator",
+      "kind": "service",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "architecture-view-renderer",
+      "name": "Architecture view renderer",
+      "kind": "build",
+      "level": 2,
+      "parentId": "project-memory-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "semantic-zoom-viewer",
+      "name": "Semantic zoom viewer",
+      "kind": "client",
+      "level": 3,
+      "parentId": "architecture-view-renderer",
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "studio-server",
+      "name": "Studio server",
+      "kind": "service",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-routes"
+      ]
+    },
+    {
+      "id": "studio-web-client",
+      "name": "Studio web client",
+      "kind": "client",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-client"
+      ]
+    },
+    {
+      "id": "studio-rpc-session",
+      "name": "Studio RPC session",
+      "kind": "service",
+      "level": 2,
+      "parentId": "pi-studio-interface",
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "versioned-checkout",
+      "name": "Versioned checkout",
+      "kind": "build",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    },
+    {
+      "id": "platform-installers",
+      "name": "Platform installers",
+      "kind": "deploy",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "installed-global-runtime",
+      "name": "Installed global runtime",
+      "kind": "deploy",
+      "level": 2,
+      "parentId": "installation-distribution-system",
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-install"
+      ]
+    }
+  ],
+  "dataObjects": [
+    {
+      "id": "global-system-policy",
+      "name": "Global system policy",
+      "kind": "policy",
+      "ownerIds": [
+        "orchestration-control-plane"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "agent-definitions",
+      "name": "Agent definitions",
+      "kind": "configuration",
+      "ownerIds": [
+        "delegated-agent-runtime"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "skill-contracts",
+      "name": "Skill contracts",
+      "kind": "contracts",
+      "ownerIds": [
+        "workflow-skill-library"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "readme-surfaces"
+      ]
+    },
+    {
+      "id": "reconciled-change-contract",
+      "name": "Reconciled change contract",
+      "kind": "contract",
+      "ownerIds": [
+        "change-contract-gate"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "system-policy"
+      ]
+    },
+    {
+      "id": "scout-evidence-report",
+      "name": "Scout evidence report",
+      "kind": "report",
+      "ownerIds": [
+        "scout-workflow"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "agent-guide-contract"
+      ]
+    },
+    {
+      "id": "plan-ecosystem",
+      "name": "Plan ecosystem",
+      "kind": "artifacts",
+      "ownerIds": [
+        "plan-artifact-ecosystem"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "planner-contract"
+      ]
+    },
+    {
+      "id": "builder-task-checkpoint",
+      "name": "Builder task and checkpoint",
+      "kind": "checkpoint",
+      "ownerIds": [
+        "builder-workflow"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "builder-contract"
+      ]
+    },
+    {
+      "id": "validation-verdict",
+      "name": "Validation verdict",
+      "kind": "verdict",
+      "ownerIds": [
+        "post-build-test-gate"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "testing-contract"
+      ]
+    },
+    {
+      "id": "markdown-memory",
+      "name": "Markdown memory",
+      "kind": "documents",
+      "ownerIds": [
+        "markdown-memory-store"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "normalized-architecture-json",
+      "name": "Normalized architecture JSON",
+      "kind": "document",
+      "ownerIds": [
+        "architecture-map-store"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "generated-architecture-html",
+      "name": "Generated architecture HTML",
+      "kind": "document",
+      "ownerIds": [
+        "architecture-view-renderer"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "memory-skill"
+      ]
+    },
+    {
+      "id": "runtime-settings-model-catalog",
+      "name": "Runtime settings and model catalog",
+      "kind": "configuration",
+      "ownerIds": [
+        "runtime-configuration"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "runtime-settings"
+      ]
+    },
+    {
+      "id": "mcp-configuration",
+      "name": "MCP configuration",
+      "kind": "configuration",
+      "ownerIds": [
+        "mcp-adapter"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "mcp-context7"
+      ]
+    },
+    {
+      "id": "session-jsonl-history",
+      "name": "Session JSONL history",
+      "kind": "history",
+      "ownerIds": [
+        "runtime-persistence"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-history"
+      ]
+    },
+    {
+      "id": "rpc-command",
+      "name": "RPC command",
+      "kind": "message",
+      "ownerIds": [
+        "studio-rpc-session"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "rpc-event",
+      "name": "RPC event",
+      "kind": "event",
+      "ownerIds": [
+        "studio-rpc-session"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "studio-server-session"
+      ]
+    },
+    {
+      "id": "github-delivery-records",
+      "name": "GitHub issue and PR delivery records",
+      "kind": "record-type",
+      "ownerIds": [
+        "flow-issue-delivery"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
+      "id": "website-stage-artifacts",
+      "name": "Website stage artifacts",
+      "kind": "artifacts",
+      "ownerIds": [
+        "website-stage-chain"
+      ],
+      "confidence": "known",
+      "evidenceIds": [
+        "website-pipeline"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "engineer-uses-orchestrator",
+      "name": "Engineer uses PI",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "pi-orchestrator",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-harness"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "engineer-uses-studio",
+      "name": "Engineer uses Studio",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "studio-web-client",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "studio-readme"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "engineer-uses-vscode",
+      "name": "Engineer uses VS Code",
+      "kind": "uses",
+      "fromId": "engineer",
+      "toId": "vscode-client",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-vscode"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-uses-routing",
+      "name": "Orchestrator uses routing",
+      "kind": "uses",
+      "fromId": "pi-orchestrator",
+      "toId": "request-routing-policy",
+      "dataObjectIds": [
+        "global-system-policy"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-uses-contract-gate",
+      "name": "Orchestrator reconciles contract",
+      "kind": "uses",
+      "fromId": "pi-orchestrator",
+      "toId": "change-contract-gate",
+      "dataObjectIds": [
+        "reconciled-change-contract"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-scout-agent",
+      "name": "Orchestrator calls scout-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "scout-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "agent-guide-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-planner-agent",
+      "name": "Orchestrator calls planner-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "planner-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-calls-builder-agent",
+      "name": "Orchestrator calls builder-agent",
+      "kind": "calls",
+      "fromId": "pi-orchestrator",
+      "toId": "builder-agent",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "orchestrator-observes-validation",
+      "name": "Orchestrator observes verdict",
+      "kind": "observes",
+      "fromId": "pi-orchestrator",
+      "toId": "validation-verdict",
+      "dataObjectIds": [
+        "validation-verdict"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planner-reads-evidence",
+      "name": "Planner reads evidence",
+      "kind": "reads",
+      "fromId": "planner-workflow",
+      "toId": "scout-evidence-report",
+      "dataObjectIds": [
+        "scout-evidence-report"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planner-builds-artifacts",
+      "name": "Planner builds artifacts",
+      "kind": "builds",
+      "fromId": "planner-workflow",
+      "toId": "plan-ecosystem",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "builder-reads-task",
+      "name": "Builder reads bounded task",
+      "kind": "reads",
+      "fromId": "builder-workflow",
+      "toId": "plan-ecosystem",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "builder-writes-checkpoint",
+      "name": "Builder writes checkpoint",
+      "kind": "writes",
+      "fromId": "builder-workflow",
+      "toId": "builder-task-checkpoint",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "builder-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-observes-checkpoint",
+      "name": "Validator observes checkpoint",
+      "kind": "observes",
+      "fromId": "post-build-test-gate",
+      "toId": "builder-task-checkpoint",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-writes-verdict",
+      "name": "Validator writes verdict",
+      "kind": "writes",
+      "fromId": "post-build-test-gate",
+      "toId": "validation-verdict",
+      "dataObjectIds": [
+        "validation-verdict"
+      ],
+      "evidenceIds": [
+        "testing-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-uses-github",
+      "name": "Flow uses GitHub",
+      "kind": "uses",
+      "fromId": "flow-issue-delivery",
+      "toId": "github-service",
+      "dataObjectIds": [
+        "github-delivery-records"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-calls-planner",
+      "name": "Flow calls planner",
+      "kind": "calls",
+      "fromId": "flow-issue-delivery",
+      "toId": "planner-workflow",
+      "dataObjectIds": [
+        "plan-ecosystem"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-calls-builder",
+      "name": "Flow calls builder",
+      "kind": "calls",
+      "fromId": "flow-issue-delivery",
+      "toId": "builder-workflow",
+      "dataObjectIds": [
+        "builder-task-checkpoint"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "website-calls-stages",
+      "name": "Website pipeline calls stage chain",
+      "kind": "calls",
+      "fromId": "website-production-pipeline",
+      "toId": "website-stage-chain",
+      "dataObjectIds": [
+        "website-stage-artifacts"
+      ],
+      "evidenceIds": [
+        "website-pipeline"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-reads-markdown",
+      "name": "Memory hook reads Markdown",
+      "kind": "reads",
+      "fromId": "project-memory-hook",
+      "toId": "markdown-memory",
+      "dataObjectIds": [
+        "markdown-memory"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-reads-json",
+      "name": "Memory hook reads architecture",
+      "kind": "reads",
+      "fromId": "project-memory-hook",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-hook-augments-orchestrator",
+      "name": "Memory hook augments prompt",
+      "kind": "publishes",
+      "fromId": "project-memory-hook",
+      "toId": "pi-orchestrator",
+      "dataObjectIds": [
+        "markdown-memory",
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-extension"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "memory-workflow-writes-json",
+      "name": "Memory workflow writes JSON",
+      "kind": "writes",
+      "fromId": "project-memory-system",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "validator-observes-json",
+      "name": "Validator observes JSON",
+      "kind": "observes",
+      "fromId": "architecture-validator",
+      "toId": "normalized-architecture-json",
+      "dataObjectIds": [
+        "normalized-architecture-json"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "renderer-builds-html",
+      "name": "Renderer builds HTML",
+      "kind": "builds",
+      "fromId": "architecture-view-renderer",
+      "toId": "generated-architecture-html",
+      "dataObjectIds": [
+        "normalized-architecture-json",
+        "generated-architecture-html"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "studio-client-calls-server",
+      "name": "Browser calls server",
+      "kind": "calls",
+      "fromId": "studio-web-client",
+      "toId": "studio-server",
+      "dataObjectIds": [
+        "rpc-command"
+      ],
+      "evidenceIds": [
+        "studio-client"
+      ],
+      "confidence": "known",
+      "protocol": "HTTP"
+    },
+    {
+      "id": "studio-session-calls-core",
+      "name": "RPC session calls PI core",
+      "kind": "calls",
+      "fromId": "studio-rpc-session",
+      "toId": "pi-core-runtime",
+      "dataObjectIds": [
+        "rpc-command"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known",
+      "protocol": "JSONL stdio"
+    },
+    {
+      "id": "studio-server-publishes-events",
+      "name": "Server publishes events",
+      "kind": "publishes",
+      "fromId": "studio-server",
+      "toId": "studio-web-client",
+      "dataObjectIds": [
+        "rpc-event"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known",
+      "protocol": "SSE"
+    },
+    {
+      "id": "installer-deploys-runtime",
+      "name": "Installer deploys runtime",
+      "kind": "deploys",
+      "fromId": "platform-installers",
+      "toId": "installed-global-runtime",
+      "dataObjectIds": [
+        "runtime-settings-model-catalog",
+        "agent-definitions",
+        "skill-contracts"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "installer-reads-checkout",
+      "name": "Installer reads checkout",
+      "kind": "reads",
+      "fromId": "platform-installers",
+      "toId": "versioned-checkout",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-install"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-reads-config",
+      "name": "PI core reads runtime config",
+      "kind": "reads",
+      "fromId": "pi-core-runtime",
+      "toId": "runtime-configuration",
+      "dataObjectIds": [
+        "runtime-settings-model-catalog"
+      ],
+      "evidenceIds": [
+        "runtime-settings"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-calls-model-provider",
+      "name": "PI core calls models",
+      "kind": "calls",
+      "fromId": "pi-core-runtime",
+      "toId": "model-provider-services",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "runtime-settings"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-uses-subagents",
+      "name": "PI core uses subagents",
+      "kind": "uses",
+      "fromId": "pi-core-runtime",
+      "toId": "subagent-package",
+      "dataObjectIds": [
+        "agent-definitions"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "core-uses-mcp",
+      "name": "PI core uses MCP adapter",
+      "kind": "uses",
+      "fromId": "pi-core-runtime",
+      "toId": "mcp-adapter",
+      "dataObjectIds": [
+        "mcp-configuration"
+      ],
+      "evidenceIds": [
+        "unix-installer"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "mcp-uses-context7",
+      "name": "MCP adapter uses Context7",
+      "kind": "uses",
+      "fromId": "mcp-adapter",
+      "toId": "context7-service",
+      "dataObjectIds": [
+        "mcp-configuration"
+      ],
+      "evidenceIds": [
+        "mcp-context7"
+      ],
+      "confidence": "inferred"
+    },
+    {
+      "id": "vscode-calls-runtime",
+      "name": "VS Code calls PI runtime",
+      "kind": "calls",
+      "fromId": "vscode-client",
+      "toId": "pi-core-runtime",
+      "dataObjectIds": [],
+      "evidenceIds": [
+        "readme-vscode"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "runtime-writes-history",
+      "name": "Runtime writes session history",
+      "kind": "writes",
+      "fromId": "pi-core-runtime",
+      "toId": "session-jsonl-history",
+      "dataObjectIds": [
+        "session-jsonl-history"
+      ],
+      "evidenceIds": [
+        "studio-history"
+      ],
+      "confidence": "known"
+    }
+  ],
+  "flows": [
+    {
+      "id": "terminal-request-flow",
+      "name": "Terminal request to closure",
+      "type": "user",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "orchestration-control-plane"
+      ],
+      "steps": [
+        {
+          "id": "terminal-request-flow-step-1",
+          "order": 1,
+          "action": "Engineer starts PI",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [
+            "engineer-uses-orchestrator"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "terminal-request-flow-step-2",
+          "order": 2,
+          "action": "Request routes",
+          "componentIds": [
+            "request-routing-policy"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-routing"
+          ],
+          "dataObjectIds": [
+            "global-system-policy"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-3",
+          "order": 3,
+          "action": "Contract is reconciled",
+          "componentIds": [
+            "change-contract-gate"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-contract-gate"
+          ],
+          "dataObjectIds": [
+            "reconciled-change-contract"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-4",
+          "order": 4,
+          "action": "Bounded work executes",
+          "componentIds": [
+            "delegated-agent-runtime"
+          ],
+          "relationshipIds": [
+            "orchestrator-calls-builder-agent"
+          ],
+          "dataObjectIds": [
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "terminal-request-flow-step-5",
+          "order": 5,
+          "action": "Validation closes outcome",
+          "componentIds": [
+            "orchestration-closure"
+          ],
+          "relationshipIds": [
+            "orchestrator-observes-validation"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Validated result returned to engineer"
+      ],
+      "failureModes": [
+        "Unresolved contract or validation blocks closure"
+      ],
+      "evidenceIds": [
+        "system-policy"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "planned-delivery-flow",
+      "name": "Evidence-backed planned delivery",
+      "type": "build",
+      "actorIds": [
+        "pi-orchestrator",
+        "scout-agent",
+        "planner-agent",
+        "builder-agent",
+        "validator-agent"
+      ],
+      "entrypointIds": [
+        "scout-workflow"
+      ],
+      "steps": [
+        {
+          "id": "planned-delivery-flow-step-1",
+          "order": 1,
+          "action": "Scout gathers evidence",
+          "componentIds": [
+            "scout-workflow"
+          ],
+          "relationshipIds": [
+            "orchestrator-calls-scout-agent"
+          ],
+          "dataObjectIds": [
+            "scout-evidence-report"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-2",
+          "order": 2,
+          "action": "Orchestrator reconciles contract",
+          "componentIds": [
+            "change-contract-gate"
+          ],
+          "relationshipIds": [
+            "orchestrator-uses-contract-gate"
+          ],
+          "dataObjectIds": [
+            "reconciled-change-contract"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-3",
+          "order": 3,
+          "action": "Planner creates ecosystem",
+          "componentIds": [
+            "plan-artifact-ecosystem"
+          ],
+          "relationshipIds": [
+            "planner-reads-evidence",
+            "planner-builds-artifacts"
+          ],
+          "dataObjectIds": [
+            "scout-evidence-report",
+            "plan-ecosystem"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-4",
+          "order": 4,
+          "action": "Builder executes bounded task",
+          "componentIds": [
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "builder-reads-task",
+            "builder-writes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem",
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-5",
+          "order": 5,
+          "action": "Test gate reviews checkpoint",
+          "componentIds": [
+            "post-build-test-gate"
+          ],
+          "relationshipIds": [
+            "validator-observes-checkpoint",
+            "validator-writes-verdict"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        },
+        {
+          "id": "planned-delivery-flow-step-6",
+          "order": 6,
+          "action": "Orchestrator closes",
+          "componentIds": [
+            "orchestration-closure"
+          ],
+          "relationshipIds": [
+            "orchestrator-observes-validation"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Checkpoint and verdict support closure"
+      ],
+      "failureModes": [
+        "Missing evidence, contract conflict, or failing verdict pauses delivery"
+      ],
+      "evidenceIds": [
+        "planner-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "project-memory-update-flow",
+      "name": "Project memory update",
+      "type": "data",
+      "actorIds": [
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "project-memory-system"
+      ],
+      "steps": [
+        {
+          "id": "project-memory-update-flow-step-1",
+          "order": 1,
+          "action": "Read repository evidence",
+          "componentIds": [
+            "project-memory-system"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "markdown-memory"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-2",
+          "order": 2,
+          "action": "Update narrative and JSON",
+          "componentIds": [
+            "markdown-memory-store",
+            "architecture-map-store"
+          ],
+          "relationshipIds": [
+            "memory-workflow-writes-json"
+          ],
+          "dataObjectIds": [
+            "markdown-memory",
+            "normalized-architecture-json"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-3",
+          "order": 3,
+          "action": "Validate JSON",
+          "componentIds": [
+            "architecture-validator"
+          ],
+          "relationshipIds": [
+            "validator-observes-json"
+          ],
+          "dataObjectIds": [
+            "normalized-architecture-json"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-4",
+          "order": 4,
+          "action": "Render HTML",
+          "componentIds": [
+            "architecture-view-renderer"
+          ],
+          "relationshipIds": [
+            "renderer-builds-html"
+          ],
+          "dataObjectIds": [
+            "generated-architecture-html"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-5",
+          "order": 5,
+          "action": "Update summary",
+          "componentIds": [
+            "markdown-memory-store"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "markdown-memory"
+          ]
+        },
+        {
+          "id": "project-memory-update-flow-step-6",
+          "order": 6,
+          "action": "Inject index next session",
+          "componentIds": [
+            "project-memory-hook"
+          ],
+          "relationshipIds": [
+            "memory-hook-reads-markdown",
+            "memory-hook-reads-json",
+            "memory-hook-augments-orchestrator"
+          ],
+          "dataObjectIds": [
+            "markdown-memory",
+            "normalized-architecture-json"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Validated JSON, derived HTML, and next-session index"
+      ],
+      "failureModes": [
+        "Invalid JSON blocks rendering and summary checkpoint"
+      ],
+      "evidenceIds": [
+        "memory-skill"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "install-update-flow",
+      "name": "Install or update harness",
+      "type": "deploy",
+      "actorIds": [
+        "engineer"
+      ],
+      "entrypointIds": [
+        "versioned-checkout"
+      ],
+      "steps": [
+        {
+          "id": "install-update-flow-step-1",
+          "order": 1,
+          "action": "Checkout provides versioned assets",
+          "componentIds": [
+            "versioned-checkout"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        },
+        {
+          "id": "install-update-flow-step-2",
+          "order": 2,
+          "action": "Installer checks platform and copies assets",
+          "componentIds": [
+            "platform-installers"
+          ],
+          "relationshipIds": [
+            "installer-reads-checkout"
+          ],
+          "dataObjectIds": [
+            "runtime-settings-model-catalog",
+            "agent-definitions",
+            "skill-contracts"
+          ]
+        },
+        {
+          "id": "install-update-flow-step-3",
+          "order": 3,
+          "action": "Installer deploys global runtime",
+          "componentIds": [
+            "installed-global-runtime"
+          ],
+          "relationshipIds": [
+            "installer-deploys-runtime"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "install-update-flow-step-4",
+          "order": 4,
+          "action": "Fresh terminal or reload activates assets",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        }
+      ],
+      "outcomes": [
+        "Installed runtime reflects checkout"
+      ],
+      "failureModes": [
+        "Version mismatch, missing Node, or package install failure stops update"
+      ],
+      "evidenceIds": [
+        "readme-install"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "studio-rpc-interface-flow",
+      "name": "PI Studio RPC interface",
+      "type": "user",
+      "actorIds": [
+        "engineer"
+      ],
+      "entrypointIds": [
+        "studio-web-client"
+      ],
+      "steps": [
+        {
+          "id": "studio-rpc-interface-flow-step-1",
+          "order": 1,
+          "action": "Browser bootstraps projects",
+          "componentIds": [
+            "studio-web-client",
+            "studio-server"
+          ],
+          "relationshipIds": [
+            "studio-client-calls-server"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-2",
+          "order": 2,
+          "action": "Engineer selects project",
+          "componentIds": [
+            "studio-web-client"
+          ],
+          "relationshipIds": [
+            "engineer-uses-studio"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-3",
+          "order": 3,
+          "action": "Server spawns pi --mode rpc",
+          "componentIds": [
+            "studio-server",
+            "studio-rpc-session"
+          ],
+          "relationshipIds": [
+            "studio-session-calls-core"
+          ],
+          "dataObjectIds": []
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-4",
+          "order": 4,
+          "action": "Command writes to stdin",
+          "componentIds": [
+            "studio-rpc-session"
+          ],
+          "relationshipIds": [
+            "studio-session-calls-core"
+          ],
+          "dataObjectIds": [
+            "rpc-command"
+          ]
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-5",
+          "order": 5,
+          "action": "Server emits SSE event",
+          "componentIds": [
+            "studio-server"
+          ],
+          "relationshipIds": [
+            "studio-server-publishes-events"
+          ],
+          "dataObjectIds": [
+            "rpc-event"
+          ]
+        },
+        {
+          "id": "studio-rpc-interface-flow-step-6",
+          "order": 6,
+          "action": "Browser updates UI",
+          "componentIds": [
+            "studio-web-client"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "rpc-event"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Interactive project-scoped PI session"
+      ],
+      "failureModes": [
+        "Spawn, malformed RPC, or connection failure surfaces as process/error events"
+      ],
+      "evidenceIds": [
+        "studio-server-session"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-issue-delivery-flow",
+      "name": "GitHub issue delivery policy",
+      "type": "build",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator",
+        "github-platform"
+      ],
+      "entrypointIds": [
+        "flow-issue-delivery"
+      ],
+      "steps": [
+        {
+          "id": "flow-issue-delivery-flow-step-1",
+          "order": 1,
+          "action": "Re-enter from GitHub authority",
+          "componentIds": [
+            "flow-reentry-claim"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-2",
+          "order": 2,
+          "action": "Use approved issue and DAG",
+          "componentIds": [
+            "flow-issue-delivery"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-3",
+          "order": 3,
+          "action": "Claim exclusive branch and worktree",
+          "componentIds": [
+            "flow-reentry-claim"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-4",
+          "order": 4,
+          "action": "Plan and build",
+          "componentIds": [
+            "planner-workflow",
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "flow-calls-planner",
+            "flow-calls-builder"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem",
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-5",
+          "order": 5,
+          "action": "Review delivery",
+          "componentIds": [
+            "testing-validation-workflow"
+          ],
+          "relationshipIds": [
+            "validator-observes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        },
+        {
+          "id": "flow-issue-delivery-flow-step-6",
+          "order": 6,
+          "action": "Merge and close status",
+          "componentIds": [
+            "flow-issue-delivery"
+          ],
+          "relationshipIds": [
+            "flow-uses-github"
+          ],
+          "dataObjectIds": [
+            "github-delivery-records"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Policy-compliant merged delivery and coherent GitHub status"
+      ],
+      "failureModes": [
+        "No approval, ambiguous claim, hazard, or failed review blocks progress"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "website-production-flow",
+      "name": "Website production pipeline",
+      "type": "build",
+      "actorIds": [
+        "engineer",
+        "pi-orchestrator"
+      ],
+      "entrypointIds": [
+        "website-production-pipeline"
+      ],
+      "steps": [
+        {
+          "id": "website-production-flow-step-1",
+          "order": 1,
+          "action": "Capture strategy",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-2",
+          "order": 2,
+          "action": "Design baseline",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-3",
+          "order": 3,
+          "action": "Optionally add explicit creative direction",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-4",
+          "order": 4,
+          "action": "Write content",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-5",
+          "order": 5,
+          "action": "Plan implementation",
+          "componentIds": [
+            "planner-workflow"
+          ],
+          "relationshipIds": [
+            "planner-builds-artifacts"
+          ],
+          "dataObjectIds": [
+            "plan-ecosystem"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-6",
+          "order": 6,
+          "action": "Build website",
+          "componentIds": [
+            "builder-workflow"
+          ],
+          "relationshipIds": [
+            "builder-writes-checkpoint"
+          ],
+          "dataObjectIds": [
+            "builder-task-checkpoint"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-7",
+          "order": 7,
+          "action": "Polish result",
+          "componentIds": [
+            "website-stage-chain"
+          ],
+          "relationshipIds": [
+            "website-calls-stages"
+          ],
+          "dataObjectIds": [
+            "website-stage-artifacts"
+          ]
+        },
+        {
+          "id": "website-production-flow-step-8",
+          "order": 8,
+          "action": "Validate quality",
+          "componentIds": [
+            "testing-validation-workflow"
+          ],
+          "relationshipIds": [
+            "validator-writes-verdict"
+          ],
+          "dataObjectIds": [
+            "validation-verdict"
+          ]
+        }
+      ],
+      "outcomes": [
+        "Accessible, responsive, evidence-backed website delivery"
+      ],
+      "failureModes": [
+        "Missing assets, unsupported claims, design conflict, or failed validation blocks closure"
+      ],
+      "evidenceIds": [
+        "website-pipeline"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "mcp-tool-flow",
+      "name": "Lazy MCP tool call",
+      "type": "runtime",
+      "actorIds": [
+        "pi-orchestrator",
+        "context7-mcp"
+      ],
+      "entrypointIds": [
+        "runtime-configuration"
+      ],
+      "steps": [
+        {
+          "id": "mcp-tool-flow-step-1",
+          "order": 1,
+          "action": "Runtime reads MCP configuration",
+          "componentIds": [
+            "runtime-configuration"
+          ],
+          "relationshipIds": [
+            "core-reads-config"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-2",
+          "order": 2,
+          "action": "PI core invokes adapter",
+          "componentIds": [
+            "pi-core-runtime",
+            "mcp-adapter"
+          ],
+          "relationshipIds": [
+            "core-uses-mcp"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-3",
+          "order": 3,
+          "action": "Adapter lazily starts Context7 process",
+          "componentIds": [
+            "mcp-adapter",
+            "context7-service"
+          ],
+          "relationshipIds": [
+            "mcp-uses-context7"
+          ],
+          "dataObjectIds": [
+            "mcp-configuration"
+          ]
+        },
+        {
+          "id": "mcp-tool-flow-step-4",
+          "order": 4,
+          "action": "Tool result returns to orchestrator",
+          "componentIds": [
+            "pi-core-runtime"
+          ],
+          "relationshipIds": [],
+          "dataObjectIds": []
+        }
+      ],
+      "outcomes": [
+        "Context7 tool result returned through adapter"
+      ],
+      "failureModes": [
+        "Package internals and process behavior are inferred outside this repository"
+      ],
+      "evidenceIds": [
+        "mcp-context7"
+      ],
+      "confidence": "inferred"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "system-policy",
+      "path": "SYSTEM.md",
+      "startLine": 1,
+      "endLine": 115,
+      "claim": "Global policy assigns outcome ownership, evidence-first routing, bounded delegation, validation, memory, and safety to the PI orchestrator.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-harness",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 28,
+      "claim": "README describes Evolvera PI as a shared terminal and VS Code harness whose principal PI remains responsible for the result.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-surfaces",
+      "path": "README.md",
+      "startLine": 140,
+      "endLine": 213,
+      "claim": "README defines system prompt, agents, skills, extensions, runtime settings, subagents, MCP, project artifacts, and routing responsibilities.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-vscode",
+      "path": "README.md",
+      "startLine": 100,
+      "endLine": 139,
+      "claim": "README documents VS Code entry commands and the external bridge capabilities.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-install",
+      "path": "README.md",
+      "startLine": 48,
+      "endLine": 99,
+      "claim": "README documents versioned checkout deployment into the global runtime and preservation/overwrite behavior.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "readme-update",
+      "path": "README.md",
+      "startLine": 271,
+      "endLine": 322,
+      "claim": "README documents update, reload, and rollback from versioned checkouts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "unix-installer",
+      "path": "install.sh",
+      "startLine": 13,
+      "endLine": 109,
+      "claim": "Unix installer validates Node, installs PI, copies configuration/agents/skills/extensions/themes, preserves existing MCP config, and installs PI packages.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "windows-installer",
+      "path": "install.ps1",
+      "startLine": 8,
+      "endLine": 160,
+      "claim": "Windows installer performs the platform-equivalent runtime deployment and package installation.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "runtime-settings",
+      "path": "config/settings.json",
+      "startLine": 1,
+      "endLine": 15,
+      "claim": "Runtime settings select provider/model/thinking/theme and declare installed packages.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "subagent-concurrency",
+      "path": "subagents.json",
+      "startLine": 1,
+      "endLine": 3,
+      "claim": "Subagent package concurrency is configured with maxConcurrent 8.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "mcp-context7",
+      "path": "config/mcp.json",
+      "startLine": 1,
+      "endLine": 12,
+      "claim": "MCP configuration declares a lazy Context7 server launched through npx.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "memory-extension",
+      "path": "extensions/project-memory.ts",
+      "startLine": 1,
+      "endLine": 186,
+      "claim": "Project-memory extension reads Markdown summary and normalized architecture JSON, compares Git HEAD, and injects a compact index before agent start.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "watchdog-extension",
+      "path": "extensions/subagent-watchdog.ts",
+      "startLine": 1,
+      "endLine": 165,
+      "claim": "Subagent watchdog adds lifecycle guards, notifications, stop RPC, and resume policy for planner-heavy.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "agent-guide-contract",
+      "path": "skills/agent-guide/SKILL.md",
+      "startLine": 1,
+      "endLine": 259,
+      "claim": "Agent guide defines delegation tiers, reconciled change-contract gate, self-contained handoffs, and scout/planner/builder roles.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "planner-contract",
+      "path": "skills/planner/SKILL.md",
+      "startLine": 1,
+      "endLine": 203,
+      "claim": "Planner workflow defines evidence intake, reconciled contracts, normalized plan artifacts, scheduling, and execution gates.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "builder-contract",
+      "path": "skills/builder/SKILL.md",
+      "startLine": 1,
+      "endLine": 291,
+      "claim": "Builder workflow defines bounded target ownership, tier routing, checkpoint expectations, validation, and stop rules.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "testing-contract",
+      "path": "skills/testing/SKILL.md",
+      "startLine": 1,
+      "endLine": 179,
+      "claim": "Testing workflow defines SHA-bound post-build evidence, stateful-resource gates, and PASS/BLOCKED/UNVERIFIED verdicts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "flow-contract",
+      "path": "skills/flow/SKILL.md",
+      "startLine": 1,
+      "endLine": 180,
+      "claim": "Flow defines GitHub-first re-entry, approval gates, issue/DAG delivery, exclusive claims, branch/worktree isolation, review, and closure policy.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "flow-artifacts",
+      "path": "skills/flow/SKILL.md",
+      "startLine": 520,
+      "endLine": 600,
+      "claim": "Flow defines durable Project plan, schedule, DAG, and index artifacts while excluding dynamic delivery state from memory.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "website-pipeline",
+      "path": "skills/website-pipeline/SKILL.md",
+      "startLine": 1,
+      "endLine": 45,
+      "claim": "Website pipeline orders strategy, design, optional creativity, content, planning, building, polishing, and validation.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "memory-skill",
+      "path": "skills/project-memory/SKILL.md",
+      "startLine": 1,
+      "endLine": 130,
+      "claim": "Project-memory skill defines Markdown narrative, normalized JSON, derived HTML, initial scan, validation, rendering, and summary injection.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-readme",
+      "path": "interface/README.md",
+      "startLine": 1,
+      "endLine": 65,
+      "claim": "PI Studio is a local workspace web interface with per-project sessions, JSONL history, streaming RPC, Docker option, and fake-RPC smoke testing.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-server-session",
+      "path": "interface/server.mjs",
+      "startLine": 235,
+      "endLine": 393,
+      "claim": "PI Studio server spawns pi --mode rpc, writes JSON commands to stdin, parses stdout, and broadcasts RPC events over SSE.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-server-routes",
+      "path": "interface/server.mjs",
+      "startLine": 512,
+      "endLine": 689,
+      "claim": "PI Studio server exposes bootstrap, project open, events, command, history, and session routes.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-client",
+      "path": "interface/public/app.js",
+      "startLine": 218,
+      "endLine": 342,
+      "claim": "Studio browser bootstraps projects, opens a project, subscribes to SSE, sends RPC commands, and submits prompts.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "studio-history",
+      "path": "interface/server.mjs",
+      "startLine": 410,
+      "endLine": 489,
+      "claim": "Studio reads per-project JSONL session history from the global agent sessions directory.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    },
+    {
+      "id": "interface-docker-pin",
+      "path": "interface/Dockerfile",
+      "startLine": 1,
+      "endLine": 16,
+      "claim": "PI Studio container installs @earendil-works/pi-coding-agent version 0.80.3.",
+      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "interface-dockerfile-version-drift",
+      "title": "PI Studio Docker version drift",
+      "status": "open",
+      "impact": "Container baseline can differ from README and installers.",
+      "question": "Should interface/Dockerfile move from PI 0.80.3 to the documented 0.80.10 baseline?",
+      "evidenceIds": [
+        "interface-docker-pin",
+        "readme-install"
+      ]
+    },
+    {
+      "id": "mcp-adapter-internals",
+      "title": "MCP adapter internals are external",
+      "status": "accepted",
+      "impact": "The map can evidence configuration and package use, but not adapter implementation details.",
+      "question": "Which exact lifecycle and transport semantics does the external pi-mcp-adapter package implement?",
+      "evidenceIds": [
+        "mcp-context7",
+        "unix-installer"
+      ]
+    },
+    {
+      "id": "vscode-bridge-source-external",
+      "title": "VS Code bridge source is external",
+      "status": "accepted",
+      "impact": "Only documented entry points and bridge capabilities are represented.",
+      "question": "How does the external VS Code extension implement its bridge to the PI runtime?",
+      "evidenceIds": [
+        "readme-vscode"
+      ]
+    },
+    {
+      "id": "live-delivery-state-excluded",
+      "title": "Live delivery state is intentionally excluded",
+      "status": "accepted",
+      "impact": "Architecture memory describes record types and policy, not current boards, claims, issues, or PR status.",
+      "question": "Current delivery state must be read from GitHub during Flow re-entry, not this snapshot.",
+      "evidenceIds": [
+        "flow-contract",
+        "flow-artifacts"
+      ]
+    }
+  ]
+}</script>
+  <script>
+  (() => {
+    'use strict';
+    const data = JSON.parse(document.getElementById('architecture-data').textContent);
+    const $ = id => document.getElementById(id);
+    const SVG = 'http://www.w3.org/2000/svg';
+    const tabs = ['Overview','Architecture','User Flows','Data Flows','Runtime','Delivery','Evidence & Gaps'];
+    const lodNames = ['LANDSCAPE','SYSTEMS','MODULES','INTERNALS'];
+    const state = { tab:'Overview', selected:null, selectedType:null, focusId:null, scale:.78, x:30, y:110, dragging:false, moved:false };
+    const SEMANTIC_DRILL_THRESHOLD=1.72, SEMANTIC_EXIT_THRESHOLD=.46, DRILL_COOLDOWN_MS=650;
+    const entity = new Map([...data.actors,...data.components,...data.dataObjects].map(x=>[x.id,x]));
+    const component = new Map(data.components.map(x=>[x.id,x]));
+    const relationship = new Map(data.relationships.map(x=>[x.id,x]));
+    const evidence = new Map(data.evidence.map(x=>[x.id,x]));
+    const flowMap = new Map(data.flows.map(x=>[x.id,x]));
+    const allRecords = [...data.actors,...data.components,...data.dataObjects,...data.relationships,...data.flows,...data.evidence,...data.gaps];
+    let positions = new Map(), graphBounds = {w:800,h:500}, pointer = null, zoomFrame=0, pendingWheel=null, lastSemanticChange=0;
+
+    function el(tag, cls, text){ const node=document.createElement(tag); if(cls)node.className=cls; if(text!==undefined)node.textContent=String(text); return node; }
+    function svg(tag, attrs={}){ const node=document.createElementNS(SVG,tag); for(const [k,v] of Object.entries(attrs))node.setAttribute(k,String(v)); return node; }
+    function appendText(parent, text, cls, attrs={}){ const node=svg('text',{...attrs,class:cls||''}); node.textContent=text; parent.appendChild(node); return node; }
+    function clear(node){ while(node.firstChild)node.removeChild(node.firstChild); }
+    function confidenceClass(value){ return ['known','inferred','unknown'].includes(value)?value:'unknown'; }
+    function currentLod(){ const base=state.focusId?(component.get(state.focusId)?.level||0)+1:0;const local=state.scale<1.05?0:state.scale<1.45?1:2;return Math.min(3,base+local); }
+    function childrenOf(id){return data.components.filter(x=>x.parentId===id)}
+    function isWithinFocus(id){if(!state.focusId)return true;if(id===state.focusId)return false;return ancestors(id).includes(state.focusId)}
+    function parentContextFor(id){const item=component.get(id);return item?.parentId||null}
+    function renderContext(){const chain=[];let item=state.focusId&&component.get(state.focusId);while(item){chain.unshift(item);item=item.parentId&&component.get(item.parentId)}const crumbs=$('breadcrumbs');clear(crumbs);const root=el('button','breadcrumb','All architecture');root.type='button';root.addEventListener('click',()=>setContext(null));crumbs.appendChild(root);for(const part of chain){crumbs.appendChild(document.createTextNode('›'));const b=el('button','breadcrumb',part.name);b.type='button';b.setAttribute('aria-current',part.id===state.focusId?'page':'false');b.addEventListener('click',()=>setContext(part.id));crumbs.appendChild(b)}const active=state.focusId&&component.get(state.focusId);$('context-title').textContent=active?.name||'All architecture';$('context-copy').textContent=active?`Current subsystem · ${childrenOf(active.id).length} contained surfaces · showing ${currentLod()>=3?'internals':currentLod()===2?'modules':'systems'}`:'Whole system · showing the landscape';$('context-up').hidden=!active;$('context-hint').hidden=Boolean(active)}
+    function animateViewport(){const stage=$('context-bar').closest('.stage');stage.classList.add('animating');setTimeout(()=>stage.classList.remove('animating'),280)}
+    function setContext(id){animateViewport();state.focusId=id;state.scale=id?1:.78;state.x=30;state.y=110;lastSemanticChange=performance.now();renderAll();fitGraph()}
+    function drillInto(id){if(!component.has(id)||!childrenOf(id).length)return;state.selected=id;state.selectedType='entity';setContext(id)}
+    function upContext(){if(!state.focusId)return;setContext(component.get(state.focusId)?.parentId||null)}
+    function flowTypes(){ return state.tab==='User Flows'?['user']:state.tab==='Data Flows'?['data']:state.tab==='Runtime'?['runtime','failure']:state.tab==='Delivery'?['build','deploy']:null; }
+    function activeFlows(){ const types=flowTypes(); return data.flows.filter(f=>!types||types.includes(f.type)); }
+    function ancestors(id){ const ids=[]; let item=component.get(id); while(item&&item.parentId){ ids.push(item.parentId); item=component.get(item.parentId); } return ids; }
+    function selectedFlow(){ return state.selectedType==='flow'?flowMap.get(state.selected):null; }
+    function flowEntityIds(flow){ const ids=new Set([...(flow?.actorIds||[]),...(flow?.entrypointIds||[])]); for(const step of flow?.steps||[])for(const id of step.componentIds||[])ids.add(id); for(const step of flow?.steps||[])for(const id of step.dataObjectIds||[])ids.add(id); return ids; }
+    function selectedPath(){ const ids=flowEntityIds(selectedFlow()); if(state.selectedType==='entity'&&state.selected)ids.add(state.selected); for(const id of [...ids])for(const parent of ancestors(id))ids.add(parent); return ids; }
+    function nearestVisible(id, visible, lod, overflowIds, overflowId){ if(visible.has(id))return id;if(overflowIds.has(id))return overflowId;let item=component.get(id);while(item?.parentId){if(visible.has(item.parentId))return item.parentId;if(overflowIds.has(item.parentId))return overflowId;item=component.get(item.parentId)}if(lod===3&&entity.has(id))return id;return null; }
+
+    function renderHeader(){
+      $('project-name').textContent=data.project.name;
+      document.title=`${data.project.name} — Architecture memory`;
+      const meta=$('snapshot-meta'); clear(meta);
+      const items=[['HEAD',data.snapshot.sourceHead==='UNKNOWN'?'UNKNOWN':data.snapshot.sourceHead.slice(0,8)],['VERIFIED',data.snapshot.lastVerifiedAt]];
+      for(const [label,value] of items){ const span=el('span'); const code=el('code','',`${label} · `); span.append(code,document.createTextNode(value)); meta.appendChild(span); }
+      const conf=el('span',`confidence ${confidenceClass(data.snapshot.confidence)}`,data.snapshot.confidence); meta.appendChild(conf);
+      const counts=$('counts'); clear(counts); for(const [label,value] of [['components',data.components.length],['links',data.relationships.length],['flows',data.flows.length],['evidence',data.evidence.length]]){const box=el('div','count');box.append(el('b','',value),el('span','',label));counts.appendChild(box)}
+    }
+    function renderTabs(){ const host=$('tabs');clear(host);for(const name of tabs){const b=el('button','tab',name);b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(state.tab===name));b.addEventListener('click',()=>{state.tab=name;state.selected=null;state.selectedType=null;renderAll()});host.appendChild(b)} }
+    function renderFlows(){
+      const host=$('flow-list'), flows=activeFlows();clear(host);$('rail-title').textContent=state.tab==='Evidence & Gaps'?'Evidence index':'Flows';
+      $('rail-summary').textContent=state.tab==='Evidence & Gaps'?`${data.evidence.length} facts · ${data.gaps.filter(g=>g.status==='open').length} open gaps`:`${flows.length} in this view`;
+      if(state.tab==='Evidence & Gaps'){
+        if(!data.evidence.length&&!data.gaps.length)host.appendChild(emptyState('No evidence or gaps','Add repository-backed evidence or an explicit question.'));
+        for(const item of [...data.evidence,...data.gaps]){const b=el('button','flow-card');b.type='button';b.append(el('strong','',item.claim||item.title),el('span','',item.path||item.status));b.addEventListener('click',()=>select(item.id,item.claim?'evidence':'gap'));host.appendChild(b)}
+        return;
+      }
+      if(!flows.length){host.appendChild(emptyState('No flows in this view','The source map can remain sparse until evidence is available.'));return}
+      for(const flow of flows){const b=el('button',`flow-card${state.selected===flow.id?' active':''}`);b.type='button';b.append(el('strong','',flow.name));const row=el('span');row.append(el('i','',flow.type),el('i','',`${flow.steps.length} steps`));b.appendChild(row);b.addEventListener('click',()=>select(flow.id,'flow'));host.appendChild(b)}
+    }
+    function emptyState(title,copy){const box=el('div','empty');box.append(el('strong','',title),document.createTextNode(copy));return box}
+
+    function visibleGraph(){
+      const lod=currentLod(), path=selectedPath(), max=innerWidth<720?70:180, candidates=[];
+      for(const actor of data.actors)if(!state.focusId||path.has(actor.id))candidates.push({...actor,_type:'actor',level:0});
+      for(const item of data.components)if(isWithinFocus(item.id)&&(item.level<=lod||path.has(item.id)))candidates.push({...item,_type:'component'});
+      if(lod===3)for(const item of data.dataObjects)if(!state.focusId||(item.ownerIds||[]).some(isWithinFocus)||path.has(item.id))candidates.push({...item,_type:'data',level:3}); else for(const item of data.dataObjects)if(path.has(item.id))candidates.push({...item,_type:'data',level:3});
+      candidates.sort((a,b)=>(a.level??0)-(b.level??0)||a.id.localeCompare(b.id));
+      const priority=candidates.filter(x=>path.has(x.id)),ordinary=candidates.filter(x=>!path.has(x.id));
+      let keep,overflowIds=new Set(),overflowId=null,overflowCount=0;
+      if(priority.length>max){overflowId='__selected_path_overflow__';const retained=priority.slice(0,Math.max(1,max-1));overflowIds=new Set(priority.slice(retained.length).map(x=>x.id));overflowCount=overflowIds.size;keep=[...retained,{id:overflowId,name:`${overflowCount} selected path nodes`,kind:'aggregate',level:lod,confidence:'unknown',evidenceIds:[],_type:'aggregate'}]}else keep=[...priority,...ordinary.slice(0,Math.max(0,max-priority.length))];
+      const visible=new Set(keep.map(x=>x.id));
+      const edges=[], grouped=new Map(); let hiddenEdges=0;
+      for(const rel of data.relationships){const from=nearestVisible(rel.fromId,visible,lod,overflowIds,overflowId),to=nearestVisible(rel.toId,visible,lod,overflowIds,overflowId);if(!from||!to||from===to){hiddenEdges++;continue}const key=`${from}|${to}`;if(grouped.has(key)){grouped.get(key).count++;grouped.get(key).ids.push(rel.id)}else grouped.set(key,{...rel,fromId:from,toId:to,count:1,ids:[rel.id]})}
+      edges.push(...[...grouped.values()].sort((a,b)=>a.id.localeCompare(b.id)));
+      return {nodes:keep,edges,lod,hiddenNodes:Math.max(0,candidates.length-keep.length)+data.components.filter(x=>isWithinFocus(x.id)&&x.level>lod&&!path.has(x.id)).length+(lod<3?data.dataObjects.filter(x=>!path.has(x.id)).length:0),hiddenEdges,path,overflowCount};
+    }
+    function layoutGraph(nodes){
+      const byParent=new Map(), nodeMap=new Map(nodes.map(n=>[n.id,n]));
+      for(const node of nodes){const parent=node._type==='component'&&node.parentId&&nodeMap.has(node.parentId)?node.parentId:'__root__';if(!byParent.has(parent))byParent.set(parent,[]);byParent.get(parent).push(node)}
+      for(const list of byParent.values())list.sort((a,b)=>a.id.localeCompare(b.id));
+      let row=0;positions=new Map();
+      function walk(node,depth){const children=byParent.get(node.id)||[];if(!children.length){positions.set(node.id,{x:60+depth*245,y:42+row++*92});return}const start=row;for(const child of children)walk(child,depth+1);const ys=children.map(x=>positions.get(x.id).y);positions.set(node.id,{x:60+depth*245,y:(Math.min(...ys)+Math.max(...ys))/2});if(row===start)row++}
+      const roots=byParent.get('__root__')||[];for(const root of roots)walk(root,state.focusId?0:(root._type==='data'?3:root.level||0));
+      graphBounds={w:Math.max(780,...[...positions.values()].map(p=>p.x+225)),h:Math.max(470,42+Math.max(row,1)*92)};
+    }
+    function edgePath(a,b){const x1=a.x+190,y1=a.y+29,x2=b.x,y2=b.y+29,m=x1+(x2-x1)/2;return `M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`}
+    function renderGraph(){
+      const model=visibleGraph();layoutGraph(model.nodes);const edgeHost=$('edges'),nodeHost=$('nodes');clear(edgeHost);clear(nodeHost);
+      const flow=selectedFlow(), activeRel=new Set((flow?.steps||[]).flatMap(s=>s.relationshipIds||[])), activeEntities=flowEntityIds(flow);
+      for(const edge of model.edges){const a=positions.get(edge.fromId),b=positions.get(edge.toId);if(!a||!b)continue;const isActive=edge.ids.some(id=>activeRel.has(id))||Boolean(flow&&activeEntities.has(edge.fromId)&&activeEntities.has(edge.toId));const dim=Boolean(flow&&!isActive);const path=svg('path',{d:edgePath(a,b),class:`edge${isActive?' active':''}${dim?' dim':''}`,'marker-end':'url(#arrow)','data-id':edge.id});const title=svg('title');title.textContent=`${edge.name}${edge.count>1?` · ${edge.count} aggregated relationships`:''}`;path.appendChild(title);edgeHost.appendChild(path)}
+      for(const node of model.nodes){const p=positions.get(node.id),isActive=!flow||activeEntities.has(node.id)||model.path.has(node.id),g=svg('g',{class:`node ${node._type}${node.kind==='external'?' external':''}${state.selected===node.id?' selected':''}${!isActive?' dim':''}`,transform:`translate(${p.x} ${p.y})`,tabindex:'0',role:'button','aria-label':`${node.name}, ${node.kind}`,'data-id':node.id});g.appendChild(svg('rect',{width:190,height:58,rx:9}));appendText(g,(node.name||node.id).slice(0,26),'',{x:13,y:24});appendText(g,`${node._type} · ${node.kind}`.toUpperCase(),'meta',{x:13,y:43});const childCount=childrenOf(node.id).length;if(childCount){g.setAttribute('aria-label',`${node.name}, ${node.kind}, ${childCount} children; double-click or Enter to enter`);g.appendChild(svg('rect',{x:132,y:9,width:48,height:16,rx:8,class:'badge-bg'}));appendText(g,`OPEN ${childCount}`,'badge-text',{x:138,y:20})}g.addEventListener('click',()=>select(node.id,'entity'));g.addEventListener('dblclick',()=>drillInto(node.id));g.addEventListener('keydown',e=>{if(e.key==='Enter'&&childCount){e.preventDefault();drillInto(node.id)}else if(e.key===' '){e.preventDefault();select(node.id,'entity')}});nodeHost.appendChild(g)}
+      $('notice').textContent=model.hiddenNodes||model.hiddenEdges||model.overflowCount?`${model.hiddenNodes} items and ${model.hiddenEdges} relationships are grouped while showing ${lodNames[model.lod].toLowerCase()}.${model.overflowCount?` ${model.overflowCount} selected path items are represented by one aggregate; every ordered step remains in the Inspector.`:''} Zoom in or enter a subsystem for more detail.`:'';
+      $('lod').textContent=state.focusId?`Inside · ${lodNames[model.lod].toLowerCase()}`:'Overview';renderContext();applyTransform();renderMinimap(model);renderTree(model.nodes);
+    }
+    function applyTransform(){ $('viewport').setAttribute('transform',`translate(${state.x} ${state.y}) scale(${state.scale})`) }
+    function renderMinimap(model){const host=$('minimap');clear(host);host.setAttribute('viewBox',`0 0 ${graphBounds.w} ${graphBounds.h}`);for(const edge of model.edges){const a=positions.get(edge.fromId),b=positions.get(edge.toId);if(a&&b)host.appendChild(svg('line',{x1:a.x+190,y1:a.y+29,x2:b.x,y2:b.y+29,stroke:'#33434c','stroke-width':Math.max(2,graphBounds.w/250)}))}for(const node of model.nodes){const p=positions.get(node.id);host.appendChild(svg('rect',{x:p.x,y:p.y,width:190,height:58,rx:5,fill:state.selected===node.id?'#64d9d0':'#52626b'}))}}
+    function fitGraph(){const box=$('graph').getBoundingClientRect();state.scale=Math.max(.48,Math.min(1,(box.width-50)/graphBounds.w,(box.height-150)/graphBounds.h));state.x=(box.width-graphBounds.w*state.scale)/2;state.y=120+(box.height-150-graphBounds.h*state.scale)/2;applyTransform();renderContext()}
+    function setZoom(next,cx,cy){const old=state.scale,stateLod=currentLod();state.scale=Math.max(.38,Math.min(2.25,next));const box=$('graph').getBoundingClientRect(),x=cx??box.width/2,y=cy??box.height/2;state.x=x-(x-state.x)*(state.scale/old);state.y=y-(y-state.y)*(state.scale/old);applyTransform();if(currentLod()!==stateLod)renderGraph();else renderContext()}
+    function hitTestComponent(clientX,clientY){const box=$('graph').getBoundingClientRect(),gx=(clientX-box.left-state.x)/state.scale,gy=(clientY-box.top-state.y)/state.scale;for(const [id,p] of positions)if(gx>=p.x&&gx<=p.x+190&&gy>=p.y&&gy<=p.y+58&&childrenOf(id).length)return id;return null}
+    function centerOn(id){const p=positions.get(id);if(!p)return;const box=$('graph').getBoundingClientRect();state.x=box.width/2-(p.x+95)*state.scale;state.y=box.height/2-(p.y+29)*state.scale;applyTransform()}
+
+    function addSection(host,title,items,renderer){if(!items.length)return;host.appendChild(el('div','section-title',title));for(const item of items)host.appendChild(renderer(item))}
+    function detailRecord(item,type){
+      const host=$('detail-body');clear(host);host.append(el('div','eyebrow',type),el('h3','',item.name||item.title||item.claim||item.id));if(item.description)host.appendChild(el('p','description',item.description));
+      const facts=el('div','facts');for(const [k,v] of [['ID',item.id],['Kind',item.kind||item.type||item.status||'evidence'],['Confidence',item.confidence||'n/a'],['Level',item.level??'n/a']]){const box=el('div','fact');box.append(el('b','',k),el('span','',v));facts.appendChild(box)}host.appendChild(facts);
+      if(type==='flow'){
+        addSection(host,'Ordered path',item.steps||[],step=>{const row=el('div','step-row');row.append(el('b','',step.order),document.createTextNode(step.action));const meta=[step.input&&`in: ${step.input}`,step.output&&`out: ${step.output}`,step.stateChange&&`state: ${step.stateChange}`].filter(Boolean).join(' · ');if(meta)row.appendChild(el('small','',meta));return row});
+        addSection(host,'Outcomes',item.outcomes||[],x=>el('div','link-row',x));addSection(host,'Failure modes',item.failureModes||[],x=>el('div','link-row',x));
+      }
+      if(type==='entity'){
+        const links=data.relationships.filter(r=>r.fromId===item.id||r.toId===item.id);addSection(host,'Relationships',links,r=>{const other=entity.get(r.fromId===item.id?r.toId:r.fromId);const row=el('button','link-row',`${r.kind} · ${other?.name||'unknown'}`);row.type='button';row.setAttribute('role','button');row.addEventListener('click',()=>{if(component.has(other?.id)&&!isWithinFocus(other.id))state.focusId=parentContextFor(other.id);select(other?.id,'entity')});return row});
+        const related=data.flows.filter(f=>flowEntityIds(f).has(item.id));addSection(host,'Flows',related,f=>{const row=el('button','link-row',f.name);row.type='button';row.addEventListener('click',()=>select(f.id,'flow'));return row});
+      }
+      const ids=new Set(item.evidenceIds||[]);if(type==='entity')for(const r of data.relationships)if((r.fromId===item.id||r.toId===item.id))for(const id of r.evidenceIds||[])ids.add(id);
+      addSection(host,'Evidence',[...ids].map(id=>evidence.get(id)).filter(Boolean),ev=>{const row=el('div','evidence-row',ev.claim);row.appendChild(el('small','',`${ev.path}${ev.symbol?` · ${ev.symbol}`:''}${ev.startLine?`:${ev.startLine}`:''}`));return row});
+      const gaps=data.gaps.filter(g=>(g.evidenceIds||[]).some(id=>ids.has(id)));addSection(host,'Related gaps',gaps,g=>{const row=el('div',`gap-row ${g.status}`,g.title);row.appendChild(el('small','',`${g.status} · ${g.question}`));return row});
+      addTreeShell(host);
+    }
+    function renderDetail(){
+      if(state.selectedType==='flow'&&flowMap.has(state.selected)){detailRecord(flowMap.get(state.selected),'flow');return}
+      if(state.selectedType==='entity'&&entity.has(state.selected)){detailRecord(entity.get(state.selected),'entity');return}
+      if(state.selectedType==='evidence'&&evidence.has(state.selected)){detailRecord(evidence.get(state.selected),'evidence');return}
+      if(state.selectedType==='gap'){const gap=data.gaps.find(x=>x.id===state.selected);if(gap){detailRecord(gap,'gap');return}}
+      const host=$('detail-body');clear(host);host.append(el('div','eyebrow','Map status'),el('h3','',data.snapshot.scope),el('p','description',data.project.description||'Select a node or flow to inspect its relationships and evidence.'));
+      const facts=el('div','facts');for(const [k,v] of [['Head',data.snapshot.sourceHead==='UNKNOWN'?'UNKNOWN':data.snapshot.sourceHead.slice(0,8)],['Confidence',data.snapshot.confidence],['Open gaps',data.gaps.filter(g=>g.status==='open').length],['Schema',data.schemaVersion]]){const box=el('div','fact');box.append(el('b','',k),el('span','',v));facts.appendChild(box)}host.appendChild(facts);
+      addSection(host,'Open questions',data.gaps.filter(g=>g.status==='open'),g=>{const row=el('div','gap-row open',g.title);row.appendChild(el('small','',g.question));return row});addTreeShell(host);
+    }
+    function addTreeShell(host){const details=el('details','tree-alt');details.appendChild(el('summary','','Keyboard tree alternative'));const list=el('div','tree-list');list.id='tree-list';list.setAttribute('role','tree');details.appendChild(list);host.appendChild(details)}
+    function renderTree(nodes){const host=$('tree-list');if(!host)return;clear(host);for(const node of nodes){const b=el('button','tree-item',node.name);b.type='button';b.dataset.level=String(node.level||0);b.setAttribute('role','treeitem');b.setAttribute('aria-level',String((node.level||0)+1));b.addEventListener('click',()=>select(node.id,'entity'));host.appendChild(b)}}
+    function select(id,type){state.selected=id;state.selectedType=type;if(type==='flow'){state.focusId=null;state.scale=.78;state.x=30;state.y=110;const f=flowMap.get(id);const tabByType={user:'User Flows',data:'Data Flows',runtime:'Runtime',failure:'Runtime',build:'Delivery',deploy:'Delivery'};if(f&&state.tab==='Evidence & Gaps')state.tab=tabByType[f.type]||'Architecture'}if(type==='entity'&&state.tab==='Evidence & Gaps')state.tab='Architecture';renderAll();if(type==='entity')centerOn(id)}
+
+    function setupSearch(){
+      const input=$('search'),results=$('search-results');input.addEventListener('input',()=>{const q=input.value.trim().toLowerCase();clear(results);if(!q){results.hidden=true;return}const matches=allRecords.filter(x=>[x.name,x.title,x.claim,x.id,x.description,x.path].filter(Boolean).join(' ').toLowerCase().includes(q)).slice(0,18);if(!matches.length)results.appendChild(el('div','empty','No matching architecture records.'));for(const item of matches){const type=flowMap.has(item.id)?'flow':entity.has(item.id)?'entity':evidence.has(item.id)?'evidence':'gap';const b=el('button','search-result',item.name||item.title||item.claim||item.id);b.type='button';b.appendChild(el('small','',`${type} · ${item.id}`));b.addEventListener('click',()=>{input.value='';results.hidden=true;if(type==='evidence'||type==='gap')state.tab='Evidence & Gaps';else if(type==='flow'){const f=flowMap.get(item.id),map={user:'User Flows',data:'Data Flows',runtime:'Runtime',failure:'Runtime',build:'Delivery',deploy:'Delivery'};state.tab=map[f.type]}else state.tab='Architecture';if(type==='entity'&&component.has(item.id)){state.focusId=parentContextFor(item.id);state.scale=1}select(item.id,type)});results.appendChild(b)}results.hidden=false});input.addEventListener('keydown',e=>{if(e.key==='Escape'){input.value='';results.hidden=true}});document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))results.hidden=true})
+    }
+    function setupGraphControls(){
+      $('zoom-in').addEventListener('click',()=>{animateViewport();setZoom(state.scale*1.32)});$('zoom-out').addEventListener('click',()=>{animateViewport();setZoom(state.scale/1.32)});$('fit').addEventListener('click',()=>{animateViewport();fitGraph()});$('context-up').addEventListener('click',upContext);$('reset').addEventListener('click',()=>{state.selected=null;state.selectedType=null;setContext(null)});
+      const graph=$('graph');graph.addEventListener('wheel',e=>{e.preventDefault();pendingWheel={delta:e.deltaY,cx:e.clientX-graph.getBoundingClientRect().left,cy:e.clientY-graph.getBoundingClientRect().top,clientX:e.clientX,clientY:e.clientY};if(zoomFrame)return;zoomFrame=requestAnimationFrame(()=>{zoomFrame=0;const z=pendingWheel;pendingWheel=null;const now=performance.now(),zoomingIn=z.delta<0;setZoom(state.scale*Math.exp(-z.delta*.0015),z.cx,z.cy);if(now-lastSemanticChange>DRILL_COOLDOWN_MS&&zoomingIn&&state.scale>SEMANTIC_DRILL_THRESHOLD){const hit=hitTestComponent(z.clientX,z.clientY);if(hit)drillInto(hit)}else if(now-lastSemanticChange>DRILL_COOLDOWN_MS&&!zoomingIn&&state.focusId&&state.scale<SEMANTIC_EXIT_THRESHOLD)upContext()})},{passive:false});
+      graph.addEventListener('pointerdown',e=>{pointer={id:e.pointerId,x:e.clientX,y:e.clientY,ox:state.x,oy:state.y};state.dragging=true;state.moved=false;$('context-bar').closest('.stage').classList.add('dragging');graph.setPointerCapture(e.pointerId)});graph.addEventListener('pointermove',e=>{if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;if(Math.abs(dx)+Math.abs(dy)>3)state.moved=true;state.x=pointer.ox+dx;state.y=pointer.oy+dy;applyTransform()});graph.addEventListener('pointerup',e=>{if(pointer?.id===e.pointerId){pointer=null;state.dragging=false;$('context-bar').closest('.stage').classList.remove('dragging')}});
+      graph.addEventListener('keydown',e=>{const amount=e.shiftKey?60:24;if(e.key==='ArrowLeft')state.x+=amount;else if(e.key==='ArrowRight')state.x-=amount;else if(e.key==='ArrowUp')state.y+=amount;else if(e.key==='ArrowDown')state.y-=amount;else return;e.preventDefault();applyTransform()});
+    }
+    function renderPrint(){const host=$('print-summary');clear(host);host.append(el('h1','',`${data.project.name} — architecture summary`),el('p','',`${data.snapshot.scope} · ${data.snapshot.confidence} · ${data.snapshot.lastVerifiedAt}`));const table=el('table'),head=el('tr');for(const x of ['Surface','Count'])head.appendChild(el('th','',x));table.appendChild(head);for(const [name,count] of [['Actors',data.actors.length],['Components',data.components.length],['Data objects',data.dataObjects.length],['Relationships',data.relationships.length],['Flows',data.flows.length],['Evidence',data.evidence.length],['Open gaps',data.gaps.filter(g=>g.status==='open').length]]){const row=el('tr');row.append(el('td','',name),el('td','',count));table.appendChild(row)}host.appendChild(table)}
+    function renderAll(){renderHeader();renderTabs();renderFlows();renderDetail();renderGraph();renderPrint()}
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.focusId&&!e.target.matches('input,textarea,[contenteditable="true"]')){e.preventDefault();upContext()}});
+    setupSearch();setupGraphControls();renderAll();
+  })();
+  </script>
+</body>
+</html>

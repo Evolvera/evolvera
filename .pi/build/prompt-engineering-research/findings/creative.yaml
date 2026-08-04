@@ -1,0 +1,228 @@
+agent_id: "creative"
+tema: "Prompt engineering as production systems rather than isolated prose"
+data_coleta: "2026-07-18"
+missao_id: null
+missao_cumprida: true
+justificativa_missao: "Core mission answered with primary/authoritative evidence on typed outputs, prompt evaluation gates, programmatic/optimizable prompt pipelines, automatic prompt optimization, and prompt-as-architecture patterns. Some requested areas, especially prompt caching, observability standards, MCP tool descriptions, and prompt linting suites, were attempted but blocked by retrieval rate limits, so they are recorded as gaps rather than overclaimed."
+findings:
+  - id: "F001"
+    claim: "Anthropic frames prompt engineering as downstream of explicit success criteria and empirical tests, not as first-step prose editing."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Before prompt engineering: This guide assumes that you have: 1. A clear definition of the success criteria for your use case 2. Some ways to empirically test against those criteria 3. A first draft prompt you want to improve"
+    source_url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview"
+    source_type: "official vendor documentation"
+    source_date: null
+    access_method: "Jina Reader"
+    context: "Anthropic's prompt engineering overview explicitly places evaluations and success criteria before prompt iteration. Publication date was unavailable from the retrieved page."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F002"
+    claim: "Anthropic says prompt engineering is not always the right lever; model selection may better improve latency and cost."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Not every success criteria or failing eval is best solved by prompt engineering. For example, you can sometimes improve latency and cost more easily by selecting a different model."
+    source_url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview"
+    source_type: "official vendor documentation"
+    source_date: null
+    access_method: "Jina Reader"
+    context: "This directly supports a production gate: decide whether a failure belongs to prompt text, model choice, retrieval, latency budget, or architecture."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F003"
+    claim: "OpenAI Structured Outputs are designed to enforce JSON Schema adherence, reducing reliance on strongly worded formatting prompts."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Structured Outputs is a feature that ensures the model will always generate responses that adhere to your supplied JSON Schema, so you don’t need to worry about the model omitting a required key, or hallucinating an invalid enum value. Some benefits of Structured Outputs include: 1. Reliable type-safety... 3. Simpler prompting: No need for strongly worded prompts to achieve consistent formatting"
+    source_url: "https://platform.openai.com/docs/guides/structured-outputs"
+    source_type: "official vendor documentation"
+    source_date: "2026-07-22"
+    access_method: "Jina Reader"
+    context: "The page date is later than the user-supplied current date due the runtime environment; treat the timestamp cautiously. The material point is architectural: schema constraints move output contracts out of prose and into API-level validation."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F004"
+    claim: "OpenAI distinguishes structured outputs for user-facing responses from function calling for connecting models to tools, functions, and data."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Function calling is useful when you are building an application that bridges the models and functionality of your application... Conversely, Structured Outputs via response_format are more suitable when you want to indicate a structured schema for use when the model responds to the user"
+    source_url: "https://platform.openai.com/docs/guides/structured-outputs"
+    source_type: "official vendor documentation"
+    source_date: "2026-07-22"
+    access_method: "Jina Reader"
+    context: "This supports a prompt-contract split: tool invocation schemas are not the same contract as final-answer schemas."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F005"
+    claim: "OpenAI states JSON mode guarantees valid JSON but not schema adherence, whereas Structured Outputs guarantee both within supported schemas."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Structured Outputs vs JSON mode... While both ensure valid JSON is produced, only Structured Outputs ensure schema adherence... We recommend always using Structured Outputs instead of JSON mode when possible."
+    source_url: "https://platform.openai.com/docs/guides/structured-outputs"
+    source_type: "official vendor documentation"
+    source_date: "2026-07-22"
+    access_method: "Jina Reader"
+    context: "Useful as a validation oracle: JSON parse success is insufficient for production contracts; schema validation or native structured output is the stronger gate."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F006"
+    claim: "OpenAI documents structured-output failure handling for truncation, refusal, and content-filter interruption."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "Check if the conversation was too long for the context window, resulting in incomplete JSON... Check if the OpenAI safety system refused the request and generated a refusal instead... Check if the model's output included restricted content, so the generation of JSON was halted and may be partial"
+    source_url: "https://platform.openai.com/docs/guides/structured-outputs"
+    source_type: "official vendor documentation"
+    source_date: "2026-07-22"
+    access_method: "Jina Reader"
+    context: "This turns prompt contracts into runtime state machines: completed, truncated, refusal, filtered, parse/schema failure."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F007"
+    claim: "APE treats an instruction as a program and selects candidate prompts by optimizing a score function over model-proposed instructions."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "we propose Automatic Prompt Engineer (APE) for automatic instruction generation and selection. In our method, we treat the instruction as the \"program,\" optimized by searching over a pool of instruction candidates proposed by an LLM in order to maximize a chosen score function."
+    source_url: "https://arxiv.org/abs/2211.01910"
+    source_type: "arXiv paper"
+    source_date: "2023-03-10"
+    access_method: "Jina Reader"
+    context: "The key production idea is not the generated wording itself but the evaluation loop: candidate generation, scoring, and selection."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F008"
+    claim: "APE reported automatically generated instructions outperforming an LLM baseline and matching or beating human annotator instructions on 19 of 24 NLP tasks."
+    claim_type: "fact"
+    confidence: "medium"
+    raw_data: "Experiments on 24 NLP tasks show that our automatically generated instructions outperform the prior LLM baseline by a large margin and achieve better or comparable performance to the instructions generated by human annotators on 19/24 tasks."
+    source_url: "https://arxiv.org/abs/2211.01910"
+    source_type: "arXiv paper"
+    source_date: "2023-03-10"
+    access_method: "Jina Reader"
+    context: "Useful evidence that optimization loops can improve prompts, but benchmark task transfer to PI production skills is uncertain."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F009"
+    claim: "Automatic Prompt Optimization uses training data, natural-language gradients, prompt edits, beam search, and bandit selection to improve prompts."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "The algorithm uses minibatches of data to form natural language \"gradients\" that criticize the current prompt. The gradients are then \"propagated\" into the prompt by editing the prompt in the opposite semantic direction of the gradient. These gradient descent steps are guided by a beam search and bandit selection procedure"
+    source_url: "https://arxiv.org/abs/2305.03495"
+    source_type: "arXiv paper"
+    source_date: "2023-10-19"
+    access_method: "Jina Reader"
+    context: "This is a production pattern for prompt changes: diff prompts using failure examples and evaluate candidates on minibatches before promotion."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F010"
+    claim: "DSPy criticizes hard-coded prompt templates and proposes declarative modules compiled into optimized LM pipelines."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "existing LM pipelines are typically implemented using hard-coded \"prompt templates\", i.e. lengthy strings discovered via trial and error. Toward a more systematic approach... we introduce DSPy, a programming model that abstracts LM pipelines as text transformation graphs... where LMs are invoked through declarative modules."
+    source_url: "https://arxiv.org/abs/2310.03714"
+    source_type: "arXiv paper"
+    source_date: "2023-10-05"
+    access_method: "Jina Reader"
+    context: "Directly addresses the mission distinction between isolated prose and prompt systems."
+    contradictions_expected: []
+    debunks_finding_id: null
+  - id: "F011"
+    claim: "DSPy modules are parameterized and can learn demonstrations for prompting, finetuning, augmentation, and reasoning techniques."
+    claim_type: "fact"
+    confidence: "high"
+    raw_data: "DSPy modules are parameterized, meaning they can learn (by creating and collecting demonstrations) how to apply compositions of prompting, finetuning, augmentation, and reasoning techniques. We design a compiler that will optimize any DSPy pipeline to maximize a given metric."
+    source_url: "https://arxiv.org/abs/2310.03714"
+    source_type: "arXiv paper"
+    source_date: "2023-10-05"
+    access_method: "Jina Reader"
+    context: "Supports compiling prompt programs against metrics instead of hand-tuning one prompt at a time."
+    contradictions_expected: []
+    debunks_finding_id: null
+inferences_made:
+  - id: "I001"
+    based_on: ["F001", "F002"]
+    inference_text: "Practical pattern: require a prompt change request to include success criteria, eval cases, and a routing diagnosis. Use prompt editing only when the target failure is controllable by instructions; route to model choice, retrieval, latency budget, or tool design otherwise. Validation oracle: failing eval becomes passing without unacceptable regressions in latency/cost."
+    confidence: "high"
+    caveats: "Anthropic guidance is Claude-oriented, but the success-criteria-before-prompting principle is model-agnostic. It fails when no representative eval set exists."
+  - id: "I002"
+    based_on: ["F003", "F005", "F006"]
+    inference_text: "Practical pattern: encode output contracts as schemas plus explicit runtime states, not as prose like 'return valid JSON'. Use when downstream code consumes model output, when fields/enums are safety-critical, or when failures need automatic retry/rollback. Validation oracle: schema adherence, refusal detection, truncation detection, and content-filter handling."
+    confidence: "high"
+    caveats: "Schema adherence does not prove factual correctness. Supported-schema and model availability constraints must be checked per provider and model version."
+  - id: "I003"
+    based_on: ["F003", "F004"]
+    inference_text: "Practical pattern: separate three contracts: instruction prompt, tool-call schema, and final-response schema. Tool schemas describe allowed system actions; final-response schemas describe user-facing artifacts. This changes architecture by moving action selection and output validation into typed interfaces."
+    confidence: "high"
+    caveats: "The retrieved evidence is OpenAI-specific. Other providers may expose different mechanics, but the separation remains useful conceptually."
+  - id: "I004"
+    based_on: ["F007", "F008", "F009"]
+    inference_text: "Practical pattern: treat prompt optimization as CI search over candidate prompts. Generate variants, score against held-out evals, promote only with measurable gains, and store losing variants as regression evidence. Use when tasks have repeatable examples and measurable metrics."
+    confidence: "medium"
+    caveats: "APE/APO benchmark gains may not transfer to open-ended agentic tasks. Automatic optimization can overfit eval sets or discover brittle wording."
+  - id: "I005"
+    based_on: ["F010", "F011"]
+    inference_text: "Practical pattern: replace monolithic prompts with typed, composable prompt modules whose signatures, demonstrations, retrieval inputs, and metrics are versioned. Use when a workflow has multiple reasoning/retrieval/tool steps or must migrate between models."
+    confidence: "high"
+    caveats: "DSPy evidence is from research case studies; production adoption still requires observability, security review, cost controls, and human rollback processes."
+  - id: "I006"
+    based_on: ["F001", "F006", "F009", "F011"]
+    inference_text: "Shortlist for a PI skill: prompt contract header, typed output schema, state-separated context assembly, eval gates, adversarial/regression suite, prompt optimizer hook, model-routing gate, and release metadata. The non-obvious leverage is to make each prompt a deployable artifact with tests and failure states."
+    confidence: "medium"
+    caveats: "This synthesizes multiple sources but lacks direct retrieved evidence for observability, prompt caching, and prompt linting because those sources were blocked."
+gaps_identified:
+  - "Prompt caching and cost optimization were in scope but the OpenAI prompt-caching page returned HTTP 429 during retrieval; no factual finding was emitted."
+  - "Retrieval ordering and lost-in-the-middle evidence were attempted via arXiv 2307.03172 but returned HTTP 429; no factual finding was emitted."
+  - "Prompt linting and adversarial suite evidence from promptfoo was attempted but returned HTTP 429; no factual finding was emitted."
+  - "OpenTelemetry GenAI observability semantic conventions were attempted but returned HTTP 429; no factual finding was emitted."
+  - "Model Context Protocol tool-description evidence was attempted but returned HTTP 429; no factual finding was emitted."
+  - "Versioning, rollback, and migration between model versions are supported indirectly by the architecture inferences but need additional primary documentation before becoming hard recommendations."
+sources_accessed:
+  - url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview"
+    status: "success"
+    content_type: "official documentation"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://platform.openai.com/docs/guides/structured-outputs"
+    status: "success"
+    content_type: "official documentation"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://arxiv.org/abs/2211.01910"
+    status: "success"
+    content_type: "arXiv abstract page"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://arxiv.org/abs/2305.03495"
+    status: "success"
+    content_type: "arXiv abstract page"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://arxiv.org/abs/2310.03714"
+    status: "success"
+    content_type: "arXiv abstract page"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://platform.openai.com/docs/guides/prompt-caching"
+    status: "failed HTTP 429"
+    content_type: "official documentation"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://arxiv.org/abs/2307.03172"
+    status: "failed HTTP 429"
+    content_type: "arXiv abstract page"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://github.com/promptfoo/promptfoo"
+    status: "failed HTTP 429"
+    content_type: "GitHub repository"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://opentelemetry.io/docs/specs/semconv/gen-ai/"
+    status: "failed HTTP 429"
+    content_type: "standards documentation"
+    date_accessed: "2026-07-18"
+    attempts: 1
+  - url: "https://modelcontextprotocol.io/specification/2025-06-18/server/tools"
+    status: "failed HTTP 429"
+    content_type: "protocol specification"
+    date_accessed: "2026-07-18"
+    attempts: 1
