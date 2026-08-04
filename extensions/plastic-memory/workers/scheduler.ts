@@ -1,4 +1,4 @@
-import { digestParts } from "../common/safety.ts";
+import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, snapshotManifestDigest, type CompletedTurnSnapshot } from "../session/cycles.ts";
 import { normalSourceEntries } from "../session/ledger.ts";
 import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
@@ -12,6 +12,13 @@ import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
 import type { PendingStore } from "../compaction/pending.ts";
 
 export type SchedulerIdentity = Readonly<{ binding: SessionBinding; branchIds: string[]; snapshotId?: string; sourceDigest?: string }>;
+export type SchedulerLifecycleEvent = Readonly<{
+  phase: "observer" | "reflector" | "compactor" | "compaction";
+  status: "started" | "no-observations" | "failed" | "skipped" | "prepared" | "applied";
+  tokenCount?: number;
+  reason?: string;
+}>;
+export type SchedulerLifecycleReporter = (event: SchedulerLifecycleEvent) => void;
 export type SchedulerInput = Readonly<{
   binding: SessionBinding;
   branchEntries: SessionEntry[];
@@ -21,6 +28,7 @@ export type SchedulerInput = Readonly<{
   runtime: RunnerRuntime;
   append?: (entry: PlasticEntry) => void;
   currentIdentity?: () => SchedulerIdentity;
+  lifecycleReporter?: SchedulerLifecycleReporter;
   projectSnapshot?: ProjectSnapshot | unknown;
   compaction?: {
     engine: Omit<EngineInput, "compact" | "cycles" | "projectSnapshot" | "binding">;
@@ -62,6 +70,13 @@ function mergeRecords(left: SessionEntry[], right: SessionEntry[]): SessionEntry
   const result = [...left];
   for (const entry of right) if (!result.includes(entry) && !result.some((candidate) => JSON.stringify(candidate) === JSON.stringify(entry))) result.push(entry);
   return result;
+}
+function safeReason(reason: unknown): string {
+  const value = typeof reason === "string" ? reason : String(reason ?? "worker did not complete");
+  return scrubSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 120) || "worker did not complete";
+}
+function report(input: SchedulerInput, event: Omit<SchedulerLifecycleEvent, "reason"> & { reason?: unknown }): void {
+  input.lifecycleReporter?.({ ...event, ...(event.reason === undefined ? {} : { reason: safeReason(event.reason) }) });
 }
 
 /** One edge-triggered, generation-safe worker pipeline. */
@@ -116,8 +131,12 @@ export class CycleScheduler {
   private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController): Promise<SchedulerResult> {
     const captured: SchedulerIdentity = { binding: { ...input.binding }, branchIds: entryIds(input.branchEntries) };
     const epoch = this.epoch;
-    if (snapshot.status === "oversized") return { status: "skipped", snapshot, reason: "snapshot exceeds one-shot bound" };
+    if (snapshot.status === "oversized") {
+      report(input, { phase: "observer", status: "skipped", reason: "snapshot exceeds one-shot bound" });
+      return { status: "skipped", snapshot, reason: "snapshot exceeds one-shot bound" };
+    }
     if (snapshot.status === "empty-valid" && normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData).length > 0 && snapshot.span.sourceEntryIds.length === 0) {
+      report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
       return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
     }
     const records = this.records(input);
@@ -139,14 +158,22 @@ export class CycleScheduler {
       return { status: "empty-valid", snapshot, attempt, cycle: closed };
     }
 
+    report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
     const observer: ObserverResult = await runObserver({ binding: input.binding, snapshot, sourceEntries: normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData), runtime: input.runtime, signal: controller.signal });
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-    if (!observer.ok || !observer.manifestValid) return this.failAttempt(input, snapshot, attempt, observer.status === "stale" ? "stale" : "failed", workingRecords, captured, controller, epoch, observer.reason ?? "observer did not prove exact coverage");
+    if (!observer.ok || !observer.manifestValid) {
+      report(input, { phase: "observer", status: "failed", reason: observer.reason ?? "observer did not prove exact coverage" });
+      return this.failAttempt(input, snapshot, attempt, observer.status === "stale" ? "stale" : "failed", workingRecords, captured, controller, epoch, observer.reason ?? "observer did not prove exact coverage");
+    }
+    if (observer.observations.length === 0) report(input, { phase: "observer", status: "no-observations" });
     if (observer.record) this.append(input, observer.record);
 
     const reflector: ReflectorResult = await runReflector({ binding: input.binding, snapshot, observations: observer.observations, runtime: input.runtime, signal: controller.signal });
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-    if (!reflector.ok || !reflector.manifestValid) return this.failAttempt(input, snapshot, attempt, reflector.status === "stale" ? "stale" : "failed", this.records(input), captured, controller, epoch, reflector.reason ?? "reflector did not prove exact coverage");
+    if (!reflector.ok || !reflector.manifestValid) {
+      report(input, { phase: "reflector", status: "failed", reason: reflector.reason ?? "reflector did not prove exact coverage" });
+      return this.failAttempt(input, snapshot, attempt, reflector.status === "stale" ? "stale" : "failed", this.records(input), captured, controller, epoch, reflector.reason ?? "reflector did not prove exact coverage");
+    }
     if (reflector.record) this.append(input, reflector.record);
 
     const closed = closeCycle(snapshot, attempt, {
@@ -181,7 +208,14 @@ export class CycleScheduler {
       signal: controller.signal,
       isCurrent: () => this.current(input, captured, { span: closed.data } as unknown as CompletedTurnSnapshot, controller, epoch),
     };
-    const job = runCompactor(jobInput).catch((error) => ({ ok: false, detached: true as const, reason: error instanceof Error ? error.message : String(error) }));
+    const job = runCompactor(jobInput).then((result) => {
+      if (!result.ok) report(input, { phase: "compactor", status: "failed", reason: result.reason ?? "compactor did not prepare compaction" });
+      return result;
+    }).catch((error) => {
+      const result = { ok: false, detached: true as const, reason: error instanceof Error ? error.message : String(error) };
+      report(input, { phase: "compactor", status: "failed", reason: result.reason });
+      return result;
+    });
     this.compactorResults.push(job);
     return job;
   }

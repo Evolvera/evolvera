@@ -12,6 +12,7 @@ const projection = await jiti.import(path.join(root, "plastic-memory/compaction/
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
 const runnerRuntimeModule = await jiti.import(path.join(root, "plastic-memory/runtime/runner-runtime.ts"));
 const pendingModule = await jiti.import(path.join(root, "plastic-memory/compaction/pending.ts"));
+const safetyModule = await jiti.import(path.join(root, "plastic-memory/common/safety.ts"));
 
 function entry(id, parentId, role = "user") {
   return { type: "message", id, parentId, message: { role, content: [{ type: "text", text: id }] } };
@@ -64,6 +65,7 @@ assert.equal(ambiguous.removed, 0);
 // and the coordinator closes one plastic cycle from the current host branch.
 const cycleModel = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const cycleCalls = [];
+let cycleMode = "observations";
 const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
   find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return cycleModel; },
   async getApiKeyAndHeaders(model) { assert.equal(model, cycleModel); return { ok: true, apiKey: "cycle-fake", headers: { "x-cycle": "fake" }, env: { CYCLE_FAKE: "yes" } }; },
@@ -72,7 +74,8 @@ const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
   const request = JSON.parse(context.messages[0].content[0].text);
   const manifest = { ...request.binding, snapshotId: request.snapshot.snapshotId, cycleId: request.snapshot.cycleId, ...request.snapshot.span };
   if (context.systemPrompt.startsWith("Extract durable")) {
-    return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, observations: [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.snapshot.span.sourceEntryIds }] }) }] };
+    if (cycleMode === "failure") return { content: [{ type: "text", text: JSON.stringify({ noManifest: true }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, observations: cycleMode === "empty" ? [] : [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.snapshot.span.sourceEntryIds }] }) }] };
   }
   return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
 });
@@ -94,7 +97,15 @@ const ownerSessionManager = {
   getBranch: () => ownerEntries,
   buildContextEntries: () => ownerEntries,
 };
-const ownerCtx = { sessionManager: ownerSessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {} };
+const ownerNotices = [];
+const ownerCtx = {
+  sessionManager: ownerSessionManager,
+  isIdle: () => true,
+  hasPendingMessages: () => false,
+  compact: () => {},
+  hasUI: true,
+  ui: { notify(message, level) { ownerNotices.push({ message, level }); } },
+};
 const ownerCoordinator = coordinatorModule.registerPlasticMemoryCoordinator(ownerPi, { enabled: true, runtime: cycleRuntime, now: () => 1_000 });
 await ownerHandlers.get("session_start")({ type: "session_start", reason: "startup" }, ownerCtx);
 ownerHandlers.get("turn_end")({ type: "turn_end" }, ownerCtx);
@@ -103,6 +114,39 @@ for (let attempt = 0; attempt < 20 && !ownerEntries.some((item) => item.customTy
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.observations.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.reflections.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.closed"), true);
+assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[0-9,]+-token snapshot$/u.test(message)), true);
+assert.equal(ownerNotices.every(({ message }) => !message.includes("cycle fact") && !message.includes("OC")), true);
+async function lifecycleProbe(mode) {
+  const entries = [{ ...entry(`${mode}-1`, undefined), tokenCount: 1 }, { ...entry(`${mode}-2`, `${mode}-1`, "assistant"), tokenCount: 1 }];
+  const handlers = new Map();
+  const notices = [];
+  const pi = {
+    on(type, handler) { handlers.set(type, handler); },
+    appendEntry(customType, data) { entries.push({ type: "custom", id: `${mode}-custom-${entries.length}`, parentId: entries.at(-1)?.id, customType, data }); },
+  };
+  const sessionManager = {
+    getSessionId: () => mode === "empty" ? "bbbbbbbbbbbbbbbbbbbbbbbb" : "cccccccccccccccccccccccc",
+    getLeafId: () => entries.at(-1)?.id,
+    getEntries: () => entries,
+    getBranch: () => entries,
+    buildContextEntries: () => entries,
+  };
+  const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {}, hasUI: true, ui: { notify(message, level) { notices.push({ message, level }); } } };
+  const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, { enabled: true, runtime: cycleRuntime, now: () => 1_000 });
+  cycleMode = mode;
+  await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+  handlers.get("turn_end")({ type: "turn_end" }, ctx);
+  const wanted = mode === "empty"
+    ? (notice) => notice.message === "Plastic memory: observer returned no observations"
+    : (notice) => notice.message.startsWith("Plastic memory: observer failed — ");
+  for (let attempt = 0; attempt < 20 && !notices.some(wanted); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  coordinator.shutdown(`${mode}-test`);
+  return notices;
+}
+const emptyNotices = await lifecycleProbe("empty");
+assert.equal(emptyNotices.some(({ message, level }) => message === "Plastic memory: observer returned no observations" && level === "warning"), true);
+const failedNotices = await lifecycleProbe("failure");
+assert.equal(failedNotices.some(({ message, level }) => level === "warning" && message.startsWith("Plastic memory: observer failed — ")), true);
 assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel]);
 assert.equal(cycleCalls.every((call) => call.options.cacheRetention === "none" && call.options.apiKey === "cycle-fake" && call.options.env.CYCLE_FAKE === "yes"), true);
 ownerCoordinator.shutdown("cycle-test");
@@ -142,6 +186,8 @@ function makeNonceProbe() {
   };
   const branch = [];
   const compactCalls = [];
+  const notices = [];
+  let stagedPending;
   const sessionManager = {
     getSessionId: () => "nonce-session",
     getLeafId: () => branch.at(-1)?.id,
@@ -154,6 +200,8 @@ function makeNonceProbe() {
     isIdle: () => true,
     hasPendingMessages: () => false,
     compact: (options) => compactCalls.push(options),
+    hasUI: true,
+    ui: { notify(message, level) { notices.push({ message, level }); } },
   };
   const probe = coordinatorModule.registerPlasticMemoryCoordinator(probePi, { enabled: true, now: () => 1_000 });
   const beforeCompact = (event) => probeHandlers.get("session_before_compact")(event, probeCtx);
@@ -170,20 +218,33 @@ function makeNonceProbe() {
     },
     stagePending() {
       const binding = probe.getBinding(probeCtx);
+      const preparedPrefixDigest = safetyModule.digestParts(branch.map((entry) => entry.id)).slice(0, 32);
+      const details = {
+        plastic: {
+          state: "verified",
+          stateDigest: "nonce-state",
+          header: "nonce-summary",
+          cutDigest: "nonce-cut",
+          preparedPrefixDigest,
+        },
+      };
       const pending = pendingModule.makePendingCompaction({
         slotId: `nonce-slot-${binding.generation}`,
         binding,
         runtimeToken: probe.runtimeToken,
         preparedPrefixIds: branch.map((entry) => entry.id),
-        cut: { firstKeptEntryId: branch[0].id, cutDigest: "nonce-cut", detailsDigest: "nonce-details", summaryHeader: "nonce-summary" },
+        cut: { firstKeptEntryId: branch[0].id, cutDigest: "nonce-cut", detailsDigest: safetyModule.digestParts(details).slice(0, 32), summaryHeader: "nonce-summary" },
         stateDigest: "nonce-state",
         now: 1_000,
       });
       probe.pendingStore.stage(pending);
-      probe.preparedViews.set(pending, { summary: "nonce summary", details: { plastic: { state: "verified" } } });
+      probe.preparedViews.set(pending, { summary: "nonce-summary\nnonce summary", details });
+      stagedPending = pending;
       return pending;
     },
     settle() { probeHandlers.get("agent_settled")({ type: "agent_settled" }, probeCtx); },
+    sessionCompact(event) { probe.inFlightPending = stagedPending; probeHandlers.get("session_compact")(event, probeCtx); },
+    notices,
   };
 }
 const nonceProbe = makeNonceProbe();
@@ -236,6 +297,17 @@ let appendCount = 0;
 if (exactResult?.compaction) appendCount += 1;
 if (overlapResult?.compaction) appendCount += 1;
 assert.equal(appendCount, 1, "exact nonce overlap must produce one append result");
+const appliedCompaction = {
+  type: "compaction",
+  id: "NC1",
+  parentId: "N2",
+  firstKeptEntryId: exactResult.compaction.firstKeptEntryId,
+  summary: exactResult.compaction.summary,
+  details: exactResult.compaction.details,
+};
+nonceProbe.branch.push(appliedCompaction);
+nonceProbe.sessionCompact({ compactionEntry: appliedCompaction });
+assert.equal(nonceProbe.notices.some(({ message, level }) => message === "Plastic memory: compaction applied" && level === "info"), true);
 nonceProbe.probe.shutdown("nonce-test");
 
 // A real Pi 0.83.0 in-memory session loads the coordinator directly. The
