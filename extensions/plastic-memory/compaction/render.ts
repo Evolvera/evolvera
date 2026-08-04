@@ -43,6 +43,14 @@ function unique(values: string[]): string[] { return [...new Set(values)]; }
 function clean(value: unknown, maximum = SUMMARY_CAP_CHARS): string {
   return scrubSensitiveText(typeof value === "string" ? value : "").replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, maximum);
 }
+function cleanSessionIndex(value: unknown, maximum: number): string {
+  return scrubSensitiveText(typeof value === "string" ? value : "")
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/gu, " ")
+    .replace(/[^\S\n]+/gu, " ")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim()
+    .slice(0, maximum);
+}
 function factsObject(value: unknown): StructuredFacts {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const list = (key: keyof StructuredFacts): string[] => Array.isArray(source[key]) ? source[key].filter((item): item is string => typeof item === "string").map((item) => clean(item, 2_000)) : [];
@@ -156,6 +164,7 @@ export function renderVerifiedCompaction(
   priorState: CumulativeState | undefined,
   snapshotInput: ProjectContext | ProjectSnapshot | unknown,
   luna: (request: LunaRequest) => LunaResult,
+  sessionIndex = "",
 ): RenderedCompaction {
   if (cycles.length === 0) throw new Error("compaction requires at least one cycle");
   const snapshot = snapshotOf(snapshotInput);
@@ -168,8 +177,14 @@ export function renderVerifiedCompaction(
   assertStateBounded(state);
   const cycleRange = `${cycles[0].cycleId}..${cycles.at(-1)?.cycleId}`;
   const header = summaryHeader(cycleRange, state.stateDigest);
+  const index = cleanSessionIndex(sessionIndex, Math.max(1, SUMMARY_CAP_CHARS - header.length - 2));
   const body = clean(response?.summary, SUMMARY_CAP_CHARS);
-  const summary = body.startsWith(header) ? body : `${header}\n${body || "Verified cumulative structured state."}`;
+  const hasHeader = body.startsWith(header);
+  const providerBody = hasHeader ? body.slice(header.length).trimStart() : body || "Verified cumulative structured state.";
+  const fixed = index ? `${header}\n${index}` : header;
+  const bodyBudget = Math.max(0, SUMMARY_CAP_CHARS - fixed.length - (providerBody ? 2 : 0));
+  const boundedBody = clean(providerBody, bodyBudget);
+  const summary = `${fixed}${boundedBody ? `${index ? "\n\n" : "\n"}${boundedBody}` : ""}`;
   assertBoundedString(summary, SUMMARY_CAP_CHARS, "compaction summary");
   assertNoSensitiveText(summary, "compaction summary");
   const details = {

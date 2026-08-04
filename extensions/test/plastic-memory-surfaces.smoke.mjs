@@ -12,6 +12,7 @@ const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 const types = await jiti.import(path.join(root, "plastic-memory/session/types.ts"));
 const ledger = await jiti.import(path.join(root, "plastic-memory/session/ledger.ts"));
 const recall = await jiti.import(path.join(root, "plastic-memory/session/recall.ts"));
+const renderSummary = await jiti.import(path.join(root, "plastic-memory/session/render-summary.ts"));
 const backfill = await jiti.import(path.join(root, "plastic-memory/session/backfill.ts"));
 const tools = await jiti.import(path.join(root, "plastic-memory/runtime/tools.ts"));
 const commands = await jiti.import(path.join(root, "plastic-memory/runtime/commands.ts"));
@@ -71,6 +72,20 @@ assert.equal(proposal.proposals[0].proposal.projectId, "pm:p:" + "a".repeat(32))
 const reflected = recall.recallSession({ entries, binding, leafId: currentAnswer.id, id: reflectionId });
 assert.equal(reflected.status, "partial");
 assert.deepEqual(reflected.missingSupportingObservationIds, ["missing-support"]);
+
+// The visible compaction index is folded from the current branch, not Luna
+// prose or hidden structured state. Every rendered memory id is exact-recallable.
+const sessionSummary = renderSummary.renderSessionSummary([...entries, forkOnly], { binding, leafId: entries.at(-1).id });
+assert.match(sessionSummary, /Use memory_recall only with an exact observation or reflection ID shown in this index/u);
+assert.match(sessionSummary, new RegExp(`\\[${reflectionId}\\] historical reflection`));
+assert.match(sessionSummary, new RegExp(`\\[${newObservationId}\\][^\\n]*new namespaced fact`));
+assert.equal(sessionSummary.includes(`[${rawId}]`), false, "dropped observation id must not be indexed");
+assert.equal(sessionSummary.includes("legacy fact"), false, "dropped observation content must not be indexed");
+assert.equal(sessionSummary.includes("historical user turn"), false, "source message bodies must not be indexed");
+assert.equal(sessionSummary.includes("off branch secret"), false, "off-branch source must not be indexed");
+const renderedObservationId = sessionSummary.match(/\[(pm:o:[a-f0-9:]+)\]/u)?.[1];
+assert.equal(renderedObservationId, newObservationId);
+assert.equal(recall.recallSession({ entries, binding, leafId: entries.at(-1).id, id: renderedObservationId }).status, "found");
 assert.equal(recall.recallSession({ entries, binding, leafId: currentAnswer.id, id: "ABCDEF000001" }).status, "unavailable");
 assert.equal(recall.recallSession({ entries, binding, leafId: currentAnswer.id, id: "not-an-id" }).status, "unavailable");
 

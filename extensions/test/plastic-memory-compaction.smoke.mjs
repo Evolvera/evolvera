@@ -39,10 +39,30 @@ function closed(cycleData) {
 }
 const cycles = [];
 for (let index = 1; index <= 6; index += 1) cycles.push(closed(cycle(index)));
+
+function appendCustom(customType, data) {
+  const entry = { type: "custom", id: `m${++nextId}`, parentId: entries.at(-1)?.id ?? null, customType, data };
+  entries.push(entry);
+  return entry;
+}
+const memorySource = entries.slice(-4);
+const memorySpan = {
+  sourceStartId: memorySource[0].id, sourceEndId: memorySource.at(-1).id, sourceEntryIds: memorySource.map((entry) => entry.id),
+  sourceDigest: ledger.sourceDigest(memorySource), completedTurnEndId: memorySource.at(-1).id,
+};
+const activeObservationId = ids.makeObservationId(binding.sessionId, ids.recordDigest(binding.sessionId, { kind: "active" }, { source: memorySource.at(-1).id }));
+const droppedObservationId = ids.makeObservationId(binding.sessionId, ids.recordDigest(binding.sessionId, { kind: "dropped" }, { source: memorySource.at(-1).id }));
+const reflectionId = ids.makeReflectionId(binding.sessionId, ids.recordDigest(binding.sessionId, { kind: "reflection" }, { source: memorySource.at(-1).id }));
+appendCustom("plastic.observations.recorded", { schemaVersion: 1, ...binding, observations: [
+  { id: activeObservationId, content: "active compaction fact", timestamp: "2026-08-03T00:00:00.000Z", relevance: "high", sourceEntryIds: [memorySource.at(-1).id], tokenCount: 2 },
+  { id: droppedObservationId, content: "dropped compaction fact", timestamp: "2026-08-03T00:00:00.000Z", relevance: "low", sourceEntryIds: [memorySource.at(-1).id], tokenCount: 2 },
+], span: memorySpan });
+appendCustom("plastic.observations.dropped", { schemaVersion: 1, ...binding, observationIds: [droppedObservationId], coversThroughId: memorySource.at(-1).id, reflectionIds: [] });
+appendCustom("plastic.reflections.recorded", { schemaVersion: 1, ...binding, reflections: [{ id: reflectionId, content: "durable compaction reflection", supportingObservationIds: [activeObservationId], tokenCount: 2 }], span: memorySpan });
 const requests = [];
 function fakeLuna(request) {
   requests.push(request);
-  return { summary: "fake Luna prose is not authoritative", state: { facts: { goals: request.facts.goals }, cycleIds: [...(request.priorState?.cycleIds ?? []), ...request.cycleIds], sourceEntryIds: [...(request.priorState?.sourceEntryIds ?? []), ...request.sourceEntryIds], sourceDigests: [...(request.priorState?.sourceDigests ?? []), ...request.sourceDigests] } };
+  return { summary: "fake Luna prose is not authoritative; api_key=supersecret", state: { facts: { goals: request.facts.goals }, cycleIds: [...(request.priorState?.cycleIds ?? []), ...request.cycleIds], sourceEntryIds: [...(request.priorState?.sourceEntryIds ?? []), ...request.sourceEntryIds], sourceDigests: [...(request.priorState?.sourceDigests ?? []), ...request.sourceDigests] } };
 }
 const first = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, firstKeptEntryId: cycles[2].sourceStartId, projectSnapshot, runtimeToken: "runtime-1", now: 1_000, compact: fakeLuna });
 assert.equal(first.eligible, true);
@@ -55,6 +75,16 @@ assert.ok(first.prepared.rendered.state.facts.errors.includes("permission denied
 assert.ok(first.prepared.rendered.details.plastic.stateDigest);
 
 const firstRendered = first.prepared.rendered;
+assert.match(firstRendered.summary, /Use memory_recall only with an exact observation or reflection ID shown in this index/u);
+assert.match(firstRendered.summary, new RegExp(`\\[${reflectionId}\\] durable compaction reflection`));
+assert.match(firstRendered.summary, new RegExp(`\\[${activeObservationId}\\] 2026-08-03T00:00:00.000Z \\[high\\] active compaction fact`));
+assert.equal(firstRendered.summary.includes(`[${droppedObservationId}]`), false, "dropped observation id must not be indexed");
+assert.equal(firstRendered.summary.includes("dropped compaction fact"), false, "dropped observation content must not be indexed");
+assert.equal(firstRendered.summary.includes("supersecret"), false, "provider secret must not be visible");
+assert.equal(firstRendered.summary.includes("sourceEntryIds"), false, "source-entry field must remain internal");
+assert.equal(firstRendered.summary.includes("structuredState"), false, "hidden state JSON must remain internal");
+assert.ok(firstRendered.summary.length <= 48_000);
+
 const firstCompaction = { type: "compaction", id: "cmp1", parentId: entries.at(-1).id, firstKeptEntryId: first.prepared.cut.firstKeptEntryId, summary: firstRendered.summary, details: firstRendered.details };
 entries.push(firstCompaction);
 for (let index = 7; index <= 8; index += 1) cycles.push(closed(cycle(index)));
