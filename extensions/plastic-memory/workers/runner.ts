@@ -51,6 +51,17 @@ function boundedText(value: unknown, maximum: number): string {
   const source = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
   return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, maximum);
 }
+/**
+ * Transport bounding for the structured worker payload: bound and strip control characters, but
+ * never scrub. Identity fields (snapshot/cycle/session/branch ids, digests, ISO timestamps) must
+ * survive transport untouched, otherwise the coverage manifest can never match. Free-text fields
+ * are scrubbed by their own adapters (observer/reflector/promoter clean(), compaction/render
+ * clean() + assertNoSensitiveText, coordinator safeNoticeReason) before anything is persisted.
+ */
+function boundedTransport(value: unknown, maximum: number): string {
+  const source = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
+  return source.replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, maximum);
+}
 function safeDiagnostic(error: unknown): string {
   return boundedText(error instanceof Error ? error.message : String(error), 500) || "agent error";
 }
@@ -181,9 +192,10 @@ export async function runBoundedRole(input: {
     if (combined.signal.aborted) {
       return { ok: false, reason: combined.timedOut() ? "timeout" : "aborted", diagnostics: { role: input.role, message: combined.timedOut() ? "worker deadline exceeded" : "worker aborted" } };
     }
-    const response = boundedText(extractResponse(raw), ROLE_RESULT_CAP);
-    let parsed: unknown = response;
-    try { parsed = JSON.parse(response); } catch { /* Structured adapters reject prose where appropriate. */ }
+    const transported = boundedTransport(extractResponse(raw), ROLE_RESULT_CAP);
+    let parsed: unknown;
+    // Prose that is not structured transport keeps the pre-parse scrubbing of the fallback path.
+    try { parsed = JSON.parse(transported); } catch { parsed = boundedText(extractResponse(raw), ROLE_RESULT_CAP); }
     return { ok: true, response: parsed, resolved, diagnostics: { role: input.role, contextWindow: resolved.contextWindow, promptChars: prompt.length } };
   } catch (error) {
     const timeout = combined.timedOut() || error instanceof Error && error.message === "__worker_timeout__";

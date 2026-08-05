@@ -8,7 +8,10 @@ const SECRET_PATTERNS = [
 ];
 const PII_PATTERNS = [
   /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gu,
-  /\b(?:\+?\d[\d ()-]{7,}\d)\b/gu,
+  // Phone-like digit runs only: the boundaries reject any run touching word/hex characters or a
+  // hyphen (UUIDs, digests, ids), the lookahead rejects ISO-8601 dates, and the 20-char ceiling
+  // (E.164 tops out at 15 digits) rejects long all-digit machine tokens.
+  /(?<![\w-])(?!\d{4}-\d{2}-\d{2})(?:\+?\d[\d ()-]{7,18}\d)(?![\w-])/gu,
 ];
 
 export function canonicalJson(value: unknown): string {

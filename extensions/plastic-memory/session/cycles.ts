@@ -128,14 +128,36 @@ function attemptsFor(snapshot: CompletedTurnSnapshot, records: SessionEntry[]): 
 
 /** Build one contiguous, completed-turn opportunity from the post-bootstrap active window. */
 export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurnSnapshot {
-  const allowed = input.activeEntryIds ? new Set(input.activeEntryIds) : undefined;
+  // An empty active window is not a restriction: a fresh-session bootstrap and every
+  // post-cycle edge bootstrap carry `activeEntryIds: []`, and their sources are the
+  // anchored descendants instead. Only a non-empty window bounds the snapshot.
+  const allowed = input.activeEntryIds?.length ? new Set(input.activeEntryIds) : undefined;
   if (allowed && input.sourceEntries.some((entry) => typeof entry.id !== "string" || !allowed.has(entry.id))) {
     throw new Error("snapshot source is outside the active bootstrap window");
   }
   const entries = input.sourceEntries.filter((entry) => typeof entry.id === "string" && (!allowed || allowed.has(entry.id)));
+  // One-shot observer bound. A single long agentic task has no completed turn until its
+  // final answer, so the first observable prefix can be very large: a real 64-message audit
+  // session reached ~115k tokens before its first terminal assistant and was skipped whole.
+  // 160k keeps the call well inside Luna's 300k window (plus CONTEXT_OVERHEAD_TOKENS and the
+  // reply) while making those sessions observable.
+  const maxTokens = input.maxTokens ?? 160_000;
+  // Chunk instead of dying: cover the LARGEST CONTIGUOUS PREFIX that ends at a terminal
+  // assistant and fits `maxTokens`. Coverage must stay a prefix (never a suffix, never a
+  // gap) because the next cycle continues from this boundary. Only when even the prefix
+  // ending at the FIRST terminal assistant exceeds the bound is the window `oversized`,
+  // and then the span stays the whole completed window exactly as before.
+  let running = 0;
   let end = -1;
-  for (let index = 0; index < entries.length; index += 1) if (isTerminalAssistantEntry(entries[index])) end = index;
-  const completed = end >= 0 ? entries.slice(0, end + 1) : [];
+  let lastTerminal = -1;
+  for (let index = 0; index < entries.length; index += 1) {
+    running += tokenCount(entries[index]);
+    if (!isTerminalAssistantEntry(entries[index])) continue;
+    lastTerminal = index;
+    if (running <= maxTokens) end = index;
+  }
+  const oversized = lastTerminal >= 0 && end < 0;
+  const completed = oversized ? entries.slice(0, lastTerminal + 1) : end >= 0 ? entries.slice(0, end + 1) : [];
   const span = spanFor(completed);
   const snapshotPayload = {
     binding: input.binding,
@@ -145,14 +167,13 @@ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurn
   const snapshotId = recordDigest(input.binding.sessionId, { generation: input.binding.generation, branchId: input.binding.branchId }, snapshotPayload);
   const cycleId = makeCycleId(input.binding.sessionId, snapshotId);
   const tokenCountValue = completed.reduce((sum, entry) => sum + tokenCount(entry), 0);
-  const maxTokens = input.maxTokens ?? 100_000;
   return {
     snapshotId,
     cycleId,
     binding: input.binding,
     span,
     tokenCount: tokenCountValue,
-    status: completed.length === 0 ? "empty-valid" : tokenCountValue > maxTokens ? "oversized" : "ready",
+    status: completed.length === 0 ? "empty-valid" : oversized ? "oversized" : "ready",
   };
 }
 

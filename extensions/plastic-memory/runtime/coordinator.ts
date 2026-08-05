@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, type PlasticMemoryConfig } from "../config.ts";
+import { sessionDigest } from "../common/ids.ts";
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { acknowledgeCompaction, type CompactionEntry } from "../compaction/engine.ts";
 import { projectPlasticContext } from "../compaction/projection.ts";
@@ -43,6 +44,7 @@ type ApplyLatch = {
   consumed: boolean;
 };
 
+const SESSION_DIGEST_PROVENANCE = "plastic-memory:session";
 const INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX = "\u0000plastic-memory:internal-compaction:";
 function internalCompactionInstructions(id: string): string {
   return `${INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX}${id}`;
@@ -156,7 +158,7 @@ export class PlasticMemoryCoordinator {
   }
 
   private binding(ctx: ExtensionContext): SessionBinding {
-    return { sessionId: ctx.sessionManager.getSessionId(), generation: this.generation, branchId: this.branchId };
+    return { sessionId: sessionDigest(ctx.sessionManager.getSessionId(), SESSION_DIGEST_PROVENANCE), generation: this.generation, branchId: this.branchId };
   }
 
   private runtimeFor(): RunnerRuntime | undefined {
@@ -229,7 +231,8 @@ export class PlasticMemoryCoordinator {
       return;
     }
     try {
-      ctx.ui.notify(message, event.status === "started" || event.status === "prepared" || event.status === "applied" ? "info" : "warning");
+      // Only a real failure warns; every waiting or progress state is informational.
+      ctx.ui.notify(message, event.status === "failed" ? "warning" : "info");
     } catch {
       // UI observability must never change worker or compaction behavior.
     }
@@ -291,7 +294,7 @@ export class PlasticMemoryCoordinator {
     }).catch(() => { /* worker failures are detached and fail closed */ });
   }
 
-  private preparationMatches(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, pending: PendingCompaction, ctx: ExtensionContext): boolean {
+  private preparationMatches(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, pending: PendingCompaction, ctx: ExtensionContext, internal: boolean): boolean {
     const branch = event.branchEntries;
     const current = ctx.sessionManager.getBranch() as SessionEntry[];
     if (!orderedBranch(branch) || !orderedBranch(current) || entryIds(branch).join("\u0000") !== entryIds(current).join("\u0000")) return false;
@@ -299,7 +302,15 @@ export class PlasticMemoryCoordinator {
     if (!sameBinding(pending.binding, binding) || pending.runtimeToken !== this.runtimeToken) return false;
     const branchIds = entryIds(branch);
     if (pending.preparedPrefixIds.some((id, index) => branchIds[index] !== id)) return false;
-    if (typeof event.preparation.firstKeptEntryId !== "string" || event.preparation.firstKeptEntryId !== pending.cut.firstKeptEntryId) return false;
+    const cutIndex = branchIds.indexOf(pending.cut.firstKeptEntryId);
+    if (cutIndex < 0) return false;
+    // The host cut is advisory: agent-session applies `extensionCompaction.firstKeptEntryId`
+    // verbatim, so the host's own keepRecentTokens cut never has to equal the 6/4 cut. On a
+    // host-initiated compaction we only refuse to keep MORE context than the host asked for.
+    if (!internal) {
+      const hostIndex = typeof event.preparation.firstKeptEntryId === "string" ? branchIds.indexOf(event.preparation.firstKeptEntryId) : -1;
+      if (hostIndex < 0 || cutIndex < hostIndex) return false;
+    }
     const kept = branch.find((entry) => entry.id === pending.cut.firstKeptEntryId);
     if (messageRole(kept) !== "user") return false;
     if (latestCompactionIdentity(branch) !== pending.latestCompactionIdentity) return false;
@@ -314,14 +325,22 @@ export class PlasticMemoryCoordinator {
     intent.consumed = true;
     if (this.applyLatch) this.applyLatch.consumed = true;
     const pending = this.pendingStore.peek(this.now());
-    if (!pending || !this.preparedViews.has(pending as object) || !this.preparationMatches(event, pending, ctx)) return { cancel: true };
+    // The nonce is already spent above, so every cancel below must release the apply state
+    // locally instead of trusting the host to deliver `onError` for the cancellation.
+    if (!pending || !this.preparedViews.has(pending as object) || !this.preparationMatches(event, pending, ctx, true)) {
+      this.resetApplyState();
+      return { cancel: true };
+    }
     const consumed = this.pendingStore.consume({
       binding: this.binding(ctx),
       runtimeToken: this.runtimeToken,
       branchIds: entryIds(event.branchEntries),
       latestCompactionIdentity: latestCompactionIdentity(event.branchEntries),
     }, this.now());
-    if (!consumed || typeof event.preparation.firstKeptEntryId !== "string") return { cancel: true };
+    if (!consumed) {
+      this.resetApplyState();
+      return { cancel: true };
+    }
     const view = this.preparedViews.get(pending as object);
     if (view) this.preparedViews.set(consumed as object, view);
     intent.pending = consumed;
@@ -341,6 +360,28 @@ export class PlasticMemoryCoordinator {
   }
   private pendingRenderedDetails(pending: PendingCompaction): unknown {
     return this.preparedViews.get(pending as object)?.details ?? { plastic: { kind: "cumulative", state: "verified", stateDigest: pending.stateDigest, header: pending.cut.summaryHeader } };
+  }
+
+  /**
+   * A failed acknowledgement must not be sticky: the pending was already consumed at
+   * `session_before_compact`, so the apply state is reset here to let a later cycle
+   * prepare and apply again. No record is appended on failure.
+   */
+  /**
+   * Clear the apply latch, the internal nonce and any in-flight pending. A cancelled or
+   * rejected apply must never latch the coordinator: `maybeApply` refuses to run while
+   * `applyLatch` or `inFlightPending` is set, so without this reset one bad attempt would
+   * block every later compaction for the rest of the session.
+   */
+  private resetApplyState(): void {
+    this.inFlightPending = undefined;
+    this.applyLatch = undefined;
+    this.internalIntent = undefined;
+  }
+
+  private failApply(ctx: ExtensionContext, reason: string): void {
+    this.resetApplyState();
+    this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason });
   }
 
   private maybeApply(ctx: ExtensionContext): void {
@@ -404,8 +445,8 @@ export class PlasticMemoryCoordinator {
       }
       if (!this.enabled()) return undefined;
       const pending = this.pendingStore.peek(this.now());
-      if (!pending || !this.preparedViews.has(pending as object) || event.reason === "manual" && !this.preparationMatches(event, pending, ctx)) return undefined;
-      if (!this.preparationMatches(event, pending, ctx)) return undefined;
+      if (!pending || !this.preparedViews.has(pending as object) || event.reason === "manual" && !this.preparationMatches(event, pending, ctx, false)) return undefined;
+      if (!this.preparationMatches(event, pending, ctx, false)) return undefined;
       const consumed = this.pendingStore.consume({
         binding: this.binding(ctx),
         runtimeToken: this.runtimeToken,
@@ -430,7 +471,7 @@ export class PlasticMemoryCoordinator {
       if (!pending || !this.enabled()) return;
       const branch = ctx.sessionManager.getBranch() as SessionEntry[];
       const matches = branch.filter((entry) => entry.type === "compaction" && entry.id === event.compactionEntry.id);
-      if (matches.length !== 1) return;
+      if (matches.length !== 1) { this.failApply(ctx, "host compaction entry not found once on the branch"); return; }
       const activeEntryIds = entryIds(ctx.sessionManager.buildContextEntries() as SessionEntry[]);
       const acknowledged = acknowledgeCompaction(pending, event.compactionEntry as SessionEntry, {
         binding: this.binding(ctx),
@@ -438,7 +479,7 @@ export class PlasticMemoryCoordinator {
         branchIds: entryIds(branch),
         latestCompactionIdentity: latestCompactionIdentity(branch.slice(0, -1)),
       }, activeEntryIds, this.now());
-      if (!acknowledged) return;
+      if (!acknowledged) { this.failApply(ctx, "host compaction did not match the prepared cut"); return; }
       this.append(acknowledged.record);
       this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
       this.inFlightPending = undefined;

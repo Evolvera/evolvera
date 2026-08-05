@@ -23,7 +23,7 @@ export type ReflectorResult = Readonly<{
   reason?: string;
 }>;
 
-const REFLECTOR_SYSTEM = "Crystallize durable reflections from observations. Return JSON with an exact coverageManifest echo and supporting observation ids. Do not close source coverage.";
+const REFLECTOR_SYSTEM = "Crystallize durable reflections from observations. Return JSON with the scalar coverageManifest identity fields (omit sourceEntryIds) and supporting observation ids. Do not close source coverage.";
 const MAX_REFLECTION_CHARS = 2_000;
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -32,12 +32,16 @@ function record(value: unknown): Record<string, unknown> | undefined {
 function exactIds(actual: unknown, expected: readonly string[]): actual is string[] {
   return Array.isArray(actual) && actual.length === expected.length && actual.every((id, index) => id === expected[index]);
 }
+/** Echoing the deterministic span ids proves nothing (code hands them to the model), so the array is optional; a supplied array must still match exactly. */
+function manifestIds(actual: unknown, expected: readonly string[]): boolean {
+  return actual === undefined || exactIds(actual, expected);
+}
 function manifest(value: unknown, snapshot: CompletedTurnSnapshot, binding: SessionBinding): boolean {
   const source = record(value);
   return Boolean(source
     && source.snapshotId === snapshot.snapshotId && source.cycleId === snapshot.cycleId
     && source.sourceDigest === snapshot.span.sourceDigest && source.completedTurnEndId === snapshot.span.completedTurnEndId
-    && exactIds(source.sourceEntryIds, snapshot.span.sourceEntryIds)
+    && manifestIds(source.sourceEntryIds, snapshot.span.sourceEntryIds)
     && source.sessionId === binding.sessionId && source.generation === binding.generation && source.branchId === binding.branchId);
 }
 function clean(value: string, maximum: number): string {
@@ -47,9 +51,9 @@ function supportIds(value: unknown, allowed: readonly string[]): string[] | unde
   if (!Array.isArray(value) || value.length === 0 || !value.every((id) => typeof id === "string")) return undefined;
   const positions = new Map(allowed.map((id, index) => [id, index]));
   const ids = value as string[];
-  if (ids.some((id) => !positions.has(id)) || new Set(ids).size !== ids.length) return undefined;
-  if (ids.some((id, index) => index > 0 && positions.get(id)! <= positions.get(ids[index - 1])!)) return undefined;
-  return ids;
+  if (ids.some((id) => !positions.has(id))) return undefined;
+  // Membership in the allowed observation ids is the invariant; citation order is not a security property, so dedupe (first wins) and canonicalize by position.
+  return [...new Set(ids)].sort((left, right) => positions.get(left)! - positions.get(right)!);
 }
 function asReflection(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot, allowed: readonly string[]): Reflection | undefined {
   const source = record(value);
@@ -69,7 +73,29 @@ function promptFor(input: ReflectorInput): string {
     snapshot: input.snapshot,
     observations: input.observations,
     priorReflections: (input.priorReflections ?? []).slice(-200),
-    output: { coverageManifest: "must exactly echo snapshot identity and ordered sourceEntryIds", reflections: "array of durable facts with supportingObservationIds" },
+    expectedCoverageManifest: {
+      snapshotId: input.snapshot.snapshotId,
+      cycleId: input.snapshot.cycleId,
+      sourceDigest: input.snapshot.span.sourceDigest,
+      completedTurnEndId: input.snapshot.span.completedTurnEndId,
+      sourceEntryIds: input.snapshot.span.sourceEntryIds,
+      sessionId: input.binding.sessionId,
+      generation: input.binding.generation,
+      branchId: input.binding.branchId,
+    },
+    output: {
+      response: "single JSON object only; no prose, markdown fence, or trailing commentary",
+      coverageManifest: "copy expectedCoverageManifest as this top-level field: flat, same key names, no additions; OMIT sourceEntryIds entirely because the deterministic ids are authoritative and are filled in by code",
+      reflections: {
+        type: "array",
+        empty: "use [] when there is nothing durable to record",
+        item: {
+          content: "non-empty string",
+          supportingObservationIds: "non-empty subset of the listed observation ids; order does not matter and duplicates are normalized by code",
+          id: "optional; if supplied, pm:r:<24 lowercase hex>:<24 lowercase hex>",
+        },
+      },
+    },
   });
 }
 
