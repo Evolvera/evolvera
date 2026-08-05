@@ -26,7 +26,7 @@ export type ObserverResult = Readonly<{
   reason?: string;
 }>;
 
-const OBSERVER_SYSTEM = "Extract durable observations only. Return one JSON object containing semantic observations and exact source citations. Do not return lifecycle identity, record ids, or a coverage manifest.";
+const OBSERVER_SYSTEM = "Extract durable observations only. Return one JSON object containing semantic observations and exact source citations. Omit placeholders and blank observations; return [] if no durable non-empty fact exists. Do not return lifecycle identity, record ids, or a coverage manifest.";
 const MAX_OBSERVATION_CHARS = 2_000;
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -46,20 +46,20 @@ function sourceIds(value: unknown, allowed: readonly string[]): string[] | undef
   return [...new Set(value as string[])].sort((left, right) => positions.get(left)! - positions.get(right)!);
 }
 type ObservationFailureCode = "invalid-observation-record" | "invalid-observation-content" | "invalid-observation-timestamp" | "invalid-observation-relevance" | "invalid-observation-sourceEntryIds";
-type ParsedObservation = Readonly<{ observation: Observation }> | Readonly<{ failure: ObservationFailureCode }>;
+type ParsedObservation = Readonly<{ observation: Observation }> | Readonly<{ discard: true }> | Readonly<{ failure: ObservationFailureCode }>;
 
 /** Return only a fixed structural rejection code; model content and citation values never leave this boundary. */
 function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot, allowed: readonly string[]): ParsedObservation {
   const source = record(value);
   if (!source) return { failure: "invalid-observation-record" };
-  if (typeof source.content !== "string" || !source.content.trim()) return { failure: "invalid-observation-content" };
+  if (typeof source.content !== "string") return { failure: "invalid-observation-content" };
   if (typeof source.timestamp !== "string") return { failure: "invalid-observation-timestamp" };
   const relevance = source.relevance;
   if (relevance !== "low" && relevance !== "medium" && relevance !== "high" && relevance !== "critical") return { failure: "invalid-observation-relevance" };
   const ids = sourceIds(source.sourceEntryIds, allowed);
   if (!ids) return { failure: "invalid-observation-sourceEntryIds" };
   const content = clean(source.content, MAX_OBSERVATION_CHARS);
-  if (!content) return { failure: "invalid-observation-content" };
+  if (!content) return { discard: true };
   // Model-provided ids are intentionally ignored. Identity is derived from the immutable
   // cycle, normalized content, and the citations that code just validated.
   const id = makeObservationId(binding.sessionId, recordDigest(binding.sessionId, { snapshotId: snapshot.snapshotId, sourceEntryIds: ids }, content));
@@ -76,9 +76,9 @@ function promptFor(input: ObserverInput): string {
       response: "single JSON object only; no prose, markdown fence, or trailing commentary",
       observations: {
         type: "array",
-        empty: "use [] when there is nothing durable to record",
+        empty: "use [] when there is nothing durable to record; omit placeholders and blank observations",
         item: {
-          content: "non-empty string",
+          content: "non-empty durable fact string; omit placeholders and blank observations",
           timestamp: "string",
           relevance: "one of: low, medium, high, critical",
           sourceEntryIds: "non-empty subset of sourceEntryIds; order does not matter and duplicates are normalized by code",
@@ -109,6 +109,7 @@ export async function runObserver(input: ObserverInput): Promise<ObserverResult>
   for (const candidate of output.observations) {
     const parsed = parseObservation(candidate, input.binding, input.snapshot, allowed);
     if ("failure" in parsed) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: `observer returned an invalid observation (${parsed.failure})` };
+    if ("discard" in parsed) continue;
     observations.push(parsed.observation);
   }
   const unique = new Map(observations.map((observation) => [observation.id, observation]));

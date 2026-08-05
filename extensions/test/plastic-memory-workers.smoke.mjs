@@ -30,6 +30,7 @@ const currentAssistant = message("assistant", 50_000, "current terminal answer")
 const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const calls = [];
 let failureMode = false;
+let observerMode = "valid";
 let reflectorFailOnce = false;
 const reflectorPrompts = [];
 const runtime = {
@@ -45,7 +46,23 @@ const runtime = {
     calls.push({ role: context.role, prompt: prompts[0].content[0].text });
     const request = JSON.parse(prompts[0].content[0].text);
     if (context.role === "reflector") reflectorPrompts.push(prompts[0].content[0].text);
-    if (failureMode || context.role === "reflector" && reflectorFailOnce && reflectorPrompts.length === 1) return { noSemanticResult: true };
+    if (context.role === "observer" && failureMode) return { observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: ["outside-span"] }] };
+    if (context.role === "observer" && observerMode === "mixed") return { observations: [
+      { content: "mixed durable fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+      { content: " \t\n ", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+      { content: "\u0000\u0001", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+    ] };
+    if (context.role === "observer" && observerMode === "blank") return { observations: [
+      { content: " \t\n ", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+      { content: "\u0000\u0001", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+    ] };
+    if (context.role === "observer" && observerMode === "blank-outside") return { observations: [
+      { content: " \t\n ", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0], "outside-span"] },
+    ] };
+    if (context.role === "observer" && observerMode === "blank-invalid-relevance") return { observations: [
+      { content: " \t\n ", timestamp: "2026-08-03 00:00", relevance: "urgent", sourceEntryIds: [request.sourceEntryIds[0]] },
+    ] };
+    if (context.role === "reflector" && reflectorFailOnce && reflectorPrompts.length === 1) return { noSemanticResult: true };
     if (context.role === "observer") {
       return { observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
     }
@@ -151,6 +168,39 @@ assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plas
 assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.reflections.recorded").length, 1);
 assert.deepEqual(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").map((entry) => [entry.data.attemptCount, entry.data.outcome, entry.data.phase]), [[0, "pending", "observer"], [0, "failed", "reflector"], [1, "pending", "reflector"]]);
 reflectorFailOnce = false;
+
+observerMode = "mixed";
+const mixedAppended = [];
+const mixedScheduler = schedulerModule.createCycleScheduler();
+const mixedResult = await mixedScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => mixedAppended.push(entry) });
+assert.equal(mixedResult.status, "closed");
+const mixedObservationRecords = mixedAppended.filter((entry) => entry.customType === "plastic.observations.recorded");
+assert.equal(mixedObservationRecords.length, 1);
+assert.equal(mixedObservationRecords[0].data.observations.length, 1);
+assert.equal(mixedObservationRecords[0].data.observations[0].content, "mixed durable fact");
+
+observerMode = "blank";
+const blankAppended = [];
+const blankScheduler = schedulerModule.createCycleScheduler();
+const blankResult = await blankScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankAppended.push(entry) });
+assert.equal(blankResult.status, "empty-valid");
+assert.equal(blankAppended.filter((entry) => entry.customType === "plastic.observations.recorded").length, 0);
+assert.equal(blankResult.cycle.data.status, "empty-valid");
+
+observerMode = "blank-outside";
+const blankOutsideAppended = [];
+const blankOutsideScheduler = schedulerModule.createCycleScheduler();
+const blankOutsideResult = await blankOutsideScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankOutsideAppended.push(entry) });
+assert.equal(blankOutsideResult.status, "failed");
+assert.equal(blankOutsideAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 0);
+
+observerMode = "blank-invalid-relevance";
+const blankInvalidRelevanceAppended = [];
+const blankInvalidRelevanceScheduler = schedulerModule.createCycleScheduler();
+const blankInvalidRelevanceResult = await blankInvalidRelevanceScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankInvalidRelevanceAppended.push(entry) });
+assert.equal(blankInvalidRelevanceResult.status, "failed");
+assert.equal(blankInvalidRelevanceAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 0);
+observerMode = "valid";
 
 const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", sourceDigest: snapshot.span.sourceDigest.slice(0, 24), projectSnapshot: { summary: "bounded", activeIndex: "{}" }, explicitRequest: true, runtime });
 assert.equal(explicitPromotion.ok, true);
