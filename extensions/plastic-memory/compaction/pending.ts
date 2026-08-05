@@ -67,14 +67,25 @@ export function makePendingCompaction(input: {
 
 export function pendingBranchDigest(branchIds: string[]): string { return branchDigest(branchIds); }
 
-export function isPendingUsable(pending: PendingCompaction | undefined, current: PendingBranch, now = Date.now()): boolean {
-  if (!pending || pending.consumed || !validNow(now) || now >= pending.expiresAt) return false;
+/**
+ * Identity/branch validation shared by both lifecycle stages, WITHOUT the
+ * `consumed` flag: a pending is consumed at `session_before_compact` and only
+ * acknowledged one hook later at `session_compact`, so acknowledgement must be
+ * able to re-validate identity on an already-consumed pending.
+ */
+export function isPendingIdentityCurrent(pending: PendingCompaction | undefined, current: PendingBranch, now = Date.now()): boolean {
+  if (!pending || !validNow(now) || now >= pending.expiresAt) return false;
   if (!sameBinding(pending.binding, current.binding) || pending.runtimeToken !== current.runtimeToken) return false;
   if (pending.latestCompactionIdentity !== current.latestCompactionIdentity) return false;
   if (!nonEmptyStrings(current.branchIds) || current.branchIds.length < pending.preparedPrefixIds.length) return false;
   if (pending.preparedPrefixIds.some((id, index) => current.branchIds[index] !== id)) return false;
   // The prefix is immutable; descendants may only be appended in the host's order.
   return branchDigest(current.branchIds.slice(0, pending.preparedPrefixIds.length)) === pending.preparedPrefixDigest;
+}
+
+/** Staging/consumption path: identity must be current AND the slot still unconsumed. */
+export function isPendingUsable(pending: PendingCompaction | undefined, current: PendingBranch, now = Date.now()): boolean {
+  return !!pending && !pending.consumed && isPendingIdentityCurrent(pending, current, now);
 }
 
 export function consumePending(pending: PendingCompaction | undefined, current: PendingBranch, now = Date.now()): PendingCompaction | undefined {

@@ -5,7 +5,7 @@ import { isTerminalAssistantEntry } from "../session/cycles.ts";
 import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import { renderSessionSummary } from "../session/render-summary.ts";
 import { extractCycleSourceFacts, verifyCycleSourceDigest, type CycleSourceFacts } from "./extract.ts";
-import { makePendingCompaction, PendingStore, type PendingBranch, type PendingCompaction } from "./pending.ts";
+import { isPendingIdentityCurrent, makePendingCompaction, PendingStore, type PendingBranch, type PendingCompaction } from "./pending.ts";
 import { projectSnapshot, renderVerifiedCompaction, verifyRenderedCompaction, type CumulativeState, type LunaRequest, type ProjectSnapshot, type RenderedCompaction } from "./render.ts";
 
 export type CycleInput = CycleClosedData | { type: "custom"; customType: "plastic.cycle.closed"; data: CycleClosedData };
@@ -24,6 +24,7 @@ export type EngineInput = Readonly<{
   pendingStore?: PendingStore;
   compact: (request: LunaRequest) => { summary?: unknown; state?: unknown; details?: unknown };
 }>;
+export type EngineWindowInput = Omit<EngineInput, "compact">;
 export type CutValidation = Readonly<{
   branchIds: string[];
   cutIndex: number;
@@ -89,7 +90,7 @@ function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPo
   if (sourceDigest(sourceEntries) !== cycle.sourceDigest) return false;
   return isTerminalAssistantEntry(sourceEntries.at(-1)!);
 }
-function eligibleWindow(input: EngineInput): { cycles: CycleClosedData[]; cut: CutValidation } | undefined {
+function eligibleWindow(input: EngineWindowInput): { cycles: CycleClosedData[]; cut: CutValidation } | undefined {
   if (!branchIsOrdered(input.branchEntries)) return undefined;
   const branchIds = input.branchEntries.map((entry) => entry.id!);
   const positions = new Map(branchIds.map((id, index) => [id, index]));
@@ -126,6 +127,10 @@ function eligibleWindow(input: EngineInput): { cycles: CycleClosedData[]; cut: C
   const latestCompactionIdentity = latest ? compactionIdentity(latest) : undefined;
   const cut: CutValidation = { branchIds, cutIndex, firstKeptEntryId: firstKept!.id!, latestCompactionIdentity, previousCompactions };
   return { cycles: compacted, cut };
+}
+/** The one 6/4 selector: callers pre-check with exactly the window preparation will compact, so selection can never diverge. */
+export function selectEligibleStride(input: EngineWindowInput): CycleClosedData[] | undefined {
+  return eligibleWindow(input)?.cycles;
 }
 function detailsDigest(rendered: RenderedCompaction): string { return digestParts(rendered.details).slice(0, 32); }
 const consumedAcknowledgements = new WeakSet<object>();
@@ -188,10 +193,10 @@ export function acknowledgeCompaction(
   if (plastic?.stateDigest !== pending.stateDigest || plastic.header !== pending.cut.summaryHeader || plastic.cutDigest !== pending.cut.cutDigest
     || plastic.preparedPrefixDigest !== pending.preparedPrefixDigest || plastic.latestCompactionIdentity !== pending.latestCompactionIdentity) return undefined;
   if (digestParts(details).slice(0, 32) !== pending.cut.detailsDigest) return undefined;
-  const store = new PendingStore();
-  store.stage(pending);
-  const consumed = store.consume(current, now);
-  if (!consumed) return undefined;
+  // Two-stage lifecycle: the pending was consumed on purpose at `session_before_compact`,
+  // so acknowledgement re-validates identity only — the `consumed` flag is expected here.
+  if (!isPendingIdentityCurrent(pending, current, now)) return undefined;
+  const consumed: PendingCompaction = pending.consumed ? pending : Object.freeze({ ...pending, consumed: true });
   const data: CompactionAppliedData = {
     schemaVersion: 1,
     ...pending.binding,

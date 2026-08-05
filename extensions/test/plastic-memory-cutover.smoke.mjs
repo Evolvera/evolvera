@@ -145,11 +145,15 @@ try {
   for (const [expectedMode, cwd] of contexts) {
     const expected = contextModule.assembleProjectContext(path.join(cwd, ".pi", "memory"), { architectureRoot: path.join(cwd, ".pi", "memory"), repositoryRoot: cwd });
     const hook = expectedMode === "canonical" ? full.root.hooks.get("before_agent_start") : (await loadMode({}, undefined)).bridge.hooks.get("before_agent_start");
-    const ctx = { cwd, systemPrompt: "ORIGINAL-SYSTEM-PROMPT" };
-    hook({}, ctx);
+    const ctx = { cwd };
+    // The host applies only the handler RESULT (`{ systemPrompt }`); mutating
+    // ctx.systemPrompt is a silent no-op in @earendil-works/pi-coding-agent.
+    const result = hook({ type: "before_agent_start", systemPrompt: "ORIGINAL-SYSTEM-PROMPT" }, ctx);
     assert.equal(expected.mode, expectedMode);
-    assert.equal(ctx.systemPrompt, `${expected.block}\n\nORIGINAL-SYSTEM-PROMPT`, `${expectedMode}: shared bounded block`);
-    assert.equal(ctx.systemPrompt.includes(sentinel), false, `${expectedMode}: no full chunk injection`);
+    assert.equal(typeof result?.systemPrompt, "string", `${expectedMode}: handler returns a system prompt`);
+    assert.equal(result.systemPrompt, `${expected.block}\n\nORIGINAL-SYSTEM-PROMPT`, `${expectedMode}: shared bounded block`);
+    assert.equal(result.systemPrompt.includes(sentinel), false, `${expectedMode}: no full chunk injection`);
+    assert.equal(ctx.systemPrompt, undefined, `${expectedMode}: no context mutation`);
   }
 
   // Tools are bound to the current ctx.cwd and current branch, never to an

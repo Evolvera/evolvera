@@ -1,13 +1,13 @@
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, snapshotManifestDigest, type CompletedTurnSnapshot } from "../session/cycles.ts";
 import { normalSourceEntries } from "../session/ledger.ts";
-import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
+import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry, type SourceSpan } from "../session/types.ts";
 import { runObserver, type ObserverResult } from "./observer.ts";
 import { runReflector, type ReflectorResult } from "./reflector.ts";
 import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
 import { runPromoter, type PromoterInput, type PromoterResult } from "./promoter.ts";
 import type { RunnerRuntime } from "./runner.ts";
-import type { EngineInput } from "../compaction/engine.ts";
+import { selectEligibleStride, type EngineInput } from "../compaction/engine.ts";
 import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
 import type { PendingStore } from "../compaction/pending.ts";
 
@@ -59,6 +59,11 @@ function samePrefix(expected: readonly string[], actual: readonly string[]): boo
   return actual.length >= expected.length && expected.every((id, index) => actual[index] === id);
 }
 function entryIds(entries: readonly SessionEntry[]): string[] { return entries.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []); }
+/** A worker may only be shown what the span validates: exactly the span entries, in span order. */
+function spanEntries(source: readonly SessionEntry[], span: SourceSpan): SessionEntry[] {
+  const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+  return span.sourceEntryIds.flatMap((id) => { const entry = byId.get(id); return entry ? [entry] : []; });
+}
 function cycleData(value: unknown): CycleClosedData | undefined {
   if (!isPlasticRecord(value) || value.customType !== PLASTIC_CYCLE_CLOSED) return undefined;
   return value.data;
@@ -75,6 +80,9 @@ function safeReason(reason: unknown): string {
   const value = typeof reason === "string" ? reason : String(reason ?? "worker did not complete");
   return scrubSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 120) || "worker did not complete";
 }
+/** Benign "not yet" outcomes are waiting states, not failures. */
+const COMPACTOR_WAITING_REASONS = new Set(["no eligible cycles", "no strict six-cycle safe current window"]);
+function compactorWaiting(reason: unknown): boolean { return typeof reason === "string" && COMPACTOR_WAITING_REASONS.has(reason); }
 function report(input: SchedulerInput, event: Omit<SchedulerLifecycleEvent, "reason"> & { reason?: unknown }): void {
   input.lifecycleReporter?.({ ...event, ...(event.reason === undefined ? {} : { reason: safeReason(event.reason) }) });
 }
@@ -91,7 +99,11 @@ export class CycleScheduler {
   trigger(input: SchedulerInput): Promise<SchedulerResult> {
     const bootstrap = input.bootstrap;
     const source = normalSourceEntries(input.branchEntries, bootstrap as BootstrapData);
-    const preview = source.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: source, activeEntryIds: bootstrap.activeEntryIds }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [], activeEntryIds: bootstrap.activeEntryIds });
+    // `normalSourceEntries` already bounds the sources to the active window plus the
+    // post-anchor descendants and returns [] on any inconsistency, so the stale bootstrap
+    // window must not be re-applied as a snapshot allow-set: on resume the new turn is a
+    // descendant and is legitimately outside it.
+    const preview = source.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: source }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
     const key = `${input.binding.sessionId}:${input.binding.generation}:${input.binding.branchId}:${preview.snapshotId}`;
     const existing = this.jobs.get(key);
     if (existing) return existing.promise;
@@ -135,7 +147,8 @@ export class CycleScheduler {
       report(input, { phase: "observer", status: "skipped", reason: "snapshot exceeds one-shot bound" });
       return { status: "skipped", snapshot, reason: "snapshot exceeds one-shot bound" };
     }
-    if (snapshot.status === "empty-valid" && normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData).length > 0 && snapshot.span.sourceEntryIds.length === 0) {
+    const source = normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData);
+    if (snapshot.status === "empty-valid" && source.length > 0 && snapshot.span.sourceEntryIds.length === 0) {
       report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
       return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
     }
@@ -159,7 +172,7 @@ export class CycleScheduler {
     }
 
     report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
-    const observer: ObserverResult = await runObserver({ binding: input.binding, snapshot, sourceEntries: normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData), runtime: input.runtime, signal: controller.signal });
+    const observer: ObserverResult = await runObserver({ binding: input.binding, snapshot, sourceEntries: spanEntries(source, snapshot.span), runtime: input.runtime, signal: controller.signal });
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
     if (!observer.ok || !observer.manifestValid) {
       report(input, { phase: "observer", status: "failed", reason: observer.reason ?? "observer did not prove exact coverage" });
@@ -198,9 +211,15 @@ export class CycleScheduler {
     const config = input.compaction;
     if (!config) return undefined;
     const cycles = [...config.cycles, closed.data];
-    const eligibleCycles = config.eligibleCycles;
+    const engine = { ...config.engine, binding: input.binding, branchEntries: input.branchEntries, cycles, projectSnapshot: config.projectSnapshot, runtimeToken: config.runtimeToken, pendingStore: config.pendingStore };
+    // The compactor only ever sees the stride the engine would compact, so no model call is spent before a valid 6/4 window exists.
+    const eligibleCycles = selectEligibleStride(engine);
+    if (!eligibleCycles) {
+      report(input, { phase: "compactor", status: "skipped", reason: "no six-cycle stride yet" });
+      return undefined;
+    }
     const jobInput: CompactorInput = {
-      engine: { ...config.engine, binding: input.binding, branchEntries: input.branchEntries, cycles, projectSnapshot: config.projectSnapshot, runtimeToken: config.runtimeToken, pendingStore: config.pendingStore },
+      engine,
       eligibleCycles,
       priorState: config.priorState,
       projectSnapshot: config.projectSnapshot,
@@ -209,7 +228,7 @@ export class CycleScheduler {
       isCurrent: () => this.current(input, captured, { span: closed.data } as unknown as CompletedTurnSnapshot, controller, epoch),
     };
     const job = runCompactor(jobInput).then((result) => {
-      if (!result.ok) report(input, { phase: "compactor", status: "failed", reason: result.reason ?? "compactor did not prepare compaction" });
+      if (!result.ok) report(input, { phase: "compactor", status: compactorWaiting(result.reason) ? "skipped" : "failed", reason: result.reason ?? "compactor did not prepare compaction" });
       return result;
     }).catch((error) => {
       const result = { ok: false, detached: true as const, reason: error instanceof Error ? error.message : String(error) };

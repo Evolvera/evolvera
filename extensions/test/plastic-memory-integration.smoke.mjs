@@ -144,7 +144,9 @@ async function lifecycleProbe(mode) {
   return notices;
 }
 const emptyNotices = await lifecycleProbe("empty");
-assert.equal(emptyNotices.some(({ message, level }) => message === "Plastic memory: observer returned no observations" && level === "warning"), true);
+// A cycle that legitimately finds nothing durable is a waiting state, not a failure:
+// only `status: "failed"` warns, so real defects stand out in a live session.
+assert.equal(emptyNotices.some(({ message, level }) => message === "Plastic memory: observer returned no observations" && level === "info"), true);
 const failedNotices = await lifecycleProbe("failure");
 assert.equal(failedNotices.some(({ message, level }) => level === "warning" && message.startsWith("Plastic memory: observer failed — ")), true);
 assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel]);

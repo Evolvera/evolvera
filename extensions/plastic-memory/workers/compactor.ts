@@ -24,7 +24,7 @@ export type CompactorResult = Readonly<{
   reason?: string;
 }>;
 
-const COMPACTOR_SYSTEM = "Maintain cumulative structured state. Return JSON with summary, state, and optional details; deterministic source identities are authoritative.";
+const COMPACTOR_SYSTEM = "Maintain cumulative structured state. Return JSON with summary, optional state.facts, and optional details; deterministic source identities are authoritative and must not be echoed.";
 const FACT_KEYS: (keyof StructuredFacts)[] = ["activeMemoryIds", "files", "commands", "errors", "decisions", "constraints", "goals", "openLoops"];
 function mergeFacts(cycles: CycleSourceFacts[]): StructuredFacts {
   const result = Object.fromEntries(FACT_KEYS.map((key) => [key, [] as string[]])) as Record<keyof StructuredFacts, string[]>;
@@ -36,14 +36,26 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 function promptFor(request: LunaRequest): string {
   return JSON.stringify({
-    exactEligibleCycles: request.cycleIds,
-    sourceEntryIds: request.sourceEntryIds,
-    sourceDigests: request.sourceDigests,
+    readOnlyIdentityContext: {
+      cycleIds: request.cycleIds,
+      sourceEntryIds: request.sourceEntryIds,
+      sourceDigests: request.sourceDigests,
+      instruction: "READ-ONLY context only. Never return these identity arrays; deterministic code fills them.",
+    },
     sourceFactsDigest: request.sourceFactsDigest,
     priorStructuredState: request.priorState,
     deterministicFacts: request.facts,
     boundedProjectSnapshot: request.projectSnapshot,
-    output: { summary: "bounded cumulative prose", state: "echo exact cycle/source identities and preserve all facts", details: "optional scrubbed metadata" },
+    output: {
+      response: "single JSON object only; no prose outside the JSON, no markdown fence, and no trailing commentary",
+      summary: "required bounded cumulative prose string in plain text with neutral wording; renderVerifiedCompaction strips a leading summaryHeader(...) if present and re-adds its own header; assertNoSensitiveText applies, so never include credentials, tokens, keys, or file contents that look like secrets",
+      state: {
+        optional: true,
+        facts: Object.fromEntries(FACT_KEYS.map((key) => [key, "optional array of strings; values are union-merged with deterministicFacts, so this may only add facts"])),
+      },
+      identityRule: "HARD RULE: omit cycleIds, sourceEntryIds, and sourceDigests entirely from the response. They must not appear under state, details, or any other key; they are authoritative read-only context and are filled by deterministic code.",
+      details: "optional scrubbed metadata object",
+    },
   });
 }
 function responseObject(value: unknown): { summary?: unknown; state?: unknown; details?: unknown } | undefined {

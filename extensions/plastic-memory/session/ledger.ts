@@ -218,16 +218,6 @@ export function normalSourceEntries(branch: SessionEntry[], bootstrap?: Bootstra
   const activePositions = activeIds.map((id) => branchPositions.get(id) as number);
   if (historicalPositions.some((position, index) => index > 0 && position <= historicalPositions[index - 1])) return [];
   if (activePositions.some((position, index) => index > 0 && position <= activePositions[index - 1])) return [];
-  if (activeIds.length > 0) {
-    if (bootstrap.activeStartId && bootstrap.activeStartId !== activeIds[0]) return [];
-    if (bootstrap.activeEndId && bootstrap.activeEndId !== activeIds.at(-1)) return [];
-    if (historicalPositions.some((position) => position >= activePositions[0])) return [];
-  } else {
-    if (bootstrap.activeStartId || bootstrap.activeEndId || historicalIds.length === 0) return [];
-  }
-
-  let boundary = activePositions.at(-1) ?? historicalPositions.at(-1);
-  if (boundary === undefined) return [];
   const sameIds = (left: unknown, right: string[]): boolean => Array.isArray(left)
     && left.length === right.length && left.every((id, index) => id === right[index]);
   const bootstrapPosition = [...branch].reverse().findIndex((entry) => {
@@ -239,8 +229,24 @@ export function normalSourceEntries(branch: SessionEntry[], bootstrap?: Bootstra
       && (bootstrap.activeDigest === undefined || data.activeDigest === bootstrap.activeDigest)
       && sameIds(data.activeEntryIds, activeIds) && sameIds(data.historicalPrefixIds, historicalIds);
   });
-  if (bootstrapPosition >= 0) {
-    boundary = branch.length - 1 - bootstrapPosition;
+  const anchorPosition = bootstrapPosition >= 0 ? branch.length - 1 - bootstrapPosition : undefined;
+
+  if (activeIds.length > 0) {
+    if (bootstrap.activeStartId && bootstrap.activeStartId !== activeIds[0]) return [];
+    if (bootstrap.activeEndId && bootstrap.activeEndId !== activeIds.at(-1)) return [];
+    if (historicalPositions.some((position) => position >= activePositions[0])) return [];
+  } else {
+    if (bootstrap.activeStartId || bootstrap.activeEndId) return [];
+    // A genuinely fresh session has no active window and no historical prefix; its own
+    // bootstrap record is then the only legitimate anchor, and it bounds the sources to the
+    // entries appended after it, so the historical gap still cannot be reopened.
+    if (historicalIds.length === 0 && anchorPosition === undefined) return [];
+  }
+
+  let boundary = activePositions.at(-1) ?? historicalPositions.at(-1) ?? anchorPosition;
+  if (boundary === undefined) return [];
+  if (anchorPosition !== undefined) {
+    boundary = anchorPosition;
     if (activePositions.some((position) => position >= boundary)
       || historicalPositions.some((position) => position >= boundary)) return [];
   }
