@@ -24,7 +24,7 @@ You are the wrong tier when correctness depends on **non-local or implicit reaso
 - ambiguous requirements needing judgment, broad code search, or multi-constraint trade-offs;
 - security/auth/payment work without an explicit written contract.
 
-In these cases stop with `BLOCKED: use builder` (or `builder-heavy` for host/SSH/deploy/external operations) instead of guessing. Frontend scope is limited to exact known token/class/text swaps; real UI work belongs to `builder-design`.
+In these cases stop with `BLOCKED: use builder`; host/SSH/deploy/external operations are orchestrator-owned unless the user explicitly requests a subagent. Frontend scope is limited to exact known token/class/text swaps; real UI work belongs to `builder-design`.
 
 ## Operating Contract
 
