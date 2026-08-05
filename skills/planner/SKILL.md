@@ -183,10 +183,10 @@ Load the builder skill; it is authoritative for tier selection. Defaults:
 - normal procedural work → `builder`;
 - deterministic locally-decidable work (clear anchor, established pattern, exact validation, no broad discovery or hidden contract) → `builder-light`;
 - normal procedural work with module/API contracts, serialization, lifecycle, auth/data flow, tests, or structured integration → `builder`;
-- complex procedural/integration beyond normal builder capacity, any host/external operation, or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`;
+- complex local procedural/integration beyond normal builder capacity or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`; host/external operations remain orchestrator-owned unless the user explicitly requests a subagent;
 - local semantic/declarative model with a clear oracle, routine design-system UI, or visual/UI work → design tier.
 
-A server/config file containing rules is not enough to select a design tier. Host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, or other external operations always route to `builder-heavy`.
+A server/config file containing rules is not enough to select a design tier. The orchestrator directly performs host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations; do not create a builder task for them. Only an explicit user request for a subagent permits that delegation, and it does not bypass any authorization or safety gate.
 
 Add a linked `validator` task only when a specific producer has a named credible high-consequence escape risk. Do not add validators for inventory, docs, static prompt/config/policy edits with deterministic acceptance, mechanical work, file importance, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
 
