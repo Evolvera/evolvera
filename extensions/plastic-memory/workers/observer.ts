@@ -45,20 +45,38 @@ function sourceIds(value: unknown, allowed: readonly string[]): string[] | undef
   // Membership in the span is the invariant; citation order is not a security property, so dedupe (first wins) and canonicalize by span position.
   return [...new Set(value as string[])].sort((left, right) => positions.get(left)! - positions.get(right)!);
 }
-type ObservationFailureCode = "invalid-observation-record" | "invalid-observation-content" | "invalid-observation-timestamp" | "invalid-observation-relevance" | "invalid-observation-sourceEntryIds";
+type ObservationFailureCode =
+  | "invalid-observation-record"
+  | "invalid-observation-content-missing"
+  | "invalid-observation-content-null"
+  | "invalid-observation-content-array"
+  | "invalid-observation-content-object"
+  | "invalid-observation-content-number"
+  | "invalid-observation-content-boolean"
+  | "invalid-observation-content-other"
+  | "invalid-observation-timestamp"
+  | "invalid-observation-relevance"
+  | "invalid-observation-sourceEntryIds";
 type ParsedObservation = Readonly<{ observation: Observation }> | Readonly<{ discard: true }> | Readonly<{ failure: ObservationFailureCode }>;
 
 /** Return only a fixed structural rejection code; model content and citation values never leave this boundary. */
 function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot, allowed: readonly string[]): ParsedObservation {
   const source = record(value);
   if (!source) return { failure: "invalid-observation-record" };
-  if (typeof source.content !== "string") return { failure: "invalid-observation-content" };
+  if (!Object.hasOwn(source, "content")) return { failure: "invalid-observation-content-missing" };
+  const contentValue = source.content;
+  if (contentValue === null) return { failure: "invalid-observation-content-null" };
+  if (Array.isArray(contentValue)) return { failure: "invalid-observation-content-array" };
+  if (typeof contentValue === "object") return { failure: "invalid-observation-content-object" };
+  if (typeof contentValue === "number") return { failure: "invalid-observation-content-number" };
+  if (typeof contentValue === "boolean") return { failure: "invalid-observation-content-boolean" };
+  if (typeof contentValue !== "string") return { failure: "invalid-observation-content-other" };
   if (typeof source.timestamp !== "string") return { failure: "invalid-observation-timestamp" };
   const relevance = source.relevance;
   if (relevance !== "low" && relevance !== "medium" && relevance !== "high" && relevance !== "critical") return { failure: "invalid-observation-relevance" };
   const ids = sourceIds(source.sourceEntryIds, allowed);
   if (!ids) return { failure: "invalid-observation-sourceEntryIds" };
-  const content = clean(source.content, MAX_OBSERVATION_CHARS);
+  const content = clean(contentValue, MAX_OBSERVATION_CHARS);
   if (!content) return { discard: true };
   // Model-provided ids are intentionally ignored. Identity is derived from the immutable
   // cycle, normalized content, and the citations that code just validated.
@@ -78,7 +96,7 @@ function promptFor(input: ObserverInput): string {
         type: "array",
         empty: "use [] when there is nothing durable to record; omit placeholders and blank observations",
         item: {
-          content: "non-empty durable fact string; omit placeholders and blank observations",
+          content: "scalar JSON string; never array, object, or null; non-empty durable fact text; omit placeholders and blank observations",
           timestamp: "string",
           relevance: "one of: low, medium, high, critical",
           sourceEntryIds: "non-empty subset of sourceEntryIds; order does not matter and duplicates are normalized by code",
