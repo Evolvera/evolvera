@@ -30,6 +30,8 @@ const currentAssistant = message("assistant", 50_000, "current terminal answer")
 const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const calls = [];
 let failureMode = false;
+let reflectorFailOnce = false;
+const reflectorPrompts = [];
 const runtime = {
   modelRegistry: {
     find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
@@ -42,16 +44,13 @@ const runtime = {
     assert.equal(config.maxToolCalls, 4);
     calls.push({ role: context.role, prompt: prompts[0].content[0].text });
     const request = JSON.parse(prompts[0].content[0].text);
-    if (failureMode) return { noManifest: true };
+    if (context.role === "reflector") reflectorPrompts.push(prompts[0].content[0].text);
+    if (failureMode || context.role === "reflector" && reflectorFailOnce && reflectorPrompts.length === 1) return { noSemanticResult: true };
     if (context.role === "observer") {
-      const snapshot = request.snapshot;
-      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
-      return { coverageManifest: manifest, observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: snapshot.span.sourceEntryIds }] };
+      return { observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
     }
     if (context.role === "reflector") {
-      const snapshot = request.snapshot;
-      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
-      return { coverageManifest: manifest, reflections: [{ content: "durable pattern", supportingObservationIds: request.observations.map((item) => item.id) }] };
+      return { reflections: [{ content: "durable pattern", supportingObservationIds: request.observations.map((item) => item.id) }] };
     }
     return { proposal: "proposal", repositoryEvidence: ["extensions/plastic-memory/workers"] };
   },
@@ -123,19 +122,35 @@ assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeat
 assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
 assert.deepEqual(lifecycleEvents.filter((event) => event.phase === "observer"), [{ phase: "observer", status: "started", tokenCount: 100_000 }]);
 
-// Missing/reordered manifests fail closed and permit only one automatic retry.
+// Semantic failures fail closed and retry once immediately with the same chunk.
 failureMode = true;
 const retryAppended = [];
 const retryScheduler = schedulerModule.createCycleScheduler();
 const retryInput = { ...scheduleInput, records: [], append: (entry) => retryAppended.push(entry) };
+const failedObserverStart = calls.filter((call) => call.role === "observer").length;
 assert.equal((await retryScheduler.trigger(retryInput)).status, "failed");
-assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "failed");
+const failedObserverPrompts = calls.filter((call) => call.role === "observer").slice(failedObserverStart).map((call) => call.prompt);
+assert.equal(failedObserverPrompts.length, 2, "observer retries once immediately");
+assert.equal(failedObserverPrompts[0], failedObserverPrompts[1], "observer retry uses byte-equivalent chunk input");
 assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
 assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
+assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").filter((entry) => entry.data.outcome === "failed").length, 2);
 assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 2);
 assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 3);
 assert.equal(lifecycleEvents.every((event) => event.reason === undefined || event.reason.length <= 120), true);
 failureMode = false;
+reflectorFailOnce = true;
+reflectorPrompts.length = 0;
+const reflectorRetryAppended = [];
+const reflectorRetryScheduler = schedulerModule.createCycleScheduler();
+const reflectorRetryInput = { ...scheduleInput, records: [], append: (entry) => reflectorRetryAppended.push(entry) };
+assert.equal((await reflectorRetryScheduler.trigger(reflectorRetryInput)).status, "closed");
+assert.equal(reflectorPrompts.length, 2, "reflector retries once in the same trigger");
+assert.equal(reflectorPrompts[0], reflectorPrompts[1], "reflector retry uses byte-equivalent aggregate input");
+assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.observations.recorded").length, 1, "observations persist once after full coverage");
+assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.reflections.recorded").length, 1);
+assert.deepEqual(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").map((entry) => [entry.data.attemptCount, entry.data.outcome, entry.data.phase]), [[0, "pending", "observer"], [0, "failed", "reflector"], [1, "pending", "reflector"]]);
+reflectorFailOnce = false;
 
 const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", sourceDigest: snapshot.span.sourceDigest.slice(0, 24), projectSnapshot: { summary: "bounded", activeIndex: "{}" }, explicitRequest: true, runtime });
 assert.equal(explicitPromotion.ok, true);

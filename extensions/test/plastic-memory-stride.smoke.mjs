@@ -33,11 +33,10 @@ function stubRuntime(options = {}) {
         if (options.compactorMode === "unstructured") return "plain prose without any JSON object";
         return JSON.stringify({ summary: "Bounded cumulative state for the compacted stride.", state: { facts: { goals: request.deterministicFacts.goals } } });
       }
-      const manifest = request.expectedCoverageManifest;
       if (context.role === "observer") {
-        return JSON.stringify({ coverageManifest: manifest, observations: [{ content: "The bounded turn constraint is durable.", timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: [manifest.sourceEntryIds[0]] }] });
+        return JSON.stringify({ observations: [{ content: "The bounded turn constraint is durable.", timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: [request.sourceEntryIds[0]] }] });
       }
-      return JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "The bounded constraint persists.", supportingObservationIds: request.observations.map((observation) => observation.id) }] });
+      return JSON.stringify({ reflections: [{ content: "The bounded constraint persists.", supportingObservationIds: request.observations.map((observation) => observation.id) }] });
     },
   };
   return { runtime, calls, prompts, count(role) { return calls.filter((call) => call.role === role).length; } };

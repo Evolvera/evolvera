@@ -1,7 +1,7 @@
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
-import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, snapshotManifestDigest, type CompletedTurnSnapshot } from "../session/cycles.ts";
-import { normalSourceEntries } from "../session/ledger.ts";
-import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry, type SourceSpan } from "../session/types.ts";
+import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, partitionCompletedTurnSnapshot, type CompletedTurnSnapshot } from "../session/cycles.ts";
+import { makePlasticEntry, normalSourceEntries } from "../session/ledger.ts";
+import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, PLASTIC_OBSERVATIONS_RECORDED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import { runObserver, type ObserverResult } from "./observer.ts";
 import { runReflector, type ReflectorResult } from "./reflector.ts";
 import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
@@ -59,11 +59,6 @@ function samePrefix(expected: readonly string[], actual: readonly string[]): boo
   return actual.length >= expected.length && expected.every((id, index) => actual[index] === id);
 }
 function entryIds(entries: readonly SessionEntry[]): string[] { return entries.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []); }
-/** A worker may only be shown what the span validates: exactly the span entries, in span order. */
-function spanEntries(source: readonly SessionEntry[], span: SourceSpan): SessionEntry[] {
-  const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
-  return span.sourceEntryIds.flatMap((id) => { const entry = byId.get(id); return entry ? [entry] : []; });
-}
 function cycleData(value: unknown): CycleClosedData | undefined {
   if (!isPlasticRecord(value) || value.customType !== PLASTIC_CYCLE_CLOSED) return undefined;
   return value.data;
@@ -103,7 +98,8 @@ export class CycleScheduler {
     // post-anchor descendants and returns [] on any inconsistency, so the stale bootstrap
     // window must not be re-applied as a snapshot allow-set: on resume the new turn is a
     // descendant and is legitimately outside it.
-    const preview = source.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: source }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
+    const capturedSource = source.map((entry) => entry);
+    const preview = capturedSource.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: capturedSource }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
     const key = `${input.binding.sessionId}:${input.binding.generation}:${input.binding.branchId}:${preview.snapshotId}`;
     const existing = this.jobs.get(key);
     if (existing) return existing.promise;
@@ -111,7 +107,7 @@ export class CycleScheduler {
     const controller = new AbortController();
     this.controllers.add(controller);
     const job: Job = { controller, epoch: this.epoch, promise: Promise.resolve({ status: "skipped" as const }) };
-    job.promise = this.run(input, preview, controller).finally(() => {
+    job.promise = this.run(input, preview, controller, capturedSource).finally(() => {
       this.jobs.delete(key);
       this.controllers.delete(controller);
     });
@@ -134,31 +130,30 @@ export class CycleScheduler {
       && (identity.sourceDigest === undefined || identity.sourceDigest === snapshot.span.sourceDigest)
       && snapshot.span.sourceEntryIds.every((id) => identity.branchIds.includes(id));
   }
-  private failAttempt(input: SchedulerInput, snapshot: CompletedTurnSnapshot, attempt: PlasticEntry<"plastic.cycle.attempted">, outcome: "failed" | "partial" | "stale", records: SessionEntry[], captured: SchedulerIdentity, controller: AbortController, epoch: number, reason: string): SchedulerResult {
+  private failAttempt(input: SchedulerInput, snapshot: CompletedTurnSnapshot, attempt: PlasticEntry<"plastic.cycle.attempted">, outcome: "failed" | "partial" | "stale" | "oversized", records: SessionEntry[], captured: SchedulerIdentity, controller: AbortController, epoch: number, reason: string): SchedulerResult {
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
     const failed = finishCycleAttempt(snapshot, attempt, outcome);
     if (failed) this.append(input, failed);
     return { status: outcome === "stale" ? "stale" : "failed", snapshot, attempt: failed ?? attempt, reason };
   }
-  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController): Promise<SchedulerResult> {
+  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController, source: SessionEntry[]): Promise<SchedulerResult> {
     const captured: SchedulerIdentity = { binding: { ...input.binding }, branchIds: entryIds(input.branchEntries) };
     const epoch = this.epoch;
-    if (snapshot.status === "oversized") {
-      report(input, { phase: "observer", status: "skipped", reason: "snapshot exceeds one-shot bound" });
-      return { status: "skipped", snapshot, reason: "snapshot exceeds one-shot bound" };
-    }
-    const source = normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData);
     if (snapshot.status === "empty-valid" && source.length > 0 && snapshot.span.sourceEntryIds.length === 0) {
       report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
       return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
     }
-    const records = this.records(input);
-    const selected = beginCycleAttempt(snapshot, records, { explicitRetry: input.explicitRetry === true });
+    const partition = partitionCompletedTurnSnapshot(snapshot, source);
+    if (!partition.ok) {
+      report(input, { phase: "observer", status: "skipped", reason: partition.reason });
+      return { status: "skipped", snapshot, reason: partition.reason };
+    }
+    const selected = beginCycleAttempt(snapshot, this.records(input), { explicitRetry: input.explicitRetry === true });
     if (!selected.allowed) {
       if (selected.record) this.append(input, selected.record);
       return { status: selected.reason === "automatic-retry-exhausted" ? "suppressed" : "skipped", snapshot, attempt: selected.record, reason: selected.reason };
     }
-    const attempt = selected.record;
+    let attempt = selected.record;
     if (!attempt) return { status: "failed", snapshot, reason: "cycle attempt did not produce an identity" };
     this.append(input, attempt);
     const workingRecords = this.records(input);
@@ -171,40 +166,73 @@ export class CycleScheduler {
       return { status: "empty-valid", snapshot, attempt, cycle: closed };
     }
 
-    report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
-    const observer: ObserverResult = await runObserver({ binding: input.binding, snapshot, sourceEntries: spanEntries(source, snapshot.span), runtime: input.runtime, signal: controller.signal });
-    if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-    if (!observer.ok || !observer.manifestValid) {
-      report(input, { phase: "observer", status: "failed", reason: observer.reason ?? "observer did not prove exact coverage" });
-      return this.failAttempt(input, snapshot, attempt, observer.status === "stale" ? "stale" : "failed", workingRecords, captured, controller, epoch, observer.reason ?? "observer did not prove exact coverage");
+    // Keep the captured source and chunk list immutable across retries. A later branch
+    // cannot replace an input that the first attempt already observed.
+    const chunks = partition.chunks;
+    let observations: ObserverResult["observations"] = [];
+    let observer: ObserverResult | undefined;
+    for (let observerAttempt = 0; observerAttempt < 2; observerAttempt += 1) {
+      report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
+      const chunkObservations: ObserverResult["observations"] = [];
+      let failure: ObserverResult | undefined;
+      for (const chunk of chunks) {
+        const result = await runObserver({ binding: input.binding, snapshot, sourceEntries: chunk.entries, sourceEntryIds: chunk.sourceEntryIds, runtime: input.runtime, signal: controller.signal });
+        if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+        if (!result.ok || !result.manifestValid) { failure = result; break; }
+        chunkObservations.push(...result.observations);
+      }
+      if (!failure) {
+        observations = [...chunkObservations];
+        observer = { ok: true, status: observations.length === 0 ? "empty-valid" : "complete", manifestValid: true, observations };
+        break;
+      }
+      report(input, { phase: "observer", status: "failed", reason: failure.reason ?? "observer did not return semantic observations" });
+      if (failure.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+      const failed = finishCycleAttempt(snapshot, attempt, "failed", "observer");
+      if (failed) this.append(input, failed);
+      if (observerAttempt === 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: failure.reason ?? "observer did not return semantic observations" };
+      const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "observer" });
+      if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
+      attempt = retry.record;
+      this.append(input, attempt);
     }
-    if (observer.observations.length === 0) report(input, { phase: "observer", status: "no-observations" });
-    if (observer.record) this.append(input, observer.record);
+    if (!observer) return { status: "failed", snapshot, attempt, reason: "observer did not complete" };
+    if (observations.length === 0) report(input, { phase: "observer", status: "no-observations" });
+    if (observations.length > 0) this.append(input, makePlasticEntry(PLASTIC_OBSERVATIONS_RECORDED, { schemaVersion: 1, ...input.binding, observations, span: snapshot.span }));
 
-    const reflector: ReflectorResult = await runReflector({ binding: input.binding, snapshot, observations: observer.observations, runtime: input.runtime, signal: controller.signal });
-    if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-    if (!reflector.ok || !reflector.manifestValid) {
-      report(input, { phase: "reflector", status: "failed", reason: reflector.reason ?? "reflector did not prove exact coverage" });
-      return this.failAttempt(input, snapshot, attempt, reflector.status === "stale" ? "stale" : "failed", this.records(input), captured, controller, epoch, reflector.reason ?? "reflector did not prove exact coverage");
+    let reflector: ReflectorResult | undefined;
+    for (let reflectorAttempt = 0; reflectorAttempt < 2; reflectorAttempt += 1) {
+      const result = await runReflector({ binding: input.binding, snapshot, observations, runtime: input.runtime, signal: controller.signal });
+      if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+      if (result.ok && result.manifestValid) { reflector = result; break; }
+      report(input, { phase: "reflector", status: "failed", reason: result.reason ?? "reflector did not return semantic reflections" });
+      if (result.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+      const failed = finishCycleAttempt(snapshot, attempt, "failed", "reflector");
+      if (failed) this.append(input, failed);
+      if (reflectorAttempt === 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: result.reason ?? "reflector did not return semantic reflections" };
+      const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "reflector" });
+      if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
+      attempt = retry.record;
+      this.append(input, attempt);
     }
+    if (!reflector) return { status: "failed", snapshot, attempt, reason: "reflector did not complete" };
     if (reflector.record) this.append(input, reflector.record);
-
     const closed = closeCycle(snapshot, attempt, {
-      outcome: observer.observations.length === 0 ? "empty-valid" : "complete",
+      outcome: observations.length === 0 ? "empty-valid" : "complete",
       sourceEntryIds: snapshot.span.sourceEntryIds,
       sourceStartId: snapshot.span.sourceStartId,
       sourceEndId: snapshot.span.sourceEndId,
       sourceDigest: snapshot.span.sourceDigest,
       completedTurnEndId: snapshot.span.completedTurnEndId,
-      observationIds: observer.observations.map((observation) => observation.id),
+      observationIds: observations.map((observation) => observation.id),
       reflectionIds: reflector.reflections.map((reflection) => reflection.id),
     }, this.records(input));
-    if (!closed) return this.failAttempt(input, snapshot, attempt, "failed", this.records(input), captured, controller, epoch, "deterministic cycle closer rejected model result");
+    if (!closed) return this.failAttempt(input, snapshot, attempt, "failed", this.records(input), captured, controller, epoch, "deterministic cycle closer rejected semantic result");
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
     this.append(input, closed);
     this.terminalSnapshots.add(snapshot.snapshotId);
     const compactorJob = this.startCompactor(input, closed, captured, controller, epoch);
-    return { status: observer.observations.length === 0 ? "empty-valid" : "closed", snapshot, attempt, cycle: closed, ...(compactorJob ? { compactorJob } : {}) };
+    return { status: observations.length === 0 ? "empty-valid" : "closed", snapshot, attempt, cycle: closed, ...(compactorJob ? { compactorJob } : {}) };
   }
 
   private startCompactor(input: SchedulerInput, closed: PlasticEntry<"plastic.cycle.closed">, captured: SchedulerIdentity, controller: AbortController, epoch: number): Promise<CompactorResult> | undefined {

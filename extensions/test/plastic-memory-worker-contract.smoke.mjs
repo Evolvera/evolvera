@@ -56,31 +56,27 @@ const runtime = {
       });
     }
     if (context.role === "observer") {
-      return JSON.stringify({
-        coverageManifest: request.expectedCoverageManifest,
-        observations: [{
-          content: "The durable constraint is to preserve the bounded snapshot.",
-          timestamp: "2026-08-03T00:00:00Z",
-          relevance: "high",
-          sourceEntryIds: [request.expectedCoverageManifest.sourceEntryIds[0]],
-        }],
-      });
+      return JSON.stringify({ observations: [{
+        content: "The durable constraint is to preserve the bounded snapshot.",
+        timestamp: "2026-08-03T00:00:00Z",
+        relevance: "high",
+        sourceEntryIds: [request.sourceEntryIds[0]],
+        id: "pm:o:aaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbb",
+      }] });
     }
-    return JSON.stringify({
-      coverageManifest: request.expectedCoverageManifest,
-      reflections: [{
-        content: "The bounded snapshot constraint is durable.",
-        supportingObservationIds: request.observations.map((observation) => observation.id),
-      }],
-    });
+    return JSON.stringify({ reflections: [{
+      content: "The bounded snapshot constraint is durable.",
+      supportingObservationIds: request.observations.map((observation) => observation.id),
+      id: "pm:r:aaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbb",
+    }] });
   },
 };
 
 const observerRequest = JSON.parse(observer.buildObserverRequest({ binding, snapshot, sourceEntries, runtime }));
-assert.deepEqual(observerRequest.expectedCoverageManifest, expectedCoverageManifest);
-assert.deepEqual(Object.keys(observerRequest.expectedCoverageManifest), [
-  "snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sourceEntryIds", "sessionId", "generation", "branchId",
-]);
+assert.deepEqual(observerRequest.sourceEntryIds, snapshot.span.sourceEntryIds);
+assert.equal(Object.hasOwn(observerRequest, "binding"), false);
+assert.equal(Object.hasOwn(observerRequest, "snapshot"), false);
+assert.equal(Object.hasOwn(observerRequest, "expectedCoverageManifest"), false);
 assert.match(observerRequest.output.response, /single JSON object/);
 const observed = await observer.runObserver({ binding, snapshot, sourceEntries, runtime });
 assert.equal(observed.ok, true);
@@ -91,8 +87,9 @@ assert.equal(observed.observations[0].content, "The durable constraint is to pre
 assert.equal(typeof observed.observations[0].timestamp, "string");
 
 const reflectorRequest = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot, observations: observed.observations, runtime }));
-assert.deepEqual(reflectorRequest.expectedCoverageManifest, expectedCoverageManifest);
-assert.deepEqual(Object.keys(reflectorRequest.expectedCoverageManifest), Object.keys(observerRequest.expectedCoverageManifest));
+assert.equal(Object.hasOwn(reflectorRequest, "binding"), false);
+assert.equal(Object.hasOwn(reflectorRequest, "snapshot"), false);
+assert.equal(Object.hasOwn(reflectorRequest, "expectedCoverageManifest"), false);
 assert.match(reflectorRequest.output.reflections.item.supportingObservationIds, /non-empty subset/);
 const reflected = await reflector.runReflector({ binding, snapshot, observations: observed.observations, runtime });
 assert.equal(reflected.ok, true);
@@ -149,141 +146,40 @@ const legacyCompacted = await compactor.runCompactor(compactorInput);
 assert.equal(legacyCompacted.ok, false);
 assert.match(legacyCompacted.reason, /identity mismatch/);
 
-// --- optional manifest echo + normalized citation order (observer and reflector) ---
+// Semantic-only responses never need lifecycle identity. Citations remain strict.
 const wideEntries = [1, 2].flatMap((turn) => {
   const user = { type: "message", id: `wide-user-${turn}`, parentId: turn === 1 ? null : `wide-assistant-${turn - 1}`, message: { role: "user", content: [{ type: "text", text: `Wide turn ${turn} constraint.` }] }, tokenCount: 8 };
   const assistant = { type: "message", id: `wide-assistant-${turn}`, parentId: user.id, message: { role: "assistant", content: [{ type: "text", text: `Wide turn ${turn} done.` }] }, tokenCount: 8 };
   return [user, assistant];
 });
 const wideSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: wideEntries, maxTokens: 100_000 });
-assert.equal(wideSnapshot.status, "ready");
 const span = wideSnapshot.span.sourceEntryIds;
-assert.ok(span.length >= 4);
-const scalarManifest = () => {
-  const { sourceEntryIds: _omitted, ...scalars } = expectedCoverageManifest;
-  return { ...scalars, snapshotId: wideSnapshot.snapshotId, cycleId: wideSnapshot.cycleId, sourceDigest: wideSnapshot.span.sourceDigest, completedTurnEndId: wideSnapshot.span.completedTurnEndId };
-};
-const stub = (responder) => ({ modelRegistry: runtime.modelRegistry, async agentLoop(prompts, context) { return JSON.stringify(responder(JSON.parse(prompts[0].content[0].text), context)); } });
+const stub = (responder) => ({ modelRegistry: runtime.modelRegistry, async agentLoop(prompts) { return JSON.stringify(responder(JSON.parse(prompts[0].content[0].text))); } });
 const observeWith = (responder) => observer.runObserver({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime: stub(responder) });
-const observation = (cited, content = "Wide durable constraint.") => ({ content, timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: cited });
-const manifestFailurePrefix = "observer coverage manifest is missing, reordered, or identity-mismatched";
-
-// A1: manifest omitting sourceEntryIds is accepted and the stored span is untouched.
-const omitted = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation([span[0]])] }));
-assert.equal(omitted.ok, true);
-assert.equal(omitted.manifestValid, true);
-assert.deepEqual(omitted.record.data.span, wideSnapshot.span);
-
-// A1b: the legacy manifest alias remains accepted.
-const aliased = await observeWith(() => ({ manifest: scalarManifest(), observations: [] }));
-assert.equal(aliased.ok, true);
-assert.equal(aliased.manifestValid, true);
-
-// A1c: missing coverage is categorized without exposing the response.
-const missing = await observeWith(() => ({ observations: [] }));
-assert.equal(missing.ok, false);
-assert.equal(missing.manifestValid, false);
-assert.equal(missing.reason, `${manifestFailurePrefix} (missing-coverage-manifest)`);
-const nonRecord = await observeWith(() => "model-output-secret");
-assert.equal(nonRecord.ok, false);
-assert.equal(nonRecord.reason, `${manifestFailurePrefix} (missing-coverage-manifest)`);
-assert.doesNotMatch(nonRecord.reason, /model-output-secret/);
-
-// A1d: identity failures expose only their fixed structural category.
-const returnedBranch = "branch:SECRET-SHOULD-NOT-APPEAR";
-const branchMismatch = await observeWith(() => ({ manifest: { ...scalarManifest(), branchId: returnedBranch }, observations: [] }));
-assert.equal(branchMismatch.ok, false);
-assert.equal(branchMismatch.manifestValid, false);
-assert.equal(branchMismatch.reason, `${manifestFailurePrefix} (mismatch-branchId)`);
-assert.doesNotMatch(branchMismatch.reason, new RegExp(`${binding.branchId}|${returnedBranch}`));
-
-const returnedDigest = "digest-secret-should-not-appear";
-const digestMismatch = await observeWith(() => ({ coverage: { ...scalarManifest(), sourceDigest: returnedDigest }, observations: [] }));
-assert.equal(digestMismatch.ok, false);
-assert.equal(digestMismatch.manifestValid, false);
-assert.equal(digestMismatch.reason, `${manifestFailurePrefix} (mismatch-sourceDigest)`);
-assert.doesNotMatch(digestMismatch.reason, new RegExp(`${wideSnapshot.span.sourceDigest}|${returnedDigest}`));
-
-// A2: a supplied but wrong/reordered manifest array is still rejected.
-for (const wrong of [[...span].reverse(), span.slice(0, 2), [...span.slice(0, -1), "not-an-entry"]]) {
-  const bad = await observeWith(() => ({ coverageManifest: { ...scalarManifest(), sourceEntryIds: wrong }, observations: [] }));
-  assert.equal(bad.ok, false);
-  assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
-}
-
-// A3: every scalar identity field stays required and exactly compared.
-for (const key of ["snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sessionId", "generation", "branchId"]) {
-  for (const mutate of [(m) => { delete m[key]; return m; }, (m) => ({ ...m, [key]: "corrupted" })]) {
-    const bad = await observeWith(() => ({ coverageManifest: mutate(scalarManifest()), observations: [] }));
-    assert.equal(bad.ok, false, `scalar ${key} must be required`);
-    assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
-  }
-}
-
-// A4: out-of-order and duplicated citations are normalized, not rejected.
-const normalized = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation([span[2], span[0], span[2]])] }));
-assert.equal(normalized.ok, true);
-assert.deepEqual(normalized.observations[0].sourceEntryIds, [span[0], span[2]]);
-
-// A5/A6: membership and non-emptiness remain hard invariants, with a safe reason category.
+const observation = (cited, content = "Wide durable constraint.") => ({ content, timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: cited, id: "pm:o:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee" });
+const semantic = await observeWith(() => ({ observations: [observation([span[2], span[0], span[2]])] }));
+assert.equal(semantic.ok, true);
+assert.deepEqual(semantic.observations[0].sourceEntryIds, [span[0], span[2]]);
+assert.notEqual(semantic.observations[0].id, "pm:o:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee");
 for (const cited of [[span[0], "outside-span"], [], [span[0], 7]]) {
-  const bad = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation(cited)] }));
+  const bad = await observeWith(() => ({ observations: [observation(cited)] }));
   assert.equal(bad.ok, false);
   assert.equal(bad.reason, "observer returned an invalid observation (invalid-observation-sourceEntryIds)");
 }
-
-// A6b: malformed fields identify only their structural class; no model value leaks.
-const badRelevance = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [{ ...observation([span[0]]), relevance: "SECRET-RELEVANCE-SHOULD-NOT-APPEAR" }] }));
-assert.equal(badRelevance.reason, "observer returned an invalid observation (invalid-observation-relevance)");
-assert.doesNotMatch(badRelevance.reason, /SECRET-RELEVANCE-SHOULD-NOT-APPEAR/);
-const badContent = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [{ ...observation([span[0]]), content: "   " }] }));
-assert.equal(badContent.reason, "observer returned an invalid observation (invalid-observation-content)");
-
-// A7: the emitted prompt tells the model to omit the manifest ids.
-const widePrompt = JSON.parse(observer.buildObserverRequest({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime }));
-assert.match(widePrompt.output.coverageManifest, /OMIT sourceEntryIds/);
-assert.match(widePrompt.output.observations.item.sourceEntryIds, /order does not matter/);
-assert.deepEqual(widePrompt.expectedCoverageManifest.sourceEntryIds, span);
-
-const multi = await observeWith(() => ({
-  coverageManifest: scalarManifest(),
-  observations: ["alpha", "beta", "gamma"].map((word, index) => observation([span[index]], `Durable ${word} constraint.`)),
-}));
-assert.equal(multi.observations.length, 3);
-const observationIds = multi.observations.map((item) => item.id);
-const reflectWith = (responder) => reflector.runReflector({ binding, snapshot: wideSnapshot, observations: multi.observations, runtime: stub(responder) });
-const reflection = (cited) => ({ content: "The wide constraint is durable.", supportingObservationIds: cited });
-
-// B1: reflector accepts an omitted manifest array and keeps the stored span.
-const reflectedOmitted = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection([observationIds[0]])] }));
-assert.equal(reflectedOmitted.ok, true);
-assert.deepEqual(reflectedOmitted.record.data.span, wideSnapshot.span);
-
-// B2/B3: supplied-but-wrong arrays and scalar corruption stay rejected.
-const reflectedWrong = await reflectWith(() => ({ coverageManifest: { ...scalarManifest(), sourceEntryIds: [...span].reverse() }, reflections: [] }));
-assert.equal(reflectedWrong.ok, false);
-assert.match(reflectedWrong.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
-for (const key of ["snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sessionId", "generation", "branchId"]) {
-  const bad = await reflectWith(() => { const m = scalarManifest(); delete m[key]; return { coverageManifest: m, reflections: [] }; });
-  assert.equal(bad.ok, false, `scalar ${key} must be required`);
-  assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
-}
-
-// B4: supporting ids are deduplicated and ordered by observation position.
-const reflectedNormalized = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection([observationIds[2], observationIds[0], observationIds[2]])] }));
-assert.equal(reflectedNormalized.ok, true);
-assert.deepEqual(reflectedNormalized.reflections[0].supportingObservationIds, [observationIds[0], observationIds[2]]);
-
-// B5/B6: outside ids and empty citations stay rejected.
+const noManifest = JSON.parse(observer.buildObserverRequest({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime }));
+assert.equal(Object.hasOwn(noManifest, "expectedCoverageManifest"), false);
+assert.equal(Object.hasOwn(noManifest, "binding"), false);
+const observationIds = semantic.observations.map((item) => item.id);
+const reflectWith = (responder) => reflector.runReflector({ binding, snapshot: wideSnapshot, observations: semantic.observations, runtime: stub(responder) });
+const reflectedSemantic = await reflectWith(() => ({ reflections: [{ content: "The wide constraint is durable.", supportingObservationIds: [observationIds[0], observationIds[0]], id: "pm:r:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee" }] }));
+assert.equal(reflectedSemantic.ok, true);
+assert.notEqual(reflectedSemantic.reflections[0].id, "pm:r:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee");
 for (const cited of [[observationIds[0], "pm:o:deadbeef"], []]) {
-  const bad = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection(cited)] }));
+  const bad = await reflectWith(() => ({ reflections: [{ content: "invalid", supportingObservationIds: cited }] }));
   assert.equal(bad.ok, false);
   assert.equal(bad.reason, "reflector returned an invalid reflection");
 }
-
-// B7: reflector prompt also instructs omission.
-const widePromptReflector = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot: wideSnapshot, observations: multi.observations, runtime }));
-assert.match(widePromptReflector.output.coverageManifest, /OMIT sourceEntryIds/);
-assert.match(widePromptReflector.output.reflections.item.supportingObservationIds, /order does not matter/);
-
-console.log("PLASTIC_MEMORY_WORKER_CONTRACT: PASS (optional manifest echo, normalized citations, and observer/reflector/compactor contracts validate)");
+const reflectorPrompt = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot: wideSnapshot, observations: semantic.observations, runtime }));
+assert.equal(Object.hasOwn(reflectorPrompt, "expectedCoverageManifest"), false);
+assert.match(reflectorPrompt.output.reflections.item.supportingObservationIds, /order does not matter/);
+console.log("PLASTIC_MEMORY_WORKER_CONTRACT: PASS (semantic-only worker contracts, code-owned identity, strict citations, and compactor contract validate)");
