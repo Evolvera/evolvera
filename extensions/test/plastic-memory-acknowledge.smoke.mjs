@@ -68,6 +68,8 @@ function world() {
     },
     isIdle() { return true; },
     hasPendingMessages() { return false; },
+    getContextUsage() { return { tokens: 21_000, contextWindow: 160_000 }; },
+    getSystemPrompt() { return "synthetic system prompt"; },
     compact(request) { compactCalls.push(request); },
     ui: { notify() {} },
   };
@@ -76,18 +78,25 @@ function world() {
   const binding = coordinator.getBinding(ctx);
   const allCycles = spans.map((span) => closedCycle(binding, span, entries));
   let priorState;
+  let stagedGeneration = binding.generation;
 
   /** Stage a freshly prepared pending built from the first `cycleCount` closed cycles. */
   function stage(cycleCount) {
     clock += 1_000;
+    const currentBinding = coordinator.getBinding(ctx);
+    if (currentBinding.generation !== stagedGeneration) {
+      priorState = undefined;
+      stagedGeneration = currentBinding.generation;
+    }
+    const currentCycles = allCycles.slice(0, cycleCount).map((cycle) => ({ ...cycle, ...currentBinding }));
     const prepared = engine.prepareSemanticCompaction({
-      binding, branchEntries: state.branch, cycles: allCycles.slice(0, cycleCount), priorState,
+      binding: currentBinding, branchEntries: state.branch, cycles: currentCycles, priorState,
       projectSnapshot, runtimeToken, now: clock, compact: fakeLuna,
     });
     assert.equal(prepared.eligible, true, `cycle window of ${cycleCount} prepares a real 6/4 pending: ${prepared.reason}`);
     priorState = prepared.prepared.rendered.state;
     coordinator.pendingStore.stage(prepared.prepared.pending);
-    coordinator.preparedViews.set(prepared.prepared.pending, { summary: prepared.prepared.rendered.summary, details: prepared.prepared.rendered.details });
+    coordinator.preparedViews.set(prepared.prepared.pending, { summary: prepared.prepared.rendered.summary, details: prepared.prepared.rendered.details, state: prepared.prepared.rendered.state });
     return prepared.prepared;
   }
 
@@ -138,9 +147,11 @@ const w = world();
   const prepared = w.stage(6);
   const compaction = w.beforeCompact();
   assert.equal(compaction.firstKeptEntryId, prepared.cut.firstKeptEntryId);
+  assert.equal(w.coordinator.priorState, undefined, "staging does not promote prior state");
   const entry = w.hostAppend(compaction);
   w.compactEvent(entry);
   assert.equal(applied(w).length, 1, "a consumed pending is acknowledged at session_compact");
+  assert.deepEqual(w.coordinator.priorState, prepared.rendered.state, "matching acknowledgement promotes the verified state");
   const record = applied(w)[0].data;
   assert.equal(record.compactionEntryId, entry.id);
   assert.equal(record.firstKeptEntryId, prepared.cut.firstKeptEntryId);
@@ -162,9 +173,12 @@ const w = world();
 {
   w.stage(10);
   const compaction = w.beforeCompact();
+  const generationBeforeFallback = w.coordinator.getGeneration();
   const tampered = w.hostAppend(compaction, (entry) => ({ ...entry, summary: `TAMPERED ${entry.summary}` }));
   w.compactEvent(tampered);
   assert.equal(applied(w).length, 2, "a tampered host compaction is never acknowledged");
+  assert.equal(w.coordinator.getGeneration(), generationBeforeFallback + 1, "an unmatched actual boundary rebases the Plastic generation");
+  assert.equal(w.coordinator.getPending(), undefined, "rebase clears stale pending before the next stage");
 
   const prepared = w.stage(12);
   const nextCompaction = w.beforeCompact();
@@ -172,6 +186,23 @@ const w = world();
   w.compactEvent(entry);
   assert.equal(applied(w).length, 3, "apply state recovers after a failed acknowledgement");
   assert.equal(applied(w)[2].data.firstKeptEntryId, prepared.cut.firstKeptEntryId);
+}
+// 3a. A native boundary with no in-flight Plastic apply clears pending/prior state and
+// bootstraps from the host's active context without removing the native summary.
+{
+  const nativeWorld = world();
+  nativeWorld.stage(6);
+  const native = nativeWorld.hostAppend({ summary: "HOST-NATIVE-SUMMARY", firstKeptEntryId: nativeWorld.entries[0].id, tokensBefore: 7_777, details: undefined }, (entry) => ({
+    ...entry,
+    fromHook: false,
+  }));
+  // Simulate a native host compaction that bypassed the Plastic before hook.
+  nativeWorld.compactEvent(native);
+  assert.equal(nativeWorld.coordinator.getPending(), undefined, "native boundary clears stale pending");
+  assert.equal(nativeWorld.coordinator.getGeneration(), 2, "native boundary starts a fresh generation");
+  assert.equal(nativeWorld.appended.some((record) => record.customType === "plastic.bootstrap.recorded" && record.data.generation === 2), true,
+    "native boundary bootstraps the new active host context");
+  assert.equal(native.summary, "HOST-NATIVE-SUMMARY", "native summary remains host-owned, not rewritten");
 }
 
 // 4. Regression guard: the staging path still refuses an already-consumed pending.
