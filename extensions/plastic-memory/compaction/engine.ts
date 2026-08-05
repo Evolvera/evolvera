@@ -10,6 +10,16 @@ import { projectSnapshot, renderVerifiedCompaction, verifyRenderedCompaction, ty
 
 export type CycleInput = CycleClosedData | { type: "custom"; customType: "plastic.cycle.closed"; data: CycleClosedData };
 export type CompactionEntry = SessionEntry & { type: "compaction"; id: string; firstKeptEntryId?: string; summary?: string; details?: unknown };
+export type PhysicalBudget = Readonly<{
+  /** The public model context window, not a private host setting. */
+  contextWindow: number;
+  /** Effective system prompt + bounded Plastic summary + host reserve. */
+  fixedTokens: number;
+  /** Conservative token estimate for each closed cycle that may remain current. */
+  retainedCycleTokens: Readonly<Record<string, number>>;
+  /** Conservative token estimate for the incomplete suffix after the last closed cycle. */
+  incompleteSuffixTokens: number;
+}>;
 export type EngineInput = Readonly<{
   binding: SessionBinding;
   branchEntries: SessionEntry[];
@@ -17,7 +27,9 @@ export type EngineInput = Readonly<{
   priorState?: CumulativeState;
   activeMemoryIds?: string[];
   projectSnapshot: ProjectSnapshot | unknown;
-  /** Optional host-selected cut; it must equal the deterministically verified 6/4 boundary. */
+  /** Optional public physical context proof. Omitted keeps the established four-cycle policy for pure callers; null fails closed. */
+  physicalBudget?: PhysicalBudget | null;
+  /** Optional host-selected cut; it must equal the deterministically verified whole-cycle boundary. */
   firstKeptEntryId?: string;
   runtimeToken?: string;
   now?: number;
@@ -75,9 +87,22 @@ function plasticCompaction(entry: CompactionEntry): boolean {
     && ((typeof plastic.cycleRange === "string" && typeof plastic.stateDigest === "string" && typeof plastic.header === "string")
       || (typeof range?.fromEntryId === "string" && typeof range.throughEntryId === "string"));
 }
-/** The custom 6/4 cut starts the first preserved cycle, never a turn in progress. */
+/** The custom cut starts a whole retained cycle, never a turn in progress. */
 function safeCutEntry(entry: SessionEntry | undefined): boolean {
   return entry?.type === "message" && message(entry)?.role === "user";
+}
+function validPhysicalBudget(budget: PhysicalBudget | null | undefined, retained: CycleClosedData[]): boolean {
+  if (budget === undefined) return retained.length === 4;
+  if (budget === null || !Number.isSafeInteger(budget.contextWindow) || budget.contextWindow <= 0
+    || !Number.isSafeInteger(budget.fixedTokens) || budget.fixedTokens < 0
+    || !Number.isSafeInteger(budget.incompleteSuffixTokens) || budget.incompleteSuffixTokens < 0) return false;
+  let total = budget.fixedTokens + budget.incompleteSuffixTokens;
+  for (const cycle of retained) {
+    const tokens = budget.retainedCycleTokens[cycle.cycleId];
+    if (!Number.isSafeInteger(tokens) || tokens < 0) return false;
+    total += tokens;
+  }
+  return total <= budget.contextWindow;
 }
 function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPositions: Map<string, number>, sourcePositions: Map<string, number>): boolean {
   if (cycle.status !== "complete" && cycle.status !== "empty-valid") return false;
@@ -100,18 +125,48 @@ function eligibleWindow(input: EngineWindowInput): { cycles: CycleClosedData[]; 
   const complete = normalized.filter((cycle): cycle is CycleClosedData => Boolean(cycle && (cycle.status === "complete" || cycle.status === "empty-valid")));
   const ordered = [...complete].sort((a, b) => (sourcePositions.get(a.sourceStartId) ?? Number.MAX_SAFE_INTEGER) - (sourcePositions.get(b.sourceStartId) ?? Number.MAX_SAFE_INTEGER));
   if (ordered.length < 6 || new Set(ordered.map((cycle) => cycle.cycleId)).size !== ordered.length) return undefined;
-  const window = ordered.slice(-6);
-  if (!window.every((cycle) => exactCycleSpan(cycle, input.branchEntries, positions, sourcePositions))) return undefined;
-  for (let index = 1; index < window.length; index += 1) {
-    const previous = window[index - 1];
-    const current = window[index];
+  const boundary = ordered;
+  if (!boundary.every((cycle) => exactCycleSpan(cycle, input.branchEntries, positions, sourcePositions))) return undefined;
+  for (let index = 1; index < boundary.length; index += 1) {
+    const previous = boundary[index - 1];
+    const current = boundary[index];
     const previousEnd = sourcePositions.get(previous.sourceEndId);
     const currentStart = sourcePositions.get(current.sourceStartId);
     if (previousEnd === undefined || currentStart === undefined || currentStart !== previousEnd + 1) return undefined;
   }
-  const compacted = window.slice(0, 2);
-  const firstKept = input.branchEntries.find((entry) => entry.id === window[2].sourceStartId);
-  if (!safeCutEntry(firstKept) || (input.firstKeptEntryId !== undefined && input.firstKeptEntryId !== firstKept.id)) return undefined;
+  let retainedCount: number | undefined;
+  let firstKept: SessionEntry | undefined;
+  for (let candidate = 4; candidate >= 0; candidate -= 1) {
+    const candidateRetained = candidate === 0 ? [] : boundary.slice(-candidate);
+    const candidateFirstKept = candidate === 0
+      ? (() => {
+        const lastEnd = positions.get(boundary.at(-1)!.sourceEndId);
+        return lastEnd === undefined ? undefined : input.branchEntries[lastEnd + 1];
+      })()
+      : input.branchEntries.find((entry) => entry.id === candidateRetained[0].sourceStartId);
+    // A zero-raw-cycle cut is representable only when the first incomplete suffix
+    // entry is itself a safe user boundary. A branch ending at a closed cycle has
+    // no host firstKeptEntryId to represent that cut, so retain at least one cycle.
+    if (!safeCutEntry(candidateFirstKept) || !validPhysicalBudget(input.physicalBudget, candidateRetained)) continue;
+    retainedCount = candidate;
+    firstKept = candidateFirstKept;
+    break;
+  }
+  if (retainedCount === undefined || !firstKept) return undefined;
+  const retained = retainedCount === 0 ? [] : boundary.slice(-retainedCount);
+  const acknowledged = new Set(input.priorState?.cycleIds ?? []);
+  const older = retainedCount === 0 ? boundary : boundary.slice(0, -retainedCount);
+  let sawUnacknowledged = false;
+  for (const cycle of older) {
+    if (acknowledged.has(cycle.cycleId)) {
+      if (sawUnacknowledged) return undefined;
+    } else {
+      sawUnacknowledged = true;
+    }
+  }
+  const compacted = older.filter((cycle) => !acknowledged.has(cycle.cycleId));
+  if (compacted.length === 0) return undefined;
+  if (input.firstKeptEntryId !== undefined && input.firstKeptEntryId !== firstKept.id) return undefined;
   const cutIndex = positions.get(firstKept!.id!);
   if (cutIndex === undefined) return undefined;
   const compactions = input.branchEntries.filter((entry): entry is CompactionEntry => entry.type === "compaction" && hasId(entry));
@@ -128,7 +183,7 @@ function eligibleWindow(input: EngineWindowInput): { cycles: CycleClosedData[]; 
   const cut: CutValidation = { branchIds, cutIndex, firstKeptEntryId: firstKept!.id!, latestCompactionIdentity, previousCompactions };
   return { cycles: compacted, cut };
 }
-/** The one 6/4 selector: callers pre-check with exactly the window preparation will compact, so selection can never diverge. */
+/** Select every unacknowledged closed cycle before the largest safe, physically fitting retained suffix. */
 export function selectEligibleStride(input: EngineWindowInput): CycleClosedData[] | undefined {
   return eligibleWindow(input)?.cycles;
 }

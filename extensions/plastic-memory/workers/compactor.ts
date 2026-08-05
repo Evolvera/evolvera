@@ -7,7 +7,7 @@ import { runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.
 
 export type CompactorInput = Readonly<{
   engine: Omit<EngineInput, "compact">;
-  /** The exact two cycles eligible for this detached compaction stride. */
+  /** Every unacknowledged closed cycle before the selected retained suffix; when physical budget forces emergency mode, all folded normally-retained cycles stay in this same request and cumulative state. */
   eligibleCycles: CycleInput[];
   priorState?: CumulativeState;
   projectSnapshot: ProjectSnapshot | unknown;

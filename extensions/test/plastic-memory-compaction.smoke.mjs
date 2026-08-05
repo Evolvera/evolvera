@@ -85,13 +85,39 @@ assert.equal(firstRendered.summary.includes("sourceEntryIds"), false, "source-en
 assert.equal(firstRendered.summary.includes("structuredState"), false, "hidden state JSON must remain internal");
 assert.ok(firstRendered.summary.length <= 48_000);
 
+// A proved physical budget may fold the oldest two normally-retained cycles into
+// the same cumulative request/state. No cut is allowed to split a cycle.
+const emergencyBudget = {
+  contextWindow: 60,
+  fixedTokens: 10,
+  retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 25])),
+  incompleteSuffixTokens: 0,
+};
+const emergency = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_250, physicalBudget: emergencyBudget, compact: fakeLuna });
+assert.equal(emergency.eligible, true);
+assert.equal(emergency.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId, "emergency advances two whole cycles");
+assert.deepEqual(requests[1].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "4→2 emergency folds both oldest retained cycles into the same request");
+assert.deepEqual(emergency.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "4→2 emergency keeps one cumulative state");
+const impossibleBudget = { ...emergencyBudget, contextWindow: 34 };
+const requestsBeforeImpossible = requests.length;
+const impossible = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_260, physicalBudget: impossibleBudget, compact: fakeLuna });
+assert.equal(impossible.eligible, false, "one retained cycle plus fixed budget cannot fit");
+assert.equal(requests.length, requestsBeforeImpossible, "impossible one-cycle fit makes no compactor call");
+assert.equal(engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_270, physicalBudget: null, compact: fakeLuna }).eligible, false, "unknown physical proof fails closed");
+
 const firstCompaction = { type: "compaction", id: "cmp1", parentId: entries.at(-1).id, firstKeptEntryId: first.prepared.cut.firstKeptEntryId, summary: firstRendered.summary, details: firstRendered.details };
 entries.push(firstCompaction);
 for (let index = 7; index <= 8; index += 1) cycles.push(closed(cycle(index)));
+const delayedEight = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_500, compact: fakeLuna });
+assert.equal(delayedEight.eligible, true);
+assert.equal(delayedEight.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
+assert.deepEqual(requests[2].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "an unacknowledged eight-cycle branch sends every older cycle");
+assert.deepEqual(delayedEight.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
+
 const second = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: firstRendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_000, compact: fakeLuna });
 assert.equal(second.eligible, true);
 assert.equal(second.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
-assert.deepEqual(requests[1].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
+assert.deepEqual(requests[3].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
 assert.deepEqual(second.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
 assert.equal(second.prepared.rendered.state.facts.errors.includes("permission denied"), true);
 assert.notEqual(second.prepared.rendered.state.stateDigest, firstRendered.state.stateDigest);
@@ -99,8 +125,38 @@ assert.notEqual(second.prepared.rendered.state.stateDigest, firstRendered.state.
 for (let index = 9; index <= 10; index += 1) cycles.push(closed(cycle(index)));
 const third = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: second.prepared.rendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_500, compact: fakeLuna });
 assert.equal(third.eligible, true);
-assert.deepEqual(requests[2].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
+assert.deepEqual(requests[4].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
 assert.deepEqual(third.prepared.rendered.state.cycleIds, cycles.slice(0, 6).map((cycle) => cycle.cycleId));
+
+const suffixUser = append({ role: "user", content: [{ type: "text", text: "goal C9; incomplete suffix" }] });
+const suffixTool = append({ role: "assistant", content: [{ type: "toolCall", id: "call-9", name: "functions.read", arguments: { path: "src/C9.ts" } }], stopReason: "toolUse" });
+const suffixResult = append({ type: "toolResult", toolCallId: "call-9", content: [{ type: "text", text: "read complete" }] });
+const delayedWithSuffix = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles: cycles.slice(0, 8), projectSnapshot, runtimeToken: "runtime-1", now: 2_750, compact: fakeLuna });
+assert.equal(delayedWithSuffix.eligible, true);
+assert.equal(delayedWithSuffix.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
+assert.deepEqual(requests[5].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
+assert.deepEqual(delayedWithSuffix.prepared.pending.preparedPrefixIds.slice(-3), [suffixUser.id, suffixTool.id, suffixResult.id], "incomplete C9 suffix remains retained");
+
+// With a safe incomplete user suffix, zero raw closed cycles is representable:
+// every closed cycle folds into the same rolling summary and the suffix stays whole.
+const zeroBudget = {
+  contextWindow: 25,
+  fixedTokens: 10,
+  retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 25])),
+  incompleteSuffixTokens: 15,
+};
+const zeroRaw = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 2_800, physicalBudget: zeroBudget, compact: fakeLuna });
+assert.equal(zeroRaw.eligible, true);
+assert.equal(zeroRaw.prepared.cut.firstKeptEntryId, suffixUser.id, "zero-raw cut begins at the safe incomplete user boundary");
+assert.deepEqual(requests[6].cycleIds, cycles.map((cycle) => cycle.cycleId), "zero-raw request folds every closed cycle");
+assert.deepEqual(zeroRaw.prepared.rendered.state.cycleIds, cycles.map((cycle) => cycle.cycleId));
+assert.deepEqual(zeroRaw.prepared.pending.preparedPrefixIds.slice(-3), [suffixUser.id, suffixTool.id, suffixResult.id], "zero-raw cut keeps the incomplete tool exchange whole");
+
+// When the branch ends at the last closed cycle there is no representable absent
+// firstKeptEntryId; if even one raw cycle cannot fit, fail closed without a call.
+const branchEndingAtClosedCycle = entries.slice(0, entries.indexOf(suffixUser));
+const noRepresentableOneCycle = engine.prepareSemanticCompaction({ binding, branchEntries: branchEndingAtClosedCycle, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 2_810, physicalBudget: impossibleBudget, compact: fakeLuna });
+assert.equal(noRepresentableOneCycle.eligible, false, "no safe zero-raw host cut and no fitting one-cycle suffix fails closed");
 
 const store = pendingModule.createPendingStore();
 store.stage(second.prepared.pending);

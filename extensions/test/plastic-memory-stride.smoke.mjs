@@ -93,7 +93,7 @@ async function runStride(closedTurns, options = {}) {
     append() {},
     lifecycleReporter: (event) => lifecycle.push(event),
     compaction: {
-      engine: { branchEntries: entries, cycles, activeMemoryIds: [], runtimeToken: "runtime-stride", projectSnapshot },
+      engine: { branchEntries: entries, cycles, activeMemoryIds: [], runtimeToken: "runtime-stride", physicalBudget: options.physicalBudget, projectSnapshot },
       cycles,
       eligibleCycles: cycles,
       runtimeToken: "runtime-stride",
@@ -116,23 +116,46 @@ async function runStride(closedTurns, options = {}) {
   assert.match(skipped[0].reason, /stride/u);
 }
 
-// 2. Six or more valid cycles: the compactor receives exactly the two cycles the engine compacts.
+// 2. Six or more valid cycles: the compactor receives every older cycle before the newest four.
 {
-  const run = await runStride(5); // five prior cycles + the one the scheduler closes = six
+  const run = await runStride(7); // seven prior cycles + the one the scheduler closes = eight
   assert.ok(run.compacted, "the compactor runs on a full stride");
   assert.equal(run.compacted.ok, true, run.compacted?.reason);
   assert.equal(run.stub.count("compactor"), 1);
   const closedCycles = [...run.cycles, run.result.cycle.data];
   const stride = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, projectSnapshot });
-  assert.equal(stride.length, 2);
-  const expected = closedCycles.slice(-6).slice(0, 2).map((cycle) => cycle.cycleId);
-  assert.deepEqual(stride.map((cycle) => cycle.cycleId), expected, "the stride is the first two of the last six in engine order");
+  assert.equal(stride.length, 4);
+  const expected = closedCycles.slice(0, -4).map((cycle) => cycle.cycleId);
+  assert.deepEqual(stride.map((cycle) => cycle.cycleId), expected, "the stride contains every older closed cycle before the retained four");
   // The emitted compactor prompt lists only the exact eligible cycles it was fed.
   const prompt = JSON.parse(run.stub.prompts.compactor[0]);
   assert.deepEqual(prompt.readOnlyIdentityContext.cycleIds, expected);
-  assert.equal(prompt.readOnlyIdentityContext.cycleIds.length, 2, "the four retained cycles are never described to the compactor");
-  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-4).sourceStartId, "the 6/4 cut is unchanged");
+  assert.equal(prompt.readOnlyIdentityContext.cycleIds.length, 4, "the newest four retained cycles are never described to the compactor");
+  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-4).sourceStartId, "the newest four-cycle cut is preserved");
   assert.equal(run.lifecycle.some((event) => event.phase === "compactor"), false, "a successful stride reports no compactor waiting or failure event");
+}
+// 2a. Physical emergency mode selects the same whole-cycle fold for selector, detached
+// request, and final preparation, while retaining the incomplete turn suffix.
+{
+  const cycleTokens = new Proxy({}, { get: (_target, key) => typeof key === "string" ? 20 : undefined });
+  const run = await runStride(7, { physicalBudget: { contextWindow: 54, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 4 } });
+  assert.ok(run.compacted?.ok, run.compacted?.reason);
+  const closedCycles = [...run.cycles, run.result.cycle.data];
+  const expected = closedCycles.slice(0, -2).map((cycle) => cycle.cycleId);
+  const selected = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, physicalBudget: { contextWindow: 54, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 4 }, projectSnapshot });
+  assert.deepEqual(selected.map((cycle) => cycle.cycleId), expected, "4→2 selector folds two normally-retained cycles");
+  const prompt = JSON.parse(run.stub.prompts.compactor[0]);
+  assert.deepEqual(prompt.readOnlyIdentityContext.cycleIds, expected, "4→2 detached request matches selector");
+  assert.deepEqual(run.compacted.prepared.rendered.state.cycleIds, expected, "4→2 final preparation matches request/state");
+  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-2).sourceStartId);
+}
+// Even zero raw cycles cannot fit when the fixed/incomplete budget alone exceeds
+// the context window, so the selector and detached compactor make no call.
+{
+  const cycleTokens = new Proxy({}, { get: (_target, key) => typeof key === "string" ? 20 : undefined });
+  const run = await runStride(7, { physicalBudget: { contextWindow: 59, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 50 } });
+  assert.equal(run.result.compactorJob, undefined, "impossible one-cycle-plus-incomplete-suffix window is skipped");
+  assert.equal(run.stub.count("compactor"), 0, "impossible physical fit makes no compactor call");
 }
 
 // 3. A genuine compactor failure is still a failure.

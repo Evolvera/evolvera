@@ -48,15 +48,18 @@ function closedCycle(binding, span, entries) {
 /** Fresh coordinator + host stubs with a real engine-prepared pending staged. */
 function world(options = {}) {
   const runtimeToken = options.runtimeToken ?? "runtime-test";
+  const contextWindow = options.contextWindow ?? 160_000;
+  let usageTokens = Object.hasOwn(options, "usageTokens") ? options.usageTokens : 21_000;
   const { entries, spans } = fixture();
   const handlers = new Map();
   const compactCalls = [];
+  const notices = [];
   let clock = NOW;
   const pi = { on(event, handler) { handlers.set(event, handler); }, appendEntry() {}, registerTool() {}, registerCommand() {} };
   const state = { branch: entries };
   const ctx = {
     cwd: root,
-    hasUI: false,
+    hasUI: true,
     sessionManager: {
       getSessionId() { return "019fcf17-6e55-7646-89f9-4e0e0258b267"; },
       getEntries() { return state.branch; },
@@ -66,15 +69,23 @@ function world(options = {}) {
     },
     isIdle() { return true; },
     hasPendingMessages() { return false; },
+    getContextUsage() { return usageTokens === null ? { tokens: null, contextWindow } : usageTokens === undefined ? undefined : { tokens: usageTokens, contextWindow }; },
+    getSystemPrompt() { return "synthetic system prompt"; },
     compact(request) { compactCalls.push(request); },
-    ui: { notify() {} },
+    ui: { notify(message, level) { notices.push({ message, level }); } },
   };
   const coordinator = new coordinatorModule.PlasticMemoryCoordinator(pi, { enabled: true, runtimeToken, now: () => clock });
   handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
   const binding = options.binding ? options.binding(coordinator.getBinding(ctx)) : coordinator.getBinding(ctx);
   const cycles = spans.map((span) => closedCycle(binding, span, entries));
+  const physicalBudget = options.twoCyclePhysicalBudget ? {
+    contextWindow: 25_000,
+    fixedTokens: 0,
+    retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 10_000])),
+    incompleteSuffixTokens: 0,
+  } : undefined;
   const prepared = engine.prepareSemanticCompaction({
-    binding, branchEntries: entries, cycles, projectSnapshot,
+    binding, branchEntries: entries, cycles, physicalBudget, projectSnapshot,
     runtimeToken: options.pendingRuntimeToken ?? runtimeToken, now: PREPARE_AT, compact: fakeLuna,
   });
   assert.equal(prepared.eligible, true, "fixture prepares a real 6/4 pending compaction");
@@ -86,6 +97,7 @@ function world(options = {}) {
     rendered: prepared.prepared.rendered,
     cut: pending.cut.firstKeptEntryId,
     setClock(value) { clock = value; },
+    setUsage(value) { usageTokens = value; },
     internalInstructions() {
       handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
       assert.equal(compactCalls.length, 1, "settled coordinator issues one internal compact");
@@ -94,10 +106,29 @@ function world(options = {}) {
     beforeCompact(event) {
       return handlers.get("session_before_compact")({ type: "session_before_compact", branchEntries: state.branch, ...event }, ctx);
     },
+    notices,
   };
 }
 function hostEvent(firstKeptEntryId, extra = {}) {
   return { preparation: { firstKeptEntryId, tokensBefore: 7_777 }, reason: "auto", ...extra };
+}
+
+// 0. Application waits for a known usage strictly above 20,000, then reassesses the
+// same prepared pending without consuming it early.
+for (const usageTokens of [undefined, null, 0, 20_000]) {
+  const w = world({ usageTokens });
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} defers internal apply`);
+  assert.notEqual(w.coordinator.getPending(), undefined, `usage ${usageTokens} retains pending state`);
+  assert.equal(w.notices.at(-1)?.level, "info");
+  assert.match(w.notices.at(-1)?.message ?? "", /compaction skipped/u);
+}
+{
+  const w = world({ usageTokens: 20_000 });
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  w.setUsage(20_001);
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 1, "strictly high usage applies exactly once after deferral");
 }
 
 // 1. INTERNAL path: the host's own keepRecentTokens suggestion differs from the 6/4 cut
@@ -128,12 +159,19 @@ function hostEvent(firstKeptEntryId, extra = {}) {
   assert.deepEqual(w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions: "\u0000plastic-memory:internal-compaction:foreign", reason: "manual" }), { cancel: true });
 }
 
-// 2. HOST path: a later-or-equal plastic cut is accepted, an earlier one is rejected.
+// 2. HOST path: Plastic owns a valid cut regardless of host advisory ordering.
 {
   const w = world();
   const result = w.beforeCompact(hostEvent(w.entries[0].id));
   assert.equal(result.compaction.firstKeptEntryId, w.cut, "plastic cut later than the host cut is accepted");
   assert.equal(result.compaction.tokensBefore, 7_777);
+}
+{
+  // A physically selected two-cycle retained suffix must survive the coordinator's
+  // hook-time tail recheck; the public host budget is independent of the engine proof.
+  const w = world({ twoCyclePhysicalBudget: true, contextWindow: 30_000 });
+  assert.equal(w.cut, w.entries[16].id, "fixture selected the two-cycle retained cut");
+  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)).compaction.firstKeptEntryId, w.cut, "hook-time physicalTailFits accepts the prepared 2-cycle cut");
 }
 {
   const w = world();
@@ -143,12 +181,32 @@ function hostEvent(firstKeptEntryId, extra = {}) {
   const w = world();
   const later = w.entries.at(-4).id;
   assert.notEqual(later, w.cut);
-  assert.equal(w.beforeCompact(hostEvent(later)), undefined, "plastic cut earlier than the host cut is rejected");
+  assert.equal(w.beforeCompact(hostEvent(later)).compaction.firstKeptEntryId, w.cut, "plastic cut is accepted when host advice is later");
 }
 {
   const w = world();
   assert.equal(w.beforeCompact(hostEvent("not-on-this-branch")), undefined, "unlocatable host cut fails closed");
   assert.equal(w.beforeCompact(hostEvent(undefined)), undefined, "absent host cut fails closed on the host path");
+}
+// 2a. Pi can reject before the extension hook when its own preparation is empty. The
+// exact benign error clears only the latch and preserves the pending for one later edge.
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  w.compactCalls[0].onError(new Error("Nothing to compact (session too small)"));
+  assert.notEqual(w.coordinator.getPending(), undefined, "benign host refusal retains pending");
+  assert.equal(w.notices.at(-1)?.message, "Plastic memory: compaction skipped — Nothing to compact (session too small)");
+  w.setUsage(20_001);
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 2, "later settled edge gets exactly one retry");
+  assert.notEqual(w.compactCalls[1].customInstructions, customInstructions);
+}
+// 2b. A descendant that makes the prepared cut physically unsafe is rejected at hook time.
+{
+  const w = world();
+  w.state.branch.push({ type: "message", id: "huge-descendant", parentId: w.state.branch.at(-1).id, message: { role: "user", content: [{ type: "text", text: "x".repeat(700_000) }] } });
+  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "hook-time budget recheck rejects an overflowing descendant");
+  assert.notEqual(w.coordinator.getPending(), undefined, "budget rejection retains pending for native fallback/retry");
 }
 
 // 3. Every pre-existing rejection still rejects.
@@ -207,4 +265,4 @@ function hostEvent(firstKeptEntryId, extra = {}) {
   assert.equal(retry.compaction.firstKeptEntryId, w.cut);
 }
 
-console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (internal apply ignores the advisory host cut, host path accepts only later-or-equal cuts, cancellation releases the apply latch, all prior guards reject)");
+console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (Plastic owns valid cuts independent of host advisory order, budget and exact benign deferrals retain pending, cancellation releases the apply latch, all prior guards reject)");

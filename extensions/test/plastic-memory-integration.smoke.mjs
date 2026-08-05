@@ -102,6 +102,8 @@ const ownerCtx = {
   sessionManager: ownerSessionManager,
   isIdle: () => true,
   hasPendingMessages: () => false,
+  getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+  getSystemPrompt: () => "synthetic system prompt",
   compact: () => {},
   hasUI: true,
   ui: { notify(message, level) { ownerNotices.push({ message, level }); } },
@@ -131,7 +133,7 @@ async function lifecycleProbe(mode) {
     getBranch: () => entries,
     buildContextEntries: () => entries,
   };
-  const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {}, hasUI: true, ui: { notify(message, level) { notices.push({ message, level }); } } };
+  const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }), getSystemPrompt: () => "synthetic system prompt", compact: () => {}, hasUI: true, ui: { notify(message, level) { notices.push({ message, level }); } } };
   const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, { enabled: true, runtime: cycleRuntime, now: () => 1_000 });
   cycleMode = mode;
   await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
@@ -168,7 +170,7 @@ const sessionManager = {
   getBranch: () => [],
   buildContextEntries: () => [],
 };
-const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {} };
+const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }), getSystemPrompt: () => "synthetic system prompt", compact: () => {} };
 await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
 assert.equal(coordinator.getGeneration(), 1);
 assert.ok(handlers.has("session_before_compact"));
@@ -201,6 +203,8 @@ function makeNonceProbe() {
     sessionManager,
     isIdle: () => true,
     hasPendingMessages: () => false,
+    getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+    getSystemPrompt: () => "synthetic system prompt",
     compact: (options) => compactCalls.push(options),
     hasUI: true,
     ui: { notify(message, level) { notices.push({ message, level }); } },
