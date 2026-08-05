@@ -78,6 +78,8 @@ assert.equal(Object.hasOwn(observerRequest, "binding"), false);
 assert.equal(Object.hasOwn(observerRequest, "snapshot"), false);
 assert.equal(Object.hasOwn(observerRequest, "expectedCoverageManifest"), false);
 assert.match(observerRequest.output.response, /single JSON object/);
+assert.match(observerRequest.output.observations.empty, /omit placeholders and blank observations/);
+assert.match(observerRequest.output.observations.item.content, /non-empty durable fact/);
 const observed = await observer.runObserver({ binding, snapshot, sourceEntries, runtime });
 assert.equal(observed.ok, true);
 assert.equal(observed.status, "complete");
@@ -161,11 +163,44 @@ const semantic = await observeWith(() => ({ observations: [observation([span[2],
 assert.equal(semantic.ok, true);
 assert.deepEqual(semantic.observations[0].sourceEntryIds, [span[0], span[2]]);
 assert.notEqual(semantic.observations[0].id, "pm:o:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee");
+const mixed = await observeWith(() => ({ observations: [
+  observation([span[0]], "Wide durable constraint."),
+  observation([span[1]], " \t\n "),
+  observation([span[2]], "\u0000\u0001"),
+] }));
+assert.equal(mixed.ok, true);
+assert.equal(mixed.status, "complete");
+assert.equal(mixed.observations.length, 1);
+assert.equal(mixed.observations[0].content, "Wide durable constraint.");
+const allBlank = await observeWith(() => ({ observations: [
+  observation([span[0]], " \t\n "),
+  observation([span[1]], "\u0000\u0001"),
+] }));
+assert.equal(allBlank.ok, true);
+assert.equal(allBlank.status, "empty-valid");
+assert.equal(allBlank.observations.length, 0);
+assert.equal(allBlank.record, undefined);
+const blankOutsideCitation = await observeWith(() => ({ observations: [observation([span[0], "outside-span"], " \t\n ")] }));
+assert.equal(blankOutsideCitation.ok, false);
+assert.equal(blankOutsideCitation.reason, "observer returned an invalid observation (invalid-observation-sourceEntryIds)");
+const blankInvalidRelevance = await observeWith(() => ({ observations: [{ ...observation([span[0]], " \t\n "), relevance: "urgent" }] }));
+assert.equal(blankInvalidRelevance.ok, false);
+assert.equal(blankInvalidRelevance.reason, "observer returned an invalid observation (invalid-observation-relevance)");
 for (const cited of [[span[0], "outside-span"], [], [span[0], 7]]) {
   const bad = await observeWith(() => ({ observations: [observation(cited)] }));
   assert.equal(bad.ok, false);
   assert.equal(bad.reason, "observer returned an invalid observation (invalid-observation-sourceEntryIds)");
 }
+const invalidRelevance = await observeWith(() => ({ observations: [{ ...observation([span[0]]), relevance: "urgent" }] }));
+assert.equal(invalidRelevance.ok, false);
+assert.equal(invalidRelevance.reason, "observer returned an invalid observation (invalid-observation-relevance)");
+const fixtureSecret = "api_key: fixture-secret-value";
+const fixturePii = "fixture.person@example.com";
+const unsafe = await observeWith(() => ({ observations: [observation([span[0], "outside-span"], `${fixtureSecret} ${fixturePii}`)] }));
+assert.equal(unsafe.ok, false);
+assert.equal(unsafe.reason, "observer returned an invalid observation (invalid-observation-sourceEntryIds)");
+assert.equal(unsafe.reason.includes(fixtureSecret), false);
+assert.equal(unsafe.reason.includes(fixturePii), false);
 const noManifest = JSON.parse(observer.buildObserverRequest({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime }));
 assert.equal(Object.hasOwn(noManifest, "expectedCoverageManifest"), false);
 assert.equal(Object.hasOwn(noManifest, "binding"), false);
