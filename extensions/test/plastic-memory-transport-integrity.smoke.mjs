@@ -44,13 +44,12 @@ function runtimeReturning(respond) {
   };
 }
 
-// 1. End-to-end through the real runObserver: the model echoes the manifest verbatim.
+// 1. End-to-end through the real runObserver: semantic output carries citations only.
 const observerRuntime = runtimeReturning((request) => {
   observerPayload = JSON.stringify({
-    coverageManifest: request.expectedCoverageManifest,
     observations: [
-      { content: "durable transport fact", timestamp: TIMESTAMP, relevance: "high", sourceEntryIds: request.expectedCoverageManifest.sourceEntryIds },
-      { content: `reach ${EMAIL} or ${PHONE} and rotate api_key: abc123def456`, timestamp: TIMESTAMP, relevance: "medium", sourceEntryIds: [request.expectedCoverageManifest.sourceEntryIds[0]] },
+      { content: "durable transport fact", timestamp: TIMESTAMP, relevance: "high", sourceEntryIds: request.sourceEntryIds },
+      { content: `reach ${EMAIL} or ${PHONE} and rotate api_key: abc123def456`, timestamp: TIMESTAMP, relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
     ],
   });
   return observerPayload;
@@ -111,4 +110,4 @@ assert.equal(typeof prose.response, "string");
 assert.equal(prose.response.includes(EMAIL), false, "non-JSON fallback stays scrubbed");
 assert.equal(prose.response, "contact [REDACTED_PII] for the summary");
 
-console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (manifest echo closes, ISO/UUID identities survive, content scrubbing intact, prose fallback scrubbed)");
+console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (semantic transport, code-owned identities, ISO/UUID preservation, content scrubbing, and prose fallback)");

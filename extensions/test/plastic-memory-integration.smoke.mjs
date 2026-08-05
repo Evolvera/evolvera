@@ -72,12 +72,11 @@ const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
 }, async (model, context, options) => {
   cycleCalls.push({ model, context, options });
   const request = JSON.parse(context.messages[0].content[0].text);
-  const manifest = { ...request.binding, snapshotId: request.snapshot.snapshotId, cycleId: request.snapshot.cycleId, ...request.snapshot.span };
   if (context.systemPrompt.startsWith("Extract durable")) {
-    if (cycleMode === "failure") return { content: [{ type: "text", text: JSON.stringify({ noManifest: true }) }] };
-    return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, observations: cycleMode === "empty" ? [] : [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.snapshot.span.sourceEntryIds }] }) }] };
+    if (cycleMode === "failure") return { content: [{ type: "text", text: JSON.stringify({ noObservations: true }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({ observations: cycleMode === "empty" ? [] : [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] }) }] };
   }
-  return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
+  return { content: [{ type: "text", text: JSON.stringify({ reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
 });
 assert.ok(cycleRuntime);
 const ownerEntries = [{ ...entry("O1", undefined), tokenCount: 1 }, { ...entry("O2", "O1", "assistant"), tokenCount: 1 }];

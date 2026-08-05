@@ -9,6 +9,8 @@ export type ObserverInput = Readonly<{
   binding: SessionBinding;
   snapshot: CompletedTurnSnapshot;
   sourceEntries: SessionEntry[];
+  /** The exact source ids visible to this bounded call; defaults to the snapshot span. */
+  sourceEntryIds?: readonly string[];
   priorObservations?: Observation[];
   priorReflections?: unknown[];
   runtime: RunnerRuntime;
@@ -24,50 +26,14 @@ export type ObserverResult = Readonly<{
   reason?: string;
 }>;
 
-const OBSERVER_SYSTEM = "Extract durable observations only. Return JSON with the scalar coverageManifest identity fields (omit sourceEntryIds) and observations. Never invent source ids.";
+const OBSERVER_SYSTEM = "Extract durable observations only. Return one JSON object containing semantic observations and exact source citations. Do not return lifecycle identity, record ids, or a coverage manifest.";
 const MAX_OBSERVATION_CHARS = 2_000;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
-function exactIds(actual: unknown, expected: readonly string[]): actual is string[] {
-  return Array.isArray(actual) && actual.length === expected.length && actual.every((id, index) => id === expected[index]);
-}
-/** Echoing the deterministic span ids proves nothing (code hands them to the model), so the array is optional; a supplied array must still match exactly. */
-function manifestIds(actual: unknown, expected: readonly string[]): boolean {
-  return actual === undefined || exactIds(actual, expected);
-}
-type ManifestFailureCode =
-  | "missing-coverage-manifest"
-  | "invalid-coverage-manifest"
-  | "mismatch-snapshotId"
-  | "mismatch-cycleId"
-  | "mismatch-sourceDigest"
-  | "mismatch-completedTurnEndId"
-  | "mismatch-sourceEntryIds"
-  | "mismatch-sessionId"
-  | "mismatch-generation"
-  | "mismatch-branchId";
-
-function responseManifest(value: Record<string, unknown>): unknown {
-  return value.coverageManifest ?? value.manifest ?? value.coverage;
-}
-function manifestFailureCode(value: unknown, snapshot: CompletedTurnSnapshot, binding: SessionBinding): ManifestFailureCode | undefined {
-  const output = record(value);
-  if (!output) return "missing-coverage-manifest";
-  const response = responseManifest(output);
-  if (response === undefined) return "missing-coverage-manifest";
-  const manifest = record(response);
-  if (!manifest) return "invalid-coverage-manifest";
-  if (manifest.snapshotId !== snapshot.snapshotId) return "mismatch-snapshotId";
-  if (manifest.cycleId !== snapshot.cycleId) return "mismatch-cycleId";
-  if (manifest.sourceDigest !== snapshot.span.sourceDigest) return "mismatch-sourceDigest";
-  if (manifest.completedTurnEndId !== snapshot.span.completedTurnEndId) return "mismatch-completedTurnEndId";
-  if (!manifestIds(manifest.sourceEntryIds, snapshot.span.sourceEntryIds)) return "mismatch-sourceEntryIds";
-  if (manifest.sessionId !== binding.sessionId) return "mismatch-sessionId";
-  if (manifest.generation !== binding.generation) return "mismatch-generation";
-  if (manifest.branchId !== binding.branchId) return "mismatch-branchId";
-  return undefined;
+function allowedSourceIds(input: ObserverInput): readonly string[] {
+  return input.sourceEntryIds ?? input.snapshot.span.sourceEntryIds;
 }
 function clean(value: string, maximum: number): string {
   return scrubSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, maximum);
@@ -83,41 +49,31 @@ type ObservationFailureCode = "invalid-observation-record" | "invalid-observatio
 type ParsedObservation = Readonly<{ observation: Observation }> | Readonly<{ failure: ObservationFailureCode }>;
 
 /** Return only a fixed structural rejection code; model content and citation values never leave this boundary. */
-function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot): ParsedObservation {
+function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot, allowed: readonly string[]): ParsedObservation {
   const source = record(value);
   if (!source) return { failure: "invalid-observation-record" };
   if (typeof source.content !== "string" || !source.content.trim()) return { failure: "invalid-observation-content" };
   if (typeof source.timestamp !== "string") return { failure: "invalid-observation-timestamp" };
   const relevance = source.relevance;
   if (relevance !== "low" && relevance !== "medium" && relevance !== "high" && relevance !== "critical") return { failure: "invalid-observation-relevance" };
-  const ids = sourceIds(source.sourceEntryIds, snapshot.span.sourceEntryIds);
+  const ids = sourceIds(source.sourceEntryIds, allowed);
   if (!ids) return { failure: "invalid-observation-sourceEntryIds" };
   const content = clean(source.content, MAX_OBSERVATION_CHARS);
   if (!content) return { failure: "invalid-observation-content" };
-  const id = typeof source.id === "string" && /^pm:o:[a-f0-9]{24}:[a-f0-9]{24}$/u.test(source.id)
-    ? source.id
-    : makeObservationId(binding.sessionId, recordDigest(binding.sessionId, snapshot.snapshotId, content));
+  // Model-provided ids are intentionally ignored. Identity is derived from the immutable
+  // cycle, normalized content, and the citations that code just validated.
+  const id = makeObservationId(binding.sessionId, recordDigest(binding.sessionId, { snapshotId: snapshot.snapshotId, sourceEntryIds: ids }, content));
   return { observation: { id, content, timestamp: clean(source.timestamp, 64), relevance, sourceEntryIds: ids, tokenCount: Math.max(1, Math.ceil(content.length / 4)) } };
 }
 function promptFor(input: ObserverInput): string {
+  const sourceEntryIds = allowedSourceIds(input);
   return JSON.stringify({
-    binding: input.binding,
-    snapshot: { ...input.snapshot, sourceEntries: input.sourceEntries },
+    sourceEntries: input.sourceEntries,
+    sourceEntryIds,
     priorObservations: (input.priorObservations ?? []).slice(-200),
     priorReflections: (input.priorReflections ?? []).slice(-200),
-    expectedCoverageManifest: {
-      snapshotId: input.snapshot.snapshotId,
-      cycleId: input.snapshot.cycleId,
-      sourceDigest: input.snapshot.span.sourceDigest,
-      completedTurnEndId: input.snapshot.span.completedTurnEndId,
-      sourceEntryIds: input.snapshot.span.sourceEntryIds,
-      sessionId: input.binding.sessionId,
-      generation: input.binding.generation,
-      branchId: input.binding.branchId,
-    },
     output: {
       response: "single JSON object only; no prose, markdown fence, or trailing commentary",
-      coverageManifest: "copy expectedCoverageManifest as this top-level field: flat, same key names, no additions; OMIT sourceEntryIds entirely because the deterministic ids are authoritative and are filled in by code",
       observations: {
         type: "array",
         empty: "use [] when there is nothing durable to record",
@@ -125,8 +81,7 @@ function promptFor(input: ObserverInput): string {
           content: "non-empty string",
           timestamp: "string",
           relevance: "one of: low, medium, high, critical",
-          sourceEntryIds: "non-empty subset of expectedCoverageManifest.sourceEntryIds; order does not matter and duplicates are normalized by code",
-          id: "optional; if supplied, pm:o:<24 lowercase hex>:<24 lowercase hex>",
+          sourceEntryIds: "non-empty subset of sourceEntryIds; order does not matter and duplicates are normalized by code",
         },
       },
     },
@@ -141,29 +96,18 @@ export async function runObserver(input: ObserverInput): Promise<ObserverResult>
     systemPrompt: OBSERVER_SYSTEM,
     runtime: input.runtime,
     signal: input.signal,
-    inputTokens: input.snapshot.tokenCount + 2_048,
   });
-  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: false, observations: [], runner, reason: runner.reason };
+  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: true, observations: [], runner, reason: runner.reason };
   const output = record(runner.response);
-  const manifestFailure = manifestFailureCode(runner.response, input.snapshot, input.binding);
-  if (!output || manifestFailure) {
-    const safeCode = manifestFailure ?? "missing-coverage-manifest";
-    return {
-      ok: false,
-      status: "invalid",
-      manifestValid: false,
-      observations: [],
-      runner,
-      reason: `observer coverage manifest is missing, reordered, or identity-mismatched (${safeCode})`,
-    };
-  }
+  if (!output) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer response is not a semantic object" };
   if (output.status !== undefined && output.status !== "complete" && output.status !== "empty-valid") {
     return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer reported partial coverage" };
   }
   if (!Array.isArray(output.observations)) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer observations are not an array" };
   const observations: Observation[] = [];
+  const allowed = allowedSourceIds(input);
   for (const candidate of output.observations) {
-    const parsed = parseObservation(candidate, input.binding, input.snapshot);
+    const parsed = parseObservation(candidate, input.binding, input.snapshot, allowed);
     if ("failure" in parsed) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: `observer returned an invalid observation (${parsed.failure})` };
     observations.push(parsed.observation);
   }

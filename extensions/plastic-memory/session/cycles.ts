@@ -24,6 +24,17 @@ export type CompletedTurnSnapshot = {
   tokenCount: number;
   status: SnapshotStatus;
 };
+export type SnapshotChunk = Readonly<{
+  index: number;
+  entries: SessionEntry[];
+  sourceEntryIds: string[];
+  tokenCount: number;
+}>;
+export type SnapshotPartition = Readonly<{
+  ok: boolean;
+  chunks: SnapshotChunk[];
+  reason?: "indivisible-message-group-exceeds-bound" | "tool-exchange-integrity-failure";
+}>;
 export type SnapshotInput = {
   binding: SessionBinding;
   sourceEntries: SessionEntry[];
@@ -63,6 +74,36 @@ function tokenCount(entry: SessionEntry): number {
 function isToolCallContentPart(value: unknown): boolean {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     && (value as { type?: unknown }).type === "toolCall";
+}
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+function messageValue(entry: SessionEntry): Record<string, unknown> {
+  return recordValue(entry.message) ?? entry as Record<string, unknown>;
+}
+function contentParts(entry: SessionEntry): unknown[] {
+  const content = messageValue(entry).content ?? entry.content;
+  return Array.isArray(content) ? content : [];
+}
+function assistantToolCallIds(entry: SessionEntry): { ids: string[]; malformed: boolean } {
+  if (messageValue(entry).role !== "assistant") return { ids: [], malformed: false };
+  const ids: string[] = [];
+  for (const part of contentParts(entry)) {
+    if (!isToolCallContentPart(part)) continue;
+    const id = recordValue(part)?.id;
+    if (typeof id !== "string" || id.length === 0) return { ids: [], malformed: true };
+    ids.push(id);
+  }
+  return { ids, malformed: false };
+}
+function toolResult(entry: SessionEntry): { present: boolean; id?: string; malformed: boolean } {
+  const message = messageValue(entry);
+  const role = message.role ?? (entry.type === "toolResult" ? "toolResult" : undefined);
+  if (role !== "toolResult") return { present: false, malformed: false };
+  const id = message.toolCallId ?? entry.toolCallId;
+  return typeof id === "string" && id.length > 0
+    ? { present: true, id, malformed: false }
+    : { present: true, malformed: true };
 }
 
 /** A tool-call assistant is an in-progress turn until a later terminal assistant arrives. */
@@ -126,6 +167,88 @@ function attemptsFor(snapshot: CompletedTurnSnapshot, records: SessionEntry[]): 
   return [...latestByAttempt.values()];
 }
 
+/** Partition into contiguous atomic groups: complete tool exchanges, terminal boundaries, and ordinary runs. */
+function partitionEntries(entries: SessionEntry[], maxTokens: number): SnapshotPartition {
+  const groups: SessionEntry[][] = [];
+  let ordinary: SessionEntry[] = [];
+  let exchange: SessionEntry[] | undefined;
+  const pendingCalls = new Set<string>();
+  const integrityFailure = (): SnapshotPartition => ({ ok: false, chunks: [], reason: "tool-exchange-integrity-failure" });
+
+  for (const entry of entries) {
+    const calls = assistantToolCallIds(entry);
+    const result = toolResult(entry);
+    if (calls.malformed || result.malformed) return integrityFailure();
+    if (exchange) {
+      exchange.push(entry);
+      for (const callId of calls.ids) {
+        if (pendingCalls.has(callId)) return integrityFailure();
+        pendingCalls.add(callId);
+      }
+      if (result.present) {
+        if (!result.id || !pendingCalls.has(result.id)) return integrityFailure();
+        pendingCalls.delete(result.id);
+      }
+      if (pendingCalls.size === 0) {
+        groups.push(exchange);
+        exchange = undefined;
+      }
+      continue;
+    }
+    if (result.present) return integrityFailure();
+    if (calls.ids.length > 0) {
+      if (ordinary.length > 0) {
+        groups.push(ordinary);
+        ordinary = [];
+      }
+      exchange = [entry];
+      for (const callId of calls.ids) {
+        if (pendingCalls.has(callId)) return integrityFailure();
+        pendingCalls.add(callId);
+      }
+      continue;
+    }
+    ordinary.push(entry);
+    if (isTerminalAssistantEntry(entry)) {
+      groups.push(ordinary);
+      ordinary = [];
+    }
+  }
+  if (exchange || pendingCalls.size > 0) return integrityFailure();
+  if (ordinary.length > 0) groups.push(ordinary);
+
+  const chunks: SnapshotChunk[] = [];
+  let currentChunk: SessionEntry[] = [];
+  let currentTokens = 0;
+  for (const group of groups) {
+    const groupTokens = group.reduce((sum, entry) => sum + tokenCount(entry), 0);
+    if (groupTokens > maxTokens) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
+    if (currentChunk.length > 0 && currentTokens + groupTokens > maxTokens) {
+      chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
+      currentChunk = [];
+      currentTokens = 0;
+    }
+    currentChunk.push(...group);
+    currentTokens += groupTokens;
+  }
+  if (currentChunk.length > 0) {
+    chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
+  }
+  return { ok: true, chunks };
+}
+
+export function partitionCompletedTurnSnapshot(snapshot: CompletedTurnSnapshot, sourceEntries: SessionEntry[], maxTokens = 160_000): SnapshotPartition {
+  if (snapshot.status === "empty-valid") return { ok: true, chunks: [] };
+  const entries = spanEntriesFor(sourceEntries, snapshot.span);
+  if (entries.length !== snapshot.span.sourceEntryIds.length) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
+  return partitionEntries(entries, maxTokens);
+}
+
+function spanEntriesFor(source: SessionEntry[], span: SourceSpan): SessionEntry[] {
+  const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+  return span.sourceEntryIds.flatMap((id) => { const entry = byId.get(id); return entry ? [entry] : []; });
+}
+
 /** Build one contiguous, completed-turn opportunity from the post-bootstrap active window. */
 export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurnSnapshot {
   // An empty active window is not a restriction: a fresh-session bootstrap and every
@@ -136,28 +259,11 @@ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurn
     throw new Error("snapshot source is outside the active bootstrap window");
   }
   const entries = input.sourceEntries.filter((entry) => typeof entry.id === "string" && (!allowed || allowed.has(entry.id)));
-  // One-shot observer bound. A single long agentic task has no completed turn until its
-  // final answer, so the first observable prefix can be very large: a real 64-message audit
-  // session reached ~115k tokens before its first terminal assistant and was skipped whole.
-  // 160k keeps the call well inside Luna's 300k window (plus CONTEXT_OVERHEAD_TOKENS and the
-  // reply) while making those sessions observable.
-  const maxTokens = input.maxTokens ?? 160_000;
-  // Chunk instead of dying: cover the LARGEST CONTIGUOUS PREFIX that ends at a terminal
-  // assistant and fits `maxTokens`. Coverage must stay a prefix (never a suffix, never a
-  // gap) because the next cycle continues from this boundary. Only when even the prefix
-  // ending at the FIRST terminal assistant exceeds the bound is the window `oversized`,
-  // and then the span stays the whole completed window exactly as before.
-  let running = 0;
-  let end = -1;
-  let lastTerminal = -1;
+  let completedEnd = -1;
   for (let index = 0; index < entries.length; index += 1) {
-    running += tokenCount(entries[index]);
-    if (!isTerminalAssistantEntry(entries[index])) continue;
-    lastTerminal = index;
-    if (running <= maxTokens) end = index;
+    if (isTerminalAssistantEntry(entries[index])) completedEnd = index;
   }
-  const oversized = lastTerminal >= 0 && end < 0;
-  const completed = oversized ? entries.slice(0, lastTerminal + 1) : end >= 0 ? entries.slice(0, end + 1) : [];
+  const completed = completedEnd >= 0 ? entries.slice(0, completedEnd + 1) : [];
   const span = spanFor(completed);
   const snapshotPayload = {
     binding: input.binding,
@@ -167,13 +273,15 @@ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurn
   const snapshotId = recordDigest(input.binding.sessionId, { generation: input.binding.generation, branchId: input.binding.branchId }, snapshotPayload);
   const cycleId = makeCycleId(input.binding.sessionId, snapshotId);
   const tokenCountValue = completed.reduce((sum, entry) => sum + tokenCount(entry), 0);
+  const maxTokens = input.maxTokens ?? 160_000;
+  const partition = completed.length > 0 ? partitionEntries(completed, maxTokens) : { ok: true, chunks: [] };
   return {
     snapshotId,
     cycleId,
     binding: input.binding,
     span,
     tokenCount: tokenCountValue,
-    status: completed.length === 0 ? "empty-valid" : oversized ? "oversized" : "ready",
+    status: completed.length === 0 ? "empty-valid" : partition.ok ? "ready" : "oversized",
   };
 }
 
@@ -210,12 +318,13 @@ export function finishCycleAttempt(
   snapshot: CompletedTurnSnapshot,
   attempt: PlasticEntry<"plastic.cycle.attempted">,
   outcome: Exclude<AttemptOutcome, "pending" | "complete" | "empty-valid" | "suppressed">,
+  phase: CycleAttemptedData["phase"] = attempt.data.phase,
 ): PlasticEntry<"plastic.cycle.attempted"> | undefined {
   if (!isPlasticRecord(attempt) || attempt.customType !== PLASTIC_CYCLE_ATTEMPTED) return undefined;
   if (snapshot.status === "oversized") return undefined;
   if (!sameBinding(attempt.data, snapshot.binding) || attempt.data.cycleId !== snapshot.cycleId
     || attempt.data.snapshotId !== snapshot.snapshotId || !sameSpan(attempt.data, snapshot.span)) return undefined;
-  return recordForSnapshot(snapshot, outcome, attempt.data.attemptCount, attempt.data.attemptId, attempt.data.phase, outcome === "stale" ? "stale-identity" : undefined);
+  return recordForSnapshot(snapshot, outcome, attempt.data.attemptCount, attempt.data.attemptId, phase, outcome === "stale" ? "stale-identity" : undefined);
 }
 
 /** Close only from an exact source manifest/span/digest. Model prose is never consulted. */

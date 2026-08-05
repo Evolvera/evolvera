@@ -31,18 +31,136 @@ const u3 = entry("user", 20_000, "goal three");
 const a3 = entry("assistant", 20_000, "answer three");
 const window3 = [u1, a1, u2, a2, u3, a3];
 
-// A.1 — oversized window chunks to the largest terminal-ending PREFIX within budget.
+// A.1 — an over-bound completed span is preserved as one identity and partitioned safely.
 const first = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: window3, maxTokens: MAX });
 assert.equal(first.status, "ready");
-assert.deepEqual(first.span.sourceEntryIds, [u1.id, a1.id, u2.id, a2.id]);
+assert.deepEqual(first.span.sourceEntryIds, [u1.id, a1.id, u2.id, a2.id, u3.id, a3.id]);
 assert.equal(first.span.sourceStartId, u1.id);
-assert.equal(first.span.sourceEndId, a2.id);
-assert.equal(first.span.completedTurnEndId, a2.id);
-assert.equal(first.tokenCount, 80_000);
-assert.equal(first.span.sourceEntryIds.includes(a3.id), false, "coverage is a prefix, never the whole window");
-assert.equal(first.span.sourceEntryIds[0], u1.id, "coverage is a prefix, never a suffix");
+assert.equal(first.span.sourceEndId, a3.id);
+assert.equal(first.span.completedTurnEndId, a3.id);
+assert.equal(first.tokenCount, 120_000);
+const firstPartition = cycles.partitionCompletedTurnSnapshot(first, window3, MAX);
+assert.equal(firstPartition.ok, true);
+assert.deepEqual(firstPartition.chunks.map((chunk) => chunk.sourceEntryIds), [[u1.id, a1.id, u2.id, a2.id], [u3.id, a3.id]]);
+assert.ok(firstPartition.chunks.every((chunk) => chunk.tokenCount <= MAX));
+const toolEntries = [
+  { type: "message", id: "tool-u", parentId: null, message: { role: "user", content: [{ type: "text", text: "tool goal" }] }, tokenCount: 20_000 },
+  { type: "message", id: "tool-a", parentId: "tool-u", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read" }], stopReason: "toolUse" }, tokenCount: 30_000 },
+  { type: "message", id: "tool-r", parentId: "tool-a", message: { role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "result" }] }, tokenCount: 30_000 },
+  { type: "message", id: "tool-end", parentId: "tool-r", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 20_000 },
+  { type: "message", id: "tool-u2", parentId: "tool-end", message: { role: "user", content: [{ type: "text", text: "next" }] }, tokenCount: 10_000 },
+  { type: "message", id: "tool-a2", parentId: "tool-u2", message: { role: "assistant", content: [{ type: "text", text: "next done" }] }, tokenCount: 10_000 },
+];
+const toolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: toolEntries, maxTokens: MAX });
+const toolPartition = cycles.partitionCompletedTurnSnapshot(toolSnapshot, toolEntries, MAX);
+assert.equal(toolPartition.ok, true);
+assert.deepEqual(toolPartition.chunks[0].sourceEntryIds, ["tool-u", "tool-a", "tool-r", "tool-end"], "tool call/result stays indivisible");
 
-// A.2 — the leftover turn is still reachable as the next cycle's prefix, with a distinct identity.
+// A.1a — a large ordinary prefix and a large valid tool exchange are separate atomic groups.
+const ordinaryPrefixToolEntries = [
+  { type: "message", id: "prefix-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "large prefix" }] }, tokenCount: 95_000 },
+  { type: "message", id: "prefix-call", parentId: "prefix-user", message: { role: "assistant", content: [{ type: "toolCall", id: "prefix-tool", name: "read" }], stopReason: "toolUse" }, tokenCount: 35_000 },
+  { type: "message", id: "prefix-result", parentId: "prefix-call", message: { role: "toolResult", toolCallId: "prefix-tool", content: [{ type: "text", text: "large result" }] }, tokenCount: 35_000 },
+  { type: "message", id: "prefix-terminal", parentId: "prefix-result", message: { role: "assistant", content: [{ type: "text", text: "complete" }], stopReason: "stop" }, tokenCount: 10_000 },
+];
+const ordinaryPrefixToolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: ordinaryPrefixToolEntries });
+const ordinaryPrefixToolPartition = cycles.partitionCompletedTurnSnapshot(ordinaryPrefixToolSnapshot, ordinaryPrefixToolEntries);
+assert.equal(ordinaryPrefixToolSnapshot.status, "ready");
+assert.equal(ordinaryPrefixToolPartition.ok, true);
+assert.deepEqual(ordinaryPrefixToolPartition.chunks.map((chunk) => chunk.sourceEntryIds), [["prefix-user"], ["prefix-call", "prefix-result", "prefix-terminal"]]);
+assert.ok(ordinaryPrefixToolPartition.chunks.every((chunk) => chunk.tokenCount <= 160_000));
+assert.deepEqual(ordinaryPrefixToolPartition.chunks.flatMap((chunk) => chunk.sourceEntryIds), ordinaryPrefixToolEntries.map((entry) => entry.id));
+const prefixCallChunk = ordinaryPrefixToolPartition.chunks.find((chunk) => chunk.sourceEntryIds.includes("prefix-call"));
+assert.ok(prefixCallChunk?.sourceEntryIds.includes("prefix-result"), "tool call and result remain in one chunk");
+const prefixRuntime = {
+  modelRegistry: { find: () => ({ provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (context.role === "observer") return { observations: [{ content: "prefix fact", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    return { reflections: [{ content: "prefix reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
+  },
+};
+const prefixRecords = [];
+const prefixResult = await schedulerModule.createCycleScheduler().trigger({
+  binding,
+  branchEntries: ordinaryPrefixToolEntries,
+  bootstrap: { activeEntryIds: ordinaryPrefixToolEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: [],
+  runtime: prefixRuntime,
+  append: (record) => prefixRecords.push(record),
+});
+assert.equal(prefixResult.status, "closed", "terminal-complete ordinary/tool fixture closes");
+assert.equal(prefixRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1, "fixture closes exactly once");
+
+const impossibleToolEntries = [
+  { type: "message", id: "im-u", parentId: null, message: { role: "user", content: [{ type: "text", text: "impossible" }] }, tokenCount: 10_000 },
+  { type: "message", id: "im-a", parentId: "im-u", message: { role: "assistant", content: [{ type: "toolCall", id: "im-call", name: "read" }], stopReason: "toolUse" }, tokenCount: 60_000 },
+  { type: "message", id: "im-r", parentId: "im-a", message: { role: "toolResult", toolCallId: "im-call", content: [{ type: "text", text: "large result" }] }, tokenCount: 60_000 },
+  { type: "message", id: "im-end", parentId: "im-r", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 10_000 },
+];
+const impossibleToolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: impossibleToolEntries, maxTokens: MAX });
+assert.equal(impossibleToolSnapshot.status, "oversized");
+assert.deepEqual(cycles.partitionCompletedTurnSnapshot(impossibleToolSnapshot, impossibleToolEntries, MAX), { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" });
+
+// A.1b — one giant completed agentic turn partitions at complete exchange boundaries.
+const agenticEntries = [
+  { type: "message", id: "agentic-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "campaign goal" }] }, tokenCount: 10_000 },
+  { type: "message", id: "agentic-call-1", parentId: "agentic-user", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-1", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-result-1", parentId: "agentic-call-1", message: { role: "toolResult", toolCallId: "agentic-tool-1", content: [{ type: "text", text: "result one" }] }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-call-2", parentId: "agentic-result-1", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-2", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-result-2", parentId: "agentic-call-2", message: { role: "toolResult", toolCallId: "agentic-tool-2", content: [{ type: "text", text: "result two" }] }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-call-3", parentId: "agentic-result-2", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-3", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-result-3", parentId: "agentic-call-3", message: { role: "toolResult", toolCallId: "agentic-tool-3", content: [{ type: "text", text: "result three" }] }, tokenCount: 25_000 },
+  { type: "message", id: "agentic-terminal", parentId: "agentic-result-3", message: { role: "assistant", content: [{ type: "text", text: "campaign complete" }], stopReason: "stop" }, tokenCount: 10_000 },
+];
+const agenticSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: agenticEntries });
+assert.equal(agenticSnapshot.status, "ready");
+assert.ok(agenticSnapshot.tokenCount > 160_000);
+const agenticPartition = cycles.partitionCompletedTurnSnapshot(agenticSnapshot, agenticEntries);
+assert.equal(agenticPartition.ok, true);
+assert.ok(agenticPartition.chunks.length > 1);
+assert.ok(agenticPartition.chunks.every((chunk) => chunk.tokenCount <= 160_000));
+assert.deepEqual(agenticPartition.chunks.flatMap((chunk) => chunk.sourceEntryIds), agenticEntries.map((entry) => entry.id), "ordered union covers every source exactly once");
+for (const [callId, resultId] of [["agentic-call-1", "agentic-result-1"], ["agentic-call-2", "agentic-result-2"], ["agentic-call-3", "agentic-result-3"]]) {
+  const callChunk = agenticPartition.chunks.findIndex((chunk) => chunk.sourceEntryIds.includes(callId));
+  assert.ok(callChunk >= 0);
+  assert.equal(agenticPartition.chunks[callChunk].sourceEntryIds.includes(resultId), true, `${callId} and its result stay together`);
+}
+
+// Malformed completed spans fail closed before a worker can be called.
+const malformedRuntimeCalls = [];
+const malformedRuntime = {
+  modelRegistry: { find: () => ({ provider: "fake", id: "fake", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
+  async agentLoop() { malformedRuntimeCalls.push(true); throw new Error("worker must not run"); },
+};
+const malformedSources = [
+  [
+    { type: "message", id: "multi-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "multi" }] }, tokenCount: 1 },
+    { type: "message", id: "multi-call", parentId: "multi-user", message: { role: "assistant", content: [{ type: "toolCall", id: "multi-1", name: "read" }, { type: "toolCall", id: "multi-2", name: "read" }], stopReason: "toolUse" }, tokenCount: 1 },
+    { type: "message", id: "multi-result", parentId: "multi-call", message: { role: "toolResult", toolCallId: "multi-1", content: [{ type: "text", text: "only one" }] }, tokenCount: 1 },
+    { type: "message", id: "multi-terminal", parentId: "multi-result", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 1 },
+  ],
+  [
+    { type: "message", id: "orphan-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "orphan" }] }, tokenCount: 1 },
+    { type: "message", id: "orphan-result", parentId: "orphan-user", message: { role: "toolResult", toolCallId: "missing", content: [{ type: "text", text: "orphan" }] }, tokenCount: 1 },
+    { type: "message", id: "orphan-terminal", parentId: "orphan-result", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 1 },
+  ],
+];
+for (const sourceEntries of malformedSources) {
+  const malformedSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries });
+  assert.deepEqual(cycles.partitionCompletedTurnSnapshot(malformedSnapshot, sourceEntries), { ok: false, chunks: [], reason: "tool-exchange-integrity-failure" });
+  const malformedResult = await schedulerModule.createCycleScheduler().trigger({
+    binding,
+    branchEntries: sourceEntries,
+    bootstrap: { activeEntryIds: sourceEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+    records: [], runtime: malformedRuntime, append: () => {},
+  });
+  assert.equal(malformedResult.status, "skipped");
+  assert.equal(malformedResult.reason, "tool-exchange-integrity-failure");
+}
+assert.equal(malformedRuntimeCalls.length, 0, "malformed spans fail before worker calls");
+
+// A.2 — the leftover turn remains a distinct fitting snapshot identity.
 const second = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: [u3, a3], maxTokens: MAX });
 assert.equal(second.status, "ready");
 assert.deepEqual(second.span.sourceEntryIds, [u3.id, a3.id]);
@@ -85,9 +203,9 @@ assert.deepEqual(fits.span, expectedSpan);
 assert.equal(fits.tokenCount, 80_000);
 assert.equal(fits.snapshotId, expectedSnapshotId);
 assert.equal(fits.cycleId, ids.makeCycleId(binding.sessionId, expectedSnapshotId));
-assert.equal(fits.snapshotId, first.snapshotId, "the chunk of an oversized window is identical to the same fitting window");
+assert.notEqual(fits.snapshotId, first.snapshotId, "the full-span snapshot owns the full completed coverage identity");
 
-// B — the observer must be shown exactly the span entries, in span order.
+// B — each bounded observer call sees exactly one immutable chunk in order.
 const captured = [];
 const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const offlineRuntime = {
@@ -97,12 +215,12 @@ const offlineRuntime = {
   },
   async agentLoop(prompts, context) {
     const request = JSON.parse(prompts[0].content[0].text);
-    captured.push({ role: context.role, sourceEntryIds: (request.snapshot.sourceEntries ?? []).map((item) => item.id) });
-    return { rejected: true }; // no manifest: the cycle fails closed; no network is ever touched
+    captured.push({ role: context.role, sourceEntryIds: request.sourceEntryIds ?? request.observations?.flatMap((item) => item.sourceEntryIds) ?? [] });
+    if (context.role === "observer") return { observations: [{ content: `fact ${request.sourceEntryIds[0]}`, timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    return { reflections: [{ content: "aggregate reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
   },
 };
-// The scheduler never passes `maxTokens`, so this window is sized against the DEFAULT
-// one-shot bound (160k): prefix@b1=60k, prefix@b2=120k, prefix@b3=180k > default.
+// The scheduler uses the DEFAULT 160k bound: first two 60k turns fit together, third is a second chunk.
 const b0 = entry("user", 30_000, "scheduler goal one");
 const b1 = entry("assistant", 30_000, "scheduler answer one");
 const b2 = entry("user", 30_000, "scheduler goal two");
@@ -119,11 +237,47 @@ const result = await scheduler.trigger({
   runtime: offlineRuntime,
   append: () => {},
 });
-assert.equal(result.status, "failed", "the offline stub returns no manifest, so the cycle fails closed");
-assert.deepEqual(result.snapshot.span.sourceEntryIds, [b0.id, b1.id, b2.id, b3.id], "the scheduler snapshot is the chunked prefix under the default bound");
-assert.equal(result.snapshot.tokenCount, 120_000, "the default bound admits a 120k prefix that the old 100k bound would have rejected");
-assert.equal(captured.length, 1);
-assert.equal(captured[0].role, "observer");
-assert.deepEqual(captured[0].sourceEntryIds, result.snapshot.span.sourceEntryIds, "observer sees exactly the span entries, in span order");
+assert.equal(result.status, "closed");
+assert.deepEqual(result.snapshot.span.sourceEntryIds, schedulerWindow.map((item) => item.id), "the full completed span is preserved");
+assert.equal(result.snapshot.tokenCount, 180_000);
+assert.deepEqual(captured.filter((call) => call.role === "observer").map((call) => call.sourceEntryIds), [[b0.id, b1.id, b2.id, b3.id], [b4.id, b5.id]]);
+assert.equal(captured.filter((call) => call.role === "reflector").length, 1, "one reflection covers the aggregate");
 
-console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, observer span contract)");
+// The real-sized agentic campaign still observes every atomic chunk, then persists and closes once.
+const agenticObservedCalls = [];
+const agenticRecords = [];
+const agenticRuntime = {
+  modelRegistry: {
+    find: () => model,
+    async getProviderAuth() { return { apiKey: "fake-only" }; },
+  },
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    agenticObservedCalls.push({ role: context.role, sourceEntryIds: request.sourceEntryIds ?? [] });
+    if (context.role === "observer") return { observations: [{ content: `agentic fact ${request.sourceEntryIds[0]}`, timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    return { reflections: [{ content: "agentic aggregate reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
+  },
+};
+const agenticScheduler = schedulerModule.createCycleScheduler();
+const agenticResult = await agenticScheduler.trigger({
+  binding,
+  branchEntries: agenticEntries,
+  bootstrap: { activeEntryIds: agenticEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: [], runtime: agenticRuntime, append: (record) => agenticRecords.push(record),
+});
+assert.equal(agenticResult.status, "closed");
+const agenticObserverCalls = agenticObservedCalls.filter((call) => call.role === "observer");
+assert.equal(agenticObserverCalls.length, agenticPartition.chunks.length);
+assert.deepEqual(agenticObserverCalls.flatMap((call) => call.sourceEntryIds), agenticEntries.map((entry) => entry.id));
+for (const [callId, resultId] of [["agentic-call-1", "agentic-result-1"], ["agentic-call-2", "agentic-result-2"], ["agentic-call-3", "agentic-result-3"]]) {
+  const callChunk = agenticObserverCalls.find((call) => call.sourceEntryIds.includes(callId));
+  assert.ok(callChunk);
+  assert.equal(callChunk.sourceEntryIds.includes(resultId), true, `${callId} and result are observed together`);
+}
+assert.equal(agenticObservedCalls.filter((call) => call.role === "reflector").length, 1);
+assert.equal(agenticRecords.filter((record) => record.customType === "plastic.observations.recorded").length, 1);
+assert.equal(agenticRecords.filter((record) => record.customType === "plastic.reflections.recorded").length, 1);
+assert.equal(agenticRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1);
+assert.deepEqual(agenticResult.cycle.data.sourceEntryIds, agenticEntries.map((entry) => entry.id));
+
+console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, agentic atomic exchanges, malformed tool integrity, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, observer span contract)");
