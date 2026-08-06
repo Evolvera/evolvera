@@ -1,8 +1,10 @@
 import type { BeforeAgentStartEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePlasticMemorySettings, type ResolvedPlasticMemorySettings } from "./config.ts";
+import { CATEGORIES, CONFIDENCES, makeChunk, validateEvidence } from "./project/schema.ts";
+import { loadProject, publishProject, type PublicationCandidate } from "./project/store.ts";
 
 export type PlasticMemoryOwnerMode = "full" | "bridge";
 
@@ -123,6 +125,28 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     };
   };
   const memoryRootFor = (ctx: any): string => currentMemoryRoot(ctx).memoryRoot;
+  const candidateFrom = (args: JsonObject): PublicationCandidate => ({
+    category: args.category as PublicationCandidate["category"], title: args.title as string, target: args.target as string,
+    body: args.body as string, confidence: args.confidence as PublicationCandidate["confidence"],
+    ...(args.evidence !== undefined ? { evidence: args.evidence as PublicationCandidate["evidence"] } : {}),
+    ...(args.chunkId !== undefined ? { chunkId: args.chunkId as string } : {}),
+    ...(args.supersedes !== undefined ? { supersedes: args.supersedes as string } : {}),
+    ...(args.links !== undefined ? { links: args.links as string[] } : {}),
+    ...(args.status !== undefined ? { status: args.status as PublicationCandidate["status"] } : {}),
+  });
+  const validateProposalCandidate = (args: JsonObject): PublicationCandidate => {
+    for (const field of ["category", "title", "target", "body", "confidence"]) if (!(field in args)) throw new Error(`${field} is required`);
+    const candidate = candidateFrom(args);
+    if (!CATEGORIES.includes(candidate.category)) throw new Error("category is invalid");
+    if (!CONFIDENCES.includes(candidate.confidence)) throw new Error("confidence is invalid");
+    const evidence = candidate.evidence === undefined ? [] : Array.isArray(candidate.evidence) ? candidate.evidence.map((item) => validateEvidence(item)) : (() => { throw new Error("evidence must be an array"); })();
+    makeChunk("pm:p:" + "0".repeat(32), {
+      category: candidate.category, status: candidate.status ?? "active", confidence: candidate.confidence, title: candidate.title,
+      target: candidate.target, sourceHead: "UNKNOWN", evidenceIds: evidence.map((item) => item.id), links: candidate.links ?? [],
+      id: candidate.chunkId, supersedes: candidate.supersedes,
+    }, candidate.body);
+    return candidate;
+  };
   const operations = {
     recall: (id: string, ctx: any) => {
       const branch = branchFor(ctx);
@@ -154,8 +178,25 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   commandsModule.registerMemoryCommands(pi, {
     status: operations.status,
     view: operations.view,
-    propose: () => operations.unavailable("project promotion"),
-    accept: () => operations.unavailable("proposal acceptance"),
+    propose: (args: JsonObject, ctx: any) => {
+      if (typeof ctx?.cwd !== "string" || !isAbsolute(ctx.cwd)) return operations.unavailable("project promotion");
+      const candidate = validateProposalCandidate(args);
+      const project = loadProject(memoryRootFor(ctx));
+      const active = project?.chunks.find((chunk) => chunk.frontMatter.status === "active" && chunk.frontMatter.target === candidate.target);
+      const action = candidate.supersedes ? "supersede" : active ? "update" : "create";
+      const warnings = active && !candidate.supersedes && candidate.chunkId !== active.frontMatter.id ? ["active target requires its chunkId or supersedes"] : [];
+      return {
+        status: "preview", action, projectExists: Boolean(project), target: candidate.target, category: candidate.category,
+        ...(active ? { activeChunkId: active.frontMatter.id, activeChunkTitle: active.frontMatter.title } : {}), warnings,
+      };
+    },
+    accept: (args: JsonObject, ctx: any) => {
+      const { cwd, memoryRoot } = currentMemoryRoot(ctx);
+      const candidate = candidateFrom(args);
+      const input: { project?: { provenance: { root: string }; name: string; repository: string }; candidate: PublicationCandidate } = { candidate };
+      if (!loadProject(memoryRoot)) input.project = { provenance: { root: cwd }, name: basename(cwd), repository: basename(cwd) };
+      return publishProject(memoryRoot, input, { accepted: true });
+    },
     migrate: () => operations.unavailable("migration"),
     backfill: () => operations.unavailable("backfill execution"),
     retry: () => operations.unavailable("retry execution"),
