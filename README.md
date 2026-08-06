@@ -23,7 +23,7 @@ Usuário
 - npm disponível no `PATH`;
 - credencial para pelo menos um provider de IA.
 
-A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.83.0`.
+A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.83.0`. O patch de continuidade descrito abaixo é compatível somente com essa versão; uma versão selecionada por override que não seja `0.83.0` faz o instalador falhar fechado.
 
 ### Node com fnm (Linux e macOS)
 
@@ -130,6 +130,18 @@ Os instaladores:
 6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); a configuração versionada descreve `plastic-memory`, não `pi-observational-memory`;
 7. criam `mcp.json` somente quando ele ainda não existe;
 8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados.
+
+### Patch de continuidade do PI 0.83.0
+
+Depois do `npm install` global e antes de verificar a instalação ou ativar `settings.json`, os instaladores executam `scripts/patch-pi-083-threshold-cancel.mjs`. O patcher valida o nome/versão exatos, o caminho, a cardinalidade e o SHA-256 do anchor conhecido, e então altera somente o cancelamento de auto-compaction por `reason === "threshold"`: mensagens já enfileiradas podem continuar. Cancelamento por overflow, compactação manual e o caminho de sucesso permanecem inalterados.
+
+Qualquer versão, conteúdo ou cardinalidade desconhecidos são recusados sem substituir o arquivo. A operação é idempotente, atômica e preserva o modo do arquivo. A verificação segura usa exclusivamente uma fixture sintética temporária e descartável:
+
+```bash
+node scripts/test/patch-pi-083-threshold-cancel.smoke.mjs
+```
+
+Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução futura de um instalador pode aplicá-lo ao pacote global correspondente e exige confirmação nova para essa consequência; a smoke não é prova de uma campanha live.
 
 ### Ativação, colisões e atualização
 
@@ -382,6 +394,22 @@ git pull --ff-only
 Depois, reinicie o terminal/VS Code ou use `/reload`.
 
 ## Rollback
+
+### Restaurar o arquivo do PI sem o patch
+
+O patch é parte do pacote global instalado, não do checkout. Para restaurar a cópia exata não patched do host, reinstale diretamente a versão compatível, sem executar o patcher nem `install.sh`/`install.ps1` depois:
+
+```bash
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.83.0
+```
+
+No Windows:
+
+```powershell
+npm install -g @earendil-works/pi-coding-agent@0.83.0
+```
+
+Essa ação altera o host e requer confirmação nova; a tarefa atual não a executou.
 
 ### Rollback local para uma revisão conhecida
 

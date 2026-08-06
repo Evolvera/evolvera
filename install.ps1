@@ -34,6 +34,9 @@ Info ("Node " + $nodeVersion + " compativel")
 Info ("Garantindo @earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION + "...")
 npm install -g ("@earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION)
 if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do PI." }
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-threshold-cancel.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 0.83.0." }
+Info "Patch de continuidade do PI 0.83.0 verificado"
 
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if (-not $piCmd) { throw "PI nao encontrado apos a instalacao." }
