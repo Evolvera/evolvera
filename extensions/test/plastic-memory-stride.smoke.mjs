@@ -189,25 +189,17 @@ async function runStride(closedTurns, options = {}) {
     projectSnapshot,
   }), undefined);
 }
-// 2a. Physical emergency mode selects the same whole-cycle fold for selector, detached
-// request, and final preparation, while retaining the incomplete turn suffix.
+// 2a. Physical pressure cannot shrink normal retention. The separate emergency
+// selector owns any transient smaller window, so detached normal compaction is skipped.
 {
-  // The scheduler receives this map before it closes the final cycle. It is keyed
-  // only by real branch entry IDs, so the just-closed cycle has no special budget key.
   const run = await runStride(7, { preClosePhysicalBudget: true });
-  assert.ok(run.compacted?.ok, run.compacted?.reason);
+  assert.equal(run.compacted, undefined, "normal compactor is not started when four retained cycles do not fit");
+  assert.equal(run.stub.count("compactor"), 0, "physical four-cycle failure makes no normal compactor call");
   const closedCycles = [...run.cycles, run.result.cycle.data];
-  const expected = closedCycles.slice(0, -2).map((cycle) => cycle.cycleId);
   assert.equal(Object.hasOwn(run.physicalBudget.entryTokens, run.result.cycle.data.cycleId), false, "pre-close budget has no per-cycle key");
-  const selected = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, physicalBudget: entryBudget(run.entries, 170, 10, 20), projectSnapshot });
-  assert.deepEqual(selected.map((cycle) => cycle.cycleId), expected, "4→2 selector folds two normally-retained cycles");
-  const prompt = JSON.parse(run.stub.prompts.compactor[0]);
-  assert.deepEqual(prompt.readOnlyIdentityContext.cycleIds, expected, "4→2 detached request matches selector");
-  assert.deepEqual(run.compacted.prepared.rendered.state.cycleIds, expected, "4→2 final preparation matches request/state");
-  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-2).sourceStartId);
+  assert.equal(engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, physicalBudget: entryBudget(run.entries, 170, 10, 20), projectSnapshot }), undefined, "normal selector does not fold below four retained cycles");
 }
-// Even zero raw cycles cannot fit when the fixed/incomplete budget alone exceeds
-// the context window, so the selector and detached compactor make no call.
+// An even smaller public window remains fail-closed before any model call.
 {
   const run = await runStride(7, { physicalBudgetForEntries: (entries) => entryBudget(entries, 59, 10, 20) });
   assert.equal(run.result.compactorJob, undefined, "impossible one-cycle-plus-incomplete-suffix window is skipped");

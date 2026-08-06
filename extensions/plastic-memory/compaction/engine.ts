@@ -83,13 +83,13 @@ function safeCutEntry(entry: SessionEntry | undefined): boolean {
 const MIN_CLOSED_CYCLES = 6;
 const MAX_RETAINED_CYCLES = 4;
 
-function validPhysicalBudget(
+export function physicalBudgetFits(
   budget: PhysicalBudget | null | undefined,
   branchEntries: readonly SessionEntry[],
   firstKept: SessionEntry | undefined,
-  retained: readonly CycleClosedData[],
+  retainedCount: number,
 ): boolean {
-  if (budget === undefined) return retained.length === MAX_RETAINED_CYCLES;
+  if (budget === undefined) return retainedCount === MAX_RETAINED_CYCLES;
   if (budget === null || !Number.isSafeInteger(budget.contextWindow) || budget.contextWindow <= 0
     || !Number.isSafeInteger(budget.fixedTokens) || budget.fixedTokens < 0
     || !budget.entryTokens || typeof budget.entryTokens !== "object"
@@ -99,13 +99,14 @@ function validPhysicalBudget(
   let total = budget.fixedTokens;
   for (const entry of branchEntries.slice(firstKeptIndex)) {
     if (typeof entry.id !== "string") return false;
+    if (!Object.hasOwn(budget.entryTokens, entry.id)) return false;
     const tokens = budget.entryTokens[entry.id];
     if (!Number.isSafeInteger(tokens) || tokens < 0) return false;
     total += tokens;
   }
   return total <= budget.contextWindow;
 }
-function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPositions: Map<string, number>, sourcePositions: Map<string, number>): boolean {
+export function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPositions: Map<string, number>, sourcePositions: Map<string, number>): boolean {
   if (cycle.status !== "complete" && cycle.status !== "empty-valid") return false;
   if (!cycle.sourceEntryIds.length || cycle.sourceStartId !== cycle.sourceEntryIds[0] || cycle.sourceEndId !== cycle.sourceEntryIds.at(-1) || cycle.completedTurnEndId !== cycle.sourceEntryIds.at(-1)) return false;
   const indexes = cycle.sourceEntryIds.map((id) => sourcePositions.get(id));
@@ -117,46 +118,44 @@ function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPo
   return isTerminalAssistantEntry(sourceEntries.at(-1)!);
 }
 type WindowTrace = { code?: string };
-function eligibleWindow(input: EngineWindowInput, trace: WindowTrace = {}): { cycles: CycleClosedData[]; cut: CutValidation } | undefined {
-  const reject = (code: string): undefined => { trace.code = code; return undefined; };
-  if (!hasOrderedContextTail(input.branchEntries)) return reject("branch-order");
+export type ValidatedCycleSet = Readonly<{
+  branchIds: string[];
+  branchPositions: Map<string, number>;
+  sourcePositions: Map<string, number>;
+  cycles: CycleClosedData[];
+}>;
+/** Validate current-branch cycle identity, exact source spans, digest, and contiguity once for all selectors. */
+export function validateClosedCycleSet(input: Pick<EngineWindowInput, "binding" | "branchEntries" | "cycles">): ValidatedCycleSet | undefined {
+  if (!hasOrderedContextTail(input.branchEntries)) return undefined;
   const branchIds = input.branchEntries.map((entry) => entry.id!);
-  const positions = new Map(branchIds.map((id, index) => [id, index]));
+  const branchPositions = new Map(branchIds.map((id, index) => [id, index]));
   const sourcePositions = new Map(input.branchEntries.filter(isSourceEntry).map((entry, index) => [entry.id!, index]));
   const normalized = input.cycles.map(asCycleData);
-  if (normalized.some((cycle) => !cycle || cycle.sessionId !== input.binding.sessionId || cycle.generation !== input.binding.generation || cycle.branchId !== input.binding.branchId)) return reject("binding-mismatch");
+  if (normalized.some((cycle) => !cycle || cycle.sessionId !== input.binding.sessionId || cycle.generation !== input.binding.generation || cycle.branchId !== input.binding.branchId
+    || (cycle.status !== "complete" && cycle.status !== "empty-valid"))) return undefined;
   const complete = normalized.filter((cycle): cycle is CycleClosedData => Boolean(cycle && (cycle.status === "complete" || cycle.status === "empty-valid")));
-  const ordered = [...complete].sort((a, b) => (sourcePositions.get(a.sourceStartId) ?? Number.MAX_SAFE_INTEGER) - (sourcePositions.get(b.sourceStartId) ?? Number.MAX_SAFE_INTEGER));
-  if (ordered.length < MIN_CLOSED_CYCLES || new Set(ordered.map((cycle) => cycle.cycleId)).size !== ordered.length) return reject("stride-too-small");
-  const boundary = ordered;
-  if (!boundary.every((cycle) => exactCycleSpan(cycle, input.branchEntries, positions, sourcePositions))) return reject("cycle-span-invalid");
-  for (let index = 1; index < boundary.length; index += 1) {
-    const previous = boundary[index - 1];
-    const current = boundary[index];
-    const previousEnd = sourcePositions.get(previous.sourceEndId);
-    const currentStart = sourcePositions.get(current.sourceStartId);
-    if (previousEnd === undefined || currentStart === undefined || currentStart !== previousEnd + 1) return reject("cycles-not-contiguous");
+  const cycles = [...complete].sort((a, b) => (sourcePositions.get(a.sourceStartId) ?? Number.MAX_SAFE_INTEGER) - (sourcePositions.get(b.sourceStartId) ?? Number.MAX_SAFE_INTEGER));
+  if (new Set(cycles.map((cycle) => cycle.cycleId)).size !== cycles.length) return undefined;
+  if (!cycles.every((cycle) => exactCycleSpan(cycle, input.branchEntries, branchPositions, sourcePositions))) return undefined;
+  for (let index = 1; index < cycles.length; index += 1) {
+    const previousEnd = sourcePositions.get(cycles[index - 1].sourceEndId);
+    const currentStart = sourcePositions.get(cycles[index].sourceStartId);
+    if (previousEnd === undefined || currentStart === undefined || currentStart !== previousEnd + 1) return undefined;
   }
-  let retainedCount: number | undefined;
-  let firstKept: SessionEntry | undefined;
-  for (let candidate = MAX_RETAINED_CYCLES; candidate >= 0; candidate -= 1) {
-    const candidateRetained = candidate === 0 ? [] : boundary.slice(-candidate);
-    const candidateFirstKept = candidate === 0
-      ? (() => {
-        const lastEnd = positions.get(boundary.at(-1)!.sourceEndId);
-        return lastEnd === undefined ? undefined : input.branchEntries[lastEnd + 1];
-      })()
-      : input.branchEntries.find((entry) => entry.id === candidateRetained[0].sourceStartId);
-    // A zero-raw-cycle cut is representable only when the first incomplete suffix
-    // entry is itself a safe user boundary. A branch ending at a closed cycle has
-    // no host firstKeptEntryId to represent that cut, so retain at least one cycle.
-    if (!safeCutEntry(candidateFirstKept) || !validPhysicalBudget(input.physicalBudget, input.branchEntries, candidateFirstKept, candidateRetained)) continue;
-    retainedCount = candidate;
-    firstKept = candidateFirstKept;
-    break;
-  }
-  if (retainedCount === undefined || !firstKept) return reject("no-safe-retained-cut");
-  const retained = retainedCount === 0 ? [] : boundary.slice(-retainedCount);
+  return { branchIds, branchPositions, sourcePositions, cycles };
+}
+function eligibleWindow(input: EngineWindowInput, trace: WindowTrace = {}): { cycles: CycleClosedData[]; cut: CutValidation } | undefined {
+  const reject = (code: string): undefined => { trace.code = code; return undefined; };
+  const validated = validateClosedCycleSet(input);
+  if (!validated) return reject("cycle-span-invalid");
+  const { branchIds, branchPositions: positions, cycles: boundary } = validated;
+  if (boundary.length < MIN_CLOSED_CYCLES) return reject("stride-too-small");
+  const retainedCount = MAX_RETAINED_CYCLES;
+  const retained = boundary.slice(-retainedCount);
+  const firstKept = input.branchEntries.find((entry) => entry.id === retained[0].sourceStartId);
+  // Normal selection never shrinks the retained suffix under physical pressure.
+  if (!safeCutEntry(firstKept) || !physicalBudgetFits(input.physicalBudget, input.branchEntries, firstKept, retainedCount)) return reject("no-strict-four-cycle-fit");
+  if (input.firstKeptEntryId !== undefined && input.firstKeptEntryId !== firstKept.id) return reject("host-cut-mismatch");
   const acknowledged = new Set(input.priorState?.cycleIds ?? []);
   const older = retainedCount === 0 ? boundary : boundary.slice(0, -retainedCount);
   let sawUnacknowledged = false;
@@ -169,7 +168,6 @@ function eligibleWindow(input: EngineWindowInput, trace: WindowTrace = {}): { cy
   }
   const compacted = older.filter((cycle) => !acknowledged.has(cycle.cycleId));
   if (compacted.length === 0) return reject("nothing-unacknowledged");
-  if (input.firstKeptEntryId !== undefined && input.firstKeptEntryId !== firstKept.id) return reject("host-cut-mismatch");
   const cutIndex = positions.get(firstKept!.id!);
   if (cutIndex === undefined) return reject("cut-not-on-branch");
   const compactions = input.branchEntries.filter((entry): entry is CompactionEntry => entry.type === "compaction" && hasId(entry));

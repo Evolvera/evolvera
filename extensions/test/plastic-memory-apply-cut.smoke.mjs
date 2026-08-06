@@ -187,13 +187,6 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   assert.equal(w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "post-anchor mismatch rejects the coordinator hook");
 }
 {
-  // A physically selected two-cycle retained suffix must survive the coordinator's
-  // hook-time tail recheck; the public host budget is independent of the engine proof.
-  const w = world({ twoCyclePhysicalBudget: true, contextWindow: 30_000 });
-  assert.equal(w.cut, w.entries[16].id, "fixture selected the two-cycle retained cut");
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)).compaction.firstKeptEntryId, w.cut, "hook-time physicalTailFits accepts the prepared 2-cycle cut");
-}
-{
   const w = world();
   assert.equal(w.beforeCompact(hostEvent(w.cut)).compaction.firstKeptEntryId, w.cut, "equal cut is accepted");
 }
