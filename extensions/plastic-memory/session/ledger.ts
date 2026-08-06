@@ -1,6 +1,7 @@
 import { digestParts } from "../common/safety.ts";
 import {
   isAnyLegacyRecord,
+  isCycleQueuedRecord,
   isLegacyFolded,
   isLegacyObservationsDropped,
   isLegacyObservationsRecorded,
@@ -10,12 +11,14 @@ import {
   LEGACY_OBSERVATIONS_DROPPED,
   LEGACY_OBSERVATIONS_RECORDED,
   LEGACY_REFLECTIONS_RECORDED,
+  PLASTIC_CYCLE_QUEUED,
   PLASTIC_OBSERVATIONS_DROPPED,
   PLASTIC_OBSERVATIONS_RECORDED,
   PLASTIC_REFLECTIONS_RECORDED,
   PLASTIC_COMPACTION_APPLIED,
   type BootstrapData,
   type CompactionAppliedData,
+  type CycleQueuedData,
   type LegacyObservation,
   type LegacyReflection,
   type PlasticDataMap,
@@ -41,6 +44,7 @@ export type FoldedLedger = {
   latestBootstrap?: BootstrapData;
   compactions: SessionEntry[];
   compactionAcknowledgements: CompactionAppliedData[];
+  queuedCycles: CycleQueuedData[];
   legacyCoverageIds: string[];
 };
 
@@ -119,7 +123,13 @@ function legacyCoverageId(entry: SessionEntry): string | undefined {
   return typeof data?.coversUpToId === "string" ? data.coversUpToId : undefined;
 }
 function recordSourceIds(entry: SessionEntry): string[] {
-  if (isPlasticRecord(entry) && "span" in entry.data) return entry.data.span.sourceEntryIds;
+  if (!isPlasticRecord(entry)) return [];
+  const data = entry.data as Record<string, unknown>;
+  if (Array.isArray(data.sourceEntryIds)) return data.sourceEntryIds.filter((id): id is string => typeof id === "string");
+  const span = data.span;
+  if (span && typeof span === "object" && !Array.isArray(span) && Array.isArray((span as Record<string, unknown>).sourceEntryIds)) {
+    return ((span as Record<string, unknown>).sourceEntryIds as unknown[]).filter((id): id is string => typeof id === "string");
+  }
   return [];
 }
 function validNewRecordForBranch(entry: SessionEntry, branchIds: Set<string>, context?: LedgerContext): boolean {
@@ -151,6 +161,7 @@ export function foldLedger(entries: SessionEntry[], options: { leafId?: string |
   const bootstraps: BootstrapData[] = [];
   const compactions = branch.filter((entry) => entry.type === "compaction");
   const compactionAcknowledgements: CompactionAppliedData[] = [];
+  const queuedCycles: CycleQueuedData[] = [];
   const legacyCoverageIds: string[] = [];
 
   for (const entry of branch) {
@@ -160,6 +171,8 @@ export function foldLedger(entries: SessionEntry[], options: { leafId?: string |
         for (const observation of entry.data.observations) if (!observationsById.has(observation.id)) observationsById.set(observation.id, observation);
       } else if (entry.customType === PLASTIC_REFLECTIONS_RECORDED) {
         for (const reflection of entry.data.reflections) if (!reflectionsById.has(reflection.id)) reflectionsById.set(reflection.id, reflection);
+      } else if (entry.customType === PLASTIC_CYCLE_QUEUED && isCycleQueuedRecord(entry)) {
+        queuedCycles.push(entry.data);
       } else if (entry.customType === PLASTIC_OBSERVATIONS_DROPPED) {
         entry.data.observationIds.forEach((id) => droppedObservationIds.add(id));
       } else if (entry.customType === "plastic.bootstrap.recorded") {
@@ -203,6 +216,7 @@ export function foldLedger(entries: SessionEntry[], options: { leafId?: string |
     latestBootstrap: bootstraps.at(-1),
     compactions,
     compactionAcknowledgements,
+    queuedCycles,
     legacyCoverageIds,
   };
 }
