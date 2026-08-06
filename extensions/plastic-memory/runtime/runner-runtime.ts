@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  LUNA_MODEL,
-  LUNA_PROVIDER,
   type LunaModel,
   type RoleRegistry,
   type RunnerRuntime,
@@ -66,8 +64,8 @@ export function createPiRunnerRuntime(value: unknown, invoke: CompleteInvoker = 
   return {
     modelRegistry,
     agentLoop: async (prompts, context, config, signal) => {
-      const model = registry.find(LUNA_PROVIDER, LUNA_MODEL);
-      if (!model) throw new Error("worker Luna model is unavailable");
+      const model = config.model as LunaModel | undefined;
+      if (!model || typeof model !== "object") throw new Error("worker model is unavailable");
       const response = await invoke(model, {
         systemPrompt: typeof context.systemPrompt === "string" ? context.systemPrompt : undefined,
         messages: prompts as WorkerMessage[],

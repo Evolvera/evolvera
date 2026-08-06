@@ -3,7 +3,7 @@ import { extractCycleSourceFacts, type CycleSourceFacts, type StructuredFacts } 
 import { prepareSemanticCompaction, type CycleInput, type EngineInput, type EngineResult, type PreparedCompaction } from "../compaction/engine.ts";
 import { buildLunaRequest, projectSnapshot, type CumulativeState, type LunaRequest, type ProjectSnapshot } from "../compaction/render.ts";
 import type { SessionEntry } from "../session/types.ts";
-import { runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.ts";
+import { runBoundedRole, type ModelTarget, type RunnerResult, type RunnerRuntime } from "./runner.ts";
 
 export type CompactorInput = Readonly<{
   engine: Omit<EngineInput, "compact">;
@@ -13,6 +13,8 @@ export type CompactorInput = Readonly<{
   projectSnapshot: ProjectSnapshot | unknown;
   runtime: RunnerRuntime;
   signal?: AbortSignal;
+  model?: ModelTarget;
+  deadlineMs?: number;
   isCurrent?: () => boolean;
 }>;
 export type CompactorResult = Readonly<{
@@ -81,6 +83,8 @@ export async function runCompactor(input: CompactorInput): Promise<CompactorResu
     systemPrompt: COMPACTOR_SYSTEM,
     runtime: input.runtime,
     signal: input.signal,
+    model: input.model,
+    deadlineMs: input.deadlineMs,
     inputTokens: Math.ceil(JSON.stringify(request).length / 4) + 2_048,
   });
   if (!runner.ok) return { ok: false, detached: true, runner, reason: runner.reason };

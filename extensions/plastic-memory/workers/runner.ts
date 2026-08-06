@@ -4,6 +4,9 @@ import type { PlasticMemoryRole, RoleConfig } from "../config.ts";
 export const LUNA_PROVIDER = "openai-codex" as const;
 export const LUNA_MODEL = "gpt-5.6-luna" as const;
 export const LUNA_MODEL_REF = `${LUNA_PROVIDER}/${LUNA_MODEL}` as const;
+export const SONNET_PROVIDER = "anthropic" as const;
+export const SONNET_MODEL = "claude-sonnet-5" as const;
+export const SONNET_MODEL_REF = `${SONNET_PROVIDER}/${SONNET_MODEL}` as const;
 export const LUNA_ROLE_CONFIG: RoleConfig = Object.freeze({
   model: LUNA_MODEL_REF,
   thinking: "medium",
@@ -19,6 +22,7 @@ export const ROLE_CONFIGS: Readonly<Record<PlasticMemoryRole, RoleConfig>> = Obj
 });
 
 export type LunaModel = { provider?: string; id?: string; contextWindow?: number; maxTokens?: number; [key: string]: unknown };
+export type ModelTarget = Readonly<{ provider: string; id: string }>;
 export type RoleAuth = { apiKey?: string; headers?: Record<string, string>; env?: Record<string, string>; [key: string]: unknown };
 export type RoleRegistry = {
   find?: (provider: string, model: string) => LunaModel | undefined;
@@ -73,9 +77,10 @@ export function prepareRolePrompt(value: string): PreparedRolePrompt {
 function safeDiagnostic(error: unknown): string {
   return boundedText(error instanceof Error ? error.message : String(error), 500) || "agent error";
 }
-function modelFor(registry: RoleRegistry, role: PlasticMemoryRole): LunaModel | undefined {
-  const config = ROLE_CONFIGS[role];
-  return registry.find?.(LUNA_PROVIDER, LUNA_MODEL) ?? registry.getModel?.(LUNA_PROVIDER, LUNA_MODEL);
+function modelFor(registry: RoleRegistry, target?: ModelTarget): LunaModel | undefined {
+  const provider = target?.provider ?? LUNA_PROVIDER;
+  const id = target?.id ?? LUNA_MODEL;
+  return registry.find?.(provider, id) ?? registry.getModel?.(provider, id);
 }
 function normalizeAuth(value: unknown): RoleAuth | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -83,10 +88,11 @@ function normalizeAuth(value: unknown): RoleAuth | undefined {
   if (source.auth && typeof source.auth === "object") return source.auth as RoleAuth;
   return source as RoleAuth;
 }
-async function authFor(runtime: RunnerRuntime, model: LunaModel): Promise<RoleAuth | undefined> {
-  if (runtime.auth) return normalizeAuth(await runtime.auth(LUNA_PROVIDER, model));
+async function authFor(runtime: RunnerRuntime, model: LunaModel, target?: ModelTarget): Promise<RoleAuth | undefined> {
+  const provider = target?.provider ?? model.provider ?? LUNA_PROVIDER;
+  if (runtime.auth) return normalizeAuth(await runtime.auth(provider, model));
   if (runtime.modelRegistry.getProviderAuth) {
-    const result = await runtime.modelRegistry.getProviderAuth(LUNA_PROVIDER);
+    const result = await runtime.modelRegistry.getProviderAuth(provider);
     return normalizeAuth(result);
   }
   if (runtime.modelRegistry.getApiKeyAndHeaders) {
@@ -125,24 +131,54 @@ function combineSignals(parent: AbortSignal | undefined, timeoutMs: number): { s
     timedOut: () => timedOut,
   };
 }
-function validateModel(model: LunaModel | undefined): model is LunaModel & { contextWindow: number } {
-  return Boolean(model && (model.provider === undefined || model.provider === LUNA_PROVIDER)
-    && (model.id === undefined || model.id === LUNA_MODEL)
+function validateModel(model: LunaModel | undefined, target?: ModelTarget): model is LunaModel & { contextWindow: number } {
+  return Boolean(model
+    && (target ? (model.provider === target.provider && model.id === target.id)
+      : (model.provider === undefined || model.provider === LUNA_PROVIDER)
+        && (model.id === undefined || model.id === LUNA_MODEL))
     && typeof model.contextWindow === "number" && Number.isFinite(model.contextWindow) && model.contextWindow > CONTEXT_OVERHEAD_TOKENS);
+}
+function validTarget(target: ModelTarget | undefined): target is ModelTarget {
+  return Boolean(target && typeof target.provider === "string" && target.provider.length > 0
+    && typeof target.id === "string" && target.id.length > 0);
+}
+
+export function modelTarget(model: LunaModel | undefined): ModelTarget | undefined {
+  const target = model && typeof model.provider === "string" && typeof model.id === "string"
+    ? { provider: model.provider, id: model.id } : undefined;
+  return validTarget(target) ? target : undefined;
+}
+
+/** Build the emergency order; the duplicate Luna entries intentionally represent the immediate retry. */
+export function buildEmergencyModelTargets(visibleModel?: LunaModel): ModelTarget[] {
+  const targets: ModelTarget[] = [
+    { provider: LUNA_PROVIDER, id: LUNA_MODEL },
+    { provider: LUNA_PROVIDER, id: LUNA_MODEL },
+    { provider: SONNET_PROVIDER, id: SONNET_MODEL },
+  ];
+  const visible = modelTarget(visibleModel);
+  if (visible && !targets.some((target) => target.provider === visible.provider && target.id === visible.id)) targets.push(visible);
+  return targets;
 }
 
 /** Resolve a worker model without consulting the visible model or mutating Pi session state. */
-export async function resolveLunaRole(role: PlasticMemoryRole, runtime: RunnerRuntime): Promise<ResolvedRole | RunnerFailure> {
+export async function resolveRoleTarget(role: PlasticMemoryRole, runtime: RunnerRuntime, target?: ModelTarget): Promise<ResolvedRole | RunnerFailure> {
   try {
-    const model = modelFor(runtime.modelRegistry, role);
-    if (!model) return { ok: false, reason: "model-unavailable", diagnostics: { role, message: LUNA_MODEL_REF } };
-    if (!validateModel(model)) return { ok: false, reason: "invalid-model", diagnostics: { role, message: "resolved Luna model has no usable contextWindow" } };
-    const auth = await authFor(runtime, model);
-    if (!auth) return { ok: false, reason: "auth-unavailable", diagnostics: { role, message: LUNA_PROVIDER } };
-    return { role, config: { ...ROLE_CONFIGS[role] }, model, auth, contextWindow: model.contextWindow };
+    if (target && !validTarget(target)) return { ok: false, reason: "model-unavailable", diagnostics: { role, message: "requested model target is unavailable" } };
+    const model = modelFor(runtime.modelRegistry, target);
+    const modelRef = target ? `${target.provider}/${target.id}` : LUNA_MODEL_REF;
+    if (!model) return { ok: false, reason: "model-unavailable", diagnostics: { role, message: modelRef } };
+    if (!validateModel(model, target)) return { ok: false, reason: "invalid-model", diagnostics: { role, message: target ? "requested model has no usable contextWindow" : "resolved Luna model has no usable contextWindow" } };
+    const auth = await authFor(runtime, model, target);
+    if (!auth) return { ok: false, reason: "auth-unavailable", diagnostics: { role, message: target?.provider ?? LUNA_PROVIDER } };
+    const config = target ? { ...ROLE_CONFIGS[role], model: modelRef } : { ...ROLE_CONFIGS[role] };
+    return { role, config, model, auth, contextWindow: model.contextWindow };
   } catch (error) {
-    return { ok: false, reason: "auth-unavailable", diagnostics: { role, message: safeDiagnostic(error) } };
+    return { ok: false, reason: "auth-unavailable", diagnostics: { role, message: target ? "agent error" : safeDiagnostic(error) } };
   }
+}
+export async function resolveLunaRole(role: PlasticMemoryRole, runtime: RunnerRuntime): Promise<ResolvedRole | RunnerFailure> {
+  return resolveRoleTarget(role, runtime);
 }
 
 /** Execute one role through the injected Pi-shaped loop with a hard abortable deadline. */
@@ -153,8 +189,11 @@ export async function runBoundedRole(input: {
   runtime: RunnerRuntime;
   signal?: AbortSignal;
   inputTokens?: number;
+  model?: ModelTarget;
+  /** Remaining time for this attempt; it can shorten, never extend, the role maximum. */
+  deadlineMs?: number;
 }): Promise<RunnerResult> {
-  const resolved = await resolveLunaRole(input.role, input.runtime);
+  const resolved = await resolveRoleTarget(input.role, input.runtime, input.model);
   if (!("contextWindow" in resolved)) return resolved;
   const preparedPrompt = prepareRolePrompt(input.prompt);
   if (!preparedPrompt.ok) {
@@ -165,7 +204,10 @@ export async function runBoundedRole(input: {
   if (inputTokens + CONTEXT_OVERHEAD_TOKENS > resolved.contextWindow) {
     return { ok: false, reason: "oversized", diagnostics: { role: input.role, message: `input exceeds contextWindow ${resolved.contextWindow}` } };
   }
-  const combined = combineSignals(input.signal, resolved.config.maxRuntimeMs);
+  const requestedDeadline = typeof input.deadlineMs === "number" && Number.isFinite(input.deadlineMs)
+    ? input.deadlineMs : resolved.config.maxRuntimeMs;
+  const timeoutMs = Math.max(0, Math.min(resolved.config.maxRuntimeMs, requestedDeadline));
+  const combined = combineSignals(input.signal, timeoutMs);
   try {
     if (combined.signal.aborted) return { ok: false, reason: "aborted", diagnostics: { role: input.role, message: "aborted before agent loop" } };
     const context = {
@@ -196,7 +238,7 @@ export async function runBoundedRole(input: {
     ));
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
-      deadlineTimer = setTimeout(() => { combined.abort(new Error("worker timeout")); reject(new Error("__worker_timeout__")); }, resolved.config.maxRuntimeMs);
+      deadlineTimer = setTimeout(() => { combined.abort(new Error("worker timeout")); reject(new Error("__worker_timeout__")); }, timeoutMs);
     });
     let raw: unknown;
     try { raw = await Promise.race([rawPromise, deadline]); }
@@ -211,12 +253,12 @@ export async function runBoundedRole(input: {
     return { ok: true, response: parsed, resolved, diagnostics: { role: input.role, contextWindow: resolved.contextWindow, promptChars: prompt.length } };
   } catch (error) {
     const timeout = combined.timedOut() || error instanceof Error && error.message === "__worker_timeout__";
-    return { ok: false, reason: timeout ? "timeout" : combined.signal.aborted ? "aborted" : "agent-error", diagnostics: { role: input.role, message: timeout ? "worker deadline exceeded" : safeDiagnostic(error) } };
+    return { ok: false, reason: timeout ? "timeout" : combined.signal.aborted ? "aborted" : "agent-error", diagnostics: { role: input.role, message: timeout ? "worker deadline exceeded" : input.model ? "agent error" : safeDiagnostic(error) } };
   } finally {
     combined.dispose();
   }
 }
 
 export const runWorkerAgent = runBoundedRole;
-export const resolveRole = resolveLunaRole;
+export const resolveRole = resolveRoleTarget;
 export const runRole = runBoundedRole;

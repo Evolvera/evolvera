@@ -3,7 +3,7 @@ import { scrubSensitiveText } from "../common/safety.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { PLASTIC_OBSERVATIONS_RECORDED, type Observation, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import type { CompletedTurnSnapshot } from "../session/cycles.ts";
-import { prepareRolePrompt, runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.ts";
+import { prepareRolePrompt, runBoundedRole, type ModelTarget, type RunnerResult, type RunnerRuntime } from "./runner.ts";
 
 export type ObserverInput = Readonly<{
   binding: SessionBinding;
@@ -15,6 +15,8 @@ export type ObserverInput = Readonly<{
   priorReflections?: unknown[];
   runtime: RunnerRuntime;
   signal?: AbortSignal;
+  model?: ModelTarget;
+  deadlineMs?: number;
 }>;
 export type ObserverResult = Readonly<{
   ok: boolean;
@@ -117,6 +119,8 @@ export async function runObserver(input: ObserverInput): Promise<ObserverResult>
     systemPrompt: OBSERVER_SYSTEM,
     runtime: input.runtime,
     signal: input.signal,
+    model: input.model,
+    deadlineMs: input.deadlineMs,
   });
   if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: true, observations: [], runner, reason: runner.reason };
   const output = record(runner.response);
