@@ -3,7 +3,7 @@ import { scrubSensitiveText } from "../common/safety.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { PLASTIC_REFLECTIONS_RECORDED, type Observation, type PlasticEntry, type Reflection, type SessionBinding } from "../session/types.ts";
 import type { CompletedTurnSnapshot } from "../session/cycles.ts";
-import { runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.ts";
+import { runBoundedRole, type ModelTarget, type RunnerResult, type RunnerRuntime } from "./runner.ts";
 
 export type ReflectorInput = Readonly<{
   binding: SessionBinding;
@@ -12,6 +12,8 @@ export type ReflectorInput = Readonly<{
   priorReflections?: Reflection[];
   runtime: RunnerRuntime;
   signal?: AbortSignal;
+  model?: ModelTarget;
+  deadlineMs?: number;
 }>;
 export type ReflectorResult = Readonly<{
   ok: boolean;
@@ -79,6 +81,8 @@ export async function runReflector(input: ReflectorInput): Promise<ReflectorResu
     systemPrompt: REFLECTOR_SYSTEM,
     runtime: input.runtime,
     signal: input.signal,
+    model: input.model,
+    deadlineMs: input.deadlineMs,
   });
   if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: true, reflections: [], runner, reason: runner.reason };
   const output = record(runner.response);
