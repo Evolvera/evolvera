@@ -34,6 +34,8 @@ info "Node $(node --version) compatível"
 
 info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
 npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
+node "$SCRIPT_DIR/scripts/patch-pi-083-threshold-cancel.mjs"
+info "Patch de continuidade do PI 0.83.0 verificado"
 command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
 info "PI $PI_CODING_AGENT_VERSION instalado"
 
