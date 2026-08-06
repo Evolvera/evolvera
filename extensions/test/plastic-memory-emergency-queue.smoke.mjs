@@ -7,6 +7,7 @@ const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-wor
 const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
+const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
 
 function deferred() {
@@ -114,4 +115,61 @@ aborted.abort(new Error("queue smoke cancellation"));
 const abortedAcquisition = await schedulerModule.createCycleScheduler().acquireExclusiveLease(aborted.signal);
 assert.deepEqual(abortedAcquisition, { ok: false, reason: "aborted" }, "an already-aborted acquisition fails closed without reserving work");
 
-console.log("PLASTIC_MEMORY_EMERGENCY_QUEUE: PASS (synchronous lease, abort-settle barrier, one deferred reschedule, idempotent release, invalidation, and no late append)");
+// Durable FIFO continuity: A is immutable and active while B/C are already persisted;
+// observation-only busy state never aborts A, and later triggers drain B then C.
+const fifoEntries = [];
+for (const label of ["A", "B", "C"]) {
+  const user = { type: "message", id: `fifo-${label}-user`, parentId: fifoEntries.at(-1)?.id ?? null, message: { role: "user", content: [{ type: "text", text: `queue ${label}` }] }, tokenCount: 10_000 };
+  const assistant = { type: "message", id: `fifo-${label}-assistant`, parentId: user.id, message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: `done ${label}` }] }, tokenCount: 10_000 };
+  fifoEntries.push(user, assistant);
+}
+const fifoBinding = { sessionId: ids.sessionDigest("durable-fifo", { generation: 1 }), generation: 1, branchId: "main" };
+const fifoRecords = cycles.createQueuedCycleRecords({ binding: fifoBinding, sourceEntries: fifoEntries });
+assert.equal(fifoRecords.length, 3);
+const fifoObserverStarted = deferred();
+const fifoRelease = deferred();
+const fifoPrompts = [];
+let fifoObserverCalls = 0;
+const fifoRuntime = {
+  modelRegistry: { find: () => model, async getProviderAuth() { return { apiKey: "offline-only" }; } },
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (context.role === "observer") {
+      fifoPrompts.push(request.sourceEntryIds);
+      fifoObserverCalls += 1;
+      if (fifoObserverCalls === 1) {
+        fifoObserverStarted.resolve();
+        await fifoRelease.promise;
+      }
+      return { observations: [{ content: "durable FIFO fact", timestamp: "2026-08-06T15:02:43Z", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    }
+    return { reflections: [{ content: "durable FIFO reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] };
+  },
+};
+const fifoAppended = [];
+const fifoScheduler = schedulerModule.createCycleScheduler();
+const fifoInput = {
+  binding: fifoBinding,
+  branchEntries: fifoEntries,
+  bootstrap: { activeEntryIds: fifoEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: fifoRecords,
+  runtime: fifoRuntime,
+  append: (entry) => fifoAppended.push(entry),
+};
+const aPromise = fifoScheduler.trigger(fifoInput);
+await fifoObserverStarted.promise;
+assert.equal(fifoScheduler.isBusy(), true);
+assert.equal(fifoScheduler.busy, true);
+assert.equal(fifoObserverCalls, 1);
+assert.deepEqual(fifoPrompts[0], fifoRecords[0].data.sourceEntryIds);
+fifoRelease.resolve();
+assert.equal((await aPromise).status, "closed");
+for (let index = 1; index < fifoRecords.length; index += 1) {
+  const result = await fifoScheduler.trigger({ ...fifoInput, records: [...fifoRecords, ...fifoAppended] });
+  assert.equal(result.status, "closed");
+  assert.deepEqual(fifoPrompts[index], fifoRecords[index].data.sourceEntryIds);
+}
+assert.equal(fifoAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 3);
+assert.equal(fifoScheduler.isBusy(), false);
+
+console.log("PLASTIC_MEMORY_EMERGENCY_QUEUE: PASS (synchronous lease, durable A/B/C FIFO drain, non-aborting busy observation, one deferred reschedule, idempotent release, invalidation, and no late append)");

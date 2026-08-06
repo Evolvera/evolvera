@@ -8,6 +8,9 @@ const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_m
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const runner = await jiti.import(path.join(root, "plastic-memory/workers/runner.ts"));
 const runnerRuntime = await jiti.import(path.join(root, "plastic-memory/runtime/runner-runtime.ts"));
+const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
+const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
+const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
 
 const luna = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const sonnet = { provider: "anthropic", id: "claude-sonnet-5", contextWindow: 200_000, maxTokens: 16_000 };
@@ -38,6 +41,7 @@ assert.deepEqual(targets, [
 ]);
 assert.deepEqual(runner.buildEmergencyModelTargets(luna), targets.slice(0, 3), "visible Luna is deduplicated");
 assert.deepEqual(runner.buildEmergencyModelTargets({ contextWindow: 200_000 }), targets.slice(0, 3), "unusable visible identity is omitted");
+assert.deepEqual(runner.buildModelTargets(visible), targets, "normal and compatibility candidate builders share the exact order");
 
 const prompt = JSON.stringify({ immutable: true, sourceIds: ["pm:cy:fixed"] });
 const traces = [];
@@ -100,5 +104,44 @@ const timedOut = await runner.runBoundedRole({ role: "observer", prompt, runtime
 assert.equal(timedOut.ok, false);
 assert.equal(timedOut.reason, "timeout");
 assert.equal(timedOut.diagnostics.message, "worker deadline exceeded");
+
+// The normal queued scheduler applies the same immutable candidate order independently
+// to observer and reflector phases; failed Luna output cannot be mixed into Sonnet input.
+const queueBinding = { sessionId: ids.sessionDigest("fallback-queue", { generation: 1 }), generation: 1, branchId: "main" };
+const queueEntries = [
+  { type: "message", id: "fallback-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "queue fallback" }] }, tokenCount: 10_000 },
+  { type: "message", id: "fallback-assistant", parentId: "fallback-user", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "queue fallback complete" }] }, tokenCount: 10_000 },
+];
+const queued = cycles.createQueuedCycleRecords({ binding: queueBinding, sourceEntries: queueEntries });
+assert.equal(queued.length, 1);
+const normalTraces = [];
+const normalRuntime = {
+  modelRegistry: registry,
+  visibleModel: visible,
+  async agentLoop(prompts, context, config) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    normalTraces.push({ role: context.role, target: `${config.model.provider}/${config.model.id}`, prompt: prompts[0].content[0].text });
+    if (config.model.provider === "openai-codex") return { invalid: true };
+    if (context.role === "observer") return { observations: [{ content: "fallback fact", timestamp: "2026-08-06T00:00:00Z", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    return { reflections: [{ content: "fallback reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
+  },
+};
+const normalAppended = [];
+const normalResult = await schedulerModule.createCycleScheduler().trigger({
+  binding: queueBinding,
+  branchEntries: queueEntries,
+  bootstrap: { activeEntryIds: queueEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: queued,
+  runtime: normalRuntime,
+  append: (entry) => normalAppended.push(entry),
+});
+assert.equal(normalResult.status, "closed");
+assert.deepEqual(normalTraces.map((trace) => trace.target), [
+  "openai-codex/gpt-5.6-luna", "openai-codex/gpt-5.6-luna", "anthropic/claude-sonnet-5",
+  "openai-codex/gpt-5.6-luna", "openai-codex/gpt-5.6-luna", "anthropic/claude-sonnet-5",
+]);
+assert.equal(normalTraces[0].prompt, normalTraces[1].prompt);
+assert.equal(normalTraces[1].prompt, normalTraces[2].prompt);
+assert.equal(normalAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
 
 console.log("PLASTIC_MEMORY_MODEL_FALLBACK: PASS (candidate order, duplicate Luna retry, visible-model dedupe, immutable prompts, bounded timeout, and exact adapter identity)");

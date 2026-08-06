@@ -139,6 +139,44 @@ assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeat
 assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
 assert.deepEqual(lifecycleEvents.filter((event) => event.phase === "observer"), [{ phase: "observer", status: "started", tokenCount: 100_000 }]);
 
+// Durable queue mode consumes the exact persisted head instead of rebuilding a live snapshot.
+const queuedRecord = cycles.createQueuedCycleRecords({ binding, sourceEntries: [currentUser, currentAssistant] })[0];
+assert.ok(queuedRecord);
+const queuedAppended = [];
+const queuedScheduler = schedulerModule.createCycleScheduler();
+const queuedResult = await queuedScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => queuedAppended.push(entry) });
+assert.equal(queuedResult.status, "closed");
+assert.deepEqual(queuedResult.snapshot.span.sourceEntryIds, queuedRecord.data.sourceEntryIds);
+assert.equal(queuedAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 1);
+assert.equal(queuedAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
+assert.equal(queuedScheduler.isBusy(), false);
+
+// Queued fallback exhaustion records only the final failed attempt: it never closes,
+// never appends a suppressed/pending terminal state, and remains retryable later.
+const exhaustedQueued = [];
+const exhaustedRuntime = {
+  ...runtime,
+  visibleModel: { provider: "google", id: "visible", contextWindow: 200_000, maxTokens: 16_000 },
+  modelRegistry: {
+    find(_provider, id) {
+      if (id === "gpt-5.6-luna") return model;
+      if (id === "claude-sonnet-5") return { provider: "anthropic", id, contextWindow: 200_000, maxTokens: 16_000 };
+      return { provider: "google", id, contextWindow: 200_000, maxTokens: 16_000 };
+    },
+    async getProviderAuth() { return { apiKey: "fake-only" }; },
+  },
+  async agentLoop() { return { invalid: true }; },
+};
+const exhaustedScheduler = schedulerModule.createCycleScheduler();
+const exhaustedInput = { ...scheduleInput, records: [queuedRecord], runtime: exhaustedRuntime, append: (entry) => exhaustedQueued.push(entry) };
+assert.equal((await exhaustedScheduler.trigger(exhaustedInput)).status, "failed");
+assert.equal(exhaustedQueued.filter((entry) => entry.customType === "plastic.cycle.closed").length, 0);
+const exhaustedAttempts = exhaustedQueued.filter((entry) => entry.customType === "plastic.cycle.attempted");
+assert.equal(exhaustedAttempts.at(-1).data.outcome, "failed", "fallback exhaustion finalizes the one active attempt");
+const beforeRetryAttempts = exhaustedAttempts.length;
+assert.equal((await exhaustedScheduler.trigger({ ...exhaustedInput, records: [queuedRecord, ...exhaustedQueued] })).status, "failed", "failed queued work remains retryable");
+assert.ok(exhaustedQueued.filter((entry) => entry.customType === "plastic.cycle.attempted").length > beforeRetryAttempts);
+
 // Semantic failures fail closed and retry once immediately with the same chunk.
 failureMode = true;
 const retryAppended = [];
@@ -152,8 +190,8 @@ assert.equal(failedObserverPrompts[0], failedObserverPrompts[1], "observer retry
 assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
 assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
 assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").filter((entry) => entry.data.outcome === "failed").length, 2);
-assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 2);
-assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 3);
+assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 10);
+assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 12);
 assert.equal(lifecycleEvents.every((event) => event.reason === undefined || event.reason.length <= 120), true);
 failureMode = false;
 reflectorFailOnce = true;

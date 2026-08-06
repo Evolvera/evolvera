@@ -82,11 +82,13 @@ const prefixRuntime = {
   },
 };
 const prefixRecords = [];
+const prefixQueue = cycles.createQueuedCycleRecords({ binding, sourceEntries: ordinaryPrefixToolEntries });
+assert.equal(prefixQueue.length, 1);
 const prefixResult = await schedulerModule.createCycleScheduler().trigger({
   binding,
   branchEntries: ordinaryPrefixToolEntries,
   bootstrap: { activeEntryIds: ordinaryPrefixToolEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [],
+  records: prefixQueue,
   runtime: prefixRuntime,
   append: (record) => prefixRecords.push(record),
 });
@@ -230,19 +232,21 @@ const b4 = entry("user", 30_000, "scheduler goal three");
 const b5 = entry("assistant", 30_000, "scheduler answer three");
 const schedulerWindow = [b0, b1, b2, b3, b4, b5];
 const scheduler = schedulerModule.createCycleScheduler();
+const schedulerQueue = cycles.createQueuedCycleRecords({ binding, sourceEntries: schedulerWindow });
+assert.equal(schedulerQueue.length, 3);
 const result = await scheduler.trigger({
   binding,
   branchEntries: schedulerWindow,
   bootstrap: { activeEntryIds: schedulerWindow.map((item) => item.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [],
+  records: schedulerQueue,
   runtime: offlineRuntime,
   append: () => {},
 });
 assert.equal(result.status, "closed");
-assert.deepEqual(result.snapshot.span.sourceEntryIds, schedulerWindow.map((item) => item.id), "the full completed span is preserved");
-assert.equal(result.snapshot.tokenCount, 180_000);
-assert.deepEqual(captured.filter((call) => call.role === "observer").map((call) => call.sourceEntryIds), [[b0.id, b1.id, b2.id, b3.id], [b4.id, b5.id]]);
-assert.equal(captured.filter((call) => call.role === "reflector").length, 1, "one reflection covers the aggregate");
+assert.deepEqual(result.snapshot.span.sourceEntryIds, schedulerQueue[0].data.sourceEntryIds, "the oldest exact queued span is preserved");
+assert.equal(result.snapshot.tokenCount, 60_000);
+assert.deepEqual(captured.filter((call) => call.role === "observer").map((call) => call.sourceEntryIds), [[b0.id, b1.id]]);
+assert.equal(captured.filter((call) => call.role === "reflector").length, 1, "one reflection covers the queued item");
 
 // The real-sized agentic campaign still observes every atomic chunk, then persists and closes once.
 const agenticObservedCalls = [];
