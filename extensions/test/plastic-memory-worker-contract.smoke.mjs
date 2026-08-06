@@ -13,6 +13,7 @@ const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.
 const observer = await jiti.import(path.join(root, "plastic-memory/workers/observer.ts"));
 const reflector = await jiti.import(path.join(root, "plastic-memory/workers/reflector.ts"));
 const compactor = await jiti.import(path.join(root, "plastic-memory/workers/compactor.ts"));
+const runner = await jiti.import(path.join(root, "plastic-memory/workers/runner.ts"));
 
 const binding = { sessionId: ids.sessionDigest("worker-contract-smoke", { generation: 1 }), generation: 1, branchId: "main" };
 const sourceEntries = [
@@ -72,7 +73,10 @@ const runtime = {
   },
 };
 
-const observerRequest = JSON.parse(observer.buildObserverRequest({ binding, snapshot, sourceEntries, runtime }));
+const observerPrompt = observer.buildObserverRequest({ binding, snapshot, sourceEntries, runtime });
+const observerRequest = JSON.parse(observerPrompt);
+assert.equal(observer.observerRequestFits({ binding, snapshot, sourceEntries, runtime }), runner.prepareRolePrompt(observerPrompt).ok);
+assert.ok(observerPrompt.indexOf('"output"') < observerPrompt.indexOf('"sourceEntries"'), "output contract must precede bulky source entries");
 assert.deepEqual(observerRequest.sourceEntryIds, snapshot.span.sourceEntryIds);
 assert.equal(Object.hasOwn(observerRequest, "binding"), false);
 assert.equal(Object.hasOwn(observerRequest, "snapshot"), false);

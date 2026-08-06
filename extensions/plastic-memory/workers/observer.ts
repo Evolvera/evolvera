@@ -3,7 +3,7 @@ import { scrubSensitiveText } from "../common/safety.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { PLASTIC_OBSERVATIONS_RECORDED, type Observation, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import type { CompletedTurnSnapshot } from "../session/cycles.ts";
-import { runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.ts";
+import { prepareRolePrompt, runBoundedRole, type RunnerResult, type RunnerRuntime } from "./runner.ts";
 
 export type ObserverInput = Readonly<{
   binding: SessionBinding;
@@ -86,10 +86,6 @@ function parseObservation(value: unknown, binding: SessionBinding, snapshot: Com
 function promptFor(input: ObserverInput): string {
   const sourceEntryIds = allowedSourceIds(input);
   return JSON.stringify({
-    sourceEntries: input.sourceEntries,
-    sourceEntryIds,
-    priorObservations: (input.priorObservations ?? []).slice(-200),
-    priorReflections: (input.priorReflections ?? []).slice(-200),
     output: {
       response: "single JSON object only; no prose, markdown fence, or trailing commentary",
       observations: {
@@ -103,7 +99,14 @@ function promptFor(input: ObserverInput): string {
         },
       },
     },
+    sourceEntries: input.sourceEntries,
+    sourceEntryIds,
+    priorObservations: (input.priorObservations ?? []).slice(-200),
+    priorReflections: (input.priorReflections ?? []).slice(-200),
   });
+}
+export function observerRequestFits(input: ObserverInput): boolean {
+  return prepareRolePrompt(promptFor(input)).ok;
 }
 
 /** Run the observer against one immutable, bootstrap-approved snapshot. */

@@ -168,7 +168,7 @@ function attemptsFor(snapshot: CompletedTurnSnapshot, records: SessionEntry[]): 
 }
 
 /** Partition into contiguous atomic groups: complete tool exchanges, terminal boundaries, and ordinary runs. */
-function partitionEntries(entries: SessionEntry[], maxTokens: number): SnapshotPartition {
+function partitionEntries(entries: SessionEntry[], maxTokens: number, fitsChunk?: (chunk: SnapshotChunk) => boolean): SnapshotPartition {
   const groups: SessionEntry[][] = [];
   let ordinary: SessionEntry[] = [];
   let exchange: SessionEntry[] | undefined;
@@ -220,28 +220,41 @@ function partitionEntries(entries: SessionEntry[], maxTokens: number): SnapshotP
   const chunks: SnapshotChunk[] = [];
   let currentChunk: SessionEntry[] = [];
   let currentTokens = 0;
+  const makeChunk = (chunkEntries: SessionEntry[], index: number, tokens: number): SnapshotChunk => ({
+    index,
+    entries: chunkEntries,
+    sourceEntryIds: chunkEntries.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []),
+    tokenCount: tokens,
+  });
   for (const group of groups) {
     const groupTokens = group.reduce((sum, entry) => sum + tokenCount(entry), 0);
     if (groupTokens > maxTokens) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
-    if (currentChunk.length > 0 && currentTokens + groupTokens > maxTokens) {
-      chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
+    const combined = makeChunk([...currentChunk, ...group], chunks.length, currentTokens + groupTokens);
+    const mustFlush = currentChunk.length > 0
+      && (currentTokens + groupTokens > maxTokens || fitsChunk !== undefined && !fitsChunk(combined));
+    if (mustFlush) {
+      chunks.push(makeChunk(currentChunk, chunks.length, currentTokens));
       currentChunk = [];
       currentTokens = 0;
+    }
+    const candidate = makeChunk(group, chunks.length, groupTokens);
+    if (fitsChunk !== undefined && !fitsChunk(candidate)) {
+      return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
     }
     currentChunk.push(...group);
     currentTokens += groupTokens;
   }
   if (currentChunk.length > 0) {
-    chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
+    chunks.push(makeChunk(currentChunk, chunks.length, currentTokens));
   }
   return { ok: true, chunks };
 }
 
-export function partitionCompletedTurnSnapshot(snapshot: CompletedTurnSnapshot, sourceEntries: SessionEntry[], maxTokens = 160_000): SnapshotPartition {
+export function partitionCompletedTurnSnapshot(snapshot: CompletedTurnSnapshot, sourceEntries: SessionEntry[], maxTokens = 160_000, fitsChunk?: (chunk: SnapshotChunk) => boolean): SnapshotPartition {
   if (snapshot.status === "empty-valid") return { ok: true, chunks: [] };
   const entries = spanEntriesFor(sourceEntries, snapshot.span);
   if (entries.length !== snapshot.span.sourceEntryIds.length) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
-  return partitionEntries(entries, maxTokens);
+  return partitionEntries(entries, maxTokens, fitsChunk);
 }
 
 function spanEntriesFor(source: SessionEntry[], span: SourceSpan): SessionEntry[] {

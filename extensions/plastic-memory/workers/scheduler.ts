@@ -1,8 +1,8 @@
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
-import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, partitionCompletedTurnSnapshot, type CompletedTurnSnapshot } from "../session/cycles.ts";
+import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, partitionCompletedTurnSnapshot, type CompletedTurnSnapshot, type SnapshotChunk } from "../session/cycles.ts";
 import { makePlasticEntry, normalSourceEntries } from "../session/ledger.ts";
 import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, PLASTIC_OBSERVATIONS_RECORDED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
-import { runObserver, type ObserverResult } from "./observer.ts";
+import { observerRequestFits, runObserver, type ObserverResult } from "./observer.ts";
 import { runReflector, type ReflectorResult } from "./reflector.ts";
 import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
 import { runPromoter, type PromoterInput, type PromoterResult } from "./promoter.ts";
@@ -143,7 +143,15 @@ export class CycleScheduler {
       report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
       return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
     }
-    const partition = partitionCompletedTurnSnapshot(snapshot, source);
+    const observerInputFor = (chunk: SnapshotChunk) => ({
+      binding: input.binding,
+      snapshot,
+      sourceEntries: chunk.entries,
+      sourceEntryIds: chunk.sourceEntryIds,
+      runtime: input.runtime,
+      signal: controller.signal,
+    });
+    const partition = partitionCompletedTurnSnapshot(snapshot, source, 160_000, (chunk) => observerRequestFits(observerInputFor(chunk)));
     if (!partition.ok) {
       report(input, { phase: "observer", status: "skipped", reason: partition.reason });
       return { status: "skipped", snapshot, reason: partition.reason };
@@ -176,7 +184,7 @@ export class CycleScheduler {
       const chunkObservations: ObserverResult["observations"] = [];
       let failure: ObserverResult | undefined;
       for (const chunk of chunks) {
-        const result = await runObserver({ binding: input.binding, snapshot, sourceEntries: chunk.entries, sourceEntryIds: chunk.sourceEntryIds, runtime: input.runtime, signal: controller.signal });
+        const result = await runObserver(observerInputFor(chunk));
         if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
         if (!result.ok || !result.manifestValid) { failure = result; break; }
         chunkObservations.push(...result.observations);
