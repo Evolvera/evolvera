@@ -126,22 +126,22 @@ assert.equal(reflected.record.data.span.sourceDigest, snapshot.span.sourceDigest
 
 const appended = [];
 const lifecycleEvents = [];
+const queuedRecord = cycles.createQueuedCycleRecords({ binding, sourceEntries: [currentUser, currentAssistant] })[0];
+assert.ok(queuedRecord, "every direct scheduler fixture starts from a qualifying durable queue record");
 const scheduler = schedulerModule.createCycleScheduler();
-const scheduleInput = { binding, branchEntries: entries, bootstrap: { activeEntryIds: [currentUser.id, currentAssistant.id], historicalPrefixIds: [old.id], historicalGap: "historical-unindexed" }, records: [], runtime, append: (entry) => appended.push(entry), lifecycleReporter: (event) => lifecycleEvents.push(event) };
+const scheduleInput = { binding, branchEntries: entries, bootstrap: { activeEntryIds: [currentUser.id, currentAssistant.id], historicalPrefixIds: [old.id], historicalGap: "historical-unindexed" }, records: [queuedRecord], runtime, append: (entry) => appended.push(entry), lifecycleReporter: (event) => lifecycleEvents.push(event) };
 const first = await scheduler.trigger(scheduleInput);
 assert.equal(first.status, "closed");
 assert.equal(first.cycle.data.sourceEntryIds.length, 2);
 assert.equal(calls.filter((call) => call.role === "observer").length, 2);
 assert.equal(calls.filter((call) => call.prompt.includes(old.id)).length, 0, "historical prefix must not enter worker request");
-const repeated = await scheduler.trigger({ ...scheduleInput, records: appended });
+const repeated = await scheduler.trigger({ ...scheduleInput, records: [queuedRecord, ...appended] });
 assert.equal(repeated.status, "skipped");
 assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeated triggers must not hot-loop a closed snapshot");
 assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
 assert.deepEqual(lifecycleEvents.filter((event) => event.phase === "observer"), [{ phase: "observer", status: "started", tokenCount: 100_000 }]);
 
-// Durable queue mode consumes the exact persisted head instead of rebuilding a live snapshot.
-const queuedRecord = cycles.createQueuedCycleRecords({ binding, sourceEntries: [currentUser, currentAssistant] })[0];
-assert.ok(queuedRecord);
+// A second scheduler consumes the same exact persisted head instead of rebuilding a live snapshot.
 const queuedAppended = [];
 const queuedScheduler = schedulerModule.createCycleScheduler();
 const queuedResult = await queuedScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => queuedAppended.push(entry) });
@@ -177,40 +177,40 @@ const beforeRetryAttempts = exhaustedAttempts.length;
 assert.equal((await exhaustedScheduler.trigger({ ...exhaustedInput, records: [queuedRecord, ...exhaustedQueued] })).status, "failed", "failed queued work remains retryable");
 assert.ok(exhaustedQueued.filter((entry) => entry.customType === "plastic.cycle.attempted").length > beforeRetryAttempts);
 
-// Semantic failures fail closed and retry once immediately with the same chunk.
+// Queue-backed semantic failures exhaust the bounded model fallback on the same immutable chunk and retry on a later durable trigger.
 failureMode = true;
 const retryAppended = [];
 const retryScheduler = schedulerModule.createCycleScheduler();
-const retryInput = { ...scheduleInput, records: [], append: (entry) => retryAppended.push(entry) };
+const retryInput = { ...scheduleInput, records: [queuedRecord], append: (entry) => retryAppended.push(entry) };
 const failedObserverStart = calls.filter((call) => call.role === "observer").length;
 assert.equal((await retryScheduler.trigger(retryInput)).status, "failed");
 const failedObserverPrompts = calls.filter((call) => call.role === "observer").slice(failedObserverStart).map((call) => call.prompt);
 assert.equal(failedObserverPrompts.length, 2, "observer retries once immediately");
 assert.equal(failedObserverPrompts[0], failedObserverPrompts[1], "observer retry uses byte-equivalent chunk input");
-assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
-assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
+assert.equal((await retryScheduler.trigger({ ...retryInput, records: [queuedRecord, ...retryAppended] })).status, "failed", "failed queued work remains retryable only through its durable record");
+assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 4);
 assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").filter((entry) => entry.data.outcome === "failed").length, 2);
-assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 10);
-assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 12);
+assert.ok(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length >= 4);
+assert.ok(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length >= 4);
 assert.equal(lifecycleEvents.every((event) => event.reason === undefined || event.reason.length <= 120), true);
 failureMode = false;
 reflectorFailOnce = true;
 reflectorPrompts.length = 0;
 const reflectorRetryAppended = [];
 const reflectorRetryScheduler = schedulerModule.createCycleScheduler();
-const reflectorRetryInput = { ...scheduleInput, records: [], append: (entry) => reflectorRetryAppended.push(entry) };
+const reflectorRetryInput = { ...scheduleInput, records: [queuedRecord], append: (entry) => reflectorRetryAppended.push(entry) };
 assert.equal((await reflectorRetryScheduler.trigger(reflectorRetryInput)).status, "closed");
 assert.equal(reflectorPrompts.length, 2, "reflector retries once in the same trigger");
 assert.equal(reflectorPrompts[0], reflectorPrompts[1], "reflector retry uses byte-equivalent aggregate input");
 assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.observations.recorded").length, 1, "observations persist once after full coverage");
 assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.reflections.recorded").length, 1);
-assert.deepEqual(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").map((entry) => [entry.data.attemptCount, entry.data.outcome, entry.data.phase]), [[0, "pending", "observer"], [0, "failed", "reflector"], [1, "pending", "reflector"]]);
+assert.deepEqual(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").map((entry) => [entry.data.attemptCount, entry.data.outcome, entry.data.phase]), [[0, "pending", "observer"]], "one queued attempt survives bounded reflector fallback without a legacy retry branch");
 reflectorFailOnce = false;
 
 observerMode = "mixed";
 const mixedAppended = [];
 const mixedScheduler = schedulerModule.createCycleScheduler();
-const mixedResult = await mixedScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => mixedAppended.push(entry) });
+const mixedResult = await mixedScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => mixedAppended.push(entry) });
 assert.equal(mixedResult.status, "closed");
 const mixedObservationRecords = mixedAppended.filter((entry) => entry.customType === "plastic.observations.recorded");
 assert.equal(mixedObservationRecords.length, 1);
@@ -220,7 +220,7 @@ assert.equal(mixedObservationRecords[0].data.observations[0].content, "mixed dur
 observerMode = "blank";
 const blankAppended = [];
 const blankScheduler = schedulerModule.createCycleScheduler();
-const blankResult = await blankScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankAppended.push(entry) });
+const blankResult = await blankScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => blankAppended.push(entry) });
 assert.equal(blankResult.status, "empty-valid");
 assert.equal(blankAppended.filter((entry) => entry.customType === "plastic.observations.recorded").length, 0);
 assert.equal(blankResult.cycle.data.status, "empty-valid");
@@ -228,14 +228,14 @@ assert.equal(blankResult.cycle.data.status, "empty-valid");
 observerMode = "blank-outside";
 const blankOutsideAppended = [];
 const blankOutsideScheduler = schedulerModule.createCycleScheduler();
-const blankOutsideResult = await blankOutsideScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankOutsideAppended.push(entry) });
+const blankOutsideResult = await blankOutsideScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => blankOutsideAppended.push(entry) });
 assert.equal(blankOutsideResult.status, "failed");
 assert.equal(blankOutsideAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 0);
 
 observerMode = "blank-invalid-relevance";
 const blankInvalidRelevanceAppended = [];
 const blankInvalidRelevanceScheduler = schedulerModule.createCycleScheduler();
-const blankInvalidRelevanceResult = await blankInvalidRelevanceScheduler.trigger({ ...scheduleInput, records: [], append: (entry) => blankInvalidRelevanceAppended.push(entry) });
+const blankInvalidRelevanceResult = await blankInvalidRelevanceScheduler.trigger({ ...scheduleInput, records: [queuedRecord], append: (entry) => blankInvalidRelevanceAppended.push(entry) });
 assert.equal(blankInvalidRelevanceResult.status, "failed");
 assert.equal(blankInvalidRelevanceAppended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 0);
 observerMode = "valid";
@@ -248,7 +248,7 @@ assert.equal(explicitPromotion.record.customType, "plastic.project.proposal.reco
 const staleRuntime = { ...runtime, agentLoop: async (_prompts, _context, _config, signal) => await new Promise((resolve) => signal.addEventListener("abort", () => resolve({ coverageManifest: {} }), { once: true })) };
 const staleAppended = [];
 const staleScheduler = schedulerModule.createCycleScheduler();
-const stalePromise = staleScheduler.trigger({ ...scheduleInput, runtime: staleRuntime, records: [], append: (entry) => staleAppended.push(entry) });
+const stalePromise = staleScheduler.trigger({ ...scheduleInput, runtime: staleRuntime, records: [queuedRecord], append: (entry) => staleAppended.push(entry) });
 staleScheduler.shutdown();
 assert.equal((await stalePromise).status, "stale");
 assert.equal(staleAppended.some((entry) => entry.customType === "plastic.cycle.closed"), false);

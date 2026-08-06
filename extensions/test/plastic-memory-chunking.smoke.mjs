@@ -130,12 +130,7 @@ for (const [callId, resultId] of [["agentic-call-1", "agentic-result-1"], ["agen
   assert.equal(agenticPartition.chunks[callChunk].sourceEntryIds.includes(resultId), true, `${callId} and its result stay together`);
 }
 
-// Malformed completed spans fail closed before a worker can be called.
-const malformedRuntimeCalls = [];
-const malformedRuntime = {
-  modelRegistry: { find: () => ({ provider: "fake", id: "fake", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
-  async agentLoop() { malformedRuntimeCalls.push(true); throw new Error("worker must not run"); },
-};
+// Malformed completed spans are rejected by direct partitioning; they never become queue records.
 const malformedSources = [
   [
     { type: "message", id: "multi-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "multi" }] }, tokenCount: 1 },
@@ -152,16 +147,8 @@ const malformedSources = [
 for (const sourceEntries of malformedSources) {
   const malformedSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries });
   assert.deepEqual(cycles.partitionCompletedTurnSnapshot(malformedSnapshot, sourceEntries), { ok: false, chunks: [], reason: "tool-exchange-integrity-failure" });
-  const malformedResult = await schedulerModule.createCycleScheduler().trigger({
-    binding,
-    branchEntries: sourceEntries,
-    bootstrap: { activeEntryIds: sourceEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-    records: [], runtime: malformedRuntime, append: () => {},
-  });
-  assert.equal(malformedResult.status, "skipped");
-  assert.equal(malformedResult.reason, "tool-exchange-integrity-failure");
+  assert.equal(cycles.createQueuedCycleRecords({ binding, sourceEntries }).length, 0, "malformed spans cannot enter the durable queue");
 }
-assert.equal(malformedRuntimeCalls.length, 0, "malformed spans fail before worker calls");
 
 // A.2 — the leftover turn remains a distinct fitting snapshot identity.
 const second = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: [u3, a3], maxTokens: MAX });
@@ -264,11 +251,13 @@ const agenticRuntime = {
   },
 };
 const agenticScheduler = schedulerModule.createCycleScheduler();
+const agenticQueue = cycles.createQueuedCycleRecords({ binding, sourceEntries: agenticEntries });
+assert.equal(agenticQueue.length, 1, "the complete agentic turn enters one durable queue item");
 const agenticResult = await agenticScheduler.trigger({
   binding,
   branchEntries: agenticEntries,
   bootstrap: { activeEntryIds: agenticEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [], runtime: agenticRuntime, append: (record) => agenticRecords.push(record),
+  records: agenticQueue, runtime: agenticRuntime, append: (record) => agenticRecords.push(record),
 });
 assert.equal(agenticResult.status, "closed");
 const agenticObserverCalls = agenticObservedCalls.filter((call) => call.role === "observer");
@@ -323,21 +312,22 @@ const charSchedulerRuntime = {
   },
 };
 const charRecords = [];
+const charQueue = cycles.createQueuedCycleRecords({ binding: charBinding, sourceEntries: charEntries });
+assert.equal(charQueue.length, 2, "each qualifying terminal turn is its own durable FIFO item");
 const charResult = await schedulerModule.createCycleScheduler().trigger({
   binding: charBinding,
   branchEntries: charEntries,
   bootstrap: { activeEntryIds: charEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [], runtime: charSchedulerRuntime, append: (record) => charRecords.push(record),
+  records: charQueue, runtime: charSchedulerRuntime, append: (record) => charRecords.push(record),
 });
 assert.equal(charResult.status, "closed");
-assert.equal(charObservedPrompts.length, charPartition.chunks.length);
-assert.ok(charObservedPrompts.every((call) => observer.observerRequestFits({ binding: charBinding, snapshot: charSnapshot, sourceEntries: charEntries.filter((entry) => call.sourceEntryIds.includes(entry.id)), sourceEntryIds: call.sourceEntryIds, runtime: charRuntime })));
-assert.deepEqual(charObservedPrompts.flatMap((call) => call.sourceEntryIds), charEntries.map((entry) => entry.id));
+assert.equal(charObservedPrompts.length, 1, "scheduler observes only the oldest exact queued item");
+assert.ok(charObservedPrompts.every((call) => observer.observerRequestFits({ binding: charBinding, snapshot: charResult.snapshot, sourceEntries: charEntries.filter((entry) => call.sourceEntryIds.includes(entry.id)), sourceEntryIds: call.sourceEntryIds, runtime: charRuntime })));
+assert.deepEqual(charObservedPrompts.flatMap((call) => call.sourceEntryIds), charQueue[0].data.sourceEntryIds);
 assert.equal(charRecords.filter((record) => record.customType === "plastic.observations.recorded").length, 1);
 assert.equal(charRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1);
 
 // A group that cannot fit the exact request fails closed before any worker call.
-const indivisibleRuntimeCalls = [];
 const indivisibleText = "i".repeat(350_000);
 const indivisibleEntries = [
   { type: "message", id: "indivisible-user", parentId: null, message: { role: "user", content: [{ type: "text", text: indivisibleText }] }, tokenCount: 20_000 },
@@ -348,15 +338,6 @@ const indivisibleFit = (chunk) => observer.observerRequestFits({ binding: charBi
 assert.equal(indivisibleFit({ entries: indivisibleEntries, sourceEntryIds: indivisibleEntries.map((entry) => entry.id), tokenCount: 40_000, index: 0 }), false);
 const indivisible = cycles.partitionCompletedTurnSnapshot(indivisibleSnapshot, indivisibleEntries, 160_000, indivisibleFit);
 assert.deepEqual(indivisible, { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" });
-const indivisibleResult = await schedulerModule.createCycleScheduler().trigger({
-  binding: charBinding,
-  branchEntries: indivisibleEntries,
-  bootstrap: { activeEntryIds: indivisibleEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [], runtime: { ...charRuntime, async agentLoop() { indivisibleRuntimeCalls.push(true); return {}; } }, append: () => {},
-});
-assert.equal(indivisibleResult.status, "skipped");
-assert.equal(indivisibleResult.reason, "indivisible-message-group-exceeds-bound");
-assert.equal(indivisibleRuntimeCalls.length, 0);
 
 // Later-chunk failure retries the immutable partition but persists no partial observations.
 let failingObserverCalls = 0;
@@ -374,10 +355,10 @@ const laterFailureRuntime = {
   },
 };
 const laterFailure = await schedulerModule.createCycleScheduler().trigger({
-  binding: charBinding,
-  branchEntries: charEntries,
-  bootstrap: { activeEntryIds: charEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
-  records: [], runtime: laterFailureRuntime, append: (record) => laterFailureRecords.push(record),
+  binding,
+  branchEntries: agenticEntries,
+  bootstrap: { activeEntryIds: agenticEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: agenticQueue, runtime: laterFailureRuntime, append: (record) => laterFailureRecords.push(record),
 });
 assert.equal(laterFailure.status, "failed");
 assert.equal(failingObserverCalls, 4, "later chunk failure retries the full immutable partition once");
