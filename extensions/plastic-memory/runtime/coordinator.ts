@@ -84,7 +84,9 @@ function safeNoticeReason(value: unknown): string {
   return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 120) || "worker did not complete";
 }
 const PLASTIC_SUMMARY_TOKENS = 12_000; // SUMMARY_CAP_CHARS / conservative chars-per-token
-const COMPACTION_RESERVE_TOKENS = 16_384; // host default reserve, kept local because settings are out of scope
+const COMPACTION_RESERVE_TOKENS = 16_384; // real host reserve, not an estimate; never scale it
+const CALIBRATION_MIN_SAMPLE_TOKENS = 2_000;
+const CALIBRATION_MAX_FACTOR = 3;
 const TOKEN_ROLES = new Set(["user", "assistant", "toolResult", "custom", "bashExecution", "branchSummary", "compactionSummary"]);
 type PublicContextUsage = { tokens?: number | null; contextWindow?: number };
 function estimatePublicMessage(value: unknown): number | undefined {
@@ -106,7 +108,32 @@ function estimateEntryTokens(entry: SessionEntry): number | undefined {
   if (entry.type === "compaction" && typeof entry.summary === "string") return estimatePublicMessage({ role: "compactionSummary", summary: entry.summary });
   return entry.type === "custom" || entry.type === "model_change" || entry.type === "thinking_level_change" ? 0 : undefined;
 }
-function fixedPhysicalBudgetFor(ctx: ExtensionContext): Pick<PhysicalBudget, "contextWindow" | "fixedTokens"> | null {
+export function calibrationFactorFor(ctx: ExtensionContext): number {
+  try {
+    const usage = (ctx as unknown as { getContextUsage?: () => PublicContextUsage | undefined }).getContextUsage?.();
+    if (!usage || !Number.isFinite(usage.tokens) || usage.tokens <= 0) return 1;
+    const getSystemPrompt = (ctx as unknown as { getSystemPrompt?: () => string }).getSystemPrompt;
+    const systemPrompt = getSystemPrompt?.();
+    if (typeof systemPrompt !== "string") return 1;
+    const systemPromptTokens = estimatePublicMessage({ role: "user", content: [{ type: "text", text: systemPrompt }] });
+    if (systemPromptTokens === undefined) return 1;
+    let ourEstimate = systemPromptTokens;
+    for (const entry of ctx.sessionManager.buildContextEntries() as SessionEntry[]) {
+      const tokens = estimateEntryTokens(entry);
+      if (tokens === undefined) return 1;
+      ourEstimate += tokens;
+    }
+    const factor = usage.tokens / ourEstimate;
+    // Provider usage and this estimate describe the same current context, so their
+    // ratio is runtime evidence. Only ratios above one are honored (never loosen
+    // the budget), and the host reserve below is real capacity, not estimated text.
+    if (ourEstimate < CALIBRATION_MIN_SAMPLE_TOKENS || !Number.isFinite(factor) || factor <= 1) return 1;
+    return Math.min(factor, CALIBRATION_MAX_FACTOR);
+  } catch {
+    return 1;
+  }
+}
+function fixedPhysicalBudgetFor(ctx: ExtensionContext): (Pick<PhysicalBudget, "contextWindow" | "fixedTokens"> & { factor: number }) | null {
   try {
     const usage = (ctx as unknown as { getContextUsage?: () => PublicContextUsage | undefined }).getContextUsage?.();
     const contextWindow = usage?.contextWindow;
@@ -115,30 +142,39 @@ function fixedPhysicalBudgetFor(ctx: ExtensionContext): Pick<PhysicalBudget, "co
     if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0 || typeof systemPrompt !== "string") return null;
     const systemPromptTokens = estimatePublicMessage({ role: "user", content: [{ type: "text", text: systemPrompt }] });
     if (systemPromptTokens === undefined) return null;
-    return { contextWindow, fixedTokens: systemPromptTokens + PLASTIC_SUMMARY_TOKENS + COMPACTION_RESERVE_TOKENS };
+    const factor = calibrationFactorFor(ctx);
+    return {
+      contextWindow,
+      fixedTokens: Math.ceil((systemPromptTokens + PLASTIC_SUMMARY_TOKENS) * factor) + COMPACTION_RESERVE_TOKENS,
+      factor,
+    };
   } catch {
     return null;
   }
 }
-function physicalBudgetFor(ctx: ExtensionContext, branch: readonly SessionEntry[]): PhysicalBudget | null {
+function scaledEntryTokens(entry: SessionEntry, factor: number): number | undefined {
+  const tokens = estimateEntryTokens(entry);
+  return tokens === undefined ? undefined : Math.ceil(tokens * factor);
+}
+export function physicalBudgetFor(ctx: ExtensionContext, branch: readonly SessionEntry[]): PhysicalBudget | null {
   const fixed = fixedPhysicalBudgetFor(ctx);
   if (!fixed) return null;
   const entryTokens: Record<string, number> = {};
   for (const entry of branch) {
     if (typeof entry.id !== "string") continue;
-    const tokens = estimateEntryTokens(entry);
+    const tokens = scaledEntryTokens(entry, fixed.factor);
     if (tokens !== undefined) entryTokens[entry.id] = tokens;
   }
-  return { ...fixed, entryTokens };
+  return { contextWindow: fixed.contextWindow, fixedTokens: fixed.fixedTokens, entryTokens };
 }
-function physicalTailFits(ctx: ExtensionContext, branch: readonly SessionEntry[], cutId: string): boolean {
+export function physicalTailFits(ctx: ExtensionContext, branch: readonly SessionEntry[], cutId: string): boolean {
   const budget = fixedPhysicalBudgetFor(ctx);
   if (!budget) return false;
   const index = branch.findIndex((entry) => entry.id === cutId);
   if (index < 0) return false;
   let tailTokens = 0;
   for (const entry of branch.slice(index)) {
-    const tokens = estimateEntryTokens(entry);
+    const tokens = scaledEntryTokens(entry, budget.factor);
     if (tokens === undefined) return false;
     tailTokens += tokens;
   }
