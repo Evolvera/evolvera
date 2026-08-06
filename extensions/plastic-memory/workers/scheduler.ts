@@ -50,8 +50,13 @@ export type SchedulerResult = Readonly<{
   reason?: string;
   compactorJob?: Promise<CompactorResult>;
 }>;
+export type SchedulerExclusiveLease = Readonly<{ release: () => void }>;
+export type SchedulerExclusiveLeaseResult =
+  | Readonly<{ ok: true; lease: SchedulerExclusiveLease }>
+  | Readonly<{ ok: false; reason: "exclusive-lease-held" | "aborted" | "invalidated" }>;
 
 type Job = { controller: AbortController; epoch: number; snapshotId: string; promise: Promise<SchedulerResult> };
+type ExclusiveLease = { epoch: number };
 
 function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
   return left.sessionId === right.sessionId && left.generation === right.generation && left.branchId === right.branchId;
@@ -87,6 +92,7 @@ function report(input: SchedulerInput, event: Omit<SchedulerLifecycleEvent, "rea
 export class CycleScheduler {
   private epoch = 0;
   private activeJob?: Job;
+  private exclusiveLease?: ExclusiveLease;
   private rescheduleQueued = false;
   private rescheduleCallback?: () => void;
   private readonly controllers = new Set<AbortController>();
@@ -103,6 +109,13 @@ export class CycleScheduler {
     // descendant and is legitimately outside it.
     const capturedSource = source.map((entry) => entry);
     const preview = capturedSource.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: capturedSource }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
+    if (this.exclusiveLease) {
+      // Keep only the newest caller-owned reschedule path. A trigger without a
+      // callback cannot revoke a previously deferred caller's opportunity.
+      this.rescheduleQueued = true;
+      if (input.reschedule) this.rescheduleCallback = input.reschedule;
+      return Promise.resolve({ status: "skipped", snapshot: preview, reason: "scheduler exclusively leased" });
+    }
     const active = this.activeJob;
     if (active) {
       if (active.snapshotId === preview.snapshotId) return active.promise;
@@ -118,6 +131,9 @@ export class CycleScheduler {
       if (this.activeJob !== job) return;
       this.activeJob = undefined;
       this.controllers.delete(controller);
+      // An exclusive lease owns the queued callback until it has an awaited
+      // idle boundary. Normal scheduling retains the original eager drain.
+      if (this.exclusiveLease) return;
       const callback = this.rescheduleQueued ? this.rescheduleCallback : undefined;
       this.rescheduleQueued = false;
       this.rescheduleCallback = undefined;
@@ -127,6 +143,44 @@ export class CycleScheduler {
     });
     this.activeJob = job;
     return job.promise;
+  }
+
+  /**
+   * Reserve an in-process emergency interval before awaiting the current worker.
+   * The reservation is synchronous; an aborted caller still waits for the active
+   * worker to settle, then receives a failure rather than a racing snapshot.
+   */
+  async acquireExclusiveLease(signal?: AbortSignal): Promise<SchedulerExclusiveLeaseResult> {
+    if (this.exclusiveLease) return { ok: false, reason: "exclusive-lease-held" };
+    if (signal?.aborted) return { ok: false, reason: "aborted" };
+    const lease: ExclusiveLease = { epoch: this.epoch };
+    this.exclusiveLease = lease;
+    const active = this.activeJob;
+    if (active) {
+      active.controller.abort(new Error("exclusive scheduler lease"));
+      try { await active.promise; } catch { /* a settled worker error is still a stable boundary */ }
+    }
+    if (this.exclusiveLease !== lease || this.epoch !== lease.epoch) return { ok: false, reason: "invalidated" };
+    if (signal?.aborted) {
+      this.releaseExclusiveLease(lease);
+      return { ok: false, reason: "aborted" };
+    }
+    return { ok: true, lease: { release: () => this.releaseExclusiveLease(lease) } };
+  }
+
+  private releaseExclusiveLease(lease: ExclusiveLease): void {
+    if (this.exclusiveLease !== lease || this.epoch !== lease.epoch) return;
+    this.exclusiveLease = undefined;
+    const callback = this.rescheduleQueued ? this.rescheduleCallback : undefined;
+    this.rescheduleQueued = false;
+    this.rescheduleCallback = undefined;
+    if (!callback) return;
+    // Release must never start an observer on the emergency call stack. The
+    // existing callback remains the sole normal scheduling path.
+    queueMicrotask(() => {
+      if (this.epoch !== lease.epoch) return;
+      try { callback(); } catch { /* rescheduling must not change lease release */ }
+    });
   }
 
   private records(input: SchedulerInput): SessionEntry[] { return mergeRecords(input.records ?? [], this.localRecords); }
@@ -292,6 +346,7 @@ export class CycleScheduler {
   /** Abort and invalidate all work on shutdown, reload, switch, or fork. */
   invalidate(_reason = "invalidated"): void {
     this.epoch += 1;
+    this.exclusiveLease = undefined;
     for (const controller of this.controllers) controller.abort(new Error(_reason));
     this.controllers.clear();
     this.activeJob = undefined;
