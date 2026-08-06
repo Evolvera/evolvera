@@ -2,11 +2,11 @@ import { digestParts } from "../common/safety.ts";
 import { foldLedger, hasOrderedContextTail, sourceDigest } from "../session/ledger.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { isTerminalAssistantEntry } from "../session/cycles.ts";
-import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type SessionBinding, type SessionEntry } from "../session/types.ts";
+import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type Observation, type Reflection, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import { renderSessionSummary } from "../session/render-summary.ts";
 import { extractCycleSourceFacts, verifyCycleSourceDigest, type CycleSourceFacts } from "./extract.ts";
 import { isPendingIdentityCurrent, makePendingCompaction, PendingStore, type PendingBranch, type PendingCompaction } from "./pending.ts";
-import { projectSnapshot, renderVerifiedCompaction, verifyRenderedCompaction, type CumulativeState, type LunaRequest, type ProjectSnapshot, type RenderedCompaction } from "./render.ts";
+import { buildLunaRequest, projectSnapshot, renderVerifiedCompaction, verifyRenderedCompaction, type CumulativeState, type LunaRequest, type ProjectSnapshot, type RenderedCompaction } from "./render.ts";
 
 export type CycleInput = CycleClosedData | { type: "custom"; customType: "plastic.cycle.closed"; data: CycleClosedData };
 export type CompactionEntry = SessionEntry & { type: "compaction"; id: string; firstKeptEntryId?: string; summary?: string; details?: unknown };
@@ -46,6 +46,19 @@ export type PreparedCompaction = Readonly<{
   rendered: RenderedCompaction;
   cut: CutValidation;
   pending: PendingCompaction;
+}>;
+export type EmergencyFinalizationInput = Readonly<{
+  binding: SessionBinding;
+  branchEntries: SessionEntry[];
+  firstKeptEntryId: string;
+  sourceFacts: CycleSourceFacts[];
+  observations?: Observation[];
+  reflections?: Reflection[];
+  priorState?: CumulativeState;
+  projectSnapshot: ProjectSnapshot | unknown;
+  runtimeToken?: string;
+  now?: number;
+  compact: (request: LunaRequest) => { summary?: unknown; state?: unknown; details?: unknown };
 }>;
 export type EngineResult = Readonly<{
   eligible: true;
@@ -194,7 +207,107 @@ export function diagnoseEligibleWindow(input: EngineWindowInput): string {
   return eligibleWindow(input, trace) ? "eligible" : trace.code ?? "unknown";
 }
 function detailsDigest(rendered: RenderedCompaction): string { return digestParts(rendered.details).slice(0, 32); }
+function mergeStructuredFacts(cycles: CycleSourceFacts[]): CycleSourceFacts["facts"] {
+  const keys: (keyof CycleSourceFacts["facts"])[] = ["activeMemoryIds", "files", "commands", "errors", "decisions", "constraints", "goals", "openLoops"];
+  const merged = Object.fromEntries(keys.map((key) => [key, [] as string[]])) as Record<keyof CycleSourceFacts["facts"], string[]>;
+  for (const cycle of cycles) for (const key of keys) for (const value of cycle.facts[key]) if (!merged[key].includes(value)) merged[key].push(value);
+  return merged;
+}
 const consumedAcknowledgements = new WeakSet<object>();
+
+/**
+ * Finalize a previously selected emergency span without consulting normal six/four
+ * eligibility. The caller must supply an immutable, worker-verified source fact
+ * span; unlike the normal path this function never stages the pending slot.
+ */
+export function finalizeEmergencyCompaction(input: EmergencyFinalizationInput): EngineResult {
+  try {
+    if (!hasOrderedContextTail(input.branchEntries) || input.sourceFacts.length === 0 || !safeCutEntry(input.branchEntries.find((entry) => entry.id === input.firstKeptEntryId))) {
+      return { eligible: false, reason: "emergency cut is not a safe current-branch boundary" };
+    }
+    const branchIds = input.branchEntries.map((entry) => entry.id);
+    if (branchIds.some((id): id is undefined => id === undefined) || new Set(branchIds).size !== branchIds.length) {
+      return { eligible: false, reason: "emergency branch identity is malformed" };
+    }
+    const cutIndex = branchIds.indexOf(input.firstKeptEntryId);
+    if (cutIndex <= 0) return { eligible: false, reason: "emergency cut has no removable prefix" };
+    const sourcePositions = new Map(input.branchEntries.filter(isSourceEntry).map((entry, index) => [entry.id!, index]));
+    const sourceEntries = input.sourceFacts.flatMap((cycle) => cycle.sourceEntryIds.map((id) => input.branchEntries.find((entry) => entry.id === id)));
+    if (sourceEntries.length === 0 || sourceEntries.some((entry): entry is undefined => entry === undefined)) {
+      return { eligible: false, reason: "emergency source span is not on the current branch" };
+    }
+    const sourceIds = input.sourceFacts.flatMap((cycle) => cycle.sourceEntryIds);
+    const sourcePrefixIds = input.branchEntries.slice(0, cutIndex).filter(isSourceEntry).map((entry) => entry.id!);
+    if (new Set(sourceIds).size !== sourceIds.length || sourceIds.some((id) => !sourcePositions.has(id))
+      || sourceIds.length !== sourcePrefixIds.length || sourceIds.some((id, index) => id !== sourcePrefixIds[index])) {
+      return { eligible: false, reason: "emergency source span crosses the selected cut" };
+    }
+    for (const [index, cycle] of input.sourceFacts.entries()) {
+      const cycleEntries = cycle.sourceEntryIds.map((id) => input.branchEntries.find((entry) => entry.id === id)!);
+      if (sourceDigest(cycleEntries) !== cycle.sourceDigest || cycle.sourceStartId !== cycle.sourceEntryIds[0]
+        || cycle.sourceEndId !== cycle.sourceEntryIds.at(-1) || cycle.completedTurnEndId !== cycle.sourceEntryIds.at(-1)
+        || !isTerminalAssistantEntry(cycleEntries.at(-1)!)) {
+        return { eligible: false, reason: `emergency source fact ${index + 1} failed verification` };
+      }
+    }
+    const project = projectSnapshot(input.projectSnapshot);
+    const currentBranch = foldLedger(input.branchEntries, { leafId: input.branchEntries.at(-1)?.id, context: input.binding }).branch;
+    const sessionIndex = renderSessionSummary(currentBranch, {
+      leafId: currentBranch.at(-1)?.id,
+      binding: input.binding,
+      overlay: { observations: input.observations ?? [], reflections: input.reflections ?? [] },
+    });
+    const request = buildLunaRequest(input.sourceFacts, input.priorState, project, mergeStructuredFacts(input.sourceFacts));
+    const response = input.compact(request);
+    if (!response || typeof response.summary !== "string" || response.summary.trim().length === 0) {
+      return { eligible: false, reason: "emergency compactor did not return a non-empty semantic summary" };
+    }
+    const rendered = renderVerifiedCompaction(input.sourceFacts, input.priorState, project, () => response, sessionIndex);
+    if (!verifyRenderedCompaction(rendered)) return { eligible: false, reason: "rendered emergency compaction identity failed verification" };
+    const compactions = input.branchEntries.filter((entry): entry is CompactionEntry => entry.type === "compaction" && hasId(entry));
+    const previousCompactions: string[] = [];
+    for (const compaction of compactions) {
+      const position = branchIds.indexOf(compaction.id);
+      if (position < cutIndex) {
+        if (!plasticCompaction(compaction)) return { eligible: false, reason: "foreign prior compaction before emergency cut" };
+        previousCompactions.push(compactionIdentity(compaction));
+      }
+    }
+    const latest = compactions.at(-1);
+    const cut: CutValidation = {
+      branchIds,
+      cutIndex,
+      firstKeptEntryId: input.firstKeptEntryId,
+      latestCompactionIdentity: latest ? compactionIdentity(latest) : undefined,
+      previousCompactions,
+    };
+    const cutDigest = digestParts({ preparedPrefixIds: cut.branchIds, firstKeptEntryId: cut.firstKeptEntryId, latestCompactionIdentity: cut.latestCompactionIdentity, stateDigest: rendered.stateDigest, cycleRange: rendered.cycleRange }).slice(0, 32);
+    const boundDetails = {
+      ...rendered.details,
+      plastic: {
+        ...(rendered.details.plastic as Record<string, unknown>),
+        cutDigest,
+        preparedPrefixDigest: digestParts(cut.branchIds).slice(0, 32),
+        latestCompactionIdentity: cut.latestCompactionIdentity,
+      },
+    };
+    const boundRendered: RenderedCompaction = { ...rendered, details: boundDetails };
+    if (!verifyRenderedCompaction(boundRendered)) return { eligible: false, reason: "bound emergency compaction identity failed verification" };
+    const pending = makePendingCompaction({
+      slotId: digestParts(input.binding, cut.branchIds, rendered.stateDigest).slice(0, 32),
+      binding: input.binding,
+      runtimeToken: input.runtimeToken ?? "runtime:default",
+      preparedPrefixIds: cut.branchIds,
+      latestCompactionIdentity: cut.latestCompactionIdentity,
+      cut: { firstKeptEntryId: cut.firstKeptEntryId, cutDigest, detailsDigest: detailsDigest(boundRendered), summaryHeader: rendered.summary.split("\n", 1)[0] },
+      stateDigest: rendered.stateDigest,
+      now: input.now,
+    });
+    return { eligible: true, prepared: { rendered: boundRendered, cut, pending } };
+  } catch (error) {
+    return { eligible: false, reason: error instanceof Error ? error.message : "emergency finalization failed" };
+  }
+}
 
 export function prepareSemanticCompaction(input: EngineInput): EngineResult {
   const window = eligibleWindow(input);
