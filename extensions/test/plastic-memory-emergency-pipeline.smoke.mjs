@@ -16,7 +16,7 @@ const emergency = await jiti.import(path.join(root, "plastic-memory/compaction/e
 const binding = { sessionId: ids.sessionDigest("emergency-pipeline", { generation: 1 }), generation: 1, branchId: "main" };
 const entries = [];
 function append(message) {
-  const entry = { type: "message", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
+  const entry = { type: "message", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 10_000 };
   entries.push(entry);
   return entry;
 }
