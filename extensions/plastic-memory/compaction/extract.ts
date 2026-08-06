@@ -23,6 +23,7 @@ export type CycleSourceFacts = Readonly<{
   facts: StructuredFacts;
   factsDigest: string;
 }>;
+export type SourceSpanFactsInput = Readonly<Pick<CycleSourceFacts, "cycleId" | "sourceEntryIds" | "sourceDigest" | "sourceStartId" | "sourceEndId" | "completedTurnEndId">>;
 
 const PATH_KEYS = ["path", "file_path", "filePath", "filename", "file", "target_file", "file_uri"];
 const COMMAND_KEYS = ["command", "cmd", "script"];
@@ -124,10 +125,28 @@ export function extractStructuredFacts(entries: SessionEntry[], activeMemoryIds:
 
 export function factsDigest(facts: StructuredFacts): string { return digestParts(facts).slice(0, 32); }
 
-export function extractCycleSourceFacts(cycle: CycleClosedData, entries: SessionEntry[], activeMemoryIds: string[] = []): CycleSourceFacts {
+export function extractSourceSpanFacts(span: SourceSpanFactsInput, entries: SessionEntry[], activeMemoryIds: string[] = []): CycleSourceFacts | undefined {
   const byId = new Map(entries.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
-  const sourceEntries = cycle.sourceEntryIds.map((id) => byId.get(id)).filter((entry): entry is SessionEntry => Boolean(entry));
-  const facts = extractStructuredFacts(sourceEntries, activeMemoryIds);
+  const sourceEntries = span.sourceEntryIds.map((id) => byId.get(id));
+  if (sourceEntries.some((entry) => !entry) || sourceDigest(sourceEntries as SessionEntry[]) !== span.sourceDigest) return undefined;
+  const facts = extractStructuredFacts(sourceEntries as SessionEntry[], activeMemoryIds);
+  return {
+    cycleId: span.cycleId,
+    sourceEntryIds: [...span.sourceEntryIds],
+    sourceDigest: span.sourceDigest,
+    sourceStartId: span.sourceStartId,
+    sourceEndId: span.sourceEndId,
+    completedTurnEndId: span.completedTurnEndId,
+    facts,
+    factsDigest: factsDigest(facts),
+  };
+}
+
+export function extractCycleSourceFacts(cycle: CycleClosedData, entries: SessionEntry[], activeMemoryIds: string[] = []): CycleSourceFacts {
+  const facts = extractSourceSpanFacts(cycle, entries, activeMemoryIds);
+  if (facts) return facts;
+  const sourceEntries = cycle.sourceEntryIds.map((id) => entries.find((entry) => entry.id === id)).filter((entry): entry is SessionEntry => Boolean(entry));
+  const structured = extractStructuredFacts(sourceEntries, activeMemoryIds);
   return {
     cycleId: cycle.cycleId,
     sourceEntryIds: [...cycle.sourceEntryIds],
@@ -135,8 +154,8 @@ export function extractCycleSourceFacts(cycle: CycleClosedData, entries: Session
     sourceStartId: cycle.sourceStartId,
     sourceEndId: cycle.sourceEndId,
     completedTurnEndId: cycle.completedTurnEndId,
-    facts,
-    factsDigest: factsDigest(facts),
+    facts: structured,
+    factsDigest: factsDigest(structured),
   };
 }
 

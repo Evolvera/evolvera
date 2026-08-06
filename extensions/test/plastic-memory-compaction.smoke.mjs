@@ -93,19 +93,17 @@ assert.equal(firstRendered.summary.includes("sourceEntryIds"), false, "source-en
 assert.equal(firstRendered.summary.includes("structuredState"), false, "hidden state JSON must remain internal");
 assert.ok(firstRendered.summary.length <= 48_000);
 
-// A proved physical budget may fold the oldest two normally-retained cycles into
-// the same cumulative request/state. No cut is allowed to split a cycle.
-const emergencyBudget = entryBudget(entries, 61, 10, (entry) => entry.type === "message" ? 6 : 1);
-const emergency = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_250, physicalBudget: emergencyBudget, compact: fakeLuna });
-assert.equal(emergency.eligible, true);
-assert.equal(emergency.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId, "emergency advances two whole cycles");
-assert.deepEqual(requests[1].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "4→2 emergency folds both oldest retained cycles into the same request");
-assert.deepEqual(emergency.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "4→2 emergency keeps one cumulative state");
-const impossibleBudget = { ...emergencyBudget, contextWindow: 34 };
-const requestsBeforeImpossible = requests.length;
+// Physical pressure never shrinks the normal retained suffix. Emergency selection
+// owns any smaller transient window in its separate pure selector.
+const pressureBudget = entryBudget(entries, 61, 10, (entry) => entry.type === "message" ? 6 : 1);
+const requestsBeforePressure = requests.length;
+const pressure = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_250, physicalBudget: pressureBudget, compact: fakeLuna });
+assert.equal(pressure.eligible, false, "four-cycle normal fit failure yields no normal pending");
+assert.equal(requests.length, requestsBeforePressure, "normal physical failure makes no compactor call");
+const impossibleBudget = { ...pressureBudget, contextWindow: 34 };
 const impossible = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_260, physicalBudget: impossibleBudget, compact: fakeLuna });
-assert.equal(impossible.eligible, false, "one retained cycle plus fixed budget cannot fit");
-assert.equal(requests.length, requestsBeforeImpossible, "impossible one-cycle fit makes no compactor call");
+assert.equal(impossible.eligible, false, "an impossible four-cycle fit stays ineligible");
+assert.equal(requests.length, requestsBeforePressure, "physical failure does not call the model");
 assert.equal(engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_270, physicalBudget: null, compact: fakeLuna }).eligible, false, "unknown physical proof fails closed");
 
 const firstCompaction = { type: "compaction", id: "cmp1", parentId: entries.at(-1).id, firstKeptEntryId: first.prepared.cut.firstKeptEntryId, summary: firstRendered.summary, details: firstRendered.details };
@@ -114,13 +112,13 @@ for (let index = 7; index <= 8; index += 1) cycles.push(closed(cycle(index)));
 const delayedEight = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_500, compact: fakeLuna });
 assert.equal(delayedEight.eligible, true);
 assert.equal(delayedEight.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
-assert.deepEqual(requests[2].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "an unacknowledged eight-cycle branch sends every older cycle");
+assert.deepEqual(requests[1].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "an unacknowledged eight-cycle branch sends every older cycle");
 assert.deepEqual(delayedEight.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
 
 const second = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: firstRendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_000, compact: fakeLuna });
 assert.equal(second.eligible, true);
 assert.equal(second.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
-assert.deepEqual(requests[3].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
+assert.deepEqual(requests[2].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
 assert.deepEqual(second.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
 assert.equal(second.prepared.rendered.state.facts.errors.includes("permission denied"), true);
 assert.notEqual(second.prepared.rendered.state.stateDigest, firstRendered.state.stateDigest);
@@ -128,7 +126,7 @@ assert.notEqual(second.prepared.rendered.state.stateDigest, firstRendered.state.
 for (let index = 9; index <= 10; index += 1) cycles.push(closed(cycle(index)));
 const third = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: second.prepared.rendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_500, compact: fakeLuna });
 assert.equal(third.eligible, true);
-assert.deepEqual(requests[4].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
+assert.deepEqual(requests[3].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
 assert.deepEqual(third.prepared.rendered.state.cycleIds, cycles.slice(0, 6).map((cycle) => cycle.cycleId));
 
 const suffixUser = append({ role: "user", content: [{ type: "text", text: "goal C9; incomplete suffix" }] });
@@ -137,24 +135,14 @@ const suffixResult = append({ type: "toolResult", toolCallId: "call-9", content:
 const delayedWithSuffix = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles: cycles.slice(0, 8), projectSnapshot, runtimeToken: "runtime-1", now: 2_750, compact: fakeLuna });
 assert.equal(delayedWithSuffix.eligible, true);
 assert.equal(delayedWithSuffix.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
-assert.deepEqual(requests[5].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
+assert.deepEqual(requests[4].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
 assert.deepEqual(delayedWithSuffix.prepared.pending.preparedPrefixIds.slice(-3), [suffixUser.id, suffixTool.id, suffixResult.id], "incomplete C9 suffix remains retained");
 
-// With a safe incomplete user suffix, zero raw closed cycles is representable:
-// every closed cycle folds into the same rolling summary and the suffix stays whole.
-const zeroBudget = entryBudget(entries, 25, 10, 5);
-const zeroRaw = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 2_800, physicalBudget: zeroBudget, compact: fakeLuna });
-assert.equal(zeroRaw.eligible, true);
-assert.equal(zeroRaw.prepared.cut.firstKeptEntryId, suffixUser.id, "zero-raw cut begins at the safe incomplete user boundary");
-assert.deepEqual(requests[6].cycleIds, cycles.map((cycle) => cycle.cycleId), "zero-raw request folds every closed cycle");
-assert.deepEqual(zeroRaw.prepared.rendered.state.cycleIds, cycles.map((cycle) => cycle.cycleId));
-assert.deepEqual(zeroRaw.prepared.pending.preparedPrefixIds.slice(-3), [suffixUser.id, suffixTool.id, suffixResult.id], "zero-raw cut keeps the incomplete tool exchange whole");
-
-// When the branch ends at the last closed cycle there is no representable absent
-// firstKeptEntryId; if even one raw cycle cannot fit, fail closed without a call.
+// Normal selection does not expose a zero-raw-cycle fallback; emergency owns that
+// transient case without changing the normal pending lifecycle.
 const branchEndingAtClosedCycle = entries.slice(0, entries.indexOf(suffixUser));
 const noRepresentableOneCycle = engine.prepareSemanticCompaction({ binding, branchEntries: branchEndingAtClosedCycle, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 2_810, physicalBudget: impossibleBudget, compact: fakeLuna });
-assert.equal(noRepresentableOneCycle.eligible, false, "no safe zero-raw host cut and no fitting one-cycle suffix fails closed");
+assert.equal(noRepresentableOneCycle.eligible, false, "normal selection never invents an absent host cut");
 
 const store = pendingModule.createPendingStore();
 store.stage(second.prepared.pending);
