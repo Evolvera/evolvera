@@ -8,10 +8,13 @@ import { prepareEmergencyCompaction, selectEmergencyWindow } from "../compaction
 import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
 import { bootstrapSession } from "../session/bootstrap.ts";
-import { foldLedger, hasOrderedContextTail } from "../session/ledger.ts";
+import { createQueuedCycleRecords, reconstructCycleQueue, type QueueReconstruction } from "../session/cycles.ts";
+import { foldLedger, hasOrderedContextTail, normalSourceEntries } from "../session/ledger.ts";
 import {
   isPlasticRecord,
+  PLASTIC_CYCLE_ATTEMPTED,
   PLASTIC_CYCLE_CLOSED,
+  PLASTIC_CYCLE_QUEUED,
   PLASTIC_OBSERVATIONS_RECORDED,
   PLASTIC_REFLECTIONS_RECORDED,
   type BootstrapData,
@@ -173,25 +176,6 @@ function usableVisibleModel(ctx: ExtensionContext): LunaModel | undefined {
   const candidate = (ctx as unknown as { model?: unknown }).model;
   return candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as LunaModel : undefined;
 }
-function edgeBootstrap(bootstrap: BootstrapData, cycles: readonly CycleClosedData[]): BootstrapData {
-  const latest = cycles.at(-1);
-  if (!latest || latest.sourceEntryIds.length === 0) return bootstrap;
-  // The persisted bootstrap describes the initial host window. Once one cycle
-  // closes, the scheduler must advance past that cycle rather than reopening
-  // the whole prefix on every later turn.
-  const historicalPrefixIds = [...new Set([
-    ...bootstrap.historicalPrefixIds,
-    ...bootstrap.activeEntryIds,
-    ...latest.sourceEntryIds,
-  ])];
-  return {
-    ...bootstrap,
-    activeEntryIds: [],
-    activeStartId: undefined,
-    activeEndId: undefined,
-    historicalPrefixIds,
-  };
-}
 
 /**
  * The one host owner for plastic-memory compaction and context projection.
@@ -288,6 +272,67 @@ export class PlasticMemoryCoordinator {
     }
   }
 
+  /** Keep prior-generation queue history out of a new generation while retaining malformed evidence. */
+  private queueRecordsFor(binding: SessionBinding, branchEntries: SessionEntry[]): SessionEntry[] {
+    return branchEntries.filter((entry) => {
+      if (entry.type !== "custom" || (entry.customType !== PLASTIC_CYCLE_QUEUED && entry.customType !== PLASTIC_CYCLE_ATTEMPTED && entry.customType !== PLASTIC_CYCLE_CLOSED)) return true;
+      return !isPlasticRecord(entry) || sameBinding(entry.data, binding);
+    });
+  }
+
+  /** Reconstruct only the current binding's exact durable queue against its bootstrap window. */
+  private queueState(ctx: ExtensionContext, binding: SessionBinding, bootstrap: BootstrapData): QueueReconstruction | undefined {
+    const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
+    const sourceEntries = normalSourceEntries(branchEntries, bootstrap);
+    const state = reconstructCycleQueue({
+      binding,
+      branchEntries,
+      leafId: ctx.sessionManager.getLeafId(),
+      sourceEntries,
+      records: this.queueRecordsFor(binding, branchEntries),
+    });
+    return state.valid ? state : undefined;
+  }
+
+  /** Append every newly crossed completed-turn batch, and prove each append is current before work starts. */
+  private captureQueuedCycles(ctx: ExtensionContext, binding: SessionBinding, bootstrap: BootstrapData): QueueReconstruction | undefined {
+    let state = this.queueState(ctx, binding, bootstrap);
+    if (!state) return undefined;
+    const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
+    const candidates = createQueuedCycleRecords({ binding, sourceEntries: normalSourceEntries(branchEntries, bootstrap) });
+    for (const candidate of candidates) {
+      if (state.queued.some((record) => record.data.cycleId === candidate.data.cycleId && record.data.snapshotId === candidate.data.snapshotId)) continue;
+      try {
+        this.append(candidate);
+      } catch {
+        return undefined;
+      }
+      const refreshed = this.queueState(ctx, binding, bootstrap);
+      if (!refreshed || !refreshed.queued.some((record) => record.data.cycleId === candidate.data.cycleId && record.data.snapshotId === candidate.data.snapshotId)) return undefined;
+      state = refreshed;
+    }
+    return state;
+  }
+
+  /** Restart only an unambiguous, valid current-branch queue lineage for this stable session. */
+  private recoverQueueBinding(ctx: ExtensionContext): SessionBinding | undefined {
+    const sessionId = sessionDigest(ctx.sessionManager.getSessionId(), SESSION_DIGEST_PROVENANCE);
+    const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
+    const candidates = new Map<string, SessionBinding>();
+    for (const entry of branchEntries) {
+      if (!isPlasticRecord(entry) || entry.customType !== PLASTIC_CYCLE_QUEUED || entry.data.sessionId !== sessionId) continue;
+      const binding = { sessionId: entry.data.sessionId, generation: entry.data.generation, branchId: entry.data.branchId };
+      candidates.set(`${binding.generation}\u0000${binding.branchId}`, binding);
+    }
+    const resumable: SessionBinding[] = [];
+    for (const binding of candidates.values()) {
+      const bootstrap = bootstrapFor(branchEntries, binding);
+      const state = bootstrap ? this.queueState(ctx, binding, bootstrap) : undefined;
+      if (state?.restartCandidate) resumable.push(binding);
+    }
+    return resumable.length === 1 ? resumable[0] : undefined;
+  }
+
   private currentIdentity(ctx: ExtensionContext): SchedulerIdentity {
     const binding = this.binding(ctx);
     return { binding, branchIds: entryIds(ctx.sessionManager.getBranch() as SessionEntry[]) };
@@ -330,12 +375,21 @@ export class PlasticMemoryCoordinator {
 
   private schedule(ctx: ExtensionContext): void {
     if (!this.enabled()) return;
+    const binding = this.binding(ctx);
+    const initialBranch = ctx.sessionManager.getBranch() as SessionEntry[];
+    const bootstrap = bootstrapFor(initialBranch, binding) ?? this.ensureBootstrap(ctx);
+    if (!bootstrap) return;
+    // Capture and prove the durable FIFO state before resolving a runtime or starting
+    // any asynchronous worker. Runtime absence and a busy observer therefore cannot lose a turn.
+    const capturedQueue = this.captureQueuedCycles(ctx, binding, bootstrap);
+    if (!capturedQueue) return;
+    const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
+    const queueState = this.queueState(ctx, binding, bootstrap);
+    if (!queueState) return;
     const runtime = this.runtimeFor();
     if (!runtime) return;
-    const binding = this.binding(ctx);
-    const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
-    const bootstrap = bootstrapFor(branchEntries, binding) ?? this.ensureBootstrap(ctx);
-    if (!bootstrap) return;
+    const visibleModel = usableVisibleModel(ctx);
+    const schedulerRuntime = visibleModel ? { ...runtime, visibleModel } : runtime;
     const cycles = cyclesFor(branchEntries, binding);
     const physicalBudget = physicalBudgetFor(ctx, branchEntries);
     const folded = foldLedger(branchEntries, { context: binding });
@@ -343,9 +397,10 @@ export class PlasticMemoryCoordinator {
     const input = {
       binding,
       branchEntries,
-      bootstrap: edgeBootstrap(bootstrap, cycles),
-      records: ctx.sessionManager.getEntries() as SessionEntry[],
-      runtime,
+      bootstrap,
+      queueState,
+      records: this.queueRecordsFor(binding, branchEntries),
+      runtime: schedulerRuntime,
       append: (record: { customType: string; data: unknown }) => this.appendWorkerRecord(ctx, record),
       currentIdentity: () => this.currentIdentity(ctx),
       lifecycleReporter: (event: SchedulerLifecycleEvent) => this.reportLifecycle(ctx, event),
@@ -662,9 +717,16 @@ export class PlasticMemoryCoordinator {
   private register(): void {
     this.pi.on("session_start", (_event, ctx) => {
       if (this.generation > 0) this.invalidate("session-start");
-      this.generation += 1;
-      this.branchId = `branch:${randomUUID()}`;
-      this.bootstrapAttempted = false;
+      const recovered = this.recoverQueueBinding(ctx);
+      if (recovered) {
+        this.generation = recovered.generation;
+        this.branchId = recovered.branchId;
+        this.bootstrapAttempted = true;
+      } else {
+        this.generation += 1;
+        this.branchId = `branch:${randomUUID()}`;
+        this.bootstrapAttempted = false;
+      }
       this.settled = false;
       this.ensureBootstrap(ctx);
     });
@@ -672,6 +734,7 @@ export class PlasticMemoryCoordinator {
     this.pi.on("turn_end", (_event, ctx) => { this.ensureBootstrap(ctx); this.schedule(ctx); });
     this.pi.on("agent_settled", (_event, ctx) => {
       this.settled = true;
+      this.schedule(ctx);
       this.maybeApply(ctx);
     });
     this.pi.on("session_before_compact", async (event, ctx) => {

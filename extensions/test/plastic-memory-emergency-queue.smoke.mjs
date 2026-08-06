@@ -19,10 +19,12 @@ function deferred() {
 
 const binding = { sessionId: ids.sessionDigest("emergency-queue-smoke", { generation: 1 }), generation: 1, branchId: "main" };
 const entries = [
-  { type: "message", id: "queue-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "preserve the bounded queue" }] }, tokenCount: 10 },
-  { type: "message", id: "queue-assistant", parentId: "queue-user", message: { role: "assistant", content: [{ type: "text", text: "completed bounded queue" }] }, tokenCount: 10 },
+  { type: "message", id: "queue-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "preserve the bounded queue" }] }, tokenCount: 10_000 },
+  { type: "message", id: "queue-assistant", parentId: "queue-user", message: { role: "assistant", content: [{ type: "text", text: "completed bounded queue" }] }, tokenCount: 10_000 },
 ];
 const bootstrap = { activeEntryIds: entries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" };
+const queuedRecord = cycles.createQueuedCycleRecords({ binding, sourceEntries: entries })[0];
+assert.ok(queuedRecord, "lease fixture starts from a qualifying durable queue record");
 const firstObserver = deferred();
 const firstObserverStarted = deferred();
 const rescheduled = deferred();
@@ -52,7 +54,7 @@ const runtime = {
   },
 };
 const scheduler = schedulerModule.createCycleScheduler();
-const input = { binding, branchEntries: entries, bootstrap, records: [], runtime, append: (entry) => appended.push(entry) };
+const input = { binding, branchEntries: entries, bootstrap, records: [queuedRecord], runtime, append: (entry) => appended.push(entry) };
 
 const active = scheduler.trigger(input);
 await firstObserverStarted.promise;

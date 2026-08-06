@@ -97,7 +97,7 @@ const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
   return { content: [{ type: "text", text: JSON.stringify({ reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
 });
 assert.ok(cycleRuntime);
-const ownerEntries = [{ ...entry("O1", undefined), tokenCount: 1 }, { ...entry("O2", "O1", "assistant"), tokenCount: 1 }];
+const ownerEntries = [{ ...entry("O1", undefined), tokenCount: 10_000 }, { ...entry("O2", "O1", "assistant"), tokenCount: 10_000 }];
 let customId = 0;
 const ownerHandlers = new Map();
 const ownerPi = {
@@ -136,7 +136,7 @@ assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.clos
 assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[0-9,]+-token snapshot$/u.test(message)), true);
 assert.equal(ownerNotices.every(({ message }) => !message.includes("cycle fact") && !message.includes("OC")), true);
 async function lifecycleProbe(mode) {
-  const entries = [{ ...entry(`${mode}-1`, undefined), tokenCount: 1 }, { ...entry(`${mode}-2`, `${mode}-1`, "assistant"), tokenCount: 1 }];
+  const entries = [{ ...entry(`${mode}-1`, undefined), tokenCount: 10_000 }, { ...entry(`${mode}-2`, `${mode}-1`, "assistant"), tokenCount: 10_000 }];
   const handlers = new Map();
   const notices = [];
   const pi = {
@@ -171,6 +171,169 @@ assert.equal(failedNotices.some(({ message, level }) => level === "warning" && m
 assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel]);
 assert.equal(cycleCalls.every((call) => call.options.cacheRetention === "none" && call.options.apiKey === "cycle-fake" && call.options.env.CYCLE_FAKE === "yes"), true);
 ownerCoordinator.shutdown("cycle-test");
+
+function completedTurn(entries, label, userTokens, assistantTokens) {
+  const user = { type: "message", id: `${label}-user`, parentId: entries.at(-1)?.id ?? null, message: { role: "user", content: [{ type: "text", text: `${label} goal` }] }, tokenCount: userTokens };
+  const assistant = { type: "message", id: `${label}-assistant`, parentId: user.id, message: { role: "assistant", content: [{ type: "text", text: `${label} answer` }], stopReason: "stop" }, tokenCount: assistantTokens };
+  entries.push(user, assistant);
+  return [user, assistant];
+}
+function queueHarness(entries, runtime, sessionId = "dddddddddddddddddddddddd") {
+  const state = { entries, nextCustom: entries.length, calls: [] };
+  const handlers = new Map();
+  const pi = {
+    on(type, handler) { handlers.set(type, handler); },
+    appendEntry(customType, data) {
+      state.entries.push({ type: "custom", id: `queue-custom-${++state.nextCustom}`, parentId: state.entries.at(-1)?.id ?? null, customType, data });
+    },
+  };
+  const ctx = {
+    sessionManager: {
+      getSessionId: () => sessionId,
+      getLeafId: () => state.entries.at(-1)?.id,
+      getEntries: () => state.entries,
+      getBranch: () => state.entries,
+      buildContextEntries: () => state.entries,
+    },
+    isIdle: () => true,
+    hasPendingMessages: () => false,
+    getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+    getSystemPrompt: () => "synthetic system prompt",
+    compact: () => {},
+    hasUI: false,
+  };
+  const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, { enabled: true, ...(runtime ? { runtime } : {}), now: () => 1_000 });
+  return {
+    state,
+    ctx,
+    coordinator,
+    async start() { await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx); },
+    turn() { handlers.get("turn_end")({ type: "turn_end" }, ctx); },
+  };
+}
+function queueRuntime(state, waitForFirstObserver) {
+  return {
+    modelRegistry: {
+      find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return cycleModel; },
+      async getProviderAuth() { return { apiKey: "in-process-only" }; },
+    },
+    async agentLoop(prompts, context) {
+      const request = JSON.parse(prompts[0].content[0].text);
+      state.calls.push({ role: context.role, sourceEntryIds: request.sourceEntryIds ?? [] });
+      if (context.role === "observer") {
+        if (waitForFirstObserver) await waitForFirstObserver();
+        return { observations: [{ content: "queued integration fact", timestamp: "2026-08-06", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+      }
+      return { reflections: [{ content: "queued integration reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] };
+    },
+  };
+}
+async function waitFor(check, message) {
+  for (let attempt = 0; attempt < 80 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(check(), true, message);
+}
+function queueEntries(state) { return state.entries.filter((item) => item.customType === "plastic.cycle.queued"); }
+
+// Terminal capture is synchronous and independent of a runtime: no undersized source can
+// start a worker, while exactly 20k and multiple crossed batches become persisted queue records.
+{
+  const underEntries = [];
+  completedTurn(underEntries, "under", 9_999, 10_000);
+  const underRuntimeState = { calls: [] };
+  const under = queueHarness(underEntries, queueRuntime(underRuntimeState));
+  await under.start();
+  under.turn();
+  assert.equal(queueEntries(under.state).length, 0, "19,999 tokens append no queue item");
+  assert.equal(under.state.entries.some((item) => item.customType === "plastic.cycle.attempted"), false, "19,999 tokens append no attempt");
+  assert.equal(under.state.entries.some((item) => item.customType === "plastic.cycle.closed"), false, "19,999 tokens append no close");
+  assert.equal(underRuntimeState.calls.length, 0, "19,999 tokens start no model work");
+
+  const exactEntries = [];
+  completedTurn(exactEntries, "exact", 10_000, 10_000);
+  const exact = queueHarness(exactEntries);
+  await exact.start();
+  exact.turn();
+  assert.equal(queueEntries(exact.state).length, 1, "20,000 tokens synchronously append one deterministic queue item");
+  assert.equal(queueEntries(exact.state)[0].data.estimatedTokenCount, 20_000);
+  assert.equal(exact.state.entries.some((item) => item.customType === "plastic.cycle.attempted"), false, "runtime absence captures without worker work");
+
+  const multiEntries = [];
+  completedTurn(multiEntries, "multi-a", 10_000, 10_000);
+  completedTurn(multiEntries, "multi-b", 10_000, 10_000);
+  const multi = queueHarness(multiEntries);
+  await multi.start();
+  multi.turn();
+  assert.deepEqual(queueEntries(multi.state).map((item) => item.data.estimatedTokenCount), [20_000, 20_000], "every newly crossed batch is synchronously persisted without a runtime");
+}
+
+// A runs from its immutable queued A manifest while later terminal B/C batches append,
+// then the durable wake-up drains the exact FIFO order without duplicate capture.
+{
+  const entries = [];
+  const a = completedTurn(entries, "A", 10_000, 10_000);
+  let releaseA;
+  const releasedA = new Promise((resolve) => { releaseA = resolve; });
+  let firstObserver;
+  const observedA = new Promise((resolve) => { firstObserver = resolve; });
+  let observerCount = 0;
+  const stateForRuntime = { calls: [] };
+  const runtime = queueRuntime(stateForRuntime, async () => {
+    observerCount += 1;
+    if (observerCount === 1) {
+      firstObserver();
+      await releasedA;
+    }
+  });
+  const harness = queueHarness(entries, runtime);
+  await harness.start();
+  harness.turn();
+  await observedA;
+  const b = completedTurn(harness.state.entries, "B", 10_000, 10_000);
+  harness.turn();
+  const c = completedTurn(harness.state.entries, "C", 10_000, 10_000);
+  harness.turn();
+  assert.deepEqual(queueEntries(harness.state).map((item) => item.data.sourceEntryIds), [a.map((item) => item.id), b.map((item) => item.id), c.map((item) => item.id)], "active A does not prevent B/C durable capture");
+  assert.equal(stateForRuntime.calls.filter((call) => call.role === "observer").length, 1, "A is the only observer before release");
+  releaseA();
+  await waitFor(() => harness.state.entries.filter((item) => item.customType === "plastic.cycle.closed").length === 3, "durable wake-up drains queued B then C");
+  assert.deepEqual(stateForRuntime.calls.filter((call) => call.role === "observer").map((call) => call.sourceEntryIds), [a.map((item) => item.id), b.map((item) => item.id), c.map((item) => item.id)], "worker inputs remain exact FIFO queue manifests");
+  assert.equal(queueEntries(harness.state).length, 3, "later turns do not duplicate durable capture");
+}
+
+// A fresh coordinator restores only the same valid unresolved queue lineage and starts its oldest ID.
+{
+  const entries = [];
+  const first = completedTurn(entries, "restart-a", 10_000, 10_000);
+  const second = completedTurn(entries, "restart-b", 10_000, 10_000);
+  const captured = queueHarness(entries, undefined, "eeeeeeeeeeeeeeeeeeeeeeee");
+  await captured.start();
+  captured.turn();
+  const persisted = queueEntries(captured.state);
+  assert.equal(persisted.length, 2);
+  const resumedRuntimeState = { calls: [] };
+  const resumed = queueHarness(captured.state.entries, queueRuntime(resumedRuntimeState), "eeeeeeeeeeeeeeeeeeeeeeee");
+  await resumed.start();
+  assert.deepEqual(resumed.coordinator.getBinding(resumed.ctx), { sessionId: persisted[0].data.sessionId, generation: persisted[0].data.generation, branchId: persisted[0].data.branchId }, "restart restores the stable queued binding rather than randomizing it");
+  resumed.turn();
+  await waitFor(() => resumed.state.entries.some((item) => item.customType === "plastic.cycle.closed"), "restart schedules the persisted oldest unresolved item");
+  assert.deepEqual(resumedRuntimeState.calls.find((call) => call.role === "observer")?.sourceEntryIds, first.map((item) => item.id));
+  assert.notDeepEqual(resumedRuntimeState.calls.find((call) => call.role === "observer")?.sourceEntryIds, second.map((item) => item.id));
+}
+
+// Malformed durable evidence blocks capture extension and all model/worker calls.
+{
+  const entries = [];
+  completedTurn(entries, "malformed", 10_000, 10_000);
+  entries.push({ type: "custom", id: "malformed-queue", parentId: entries.at(-1)?.id, customType: "plastic.cycle.queued", data: {} });
+  const runtimeState = { calls: [] };
+  const malformed = queueHarness(entries, queueRuntime(runtimeState), "ffffffffffffffffffffffff");
+  await malformed.start();
+  malformed.turn();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(queueEntries(malformed.state).length, 1, "malformed queue state cannot be extended");
+  assert.equal(malformed.state.entries.some((item) => item.customType === "plastic.cycle.attempted"), false, "malformed queue state starts no attempt");
+  assert.equal(runtimeState.calls.length, 0, "malformed queue state starts no model work");
+}
 
 // Registration is direct and provider-free: the coordinator only asks Pi for
 // public session/context/lifecycle callbacks and does not register a provider.

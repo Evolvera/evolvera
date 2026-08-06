@@ -1,7 +1,7 @@
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
-import { beginCycleAttempt, beginQueuedCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, partitionCompletedTurnSnapshot, reconstructCycleQueue, selectOldestUnresolvedQueuedCycle, snapshotFromQueuedCycle, type CompletedTurnSnapshot, type SnapshotChunk } from "../session/cycles.ts";
+import { beginQueuedCycleAttempt, closeCycle, finishCycleAttempt, partitionCompletedTurnSnapshot, reconstructCycleQueue, selectOldestUnresolvedQueuedCycle, snapshotFromQueuedCycle, type CompletedTurnSnapshot, type QueueReconstruction, type SnapshotChunk } from "../session/cycles.ts";
 import { makePlasticEntry, normalSourceEntries } from "../session/ledger.ts";
-import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, PLASTIC_CYCLE_QUEUED, PLASTIC_OBSERVATIONS_RECORDED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
+import { PLASTIC_OBSERVATIONS_RECORDED, type BootstrapData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import { observerRequestFits, runObserver, type ObserverResult } from "./observer.ts";
 import { runReflector, type ReflectorResult } from "./reflector.ts";
 import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
@@ -23,6 +23,8 @@ export type SchedulerInput = Readonly<{
   binding: SessionBinding;
   branchEntries: SessionEntry[];
   bootstrap: BootstrapData | { activeEntryIds: string[]; historicalPrefixIds: string[]; historicalGap: "historical-unindexed" };
+  /** Coordinator-proven current queue state; scheduler independently revalidates it below. */
+  queueState?: QueueReconstruction;
   records?: SessionEntry[];
   explicitRetry?: boolean;
   runtime: RunnerRuntime;
@@ -71,10 +73,6 @@ function samePrefix(expected: readonly string[], actual: readonly string[]): boo
   return actual.length >= expected.length && expected.every((id, index) => actual[index] === id);
 }
 function entryIds(entries: readonly SessionEntry[]): string[] { return entries.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []); }
-function cycleData(value: unknown): CycleClosedData | undefined {
-  if (!isPlasticRecord(value) || value.customType !== PLASTIC_CYCLE_CLOSED) return undefined;
-  return value.data;
-}
 function serializer(entries: SessionEntry[]): string {
   return entries.map((entry) => JSON.stringify({ id: entry.id, parentId: entry.parentId ?? null, type: entry.type, message: entry.message, content: entry.content, tokenCount: entry.tokenCount })).join("\n");
 }
@@ -95,32 +93,37 @@ function report(input: SchedulerInput, event: Omit<SchedulerLifecycleEvent, "rea
 }
 
 type QueueLookup =
-  | Readonly<{ kind: "legacy" }>
   | Readonly<{ kind: "idle"; reason?: string }>
   | Readonly<{ kind: "invalid"; reason: string }>
-  | Readonly<{ kind: "ready"; selection: QueueSelection }>;
+  | Readonly<{ kind: "ready"; selection: QueueSelection; unresolvedCount: number }>;
 
-/** Re-read durable queue state, but never carry source payload through a wake-up callback. */
+function sameQueueLineage(left: QueueReconstruction, right: QueueReconstruction): boolean {
+  return left.valid === right.valid
+    && left.queued.length === right.queued.length
+    && left.queued.every((record, index) => record.data.cycleId === right.queued[index]?.data.cycleId
+      && record.data.snapshotId === right.queued[index]?.data.snapshotId);
+}
+
+/** Re-read durable queue state; queued records are the sole worker input source. */
 function queuedLookup(input: SchedulerInput, source: SessionEntry[], records: SessionEntry[]): QueueLookup {
-  const durableRecords = mergeRecords(records, input.branchEntries);
-  const hasQueue = durableRecords.some((entry) => entry.type === "custom" && entry.customType === PLASTIC_CYCLE_QUEUED);
-  if (!hasQueue) return { kind: "legacy" };
   const state = reconstructCycleQueue({
     binding: input.binding,
     branchEntries: input.branchEntries,
     leafId: input.leafId,
     sourceEntries: source,
-    records: durableRecords,
+    records,
   });
-  if (!state.valid) return { kind: "invalid", reason: state.reason ?? "invalid durable queue state" };
+  if (!state.valid || input.queueState !== undefined && !sameQueueLineage(input.queueState, state)) {
+    return { kind: "invalid", reason: state.reason ?? "invalid durable queue state" };
+  }
   const record = selectOldestUnresolvedQueuedCycle(state);
-  if (!record) return { kind: "idle" };
+  if (!record) return { kind: "idle", reason: "no unresolved queued cycle" };
   const snapshot = snapshotFromQueuedCycle(record);
   if (!snapshot) return { kind: "invalid", reason: "queued record is below the durable token invariant" };
   const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
   const exactSource = snapshot.span.sourceEntryIds.map((id) => byId.get(id));
   if (exactSource.some((entry) => entry === undefined)) return { kind: "invalid", reason: "queued source manifest is unavailable" };
-  return { kind: "ready", selection: { record, snapshot, source: exactSource as SessionEntry[] } };
+  return { kind: "ready", selection: { record, snapshot, source: exactSource as SessionEntry[] }, unresolvedCount: state.unresolved.length };
 }
 
 /** One edge-triggered, generation-safe worker pipeline. */
@@ -136,21 +139,12 @@ export class CycleScheduler {
   private readonly compactorResults: Promise<CompactorResult>[] = [];
 
   trigger(input: SchedulerInput): Promise<SchedulerResult> {
-    const bootstrap = input.bootstrap;
-    const source = normalSourceEntries(input.branchEntries, bootstrap as BootstrapData);
-    // `normalSourceEntries` already bounds the sources to the active window plus the
-    // post-anchor descendants and returns [] on any inconsistency, so the stale bootstrap
-    // window must not be re-applied as a snapshot allow-set: on resume the new turn is a
-    // descendant and is legitimately outside it.
-    const capturedSource = source.map((entry) => entry);
-    const durableRecords = this.records(input);
-    const queue = queuedLookup(input, capturedSource, durableRecords);
+    const source = normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData);
+    const queue = queuedLookup(input, source, this.records(input));
     if (queue.kind === "invalid") return Promise.resolve({ status: "skipped", reason: safeReason(queue.reason) });
-    const queued = queue.kind === "ready" ? queue.selection : undefined;
-    const preview = queued?.snapshot ?? (capturedSource.length > 0
-      ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: capturedSource })
-      : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] }));
-    if (queue.kind === "idle") return Promise.resolve({ status: "skipped", snapshot: preview, reason: "no unresolved queued cycle" });
+    if (queue.kind === "idle") return Promise.resolve({ status: "skipped", reason: queue.reason });
+    const { selection, unresolvedCount } = queue;
+    const preview = selection.snapshot;
     if (this.exclusiveLease) {
       // Keep only the newest caller-owned reschedule path. A trigger without a
       // callback cannot revoke a previously deferred caller's opportunity.
@@ -160,16 +154,24 @@ export class CycleScheduler {
     }
     const active = this.activeJob;
     if (active) {
+      if (unresolvedCount > 1) {
+        this.rescheduleQueued = true;
+        if (input.reschedule) this.rescheduleCallback = input.reschedule;
+      }
       if (active.snapshotId === preview.snapshotId) return active.promise;
       this.rescheduleQueued = true;
-      this.rescheduleCallback = input.reschedule;
+      if (input.reschedule) this.rescheduleCallback = input.reschedule;
       return Promise.resolve({ status: "skipped", snapshot: preview, reason: "snapshot queued behind active cycle" });
     }
     if (this.terminalSnapshots.has(preview.snapshotId)) return Promise.resolve({ status: "skipped", snapshot: preview, reason: "snapshot already closed" });
+    if (unresolvedCount > 1) {
+      this.rescheduleQueued = true;
+      if (input.reschedule) this.rescheduleCallback = input.reschedule;
+    }
     const controller = new AbortController();
     this.controllers.add(controller);
     const job: Job = { controller, epoch: this.epoch, snapshotId: preview.snapshotId, promise: Promise.resolve({ status: "skipped" as const }) };
-    job.promise = this.run(input, preview, controller, queued?.source ?? capturedSource, queue.kind === "ready").finally(() => {
+    job.promise = this.run(input, preview, controller, selection.source).finally(() => {
       if (this.activeJob !== job) return;
       this.activeJob = undefined;
       this.controllers.delete(controller);
@@ -246,13 +248,9 @@ export class CycleScheduler {
     if (failed) this.append(input, failed);
     return { status: outcome === "stale" ? "stale" : "failed", snapshot, attempt: failed ?? attempt, reason };
   }
-  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController, source: SessionEntry[], queued = false): Promise<SchedulerResult> {
+  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController, source: SessionEntry[]): Promise<SchedulerResult> {
     const captured: SchedulerIdentity = { binding: { ...input.binding }, branchIds: entryIds(input.branchEntries) };
     const epoch = this.epoch;
-    if (snapshot.status === "empty-valid" && source.length > 0 && snapshot.span.sourceEntryIds.length === 0) {
-      report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
-      return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
-    }
     const observerInputFor = (chunk: SnapshotChunk, model?: ModelTarget) => ({
       binding: input.binding,
       snapshot,
@@ -267,9 +265,7 @@ export class CycleScheduler {
       report(input, { phase: "observer", status: "skipped", reason: partition.reason });
       return { status: "skipped", snapshot, reason: partition.reason };
     }
-    const selected = queued
-      ? beginQueuedCycleAttempt(snapshot, this.records(input))
-      : beginCycleAttempt(snapshot, this.records(input), { explicitRetry: input.explicitRetry === true });
+    const selected = beginQueuedCycleAttempt(snapshot, this.records(input));
     if (!selected.allowed) {
       if (selected.record && selected.reason !== "pending") this.append(input, selected.record);
       return { status: selected.reason === "automatic-retry-exhausted" ? "suppressed" : "skipped", snapshot, attempt: selected.record, reason: selected.reason };
@@ -277,24 +273,12 @@ export class CycleScheduler {
     let attempt = selected.record;
     if (!attempt) return { status: "failed", snapshot, reason: "cycle attempt did not produce an identity" };
     if (selected.reason !== "pending") this.append(input, attempt);
-    const workingRecords = this.records(input);
-    if (snapshot.status === "empty-valid") {
-      const closed = closeCycle(snapshot, attempt, { outcome: "empty-valid", sourceEntryIds: [], sourceStartId: "", sourceEndId: "", sourceDigest: snapshot.span.sourceDigest, completedTurnEndId: "" }, workingRecords);
-      if (!closed) return this.failAttempt(input, snapshot, attempt, "failed", workingRecords, captured, controller, epoch, "empty snapshot did not close deterministically");
-      if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-      this.append(input, closed);
-      this.terminalSnapshots.add(snapshot.snapshotId);
-      return { status: "empty-valid", snapshot, attempt, cycle: closed };
-    }
-
-    // Keep the captured source and chunk list immutable across retries. A later branch
-    // cannot replace an input that the first attempt already observed.
+    // Keep the queued source manifest and chunk list immutable across retries. A later
+    // branch cannot replace an input that the durable FIFO record already selected.
     const chunks = partition.chunks;
     let observations: ObserverResult["observations"] = [];
     let observer: ObserverResult | undefined;
-    const modelTargets: (ModelTarget | undefined)[] = queued
-      ? buildModelTargets(input.runtime.visibleModel ?? input.runtime.model)
-      : [undefined, undefined];
+    const modelTargets: (ModelTarget | undefined)[] = buildModelTargets(input.runtime.visibleModel ?? input.runtime.model);
     for (let observerAttempt = 0; observerAttempt < modelTargets.length; observerAttempt += 1) {
       const model = modelTargets[observerAttempt];
       report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
@@ -313,15 +297,7 @@ export class CycleScheduler {
       }
       report(input, { phase: "observer", status: "failed", reason: failure.reason ?? "observer did not return semantic observations" });
       if (failure.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-      if (!queued) {
-        const failed = finishCycleAttempt(snapshot, attempt, "failed", "observer");
-        if (failed) this.append(input, failed);
-        if (observerAttempt === modelTargets.length - 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: failure.reason ?? "observer did not return semantic observations" };
-        const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "observer" });
-        if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
-        attempt = retry.record;
-        this.append(input, attempt);
-      } else if (observerAttempt === modelTargets.length - 1) {
+      if (observerAttempt === modelTargets.length - 1) {
         const failed = finishCycleAttempt(snapshot, attempt, "failed", "observer");
         if (failed) this.append(input, failed);
         return { status: "failed", snapshot, attempt: failed ?? attempt, reason: failure.reason ?? "observer did not return semantic observations" };
@@ -339,15 +315,7 @@ export class CycleScheduler {
       if (result.ok && result.manifestValid) { reflector = result; break; }
       report(input, { phase: "reflector", status: "failed", reason: result.reason ?? "reflector did not return semantic reflections" });
       if (result.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
-      if (!queued) {
-        const failed = finishCycleAttempt(snapshot, attempt, "failed", "reflector");
-        if (failed) this.append(input, failed);
-        if (reflectorAttempt === modelTargets.length - 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: result.reason ?? "reflector did not return semantic reflections" };
-        const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "reflector" });
-        if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
-        attempt = retry.record;
-        this.append(input, attempt);
-      } else if (reflectorAttempt === modelTargets.length - 1) {
+      if (reflectorAttempt === modelTargets.length - 1) {
         const failed = finishCycleAttempt(snapshot, attempt, "failed", "reflector");
         if (failed) this.append(input, failed);
         return { status: "failed", snapshot, attempt: failed ?? attempt, reason: result.reason ?? "reflector did not return semantic reflections" };
@@ -369,11 +337,11 @@ export class CycleScheduler {
     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
     this.append(input, closed);
     this.terminalSnapshots.add(snapshot.snapshotId);
-    const compactorJob = this.startCompactor(input, closed, captured, controller, epoch, queued);
+    const compactorJob = this.startCompactor(input, closed, captured, controller, epoch);
     return { status: observations.length === 0 ? "empty-valid" : "closed", snapshot, attempt, cycle: closed, ...(compactorJob ? { compactorJob } : {}) };
   }
 
-  private startCompactor(input: SchedulerInput, closed: PlasticEntry<"plastic.cycle.closed">, captured: SchedulerIdentity, controller: AbortController, epoch: number, queued = false): Promise<CompactorResult> | undefined {
+  private startCompactor(input: SchedulerInput, closed: PlasticEntry<"plastic.cycle.closed">, captured: SchedulerIdentity, controller: AbortController, epoch: number): Promise<CompactorResult> | undefined {
     const config = input.compaction;
     if (!config) return undefined;
     const cycles = [...config.cycles, closed.data];
@@ -393,9 +361,7 @@ export class CycleScheduler {
       signal: controller.signal,
       isCurrent: () => this.current(input, captured, { span: closed.data } as unknown as CompletedTurnSnapshot, controller, epoch),
     };
-    const targets: (ModelTarget | undefined)[] = queued
-      ? buildModelTargets(input.runtime.visibleModel ?? input.runtime.model)
-      : [undefined];
+    const targets: (ModelTarget | undefined)[] = buildModelTargets(input.runtime.visibleModel ?? input.runtime.model);
     const job = (async (): Promise<CompactorResult> => {
       let result: CompactorResult = { ok: false, detached: true, reason: "compactor did not prepare compaction" };
       for (const model of targets) {

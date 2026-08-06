@@ -7,7 +7,7 @@ const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-wor
 const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
-const ledger = await jiti.import(path.join(root, "plastic-memory/session/ledger.ts"));
+const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const recall = await jiti.import(path.join(root, "plastic-memory/session/recall.ts"));
 const types = await jiti.import(path.join(root, "plastic-memory/session/types.ts"));
 
@@ -22,7 +22,7 @@ const models = new Map([
 ]);
 
 function appendMessage(entries, message) {
-  const entry = { type: "message", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
+  const entry = { type: "message", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 10_000 };
   entries.push(entry);
   return entry;
 }
@@ -37,23 +37,6 @@ function sourceFixture() {
     spans.push({ user, assistant, entries: [user, tool, result, assistant] });
   }
   return { entries, spans };
-}
-function closedCycle(binding, span, number) {
-  return {
-    schemaVersion: 1,
-    ...binding,
-    cycleId: `cycle-${number}`,
-    attemptId: `attempt-${number}`,
-    snapshotId: `snapshot-${number}`,
-    status: "complete",
-    sourceStartId: span.user.id,
-    sourceEndId: span.assistant.id,
-    completedTurnEndId: span.assistant.id,
-    sourceEntryIds: span.entries.map((entry) => entry.id),
-    sourceDigest: ledger.sourceDigest(span.entries),
-    observationIds: [],
-    reflectionIds: [],
-  };
 }
 function contextEntries(branch) {
   const compaction = [...branch].reverse().find((entry) => entry.type === "compaction");
@@ -120,7 +103,32 @@ async function world(mode = "success", cycleCount = 4) {
   const coordinator = new coordinatorModule.PlasticMemoryCoordinator(pi, { enabled: true, runtime, runtimeToken: "emergency-hook", projectSnapshot, now: () => 1_000 });
   await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
   const binding = coordinator.getBinding(ctx);
-  spans.slice(0, cycleCount).forEach((span, index) => pi.appendEntry(types.PLASTIC_CYCLE_CLOSED, closedCycle(binding, span, index + 1)));
+  for (const span of spans.slice(0, cycleCount)) {
+    const queued = cycles.createQueuedCycleRecords({ binding, sourceEntries: span.entries })[0];
+    assert.ok(queued, "emergency closed-cycle fixture begins with one qualifying durable queue record");
+    const snapshot = cycles.snapshotFromQueuedCycle(queued);
+    assert.ok(snapshot);
+    const attempt = cycles.beginQueuedCycleAttempt(snapshot, [queued]);
+    assert.ok(attempt.allowed && attempt.record);
+    const closed = cycles.closeCycle(snapshot, attempt.record, {
+      outcome: "complete",
+      sourceEntryIds: snapshot.span.sourceEntryIds,
+      sourceStartId: snapshot.span.sourceStartId,
+      sourceEndId: snapshot.span.sourceEndId,
+      sourceDigest: snapshot.span.sourceDigest,
+      completedTurnEndId: snapshot.span.completedTurnEndId,
+      observationIds: [],
+      reflectionIds: [],
+    }, [queued, attempt.record]);
+    assert.ok(closed, "queue-backed fixture closes only from its exact persisted attempt");
+    pi.appendEntry(types.PLASTIC_CYCLE_QUEUED, queued.data);
+    pi.appendEntry(types.PLASTIC_CYCLE_ATTEMPTED, attempt.record.data);
+    pi.appendEntry(types.PLASTIC_CYCLE_CLOSED, closed.data);
+  }
+  if (mode === "queue") {
+    appendMessage(state.branch, { role: "user", content: [{ type: "text", text: "queued normal observer goal" }] });
+    appendMessage(state.branch, { role: "assistant", content: [{ type: "text", text: "queued normal observer answer" }], stopReason: "stop" });
+  }
   const beforeCompact = async (reason = "manual") => await handlers.get("session_before_compact")({
     type: "session_before_compact",
     branchEntries: state.branch,
@@ -148,7 +156,7 @@ async function world(mode = "success", cycleCount = 4) {
 // The lease waits for an already-running normal observer to settle before the
 // emergency snapshot/model work begins; the observer's abort is not treated as ownership.
 {
-  const w = await world("queue", 0);
+  const w = await world("queue");
   w.handlers.get("turn_end")({ type: "turn_end" }, w.ctx);
   for (let attempt = 0; attempt < 20 && w.state.traces.length === 0; attempt += 1) await Promise.resolve();
   assert.equal(w.state.traces[0]?.role, "observer", "normal observer started before the emergency hook");
