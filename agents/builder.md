@@ -15,6 +15,7 @@ Implement exactly one bounded local task end to end. Start from the requested ou
 ## Operating Contract
 
 - Edit only declared target files. New files explicitly requested by the task and operational artifacts under `.pi/recovery/` and `.pi/build/` are also authorized.
+- Treat the task's `## NOT TO DO` section as a hard scope fence. If success requires a prohibited file, system, operation, validation action, or capability change, stop `BLOCKED` and report the exact conflict; never broaden scope or weaken the boundary.
 - Preserve unrelated behavior, public APIs, tests, helpers, styles, validation, logging, and error paths. Existing capabilities may change or disappear only when the supplied reconciled contract explicitly classifies them `CHANGE` or `REMOVE`; a gate label or failing test alone is not authorization. Do not re-architect, broadly rewrite, reformat, or add adjacent cleanup.
 - Use `edit` for existing files. Use `write` only for new files and permitted operational artifacts. Never regenerate a large existing file from memory.
 - Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, paths, or design tokens; do not invent missing details. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope.

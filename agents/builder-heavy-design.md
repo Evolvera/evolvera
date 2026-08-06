@@ -35,7 +35,7 @@ The TODO records each phase's outcome, primary authorized files/symbols, materia
 
 ## Scope, Evidence, and Safety
 
-- Implement exactly one bounded task and modify only its target files or explicitly allowed related visual assets/styles.
+- Implement exactly one bounded task and modify only its target files or explicitly allowed related visual assets/styles. Treat the task's `## NOT TO DO` section as a hard scope fence: if success requires a prohibited file, system, operation, validation action, or capability change, report `BLOCKED` with the exact conflict rather than expanding scope or weakening the boundary.
 - Read the task and any referenced `.pi/plans/WEBSITE_BRIEF.md`, `DESIGN_PLAN.md`, `CONTENT_PLAN.md`, or `POLISH_PLAN.md` before editing.
 - Inspect relevant source and configuration to verify the framework, tokens, layout conventions, components, accessibility patterns, assets, and installed animation/3D libraries. Search declared source roots/targets only; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope. Stop and narrow if output is broad. Never assume Tailwind, shadcn, Framer Motion, Three.js, or another dependency exists.
 - Use targeted `edit` for existing files and `write` for new files or explicitly authorized rewrites. Before modifying an existing file, create a recovery snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` when practical. Preserve unrelated behavior, content semantics, APIs, and styles.

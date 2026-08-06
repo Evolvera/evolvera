@@ -143,6 +143,9 @@ TARGET FILES
 - path/to/file.ts — MODIFY: [what to change]
 - path/to/file.test.ts — MODIFY/CREATE: [test expectation]
 
+NOT TO DO
+- [Concrete prohibited files/systems/operations, preserved capabilities, unsafe validation/actions, and exact `BLOCKED` boundary from the reconciled contract. Do not substitute generic boilerplate.]
+
 CONSTRAINTS
 - Follow existing patterns in [file/dir]
 - Preserve existing code/behavior except capabilities explicitly classified CHANGE or REMOVE in the reconciled contract
@@ -156,6 +159,7 @@ CONSTRAINTS
 - Add/update comments or docs only for non-obvious invariants, tricky logic, failure behavior, or operational usage
 - For behavior changes, prefer a failing/targeted test first or identify the existing test that covers the behavior
 - Do not touch files outside TARGET FILES unless blocked and reported
+- Treat every `NOT TO DO` item as a hard boundary; if success requires violating one, stop `BLOCKED` and report the exact conflict rather than expanding scope
 
 VALIDATION
 Run:

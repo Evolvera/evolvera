@@ -189,6 +189,9 @@ Use this compact contract:
 ## Constraints
 - Preserve / do not touch / verify before use / task-specific safety rule
 
+## NOT TO DO
+- Concrete prohibited files/systems/operations, preserved capabilities, unsafe validation/actions, and the exact `BLOCKED` boundary; derive these limits from the reconciled contract, not generic boilerplate
+
 ## Validation
 - `command or focused check` — expected signal
 
@@ -200,7 +203,7 @@ Use this compact contract:
 - Commit scope: exact owned files
 ```
 
-`Read`, `Constraints`, and `Stop If` are conditional; omit unused sections rather than writing `N/A`. `Proof` is required for writing tasks and stays proportional; omit it for review-only validators. A triggered Wide-Task Receipt belongs inside `Proof`, not in a new task section. Add at most one execution-critical section: `Contract`, `Visual Acceptance`, `Evidence Deliverable`, `Migration Sequence`, or `Patch Anchors`.
+`Read`, `Constraints`, and `Stop If` are conditional; omit unused sections rather than writing `N/A`. `NOT TO DO` is required for builder tasks and must state concrete boundaries; if no material prohibition is needed, state why the reconciled contract establishes none rather than writing generic text. `Proof` is required for writing tasks and stays proportional; omit it for review-only validators. A triggered Wide-Task Receipt belongs inside `Proof`, not in a new task section. Add at most one execution-critical section: `Contract`, `Visual Acceptance`, `Evidence Deliverable`, `Migration Sequence`, or `Patch Anchors`.
 
 Each implementation brief must name exact target paths and bounded outcomes, preserve public behavior and unrelated code by default, forbid out-of-scope/repo-wide formatting or codemods, and provide concrete validation. For shared/large existing files, include exact patch boundaries and preservation markers. A validator brief uses the same compact core, but `Change` states that it reviews the named changed surface without production edits; `Read`, `Acceptance`, and `Validation` define the exact checkpoint scope, risk-specific barriers, commands, diagnostics, and `PASS | BLOCKED` verdict. Unknown paths, symbols, schemas, layouts, markers, or commands are `TO VERIFY` gates. Do not include lifecycle templates, generic engineering prose, repeated plan context, or recovery boilerplate beyond the checkpoint contract.
 
