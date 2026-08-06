@@ -38,8 +38,8 @@ assert.equal(bootstrap.record.data.historicalGap, "historical-unindexed");
 
 const bootstrapData = bootstrap.record.data;
 const bootstrapEntry = append({ type: "custom", customType: bootstrap.record.customType, data: bootstrapData });
-const user = append({ type: "message", message: { role: "user", content: [{ type: "text", text: "first turn of a brand-new session" }] }, tokenCount: 40 });
-const assistant = append({ type: "message", message: { role: "assistant", stopReason: "endTurn", content: [{ type: "text", text: "terminal answer" }] }, tokenCount: 60 });
+const user = append({ type: "message", message: { role: "user", content: [{ type: "text", text: "first turn of a brand-new session" }] }, tokenCount: 10_000 });
+const assistant = append({ type: "message", message: { role: "assistant", stopReason: "endTurn", content: [{ type: "text", text: "terminal answer" }] }, tokenCount: 10_000 });
 
 // The fresh-session bootstrap is anchored by its own record: sources are exactly the
 // entries appended after it, never anything that precedes the anchor.
@@ -70,8 +70,8 @@ assert.deepEqual(ledger.normalSourceEntries(branch, { ...bootstrapData, historic
 // must not re-apply the stale window as a snapshot allow-set.
 const resumedBootstrapData = { ...bootstrapData, activeEntryIds: [user.id, assistant.id], activeStartId: user.id, activeEndId: assistant.id, activeDigest: ledger.digestActiveWindow([user, assistant]) };
 const resumedRecord = append({ type: "custom", customType: bootstrap.record.customType, data: resumedBootstrapData });
-const resumedUser = append({ type: "message", message: { role: "user", content: [{ type: "text", text: "second session, first new turn" }] }, tokenCount: 40 });
-const resumedAssistant = append({ type: "message", message: { role: "assistant", stopReason: "endTurn", content: [{ type: "text", text: "new terminal answer" }] }, tokenCount: 60 });
+const resumedUser = append({ type: "message", message: { role: "user", content: [{ type: "text", text: "second session, first new turn" }] }, tokenCount: 10_000 });
+const resumedAssistant = append({ type: "message", message: { role: "assistant", stopReason: "endTurn", content: [{ type: "text", text: "new terminal answer" }] }, tokenCount: 10_000 });
 
 const resumedSources = ledger.normalSourceEntries(branch, resumedBootstrapData);
 assert.deepEqual(resumedSources.map((entry) => entry.id), [user.id, assistant.id, resumedUser.id, resumedAssistant.id],
@@ -94,10 +94,12 @@ const offlineRuntime = {
   async agentLoop() { throw new Error("offline smoke runtime never calls a model"); },
 };
 const scheduler = schedulerModule.createCycleScheduler();
-const scheduled = await scheduler.trigger({ binding, branchEntries: branch, bootstrap: resumedBootstrapData, records: [], runtime: offlineRuntime, append: (entry) => appended.push(entry) });
+const resumedQueue = cycles.createQueuedCycleRecords({ binding, sourceEntries: resumedSources.slice(2) });
+assert.equal(resumedQueue.length, 1, "the resumed qualifying turn is queued before worker execution");
+const scheduled = await scheduler.trigger({ binding, branchEntries: branch, bootstrap: resumedBootstrapData, records: resumedQueue, runtime: offlineRuntime, append: (entry) => appended.push(entry) });
 assert.equal(scheduled.status, "failed", "an offline worker fails closed rather than throwing");
 assert.equal(scheduled.snapshot.status, "ready");
-assert.deepEqual(scheduled.snapshot.span.sourceEntryIds, resumedSnapshot.span.sourceEntryIds);
+assert.deepEqual(scheduled.snapshot.span.sourceEntryIds, resumedQueue[0].data.sourceEntryIds, "queued resume uses the exact new-turn manifest");
 assert.equal(appended.some((entry) => entry.customType === "plastic.cycle.attempted"), true, "the resumed turn produces a cycle attempt");
 scheduler.shutdown();
 

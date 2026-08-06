@@ -8,6 +8,7 @@ const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_m
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 const ledger = await jiti.import(path.join(root, "plastic-memory/session/ledger.ts"));
+const cyclesModule = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const engine = await jiti.import(path.join(root, "plastic-memory/compaction/engine.ts"));
 const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
@@ -21,7 +22,10 @@ function stubRuntime(options = {}) {
   const prompts = { observer: [], reflector: [], compactor: [] };
   const runtime = {
     modelRegistry: {
-      find: () => model,
+      find(provider, id) {
+        if (provider === model.provider && id === model.id) return model;
+        return { provider, id, contextWindow: 200_000, maxTokens: 16_000 };
+      },
       async getProviderAuth() { return { apiKey: "offline-only" }; },
     },
     async agentLoop(promptMessages, context) {
@@ -59,7 +63,7 @@ function branchFixture(binding, closedTurns, includeHostPrefix = false) {
     entries.push(hostBootstrap);
   }
   const append = (message) => {
-    const entry = { type: "message", id: `e${++next}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
+    const entry = { type: "message", id: `e${++next}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 10_000 };
     entries.push(entry);
     return entry;
   };
@@ -100,6 +104,8 @@ async function runStride(closedTurns, options = {}) {
   const { entries, cycles, openTurn } = branchFixture(binding, closedTurns, options.hostPrefix === true);
   const sourceIds = entries.filter((entry) => entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary").map((entry) => entry.id);
   const stub = stubRuntime(options);
+  const queued = cyclesModule.createQueuedCycleRecords({ binding, sourceEntries: openTurn.ids.map((id) => entries.find((entry) => entry.id === id)) });
+  assert.equal(queued.length, 1, "stride worker receives one qualifying queued resumed turn");
   const physicalBudget = typeof options.physicalBudgetForEntries === "function"
     ? options.physicalBudgetForEntries(entries)
     : options.preClosePhysicalBudget
@@ -116,7 +122,7 @@ async function runStride(closedTurns, options = {}) {
       historicalPrefixIds: sourceIds.filter((id) => !openTurn.ids.includes(id)),
       historicalGap: "historical-unindexed",
     },
-    records: [],
+    records: queued,
     runtime: stub.runtime,
     append() {},
     lifecycleReporter: (event) => lifecycle.push(event),
@@ -210,7 +216,7 @@ async function runStride(closedTurns, options = {}) {
 {
   const run = await runStride(5, { compactorMode: "unstructured" });
   assert.equal(run.compacted.ok, false);
-  assert.equal(run.stub.count("compactor"), 1);
+  assert.equal(run.stub.count("compactor"), 3, "queued compactor exhausts Luna retry and Sonnet candidates");
   const events = run.lifecycle.filter((event) => event.phase === "compactor");
   assert.equal(events.length, 1);
   assert.equal(events[0].status, "failed");

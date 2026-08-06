@@ -86,6 +86,33 @@ export type AttemptDecision = {
   reason?: "already-closed" | "pending" | "automatic-retry-exhausted" | "unchanged-failed-snapshot" | "oversized";
   record?: PlasticEntry<"plastic.cycle.attempted">;
 };
+
+/** Rehydrate an exact queued source manifest without consulting live session content. */
+export function snapshotFromQueuedCycle(record: PlasticEntry<"plastic.cycle.queued">): CompletedTurnSnapshot | undefined {
+  if (!isPlasticRecord(record) || record.customType !== PLASTIC_CYCLE_QUEUED) return undefined;
+  if (!Number.isSafeInteger(record.data.estimatedTokenCount) || record.data.estimatedTokenCount < QUEUED_CYCLE_MIN_TOKENS
+    || !isSourceSpan(record.data) || record.data.sourceEntryIds.length === 0) return undefined;
+  return {
+    snapshotId: record.data.snapshotId,
+    cycleId: record.data.cycleId,
+    binding: {
+      sessionId: record.data.sessionId,
+      generation: record.data.generation,
+      branchId: record.data.branchId,
+    },
+    span: {
+      sourceStartId: record.data.sourceStartId,
+      sourceEndId: record.data.sourceEndId,
+      sourceEntryIds: [...record.data.sourceEntryIds],
+      sourceDigest: record.data.sourceDigest,
+      completedTurnEndId: record.data.completedTurnEndId,
+    },
+    tokenCount: record.data.estimatedTokenCount,
+    status: "ready",
+  };
+}
+
+export const queuedCycleSnapshot = snapshotFromQueuedCycle;
 export type AttemptOutcome = CycleAttemptedData["outcome"];
 export type CycleOutcome = {
   outcome: "complete" | "empty-valid" | "partial" | "oversized" | "failed" | "stale";
@@ -457,7 +484,9 @@ function malformedQueueType(entry: SessionEntry): boolean {
 }
 function queueRecordMatchesSource(record: PlasticEntry<"plastic.cycle.queued">, sources: SessionEntry[]): boolean {
   const data = record.data;
-  if (data.sourceEntryIds.length === 0 || data.sourceStartId !== data.sourceEntryIds[0]
+  if (data.sourceEntryIds.length === 0 || !Number.isSafeInteger(data.estimatedTokenCount)
+    || data.estimatedTokenCount < QUEUED_CYCLE_MIN_TOKENS
+    || data.sourceStartId !== data.sourceEntryIds[0]
     || data.sourceEndId !== data.sourceEntryIds.at(-1) || data.completedTurnEndId !== data.sourceEndId) return false;
   const byId = new Map(sources.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
   const positions = data.sourceEntryIds.map((id) => sources.findIndex((entry) => entry.id === id));
@@ -568,7 +597,7 @@ export const selectOldestUnresolvedQueuedCycle = (state: QueueReconstruction): P
 export function beginCycleAttempt(
   snapshot: CompletedTurnSnapshot,
   records: SessionEntry[] = [],
-  options: { phase?: CycleAttemptedData["phase"]; explicitRetry?: boolean } = {},
+  options: { phase?: CycleAttemptedData["phase"]; explicitRetry?: boolean; queued?: boolean } = {},
 ): AttemptDecision {
   if (snapshot.status === "oversized") return { allowed: false, reason: "oversized" };
   const attempts = attemptsFor(snapshot, records);
@@ -581,7 +610,9 @@ export function beginCycleAttempt(
   }
   const failures = attempts.filter((attempt) => attempt.outcome === "failed" || attempt.outcome === "partial" || attempt.outcome === "stale");
   const attemptCount = attempts.reduce((max, attempt) => Math.max(max, attempt.attemptCount), -1) + 1;
-  if (failures.length >= 2 && !options.explicitRetry) {
+  // Durable queued work is deliberately retryable across later scheduler triggers. The
+  // legacy aggregate path retains its historical two-failure suppression until cutover.
+  if (failures.length >= 2 && !options.explicitRetry && !options.queued) {
     const suppressed = recordForSnapshot(snapshot, "suppressed", attemptCount, makeAttemptId(snapshot.binding.sessionId, snapshot.snapshotId, attemptCount), options.phase ?? "observer", "automatic-retry-exhausted");
     return { allowed: false, reason: "automatic-retry-exhausted", record: suppressed };
   }
@@ -590,6 +621,8 @@ export function beginCycleAttempt(
 }
 
 export const selectCycleAttempt = beginCycleAttempt;
+export const beginQueuedCycleAttempt = (snapshot: CompletedTurnSnapshot, records: SessionEntry[] = [], options: { phase?: CycleAttemptedData["phase"] } = {}): AttemptDecision =>
+  beginCycleAttempt(snapshot, records, { ...options, queued: true });
 
 export function finishCycleAttempt(
   snapshot: CompletedTurnSnapshot,

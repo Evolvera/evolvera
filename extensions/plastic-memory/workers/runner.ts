@@ -35,6 +35,9 @@ export type RunnerRuntime = {
   modelRegistry: RoleRegistry;
   agentLoop: AgentLoop;
   auth?: (provider: string, model: LunaModel) => Promise<RoleAuth | undefined> | RoleAuth | undefined;
+  /** The host-visible model is an optional final fallback, never a worker input source. */
+  visibleModel?: LunaModel;
+  model?: LunaModel;
 };
 export type ResolvedRole = {
   role: PlasticMemoryRole;
@@ -149,8 +152,8 @@ export function modelTarget(model: LunaModel | undefined): ModelTarget | undefin
   return validTarget(target) ? target : undefined;
 }
 
-/** Build the emergency order; the duplicate Luna entries intentionally represent the immediate retry. */
-export function buildEmergencyModelTargets(visibleModel?: LunaModel): ModelTarget[] {
+/** Build the normal worker order; the duplicate Luna entries intentionally represent the immediate retry. */
+export function buildModelTargets(visibleModel?: LunaModel): ModelTarget[] {
   const targets: ModelTarget[] = [
     { provider: LUNA_PROVIDER, id: LUNA_MODEL },
     { provider: LUNA_PROVIDER, id: LUNA_MODEL },
@@ -160,6 +163,9 @@ export function buildEmergencyModelTargets(visibleModel?: LunaModel): ModelTarge
   if (visible && !targets.some((target) => target.provider === visible.provider && target.id === visible.id)) targets.push(visible);
   return targets;
 }
+
+/** Compatibility export retained for disconnected emergency callers. */
+export const buildEmergencyModelTargets = buildModelTargets;
 
 /** Resolve a worker model without consulting the visible model or mutating Pi session state. */
 export async function resolveRoleTarget(role: PlasticMemoryRole, runtime: RunnerRuntime, target?: ModelTarget): Promise<ResolvedRole | RunnerFailure> {
