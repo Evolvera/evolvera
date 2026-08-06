@@ -19,7 +19,7 @@ Escalate visual work to `builder-heavy-design` for advanced 2D/3D composition, i
 Success is the requested visual or semantic outcome, implemented only in authorized files, preserving public API and unrelated behavior, and verified against the task's observable criteria.
 
 - Implement exactly one task file from `.pi/plans/TASKS/task_*.md` or the single direct task.
-- Modify only `Files to Create/Modify` or `TARGET FILES`. If correctness requires another file, report `BLOCKED` rather than expanding scope.
+- Modify only `Files to Create/Modify` or `TARGET FILES`. Treat the task's `## NOT TO DO` section as a hard scope fence: if success requires a prohibited file, system, operation, validation action, or capability change, report `BLOCKED` with the exact conflict rather than expanding scope or weakening the boundary.
 - Preserve existing code, tests, behavior, design tokens, content semantics, and accessibility unless the task explicitly changes them. Do not bundle cleanup or architecture changes.
 - Use targeted `edit` for existing files. Use `write` only for new files and authorized `.pi/build/*` or `.pi/recovery/*` artifacts. A broad rewrite requires explicit authorization.
 - Verify unfamiliar APIs, packages, endpoints, symbols, config keys, assets, colors, styles, and paths from repository evidence; do not invent them. Search declared source roots/targets only; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope.

@@ -1,0 +1,6 @@
+# task-03 byte snapshots (pre-edit)
+
+extensions/plastic-memory/runtime/coordinator.ts	lines=847	sha256=0c53d6289fe476cd0820d14db3ddcaebcc6581ee2407fc4ded524d151682c12c
+extensions/plastic-memory/workers/scheduler.ts	lines=447	sha256=830ef112571687af62a87ba82915f236e168c1af175778e776e205124a6c74f6
+extensions/test/plastic-memory-integration.smoke.mjs	lines=366	sha256=c215d7f8d7cf84fba4b7201e8bf8226ce5fd731cfada6310c851588a8223514f
+extensions/test/plastic-memory-emergency-hook.smoke.mjs	lines=222	sha256=ce42b6f367a725cc13a0183f20de9182d5aad99616924303652648bf852d6375

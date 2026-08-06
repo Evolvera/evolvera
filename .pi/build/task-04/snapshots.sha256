@@ -1,0 +1,8 @@
+extensions/plastic-memory/runtime/coordinator.ts | lines=910 | sha256=2cee6bfe2b85c64112dfbf3c026173742ef9ccfd715f357d09aa06da469ba448
+extensions/plastic-memory/compaction/engine.ts | lines=387 | sha256=c6e1af75d47e94835828985e67c92ee36eaa8586f1db668631f619fc0b3ce120
+extensions/test/plastic-memory-apply-cut.smoke.mjs | lines=281 | sha256=56469c0973b2d828487b2312ed27b6b5c30388e23ab0010326397ea9e4df1db4
+extensions/test/plastic-memory-acknowledge.smoke.mjs | lines=233 | sha256=76d99de3b9fdce06fa16811105cfd70da06a381620cc79ffbc30125bd2e5ab85
+extensions/test/plastic-memory-emergency-hook.smoke.mjs | lines=230 | sha256=bf4ce84c8b7513a2d02d4ffd97bc14627f2c7cd4a5880b3818ddaf410b49fd73
+extensions/test/plastic-memory-integration.smoke.mjs | lines=529 | sha256=01c2e3756a3733909350bad813553d9eb0be12fb28efa58aa914482dc333dd4c
+extensions/test/plastic-memory-compaction.smoke.mjs | lines=207 | sha256=b4c73c179be3380e455364d9e687ef9bc979844886f2f1fcc8f3a1cc05cab3cd
+extensions/test/plastic-memory-stride.smoke.mjs | lines=252 | sha256=1e0c08b5f791b3733217868c8117f14ba7612404f69576ced00e728b039caf7e

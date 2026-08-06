@@ -1,0 +1,355 @@
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/plastic-memory/compaction/engine.ts	2026-08-05 09:38:34
++++ extensions/plastic-memory/compaction/engine.ts	2026-08-05 15:53:16
+@@ -75,7 +75,7 @@
+     && ((typeof plastic.cycleRange === "string" && typeof plastic.stateDigest === "string" && typeof plastic.header === "string")
+       || (typeof range?.fromEntryId === "string" && typeof range.throughEntryId === "string"));
+ }
+-/** The custom 6/4 cut starts the first preserved cycle, never a turn in progress. */
++/** The custom cut starts the newest four-cycle retained suffix, never a turn in progress. */
+ function safeCutEntry(entry: SessionEntry | undefined): boolean {
+   return entry?.type === "message" && message(entry)?.role === "user";
+ }
+@@ -100,17 +100,29 @@
+   const complete = normalized.filter((cycle): cycle is CycleClosedData => Boolean(cycle && (cycle.status === "complete" || cycle.status === "empty-valid")));
+   const ordered = [...complete].sort((a, b) => (sourcePositions.get(a.sourceStartId) ?? Number.MAX_SAFE_INTEGER) - (sourcePositions.get(b.sourceStartId) ?? Number.MAX_SAFE_INTEGER));
+   if (ordered.length < 6 || new Set(ordered.map((cycle) => cycle.cycleId)).size !== ordered.length) return undefined;
+-  const window = ordered.slice(-6);
+-  if (!window.every((cycle) => exactCycleSpan(cycle, input.branchEntries, positions, sourcePositions))) return undefined;
+-  for (let index = 1; index < window.length; index += 1) {
+-    const previous = window[index - 1];
+-    const current = window[index];
++  const retained = ordered.slice(-4);
++  const boundary = ordered;
++  if (!boundary.every((cycle) => exactCycleSpan(cycle, input.branchEntries, positions, sourcePositions))) return undefined;
++  for (let index = 1; index < boundary.length; index += 1) {
++    const previous = boundary[index - 1];
++    const current = boundary[index];
+     const previousEnd = sourcePositions.get(previous.sourceEndId);
+     const currentStart = sourcePositions.get(current.sourceStartId);
+     if (previousEnd === undefined || currentStart === undefined || currentStart !== previousEnd + 1) return undefined;
+   }
+-  const compacted = window.slice(0, 2);
+-  const firstKept = input.branchEntries.find((entry) => entry.id === window[2].sourceStartId);
++  const acknowledged = new Set(input.priorState?.cycleIds ?? []);
++  const older = boundary.slice(0, -retained.length);
++  let sawUnacknowledged = false;
++  for (const cycle of older) {
++    if (acknowledged.has(cycle.cycleId)) {
++      if (sawUnacknowledged) return undefined;
++    } else {
++      sawUnacknowledged = true;
++    }
++  }
++  const compacted = older.filter((cycle) => !acknowledged.has(cycle.cycleId));
++  if (compacted.length === 0) return undefined;
++  const firstKept = input.branchEntries.find((entry) => entry.id === retained[0].sourceStartId);
+   if (!safeCutEntry(firstKept) || (input.firstKeptEntryId !== undefined && input.firstKeptEntryId !== firstKept.id)) return undefined;
+   const cutIndex = positions.get(firstKept!.id!);
+   if (cutIndex === undefined) return undefined;
+@@ -128,7 +140,7 @@
+   const cut: CutValidation = { branchIds, cutIndex, firstKeptEntryId: firstKept!.id!, latestCompactionIdentity, previousCompactions };
+   return { cycles: compacted, cut };
+ }
+-/** The one 6/4 selector: callers pre-check with exactly the window preparation will compact, so selection can never diverge. */
++/** Select every unacknowledged closed cycle before the newest four-cycle retained suffix. */
+ export function selectEligibleStride(input: EngineWindowInput): CycleClosedData[] | undefined {
+   return eligibleWindow(input)?.cycles;
+ }
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/plastic-memory/runtime/coordinator.ts	2026-08-05 09:43:23
++++ extensions/plastic-memory/runtime/coordinator.ts	2026-08-05 15:55:02
+@@ -121,7 +121,7 @@
+   private readonly runtimeToken: string;
+   private readonly scheduler = createCycleScheduler();
+   private readonly pendingStore = createPendingStore();
+-  private readonly preparedViews = new WeakMap<object, { summary: string; details: unknown }>();
++  private readonly preparedViews = new WeakMap<object, { summary: string; details: unknown; state: CumulativeState }>();
+   private readonly reportedPreparations = new WeakSet<object>();
+   private generation = 0;
+   private branchId = "";
+@@ -263,6 +263,7 @@
+           branchEntries,
+           cycles,
+           activeMemoryIds: folded.activeObservations.map((observation) => observation.id),
++          priorState: this.priorState,
+           runtimeToken: this.runtimeToken,
+           pendingStore: this.pendingStore,
+           projectSnapshot,
+@@ -280,7 +281,6 @@
+       return result.compactorJob.then((compacted) => {
+         if (!compacted.ok || !compacted.prepared) return;
+         if (this.generation !== binding.generation || this.branchId !== binding.branchId) return;
+-        this.priorState = compacted.prepared.rendered.state;
+         if (!this.reportedPreparations.has(compacted.prepared.pending as object)) {
+           this.reportedPreparations.add(compacted.prepared.pending as object);
+           this.reportLifecycle(ctx, { phase: "compaction", status: "prepared" });
+@@ -288,6 +288,7 @@
+         this.preparedViews.set(compacted.prepared.pending as object, {
+           summary: compacted.prepared.rendered.summary,
+           details: compacted.prepared.rendered.details,
++          state: compacted.prepared.rendered.state,
+         });
+         this.maybeApply(ctx);
+       });
+@@ -395,6 +396,12 @@
+     if (!idle || pendingMessages) return;
+     const pending = this.pendingStore.peek(this.now());
+     if (!pending || !this.preparedViews.has(pending as object) || pending.binding.generation !== this.generation || pending.binding.branchId !== this.branchId) return;
++    let usage: ReturnType<ExtensionContext["getContextUsage"]>;
++    try { usage = ctx.getContextUsage(); } catch { return; }
++    if (!usage || usage.tokens === null || !Number.isFinite(usage.tokens) || usage.tokens <= 20_000) {
++      this.reportLifecycle(ctx, { phase: "compaction", status: "skipped", reason: "context usage is not above the application threshold" });
++      return;
++    }
+     const id = randomUUID();
+     this.applyLatch = { id, generation: this.generation, consumed: false };
+     this.internalIntent = { id, binding: this.binding(ctx), generation: this.generation, consumed: false };
+@@ -406,15 +413,13 @@
+         },
+         onError: (error: unknown) => {
+           if (this.generation === pending.binding.generation) {
+-            this.applyLatch = undefined;
+-            this.internalIntent = undefined;
++            this.resetApplyState();
+             this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
+           }
+         },
+       });
+     } catch (error) {
+-      this.applyLatch = undefined;
+-      this.internalIntent = undefined;
++      this.resetApplyState();
+       this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
+     }
+   }
+@@ -480,7 +485,9 @@
+         latestCompactionIdentity: latestCompactionIdentity(branch.slice(0, -1)),
+       }, activeEntryIds, this.now());
+       if (!acknowledged) { this.failApply(ctx, "host compaction did not match the prepared cut"); return; }
++      const view = this.preparedViews.get(pending as object);
+       this.append(acknowledged.record);
++      if (view) this.priorState = view.state;
+       this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
+       this.inFlightPending = undefined;
+       this.applyLatch = undefined;
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/plastic-memory/workers/compactor.ts	2026-08-05 01:00:15
++++ extensions/plastic-memory/workers/compactor.ts	2026-08-05 15:48:37
+@@ -7,7 +7,7 @@
+ 
+ export type CompactorInput = Readonly<{
+   engine: Omit<EngineInput, "compact">;
+-  /** The exact two cycles eligible for this detached compaction stride. */
++  /** Every unacknowledged closed cycle before the newest four-cycle retained suffix. */
+   eligibleCycles: CycleInput[];
+   priorState?: CumulativeState;
+   projectSnapshot: ProjectSnapshot | unknown;
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/test/plastic-memory-compaction.smoke.mjs	2026-08-04 15:45:48
++++ extensions/test/plastic-memory-compaction.smoke.mjs	2026-08-05 15:51:47
+@@ -88,10 +88,16 @@
+ const firstCompaction = { type: "compaction", id: "cmp1", parentId: entries.at(-1).id, firstKeptEntryId: first.prepared.cut.firstKeptEntryId, summary: firstRendered.summary, details: firstRendered.details };
+ entries.push(firstCompaction);
+ for (let index = 7; index <= 8; index += 1) cycles.push(closed(cycle(index)));
++const delayedEight = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_500, compact: fakeLuna });
++assert.equal(delayedEight.eligible, true);
++assert.equal(delayedEight.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
++assert.deepEqual(requests[1].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId), "an unacknowledged eight-cycle branch sends every older cycle");
++assert.deepEqual(delayedEight.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
++
+ const second = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: firstRendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_000, compact: fakeLuna });
+ assert.equal(second.eligible, true);
+ assert.equal(second.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
+-assert.deepEqual(requests[1].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
++assert.deepEqual(requests[2].cycleIds, [cycles[2].cycleId, cycles[3].cycleId]);
+ assert.deepEqual(second.prepared.rendered.state.cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
+ assert.equal(second.prepared.rendered.state.facts.errors.includes("permission denied"), true);
+ assert.notEqual(second.prepared.rendered.state.stateDigest, firstRendered.state.stateDigest);
+@@ -99,9 +105,18 @@
+ for (let index = 9; index <= 10; index += 1) cycles.push(closed(cycle(index)));
+ const third = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, priorState: second.prepared.rendered.state, projectSnapshot, runtimeToken: "runtime-1", now: 2_500, compact: fakeLuna });
+ assert.equal(third.eligible, true);
+-assert.deepEqual(requests[2].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
++assert.deepEqual(requests[3].cycleIds, [cycles[4].cycleId, cycles[5].cycleId]);
+ assert.deepEqual(third.prepared.rendered.state.cycleIds, cycles.slice(0, 6).map((cycle) => cycle.cycleId));
+ 
++const suffixUser = append({ role: "user", content: [{ type: "text", text: "goal C9; incomplete suffix" }] });
++const suffixTool = append({ role: "assistant", content: [{ type: "toolCall", id: "call-9", name: "functions.read", arguments: { path: "src/C9.ts" } }], stopReason: "toolUse" });
++const suffixResult = append({ type: "toolResult", toolCallId: "call-9", content: [{ type: "text", text: "read complete" }] });
++const delayedWithSuffix = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles: cycles.slice(0, 8), projectSnapshot, runtimeToken: "runtime-1", now: 2_750, compact: fakeLuna });
++assert.equal(delayedWithSuffix.eligible, true);
++assert.equal(delayedWithSuffix.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId);
++assert.deepEqual(requests[4].cycleIds, cycles.slice(0, 4).map((cycle) => cycle.cycleId));
++assert.deepEqual(delayedWithSuffix.prepared.pending.preparedPrefixIds.slice(-3), [suffixUser.id, suffixTool.id, suffixResult.id], "incomplete C9 suffix remains retained");
++
+ const store = pendingModule.createPendingStore();
+ store.stage(second.prepared.pending);
+ const descendant = [...entries, { type: "message", id: "descendant", parentId: entries.at(-1).id, message: { role: "user", content: "later" } }];
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/test/plastic-memory-stride.smoke.mjs	2026-08-05 09:39:34
++++ extensions/test/plastic-memory-stride.smoke.mjs	2026-08-05 15:51:40
+@@ -116,22 +116,22 @@
+   assert.match(skipped[0].reason, /stride/u);
+ }
+ 
+-// 2. Six or more valid cycles: the compactor receives exactly the two cycles the engine compacts.
++// 2. Six or more valid cycles: the compactor receives every older cycle before the newest four.
+ {
+-  const run = await runStride(5); // five prior cycles + the one the scheduler closes = six
++  const run = await runStride(7); // seven prior cycles + the one the scheduler closes = eight
+   assert.ok(run.compacted, "the compactor runs on a full stride");
+   assert.equal(run.compacted.ok, true, run.compacted?.reason);
+   assert.equal(run.stub.count("compactor"), 1);
+   const closedCycles = [...run.cycles, run.result.cycle.data];
+   const stride = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, projectSnapshot });
+-  assert.equal(stride.length, 2);
+-  const expected = closedCycles.slice(-6).slice(0, 2).map((cycle) => cycle.cycleId);
+-  assert.deepEqual(stride.map((cycle) => cycle.cycleId), expected, "the stride is the first two of the last six in engine order");
++  assert.equal(stride.length, 4);
++  const expected = closedCycles.slice(0, -4).map((cycle) => cycle.cycleId);
++  assert.deepEqual(stride.map((cycle) => cycle.cycleId), expected, "the stride contains every older closed cycle before the retained four");
+   // The emitted compactor prompt lists only the exact eligible cycles it was fed.
+   const prompt = JSON.parse(run.stub.prompts.compactor[0]);
+   assert.deepEqual(prompt.readOnlyIdentityContext.cycleIds, expected);
+-  assert.equal(prompt.readOnlyIdentityContext.cycleIds.length, 2, "the four retained cycles are never described to the compactor");
+-  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-4).sourceStartId, "the 6/4 cut is unchanged");
++  assert.equal(prompt.readOnlyIdentityContext.cycleIds.length, 4, "the newest four retained cycles are never described to the compactor");
++  assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-4).sourceStartId, "the newest four-cycle cut is preserved");
+   assert.equal(run.lifecycle.some((event) => event.phase === "compactor"), false, "a successful stride reports no compactor waiting or failure event");
+ }
+ 
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/test/plastic-memory-apply-cut.smoke.mjs	2026-08-05 09:43:13
++++ extensions/test/plastic-memory-apply-cut.smoke.mjs	2026-08-05 15:50:04
+@@ -48,15 +48,17 @@
+ /** Fresh coordinator + host stubs with a real engine-prepared pending staged. */
+ function world(options = {}) {
+   const runtimeToken = options.runtimeToken ?? "runtime-test";
++  let usageTokens = Object.hasOwn(options, "usageTokens") ? options.usageTokens : 21_000;
+   const { entries, spans } = fixture();
+   const handlers = new Map();
+   const compactCalls = [];
++  const notices = [];
+   let clock = NOW;
+   const pi = { on(event, handler) { handlers.set(event, handler); }, appendEntry() {}, registerTool() {}, registerCommand() {} };
+   const state = { branch: entries };
+   const ctx = {
+     cwd: root,
+-    hasUI: false,
++    hasUI: true,
+     sessionManager: {
+       getSessionId() { return "019fcf17-6e55-7646-89f9-4e0e0258b267"; },
+       getEntries() { return state.branch; },
+@@ -66,8 +68,9 @@
+     },
+     isIdle() { return true; },
+     hasPendingMessages() { return false; },
++    getContextUsage() { return usageTokens === null ? { tokens: null, contextWindow: 160_000 } : usageTokens === undefined ? undefined : { tokens: usageTokens, contextWindow: 160_000 }; },
+     compact(request) { compactCalls.push(request); },
+-    ui: { notify() {} },
++    ui: { notify(message, level) { notices.push({ message, level }); } },
+   };
+   const coordinator = new coordinatorModule.PlasticMemoryCoordinator(pi, { enabled: true, runtimeToken, now: () => clock });
+   handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+@@ -86,6 +89,7 @@
+     rendered: prepared.prepared.rendered,
+     cut: pending.cut.firstKeptEntryId,
+     setClock(value) { clock = value; },
++    setUsage(value) { usageTokens = value; },
+     internalInstructions() {
+       handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
+       assert.equal(compactCalls.length, 1, "settled coordinator issues one internal compact");
+@@ -94,12 +98,31 @@
+     beforeCompact(event) {
+       return handlers.get("session_before_compact")({ type: "session_before_compact", branchEntries: state.branch, ...event }, ctx);
+     },
++    notices,
+   };
+ }
+ function hostEvent(firstKeptEntryId, extra = {}) {
+   return { preparation: { firstKeptEntryId, tokensBefore: 7_777 }, reason: "auto", ...extra };
+ }
+ 
++// 0. Application waits for a known usage strictly above 20,000, then reassesses the
++// same prepared pending without consuming it early.
++for (const usageTokens of [undefined, null, 0, 20_000]) {
++  const w = world({ usageTokens });
++  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
++  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} defers internal apply`);
++  assert.notEqual(w.coordinator.getPending(), undefined, `usage ${usageTokens} retains pending state`);
++  assert.equal(w.notices.at(-1)?.level, "info");
++  assert.match(w.notices.at(-1)?.message ?? "", /compaction skipped/u);
++}
++{
++  const w = world({ usageTokens: 20_000 });
++  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
++  w.setUsage(20_001);
++  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
++  assert.equal(w.compactCalls.length, 1, "strictly high usage applies exactly once after deferral");
++}
++
+ // 1. INTERNAL path: the host's own keepRecentTokens suggestion differs from the 6/4 cut
+ //    and must be ignored; the coordinator applies its own cut instead of cancelling.
+ {
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/test/plastic-memory-acknowledge.smoke.mjs	2026-08-05 01:52:01
++++ extensions/test/plastic-memory-acknowledge.smoke.mjs	2026-08-05 15:52:15
+@@ -68,6 +68,7 @@
+     },
+     isIdle() { return true; },
+     hasPendingMessages() { return false; },
++    getContextUsage() { return { tokens: 21_000, contextWindow: 160_000 }; },
+     compact(request) { compactCalls.push(request); },
+     ui: { notify() {} },
+   };
+@@ -87,7 +88,7 @@
+     assert.equal(prepared.eligible, true, `cycle window of ${cycleCount} prepares a real 6/4 pending: ${prepared.reason}`);
+     priorState = prepared.prepared.rendered.state;
+     coordinator.pendingStore.stage(prepared.prepared.pending);
+-    coordinator.preparedViews.set(prepared.prepared.pending, { summary: prepared.prepared.rendered.summary, details: prepared.prepared.rendered.details });
++    coordinator.preparedViews.set(prepared.prepared.pending, { summary: prepared.prepared.rendered.summary, details: prepared.prepared.rendered.details, state: prepared.prepared.rendered.state });
+     return prepared.prepared;
+   }
+ 
+@@ -138,9 +139,11 @@
+   const prepared = w.stage(6);
+   const compaction = w.beforeCompact();
+   assert.equal(compaction.firstKeptEntryId, prepared.cut.firstKeptEntryId);
++  assert.equal(w.coordinator.priorState, undefined, "staging does not promote prior state");
+   const entry = w.hostAppend(compaction);
+   w.compactEvent(entry);
+   assert.equal(applied(w).length, 1, "a consumed pending is acknowledged at session_compact");
++  assert.deepEqual(w.coordinator.priorState, prepared.rendered.state, "matching acknowledgement promotes the verified state");
+   const record = applied(w)[0].data;
+   assert.equal(record.compactionEntryId, entry.id);
+   assert.equal(record.firstKeptEntryId, prepared.cut.firstKeptEntryId);
+--- .pi/recovery/20260805_182432Z_plastic_memory_seamless_retention/task_01/before/extensions/test/plastic-memory-integration.smoke.mjs	2026-08-05 09:42:23
++++ extensions/test/plastic-memory-integration.smoke.mjs	2026-08-05 15:50:24
+@@ -102,6 +102,7 @@
+   sessionManager: ownerSessionManager,
+   isIdle: () => true,
+   hasPendingMessages: () => false,
++  getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+   compact: () => {},
+   hasUI: true,
+   ui: { notify(message, level) { ownerNotices.push({ message, level }); } },
+@@ -131,7 +132,7 @@
+     getBranch: () => entries,
+     buildContextEntries: () => entries,
+   };
+-  const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {}, hasUI: true, ui: { notify(message, level) { notices.push({ message, level }); } } };
++  const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }), compact: () => {}, hasUI: true, ui: { notify(message, level) { notices.push({ message, level }); } } };
+   const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, { enabled: true, runtime: cycleRuntime, now: () => 1_000 });
+   cycleMode = mode;
+   await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+@@ -168,7 +169,7 @@
+   getBranch: () => [],
+   buildContextEntries: () => [],
+ };
+-const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, compact: () => {} };
++const ctx = { sessionManager, isIdle: () => true, hasPendingMessages: () => false, getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }), compact: () => {} };
+ await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+ assert.equal(coordinator.getGeneration(), 1);
+ assert.ok(handlers.has("session_before_compact"));
+@@ -201,6 +202,7 @@
+     sessionManager,
+     isIdle: () => true,
+     hasPendingMessages: () => false,
++    getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+     compact: (options) => compactCalls.push(options),
+     hasUI: true,
+     ui: { notify(message, level) { notices.push({ message, level }); } },

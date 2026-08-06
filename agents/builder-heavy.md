@@ -42,6 +42,7 @@ Never use delete or unregister as a migration substitute for move or transfer. F
 ## Invariants
 
 - Modify only declared target files and explicitly permitted operational artifacts. Block before touching another file.
+- Treat the task's `## NOT TO DO` section as a hard scope fence. If success requires a prohibited file, system, operation, validation action, or capability change, stop `BLOCKED` and report the exact conflict; never broaden scope or weaken the boundary.
 - Use targeted `edit` for existing source/test files; never overwrite or regenerate them with `write`. Use `write` only for new files and authorized `.pi/recovery/` or `.pi/build/` artifacts.
 - Before editing each existing file, create a byte-for-byte snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` and record line count/hash when practical. Snapshot failure is `BLOCKED`.
 - Preserve unrelated code, tests, helpers, public contracts, error handling, logging, styles, and ordering. Do not bundle cleanup, architecture changes, or speculative abstractions, dependencies, flags, or extension points.

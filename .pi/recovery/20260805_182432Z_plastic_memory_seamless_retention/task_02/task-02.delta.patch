@@ -1,0 +1,1239 @@
+diff --git a/extensions/plastic-memory/session/cycles.ts b/extensions/plastic-memory/session/cycles.ts
+index bda8920..075a1a9 100644
+--- a/extensions/plastic-memory/session/cycles.ts
++++ b/extensions/plastic-memory/session/cycles.ts
+@@ -24,6 +24,17 @@ export type CompletedTurnSnapshot = {
+   tokenCount: number;
+   status: SnapshotStatus;
+ };
++export type SnapshotChunk = Readonly<{
++  index: number;
++  entries: SessionEntry[];
++  sourceEntryIds: string[];
++  tokenCount: number;
++}>;
++export type SnapshotPartition = Readonly<{
++  ok: boolean;
++  chunks: SnapshotChunk[];
++  reason?: "indivisible-message-group-exceeds-bound" | "tool-exchange-integrity-failure";
++}>;
+ export type SnapshotInput = {
+   binding: SessionBinding;
+   sourceEntries: SessionEntry[];
+@@ -64,6 +75,36 @@ function isToolCallContentPart(value: unknown): boolean {
+   return value !== null && typeof value === "object" && !Array.isArray(value)
+     && (value as { type?: unknown }).type === "toolCall";
+ }
++function recordValue(value: unknown): Record<string, unknown> | undefined {
++  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
++}
++function messageValue(entry: SessionEntry): Record<string, unknown> {
++  return recordValue(entry.message) ?? entry as Record<string, unknown>;
++}
++function contentParts(entry: SessionEntry): unknown[] {
++  const content = messageValue(entry).content ?? entry.content;
++  return Array.isArray(content) ? content : [];
++}
++function assistantToolCallIds(entry: SessionEntry): { ids: string[]; malformed: boolean } {
++  if (messageValue(entry).role !== "assistant") return { ids: [], malformed: false };
++  const ids: string[] = [];
++  for (const part of contentParts(entry)) {
++    if (!isToolCallContentPart(part)) continue;
++    const id = recordValue(part)?.id;
++    if (typeof id !== "string" || id.length === 0) return { ids: [], malformed: true };
++    ids.push(id);
++  }
++  return { ids, malformed: false };
++}
++function toolResult(entry: SessionEntry): { present: boolean; id?: string; malformed: boolean } {
++  const message = messageValue(entry);
++  const role = message.role ?? (entry.type === "toolResult" ? "toolResult" : undefined);
++  if (role !== "toolResult") return { present: false, malformed: false };
++  const id = message.toolCallId ?? entry.toolCallId;
++  return typeof id === "string" && id.length > 0
++    ? { present: true, id, malformed: false }
++    : { present: true, malformed: true };
++}
+ 
+ /** A tool-call assistant is an in-progress turn until a later terminal assistant arrives. */
+ export function isTerminalAssistantEntry(entry: SessionEntry): boolean {
+@@ -126,6 +167,88 @@ function attemptsFor(snapshot: CompletedTurnSnapshot, records: SessionEntry[]):
+   return [...latestByAttempt.values()];
+ }
+ 
++/** Partition into contiguous atomic groups: complete tool exchanges, terminal boundaries, and ordinary runs. */
++function partitionEntries(entries: SessionEntry[], maxTokens: number): SnapshotPartition {
++  const groups: SessionEntry[][] = [];
++  let ordinary: SessionEntry[] = [];
++  let exchange: SessionEntry[] | undefined;
++  const pendingCalls = new Set<string>();
++  const integrityFailure = (): SnapshotPartition => ({ ok: false, chunks: [], reason: "tool-exchange-integrity-failure" });
++
++  for (const entry of entries) {
++    const calls = assistantToolCallIds(entry);
++    const result = toolResult(entry);
++    if (calls.malformed || result.malformed) return integrityFailure();
++    if (exchange) {
++      exchange.push(entry);
++      for (const callId of calls.ids) {
++        if (pendingCalls.has(callId)) return integrityFailure();
++        pendingCalls.add(callId);
++      }
++      if (result.present) {
++        if (!result.id || !pendingCalls.has(result.id)) return integrityFailure();
++        pendingCalls.delete(result.id);
++      }
++      if (pendingCalls.size === 0) {
++        groups.push(exchange);
++        exchange = undefined;
++      }
++      continue;
++    }
++    if (result.present) return integrityFailure();
++    if (calls.ids.length > 0) {
++      if (ordinary.length > 0) {
++        groups.push(ordinary);
++        ordinary = [];
++      }
++      exchange = [entry];
++      for (const callId of calls.ids) {
++        if (pendingCalls.has(callId)) return integrityFailure();
++        pendingCalls.add(callId);
++      }
++      continue;
++    }
++    ordinary.push(entry);
++    if (isTerminalAssistantEntry(entry)) {
++      groups.push(ordinary);
++      ordinary = [];
++    }
++  }
++  if (exchange || pendingCalls.size > 0) return integrityFailure();
++  if (ordinary.length > 0) groups.push(ordinary);
++
++  const chunks: SnapshotChunk[] = [];
++  let currentChunk: SessionEntry[] = [];
++  let currentTokens = 0;
++  for (const group of groups) {
++    const groupTokens = group.reduce((sum, entry) => sum + tokenCount(entry), 0);
++    if (groupTokens > maxTokens) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
++    if (currentChunk.length > 0 && currentTokens + groupTokens > maxTokens) {
++      chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
++      currentChunk = [];
++      currentTokens = 0;
++    }
++    currentChunk.push(...group);
++    currentTokens += groupTokens;
++  }
++  if (currentChunk.length > 0) {
++    chunks.push({ index: chunks.length, entries: currentChunk, sourceEntryIds: currentChunk.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []), tokenCount: currentTokens });
++  }
++  return { ok: true, chunks };
++}
++
++export function partitionCompletedTurnSnapshot(snapshot: CompletedTurnSnapshot, sourceEntries: SessionEntry[], maxTokens = 160_000): SnapshotPartition {
++  if (snapshot.status === "empty-valid") return { ok: true, chunks: [] };
++  const entries = spanEntriesFor(sourceEntries, snapshot.span);
++  if (entries.length !== snapshot.span.sourceEntryIds.length) return { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" };
++  return partitionEntries(entries, maxTokens);
++}
++
++function spanEntriesFor(source: SessionEntry[], span: SourceSpan): SessionEntry[] {
++  const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
++  return span.sourceEntryIds.flatMap((id) => { const entry = byId.get(id); return entry ? [entry] : []; });
++}
++
+ /** Build one contiguous, completed-turn opportunity from the post-bootstrap active window. */
+ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurnSnapshot {
+   // An empty active window is not a restriction: a fresh-session bootstrap and every
+@@ -136,28 +259,11 @@ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurn
+     throw new Error("snapshot source is outside the active bootstrap window");
+   }
+   const entries = input.sourceEntries.filter((entry) => typeof entry.id === "string" && (!allowed || allowed.has(entry.id)));
+-  // One-shot observer bound. A single long agentic task has no completed turn until its
+-  // final answer, so the first observable prefix can be very large: a real 64-message audit
+-  // session reached ~115k tokens before its first terminal assistant and was skipped whole.
+-  // 160k keeps the call well inside Luna's 300k window (plus CONTEXT_OVERHEAD_TOKENS and the
+-  // reply) while making those sessions observable.
+-  const maxTokens = input.maxTokens ?? 160_000;
+-  // Chunk instead of dying: cover the LARGEST CONTIGUOUS PREFIX that ends at a terminal
+-  // assistant and fits `maxTokens`. Coverage must stay a prefix (never a suffix, never a
+-  // gap) because the next cycle continues from this boundary. Only when even the prefix
+-  // ending at the FIRST terminal assistant exceeds the bound is the window `oversized`,
+-  // and then the span stays the whole completed window exactly as before.
+-  let running = 0;
+-  let end = -1;
+-  let lastTerminal = -1;
++  let completedEnd = -1;
+   for (let index = 0; index < entries.length; index += 1) {
+-    running += tokenCount(entries[index]);
+-    if (!isTerminalAssistantEntry(entries[index])) continue;
+-    lastTerminal = index;
+-    if (running <= maxTokens) end = index;
++    if (isTerminalAssistantEntry(entries[index])) completedEnd = index;
+   }
+-  const oversized = lastTerminal >= 0 && end < 0;
+-  const completed = oversized ? entries.slice(0, lastTerminal + 1) : end >= 0 ? entries.slice(0, end + 1) : [];
++  const completed = completedEnd >= 0 ? entries.slice(0, completedEnd + 1) : [];
+   const span = spanFor(completed);
+   const snapshotPayload = {
+     binding: input.binding,
+@@ -167,13 +273,15 @@ export function createCompletedTurnSnapshot(input: SnapshotInput): CompletedTurn
+   const snapshotId = recordDigest(input.binding.sessionId, { generation: input.binding.generation, branchId: input.binding.branchId }, snapshotPayload);
+   const cycleId = makeCycleId(input.binding.sessionId, snapshotId);
+   const tokenCountValue = completed.reduce((sum, entry) => sum + tokenCount(entry), 0);
++  const maxTokens = input.maxTokens ?? 160_000;
++  const partition = completed.length > 0 ? partitionEntries(completed, maxTokens) : { ok: true, chunks: [] };
+   return {
+     snapshotId,
+     cycleId,
+     binding: input.binding,
+     span,
+     tokenCount: tokenCountValue,
+-    status: completed.length === 0 ? "empty-valid" : oversized ? "oversized" : "ready",
++    status: completed.length === 0 ? "empty-valid" : partition.ok ? "ready" : "oversized",
+   };
+ }
+ 
+@@ -210,12 +318,13 @@ export function finishCycleAttempt(
+   snapshot: CompletedTurnSnapshot,
+   attempt: PlasticEntry<"plastic.cycle.attempted">,
+   outcome: Exclude<AttemptOutcome, "pending" | "complete" | "empty-valid" | "suppressed">,
++  phase: CycleAttemptedData["phase"] = attempt.data.phase,
+ ): PlasticEntry<"plastic.cycle.attempted"> | undefined {
+   if (!isPlasticRecord(attempt) || attempt.customType !== PLASTIC_CYCLE_ATTEMPTED) return undefined;
+   if (snapshot.status === "oversized") return undefined;
+   if (!sameBinding(attempt.data, snapshot.binding) || attempt.data.cycleId !== snapshot.cycleId
+     || attempt.data.snapshotId !== snapshot.snapshotId || !sameSpan(attempt.data, snapshot.span)) return undefined;
+-  return recordForSnapshot(snapshot, outcome, attempt.data.attemptCount, attempt.data.attemptId, attempt.data.phase, outcome === "stale" ? "stale-identity" : undefined);
++  return recordForSnapshot(snapshot, outcome, attempt.data.attemptCount, attempt.data.attemptId, phase, outcome === "stale" ? "stale-identity" : undefined);
+ }
+ 
+ /** Close only from an exact source manifest/span/digest. Model prose is never consulted. */
+diff --git a/extensions/plastic-memory/workers/observer.ts b/extensions/plastic-memory/workers/observer.ts
+index 7211e64..e619011 100644
+--- a/extensions/plastic-memory/workers/observer.ts
++++ b/extensions/plastic-memory/workers/observer.ts
+@@ -9,6 +9,8 @@ export type ObserverInput = Readonly<{
+   binding: SessionBinding;
+   snapshot: CompletedTurnSnapshot;
+   sourceEntries: SessionEntry[];
++  /** The exact source ids visible to this bounded call; defaults to the snapshot span. */
++  sourceEntryIds?: readonly string[];
+   priorObservations?: Observation[];
+   priorReflections?: unknown[];
+   runtime: RunnerRuntime;
+@@ -24,50 +26,14 @@ export type ObserverResult = Readonly<{
+   reason?: string;
+ }>;
+ 
+-const OBSERVER_SYSTEM = "Extract durable observations only. Return JSON with the scalar coverageManifest identity fields (omit sourceEntryIds) and observations. Never invent source ids.";
++const OBSERVER_SYSTEM = "Extract durable observations only. Return one JSON object containing semantic observations and exact source citations. Do not return lifecycle identity, record ids, or a coverage manifest.";
+ const MAX_OBSERVATION_CHARS = 2_000;
+ 
+ function record(value: unknown): Record<string, unknown> | undefined {
+   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+ }
+-function exactIds(actual: unknown, expected: readonly string[]): actual is string[] {
+-  return Array.isArray(actual) && actual.length === expected.length && actual.every((id, index) => id === expected[index]);
+-}
+-/** Echoing the deterministic span ids proves nothing (code hands them to the model), so the array is optional; a supplied array must still match exactly. */
+-function manifestIds(actual: unknown, expected: readonly string[]): boolean {
+-  return actual === undefined || exactIds(actual, expected);
+-}
+-type ManifestFailureCode =
+-  | "missing-coverage-manifest"
+-  | "invalid-coverage-manifest"
+-  | "mismatch-snapshotId"
+-  | "mismatch-cycleId"
+-  | "mismatch-sourceDigest"
+-  | "mismatch-completedTurnEndId"
+-  | "mismatch-sourceEntryIds"
+-  | "mismatch-sessionId"
+-  | "mismatch-generation"
+-  | "mismatch-branchId";
+-
+-function responseManifest(value: Record<string, unknown>): unknown {
+-  return value.coverageManifest ?? value.manifest ?? value.coverage;
+-}
+-function manifestFailureCode(value: unknown, snapshot: CompletedTurnSnapshot, binding: SessionBinding): ManifestFailureCode | undefined {
+-  const output = record(value);
+-  if (!output) return "missing-coverage-manifest";
+-  const response = responseManifest(output);
+-  if (response === undefined) return "missing-coverage-manifest";
+-  const manifest = record(response);
+-  if (!manifest) return "invalid-coverage-manifest";
+-  if (manifest.snapshotId !== snapshot.snapshotId) return "mismatch-snapshotId";
+-  if (manifest.cycleId !== snapshot.cycleId) return "mismatch-cycleId";
+-  if (manifest.sourceDigest !== snapshot.span.sourceDigest) return "mismatch-sourceDigest";
+-  if (manifest.completedTurnEndId !== snapshot.span.completedTurnEndId) return "mismatch-completedTurnEndId";
+-  if (!manifestIds(manifest.sourceEntryIds, snapshot.span.sourceEntryIds)) return "mismatch-sourceEntryIds";
+-  if (manifest.sessionId !== binding.sessionId) return "mismatch-sessionId";
+-  if (manifest.generation !== binding.generation) return "mismatch-generation";
+-  if (manifest.branchId !== binding.branchId) return "mismatch-branchId";
+-  return undefined;
++function allowedSourceIds(input: ObserverInput): readonly string[] {
++  return input.sourceEntryIds ?? input.snapshot.span.sourceEntryIds;
+ }
+ function clean(value: string, maximum: number): string {
+   return scrubSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, maximum);
+@@ -83,41 +49,31 @@ type ObservationFailureCode = "invalid-observation-record" | "invalid-observatio
+ type ParsedObservation = Readonly<{ observation: Observation }> | Readonly<{ failure: ObservationFailureCode }>;
+ 
+ /** Return only a fixed structural rejection code; model content and citation values never leave this boundary. */
+-function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot): ParsedObservation {
++function parseObservation(value: unknown, binding: SessionBinding, snapshot: CompletedTurnSnapshot, allowed: readonly string[]): ParsedObservation {
+   const source = record(value);
+   if (!source) return { failure: "invalid-observation-record" };
+   if (typeof source.content !== "string" || !source.content.trim()) return { failure: "invalid-observation-content" };
+   if (typeof source.timestamp !== "string") return { failure: "invalid-observation-timestamp" };
+   const relevance = source.relevance;
+   if (relevance !== "low" && relevance !== "medium" && relevance !== "high" && relevance !== "critical") return { failure: "invalid-observation-relevance" };
+-  const ids = sourceIds(source.sourceEntryIds, snapshot.span.sourceEntryIds);
++  const ids = sourceIds(source.sourceEntryIds, allowed);
+   if (!ids) return { failure: "invalid-observation-sourceEntryIds" };
+   const content = clean(source.content, MAX_OBSERVATION_CHARS);
+   if (!content) return { failure: "invalid-observation-content" };
+-  const id = typeof source.id === "string" && /^pm:o:[a-f0-9]{24}:[a-f0-9]{24}$/u.test(source.id)
+-    ? source.id
+-    : makeObservationId(binding.sessionId, recordDigest(binding.sessionId, snapshot.snapshotId, content));
++  // Model-provided ids are intentionally ignored. Identity is derived from the immutable
++  // cycle, normalized content, and the citations that code just validated.
++  const id = makeObservationId(binding.sessionId, recordDigest(binding.sessionId, { snapshotId: snapshot.snapshotId, sourceEntryIds: ids }, content));
+   return { observation: { id, content, timestamp: clean(source.timestamp, 64), relevance, sourceEntryIds: ids, tokenCount: Math.max(1, Math.ceil(content.length / 4)) } };
+ }
+ function promptFor(input: ObserverInput): string {
++  const sourceEntryIds = allowedSourceIds(input);
+   return JSON.stringify({
+-    binding: input.binding,
+-    snapshot: { ...input.snapshot, sourceEntries: input.sourceEntries },
++    sourceEntries: input.sourceEntries,
++    sourceEntryIds,
+     priorObservations: (input.priorObservations ?? []).slice(-200),
+     priorReflections: (input.priorReflections ?? []).slice(-200),
+-    expectedCoverageManifest: {
+-      snapshotId: input.snapshot.snapshotId,
+-      cycleId: input.snapshot.cycleId,
+-      sourceDigest: input.snapshot.span.sourceDigest,
+-      completedTurnEndId: input.snapshot.span.completedTurnEndId,
+-      sourceEntryIds: input.snapshot.span.sourceEntryIds,
+-      sessionId: input.binding.sessionId,
+-      generation: input.binding.generation,
+-      branchId: input.binding.branchId,
+-    },
+     output: {
+       response: "single JSON object only; no prose, markdown fence, or trailing commentary",
+-      coverageManifest: "copy expectedCoverageManifest as this top-level field: flat, same key names, no additions; OMIT sourceEntryIds entirely because the deterministic ids are authoritative and are filled in by code",
+       observations: {
+         type: "array",
+         empty: "use [] when there is nothing durable to record",
+@@ -125,8 +81,7 @@ function promptFor(input: ObserverInput): string {
+           content: "non-empty string",
+           timestamp: "string",
+           relevance: "one of: low, medium, high, critical",
+-          sourceEntryIds: "non-empty subset of expectedCoverageManifest.sourceEntryIds; order does not matter and duplicates are normalized by code",
+-          id: "optional; if supplied, pm:o:<24 lowercase hex>:<24 lowercase hex>",
++          sourceEntryIds: "non-empty subset of sourceEntryIds; order does not matter and duplicates are normalized by code",
+         },
+       },
+     },
+@@ -141,29 +96,18 @@ export async function runObserver(input: ObserverInput): Promise<ObserverResult>
+     systemPrompt: OBSERVER_SYSTEM,
+     runtime: input.runtime,
+     signal: input.signal,
+-    inputTokens: input.snapshot.tokenCount + 2_048,
+   });
+-  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: false, observations: [], runner, reason: runner.reason };
++  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: true, observations: [], runner, reason: runner.reason };
+   const output = record(runner.response);
+-  const manifestFailure = manifestFailureCode(runner.response, input.snapshot, input.binding);
+-  if (!output || manifestFailure) {
+-    const safeCode = manifestFailure ?? "missing-coverage-manifest";
+-    return {
+-      ok: false,
+-      status: "invalid",
+-      manifestValid: false,
+-      observations: [],
+-      runner,
+-      reason: `observer coverage manifest is missing, reordered, or identity-mismatched (${safeCode})`,
+-    };
+-  }
++  if (!output) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer response is not a semantic object" };
+   if (output.status !== undefined && output.status !== "complete" && output.status !== "empty-valid") {
+     return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer reported partial coverage" };
+   }
+   if (!Array.isArray(output.observations)) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: "observer observations are not an array" };
+   const observations: Observation[] = [];
++  const allowed = allowedSourceIds(input);
+   for (const candidate of output.observations) {
+-    const parsed = parseObservation(candidate, input.binding, input.snapshot);
++    const parsed = parseObservation(candidate, input.binding, input.snapshot, allowed);
+     if ("failure" in parsed) return { ok: false, status: "invalid", manifestValid: true, observations: [], runner, reason: `observer returned an invalid observation (${parsed.failure})` };
+     observations.push(parsed.observation);
+   }
+diff --git a/extensions/plastic-memory/workers/reflector.ts b/extensions/plastic-memory/workers/reflector.ts
+index a5a6752..0ab6eda 100644
+--- a/extensions/plastic-memory/workers/reflector.ts
++++ b/extensions/plastic-memory/workers/reflector.ts
+@@ -23,27 +23,13 @@ export type ReflectorResult = Readonly<{
+   reason?: string;
+ }>;
+ 
+-const REFLECTOR_SYSTEM = "Crystallize durable reflections from observations. Return JSON with the scalar coverageManifest identity fields (omit sourceEntryIds) and supporting observation ids. Do not close source coverage.";
++const REFLECTOR_SYSTEM = "Crystallize durable reflections from observations. Return one JSON object containing semantic reflections and exact supporting observation citations. Do not return lifecycle identity, record ids, or a coverage manifest.";
+ const MAX_REFLECTION_CHARS = 2_000;
+ 
+ function record(value: unknown): Record<string, unknown> | undefined {
+   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+ }
+-function exactIds(actual: unknown, expected: readonly string[]): actual is string[] {
+-  return Array.isArray(actual) && actual.length === expected.length && actual.every((id, index) => id === expected[index]);
+-}
+-/** Echoing the deterministic span ids proves nothing (code hands them to the model), so the array is optional; a supplied array must still match exactly. */
+-function manifestIds(actual: unknown, expected: readonly string[]): boolean {
+-  return actual === undefined || exactIds(actual, expected);
+-}
+-function manifest(value: unknown, snapshot: CompletedTurnSnapshot, binding: SessionBinding): boolean {
+-  const source = record(value);
+-  return Boolean(source
+-    && source.snapshotId === snapshot.snapshotId && source.cycleId === snapshot.cycleId
+-    && source.sourceDigest === snapshot.span.sourceDigest && source.completedTurnEndId === snapshot.span.completedTurnEndId
+-    && manifestIds(source.sourceEntryIds, snapshot.span.sourceEntryIds)
+-    && source.sessionId === binding.sessionId && source.generation === binding.generation && source.branchId === binding.branchId);
+-}
++
+ function clean(value: string, maximum: number): string {
+   return scrubSensitiveText(value).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, maximum);
+ }
+@@ -62,37 +48,22 @@ function asReflection(value: unknown, binding: SessionBinding, snapshot: Complet
+   if (!ids) return undefined;
+   const content = clean(source.content, MAX_REFLECTION_CHARS);
+   if (!content || /[\r\n]/u.test(content)) return undefined;
+-  const id = typeof source.id === "string" && /^pm:r:[a-f0-9]{24}:[a-f0-9]{24}$/u.test(source.id)
+-    ? source.id
+-    : makeReflectionId(binding.sessionId, recordDigest(binding.sessionId, snapshot.snapshotId, content));
++  // Model-provided ids are never authoritative; reflection identity is code-owned.
++  const id = makeReflectionId(binding.sessionId, recordDigest(binding.sessionId, { snapshotId: snapshot.snapshotId, supportingObservationIds: ids }, content));
+   return { id, content, supportingObservationIds: ids, tokenCount: Math.max(1, Math.ceil(content.length / 4)) };
+ }
+ function promptFor(input: ReflectorInput): string {
+   return JSON.stringify({
+-    binding: input.binding,
+-    snapshot: input.snapshot,
+     observations: input.observations,
+     priorReflections: (input.priorReflections ?? []).slice(-200),
+-    expectedCoverageManifest: {
+-      snapshotId: input.snapshot.snapshotId,
+-      cycleId: input.snapshot.cycleId,
+-      sourceDigest: input.snapshot.span.sourceDigest,
+-      completedTurnEndId: input.snapshot.span.completedTurnEndId,
+-      sourceEntryIds: input.snapshot.span.sourceEntryIds,
+-      sessionId: input.binding.sessionId,
+-      generation: input.binding.generation,
+-      branchId: input.binding.branchId,
+-    },
+     output: {
+       response: "single JSON object only; no prose, markdown fence, or trailing commentary",
+-      coverageManifest: "copy expectedCoverageManifest as this top-level field: flat, same key names, no additions; OMIT sourceEntryIds entirely because the deterministic ids are authoritative and are filled in by code",
+       reflections: {
+         type: "array",
+         empty: "use [] when there is nothing durable to record",
+         item: {
+           content: "non-empty string",
+           supportingObservationIds: "non-empty subset of the listed observation ids; order does not matter and duplicates are normalized by code",
+-          id: "optional; if supplied, pm:r:<24 lowercase hex>:<24 lowercase hex>",
+         },
+       },
+     },
+@@ -108,13 +79,10 @@ export async function runReflector(input: ReflectorInput): Promise<ReflectorResu
+     systemPrompt: REFLECTOR_SYSTEM,
+     runtime: input.runtime,
+     signal: input.signal,
+-    inputTokens: input.snapshot.tokenCount + 2_048,
+   });
+-  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: false, reflections: [], runner, reason: runner.reason };
++  if (!runner.ok) return { ok: false, status: runner.reason === "aborted" || runner.reason === "timeout" ? "stale" : "failed", manifestValid: true, reflections: [], runner, reason: runner.reason };
+   const output = record(runner.response);
+-  if (!output || !manifest(output.coverageManifest ?? output.manifest ?? output.coverage, input.snapshot, input.binding)) {
+-    return { ok: false, status: "invalid", manifestValid: false, reflections: [], runner, reason: "reflector coverage manifest is missing, reordered, or identity-mismatched" };
+-  }
++  if (!output) return { ok: false, status: "invalid", manifestValid: true, reflections: [], runner, reason: "reflector response is not a semantic object" };
+   if (output.status !== undefined && output.status !== "complete" && output.status !== "empty-valid") {
+     return { ok: false, status: "invalid", manifestValid: true, reflections: [], runner, reason: "reflector reported partial coverage" };
+   }
+diff --git a/extensions/plastic-memory/workers/scheduler.ts b/extensions/plastic-memory/workers/scheduler.ts
+index ecb9d6f..71c0d65 100644
+--- a/extensions/plastic-memory/workers/scheduler.ts
++++ b/extensions/plastic-memory/workers/scheduler.ts
+@@ -1,7 +1,7 @@
+ import { digestParts, scrubSensitiveText } from "../common/safety.ts";
+-import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, snapshotManifestDigest, type CompletedTurnSnapshot } from "../session/cycles.ts";
+-import { normalSourceEntries } from "../session/ledger.ts";
+-import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry, type SourceSpan } from "../session/types.ts";
++import { beginCycleAttempt, closeCycle, createCompletedTurnSnapshot, finishCycleAttempt, partitionCompletedTurnSnapshot, type CompletedTurnSnapshot } from "../session/cycles.ts";
++import { makePlasticEntry, normalSourceEntries } from "../session/ledger.ts";
++import { isPlasticRecord, PLASTIC_CYCLE_CLOSED, PLASTIC_OBSERVATIONS_RECORDED, type BootstrapData, type CycleClosedData, type PlasticEntry, type SessionBinding, type SessionEntry } from "../session/types.ts";
+ import { runObserver, type ObserverResult } from "./observer.ts";
+ import { runReflector, type ReflectorResult } from "./reflector.ts";
+ import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
+@@ -59,11 +59,6 @@ function samePrefix(expected: readonly string[], actual: readonly string[]): boo
+   return actual.length >= expected.length && expected.every((id, index) => actual[index] === id);
+ }
+ function entryIds(entries: readonly SessionEntry[]): string[] { return entries.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []); }
+-/** A worker may only be shown what the span validates: exactly the span entries, in span order. */
+-function spanEntries(source: readonly SessionEntry[], span: SourceSpan): SessionEntry[] {
+-  const byId = new Map(source.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+-  return span.sourceEntryIds.flatMap((id) => { const entry = byId.get(id); return entry ? [entry] : []; });
+-}
+ function cycleData(value: unknown): CycleClosedData | undefined {
+   if (!isPlasticRecord(value) || value.customType !== PLASTIC_CYCLE_CLOSED) return undefined;
+   return value.data;
+@@ -103,7 +98,8 @@ export class CycleScheduler {
+     // post-anchor descendants and returns [] on any inconsistency, so the stale bootstrap
+     // window must not be re-applied as a snapshot allow-set: on resume the new turn is a
+     // descendant and is legitimately outside it.
+-    const preview = source.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: source }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
++    const capturedSource = source.map((entry) => entry);
++    const preview = capturedSource.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: capturedSource }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
+     const key = `${input.binding.sessionId}:${input.binding.generation}:${input.binding.branchId}:${preview.snapshotId}`;
+     const existing = this.jobs.get(key);
+     if (existing) return existing.promise;
+@@ -111,7 +107,7 @@ export class CycleScheduler {
+     const controller = new AbortController();
+     this.controllers.add(controller);
+     const job: Job = { controller, epoch: this.epoch, promise: Promise.resolve({ status: "skipped" as const }) };
+-    job.promise = this.run(input, preview, controller).finally(() => {
++    job.promise = this.run(input, preview, controller, capturedSource).finally(() => {
+       this.jobs.delete(key);
+       this.controllers.delete(controller);
+     });
+@@ -134,31 +130,30 @@ export class CycleScheduler {
+       && (identity.sourceDigest === undefined || identity.sourceDigest === snapshot.span.sourceDigest)
+       && snapshot.span.sourceEntryIds.every((id) => identity.branchIds.includes(id));
+   }
+-  private failAttempt(input: SchedulerInput, snapshot: CompletedTurnSnapshot, attempt: PlasticEntry<"plastic.cycle.attempted">, outcome: "failed" | "partial" | "stale", records: SessionEntry[], captured: SchedulerIdentity, controller: AbortController, epoch: number, reason: string): SchedulerResult {
++  private failAttempt(input: SchedulerInput, snapshot: CompletedTurnSnapshot, attempt: PlasticEntry<"plastic.cycle.attempted">, outcome: "failed" | "partial" | "stale" | "oversized", records: SessionEntry[], captured: SchedulerIdentity, controller: AbortController, epoch: number, reason: string): SchedulerResult {
+     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+     const failed = finishCycleAttempt(snapshot, attempt, outcome);
+     if (failed) this.append(input, failed);
+     return { status: outcome === "stale" ? "stale" : "failed", snapshot, attempt: failed ?? attempt, reason };
+   }
+-  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController): Promise<SchedulerResult> {
++  private async run(input: SchedulerInput, snapshot: CompletedTurnSnapshot, controller: AbortController, source: SessionEntry[]): Promise<SchedulerResult> {
+     const captured: SchedulerIdentity = { binding: { ...input.binding }, branchIds: entryIds(input.branchEntries) };
+     const epoch = this.epoch;
+-    if (snapshot.status === "oversized") {
+-      report(input, { phase: "observer", status: "skipped", reason: "snapshot exceeds one-shot bound" });
+-      return { status: "skipped", snapshot, reason: "snapshot exceeds one-shot bound" };
+-    }
+-    const source = normalSourceEntries(input.branchEntries, input.bootstrap as BootstrapData);
+     if (snapshot.status === "empty-valid" && source.length > 0 && snapshot.span.sourceEntryIds.length === 0) {
+       report(input, { phase: "observer", status: "skipped", reason: "no completed terminal turn in active window" });
+       return { status: "skipped", snapshot, reason: "no completed terminal turn in active window" };
+     }
+-    const records = this.records(input);
+-    const selected = beginCycleAttempt(snapshot, records, { explicitRetry: input.explicitRetry === true });
++    const partition = partitionCompletedTurnSnapshot(snapshot, source);
++    if (!partition.ok) {
++      report(input, { phase: "observer", status: "skipped", reason: partition.reason });
++      return { status: "skipped", snapshot, reason: partition.reason };
++    }
++    const selected = beginCycleAttempt(snapshot, this.records(input), { explicitRetry: input.explicitRetry === true });
+     if (!selected.allowed) {
+       if (selected.record) this.append(input, selected.record);
+       return { status: selected.reason === "automatic-retry-exhausted" ? "suppressed" : "skipped", snapshot, attempt: selected.record, reason: selected.reason };
+     }
+-    const attempt = selected.record;
++    let attempt = selected.record;
+     if (!attempt) return { status: "failed", snapshot, reason: "cycle attempt did not produce an identity" };
+     this.append(input, attempt);
+     const workingRecords = this.records(input);
+@@ -171,40 +166,73 @@ export class CycleScheduler {
+       return { status: "empty-valid", snapshot, attempt, cycle: closed };
+     }
+ 
+-    report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
+-    const observer: ObserverResult = await runObserver({ binding: input.binding, snapshot, sourceEntries: spanEntries(source, snapshot.span), runtime: input.runtime, signal: controller.signal });
+-    if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+-    if (!observer.ok || !observer.manifestValid) {
+-      report(input, { phase: "observer", status: "failed", reason: observer.reason ?? "observer did not prove exact coverage" });
+-      return this.failAttempt(input, snapshot, attempt, observer.status === "stale" ? "stale" : "failed", workingRecords, captured, controller, epoch, observer.reason ?? "observer did not prove exact coverage");
++    // Keep the captured source and chunk list immutable across retries. A later branch
++    // cannot replace an input that the first attempt already observed.
++    const chunks = partition.chunks;
++    let observations: ObserverResult["observations"] = [];
++    let observer: ObserverResult | undefined;
++    for (let observerAttempt = 0; observerAttempt < 2; observerAttempt += 1) {
++      report(input, { phase: "observer", status: "started", tokenCount: Math.round(snapshot.tokenCount) });
++      const chunkObservations: ObserverResult["observations"] = [];
++      let failure: ObserverResult | undefined;
++      for (const chunk of chunks) {
++        const result = await runObserver({ binding: input.binding, snapshot, sourceEntries: chunk.entries, sourceEntryIds: chunk.sourceEntryIds, runtime: input.runtime, signal: controller.signal });
++        if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
++        if (!result.ok || !result.manifestValid) { failure = result; break; }
++        chunkObservations.push(...result.observations);
++      }
++      if (!failure) {
++        observations = [...chunkObservations];
++        observer = { ok: true, status: observations.length === 0 ? "empty-valid" : "complete", manifestValid: true, observations };
++        break;
++      }
++      report(input, { phase: "observer", status: "failed", reason: failure.reason ?? "observer did not return semantic observations" });
++      if (failure.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
++      const failed = finishCycleAttempt(snapshot, attempt, "failed", "observer");
++      if (failed) this.append(input, failed);
++      if (observerAttempt === 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: failure.reason ?? "observer did not return semantic observations" };
++      const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "observer" });
++      if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
++      attempt = retry.record;
++      this.append(input, attempt);
+     }
+-    if (observer.observations.length === 0) report(input, { phase: "observer", status: "no-observations" });
+-    if (observer.record) this.append(input, observer.record);
++    if (!observer) return { status: "failed", snapshot, attempt, reason: "observer did not complete" };
++    if (observations.length === 0) report(input, { phase: "observer", status: "no-observations" });
++    if (observations.length > 0) this.append(input, makePlasticEntry(PLASTIC_OBSERVATIONS_RECORDED, { schemaVersion: 1, ...input.binding, observations, span: snapshot.span }));
+ 
+-    const reflector: ReflectorResult = await runReflector({ binding: input.binding, snapshot, observations: observer.observations, runtime: input.runtime, signal: controller.signal });
+-    if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+-    if (!reflector.ok || !reflector.manifestValid) {
+-      report(input, { phase: "reflector", status: "failed", reason: reflector.reason ?? "reflector did not prove exact coverage" });
+-      return this.failAttempt(input, snapshot, attempt, reflector.status === "stale" ? "stale" : "failed", this.records(input), captured, controller, epoch, reflector.reason ?? "reflector did not prove exact coverage");
++    let reflector: ReflectorResult | undefined;
++    for (let reflectorAttempt = 0; reflectorAttempt < 2; reflectorAttempt += 1) {
++      const result = await runReflector({ binding: input.binding, snapshot, observations, runtime: input.runtime, signal: controller.signal });
++      if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
++      if (result.ok && result.manifestValid) { reflector = result; break; }
++      report(input, { phase: "reflector", status: "failed", reason: result.reason ?? "reflector did not return semantic reflections" });
++      if (result.status === "stale") return { status: "stale", snapshot, attempt, reason: "stale-generation" };
++      const failed = finishCycleAttempt(snapshot, attempt, "failed", "reflector");
++      if (failed) this.append(input, failed);
++      if (reflectorAttempt === 1) return { status: "failed", snapshot, attempt: failed ?? attempt, reason: result.reason ?? "reflector did not return semantic reflections" };
++      const retry = beginCycleAttempt(snapshot, this.records(input), { phase: "reflector" });
++      if (!retry.allowed || !retry.record) return { status: "suppressed", snapshot, attempt: retry.record ?? attempt, reason: retry.reason ?? "automatic-retry-exhausted" };
++      attempt = retry.record;
++      this.append(input, attempt);
+     }
++    if (!reflector) return { status: "failed", snapshot, attempt, reason: "reflector did not complete" };
+     if (reflector.record) this.append(input, reflector.record);
+-
+     const closed = closeCycle(snapshot, attempt, {
+-      outcome: observer.observations.length === 0 ? "empty-valid" : "complete",
++      outcome: observations.length === 0 ? "empty-valid" : "complete",
+       sourceEntryIds: snapshot.span.sourceEntryIds,
+       sourceStartId: snapshot.span.sourceStartId,
+       sourceEndId: snapshot.span.sourceEndId,
+       sourceDigest: snapshot.span.sourceDigest,
+       completedTurnEndId: snapshot.span.completedTurnEndId,
+-      observationIds: observer.observations.map((observation) => observation.id),
++      observationIds: observations.map((observation) => observation.id),
+       reflectionIds: reflector.reflections.map((reflection) => reflection.id),
+     }, this.records(input));
+-    if (!closed) return this.failAttempt(input, snapshot, attempt, "failed", this.records(input), captured, controller, epoch, "deterministic cycle closer rejected model result");
++    if (!closed) return this.failAttempt(input, snapshot, attempt, "failed", this.records(input), captured, controller, epoch, "deterministic cycle closer rejected semantic result");
+     if (!this.current(input, captured, snapshot, controller, epoch)) return { status: "stale", snapshot, attempt, reason: "stale-generation" };
+     this.append(input, closed);
+     this.terminalSnapshots.add(snapshot.snapshotId);
+     const compactorJob = this.startCompactor(input, closed, captured, controller, epoch);
+-    return { status: observer.observations.length === 0 ? "empty-valid" : "closed", snapshot, attempt, cycle: closed, ...(compactorJob ? { compactorJob } : {}) };
++    return { status: observations.length === 0 ? "empty-valid" : "closed", snapshot, attempt, cycle: closed, ...(compactorJob ? { compactorJob } : {}) };
+   }
+ 
+   private startCompactor(input: SchedulerInput, closed: PlasticEntry<"plastic.cycle.closed">, captured: SchedulerIdentity, controller: AbortController, epoch: number): Promise<CompactorResult> | undefined {
+diff --git a/extensions/test/plastic-memory-chunking.smoke.mjs b/extensions/test/plastic-memory-chunking.smoke.mjs
+index 099db1f..22d49da 100644
+--- a/extensions/test/plastic-memory-chunking.smoke.mjs
++++ b/extensions/test/plastic-memory-chunking.smoke.mjs
+@@ -31,18 +31,136 @@ const u3 = entry("user", 20_000, "goal three");
+ const a3 = entry("assistant", 20_000, "answer three");
+ const window3 = [u1, a1, u2, a2, u3, a3];
+ 
+-// A.1 — oversized window chunks to the largest terminal-ending PREFIX within budget.
++// A.1 — an over-bound completed span is preserved as one identity and partitioned safely.
+ const first = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: window3, maxTokens: MAX });
+ assert.equal(first.status, "ready");
+-assert.deepEqual(first.span.sourceEntryIds, [u1.id, a1.id, u2.id, a2.id]);
++assert.deepEqual(first.span.sourceEntryIds, [u1.id, a1.id, u2.id, a2.id, u3.id, a3.id]);
+ assert.equal(first.span.sourceStartId, u1.id);
+-assert.equal(first.span.sourceEndId, a2.id);
+-assert.equal(first.span.completedTurnEndId, a2.id);
+-assert.equal(first.tokenCount, 80_000);
+-assert.equal(first.span.sourceEntryIds.includes(a3.id), false, "coverage is a prefix, never the whole window");
+-assert.equal(first.span.sourceEntryIds[0], u1.id, "coverage is a prefix, never a suffix");
++assert.equal(first.span.sourceEndId, a3.id);
++assert.equal(first.span.completedTurnEndId, a3.id);
++assert.equal(first.tokenCount, 120_000);
++const firstPartition = cycles.partitionCompletedTurnSnapshot(first, window3, MAX);
++assert.equal(firstPartition.ok, true);
++assert.deepEqual(firstPartition.chunks.map((chunk) => chunk.sourceEntryIds), [[u1.id, a1.id, u2.id, a2.id], [u3.id, a3.id]]);
++assert.ok(firstPartition.chunks.every((chunk) => chunk.tokenCount <= MAX));
++const toolEntries = [
++  { type: "message", id: "tool-u", parentId: null, message: { role: "user", content: [{ type: "text", text: "tool goal" }] }, tokenCount: 20_000 },
++  { type: "message", id: "tool-a", parentId: "tool-u", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read" }], stopReason: "toolUse" }, tokenCount: 30_000 },
++  { type: "message", id: "tool-r", parentId: "tool-a", message: { role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "result" }] }, tokenCount: 30_000 },
++  { type: "message", id: "tool-end", parentId: "tool-r", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 20_000 },
++  { type: "message", id: "tool-u2", parentId: "tool-end", message: { role: "user", content: [{ type: "text", text: "next" }] }, tokenCount: 10_000 },
++  { type: "message", id: "tool-a2", parentId: "tool-u2", message: { role: "assistant", content: [{ type: "text", text: "next done" }] }, tokenCount: 10_000 },
++];
++const toolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: toolEntries, maxTokens: MAX });
++const toolPartition = cycles.partitionCompletedTurnSnapshot(toolSnapshot, toolEntries, MAX);
++assert.equal(toolPartition.ok, true);
++assert.deepEqual(toolPartition.chunks[0].sourceEntryIds, ["tool-u", "tool-a", "tool-r", "tool-end"], "tool call/result stays indivisible");
+ 
+-// A.2 — the leftover turn is still reachable as the next cycle's prefix, with a distinct identity.
++// A.1a — a large ordinary prefix and a large valid tool exchange are separate atomic groups.
++const ordinaryPrefixToolEntries = [
++  { type: "message", id: "prefix-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "large prefix" }] }, tokenCount: 95_000 },
++  { type: "message", id: "prefix-call", parentId: "prefix-user", message: { role: "assistant", content: [{ type: "toolCall", id: "prefix-tool", name: "read" }], stopReason: "toolUse" }, tokenCount: 35_000 },
++  { type: "message", id: "prefix-result", parentId: "prefix-call", message: { role: "toolResult", toolCallId: "prefix-tool", content: [{ type: "text", text: "large result" }] }, tokenCount: 35_000 },
++  { type: "message", id: "prefix-terminal", parentId: "prefix-result", message: { role: "assistant", content: [{ type: "text", text: "complete" }], stopReason: "stop" }, tokenCount: 10_000 },
++];
++const ordinaryPrefixToolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: ordinaryPrefixToolEntries });
++const ordinaryPrefixToolPartition = cycles.partitionCompletedTurnSnapshot(ordinaryPrefixToolSnapshot, ordinaryPrefixToolEntries);
++assert.equal(ordinaryPrefixToolSnapshot.status, "ready");
++assert.equal(ordinaryPrefixToolPartition.ok, true);
++assert.deepEqual(ordinaryPrefixToolPartition.chunks.map((chunk) => chunk.sourceEntryIds), [["prefix-user"], ["prefix-call", "prefix-result", "prefix-terminal"]]);
++assert.ok(ordinaryPrefixToolPartition.chunks.every((chunk) => chunk.tokenCount <= 160_000));
++assert.deepEqual(ordinaryPrefixToolPartition.chunks.flatMap((chunk) => chunk.sourceEntryIds), ordinaryPrefixToolEntries.map((entry) => entry.id));
++const prefixCallChunk = ordinaryPrefixToolPartition.chunks.find((chunk) => chunk.sourceEntryIds.includes("prefix-call"));
++assert.ok(prefixCallChunk?.sourceEntryIds.includes("prefix-result"), "tool call and result remain in one chunk");
++const prefixRuntime = {
++  modelRegistry: { find: () => ({ provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
++  async agentLoop(prompts, context) {
++    const request = JSON.parse(prompts[0].content[0].text);
++    if (context.role === "observer") return { observations: [{ content: "prefix fact", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
++    return { reflections: [{ content: "prefix reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
++  },
++};
++const prefixRecords = [];
++const prefixResult = await schedulerModule.createCycleScheduler().trigger({
++  binding,
++  branchEntries: ordinaryPrefixToolEntries,
++  bootstrap: { activeEntryIds: ordinaryPrefixToolEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
++  records: [],
++  runtime: prefixRuntime,
++  append: (record) => prefixRecords.push(record),
++});
++assert.equal(prefixResult.status, "closed", "terminal-complete ordinary/tool fixture closes");
++assert.equal(prefixRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1, "fixture closes exactly once");
++
++const impossibleToolEntries = [
++  { type: "message", id: "im-u", parentId: null, message: { role: "user", content: [{ type: "text", text: "impossible" }] }, tokenCount: 10_000 },
++  { type: "message", id: "im-a", parentId: "im-u", message: { role: "assistant", content: [{ type: "toolCall", id: "im-call", name: "read" }], stopReason: "toolUse" }, tokenCount: 60_000 },
++  { type: "message", id: "im-r", parentId: "im-a", message: { role: "toolResult", toolCallId: "im-call", content: [{ type: "text", text: "large result" }] }, tokenCount: 60_000 },
++  { type: "message", id: "im-end", parentId: "im-r", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 10_000 },
++];
++const impossibleToolSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: impossibleToolEntries, maxTokens: MAX });
++assert.equal(impossibleToolSnapshot.status, "oversized");
++assert.deepEqual(cycles.partitionCompletedTurnSnapshot(impossibleToolSnapshot, impossibleToolEntries, MAX), { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" });
++
++// A.1b — one giant completed agentic turn partitions at complete exchange boundaries.
++const agenticEntries = [
++  { type: "message", id: "agentic-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "campaign goal" }] }, tokenCount: 10_000 },
++  { type: "message", id: "agentic-call-1", parentId: "agentic-user", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-1", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-result-1", parentId: "agentic-call-1", message: { role: "toolResult", toolCallId: "agentic-tool-1", content: [{ type: "text", text: "result one" }] }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-call-2", parentId: "agentic-result-1", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-2", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-result-2", parentId: "agentic-call-2", message: { role: "toolResult", toolCallId: "agentic-tool-2", content: [{ type: "text", text: "result two" }] }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-call-3", parentId: "agentic-result-2", message: { role: "assistant", content: [{ type: "toolCall", id: "agentic-tool-3", name: "read" }], stopReason: "toolUse" }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-result-3", parentId: "agentic-call-3", message: { role: "toolResult", toolCallId: "agentic-tool-3", content: [{ type: "text", text: "result three" }] }, tokenCount: 25_000 },
++  { type: "message", id: "agentic-terminal", parentId: "agentic-result-3", message: { role: "assistant", content: [{ type: "text", text: "campaign complete" }], stopReason: "stop" }, tokenCount: 10_000 },
++];
++const agenticSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: agenticEntries });
++assert.equal(agenticSnapshot.status, "ready");
++assert.ok(agenticSnapshot.tokenCount > 160_000);
++const agenticPartition = cycles.partitionCompletedTurnSnapshot(agenticSnapshot, agenticEntries);
++assert.equal(agenticPartition.ok, true);
++assert.ok(agenticPartition.chunks.length > 1);
++assert.ok(agenticPartition.chunks.every((chunk) => chunk.tokenCount <= 160_000));
++assert.deepEqual(agenticPartition.chunks.flatMap((chunk) => chunk.sourceEntryIds), agenticEntries.map((entry) => entry.id), "ordered union covers every source exactly once");
++for (const [callId, resultId] of [["agentic-call-1", "agentic-result-1"], ["agentic-call-2", "agentic-result-2"], ["agentic-call-3", "agentic-result-3"]]) {
++  const callChunk = agenticPartition.chunks.findIndex((chunk) => chunk.sourceEntryIds.includes(callId));
++  assert.ok(callChunk >= 0);
++  assert.equal(agenticPartition.chunks[callChunk].sourceEntryIds.includes(resultId), true, `${callId} and its result stay together`);
++}
++
++// Malformed completed spans fail closed before a worker can be called.
++const malformedRuntimeCalls = [];
++const malformedRuntime = {
++  modelRegistry: { find: () => ({ provider: "fake", id: "fake", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
++  async agentLoop() { malformedRuntimeCalls.push(true); throw new Error("worker must not run"); },
++};
++const malformedSources = [
++  [
++    { type: "message", id: "multi-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "multi" }] }, tokenCount: 1 },
++    { type: "message", id: "multi-call", parentId: "multi-user", message: { role: "assistant", content: [{ type: "toolCall", id: "multi-1", name: "read" }, { type: "toolCall", id: "multi-2", name: "read" }], stopReason: "toolUse" }, tokenCount: 1 },
++    { type: "message", id: "multi-result", parentId: "multi-call", message: { role: "toolResult", toolCallId: "multi-1", content: [{ type: "text", text: "only one" }] }, tokenCount: 1 },
++    { type: "message", id: "multi-terminal", parentId: "multi-result", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 1 },
++  ],
++  [
++    { type: "message", id: "orphan-user", parentId: null, message: { role: "user", content: [{ type: "text", text: "orphan" }] }, tokenCount: 1 },
++    { type: "message", id: "orphan-result", parentId: "orphan-user", message: { role: "toolResult", toolCallId: "missing", content: [{ type: "text", text: "orphan" }] }, tokenCount: 1 },
++    { type: "message", id: "orphan-terminal", parentId: "orphan-result", message: { role: "assistant", content: [{ type: "text", text: "done" }] }, tokenCount: 1 },
++  ],
++];
++for (const sourceEntries of malformedSources) {
++  const malformedSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries });
++  assert.deepEqual(cycles.partitionCompletedTurnSnapshot(malformedSnapshot, sourceEntries), { ok: false, chunks: [], reason: "tool-exchange-integrity-failure" });
++  const malformedResult = await schedulerModule.createCycleScheduler().trigger({
++    binding,
++    branchEntries: sourceEntries,
++    bootstrap: { activeEntryIds: sourceEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
++    records: [], runtime: malformedRuntime, append: () => {},
++  });
++  assert.equal(malformedResult.status, "skipped");
++  assert.equal(malformedResult.reason, "tool-exchange-integrity-failure");
++}
++assert.equal(malformedRuntimeCalls.length, 0, "malformed spans fail before worker calls");
++
++// A.2 — the leftover turn remains a distinct fitting snapshot identity.
+ const second = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: [u3, a3], maxTokens: MAX });
+ assert.equal(second.status, "ready");
+ assert.deepEqual(second.span.sourceEntryIds, [u3.id, a3.id]);
+@@ -85,9 +203,9 @@ assert.deepEqual(fits.span, expectedSpan);
+ assert.equal(fits.tokenCount, 80_000);
+ assert.equal(fits.snapshotId, expectedSnapshotId);
+ assert.equal(fits.cycleId, ids.makeCycleId(binding.sessionId, expectedSnapshotId));
+-assert.equal(fits.snapshotId, first.snapshotId, "the chunk of an oversized window is identical to the same fitting window");
++assert.notEqual(fits.snapshotId, first.snapshotId, "the full-span snapshot owns the full completed coverage identity");
+ 
+-// B — the observer must be shown exactly the span entries, in span order.
++// B — each bounded observer call sees exactly one immutable chunk in order.
+ const captured = [];
+ const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+ const offlineRuntime = {
+@@ -97,12 +215,12 @@ const offlineRuntime = {
+   },
+   async agentLoop(prompts, context) {
+     const request = JSON.parse(prompts[0].content[0].text);
+-    captured.push({ role: context.role, sourceEntryIds: (request.snapshot.sourceEntries ?? []).map((item) => item.id) });
+-    return { rejected: true }; // no manifest: the cycle fails closed; no network is ever touched
++    captured.push({ role: context.role, sourceEntryIds: request.sourceEntryIds ?? request.observations?.flatMap((item) => item.sourceEntryIds) ?? [] });
++    if (context.role === "observer") return { observations: [{ content: `fact ${request.sourceEntryIds[0]}`, timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
++    return { reflections: [{ content: "aggregate reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
+   },
+ };
+-// The scheduler never passes `maxTokens`, so this window is sized against the DEFAULT
+-// one-shot bound (160k): prefix@b1=60k, prefix@b2=120k, prefix@b3=180k > default.
++// The scheduler uses the DEFAULT 160k bound: first two 60k turns fit together, third is a second chunk.
+ const b0 = entry("user", 30_000, "scheduler goal one");
+ const b1 = entry("assistant", 30_000, "scheduler answer one");
+ const b2 = entry("user", 30_000, "scheduler goal two");
+@@ -119,11 +237,47 @@ const result = await scheduler.trigger({
+   runtime: offlineRuntime,
+   append: () => {},
+ });
+-assert.equal(result.status, "failed", "the offline stub returns no manifest, so the cycle fails closed");
+-assert.deepEqual(result.snapshot.span.sourceEntryIds, [b0.id, b1.id, b2.id, b3.id], "the scheduler snapshot is the chunked prefix under the default bound");
+-assert.equal(result.snapshot.tokenCount, 120_000, "the default bound admits a 120k prefix that the old 100k bound would have rejected");
+-assert.equal(captured.length, 1);
+-assert.equal(captured[0].role, "observer");
+-assert.deepEqual(captured[0].sourceEntryIds, result.snapshot.span.sourceEntryIds, "observer sees exactly the span entries, in span order");
++assert.equal(result.status, "closed");
++assert.deepEqual(result.snapshot.span.sourceEntryIds, schedulerWindow.map((item) => item.id), "the full completed span is preserved");
++assert.equal(result.snapshot.tokenCount, 180_000);
++assert.deepEqual(captured.filter((call) => call.role === "observer").map((call) => call.sourceEntryIds), [[b0.id, b1.id, b2.id, b3.id], [b4.id, b5.id]]);
++assert.equal(captured.filter((call) => call.role === "reflector").length, 1, "one reflection covers the aggregate");
++
++// The real-sized agentic campaign still observes every atomic chunk, then persists and closes once.
++const agenticObservedCalls = [];
++const agenticRecords = [];
++const agenticRuntime = {
++  modelRegistry: {
++    find: () => model,
++    async getProviderAuth() { return { apiKey: "fake-only" }; },
++  },
++  async agentLoop(prompts, context) {
++    const request = JSON.parse(prompts[0].content[0].text);
++    agenticObservedCalls.push({ role: context.role, sourceEntryIds: request.sourceEntryIds ?? [] });
++    if (context.role === "observer") return { observations: [{ content: `agentic fact ${request.sourceEntryIds[0]}`, timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
++    return { reflections: [{ content: "agentic aggregate reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
++  },
++};
++const agenticScheduler = schedulerModule.createCycleScheduler();
++const agenticResult = await agenticScheduler.trigger({
++  binding,
++  branchEntries: agenticEntries,
++  bootstrap: { activeEntryIds: agenticEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
++  records: [], runtime: agenticRuntime, append: (record) => agenticRecords.push(record),
++});
++assert.equal(agenticResult.status, "closed");
++const agenticObserverCalls = agenticObservedCalls.filter((call) => call.role === "observer");
++assert.equal(agenticObserverCalls.length, agenticPartition.chunks.length);
++assert.deepEqual(agenticObserverCalls.flatMap((call) => call.sourceEntryIds), agenticEntries.map((entry) => entry.id));
++for (const [callId, resultId] of [["agentic-call-1", "agentic-result-1"], ["agentic-call-2", "agentic-result-2"], ["agentic-call-3", "agentic-result-3"]]) {
++  const callChunk = agenticObserverCalls.find((call) => call.sourceEntryIds.includes(callId));
++  assert.ok(callChunk);
++  assert.equal(callChunk.sourceEntryIds.includes(resultId), true, `${callId} and result are observed together`);
++}
++assert.equal(agenticObservedCalls.filter((call) => call.role === "reflector").length, 1);
++assert.equal(agenticRecords.filter((record) => record.customType === "plastic.observations.recorded").length, 1);
++assert.equal(agenticRecords.filter((record) => record.customType === "plastic.reflections.recorded").length, 1);
++assert.equal(agenticRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1);
++assert.deepEqual(agenticResult.cycle.data.sourceEntryIds, agenticEntries.map((entry) => entry.id));
+ 
+-console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, observer span contract)");
++console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, agentic atomic exchanges, malformed tool integrity, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, observer span contract)");
+diff --git a/extensions/test/plastic-memory-integration.smoke.mjs b/extensions/test/plastic-memory-integration.smoke.mjs
+index 29413ba..e4c6e86 100644
+--- a/extensions/test/plastic-memory-integration.smoke.mjs
++++ b/extensions/test/plastic-memory-integration.smoke.mjs
+@@ -72,12 +72,11 @@ const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
+ }, async (model, context, options) => {
+   cycleCalls.push({ model, context, options });
+   const request = JSON.parse(context.messages[0].content[0].text);
+-  const manifest = { ...request.binding, snapshotId: request.snapshot.snapshotId, cycleId: request.snapshot.cycleId, ...request.snapshot.span };
+   if (context.systemPrompt.startsWith("Extract durable")) {
+-    if (cycleMode === "failure") return { content: [{ type: "text", text: JSON.stringify({ noManifest: true }) }] };
+-    return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, observations: cycleMode === "empty" ? [] : [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.snapshot.span.sourceEntryIds }] }) }] };
++    if (cycleMode === "failure") return { content: [{ type: "text", text: JSON.stringify({ noObservations: true }) }] };
++    return { content: [{ type: "text", text: JSON.stringify({ observations: cycleMode === "empty" ? [] : [{ content: "cycle fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] }) }] };
+   }
+-  return { content: [{ type: "text", text: JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
++  return { content: [{ type: "text", text: JSON.stringify({ reflections: [{ content: "cycle reflection", supportingObservationIds: request.observations.map((observation) => observation.id) }] }) }] };
+ });
+ assert.ok(cycleRuntime);
+ const ownerEntries = [{ ...entry("O1", undefined), tokenCount: 1 }, { ...entry("O2", "O1", "assistant"), tokenCount: 1 }];
+diff --git a/extensions/test/plastic-memory-stride.smoke.mjs b/extensions/test/plastic-memory-stride.smoke.mjs
+index 0fa4f89..91fcd04 100644
+--- a/extensions/test/plastic-memory-stride.smoke.mjs
++++ b/extensions/test/plastic-memory-stride.smoke.mjs
+@@ -33,11 +33,10 @@ function stubRuntime(options = {}) {
+         if (options.compactorMode === "unstructured") return "plain prose without any JSON object";
+         return JSON.stringify({ summary: "Bounded cumulative state for the compacted stride.", state: { facts: { goals: request.deterministicFacts.goals } } });
+       }
+-      const manifest = request.expectedCoverageManifest;
+       if (context.role === "observer") {
+-        return JSON.stringify({ coverageManifest: manifest, observations: [{ content: "The bounded turn constraint is durable.", timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: [manifest.sourceEntryIds[0]] }] });
++        return JSON.stringify({ observations: [{ content: "The bounded turn constraint is durable.", timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: [request.sourceEntryIds[0]] }] });
+       }
+-      return JSON.stringify({ coverageManifest: manifest, reflections: [{ content: "The bounded constraint persists.", supportingObservationIds: request.observations.map((observation) => observation.id) }] });
++      return JSON.stringify({ reflections: [{ content: "The bounded constraint persists.", supportingObservationIds: request.observations.map((observation) => observation.id) }] });
+     },
+   };
+   return { runtime, calls, prompts, count(role) { return calls.filter((call) => call.role === role).length; } };
+diff --git a/extensions/test/plastic-memory-transport-integrity.smoke.mjs b/extensions/test/plastic-memory-transport-integrity.smoke.mjs
+index 03cd3d6..17fe6e5 100644
+--- a/extensions/test/plastic-memory-transport-integrity.smoke.mjs
++++ b/extensions/test/plastic-memory-transport-integrity.smoke.mjs
+@@ -44,13 +44,12 @@ function runtimeReturning(respond) {
+   };
+ }
+ 
+-// 1. End-to-end through the real runObserver: the model echoes the manifest verbatim.
++// 1. End-to-end through the real runObserver: semantic output carries citations only.
+ const observerRuntime = runtimeReturning((request) => {
+   observerPayload = JSON.stringify({
+-    coverageManifest: request.expectedCoverageManifest,
+     observations: [
+-      { content: "durable transport fact", timestamp: TIMESTAMP, relevance: "high", sourceEntryIds: request.expectedCoverageManifest.sourceEntryIds },
+-      { content: `reach ${EMAIL} or ${PHONE} and rotate api_key: abc123def456`, timestamp: TIMESTAMP, relevance: "medium", sourceEntryIds: [request.expectedCoverageManifest.sourceEntryIds[0]] },
++      { content: "durable transport fact", timestamp: TIMESTAMP, relevance: "high", sourceEntryIds: request.sourceEntryIds },
++      { content: `reach ${EMAIL} or ${PHONE} and rotate api_key: abc123def456`, timestamp: TIMESTAMP, relevance: "medium", sourceEntryIds: [request.sourceEntryIds[0]] },
+     ],
+   });
+   return observerPayload;
+@@ -111,4 +110,4 @@ assert.equal(typeof prose.response, "string");
+ assert.equal(prose.response.includes(EMAIL), false, "non-JSON fallback stays scrubbed");
+ assert.equal(prose.response, "contact [REDACTED_PII] for the summary");
+ 
+-console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (manifest echo closes, ISO/UUID identities survive, content scrubbing intact, prose fallback scrubbed)");
++console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (semantic transport, code-owned identities, ISO/UUID preservation, content scrubbing, and prose fallback)");
+diff --git a/extensions/test/plastic-memory-worker-contract.smoke.mjs b/extensions/test/plastic-memory-worker-contract.smoke.mjs
+index 28efa26..7f58262 100644
+--- a/extensions/test/plastic-memory-worker-contract.smoke.mjs
++++ b/extensions/test/plastic-memory-worker-contract.smoke.mjs
+@@ -56,31 +56,27 @@ const runtime = {
+       });
+     }
+     if (context.role === "observer") {
+-      return JSON.stringify({
+-        coverageManifest: request.expectedCoverageManifest,
+-        observations: [{
+-          content: "The durable constraint is to preserve the bounded snapshot.",
+-          timestamp: "2026-08-03T00:00:00Z",
+-          relevance: "high",
+-          sourceEntryIds: [request.expectedCoverageManifest.sourceEntryIds[0]],
+-        }],
+-      });
++      return JSON.stringify({ observations: [{
++        content: "The durable constraint is to preserve the bounded snapshot.",
++        timestamp: "2026-08-03T00:00:00Z",
++        relevance: "high",
++        sourceEntryIds: [request.sourceEntryIds[0]],
++        id: "pm:o:aaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbb",
++      }] });
+     }
+-    return JSON.stringify({
+-      coverageManifest: request.expectedCoverageManifest,
+-      reflections: [{
+-        content: "The bounded snapshot constraint is durable.",
+-        supportingObservationIds: request.observations.map((observation) => observation.id),
+-      }],
+-    });
++    return JSON.stringify({ reflections: [{
++      content: "The bounded snapshot constraint is durable.",
++      supportingObservationIds: request.observations.map((observation) => observation.id),
++      id: "pm:r:aaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbb",
++    }] });
+   },
+ };
+ 
+ const observerRequest = JSON.parse(observer.buildObserverRequest({ binding, snapshot, sourceEntries, runtime }));
+-assert.deepEqual(observerRequest.expectedCoverageManifest, expectedCoverageManifest);
+-assert.deepEqual(Object.keys(observerRequest.expectedCoverageManifest), [
+-  "snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sourceEntryIds", "sessionId", "generation", "branchId",
+-]);
++assert.deepEqual(observerRequest.sourceEntryIds, snapshot.span.sourceEntryIds);
++assert.equal(Object.hasOwn(observerRequest, "binding"), false);
++assert.equal(Object.hasOwn(observerRequest, "snapshot"), false);
++assert.equal(Object.hasOwn(observerRequest, "expectedCoverageManifest"), false);
+ assert.match(observerRequest.output.response, /single JSON object/);
+ const observed = await observer.runObserver({ binding, snapshot, sourceEntries, runtime });
+ assert.equal(observed.ok, true);
+@@ -91,8 +87,9 @@ assert.equal(observed.observations[0].content, "The durable constraint is to pre
+ assert.equal(typeof observed.observations[0].timestamp, "string");
+ 
+ const reflectorRequest = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot, observations: observed.observations, runtime }));
+-assert.deepEqual(reflectorRequest.expectedCoverageManifest, expectedCoverageManifest);
+-assert.deepEqual(Object.keys(reflectorRequest.expectedCoverageManifest), Object.keys(observerRequest.expectedCoverageManifest));
++assert.equal(Object.hasOwn(reflectorRequest, "binding"), false);
++assert.equal(Object.hasOwn(reflectorRequest, "snapshot"), false);
++assert.equal(Object.hasOwn(reflectorRequest, "expectedCoverageManifest"), false);
+ assert.match(reflectorRequest.output.reflections.item.supportingObservationIds, /non-empty subset/);
+ const reflected = await reflector.runReflector({ binding, snapshot, observations: observed.observations, runtime });
+ assert.equal(reflected.ok, true);
+@@ -149,141 +146,40 @@ const legacyCompacted = await compactor.runCompactor(compactorInput);
+ assert.equal(legacyCompacted.ok, false);
+ assert.match(legacyCompacted.reason, /identity mismatch/);
+ 
+-// --- optional manifest echo + normalized citation order (observer and reflector) ---
++// Semantic-only responses never need lifecycle identity. Citations remain strict.
+ const wideEntries = [1, 2].flatMap((turn) => {
+   const user = { type: "message", id: `wide-user-${turn}`, parentId: turn === 1 ? null : `wide-assistant-${turn - 1}`, message: { role: "user", content: [{ type: "text", text: `Wide turn ${turn} constraint.` }] }, tokenCount: 8 };
+   const assistant = { type: "message", id: `wide-assistant-${turn}`, parentId: user.id, message: { role: "assistant", content: [{ type: "text", text: `Wide turn ${turn} done.` }] }, tokenCount: 8 };
+   return [user, assistant];
+ });
+ const wideSnapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: wideEntries, maxTokens: 100_000 });
+-assert.equal(wideSnapshot.status, "ready");
+ const span = wideSnapshot.span.sourceEntryIds;
+-assert.ok(span.length >= 4);
+-const scalarManifest = () => {
+-  const { sourceEntryIds: _omitted, ...scalars } = expectedCoverageManifest;
+-  return { ...scalars, snapshotId: wideSnapshot.snapshotId, cycleId: wideSnapshot.cycleId, sourceDigest: wideSnapshot.span.sourceDigest, completedTurnEndId: wideSnapshot.span.completedTurnEndId };
+-};
+-const stub = (responder) => ({ modelRegistry: runtime.modelRegistry, async agentLoop(prompts, context) { return JSON.stringify(responder(JSON.parse(prompts[0].content[0].text), context)); } });
++const stub = (responder) => ({ modelRegistry: runtime.modelRegistry, async agentLoop(prompts) { return JSON.stringify(responder(JSON.parse(prompts[0].content[0].text))); } });
+ const observeWith = (responder) => observer.runObserver({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime: stub(responder) });
+-const observation = (cited, content = "Wide durable constraint.") => ({ content, timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: cited });
+-const manifestFailurePrefix = "observer coverage manifest is missing, reordered, or identity-mismatched";
+-
+-// A1: manifest omitting sourceEntryIds is accepted and the stored span is untouched.
+-const omitted = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation([span[0]])] }));
+-assert.equal(omitted.ok, true);
+-assert.equal(omitted.manifestValid, true);
+-assert.deepEqual(omitted.record.data.span, wideSnapshot.span);
+-
+-// A1b: the legacy manifest alias remains accepted.
+-const aliased = await observeWith(() => ({ manifest: scalarManifest(), observations: [] }));
+-assert.equal(aliased.ok, true);
+-assert.equal(aliased.manifestValid, true);
+-
+-// A1c: missing coverage is categorized without exposing the response.
+-const missing = await observeWith(() => ({ observations: [] }));
+-assert.equal(missing.ok, false);
+-assert.equal(missing.manifestValid, false);
+-assert.equal(missing.reason, `${manifestFailurePrefix} (missing-coverage-manifest)`);
+-const nonRecord = await observeWith(() => "model-output-secret");
+-assert.equal(nonRecord.ok, false);
+-assert.equal(nonRecord.reason, `${manifestFailurePrefix} (missing-coverage-manifest)`);
+-assert.doesNotMatch(nonRecord.reason, /model-output-secret/);
+-
+-// A1d: identity failures expose only their fixed structural category.
+-const returnedBranch = "branch:SECRET-SHOULD-NOT-APPEAR";
+-const branchMismatch = await observeWith(() => ({ manifest: { ...scalarManifest(), branchId: returnedBranch }, observations: [] }));
+-assert.equal(branchMismatch.ok, false);
+-assert.equal(branchMismatch.manifestValid, false);
+-assert.equal(branchMismatch.reason, `${manifestFailurePrefix} (mismatch-branchId)`);
+-assert.doesNotMatch(branchMismatch.reason, new RegExp(`${binding.branchId}|${returnedBranch}`));
+-
+-const returnedDigest = "digest-secret-should-not-appear";
+-const digestMismatch = await observeWith(() => ({ coverage: { ...scalarManifest(), sourceDigest: returnedDigest }, observations: [] }));
+-assert.equal(digestMismatch.ok, false);
+-assert.equal(digestMismatch.manifestValid, false);
+-assert.equal(digestMismatch.reason, `${manifestFailurePrefix} (mismatch-sourceDigest)`);
+-assert.doesNotMatch(digestMismatch.reason, new RegExp(`${wideSnapshot.span.sourceDigest}|${returnedDigest}`));
+-
+-// A2: a supplied but wrong/reordered manifest array is still rejected.
+-for (const wrong of [[...span].reverse(), span.slice(0, 2), [...span.slice(0, -1), "not-an-entry"]]) {
+-  const bad = await observeWith(() => ({ coverageManifest: { ...scalarManifest(), sourceEntryIds: wrong }, observations: [] }));
+-  assert.equal(bad.ok, false);
+-  assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
+-}
+-
+-// A3: every scalar identity field stays required and exactly compared.
+-for (const key of ["snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sessionId", "generation", "branchId"]) {
+-  for (const mutate of [(m) => { delete m[key]; return m; }, (m) => ({ ...m, [key]: "corrupted" })]) {
+-    const bad = await observeWith(() => ({ coverageManifest: mutate(scalarManifest()), observations: [] }));
+-    assert.equal(bad.ok, false, `scalar ${key} must be required`);
+-    assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
+-  }
+-}
+-
+-// A4: out-of-order and duplicated citations are normalized, not rejected.
+-const normalized = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation([span[2], span[0], span[2]])] }));
+-assert.equal(normalized.ok, true);
+-assert.deepEqual(normalized.observations[0].sourceEntryIds, [span[0], span[2]]);
+-
+-// A5/A6: membership and non-emptiness remain hard invariants, with a safe reason category.
++const observation = (cited, content = "Wide durable constraint.") => ({ content, timestamp: "2026-08-03T00:00:00Z", relevance: "high", sourceEntryIds: cited, id: "pm:o:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee" });
++const semantic = await observeWith(() => ({ observations: [observation([span[2], span[0], span[2]])] }));
++assert.equal(semantic.ok, true);
++assert.deepEqual(semantic.observations[0].sourceEntryIds, [span[0], span[2]]);
++assert.notEqual(semantic.observations[0].id, "pm:o:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee");
+ for (const cited of [[span[0], "outside-span"], [], [span[0], 7]]) {
+-  const bad = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [observation(cited)] }));
++  const bad = await observeWith(() => ({ observations: [observation(cited)] }));
+   assert.equal(bad.ok, false);
+   assert.equal(bad.reason, "observer returned an invalid observation (invalid-observation-sourceEntryIds)");
+ }
+-
+-// A6b: malformed fields identify only their structural class; no model value leaks.
+-const badRelevance = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [{ ...observation([span[0]]), relevance: "SECRET-RELEVANCE-SHOULD-NOT-APPEAR" }] }));
+-assert.equal(badRelevance.reason, "observer returned an invalid observation (invalid-observation-relevance)");
+-assert.doesNotMatch(badRelevance.reason, /SECRET-RELEVANCE-SHOULD-NOT-APPEAR/);
+-const badContent = await observeWith(() => ({ coverageManifest: scalarManifest(), observations: [{ ...observation([span[0]]), content: "   " }] }));
+-assert.equal(badContent.reason, "observer returned an invalid observation (invalid-observation-content)");
+-
+-// A7: the emitted prompt tells the model to omit the manifest ids.
+-const widePrompt = JSON.parse(observer.buildObserverRequest({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime }));
+-assert.match(widePrompt.output.coverageManifest, /OMIT sourceEntryIds/);
+-assert.match(widePrompt.output.observations.item.sourceEntryIds, /order does not matter/);
+-assert.deepEqual(widePrompt.expectedCoverageManifest.sourceEntryIds, span);
+-
+-const multi = await observeWith(() => ({
+-  coverageManifest: scalarManifest(),
+-  observations: ["alpha", "beta", "gamma"].map((word, index) => observation([span[index]], `Durable ${word} constraint.`)),
+-}));
+-assert.equal(multi.observations.length, 3);
+-const observationIds = multi.observations.map((item) => item.id);
+-const reflectWith = (responder) => reflector.runReflector({ binding, snapshot: wideSnapshot, observations: multi.observations, runtime: stub(responder) });
+-const reflection = (cited) => ({ content: "The wide constraint is durable.", supportingObservationIds: cited });
+-
+-// B1: reflector accepts an omitted manifest array and keeps the stored span.
+-const reflectedOmitted = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection([observationIds[0]])] }));
+-assert.equal(reflectedOmitted.ok, true);
+-assert.deepEqual(reflectedOmitted.record.data.span, wideSnapshot.span);
+-
+-// B2/B3: supplied-but-wrong arrays and scalar corruption stay rejected.
+-const reflectedWrong = await reflectWith(() => ({ coverageManifest: { ...scalarManifest(), sourceEntryIds: [...span].reverse() }, reflections: [] }));
+-assert.equal(reflectedWrong.ok, false);
+-assert.match(reflectedWrong.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
+-for (const key of ["snapshotId", "cycleId", "sourceDigest", "completedTurnEndId", "sessionId", "generation", "branchId"]) {
+-  const bad = await reflectWith(() => { const m = scalarManifest(); delete m[key]; return { coverageManifest: m, reflections: [] }; });
+-  assert.equal(bad.ok, false, `scalar ${key} must be required`);
+-  assert.match(bad.reason, /coverage manifest is missing, reordered, or identity-mismatched/);
+-}
+-
+-// B4: supporting ids are deduplicated and ordered by observation position.
+-const reflectedNormalized = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection([observationIds[2], observationIds[0], observationIds[2]])] }));
+-assert.equal(reflectedNormalized.ok, true);
+-assert.deepEqual(reflectedNormalized.reflections[0].supportingObservationIds, [observationIds[0], observationIds[2]]);
+-
+-// B5/B6: outside ids and empty citations stay rejected.
++const noManifest = JSON.parse(observer.buildObserverRequest({ binding, snapshot: wideSnapshot, sourceEntries: wideEntries, runtime }));
++assert.equal(Object.hasOwn(noManifest, "expectedCoverageManifest"), false);
++assert.equal(Object.hasOwn(noManifest, "binding"), false);
++const observationIds = semantic.observations.map((item) => item.id);
++const reflectWith = (responder) => reflector.runReflector({ binding, snapshot: wideSnapshot, observations: semantic.observations, runtime: stub(responder) });
++const reflectedSemantic = await reflectWith(() => ({ reflections: [{ content: "The wide constraint is durable.", supportingObservationIds: [observationIds[0], observationIds[0]], id: "pm:r:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee" }] }));
++assert.equal(reflectedSemantic.ok, true);
++assert.notEqual(reflectedSemantic.reflections[0].id, "pm:r:ffffffffffffffffffffffff:eeeeeeeeeeeeeeeeeeeeeeee");
+ for (const cited of [[observationIds[0], "pm:o:deadbeef"], []]) {
+-  const bad = await reflectWith(() => ({ coverageManifest: scalarManifest(), reflections: [reflection(cited)] }));
++  const bad = await reflectWith(() => ({ reflections: [{ content: "invalid", supportingObservationIds: cited }] }));
+   assert.equal(bad.ok, false);
+   assert.equal(bad.reason, "reflector returned an invalid reflection");
+ }
+-
+-// B7: reflector prompt also instructs omission.
+-const widePromptReflector = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot: wideSnapshot, observations: multi.observations, runtime }));
+-assert.match(widePromptReflector.output.coverageManifest, /OMIT sourceEntryIds/);
+-assert.match(widePromptReflector.output.reflections.item.supportingObservationIds, /order does not matter/);
+-
+-console.log("PLASTIC_MEMORY_WORKER_CONTRACT: PASS (optional manifest echo, normalized citations, and observer/reflector/compactor contracts validate)");
++const reflectorPrompt = JSON.parse(reflector.buildReflectorRequest({ binding, snapshot: wideSnapshot, observations: semantic.observations, runtime }));
++assert.equal(Object.hasOwn(reflectorPrompt, "expectedCoverageManifest"), false);
++assert.match(reflectorPrompt.output.reflections.item.supportingObservationIds, /order does not matter/);
++console.log("PLASTIC_MEMORY_WORKER_CONTRACT: PASS (semantic-only worker contracts, code-owned identity, strict citations, and compactor contract validate)");
+diff --git a/extensions/test/plastic-memory-workers.smoke.mjs b/extensions/test/plastic-memory-workers.smoke.mjs
+index fd685a7..9cdcdfa 100644
+--- a/extensions/test/plastic-memory-workers.smoke.mjs
++++ b/extensions/test/plastic-memory-workers.smoke.mjs
+@@ -30,6 +30,8 @@ const currentAssistant = message("assistant", 50_000, "current terminal answer")
+ const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+ const calls = [];
+ let failureMode = false;
++let reflectorFailOnce = false;
++const reflectorPrompts = [];
+ const runtime = {
+   modelRegistry: {
+     find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
+@@ -42,16 +44,13 @@ const runtime = {
+     assert.equal(config.maxToolCalls, 4);
+     calls.push({ role: context.role, prompt: prompts[0].content[0].text });
+     const request = JSON.parse(prompts[0].content[0].text);
+-    if (failureMode) return { noManifest: true };
++    if (context.role === "reflector") reflectorPrompts.push(prompts[0].content[0].text);
++    if (failureMode || context.role === "reflector" && reflectorFailOnce && reflectorPrompts.length === 1) return { noSemanticResult: true };
+     if (context.role === "observer") {
+-      const snapshot = request.snapshot;
+-      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
+-      return { coverageManifest: manifest, observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: snapshot.span.sourceEntryIds }] };
++      return { observations: [{ content: "bounded fact", timestamp: "2026-08-03 00:00", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+     }
+     if (context.role === "reflector") {
+-      const snapshot = request.snapshot;
+-      const manifest = { ...request.binding, snapshotId: snapshot.snapshotId, cycleId: snapshot.cycleId, ...snapshot.span };
+-      return { coverageManifest: manifest, reflections: [{ content: "durable pattern", supportingObservationIds: request.observations.map((item) => item.id) }] };
++      return { reflections: [{ content: "durable pattern", supportingObservationIds: request.observations.map((item) => item.id) }] };
+     }
+     return { proposal: "proposal", repositoryEvidence: ["extensions/plastic-memory/workers"] };
+   },
+@@ -123,19 +122,35 @@ assert.equal(calls.filter((call) => call.role === "observer").length, 2, "repeat
+ assert.equal(appended.filter((entry) => entry.customType === "plastic.cycle.closed").length, 1);
+ assert.deepEqual(lifecycleEvents.filter((event) => event.phase === "observer"), [{ phase: "observer", status: "started", tokenCount: 100_000 }]);
+ 
+-// Missing/reordered manifests fail closed and permit only one automatic retry.
++// Semantic failures fail closed and retry once immediately with the same chunk.
+ failureMode = true;
+ const retryAppended = [];
+ const retryScheduler = schedulerModule.createCycleScheduler();
+ const retryInput = { ...scheduleInput, records: [], append: (entry) => retryAppended.push(entry) };
++const failedObserverStart = calls.filter((call) => call.role === "observer").length;
+ assert.equal((await retryScheduler.trigger(retryInput)).status, "failed");
+-assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "failed");
++const failedObserverPrompts = calls.filter((call) => call.role === "observer").slice(failedObserverStart).map((call) => call.prompt);
++assert.equal(failedObserverPrompts.length, 2, "observer retries once immediately");
++assert.equal(failedObserverPrompts[0], failedObserverPrompts[1], "observer retry uses byte-equivalent chunk input");
+ assert.equal((await retryScheduler.trigger({ ...retryInput, records: retryAppended })).status, "suppressed");
+ assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").length, 5);
++assert.equal(retryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").filter((entry) => entry.data.outcome === "failed").length, 2);
+ assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "failed").length, 2);
+ assert.equal(lifecycleEvents.filter((event) => event.phase === "observer" && event.status === "started").length, 3);
+ assert.equal(lifecycleEvents.every((event) => event.reason === undefined || event.reason.length <= 120), true);
+ failureMode = false;
++reflectorFailOnce = true;
++reflectorPrompts.length = 0;
++const reflectorRetryAppended = [];
++const reflectorRetryScheduler = schedulerModule.createCycleScheduler();
++const reflectorRetryInput = { ...scheduleInput, records: [], append: (entry) => reflectorRetryAppended.push(entry) };
++assert.equal((await reflectorRetryScheduler.trigger(reflectorRetryInput)).status, "closed");
++assert.equal(reflectorPrompts.length, 2, "reflector retries once in the same trigger");
++assert.equal(reflectorPrompts[0], reflectorPrompts[1], "reflector retry uses byte-equivalent aggregate input");
++assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.observations.recorded").length, 1, "observations persist once after full coverage");
++assert.equal(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.reflections.recorded").length, 1);
++assert.deepEqual(reflectorRetryAppended.filter((entry) => entry.customType === "plastic.cycle.attempted").map((entry) => [entry.data.attemptCount, entry.data.outcome, entry.data.phase]), [[0, "pending", "observer"], [0, "failed", "reflector"], [1, "pending", "reflector"]]);
++reflectorFailOnce = false;
+ 
+ const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", sourceDigest: snapshot.span.sourceDigest.slice(0, 24), projectSnapshot: { summary: "bounded", activeIndex: "{}" }, explicitRequest: true, runtime });
+ assert.equal(explicitPromotion.ok, true);

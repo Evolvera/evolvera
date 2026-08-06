@@ -1,0 +1,6 @@
+# task_07 pre-edit recovery manifest
+extensions/plastic-memory/runtime/coordinator.ts lines=609 sha256=d868d6808ad28e8acaac6150923caa56487daecfadba966cb82c2d10c9fcd45d
+extensions/plastic-memory/session/recall.ts lines=293 sha256=d2578f3468f82891762ad884b730d9eb861bc9fb15e173def2909f767f9390a0
+extensions/test/plastic-memory-apply-cut.smoke.mjs lines=281 sha256=55d8b53caeafd70519489a5f92ad005b03108618541d82458567207a29a55129
+extensions/test/plastic-memory-acknowledge.smoke.mjs lines=233 sha256=900fb6adfc7dd2fda520e94f56f6d85ea61ed3ab8cb85c67cac3a2fd21c7179b
+extensions/test/plastic-memory-integration.smoke.mjs lines=365 sha256=353d773b3e04ea76115f97944705f11e82201b3789c3682c9c5541f1f7073a0a
