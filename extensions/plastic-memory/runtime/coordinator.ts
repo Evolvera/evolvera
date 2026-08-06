@@ -332,6 +332,7 @@ export class PlasticMemoryCoordinator {
       append: (record: { customType: string; data: unknown }) => this.appendWorkerRecord(ctx, record),
       currentIdentity: () => this.currentIdentity(ctx),
       lifecycleReporter: (event: SchedulerLifecycleEvent) => this.reportLifecycle(ctx, event),
+      reschedule: () => this.schedule(ctx),
       compaction: {
         engine: {
           branchEntries,
