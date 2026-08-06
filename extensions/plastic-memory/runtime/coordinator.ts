@@ -115,35 +115,16 @@ function fixedPhysicalBudgetFor(ctx: ExtensionContext): Pick<PhysicalBudget, "co
     return null;
   }
 }
-function physicalBudgetFor(ctx: ExtensionContext, branch: readonly SessionEntry[], cycles: readonly CycleClosedData[]): PhysicalBudget | null {
+function physicalBudgetFor(ctx: ExtensionContext, branch: readonly SessionEntry[]): PhysicalBudget | null {
   const fixed = fixedPhysicalBudgetFor(ctx);
   if (!fixed) return null;
-  try {
-    const positions = new Map(branch.flatMap((entry, index) => typeof entry.id === "string" ? [[entry.id, index] as const] : []));
-    const retainedCycleTokens: Record<string, number> = {};
-    let latestEnd = -1;
-    for (const cycle of cycles) {
-      let total = 0;
-      for (const id of cycle.sourceEntryIds) {
-        const entry = branch.find((candidate) => candidate.id === id);
-        const tokens = entry ? estimateEntryTokens(entry) : undefined;
-        if (tokens === undefined) return null;
-        total += tokens;
-        const position = positions.get(id) ?? -1;
-        if (position > latestEnd) latestEnd = position;
-      }
-      retainedCycleTokens[cycle.cycleId] = total;
-    }
-    let incompleteSuffixTokens = 0;
-    for (const entry of branch.slice(latestEnd + 1)) {
-      const tokens = estimateEntryTokens(entry);
-      if (tokens === undefined) return null;
-      incompleteSuffixTokens += tokens;
-    }
-    return { ...fixed, retainedCycleTokens, incompleteSuffixTokens };
-  } catch {
-    return null;
+  const entryTokens: Record<string, number> = {};
+  for (const entry of branch) {
+    if (typeof entry.id !== "string") continue;
+    const tokens = estimateEntryTokens(entry);
+    if (tokens !== undefined) entryTokens[entry.id] = tokens;
   }
+  return { ...fixed, entryTokens };
 }
 function physicalTailFits(ctx: ExtensionContext, branch: readonly SessionEntry[], cutId: string): boolean {
   const budget = fixedPhysicalBudgetFor(ctx);
@@ -320,7 +301,7 @@ export class PlasticMemoryCoordinator {
     const bootstrap = bootstrapFor(branchEntries, binding) ?? this.ensureBootstrap(ctx);
     if (!bootstrap) return;
     const cycles = cyclesFor(branchEntries, binding);
-    const physicalBudget = physicalBudgetFor(ctx, branchEntries, cycles);
+    const physicalBudget = physicalBudgetFor(ctx, branchEntries);
     const folded = foldLedger(branchEntries, { context: binding });
     const projectSnapshot = this.snapshotFor();
     const input = {

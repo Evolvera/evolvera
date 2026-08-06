@@ -45,6 +45,10 @@ function fixture(includeHostPrefix = false) {
   }
   return { entries, spans };
 }
+function entryBudget(entries, contextWindow, fixedTokens, tokensPerEntry) {
+  return { contextWindow, fixedTokens, entryTokens: Object.fromEntries(entries.map((entry) => [entry.id, tokensPerEntry])) };
+}
+
 function closedCycle(binding, span, entries) {
   const sourceEntries = span.ids.map((id) => entries.find((entry) => entry.id === id));
   return {
@@ -88,12 +92,7 @@ function world(options = {}) {
   handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
   const binding = options.binding ? options.binding(coordinator.getBinding(ctx)) : coordinator.getBinding(ctx);
   const cycles = spans.map((span) => closedCycle(binding, span, entries));
-  const physicalBudget = options.twoCyclePhysicalBudget ? {
-    contextWindow: 25_000,
-    fixedTokens: 0,
-    retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 10_000])),
-    incompleteSuffixTokens: 0,
-  } : undefined;
+  const physicalBudget = options.twoCyclePhysicalBudget ? entryBudget(entries, 25_000, 0, 2_500) : undefined;
   const prepared = engine.prepareSemanticCompaction({
     binding, branchEntries: entries, cycles, physicalBudget, projectSnapshot,
     runtimeToken: options.pendingRuntimeToken ?? runtimeToken, now: PREPARE_AT, compact: fakeLuna,

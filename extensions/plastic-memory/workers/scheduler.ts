@@ -7,7 +7,7 @@ import { runReflector, type ReflectorResult } from "./reflector.ts";
 import { runCompactor, type CompactorInput, type CompactorResult } from "./compactor.ts";
 import { runPromoter, type PromoterInput, type PromoterResult } from "./promoter.ts";
 import type { RunnerRuntime } from "./runner.ts";
-import { selectEligibleStride, type EngineInput } from "../compaction/engine.ts";
+import { diagnoseEligibleWindow, selectEligibleStride, type EngineInput } from "../compaction/engine.ts";
 import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
 import type { PendingStore } from "../compaction/pending.ts";
 
@@ -265,7 +265,7 @@ export class CycleScheduler {
     // The compactor only ever sees the stride the engine would compact, so no model call is spent before a valid 6/4 window exists.
     const eligibleCycles = selectEligibleStride(engine);
     if (!eligibleCycles) {
-      report(input, { phase: "compactor", status: "skipped", reason: "no six-cycle stride yet" });
+      report(input, { phase: "compactor", status: "skipped", reason: `stride not eligible (${diagnoseEligibleWindow(engine)})` });
       return undefined;
     }
     const jobInput: CompactorInput = {
