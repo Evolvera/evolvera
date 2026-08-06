@@ -1,7 +1,7 @@
 import { digestParts } from "../common/safety.ts";
 import { foldLedger, hasOrderedContextTail, sourceDigest } from "../session/ledger.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
-import { isTerminalAssistantEntry } from "../session/cycles.ts";
+import { estimateSourceTokens, isTerminalAssistantEntry, QUEUED_CYCLE_MIN_TOKENS } from "../session/cycles.ts";
 import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type Observation, type Reflection, type SessionBinding, type SessionEntry } from "../session/types.ts";
 import { renderSessionSummary } from "../session/render-summary.ts";
 import { extractCycleSourceFacts, verifyCycleSourceDigest, type CycleSourceFacts } from "./extract.ts";
@@ -150,6 +150,13 @@ export function validateClosedCycleSet(input: Pick<EngineWindowInput, "binding" 
   const cycles = [...complete].sort((a, b) => (sourcePositions.get(a.sourceStartId) ?? Number.MAX_SAFE_INTEGER) - (sourcePositions.get(b.sourceStartId) ?? Number.MAX_SAFE_INTEGER));
   if (new Set(cycles.map((cycle) => cycle.cycleId)).size !== cycles.length) return undefined;
   if (!cycles.every((cycle) => exactCycleSpan(cycle, input.branchEntries, branchPositions, sourcePositions))) return undefined;
+  // A normal compaction is never allowed to reopen a below-threshold close. Recompute
+  // from the exact current-branch source entries instead of trusting persisted metadata.
+  if (!cycles.every((cycle) => {
+    const sourceEntries = cycle.sourceEntryIds.map((id) => input.branchEntries[branchPositions.get(id)!]);
+    const tokenEstimate = estimateSourceTokens(sourceEntries);
+    return Number.isSafeInteger(tokenEstimate) && tokenEstimate >= QUEUED_CYCLE_MIN_TOKENS;
+  })) return undefined;
   for (let index = 1; index < cycles.length; index += 1) {
     const previousEnd = sourcePositions.get(cycles[index - 1].sourceEndId);
     const currentStart = sourcePositions.get(cycles[index].sourceStartId);

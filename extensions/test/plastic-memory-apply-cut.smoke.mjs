@@ -31,7 +31,7 @@ function fixture(includeHostPrefix = false) {
     });
   }
   const append = (message) => {
-    const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
+    const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 5_000 };
     entries.push(entry);
     return entry;
   };
@@ -107,11 +107,6 @@ function world(options = {}) {
     cut: pending.cut.firstKeptEntryId,
     setClock(value) { clock = value; },
     setUsage(value) { usageTokens = value; },
-    internalInstructions() {
-      handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
-      assert.equal(compactCalls.length, 1, "settled coordinator issues one internal compact");
-      return compactCalls[0].customInstructions;
-    },
     beforeCompact(event) {
       return handlers.get("session_before_compact")({ type: "session_before_compact", branchEntries: state.branch, ...event }, ctx);
     },
@@ -122,50 +117,14 @@ function hostEvent(firstKeptEntryId, extra = {}) {
   return { preparation: { firstKeptEntryId, tokensBefore: 7_777 }, reason: "auto", ...extra };
 }
 
-// 0. Application waits for a known usage strictly above 20,000, then reassesses the
-// same prepared pending without consuming it early.
-for (const usageTokens of [undefined, null, 0, 20_000]) {
+// Prepared work waits passively: lifecycle edges may capture/drain queue work but never
+// invoke host compaction, regardless of context usage.
+for (const usageTokens of [undefined, null, 0, 20_000, 20_001]) {
   const w = world({ usageTokens });
+  w.handlers.get("turn_end")({ type: "turn_end" }, w.ctx);
   w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} defers internal apply`);
-  assert.notEqual(w.coordinator.getPending(), undefined, `usage ${usageTokens} retains pending state`);
-  assert.equal(w.notices.at(-1)?.level, "info");
-  assert.match(w.notices.at(-1)?.message ?? "", /compaction skipped/u);
-}
-{
-  const w = world({ usageTokens: 20_000 });
-  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  w.setUsage(20_001);
-  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  assert.equal(w.compactCalls.length, 1, "strictly high usage applies exactly once after deferral");
-}
-
-// 1. INTERNAL path: the host's own keepRecentTokens suggestion differs from the 6/4 cut
-//    and must be ignored; the coordinator applies its own cut instead of cancelling.
-{
-  const w = world();
-  const customInstructions = w.internalInstructions();
-  assert.notEqual(w.entries[0].id, w.cut, "host suggestion differs from the plastic cut");
-  const result = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id, tokensBefore: 4_242 }, customInstructions, reason: "manual" });
-  assert.equal(result.cancel, undefined, "internal apply is not cancelled");
-  assert.equal(result.compaction.firstKeptEntryId, w.cut);
-  assert.equal(result.compaction.summary, w.rendered.summary);
-  assert.equal(result.compaction.tokensBefore, 4_242);
-  assert.deepEqual(result.compaction.details, w.rendered.details);
-  assert.equal(w.coordinator.getPending(), undefined, "pending slot is consumed once");
-}
-{
-  // Internal path imposes no constraint at all from preparation.firstKeptEntryId.
-  const w = world();
-  const customInstructions = w.internalInstructions();
-  const result = await w.beforeCompact({ preparation: { tokensBefore: 1 }, customInstructions, reason: "manual" });
-  assert.equal(result.compaction.firstKeptEntryId, w.cut, "missing host suggestion still applies the plastic cut");
-}
-{
-  // Foreign / stale internal nonce still cancels.
-  const w = world();
-  w.internalInstructions();
-  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions: "\u0000plastic-memory:internal-compaction:foreign", reason: "manual" }), { cancel: true });
+  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} never autonomously compacts`);
+  assert.notEqual(w.coordinator.getPending(), undefined, `usage ${usageTokens} retains the prepared pending`);
 }
 
 // 2. HOST path: Plastic owns a valid cut regardless of host advisory ordering.
@@ -201,19 +160,6 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   assert.deepEqual(await w.beforeCompact(hostEvent("not-on-this-branch")), { cancel: true }, "unlocatable host cut cancels without native fallback");
   assert.deepEqual(await w.beforeCompact(hostEvent(undefined)), { cancel: true }, "absent host cut cancels without native fallback");
 }
-// 2a. Pi can reject before the extension hook when its own preparation is empty. The
-// exact benign error clears only the latch and preserves the pending for one later edge.
-{
-  const w = world();
-  const customInstructions = w.internalInstructions();
-  w.compactCalls[0].onError(new Error("Nothing to compact (session too small)"));
-  assert.notEqual(w.coordinator.getPending(), undefined, "benign host refusal retains pending");
-  assert.equal(w.notices.at(-1)?.message, "Plastic memory: compaction skipped — Nothing to compact (session too small)");
-  w.setUsage(20_001);
-  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  assert.equal(w.compactCalls.length, 2, "later settled edge gets exactly one retry");
-  assert.notEqual(w.compactCalls[1].customInstructions, customInstructions);
-}
 // 2b. A descendant that makes the prepared cut physically unsafe is rejected at hook time.
 {
   const w = world();
@@ -230,7 +176,6 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
 {
   const w = world({ pendingRuntimeToken: "runtime-other" });
   assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "wrong runtimeToken");
-  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.internalInstructions(), reason: "manual" }), { cancel: true }, "wrong runtimeToken (internal)");
 }
 {
   const w = world();
@@ -253,29 +198,4 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   w.setClock(PREPARE_AT + 300_001);
   assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "expired pending");
 }
-{
-  const w = world();
-  const customInstructions = w.internalInstructions();
-  w.setClock(PREPARE_AT + 300_001);
-  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions, reason: "manual" }), { cancel: true }, "expired pending (internal)");
-}
-
-// A cancelled internal apply must release the coordinator. The nonce is spent before the
-// pending is validated, so without a local reset the apply latch would stay set and every
-// later compaction in the session would be silently blocked — even if the host never
-// delivers `onError` for the cancellation.
-{
-  const w = world();
-  const customInstructions = w.internalInstructions();
-  const foreignBranch = [...w.state.branch.slice(0, -1)];
-  const cancelled = await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions, reason: "manual", branchEntries: foreignBranch });
-  assert.deepEqual(cancelled, { cancel: true }, "a branch mismatch cancels the internal apply");
-  assert.notEqual(w.coordinator.getPending(), undefined, "a cancelled apply does not consume the pending");
-  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  assert.equal(w.compactCalls.length, 2, "the coordinator is not latched: a later settle issues a new internal compact");
-  const retry = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.compactCalls[1].customInstructions, reason: "manual" });
-  assert.equal(retry.cancel, undefined, "the retried apply succeeds after the cancellation");
-  assert.equal(retry.compaction.firstKeptEntryId, w.cut);
-}
-
-console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (Plastic owns valid cuts independent of host advisory order, budget and exact benign deferrals retain pending, cancellation releases the apply latch, all prior guards reject)");
+console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (passive prepared-pending host use preserves exact cut, binding, prefix, TTL, and physical-tail guards)");

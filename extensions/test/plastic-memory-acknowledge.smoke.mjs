@@ -21,7 +21,7 @@ function fixture() {
   let nextId = 0;
   const entries = [];
   const append = (message) => {
-    const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
+    const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 5_000 };
     entries.push(entry);
     return entry;
   };
@@ -54,8 +54,16 @@ function world() {
   const appended = [];
   let clock = 2_000;
   let compactionSeq = 0;
-  const pi = { on(event, handler) { handlers.set(event, handler); }, appendEntry(customType, data) { appended.push({ customType, data }); }, registerTool() {}, registerCommand() {} };
+  let plasticSeq = 0;
   const state = { branch: [...entries] };
+  const pi = {
+    on(event, handler) { handlers.set(event, handler); },
+    appendEntry(customType, data) {
+      appended.push({ customType, data });
+      state.branch.push({ type: "custom", id: `plastic-${++plasticSeq}`, parentId: state.branch.at(-1)?.id, customType, data });
+    },
+    registerTool() {}, registerCommand() {},
+  };
   const ctx = {
     cwd: root,
     hasUI: false,
@@ -85,7 +93,7 @@ function world() {
     clock += 1_000;
     const currentBinding = coordinator.getBinding(ctx);
     if (currentBinding.generation !== stagedGeneration) {
-      priorState = undefined;
+      priorState = coordinator.priorState;
       stagedGeneration = currentBinding.generation;
     }
     const currentCycles = allCycles.slice(0, cycleCount).map((cycle) => ({ ...cycle, ...currentBinding }));
@@ -100,17 +108,13 @@ function world() {
     return prepared.prepared;
   }
 
-  /** Drive `session_before_compact` through the internal nonce and return its host reply. */
+  /** Drive Pi's ordinary host hook directly; Plastic has no internal compaction path. */
   async function beforeCompact() {
-    const before = compactCalls.length;
-    handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
-    assert.equal(compactCalls.length, before + 1, "settled coordinator issues exactly one internal compact");
-    const customInstructions = compactCalls.at(-1).customInstructions;
     const result = await handlers.get("session_before_compact")({
       type: "session_before_compact", branchEntries: state.branch,
-      preparation: { firstKeptEntryId: state.branch[0].id, tokensBefore: 7_777 }, reason: "manual", customInstructions,
+      preparation: { firstKeptEntryId: state.branch[0].id, tokensBefore: 7_777 }, reason: "manual",
     }, ctx);
-    assert.ok(result && result.compaction, "internal apply returns a plastic compaction");
+    assert.ok(result && result.compaction, "ordinary host hook returns a verified Plastic compaction");
     return result.compaction;
   }
 
@@ -151,7 +155,10 @@ const w = world();
   const entry = w.hostAppend(compaction);
   w.compactEvent(entry);
   assert.equal(applied(w).length, 1, "a consumed pending is acknowledged at session_compact");
-  assert.deepEqual(w.coordinator.priorState, prepared.rendered.state, "matching acknowledgement promotes the verified state");
+  assert.equal(w.appended.findIndex((record) => record.customType === "plastic.compaction.applied")
+    < w.appended.findIndex((record) => record.customType === "plastic.bootstrap.recorded" && record.data.generation === 2), true,
+  "the applied record is visible before rebase/bootstrap");
+  assert.deepEqual(w.coordinator.priorState, prepared.rendered.state, "rebase carries only the verified cumulative state");
   const record = applied(w)[0].data;
   assert.equal(record.compactionEntryId, entry.id);
   assert.equal(record.firstKeptEntryId, prepared.cut.firstKeptEntryId);
@@ -230,4 +237,5 @@ const w = world();
   assert.equal(engine.acknowledgeCompaction(consumed, hostCompaction, current, current.branchIds, now), undefined, "double acknowledgement is refused");
 }
 
-console.log("PLASTIC_MEMORY_ACKNOWLEDGE: PASS (two-hook lifecycle applies, repeats, recovers from failure; staging still consume-once)");
+assert.equal(w.compactCalls.length, 0, "ordinary acknowledgement lifecycle never invokes ctx.compact()");
+console.log("PLASTIC_MEMORY_ACKNOWLEDGE: PASS (ordinary host hook acknowledges visibly before cumulative-state rebase/bootstrap)");

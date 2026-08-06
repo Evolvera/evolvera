@@ -110,8 +110,8 @@ const compactorBinding = { sessionId: ids.sessionDigest("worker-contract-compact
 const compactorSnapshot = { summary: "bounded compactor project summary", activeIndex: "{}" };
 const compactorEntries = [];
 function compactorCycle(number) {
-  const user = { type: "message", id: `compact-user-${number}`, parentId: compactorEntries.at(-1)?.id ?? null, message: { role: "user", content: [{ type: "text", text: `Goal C${number}; must preserve the bounded constraint.` }] }, tokenCount: 8 };
-  const assistant = { type: "message", id: `compact-assistant-${number}`, parentId: user.id, message: { role: "assistant", content: [{ type: "text", text: `Completed C${number}.` }] }, tokenCount: 8 };
+  const user = { type: "message", id: `compact-user-${number}`, parentId: compactorEntries.at(-1)?.id ?? null, message: { role: "user", content: [{ type: "text", text: `Goal C${number}; must preserve the bounded constraint.` }] }, tokenCount: 10_000 };
+  const assistant = { type: "message", id: `compact-assistant-${number}`, parentId: user.id, message: { role: "assistant", content: [{ type: "text", text: `Completed C${number}.` }] }, tokenCount: 10_000 };
   compactorEntries.push(user, assistant);
   return {
     schemaVersion: 1, ...compactorBinding,

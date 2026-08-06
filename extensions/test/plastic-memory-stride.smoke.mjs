@@ -153,6 +153,8 @@ async function runStride(closedTurns, options = {}) {
 // 2. Six or more valid cycles: the compactor receives every older cycle before the newest four.
 {
   const run = await runStride(7); // seven prior cycles + the one the scheduler closes = eight
+  assert.equal(run.cycles.every((cycle) => cycle.sourceEntryIds.reduce((total, id) => total + run.entries.find((entry) => entry.id === id).tokenCount, 0) >= 20_000), true,
+    "six/four controls use honest >=20k durable closed cycles");
   assert.ok(run.compacted, "the compactor runs on a full stride");
   assert.equal(run.compacted.ok, true, run.compacted?.reason);
   assert.equal(run.stub.count("compactor"), 1);

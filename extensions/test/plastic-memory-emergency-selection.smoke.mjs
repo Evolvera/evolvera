@@ -11,7 +11,7 @@ const ledger = await jiti.import(path.join(root, "plastic-memory/session/ledger.
 const emergency = await jiti.import(path.join(root, "plastic-memory/compaction/emergency.ts"));
 
 const binding = { sessionId: ids.sessionDigest("emergency-selection", { generation: 1 }), generation: 1, branchId: "main" };
-function fixture(count, open = true, tokenCount = 1) {
+function fixture(count, open = true, tokenCount = 5_000) {
   let next = 0;
   const entries = [];
   const append = (message) => {
@@ -111,7 +111,7 @@ for (const count of [0, 1, 2, 3]) {
 
 // A single indivisible exchange over the cap is never split to manufacture a fit.
 {
-  const data = fixture(1, true, 10);
+  const data = fixture(1, true);
   assert.equal(select(data, budget(data.entries, 20, 0, 10)), undefined);
 }
 

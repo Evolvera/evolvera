@@ -17,7 +17,7 @@ const projectSnapshot = { summary: "bounded project summary", activeIndex: JSON.
 let nextId = 0;
 const entries = [];
 function append(message) {
-  const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message };
+  const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 5_000 };
   entries.push(entry);
   return entry;
 }
@@ -72,6 +72,17 @@ function fakeLuna(request) {
   requests.push(request);
   return { summary: "fake Luna prose is not authoritative; api_key=supersecret", state: { facts: { goals: request.facts.goals }, cycleIds: [...(request.priorState?.cycleIds ?? []), ...request.cycleIds], sourceEntryIds: [...(request.priorState?.sourceEntryIds ?? []), ...request.sourceEntryIds], sourceDigests: [...(request.priorState?.sourceDigests ?? []), ...request.sourceDigests] } };
 }
+// A single sub-20k closed cycle poisons the entire normal window before the compactor callback.
+const lowTokenEntries = entries.map((entry) => cycles[0].sourceEntryIds.includes(entry.id) ? { ...entry, tokenCount: 4_999 } : entry);
+const lowTokenCycles = cycles.map((candidate, index) => index === 0 ? {
+  ...candidate,
+  sourceDigest: ledger.sourceDigest(candidate.sourceEntryIds.map((id) => lowTokenEntries.find((entry) => entry.id === id))),
+} : candidate);
+const requestsBeforeLowToken = requests.length;
+const lowToken = engine.prepareSemanticCompaction({ binding, branchEntries: lowTokenEntries, cycles: lowTokenCycles, projectSnapshot, runtimeToken: "runtime-1", now: 999, compact: fakeLuna });
+assert.equal(lowToken.eligible, false, "a 19,996-token closed cycle rejects the complete normal window");
+assert.equal(requests.length, requestsBeforeLowToken, "sub-20k rejection occurs before a compactor callback");
+
 const first = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, firstKeptEntryId: cycles[2].sourceStartId, projectSnapshot, runtimeToken: "runtime-1", now: 1_000, compact: fakeLuna });
 assert.equal(first.eligible, true);
 assert.equal(first.prepared.cut.firstKeptEntryId, cycles[2].sourceStartId);
@@ -204,4 +215,4 @@ for (const stopKey of ["stopReason", "stop_reason"]) {
   assert.equal(toolUse.eligible, false, `${stopKey}=toolUse terminal assistant must be ineligible`);
 }
 assert.equal(safety.hasSensitiveText(firstRendered.summary), false);
-console.log("COMPACTION: PASS (6/4, cumulative stride, safe cut, fake Luna facts, scrubbed state, acknowledgement, descendant-safe pending)");
+console.log("COMPACTION: PASS (>=20k six/four stride, cumulative safe cut, scrubbed state, acknowledgement, descendant-safe pending)");
