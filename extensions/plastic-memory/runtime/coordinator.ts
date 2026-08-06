@@ -8,7 +8,7 @@ import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
 import { bootstrapSession } from "../session/bootstrap.ts";
 import { createQueuedCycleRecords, reconstructCycleQueue, type QueueReconstruction } from "../session/cycles.ts";
-import { foldLedger, hasOrderedContextTail, normalSourceEntries } from "../session/ledger.ts";
+import { foldLedger, hasOrderedContextTail, isSourceEntry, normalSourceEntries } from "../session/ledger.ts";
 import {
   isPlasticRecord,
   PLASTIC_CYCLE_ATTEMPTED,
@@ -34,7 +34,26 @@ export type CoordinatorOptions = Readonly<{
   now?: () => number;
 }>;
 
+type InternalIntent = {
+  readonly id: string;
+  readonly binding: SessionBinding;
+  readonly generation: number;
+  consumed: boolean;
+  pending?: PendingCompaction;
+};
+
+type ApplyLatch = {
+  readonly id: string;
+  readonly generation: number;
+  consumed: boolean;
+};
+
 const SESSION_DIGEST_PROVENANCE = "plastic-memory:session";
+const AUTO_APPLY_MIN_CONTEXT_TOKENS = 120_000;
+const INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX = "\u0000plastic-memory:internal-compaction:";
+function internalCompactionInstructions(id: string): string {
+  return `${INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX}${id}`;
+}
 
 function entryIds(entries: readonly SessionEntry[]): string[] {
   return entries.flatMap((entry) => typeof entry.id === "string" && entry.id.length > 0 ? [entry.id] : []);
@@ -125,6 +144,12 @@ function physicalTailFits(ctx: ExtensionContext, branch: readonly SessionEntry[]
   }
   return budget.fixedTokens + tailTokens <= budget.contextWindow;
 }
+function exactNothingToCompact(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "Nothing to compact (session too small)";
+}
+function exactCompactionCancellation(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "Compaction cancelled";
+}
 function usableVisibleModel(ctx: ExtensionContext): LunaModel | undefined {
   const candidate = (ctx as unknown as { model?: unknown }).model;
   return candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as LunaModel : undefined;
@@ -147,7 +172,10 @@ export class PlasticMemoryCoordinator {
   private readonly reportedPreparations = new WeakSet<object>();
   private generation = 0;
   private branchId = "";
+  private settled = false;
   private bootstrapAttempted = false;
+  private internalIntent?: InternalIntent;
+  private applyLatch?: ApplyLatch;
   /** The one pending already handed to Pi and awaiting host acknowledgement. */
   private inFlightPending?: PendingCompaction;
   private priorState?: CumulativeState;
@@ -169,8 +197,11 @@ export class PlasticMemoryCoordinator {
     this.branchId = `branch:${randomUUID()}`;
     this.scheduler.invalidate(reason);
     this.pendingStore.clear();
+    this.internalIntent = undefined;
+    this.applyLatch = undefined;
     this.inFlightPending = undefined;
     this.priorState = undefined;
+    this.settled = false;
     this.bootstrapAttempted = false;
   }
 
@@ -377,17 +408,17 @@ export class PlasticMemoryCoordinator {
           this.reportedPreparations.add(compacted.prepared.pending as object);
           this.reportLifecycle(ctx, { phase: "compaction", status: "prepared" });
         }
-        // Prepared normal compactions wait here for Pi to initiate a host-owned boundary.
         this.preparedViews.set(compacted.prepared.pending as object, {
           summary: compacted.prepared.rendered.summary,
           details: compacted.prepared.rendered.details,
           state: compacted.prepared.rendered.state,
         });
+        this.maybeApply(ctx);
       });
     }).catch(() => { /* worker failures are detached and fail closed */ });
   }
 
-  private preparationMatches(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, pending: PendingCompaction, ctx: ExtensionContext): boolean {
+  private preparationMatches(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, pending: PendingCompaction, ctx: ExtensionContext, internal: boolean): boolean {
     const branch = event.branchEntries;
     const current = ctx.sessionManager.getBranch() as SessionEntry[];
     if (!hasOrderedContextTail(branch) || !hasOrderedContextTail(current) || entryIds(branch).join("\u0000") !== entryIds(current).join("\u0000")) return false;
@@ -397,10 +428,12 @@ export class PlasticMemoryCoordinator {
     if (pending.preparedPrefixIds.some((id, index) => branchIds[index] !== id)) return false;
     const cutIndex = branchIds.indexOf(pending.cut.firstKeptEntryId);
     if (cutIndex < 0) return false;
-    // The host cut is advisory, but it must be branch-local. Plastic always returns its
-    // independently verified six/four cut after re-proving the retained physical tail.
-    const hostCut = event.preparation.firstKeptEntryId;
-    if (typeof hostCut !== "string" || !branchIds.includes(hostCut)) return false;
+    // The host cut is advisory, but it must be branch-local for normal calls. The
+    // internal nonce already owns its independently verified six/four boundary.
+    if (!internal) {
+      const hostCut = event.preparation.firstKeptEntryId;
+      if (typeof hostCut !== "string" || !branchIds.includes(hostCut)) return false;
+    }
     if (!physicalTailFits(ctx, branch, pending.cut.firstKeptEntryId)) return false;
     const kept = branch.find((entry) => entry.id === pending.cut.firstKeptEntryId);
     if (messageRole(kept) !== "user") return false;
@@ -456,7 +489,7 @@ export class PlasticMemoryCoordinator {
         if (this.scheduler.isBusy()) return undefined;
         if (!result.ok || !result.prepared) continue;
         const pending = result.prepared.pending;
-        if (!this.preparationMatches(event, pending, ctx)) return undefined;
+        if (!this.preparationMatches(event, pending, ctx, false)) return undefined;
         this.pendingStore.stage(pending);
         this.preparedViews.set(pending as object, {
           summary: result.prepared.rendered.summary,
@@ -472,6 +505,61 @@ export class PlasticMemoryCoordinator {
     return undefined;
   }
 
+  private consumeInternalIntent(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, ctx: ExtensionContext): { cancel: true } | { compaction: { summary: string; firstKeptEntryId: string; tokensBefore: number; details: unknown } } {
+    const intent = this.internalIntent;
+    if (!intent || intent.consumed || intent.generation !== this.generation || !sameBinding(intent.binding, this.binding(ctx))) return { cancel: true };
+    // Spend the nonce synchronously so an overlapping host compact cannot append twice.
+    intent.consumed = true;
+    if (this.applyLatch) this.applyLatch.consumed = true;
+    const pending = this.pendingStore.peek(this.now());
+    if (!pending || !this.preparedViews.has(pending as object) || !this.preparationMatches(event, pending, ctx, true)) {
+      this.resetApplyState();
+      return { cancel: true };
+    }
+    const consumed = this.pendingStore.consume({
+      binding: this.binding(ctx),
+      runtimeToken: this.runtimeToken,
+      branchIds: entryIds(event.branchEntries),
+      latestCompactionIdentity: latestCompactionIdentity(event.branchEntries),
+    }, this.now());
+    if (!consumed) {
+      this.resetApplyState();
+      return { cancel: true };
+    }
+    const view = this.preparedViews.get(pending as object);
+    if (view) this.preparedViews.set(consumed as object, view);
+    intent.pending = consumed;
+    this.inFlightPending = consumed;
+    return {
+      compaction: {
+        summary: this.pendingRenderedSummary(consumed),
+        firstKeptEntryId: consumed.cut.firstKeptEntryId,
+        tokensBefore: Number((event.preparation as Record<string, unknown>).tokensBefore ?? 0),
+        details: this.pendingRenderedDetails(consumed),
+      },
+    };
+  }
+
+  /** A new normal source entry must have started after the newest verified closed cycle. */
+  private hasStartedIncompleteCycle(ctx: ExtensionContext): boolean {
+    try {
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      if (!hasOrderedContextTail(branch)) return false;
+      const closed = cyclesFor(branch, this.binding(ctx));
+      const newestEnd = Math.max(...closed.map((cycle) => branch.findIndex((entry) => entry.id === cycle.sourceEndId)));
+      return newestEnd >= 0 && branch.slice(newestEnd + 1).some(isSourceEntry);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Clear the internal nonce, apply latch, and any host in-flight compaction. */
+  private resetApplyState(): void {
+    this.inFlightPending = undefined;
+    this.applyLatch = undefined;
+    this.internalIntent = undefined;
+  }
+
   private rebaseAfterBoundary(ctx: ExtensionContext, reason: string, priorState?: CumulativeState): void {
     // The host boundary is durable. Carry only the verified prepared state into the new generation.
     this.invalidate(reason);
@@ -480,7 +568,7 @@ export class PlasticMemoryCoordinator {
   }
 
   private failApply(ctx: ExtensionContext, reason: string): void {
-    this.inFlightPending = undefined;
+    this.resetApplyState();
     this.rebaseAfterBoundary(ctx, reason);
     this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason });
   }
@@ -493,6 +581,59 @@ export class PlasticMemoryCoordinator {
         && applied.compactionEntryId.length > 0 && applied.firstKeptEntryId === pending.cut.firstKeptEntryId).length === 1;
     } catch {
       return false;
+    }
+  }
+
+  private maybeApply(ctx: ExtensionContext): void {
+    if (!this.enabled() || !this.settled || this.applyLatch || this.inFlightPending) return;
+    let idle = false;
+    let pendingMessages = true;
+    try {
+      idle = ctx.isIdle();
+      pendingMessages = ctx.hasPendingMessages();
+    } catch {
+      return;
+    }
+    if (!idle || pendingMessages) return;
+    const pending = this.pendingStore.peek(this.now());
+    if (!pending || !this.preparedViews.has(pending as object) || pending.binding.generation !== this.generation || pending.binding.branchId !== this.branchId) return;
+    if (!this.hasStartedIncompleteCycle(ctx)) return;
+    let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+    try {
+      usage = ctx.getContextUsage();
+    } catch {
+      return;
+    }
+    // Waiting below the application threshold is the normal steady state, not an event.
+    // Reporting it would repeat on every settled turn and reproduce prior UI noise.
+    if (!usage || usage.tokens === null || !Number.isFinite(usage.tokens) || usage.tokens <= AUTO_APPLY_MIN_CONTEXT_TOKENS) return;
+    const id = randomUUID();
+    this.applyLatch = { id, generation: this.generation, consumed: false };
+    this.internalIntent = { id, binding: this.binding(ctx), generation: this.generation, consumed: false };
+    try {
+      ctx.compact({
+        customInstructions: internalCompactionInstructions(id),
+        onComplete: () => {
+          if (this.generation === pending.binding.generation) this.applyLatch = undefined;
+        },
+        onError: (error: unknown) => {
+          if (this.generation === pending.binding.generation) {
+            this.resetApplyState();
+            if (exactNothingToCompact(error)) {
+              this.reportLifecycle(ctx, { phase: "compaction", status: "skipped", reason: "Nothing to compact (session too small)" });
+            } else if (!exactCompactionCancellation(error)) {
+              this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
+            }
+          }
+        },
+      });
+    } catch (error) {
+      this.resetApplyState();
+      if (exactNothingToCompact(error)) {
+        this.reportLifecycle(ctx, { phase: "compaction", status: "skipped", reason: "Nothing to compact (session too small)" });
+      } else if (!exactCompactionCancellation(error)) {
+        this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
 
@@ -511,17 +652,29 @@ export class PlasticMemoryCoordinator {
       }
       this.ensureBootstrap(ctx);
     });
+    this.pi.on("agent_start", () => { this.settled = false; });
     this.pi.on("turn_end", (_event, ctx) => { this.ensureBootstrap(ctx); this.schedule(ctx); });
-    // Settling only captures/drains durable queue work; prepared compactions remain passive.
-    this.pi.on("agent_settled", (_event, ctx) => { this.schedule(ctx); });
+    this.pi.on("agent_settled", (_event, ctx) => {
+      this.settled = true;
+      this.schedule(ctx);
+      this.maybeApply(ctx);
+    });
     this.pi.on("session_before_compact", async (event, ctx) => {
+      const intent = this.internalIntent;
+      const hasInternalPrefix = typeof event.customInstructions === "string" && event.customInstructions.startsWith(INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX);
+      const isInternalCall = intent !== undefined && event.customInstructions === internalCompactionInstructions(intent.id);
+      if (hasInternalPrefix) {
+        if (!isInternalCall || !this.enabled()) return { cancel: true };
+        if (this.applyLatch && !this.internalIntent) return { cancel: true };
+        return this.consumeInternalIntent(event, ctx);
+      }
       if (!this.enabled()) return undefined;
 
       // A pending must match exactly. A present but stale/mismatched slot is never
       // replaced by hook-time work; only an absent slot can be refreshed while idle.
       let pending = this.pendingStore.peek(this.now());
       if (pending) {
-        if (!this.preparedViews.has(pending as object) || !this.preparationMatches(event, pending, ctx)) return { cancel: true };
+        if (!this.preparedViews.has(pending as object) || !this.preparationMatches(event, pending, ctx, false)) return { cancel: true };
       } else {
         pending = await this.refreshPendingFromClosedCycles(event, ctx);
         if (!pending) return { cancel: true };

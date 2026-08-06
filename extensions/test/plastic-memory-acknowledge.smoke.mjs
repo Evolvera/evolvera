@@ -108,7 +108,7 @@ function world() {
     return prepared.prepared;
   }
 
-  /** Drive Pi's ordinary host hook directly; Plastic has no internal compaction path. */
+  /** Drive Pi's ordinary non-internal host hook directly. */
   async function beforeCompact() {
     const result = await handlers.get("session_before_compact")({
       type: "session_before_compact", branchEntries: state.branch,
@@ -237,5 +237,5 @@ const w = world();
   assert.equal(engine.acknowledgeCompaction(consumed, hostCompaction, current, current.branchIds, now), undefined, "double acknowledgement is refused");
 }
 
-assert.equal(w.compactCalls.length, 0, "ordinary acknowledgement lifecycle never invokes ctx.compact()");
+assert.equal(w.compactCalls.length, 0, "a direct ordinary acknowledgement does not issue a second ctx.compact request");
 console.log("PLASTIC_MEMORY_ACKNOWLEDGE: PASS (ordinary host hook acknowledges visibly before cumulative-state rebase/bootstrap)");

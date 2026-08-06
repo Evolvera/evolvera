@@ -63,7 +63,9 @@ function closedCycle(binding, span, entries) {
 function world(options = {}) {
   const runtimeToken = options.runtimeToken ?? "runtime-test";
   const contextWindow = options.contextWindow ?? 160_000;
-  let usageTokens = Object.hasOwn(options, "usageTokens") ? options.usageTokens : 21_000;
+  let usageTokens = Object.hasOwn(options, "usageTokens") ? options.usageTokens : 120_001;
+  let idle = options.isIdle ?? true;
+  let pendingMessages = options.pendingMessages ?? false;
   const { entries, spans } = fixture(options.hostPrefix === true);
   const handlers = new Map();
   const compactCalls = [];
@@ -81,8 +83,8 @@ function world(options = {}) {
       getLeafId() { return state.branch.at(-1).id; },
       buildContextEntries() { return state.branch; },
     },
-    isIdle() { return true; },
-    hasPendingMessages() { return false; },
+    isIdle() { return idle; },
+    hasPendingMessages() { return pendingMessages; },
     getContextUsage() { return usageTokens === null ? { tokens: null, contextWindow } : usageTokens === undefined ? undefined : { tokens: usageTokens, contextWindow }; },
     getSystemPrompt() { return "synthetic system prompt"; },
     compact(request) { compactCalls.push(request); },
@@ -92,6 +94,16 @@ function world(options = {}) {
   handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
   const binding = options.binding ? options.binding(coordinator.getBinding(ctx)) : coordinator.getBinding(ctx);
   const cycles = spans.map((span) => closedCycle(binding, span, entries));
+  for (const cycle of cycles) {
+    entries.push({ type: "custom", id: `closed-${cycle.cycleId}`, parentId: entries.at(-1).id, customType: "plastic.cycle.closed", data: cycle });
+  }
+  let started = false;
+  const startNextCycle = () => {
+    if (started) return;
+    started = true;
+    entries.push({ type: "message", id: "started-next-cycle", parentId: entries.at(-1).id, message: { role: "user", content: [{ type: "text", text: "next cycle has started" }] }, tokenCount: 5_000 });
+  };
+  if (options.startedNextCycle !== false) startNextCycle();
   const physicalBudget = options.twoCyclePhysicalBudget ? entryBudget(entries, 25_000, 0, 2_500) : undefined;
   const prepared = engine.prepareSemanticCompaction({
     binding, branchEntries: entries, cycles, physicalBudget, projectSnapshot,
@@ -107,6 +119,14 @@ function world(options = {}) {
     cut: pending.cut.firstKeptEntryId,
     setClock(value) { clock = value; },
     setUsage(value) { usageTokens = value; },
+    setIdle(value) { idle = value; },
+    setPendingMessages(value) { pendingMessages = value; },
+    startNextCycle,
+    internalInstructions() {
+      handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
+      assert.equal(compactCalls.length, 1, "settled coordinator issues one internal compact");
+      return compactCalls[0].customInstructions;
+    },
     beforeCompact(event) {
       return handlers.get("session_before_compact")({ type: "session_before_compact", branchEntries: state.branch, ...event }, ctx);
     },
@@ -117,14 +137,75 @@ function hostEvent(firstKeptEntryId, extra = {}) {
   return { preparation: { firstKeptEntryId, tokensBefore: 7_777 }, reason: "auto", ...extra };
 }
 
-// Prepared work waits passively: lifecycle edges may capture/drain queue work but never
-// invoke host compaction, regardless of context usage.
-for (const usageTokens of [undefined, null, 0, 20_000, 20_001]) {
+// 0. Application requires a known usage strictly above 120,000, and keeps the
+// prepared six/four pending intact while a started next cycle waits below that threshold.
+for (const usageTokens of [undefined, null, 0, 20_000, 120_000]) {
   const w = world({ usageTokens });
-  w.handlers.get("turn_end")({ type: "turn_end" }, w.ctx);
   w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
-  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} never autonomously compacts`);
+  assert.equal(w.compactCalls.length, 0, `usage ${usageTokens} defers internal apply`);
   assert.notEqual(w.coordinator.getPending(), undefined, `usage ${usageTokens} retains the prepared pending`);
+}
+{
+  const w = world({ usageTokens: 120_000 });
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  w.setUsage(120_001);
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 1, "strictly high usage applies exactly once after deferral");
+}
+
+// The manual host compaction path calls abort(), so automatic application is forbidden
+// until Pi is idle with no queued messages, even if every other gate is satisfied.
+for (const options of [{ isIdle: false }, { pendingMessages: true }]) {
+  const w = world({ usageTokens: 120_001, ...options });
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 0, "busy or queued Pi state cannot auto-apply");
+}
+
+// Six validated closed cycles alone are not enough: a normal source entry must have
+// started the next cycle. Starting it later enables exactly one internal compact.
+{
+  const w = world({ usageTokens: 120_001, startedNextCycle: false });
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 0, "no started next cycle defers automatic compaction");
+  w.startNextCycle();
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 1, "starting the next cycle triggers one automatic compaction");
+}
+
+// 1. INTERNAL path: the host's own keepRecentTokens suggestion differs from the 6/4 cut
+// and must be ignored; the coordinator applies its own cut instead of cancelling.
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  assert.notEqual(w.entries[0].id, w.cut, "host suggestion differs from the Plastic cut");
+  const result = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id, tokensBefore: 4_242 }, customInstructions, reason: "manual" });
+  assert.equal(result.cancel, undefined, "internal apply is not cancelled");
+  assert.equal(result.compaction.firstKeptEntryId, w.cut);
+  assert.equal(result.compaction.summary, w.rendered.summary);
+  assert.equal(result.compaction.tokensBefore, 4_242);
+  assert.deepEqual(result.compaction.details, w.rendered.details);
+  assert.equal(w.coordinator.getPending(), undefined, "pending slot is consumed once");
+}
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  const result = await w.beforeCompact({ preparation: { tokensBefore: 1 }, customInstructions, reason: "manual" });
+  assert.equal(result.compaction.firstKeptEntryId, w.cut, "internal calls bypass the host advisory cut requirement");
+}
+{
+  const w = world();
+  w.internalInstructions();
+  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions: "\u0000plastic-memory:internal-compaction:foreign", reason: "manual" }), { cancel: true }, "foreign internal nonce cancels");
+}
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  w.compactCalls[0].onError(new Error("Nothing to compact (session too small)"));
+  assert.notEqual(w.coordinator.getPending(), undefined, "benign host refusal retains pending");
+  assert.equal(w.notices.at(-1)?.message, "Plastic memory: compaction skipped — Nothing to compact (session too small)");
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 2, "a later settled edge retries once without callback recursion");
+  assert.notEqual(w.compactCalls[1].customInstructions, customInstructions);
 }
 
 // 2. HOST path: Plastic owns a valid cut regardless of host advisory ordering.
@@ -198,4 +279,25 @@ for (const usageTokens of [undefined, null, 0, 20_000, 20_001]) {
   w.setClock(PREPARE_AT + 300_001);
   assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "expired pending");
 }
-console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (passive prepared-pending host use preserves exact cut, binding, prefix, TTL, and physical-tail guards)");
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  w.setClock(PREPARE_AT + 300_001);
+  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions, reason: "manual" }), { cancel: true }, "expired internal pending");
+}
+
+// A cancelled internal hook spends its nonce before validating the branch. It must still
+// release the latch locally because Pi need not invoke onError after a hook cancellation.
+{
+  const w = world();
+  const customInstructions = w.internalInstructions();
+  const foreignBranch = [...w.state.branch.slice(0, -1)];
+  const cancelled = await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions, reason: "manual", branchEntries: foreignBranch });
+  assert.deepEqual(cancelled, { cancel: true }, "mismatched internal branch cancels");
+  assert.notEqual(w.coordinator.getPending(), undefined, "cancelled internal apply retains pending");
+  w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
+  assert.equal(w.compactCalls.length, 2, "cancellation releases the apply latch for a later settle");
+  const retry = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.compactCalls[1].customInstructions, reason: "manual" });
+  assert.equal(retry.cancel, undefined, "retry applies after latch release");
+}
+console.log("PLASTIC_MEMORY_APPLY_CUT: PASS (automatic six/four application requires a started next cycle, >120k context, and settled idle Pi; internal nonce, latch, and host guards preserve exact cuts)");
