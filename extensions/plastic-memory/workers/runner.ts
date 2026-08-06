@@ -52,15 +52,23 @@ function boundedText(value: unknown, maximum: number): string {
   return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, maximum);
 }
 /**
- * Transport bounding for the structured worker payload: bound and strip control characters, but
- * never scrub. Identity fields (snapshot/cycle/session/branch ids, digests, ISO timestamps) must
- * survive transport untouched, otherwise the coverage manifest can never match. Free-text fields
- * are scrubbed by their own adapters (observer/reflector/promoter clean(), compaction/render
+ * Transport normalization for structured worker payloads: strip control characters, but never
+ * scrub or truncate. Identity fields (snapshot/cycle/session/branch ids, digests, ISO timestamps)
+ * must survive transport untouched, otherwise the coverage manifest can never match. Free-text
+ * fields are scrubbed by their own adapters (observer/reflector/promoter clean(), compaction/render
  * clean() + assertNoSensitiveText, coordinator safeNoticeReason) before anything is persisted.
  */
-function boundedTransport(value: unknown, maximum: number): string {
+function normalizedTransport(value: unknown): string {
   const source = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
-  return source.replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, maximum);
+  return source.replace(/[\u0000-\u001f\u007f]/gu, " ");
+}
+function boundedTransport(value: unknown, maximum: number): string {
+  return normalizedTransport(value).slice(0, maximum);
+}
+type PreparedRolePrompt = Readonly<{ ok: true; prompt: string }> | Readonly<{ ok: false }>;
+export function prepareRolePrompt(value: string): PreparedRolePrompt {
+  const prompt = normalizedTransport(value);
+  return prompt.length <= ROLE_PROMPT_CAP ? { ok: true, prompt } : { ok: false };
 }
 function safeDiagnostic(error: unknown): string {
   return boundedText(error instanceof Error ? error.message : String(error), 500) || "agent error";
@@ -148,7 +156,11 @@ export async function runBoundedRole(input: {
 }): Promise<RunnerResult> {
   const resolved = await resolveLunaRole(input.role, input.runtime);
   if (!("contextWindow" in resolved)) return resolved;
-  const prompt = boundedText(input.prompt, ROLE_PROMPT_CAP);
+  const preparedPrompt = prepareRolePrompt(input.prompt);
+  if (!preparedPrompt.ok) {
+    return { ok: false, reason: "oversized", diagnostics: { role: input.role, message: "structured worker prompt exceeds transport cap" } };
+  }
+  const prompt = preparedPrompt.prompt;
   const inputTokens = input.inputTokens ?? Math.ceil(prompt.length / 4);
   if (inputTokens + CONTEXT_OVERHEAD_TOKENS > resolved.contextWindow) {
     return { ok: false, reason: "oversized", diagnostics: { role: input.role, message: `input exceeds contextWindow ${resolved.contextWindow}` } };

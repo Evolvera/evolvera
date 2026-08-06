@@ -110,4 +110,25 @@ assert.equal(typeof prose.response, "string");
 assert.equal(prose.response.includes(EMAIL), false, "non-JSON fallback stays scrubbed");
 assert.equal(prose.response, "contact [REDACTED_PII] for the summary");
 
-console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (semantic transport, code-owned identities, ISO/UUID preservation, content scrubbing, and prose fallback)");
+// 6. Structured prompts are normalized without truncation and fail closed at the exact transport cap.
+let oversizedCalls = 0;
+const oversized = await runner.runBoundedRole({
+  role: "observer",
+  prompt: "x".repeat(600_001),
+  runtime: { modelRegistry: registry, agentLoop: async () => { oversizedCalls += 1; return {}; } },
+  inputTokens: 1,
+});
+assert.deepEqual(oversized, { ok: false, reason: "oversized", diagnostics: { role: "observer", message: "structured worker prompt exceeds transport cap" } });
+assert.equal(oversizedCalls, 0, "oversized structured prompts must not call agentLoop");
+let normalizedPrompt = "";
+const fitting = await runner.runBoundedRole({
+  role: "observer",
+  prompt: "a".repeat(599_999) + "\u0000",
+  runtime: { modelRegistry: registry, agentLoop: async (prompts) => { normalizedPrompt = prompts[0].content[0].text; return {}; } },
+  inputTokens: 1,
+});
+assert.equal(fitting.ok, true);
+assert.equal(normalizedPrompt, "a".repeat(599_999) + " ", "fitting prompt reaches runtime after control normalization only");
+assert.equal(normalizedPrompt.length, 600_000);
+
+console.log("PLASTIC_MEMORY_TRANSPORT_INTEGRITY: PASS (semantic transport, code-owned identities, ISO/UUID preservation, content scrubbing, prose fallback, and prompt cap integrity)");

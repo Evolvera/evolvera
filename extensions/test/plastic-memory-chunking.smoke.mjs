@@ -10,6 +10,7 @@ const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 const ledger = await jiti.import(path.join(root, "plastic-memory/session/ledger.ts"));
 const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
+const observer = await jiti.import(path.join(root, "plastic-memory/workers/observer.ts"));
 
 const binding = { sessionId: ids.sessionDigest("chunking-smoke", { generation: 1 }), generation: 1, branchId: "main" };
 const MAX = 100_000;
@@ -280,4 +281,103 @@ assert.equal(agenticRecords.filter((record) => record.customType === "plastic.re
 assert.equal(agenticRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1);
 assert.deepEqual(agenticResult.cycle.data.sourceEntryIds, agenticEntries.map((entry) => entry.id));
 
-console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, agentic atomic exchanges, malformed tool integrity, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, observer span contract)");
+// C — a source window under the 160k-token ceiling still partitions at the exact observer transport cap.
+const charBinding = { sessionId: ids.sessionDigest("chunking-char-cap", { generation: 1 }), generation: 1, branchId: "main" };
+const charText = "c".repeat(150_000);
+const charEntries = [
+  { type: "message", id: "char-user-1", parentId: null, message: { role: "user", content: [{ type: "text", text: charText }] }, tokenCount: 20_000 },
+  { type: "message", id: "char-assistant-1", parentId: "char-user-1", message: { role: "assistant", content: [{ type: "text", text: charText }] }, tokenCount: 20_000 },
+  { type: "message", id: "char-user-2", parentId: "char-assistant-1", message: { role: "user", content: [{ type: "text", text: charText }] }, tokenCount: 20_000 },
+  { type: "message", id: "char-assistant-2", parentId: "char-user-2", message: { role: "assistant", content: [{ type: "text", text: charText }] }, tokenCount: 20_000 },
+];
+const charSnapshot = cycles.createCompletedTurnSnapshot({ binding: charBinding, sourceEntries: charEntries });
+assert.equal(charSnapshot.status, "ready");
+assert.equal(charSnapshot.tokenCount, 80_000);
+const charModel = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const charRuntime = {
+  modelRegistry: { find: () => charModel, async getProviderAuth() { return { apiKey: "fake-only" }; } },
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (context.role === "observer") return { observations: [{ content: "char-cap fact", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    return { reflections: [{ content: "char-cap reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
+  },
+};
+const charFit = (chunk) => observer.observerRequestFits({ binding: charBinding, snapshot: charSnapshot, sourceEntries: chunk.entries, sourceEntryIds: chunk.sourceEntryIds, runtime: charRuntime });
+const charPartition = cycles.partitionCompletedTurnSnapshot(charSnapshot, charEntries, 160_000, charFit);
+assert.equal(charPartition.ok, true);
+assert.ok(charPartition.chunks.length >= 2, "transport cap must split the under-token-limit source");
+assert.ok(charPartition.chunks.every((chunk) => chunk.tokenCount <= 160_000 && charFit(chunk)));
+assert.deepEqual(charPartition.chunks.flatMap((chunk) => chunk.sourceEntryIds), charEntries.map((entry) => entry.id));
+assert.deepEqual(charPartition.chunks.map((chunk) => chunk.sourceEntryIds), [["char-user-1", "char-assistant-1"], ["char-user-2", "char-assistant-2"]]);
+const charObservedPrompts = [];
+const charSchedulerRuntime = {
+  ...charRuntime,
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (context.role === "observer") charObservedPrompts.push({ prompt: prompts[0].content[0].text, sourceEntryIds: request.sourceEntryIds });
+    return charRuntime.agentLoop(prompts, context);
+  },
+};
+const charRecords = [];
+const charResult = await schedulerModule.createCycleScheduler().trigger({
+  binding: charBinding,
+  branchEntries: charEntries,
+  bootstrap: { activeEntryIds: charEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: [], runtime: charSchedulerRuntime, append: (record) => charRecords.push(record),
+});
+assert.equal(charResult.status, "closed");
+assert.equal(charObservedPrompts.length, charPartition.chunks.length);
+assert.ok(charObservedPrompts.every((call) => observer.observerRequestFits({ binding: charBinding, snapshot: charSnapshot, sourceEntries: charEntries.filter((entry) => call.sourceEntryIds.includes(entry.id)), sourceEntryIds: call.sourceEntryIds, runtime: charRuntime })));
+assert.deepEqual(charObservedPrompts.flatMap((call) => call.sourceEntryIds), charEntries.map((entry) => entry.id));
+assert.equal(charRecords.filter((record) => record.customType === "plastic.observations.recorded").length, 1);
+assert.equal(charRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 1);
+
+// A group that cannot fit the exact request fails closed before any worker call.
+const indivisibleRuntimeCalls = [];
+const indivisibleText = "i".repeat(350_000);
+const indivisibleEntries = [
+  { type: "message", id: "indivisible-user", parentId: null, message: { role: "user", content: [{ type: "text", text: indivisibleText }] }, tokenCount: 20_000 },
+  { type: "message", id: "indivisible-assistant", parentId: "indivisible-user", message: { role: "assistant", content: [{ type: "text", text: indivisibleText }] }, tokenCount: 20_000 },
+];
+const indivisibleSnapshot = cycles.createCompletedTurnSnapshot({ binding: charBinding, sourceEntries: indivisibleEntries });
+const indivisibleFit = (chunk) => observer.observerRequestFits({ binding: charBinding, snapshot: indivisibleSnapshot, sourceEntries: chunk.entries, sourceEntryIds: chunk.sourceEntryIds, runtime: charRuntime });
+assert.equal(indivisibleFit({ entries: indivisibleEntries, sourceEntryIds: indivisibleEntries.map((entry) => entry.id), tokenCount: 40_000, index: 0 }), false);
+const indivisible = cycles.partitionCompletedTurnSnapshot(indivisibleSnapshot, indivisibleEntries, 160_000, indivisibleFit);
+assert.deepEqual(indivisible, { ok: false, chunks: [], reason: "indivisible-message-group-exceeds-bound" });
+const indivisibleResult = await schedulerModule.createCycleScheduler().trigger({
+  binding: charBinding,
+  branchEntries: indivisibleEntries,
+  bootstrap: { activeEntryIds: indivisibleEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: [], runtime: { ...charRuntime, async agentLoop() { indivisibleRuntimeCalls.push(true); return {}; } }, append: () => {},
+});
+assert.equal(indivisibleResult.status, "skipped");
+assert.equal(indivisibleResult.reason, "indivisible-message-group-exceeds-bound");
+assert.equal(indivisibleRuntimeCalls.length, 0);
+
+// Later-chunk failure retries the immutable partition but persists no partial observations.
+let failingObserverCalls = 0;
+const laterFailureRecords = [];
+const laterFailureRuntime = {
+  ...charRuntime,
+  async agentLoop(prompts, context) {
+    const request = JSON.parse(prompts[0].content[0].text);
+    if (context.role === "observer") {
+      failingObserverCalls += 1;
+      if (failingObserverCalls % 2 === 0) return { observations: [{ content: "bad", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: ["outside-span"] }] };
+      return { observations: [{ content: "first chunk", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
+    }
+    return { reflections: [] };
+  },
+};
+const laterFailure = await schedulerModule.createCycleScheduler().trigger({
+  binding: charBinding,
+  branchEntries: charEntries,
+  bootstrap: { activeEntryIds: charEntries.map((entry) => entry.id), historicalPrefixIds: [], historicalGap: "historical-unindexed" },
+  records: [], runtime: laterFailureRuntime, append: (record) => laterFailureRecords.push(record),
+});
+assert.equal(laterFailure.status, "failed");
+assert.equal(failingObserverCalls, 4, "later chunk failure retries the full immutable partition once");
+assert.equal(laterFailureRecords.filter((record) => record.customType === "plastic.observations.recorded").length, 0);
+assert.equal(laterFailureRecords.filter((record) => record.customType === "plastic.cycle.closed").length, 0);
+
+console.log("PLASTIC_MEMORY_CHUNKING: PASS (prefix chunking, agentic atomic exchanges, malformed tool integrity, reachable leftover, single-huge-turn oversized, empty-valid, identity preservation, exact observer transport fit, and scheduler atomic persistence)");
