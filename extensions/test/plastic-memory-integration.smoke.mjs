@@ -113,13 +113,14 @@ const ownerSessionManager = {
   buildContextEntries: () => ownerEntries,
 };
 const ownerNotices = [];
+const ownerCompactCalls = [];
 const ownerCtx = {
   sessionManager: ownerSessionManager,
   isIdle: () => true,
   hasPendingMessages: () => false,
-  getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+  getContextUsage: () => ({ tokens: 120_001, contextWindow: 160_000 }),
   getSystemPrompt: () => "synthetic system prompt",
-  compact: () => { throw new Error("Plastic must never autonomously invoke ctx.compact()"); },
+  compact: (request) => { ownerCompactCalls.push(request); },
   hasUI: true,
   ui: { notify(message, level) { ownerNotices.push({ message, level }); } },
 };
@@ -133,6 +134,7 @@ for (let attempt = 0; attempt < 20 && !ownerEntries.some((item) => item.customTy
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.observations.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.reflections.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.closed"), true);
+assert.equal(ownerCompactCalls.length, 0, "one 20k closed cycle cannot pass the six-cycle automatic-application gate");
 assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[0-9,]+-token snapshot$/u.test(message)), true);
 assert.equal(ownerNotices.every(({ message }) => !message.includes("cycle fact") && !message.includes("OC")), true);
 async function lifecycleProbe(mode) {
@@ -172,8 +174,10 @@ assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel
 assert.equal(cycleCalls.every((call) => call.options.cacheRetention === "none" && call.options.apiKey === "cycle-fake" && call.options.env.CYCLE_FAKE === "yes"), true);
 ownerCoordinator.shutdown("cycle-test");
 const coordinatorSource = readFileSync(path.join(root, "plastic-memory/runtime/coordinator.ts"), "utf8");
-assert.equal(/prepareEmergencyCompaction|selectEmergencyWindow|ctx\.compact/u.test(coordinatorSource), false,
-  "the active coordinator hook graph contains no emergency path or autonomous compaction call");
+assert.equal(/prepareEmergencyCompaction|selectEmergencyWindow/u.test(coordinatorSource), false,
+  "the active coordinator hook graph contains no emergency path");
+assert.equal(/AUTO_APPLY_MIN_CONTEXT_TOKENS = 120_000[\s\S]*ctx\.compact/u.test(coordinatorSource), true,
+  "the gated automatic compaction path remains connected at the 120k threshold");
 
 function completedTurn(entries, label, userTokens, assistantTokens) {
   const user = { type: "message", id: `${label}-user`, parentId: entries.at(-1)?.id ?? null, message: { role: "user", content: [{ type: "text", text: `${label} goal` }] }, tokenCount: userTokens };
@@ -363,4 +367,4 @@ assert.equal(coordinator.getGeneration(), 2);
 
 // The fake owner above is the complete lifecycle boundary for this smoke: no Pi runtime,
 // provider, user session, or host patch is started during validation.
-console.log("PLASTIC_MEMORY_INTEGRATION: PASS (in-process projection, durable queue lifecycle, passive host ownership, and no active emergency path)");
+console.log("PLASTIC_MEMORY_INTEGRATION: PASS (in-process projection, durable queue lifecycle, gated automatic ownership, and no active emergency path)");
