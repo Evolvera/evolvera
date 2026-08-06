@@ -227,7 +227,7 @@ function makeNonceProbe() {
     ui: { notify(message, level) { notices.push({ message, level }); } },
   };
   const probe = coordinatorModule.registerPlasticMemoryCoordinator(probePi, { enabled: true, now: () => 1_000 });
-  const beforeCompact = (event) => probeHandlers.get("session_before_compact")(event, probeCtx);
+  const beforeCompact = async (event) => await probeHandlers.get("session_before_compact")(event, probeCtx);
   return {
     probe,
     probeCtx,
@@ -272,7 +272,7 @@ function makeNonceProbe() {
 }
 const nonceProbe = makeNonceProbe();
 await nonceProbe.start();
-assert.deepEqual(nonceProbe.beforeCompact({
+assert.deepEqual(await nonceProbe.beforeCompact({
   customInstructions: "\u0000plastic-memory:internal-compaction:no-live-intent",
   reason: "manual",
   preparation: { firstKeptEntryId: "missing", tokensBefore: 1 },
@@ -299,22 +299,23 @@ const preparation = { firstKeptEntryId: "N1", tokensBefore: 1 };
 const eventFor = (customInstructions) => ({ customInstructions, reason: "manual", preparation, branchEntries: nonceProbe.branch });
 const formerStatic = "Apply the already-prepared plastic-memory summary only when the guarded hook accepts the exact host cut.";
 const wrongNonce = `${realNonce.slice(0, realNonce.lastIndexOf(":") + 1)}wrong`;
-assert.equal(nonceProbe.beforeCompact(eventFor(formerStatic)), undefined, "ordinary manual custom instructions must remain native fallback");
+assert.deepEqual(await nonceProbe.beforeCompact(eventFor(formerStatic)), { cancel: true }, "ordinary no-pending compaction must cancel rather than native-fallback");
 let nativeFallbackCount = 0;
 for (const [label, customInstructions] of [["wrong nonce", wrongNonce], ["stale nonce", firstNonce]]) {
-  const result = nonceProbe.beforeCompact(eventFor(customInstructions));
+  const result = await nonceProbe.beforeCompact(eventFor(customInstructions));
   assert.deepEqual(result, { cancel: true }, `${label} must cancel rather than native-fallback`);
   if (result === undefined) nativeFallbackCount += 1;
 }
-assert.equal(nativeFallbackCount, 0, "private-prefix nonce attempts must never native-fallback");
+assert.equal(nativeFallbackCount, 0, "ordinary and private-prefix no-pending attempts must never native-fallback");
 
 // Re-stage fresh state and verify only the exact live nonce consumes it. A
 // second synchronous event with that nonce is cancelled before a second append.
 nonceProbe.stagePending();
-const exactResult = nonceProbe.beforeCompact(eventFor(realNonce));
-assert.equal(typeof exactResult?.compaction?.summary, "string");
+const exactResultPromise = nonceProbe.beforeCompact(eventFor(realNonce));
 assert.equal(nonceProbe.probe.internalIntent.consumed, true);
-const overlapResult = nonceProbe.beforeCompact(eventFor(realNonce));
+const overlapResultPromise = nonceProbe.beforeCompact(eventFor(realNonce));
+const [exactResult, overlapResult] = await Promise.all([exactResultPromise, overlapResultPromise]);
+assert.equal(typeof exactResult?.compaction?.summary, "string");
 assert.deepEqual(overlapResult, { cancel: true });
 let appendCount = 0;
 if (exactResult?.compaction) appendCount += 1;

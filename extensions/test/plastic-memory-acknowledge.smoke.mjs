@@ -101,12 +101,12 @@ function world() {
   }
 
   /** Drive `session_before_compact` through the internal nonce and return its host reply. */
-  function beforeCompact() {
+  async function beforeCompact() {
     const before = compactCalls.length;
     handlers.get("agent_settled")({ type: "agent_settled" }, ctx);
     assert.equal(compactCalls.length, before + 1, "settled coordinator issues exactly one internal compact");
     const customInstructions = compactCalls.at(-1).customInstructions;
-    const result = handlers.get("session_before_compact")({
+    const result = await handlers.get("session_before_compact")({
       type: "session_before_compact", branchEntries: state.branch,
       preparation: { firstKeptEntryId: state.branch[0].id, tokensBefore: 7_777 }, reason: "manual", customInstructions,
     }, ctx);
@@ -145,7 +145,7 @@ const applied = (w) => w.appended.filter((record) => record.customType === "plas
 const w = world();
 {
   const prepared = w.stage(6);
-  const compaction = w.beforeCompact();
+  const compaction = await w.beforeCompact();
   assert.equal(compaction.firstKeptEntryId, prepared.cut.firstKeptEntryId);
   assert.equal(w.coordinator.priorState, undefined, "staging does not promote prior state");
   const entry = w.hostAppend(compaction);
@@ -161,7 +161,7 @@ const w = world();
 // 2. State is not stuck: a second compaction still prepares and applies.
 {
   const prepared = w.stage(8);
-  const compaction = w.beforeCompact();
+  const compaction = await w.beforeCompact();
   assert.notEqual(compaction.firstKeptEntryId, applied(w)[0].data.firstKeptEntryId, "the second cut advances");
   const entry = w.hostAppend(compaction);
   w.compactEvent(entry);
@@ -172,7 +172,7 @@ const w = world();
 // 3. Failure is non-sticky: a tampered host entry appends nothing, and the next cycle still applies.
 {
   w.stage(10);
-  const compaction = w.beforeCompact();
+  const compaction = await w.beforeCompact();
   const generationBeforeFallback = w.coordinator.getGeneration();
   const tampered = w.hostAppend(compaction, (entry) => ({ ...entry, summary: `TAMPERED ${entry.summary}` }));
   w.compactEvent(tampered);
@@ -181,7 +181,7 @@ const w = world();
   assert.equal(w.coordinator.getPending(), undefined, "rebase clears stale pending before the next stage");
 
   const prepared = w.stage(12);
-  const nextCompaction = w.beforeCompact();
+  const nextCompaction = await w.beforeCompact();
   const entry = w.hostAppend(nextCompaction);
   w.compactEvent(entry);
   assert.equal(applied(w).length, 3, "apply state recovers after a failed acknowledgement");

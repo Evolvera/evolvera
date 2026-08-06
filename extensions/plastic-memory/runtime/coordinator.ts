@@ -4,6 +4,7 @@ import { defaultConfig, type PlasticMemoryConfig } from "../config.ts";
 import { sessionDigest } from "../common/ids.ts";
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { acknowledgeCompaction, type CompactionEntry, type PhysicalBudget } from "../compaction/engine.ts";
+import { prepareEmergencyCompaction, selectEmergencyWindow } from "../compaction/emergency.ts";
 import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
 import { bootstrapSession } from "../session/bootstrap.ts";
@@ -11,13 +12,15 @@ import { foldLedger, hasOrderedContextTail } from "../session/ledger.ts";
 import {
   isPlasticRecord,
   PLASTIC_CYCLE_CLOSED,
+  PLASTIC_OBSERVATIONS_RECORDED,
+  PLASTIC_REFLECTIONS_RECORDED,
   type BootstrapData,
   type CycleClosedData,
   type SessionBinding,
   type SessionEntry,
 } from "../session/types.ts";
 import { createCycleScheduler, type SchedulerIdentity, type SchedulerLifecycleEvent } from "../workers/scheduler.ts";
-import type { RunnerRuntime } from "../workers/runner.ts";
+import type { LunaModel, RunnerRuntime } from "../workers/runner.ts";
 import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
 
 export type CoordinatorRuntime = RunnerRuntime | (() => RunnerRuntime | undefined);
@@ -43,6 +46,22 @@ type ApplyLatch = {
   readonly generation: number;
   consumed: boolean;
 };
+
+type EmergencySnapshot = Readonly<{
+  binding: SessionBinding;
+  branchEntries: SessionEntry[];
+  branchDigest: string;
+  activeContextDigest: string;
+  activeEntryIds: string[];
+  cycles: CycleClosedData[];
+  activeMemoryIds: string[];
+  priorState?: CumulativeState;
+  physicalBudget: PhysicalBudget;
+  projectSnapshot: ProjectSnapshot | unknown;
+  runtime: RunnerRuntime;
+  visibleModel?: LunaModel;
+  tokensBefore: number;
+}>;
 
 const SESSION_DIGEST_PROVENANCE = "plastic-memory:session";
 const INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX = "\u0000plastic-memory:internal-compaction:";
@@ -142,6 +161,18 @@ function physicalTailFits(ctx: ExtensionContext, branch: readonly SessionEntry[]
 function exactNothingToCompact(error: unknown): boolean {
   return (error instanceof Error ? error.message : String(error)) === "Nothing to compact (session too small)";
 }
+function exactCompactionCancellation(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "Compaction cancelled";
+}
+function eventSignal(value: unknown): AbortSignal | undefined {
+  return value && typeof value === "object" && "aborted" in value && "addEventListener" in value
+    ? value as AbortSignal
+    : undefined;
+}
+function usableVisibleModel(ctx: ExtensionContext): LunaModel | undefined {
+  const candidate = (ctx as unknown as { model?: unknown }).model;
+  return candidate && typeof candidate === "object" && !Array.isArray(candidate) ? candidate as LunaModel : undefined;
+}
 function edgeBootstrap(bootstrap: BootstrapData, cycles: readonly CycleClosedData[]): BootstrapData {
   const latest = cycles.at(-1);
   if (!latest || latest.sourceEntryIds.length === 0) return bootstrap;
@@ -184,6 +215,8 @@ export class PlasticMemoryCoordinator {
   private internalIntent?: InternalIntent;
   private applyLatch?: ApplyLatch;
   private inFlightPending?: PendingCompaction;
+  private emergencyInFlight?: PendingCompaction;
+  private emergencyAbort?: AbortController;
   private priorState?: CumulativeState;
   private active = true;
 
@@ -199,6 +232,8 @@ export class PlasticMemoryCoordinator {
   private enabled(): boolean { return this.active && (this.config.enabled === true); }
 
   private invalidate(reason: string): void {
+    this.emergencyAbort?.abort(new Error(reason));
+    this.emergencyAbort = undefined;
     this.generation += 1;
     this.branchId = `branch:${randomUUID()}`;
     this.scheduler.invalidate(reason);
@@ -206,6 +241,7 @@ export class PlasticMemoryCoordinator {
     this.internalIntent = undefined;
     this.applyLatch = undefined;
     this.inFlightPending = undefined;
+    this.emergencyInFlight = undefined;
     this.priorState = undefined;
     this.settled = false;
     this.bootstrapAttempted = false;
@@ -379,6 +415,107 @@ export class PlasticMemoryCoordinator {
     return isPendingUsable(pending, { binding, runtimeToken: this.runtimeToken, branchIds, latestCompactionIdentity: latestCompactionIdentity(branch) }, this.now());
   }
 
+  private captureEmergencySnapshot(ctx: ExtensionContext, event: { preparation?: { tokensBefore?: unknown } }): EmergencySnapshot | undefined {
+    try {
+      const runtime = this.runtimeFor();
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      const activeContext = ctx.sessionManager.buildContextEntries() as SessionEntry[];
+      const tokensBefore = event.preparation?.tokensBefore;
+      if (!runtime || !hasOrderedContextTail(branch) || !Number.isFinite(tokensBefore) || typeof tokensBefore !== "number" || tokensBefore < 0) return undefined;
+      const activeEntryIds = entryIds(activeContext);
+      if (activeEntryIds.length !== activeContext.length || new Set(activeEntryIds).size !== activeEntryIds.length) return undefined;
+      const binding = this.binding(ctx);
+      const physicalBudget = physicalBudgetFor(ctx, branch);
+      if (!physicalBudget) return undefined;
+      const branchEntries = structuredClone(branch) as SessionEntry[];
+      const projectSnapshot = structuredClone(this.snapshotFor()) as ProjectSnapshot | unknown;
+      const folded = foldLedger(branchEntries, { context: binding });
+      const visible = usableVisibleModel(ctx);
+      const visibleModel = typeof visible?.provider === "string" && visible.provider.length > 0
+        && typeof visible.id === "string" && visible.id.length > 0
+        ? { provider: visible.provider, id: visible.id }
+        : undefined;
+      return {
+        binding,
+        branchEntries,
+        branchDigest: digestParts(branchEntries),
+        activeContextDigest: digestParts(activeContext),
+        activeEntryIds,
+        cycles: cyclesFor(branchEntries, binding),
+        activeMemoryIds: folded.activeObservations.map((observation) => observation.id),
+        ...(this.priorState ? { priorState: structuredClone(this.priorState) as CumulativeState } : {}),
+        physicalBudget: structuredClone(physicalBudget),
+        projectSnapshot,
+        runtime,
+        ...(visibleModel ? { visibleModel } : {}),
+        tokensBefore,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private validEmergencyRecord(record: SessionEntry, snapshot: EmergencySnapshot): boolean {
+    if (!isPlasticRecord(record) || (record.customType !== PLASTIC_OBSERVATIONS_RECORDED && record.customType !== PLASTIC_REFLECTIONS_RECORDED)) return false;
+    const data = record.data as SessionBinding & { span?: { sourceEntryIds?: unknown } };
+    return sameBinding(data, snapshot.binding)
+      && Array.isArray(data.span?.sourceEntryIds)
+      && data.span.sourceEntryIds.every((id) => typeof id === "string" && snapshot.branchEntries.some((entry) => entry.id === id));
+  }
+
+  /** Prove that no model input or semantic append was raced by a branch/context change. */
+  private emergencySnapshotCurrent(ctx: ExtensionContext, snapshot: EmergencySnapshot, appended: readonly SessionEntry[] = []): boolean {
+    try {
+      if (!this.enabled() || !sameBinding(this.binding(ctx), snapshot.binding)) return false;
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      if (branch.length !== snapshot.branchEntries.length + appended.length
+        || digestParts(branch.slice(0, snapshot.branchEntries.length)) !== snapshot.branchDigest) return false;
+      if (appended.length === 0 && digestParts(ctx.sessionManager.buildContextEntries() as SessionEntry[]) !== snapshot.activeContextDigest) return false;
+      return appended.every((expected, index) => {
+        const actual = branch[snapshot.branchEntries.length + index];
+        return this.validEmergencyRecord(actual, snapshot)
+          && actual.customType === expected.customType
+          && digestParts(actual.data) === digestParts(expected.data);
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private beginEmergencyAbort(parent?: AbortSignal): { signal: AbortSignal; dispose: () => void } {
+    const controller = new AbortController();
+    const abort = () => controller.abort(parent?.reason);
+    if (parent?.aborted) abort();
+    else parent?.addEventListener("abort", abort, { once: true });
+    this.emergencyAbort = controller;
+    return {
+      signal: controller.signal,
+      dispose: () => {
+        parent?.removeEventListener("abort", abort);
+        if (this.emergencyAbort === controller) this.emergencyAbort = undefined;
+      },
+    };
+  }
+
+  private stageEmergencyPending(ctx: ExtensionContext, snapshot: EmergencySnapshot, appended: readonly SessionEntry[], pending: PendingCompaction, view: { summary: string; details: unknown; state: CumulativeState }): PendingCompaction | undefined {
+    if (!this.emergencySnapshotCurrent(ctx, snapshot, appended) || pending.consumed || !sameBinding(pending.binding, snapshot.binding)
+      || pending.runtimeToken !== this.runtimeToken || pending.preparedPrefixIds.join("\u0000") !== entryIds(snapshot.branchEntries).join("\u0000")) return undefined;
+    const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+    if (!physicalTailFits(ctx, branch, pending.cut.firstKeptEntryId)) return undefined;
+    this.pendingStore.stage(pending);
+    const consumed = this.pendingStore.consume({
+      binding: snapshot.binding,
+      runtimeToken: this.runtimeToken,
+      branchIds: entryIds(branch),
+      latestCompactionIdentity: latestCompactionIdentity(branch),
+    }, this.now());
+    if (!consumed) return undefined;
+    this.preparedViews.set(consumed as object, view);
+    this.inFlightPending = consumed;
+    this.emergencyInFlight = consumed;
+    return consumed;
+  }
+
   private consumeInternalIntent(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, ctx: ExtensionContext): { cancel: true } | { compaction: { summary: string; firstKeptEntryId: string; tokensBefore: number; details: unknown } } {
     const intent = this.internalIntent;
     if (!intent || intent.consumed || intent.generation !== this.generation || !sameBinding(intent.binding, this.binding(ctx))) return { cancel: true };
@@ -437,6 +574,7 @@ export class PlasticMemoryCoordinator {
    */
   private resetApplyState(): void {
     this.inFlightPending = undefined;
+    this.emergencyInFlight = undefined;
     this.applyLatch = undefined;
     this.internalIntent = undefined;
   }
@@ -452,6 +590,23 @@ export class PlasticMemoryCoordinator {
     this.resetApplyState();
     this.rebaseAfterBoundary(ctx, reason);
     this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason });
+  }
+
+  /** An emergency boundary cannot establish a new generation until its applied record is visible. */
+  private failEmergencyApply(ctx: ExtensionContext, reason: string): void {
+    this.resetApplyState();
+    this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason });
+  }
+
+  private emergencyAppliedVisible(ctx: ExtensionContext, pending: PendingCompaction, record: { data: unknown }): boolean {
+    try {
+      const expected = digestParts(record.data);
+      const folded = foldLedger(ctx.sessionManager.getBranch() as SessionEntry[], { context: pending.binding });
+      return folded.compactionAcknowledgements.filter((applied) => digestParts(applied) === expected
+        && applied.compactionEntryId.length > 0 && applied.firstKeptEntryId === pending.cut.firstKeptEntryId).length === 1;
+    } catch {
+      return false;
+    }
   }
 
   private maybeApply(ctx: ExtensionContext): void {
@@ -488,7 +643,7 @@ export class PlasticMemoryCoordinator {
               // cut. This is benign deferral: retain the prepared slot and wait for a
               // later settled high-usage edge; never retry from the callback.
               this.reportLifecycle(ctx, { phase: "compaction", status: "skipped", reason: "Nothing to compact (session too small)" });
-            } else {
+            } else if (!exactCompactionCancellation(error)) {
               this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
             }
           }
@@ -498,7 +653,7 @@ export class PlasticMemoryCoordinator {
       this.resetApplyState();
       if (exactNothingToCompact(error)) {
         this.reportLifecycle(ctx, { phase: "compaction", status: "skipped", reason: "Nothing to compact (session too small)" });
-      } else {
+      } else if (!exactCompactionCancellation(error)) {
         this.reportLifecycle(ctx, { phase: "compaction", status: "failed", reason: error instanceof Error ? error.message : String(error) });
       }
     }
@@ -519,7 +674,7 @@ export class PlasticMemoryCoordinator {
       this.settled = true;
       this.maybeApply(ctx);
     });
-    this.pi.on("session_before_compact", (event, ctx) => {
+    this.pi.on("session_before_compact", async (event, ctx) => {
       const intent = this.internalIntent;
       const hasInternalPrefix = typeof event.customInstructions === "string" && event.customInstructions.startsWith(INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX);
       const isInternalCall = intent !== undefined && event.customInstructions === internalCompactionInstructions(intent.id);
@@ -529,27 +684,93 @@ export class PlasticMemoryCoordinator {
         return this.consumeInternalIntent(event, ctx);
       }
       if (!this.enabled()) return undefined;
+
+      // A usable normal six/four pending keeps its established ownership and does
+      // not contend with emergency observer work.
       const pending = this.pendingStore.peek(this.now());
-      if (!pending || !this.preparedViews.has(pending as object) || event.reason === "manual" && !this.preparationMatches(event, pending, ctx, false)) return undefined;
-      if (!this.preparationMatches(event, pending, ctx, false)) return undefined;
-      const consumed = this.pendingStore.consume({
-        binding: this.binding(ctx),
-        runtimeToken: this.runtimeToken,
-        branchIds: entryIds(event.branchEntries),
-        latestCompactionIdentity: latestCompactionIdentity(event.branchEntries),
-      }, this.now());
-      if (!consumed) return undefined;
-      const view = this.preparedViews.get(pending as object);
-      if (view) this.preparedViews.set(consumed as object, view);
-      this.inFlightPending = consumed;
-      return {
-        compaction: {
-          summary: this.pendingRenderedSummary(consumed),
-          firstKeptEntryId: consumed.cut.firstKeptEntryId,
-          tokensBefore: event.preparation.tokensBefore,
-          details: this.pendingRenderedDetails(consumed),
-        },
-      };
+      if (pending && this.preparedViews.has(pending as object) && this.preparationMatches(event, pending, ctx, false)) {
+        const consumed = this.pendingStore.consume({
+          binding: this.binding(ctx),
+          runtimeToken: this.runtimeToken,
+          branchIds: entryIds(event.branchEntries),
+          latestCompactionIdentity: latestCompactionIdentity(event.branchEntries),
+        }, this.now());
+        if (consumed) {
+          const view = this.preparedViews.get(pending as object);
+          if (view) this.preparedViews.set(consumed as object, view);
+          this.inFlightPending = consumed;
+          return {
+            compaction: {
+              summary: this.pendingRenderedSummary(consumed),
+              firstKeptEntryId: consumed.cut.firstKeptEntryId,
+              tokensBefore: event.preparation.tokensBefore,
+              details: this.pendingRenderedDetails(consumed),
+            },
+          };
+        }
+      }
+
+      const signal = eventSignal((event as unknown as { signal?: unknown }).signal);
+      const acquired = await this.scheduler.acquireExclusiveLease(signal);
+      if (!acquired.ok) return { cancel: true };
+      const abort = this.beginEmergencyAbort(signal);
+      try {
+        if (abort.signal.aborted) return { cancel: true };
+        const snapshot = this.captureEmergencySnapshot(ctx, event);
+        if (!snapshot || !this.emergencySnapshotCurrent(ctx, snapshot)) return { cancel: true };
+        const startedAt = Date.now();
+        const selection = selectEmergencyWindow({
+          binding: snapshot.binding,
+          branchEntries: snapshot.branchEntries,
+          activeEntryIds: snapshot.activeEntryIds,
+          cycles: snapshot.cycles,
+          physicalBudget: snapshot.physicalBudget,
+          activeMemoryIds: snapshot.activeMemoryIds,
+        });
+        const remainingMs = 60_000 - (Date.now() - startedAt);
+        if (!selection || remainingMs <= 0 || abort.signal.aborted) return { cancel: true };
+        const prepared = await prepareEmergencyCompaction({
+          selection,
+          binding: snapshot.binding,
+          branchEntries: snapshot.branchEntries,
+          runtime: snapshot.runtime,
+          ...(snapshot.visibleModel ? { visibleModel: snapshot.visibleModel } : {}),
+          ...(snapshot.priorState ? { priorState: snapshot.priorState } : {}),
+          projectSnapshot: snapshot.projectSnapshot,
+          runtimeToken: this.runtimeToken,
+          now: this.now(),
+          signal: abort.signal,
+          deadlineMs: remainingMs,
+        });
+        if (!prepared.ok || !this.emergencySnapshotCurrent(ctx, snapshot)) return { cancel: true };
+
+        const appended: SessionEntry[] = [];
+        for (const record of prepared.records) {
+          if (!this.validEmergencyRecord(record, snapshot) || !this.emergencySnapshotCurrent(ctx, snapshot, appended)) return { cancel: true };
+          this.append(record);
+          appended.push(record);
+          if (!this.emergencySnapshotCurrent(ctx, snapshot, appended)) return { cancel: true };
+        }
+        const consumed = this.stageEmergencyPending(ctx, snapshot, appended, prepared.pending, {
+          summary: prepared.rendered.summary,
+          details: prepared.rendered.details,
+          state: prepared.rendered.state,
+        });
+        if (!consumed) return { cancel: true };
+        return {
+          compaction: {
+            summary: prepared.rendered.summary,
+            firstKeptEntryId: consumed.cut.firstKeptEntryId,
+            tokensBefore: snapshot.tokensBefore,
+            details: prepared.rendered.details,
+          },
+        };
+      } catch {
+        return { cancel: true };
+      } finally {
+        abort.dispose();
+        acquired.lease.release();
+      }
     });
     this.pi.on("session_compact", (event, ctx) => {
       if (!this.enabled()) return;
@@ -558,9 +779,14 @@ export class PlasticMemoryCoordinator {
         this.rebaseAfterBoundary(ctx, "native or unmatched compaction boundary");
         return;
       }
+      const emergency = this.emergencyInFlight === pending;
+      const fail = (reason: string): void => {
+        if (emergency) this.failEmergencyApply(ctx, reason);
+        else this.failApply(ctx, reason);
+      };
       const branch = ctx.sessionManager.getBranch() as SessionEntry[];
       const matches = branch.filter((entry) => entry.type === "compaction" && entry.id === event.compactionEntry.id);
-      if (matches.length !== 1) { this.failApply(ctx, "host compaction entry not found once on the branch"); return; }
+      if (matches.length !== 1) { fail("host compaction entry not found once on the branch"); return; }
       const activeEntryIds = entryIds(ctx.sessionManager.buildContextEntries() as SessionEntry[]);
       const acknowledged = acknowledgeCompaction(pending, event.compactionEntry as SessionEntry, {
         binding: this.binding(ctx),
@@ -568,14 +794,26 @@ export class PlasticMemoryCoordinator {
         branchIds: entryIds(branch),
         latestCompactionIdentity: latestCompactionIdentity(branch.slice(0, -1)),
       }, activeEntryIds, this.now());
-      if (!acknowledged) { this.failApply(ctx, "host compaction did not match the prepared cut"); return; }
+      if (!acknowledged) { fail("host compaction did not match the prepared cut"); return; }
       const view = this.preparedViews.get(pending as object);
-      this.append(acknowledged.record);
+      try {
+        this.append(acknowledged.record);
+      } catch {
+        fail("plastic compaction acknowledgement could not be appended");
+        return;
+      }
+      if (emergency) {
+        if (!this.emergencyAppliedVisible(ctx, pending, acknowledged.record)) {
+          fail("plastic compaction acknowledgement was not visible and valid on the current branch");
+          return;
+        }
+        this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
+        this.rebaseAfterBoundary(ctx, "acknowledged emergency compaction boundary");
+        return;
+      }
       if (view) this.priorState = view.state;
       this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
-      this.inFlightPending = undefined;
-      this.applyLatch = undefined;
-      this.internalIntent = undefined;
+      this.resetApplyState();
     });
     this.pi.on("context", (event, ctx) => {
       if (!this.enabled()) return { messages: event.messages };

@@ -129,6 +129,19 @@ function validPlasticForBranch(entry: SessionEntry, branchIds: Set<string>, bind
   if (span && Array.isArray(span.sourceEntryIds) && span.sourceEntryIds.some((id) => typeof id !== "string" || !branchIds.has(id))) return false;
   return true;
 }
+/** Exact namespaced recall can cross a rebase, never a session/branch boundary or future generation. */
+function validHistoricalPlasticForBranch(entry: SessionEntry, branchIds: Set<string>, binding: SessionBinding | undefined): boolean {
+  if (!binding || !isPlasticRecord(entry) || !validPlasticForBranch(entry, branchIds)) return false;
+  const data = entry.data;
+  return data.sessionId === binding.sessionId
+    && Number.isSafeInteger(data.generation) && data.generation >= 0 && data.generation < binding.generation;
+}
+function validHistoricalObservation(value: LegacyObservation, sourceById: Map<string, SessionEntry>): boolean {
+  return value.sourceEntryIds.length > 0 && value.sourceEntryIds.every((sourceId) => {
+    const source = sourceById.get(sourceId);
+    return Boolean(source && isSourceEntry(source));
+  });
+}
 function validMemoryId(id: string): boolean { return isLegacyMemoryId(id) || NAMESPACED_MEMORY_ID.test(id); }
 function memoryIdAllowed(id: string, raw: boolean): boolean { return raw ? isLegacyMemoryId(id) : NAMESPACED_MEMORY_ID.test(id); }
 
@@ -169,24 +182,49 @@ export function recallSession(input: SessionRecallInput): SessionRecallResult {
   const folded = foldLedger(input.entries, { leafId: input.leafId, context: input.binding });
   const branch = folded.branch;
   const branchIds = entryIds(branch);
+  const sourceById = new Map(branch.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+  const historicalObservations = new Map<number, Map<string, { value: LegacyObservation; entryId: string; recordIndex: number }>>();
+  if (!raw && input.binding) {
+    for (const entry of branch) {
+      if (!validHistoricalPlasticForBranch(entry, branchIds, input.binding) || entry.customType !== PLASTIC_OBSERVATIONS_RECORDED) continue;
+      const byId = historicalObservations.get(entry.data.generation) ?? new Map<string, { value: LegacyObservation; entryId: string; recordIndex: number }>();
+      for (const [recordIndex, value] of entry.data.observations.entries()) {
+        if (validHistoricalObservation(value, sourceById) && !byId.has(value.id)) byId.set(value.id, { value, entryId: entry.id!, recordIndex });
+      }
+      historicalObservations.set(entry.data.generation, byId);
+    }
+  }
   const observations: Array<{ value: LegacyObservation; entryId: string; recordIndex: number }> = [];
-  const reflections: Array<{ value: LegacyReflection; entryId: string; recordIndex: number }> = [];
+  const reflections: Array<{ value: LegacyReflection; entryId: string; recordIndex: number; historicalGeneration?: number }> = [];
   const proposals: Array<{ value: Record<string, unknown>; entryId: string }> = [];
   for (const entry of branch) {
     if (isLegacyObservationsRecorded(entry)) {
       entry.data.observations.forEach((value, recordIndex) => { if (value.id === memoryId) observations.push({ value, entryId: entry.id!, recordIndex }); });
     } else if (isLegacyReflectionsRecorded(entry)) {
       entry.data.reflections.forEach((value, recordIndex) => { if (value.id === memoryId) reflections.push({ value, entryId: entry.id!, recordIndex }); });
-    } else if (validPlasticForBranch(entry, branchIds, input.binding)) {
-      if (entry.customType === PLASTIC_OBSERVATIONS_RECORDED) entry.data.observations.forEach((value, recordIndex) => { if (value.id === memoryId) observations.push({ value, entryId: entry.id!, recordIndex }); });
-      if (entry.customType === PLASTIC_REFLECTIONS_RECORDED) entry.data.reflections.forEach((value, recordIndex) => { if (value.id === memoryId) reflections.push({ value, entryId: entry.id!, recordIndex }); });
-      if (entry.customType === PLASTIC_PROJECT_PROPOSAL_RECORDED && entry.data.proposalId === memoryId) proposals.push({ value: entry.data as unknown as Record<string, unknown>, entryId: entry.id! });
+    } else {
+      const current = validPlasticForBranch(entry, branchIds, input.binding);
+      const historical = !raw && validHistoricalPlasticForBranch(entry, branchIds, input.binding);
+      if (!current && !historical) continue;
+      if (entry.customType === PLASTIC_OBSERVATIONS_RECORDED) {
+        entry.data.observations.forEach((value, recordIndex) => {
+          if (value.id === memoryId && (!historical || validHistoricalObservation(value, sourceById))) observations.push({ value, entryId: entry.id!, recordIndex });
+        });
+      }
+      if (entry.customType === PLASTIC_REFLECTIONS_RECORDED) {
+        const supports = historical ? historicalObservations.get(entry.data.generation) : undefined;
+        entry.data.reflections.forEach((value, recordIndex) => {
+          if (value.id === memoryId && (!historical || value.supportingObservationIds.every((id) => supports?.has(id)))) {
+            reflections.push({ value, entryId: entry.id!, recordIndex, ...(historical ? { historicalGeneration: entry.data.generation } : {}) });
+          }
+        });
+      }
+      if (current && entry.customType === PLASTIC_PROJECT_PROPOSAL_RECORDED && entry.data.proposalId === memoryId) proposals.push({ value: entry.data as unknown as Record<string, unknown>, entryId: entry.id! });
     }
   }
   if (observations.length === 0 && reflections.length === 0 && proposals.length === 0) return empty(memoryId);
 
-  const byObservationId = folded.observationsById;
-  const sourceById = new Map(branch.flatMap((entry) => typeof entry.id === "string" ? [[entry.id, entry] as const] : []));
+  const currentObservations = new Map([...folded.observationsById].map(([id, value]) => [id, { value, entryId: "folded", recordIndex: 0 }]));
   const recalledObservations: RecalledObservation[] = [];
   const sourceEntries: SessionEntry[] = [];
   const missingSourceEntryIds: string[] = [];
@@ -211,10 +249,11 @@ export function recallSession(input: SessionRecallInput): SessionRecallResult {
 
   const missingSupportingObservationIds: string[] = [];
   for (const item of reflections) {
+    const historicalSupports = item.historicalGeneration === undefined ? undefined : historicalObservations.get(item.historicalGeneration);
     for (const observationId of unique(item.value.supportingObservationIds)) {
-      const supporting = byObservationId.get(observationId);
+      const supporting = historicalSupports?.get(observationId) ?? (item.historicalGeneration === undefined ? currentObservations.get(observationId) : undefined);
       if (!supporting) missingSupportingObservationIds.push(observationId);
-      else if (!recalledObservations.some((match) => match.observation === supporting)) addObservation(supporting, "folded", 0);
+      else if (!recalledObservations.some((match) => match.observation === supporting.value)) addObservation(supporting.value, supporting.entryId, supporting.recordIndex);
     }
   }
   const missing = unique([...missingSourceEntryIds, ...nonSourceEntryIds, ...missingSupportingObservationIds]);
