@@ -26,6 +26,7 @@ import {
 } from "./types.ts";
 
 const SOURCE_ENTRY_TYPES = new Set(["message", "custom_message", "branch_summary"]);
+const CONTEXT_ENTRY_TYPES = new Set(["message", "custom_message", "branch_summary", "compaction"]);
 
 export type LedgerContext = SessionBinding;
 export type FoldedLedger = {
@@ -74,6 +75,23 @@ export function resolveCurrentBranch(entries: SessionEntry[], leafId?: string | 
 
 export function isSourceEntry(entry: SessionEntry): boolean {
   return SOURCE_ENTRY_TYPES.has(entry.type) && hasId(entry);
+}
+/** Require unique IDs everywhere, then strict parent ordering from the first context entry onward. */
+export function hasOrderedContextTail(entries: readonly SessionEntry[]): boolean {
+  const ids = new Set<string>();
+  let anchor = -1;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!hasId(entry) || ids.has(entry.id)) return false;
+    ids.add(entry.id);
+    if (anchor < 0 && CONTEXT_ENTRY_TYPES.has(entry.type)) anchor = index;
+  }
+  if (anchor < 0) return false;
+  if (anchor > 0 && entries[anchor].parentId !== entries[anchor - 1].id) return false;
+  for (let index = anchor + 1; index < entries.length; index += 1) {
+    if (entries[index].parentId !== entries[index - 1].id) return false;
+  }
+  return true;
 }
 export function sourceEntries(branch: SessionEntry[]): SessionEntry[] {
   return branch.filter(isSourceEntry);

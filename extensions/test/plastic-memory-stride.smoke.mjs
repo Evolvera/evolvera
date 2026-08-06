@@ -43,9 +43,17 @@ function stubRuntime(options = {}) {
 }
 
 /** Closed cycles over a contiguous synthetic branch: each cycle ends on a terminal assistant and starts on a user message. */
-function branchFixture(binding, closedTurns) {
+function branchFixture(binding, closedTurns, includeHostPrefix = false) {
   let next = 0;
   const entries = [];
+  let hostBootstrap;
+  if (includeHostPrefix) {
+    entries.push({ type: "session", id: "session", parentId: null });
+    entries.push({ type: "model_change", id: "host-model", parentId: "disconnected-model" });
+    entries.push({ type: "thinking_level_change", id: "host-thinking", parentId: "disconnected-thinking" });
+    hostBootstrap = { type: "custom", id: "host-bootstrap", parentId: "disconnected-bootstrap", customType: "plastic.bootstrap.recorded", data: {} };
+    entries.push(hostBootstrap);
+  }
   const append = (message) => {
     const entry = { type: "message", id: `e${++next}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
     entries.push(entry);
@@ -70,12 +78,23 @@ function branchFixture(binding, closedTurns) {
     });
   }
   const openTurn = turn(closedTurns + 1);
+  if (hostBootstrap) {
+    const sourceIds = entries.filter((entry) => entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary").map((entry) => entry.id);
+    hostBootstrap.data = {
+      schemaVersion: 1, sessionId: "host-prefix", generation: 0, branchId: "host-prefix",
+      activeEntryIds: openTurn.ids,
+      activeDigest: "host-active",
+      historicalPrefixIds: sourceIds.filter((id) => !openTurn.ids.includes(id)),
+      historicalGap: "historical-unindexed",
+    };
+  }
   return { entries, cycles, openTurn };
 }
 
 async function runStride(closedTurns, options = {}) {
   const binding = { sessionId: ids.sessionDigest(`stride-smoke-${closedTurns}-${options.compactorMode ?? "valid"}`, { generation: 1 }), generation: 1, branchId: "main" };
-  const { entries, cycles, openTurn } = branchFixture(binding, closedTurns);
+  const { entries, cycles, openTurn } = branchFixture(binding, closedTurns, options.hostPrefix === true);
+  const sourceIds = entries.filter((entry) => entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary").map((entry) => entry.id);
   const stub = stubRuntime(options);
   const lifecycle = [];
   const scheduler = schedulerModule.createCycleScheduler();
@@ -83,8 +102,9 @@ async function runStride(closedTurns, options = {}) {
     binding,
     branchEntries: entries,
     bootstrap: {
+      ...binding,
       activeEntryIds: openTurn.ids,
-      historicalPrefixIds: entries.map((entry) => entry.id).filter((id) => !openTurn.ids.includes(id)),
+      historicalPrefixIds: sourceIds.filter((id) => !openTurn.ids.includes(id)),
       historicalGap: "historical-unindexed",
     },
     records: [],
@@ -132,6 +152,33 @@ async function runStride(closedTurns, options = {}) {
   assert.equal(prompt.readOnlyIdentityContext.cycleIds.length, 4, "the newest four retained cycles are never described to the compactor");
   assert.equal(run.compacted.prepared.cut.firstKeptEntryId, closedCycles.at(-4).sourceStartId, "the newest four-cycle cut is preserved");
   assert.equal(run.lifecycle.some((event) => event.phase === "compactor"), false, "a successful stride reports no compactor waiting or failure event");
+}
+// 2b. Pi's leading host metadata prefix is accepted, while the six-cycle stride
+// still uses the actual branch positions and starts one compactor job.
+{
+  const run = await runStride(7, { hostPrefix: true });
+  assert.ok(run.compacted?.ok, run.compacted?.reason);
+  assert.equal(run.stub.count("compactor"), 1, "host-prefixed branch starts one compactor job");
+  const closedCycles = [...run.cycles, run.result.cycle.data];
+  const stride = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, projectSnapshot });
+  assert.deepEqual(stride.map((cycle) => cycle.cycleId), closedCycles.slice(0, -4).map((cycle) => cycle.cycleId));
+  const firstSource = run.entries.findIndex((entry) => entry.type === "message");
+  const malformed = run.entries.map((entry, index) => index === firstSource + 1 ? { ...entry, parentId: "post-anchor-disconnected" } : entry);
+  assert.equal(engine.selectEligibleStride({ binding: run.binding, branchEntries: malformed, cycles: closedCycles, projectSnapshot }), undefined, "post-anchor mismatch makes engine selection ineligible");
+}
+// A branch with IDs but no context-bearing anchor remains fail-closed.
+{
+  const binding = { sessionId: ids.sessionDigest("stride-no-context", { generation: 1 }), generation: 1, branchId: "main" };
+  assert.equal(engine.selectEligibleStride({
+    binding,
+    branchEntries: [
+      { type: "session", id: "session", parentId: null },
+      { type: "model_change", id: "model", parentId: "unrelated" },
+      { type: "custom", id: "bootstrap", parentId: "another-unrelated", customType: "plastic.bootstrap.recorded" },
+    ],
+    cycles: [],
+    projectSnapshot,
+  }), undefined);
 }
 // 2a. Physical emergency mode selects the same whole-cycle fold for selector, detached
 // request, and final preparation, while retaining the incomplete turn suffix.

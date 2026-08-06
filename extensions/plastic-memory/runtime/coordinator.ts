@@ -7,7 +7,7 @@ import { acknowledgeCompaction, type CompactionEntry, type PhysicalBudget } from
 import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
 import { bootstrapSession } from "../session/bootstrap.ts";
-import { foldLedger } from "../session/ledger.ts";
+import { foldLedger, hasOrderedContextTail } from "../session/ledger.ts";
 import {
   isPlasticRecord,
   PLASTIC_CYCLE_CLOSED,
@@ -59,16 +59,6 @@ function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
 function messageRole(entry: SessionEntry | undefined): string | undefined {
   const message = entry?.message;
   return message && typeof message === "object" && !Array.isArray(message) ? (message as Record<string, unknown>).role as string | undefined : undefined;
-}
-function orderedBranch(entries: readonly SessionEntry[]): boolean {
-  const seen = new Set<string>();
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (typeof entry.id !== "string" || entry.id.length === 0 || seen.has(entry.id)) return false;
-    seen.add(entry.id);
-    if (index > 0 && entry.parentId !== entries[index - 1]?.id) return false;
-  }
-  return true;
 }
 function latestCompactionIdentity(branch: readonly SessionEntry[]): string | undefined {
   const latest = [...branch].reverse().find((entry) => entry.type === "compaction" && typeof entry.id === "string") as CompactionEntry | undefined;
@@ -384,7 +374,7 @@ export class PlasticMemoryCoordinator {
   private preparationMatches(event: { preparation: { firstKeptEntryId?: string }; branchEntries: SessionEntry[] }, pending: PendingCompaction, ctx: ExtensionContext, internal: boolean): boolean {
     const branch = event.branchEntries;
     const current = ctx.sessionManager.getBranch() as SessionEntry[];
-    if (!orderedBranch(branch) || !orderedBranch(current) || entryIds(branch).join("\u0000") !== entryIds(current).join("\u0000")) return false;
+    if (!hasOrderedContextTail(branch) || !hasOrderedContextTail(current) || entryIds(branch).join("\u0000") !== entryIds(current).join("\u0000")) return false;
     const binding = this.binding(ctx);
     if (!sameBinding(pending.binding, binding) || pending.runtimeToken !== this.runtimeToken) return false;
     const branchIds = entryIds(branch);

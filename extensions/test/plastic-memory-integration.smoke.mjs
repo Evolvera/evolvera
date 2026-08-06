@@ -17,7 +17,13 @@ const safetyModule = await jiti.import(path.join(root, "plastic-memory/common/sa
 function entry(id, parentId, role = "user") {
   return { type: "message", id, parentId, message: { role, content: [{ type: "text", text: id }] } };
 }
-const branch = [entry("C1", undefined), entry("C2", "C1", "assistant"), entry("C3", "C2"), entry("C4", "C3", "assistant")];
+const branch = [entry("C1", "host-bootstrap"), entry("C2", "C1", "assistant"), entry("C3", "C2"), entry("C4", "C3", "assistant")];
+const hostPrefix = [
+  { type: "session", id: "session", parentId: null },
+  { type: "model_change", id: "host-model", parentId: "disconnected-model" },
+  { type: "thinking_level_change", id: "host-thinking", parentId: "disconnected-thinking" },
+  { type: "custom", id: "host-bootstrap", parentId: "disconnected-bootstrap", customType: "plastic.bootstrap.recorded", data: {} },
+];
 function compaction(id, parentId, from, through, stateDigest) {
   const header = `PLASTIC-COMPACTION ${stateDigest}`;
   return {
@@ -28,7 +34,7 @@ function compaction(id, parentId, from, through, stateDigest) {
 }
 const old = compaction("old", "C4", "C1", "C2", "old-state");
 const latest = compaction("latest", "old", "C1", "C4", "latest-state");
-const fullBranch = [...branch, old, latest];
+const fullBranch = [...hostPrefix, ...branch, old, latest];
 const contextEntries = [latest, old];
 const messages = [
   { role: "compactionSummary", summary: latest.summary },
@@ -40,6 +46,18 @@ assert.equal(projected.status, "projected");
 assert.equal(projected.removed, 1);
 assert.deepEqual(projected.messages.map((message) => message.role), ["compactionSummary", "user"]);
 assert.equal(projected.messages[0].summary, latest.summary);
+
+const malformedHostBranch = [...hostPrefix, ...branch.map((candidate, index) => index === 1 ? { ...candidate, parentId: "post-anchor-disconnected" } : candidate), old, latest];
+const malformed = projection.projectPlasticContext({ messages, branchEntries: malformedHostBranch, contextEntries });
+assert.equal(malformed.status, "noop");
+assert.equal(malformed.reason, "ambiguous branch order");
+const noContext = projection.projectPlasticContext({
+  messages: [],
+  branchEntries: hostPrefix,
+  contextEntries: [],
+});
+assert.equal(noContext.status, "noop");
+assert.equal(noContext.reason, "ambiguous branch order");
 
 const native = { type: "compaction", id: "native", parentId: "C4", firstKeptEntryId: "C2", summary: "host-native" };
 const nativeResult = projection.projectPlasticContext({
