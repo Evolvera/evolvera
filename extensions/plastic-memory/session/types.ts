@@ -3,6 +3,7 @@ import {
   LEGACY_MEMORY_ID_PATTERN,
   RECORD_DIGEST_PATTERN,
   SESSION_DIGEST_PATTERN,
+  isInternalId,
   isPublicId,
 } from "../common/ids.ts";
 
@@ -12,6 +13,7 @@ export const PLASTIC_OBSERVATIONS_RECORDED = "plastic.observations.recorded" as 
 export const PLASTIC_REFLECTIONS_RECORDED = "plastic.reflections.recorded" as const;
 export const PLASTIC_OBSERVATIONS_DROPPED = "plastic.observations.dropped" as const;
 export const PLASTIC_BOOTSTRAP_RECORDED = "plastic.bootstrap.recorded" as const;
+export const PLASTIC_CYCLE_QUEUED = "plastic.cycle.queued" as const;
 export const PLASTIC_CYCLE_ATTEMPTED = "plastic.cycle.attempted" as const;
 export const PLASTIC_CYCLE_CLOSED = "plastic.cycle.closed" as const;
 export const PLASTIC_COMPACTION_APPLIED = "plastic.compaction.applied" as const;
@@ -24,6 +26,7 @@ export const PLASTIC_TYPES = [
   PLASTIC_REFLECTIONS_RECORDED,
   PLASTIC_OBSERVATIONS_DROPPED,
   PLASTIC_BOOTSTRAP_RECORDED,
+  PLASTIC_CYCLE_QUEUED,
   PLASTIC_CYCLE_ATTEMPTED,
   PLASTIC_CYCLE_CLOSED,
   PLASTIC_COMPACTION_APPLIED,
@@ -106,6 +109,13 @@ export type BootstrapData = SessionBinding & {
   historicalGap: "historical-unindexed";
 };
 
+export type CycleQueuedData = SessionBinding & SourceSpan & {
+  schemaVersion: 1;
+  cycleId: string;
+  snapshotId: string;
+  estimatedTokenCount: number;
+};
+
 export type CycleAttemptedData = SessionBinding & SourceSpan & {
   schemaVersion: 1;
   cycleId: string;
@@ -158,6 +168,7 @@ export type PlasticDataMap = {
   [PLASTIC_REFLECTIONS_RECORDED]: ReflectionsRecordedData;
   [PLASTIC_OBSERVATIONS_DROPPED]: ObservationsDroppedData;
   [PLASTIC_BOOTSTRAP_RECORDED]: BootstrapData;
+  [PLASTIC_CYCLE_QUEUED]: CycleQueuedData;
   [PLASTIC_CYCLE_ATTEMPTED]: CycleAttemptedData;
   [PLASTIC_CYCLE_CLOSED]: CycleClosedData;
   [PLASTIC_COMPACTION_APPLIED]: CompactionAppliedData;
@@ -288,6 +299,14 @@ function isBootstrapData(value: unknown): value is BootstrapData {
     && isStringArray(value.legacyCoverageIds, true) && isStringArray(value.historicalPrefixIds, true)
     && value.historicalGap === "historical-unindexed";
 }
+function isCycleQueuedData(value: unknown): value is CycleQueuedData {
+  return isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "sourceStartId", "sourceEndId", "sourceEntryIds", "sourceDigest", "completedTurnEndId", "cycleId", "snapshotId", "estimatedTokenCount"])
+    && isSessionBinding(value) && isSourceSpan(value) && isStringArray(value.sourceEntryIds)
+    && value.sourceStartId === value.sourceEntryIds[0] && value.sourceEndId === value.sourceEntryIds.at(-1)
+    && value.completedTurnEndId === value.sourceEndId && isInternalId(value.cycleId)
+    && isDigest(value.snapshotId, RECORD_DIGEST_PATTERN) && isNonnegativeInteger(value.estimatedTokenCount)
+    && value.estimatedTokenCount >= 20_000;
+}
 function isCycleAttemptedData(value: unknown): value is CycleAttemptedData {
   return isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "sourceStartId", "sourceEndId", "sourceEntryIds", "sourceDigest", "completedTurnEndId", "cycleId", "attemptId", "snapshotId", "phase", "outcome", "attemptCount"], ["suppressionReason"])
     && isSessionBinding(value) && isSourceSpan(value) && isString(value.cycleId) && isString(value.attemptId) && isString(value.snapshotId)
@@ -329,6 +348,7 @@ export function isPlasticRecord(value: unknown): value is PlasticEntry {
     case PLASTIC_REFLECTIONS_RECORDED: return isReflectionsRecordedData(value.data);
     case PLASTIC_OBSERVATIONS_DROPPED: return isObservationsDroppedData(value.data);
     case PLASTIC_BOOTSTRAP_RECORDED: return isBootstrapData(value.data);
+    case PLASTIC_CYCLE_QUEUED: return isCycleQueuedData(value.data);
     case PLASTIC_CYCLE_ATTEMPTED: return isCycleAttemptedData(value.data);
     case PLASTIC_CYCLE_CLOSED: return isCycleClosedData(value.data);
     case PLASTIC_COMPACTION_APPLIED: return isCompactionAppliedData(value.data);
@@ -340,6 +360,9 @@ export function isPlasticRecord(value: unknown): value is PlasticEntry {
 
 export function isBootstrapRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_BOOTSTRAP_RECORDED> {
   return isPlasticRecord(value) && value.customType === PLASTIC_BOOTSTRAP_RECORDED;
+}
+export function isCycleQueuedRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_CYCLE_QUEUED> {
+  return isPlasticRecord(value) && value.customType === PLASTIC_CYCLE_QUEUED;
 }
 export function isCycleAttemptedRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_CYCLE_ATTEMPTED> {
   return isPlasticRecord(value) && value.customType === PLASTIC_CYCLE_ATTEMPTED;
