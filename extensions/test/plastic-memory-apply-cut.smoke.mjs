@@ -146,7 +146,7 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   const w = world();
   const customInstructions = w.internalInstructions();
   assert.notEqual(w.entries[0].id, w.cut, "host suggestion differs from the plastic cut");
-  const result = w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id, tokensBefore: 4_242 }, customInstructions, reason: "manual" });
+  const result = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id, tokensBefore: 4_242 }, customInstructions, reason: "manual" });
   assert.equal(result.cancel, undefined, "internal apply is not cancelled");
   assert.equal(result.compaction.firstKeptEntryId, w.cut);
   assert.equal(result.compaction.summary, w.rendered.summary);
@@ -158,48 +158,48 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   // Internal path imposes no constraint at all from preparation.firstKeptEntryId.
   const w = world();
   const customInstructions = w.internalInstructions();
-  const result = w.beforeCompact({ preparation: { tokensBefore: 1 }, customInstructions, reason: "manual" });
+  const result = await w.beforeCompact({ preparation: { tokensBefore: 1 }, customInstructions, reason: "manual" });
   assert.equal(result.compaction.firstKeptEntryId, w.cut, "missing host suggestion still applies the plastic cut");
 }
 {
   // Foreign / stale internal nonce still cancels.
   const w = world();
   w.internalInstructions();
-  assert.deepEqual(w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions: "\u0000plastic-memory:internal-compaction:foreign", reason: "manual" }), { cancel: true });
+  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions: "\u0000plastic-memory:internal-compaction:foreign", reason: "manual" }), { cancel: true });
 }
 
 // 2. HOST path: Plastic owns a valid cut regardless of host advisory ordering.
 {
   const w = world();
-  const result = w.beforeCompact(hostEvent(w.entries[0].id));
+  const result = await w.beforeCompact(hostEvent(w.entries[0].id));
   assert.equal(result.compaction.firstKeptEntryId, w.cut, "plastic cut later than the host cut is accepted");
   assert.equal(result.compaction.tokensBefore, 7_777);
 }
 {
   const w = world({ hostPrefix: true });
-  const result = w.beforeCompact(hostEvent(w.entries[0].id));
+  const result = await w.beforeCompact(hostEvent(w.entries[0].id));
   assert.equal(result.compaction.firstKeptEntryId, w.cut, "host-prefixed branch keeps the Plastic cut");
 }
 {
   const w = world({ hostPrefix: true });
   const firstSource = w.state.branch.findIndex((entry) => entry.type === "message");
   w.state.branch = w.state.branch.map((entry, index) => index === firstSource + 1 ? { ...entry, parentId: "post-anchor-disconnected" } : entry);
-  assert.equal(w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "post-anchor mismatch rejects the coordinator hook");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.state.branch[0].id)), { cancel: true }, "post-anchor mismatch cancels rather than exposing native compaction");
 }
 {
   const w = world();
-  assert.equal(w.beforeCompact(hostEvent(w.cut)).compaction.firstKeptEntryId, w.cut, "equal cut is accepted");
+  assert.equal((await w.beforeCompact(hostEvent(w.cut))).compaction.firstKeptEntryId, w.cut, "equal cut is accepted");
 }
 {
   const w = world();
   const later = w.entries.at(-4).id;
   assert.notEqual(later, w.cut);
-  assert.equal(w.beforeCompact(hostEvent(later)).compaction.firstKeptEntryId, w.cut, "plastic cut is accepted when host advice is later");
+  assert.equal((await w.beforeCompact(hostEvent(later))).compaction.firstKeptEntryId, w.cut, "plastic cut is accepted when host advice is later");
 }
 {
   const w = world();
-  assert.equal(w.beforeCompact(hostEvent("not-on-this-branch")), undefined, "unlocatable host cut fails closed");
-  assert.equal(w.beforeCompact(hostEvent(undefined)), undefined, "absent host cut fails closed on the host path");
+  assert.deepEqual(await w.beforeCompact(hostEvent("not-on-this-branch")), { cancel: true }, "unlocatable host cut cancels without native fallback");
+  assert.deepEqual(await w.beforeCompact(hostEvent(undefined)), { cancel: true }, "absent host cut cancels without native fallback");
 }
 // 2a. Pi can reject before the extension hook when its own preparation is empty. The
 // exact benign error clears only the latch and preserves the pending for one later edge.
@@ -218,46 +218,46 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
 {
   const w = world();
   w.state.branch.push({ type: "message", id: "huge-descendant", parentId: w.state.branch.at(-1).id, message: { role: "user", content: [{ type: "text", text: "x".repeat(700_000) }] } });
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "hook-time budget recheck rejects an overflowing descendant");
-  assert.notEqual(w.coordinator.getPending(), undefined, "budget rejection retains pending for native fallback/retry");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "hook-time budget recheck cancels an overflowing descendant");
+  assert.notEqual(w.coordinator.getPending(), undefined, "budget rejection retains the existing pending for retry");
 }
 
 // 3. Every pre-existing rejection still rejects.
 {
   const w = world({ binding: (binding) => ({ ...binding, generation: binding.generation + 1 }) });
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "wrong binding");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "wrong binding");
 }
 {
   const w = world({ pendingRuntimeToken: "runtime-other" });
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "wrong runtimeToken");
-  assert.deepEqual(w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.internalInstructions(), reason: "manual" }), { cancel: true }, "wrong runtimeToken (internal)");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "wrong runtimeToken");
+  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.internalInstructions(), reason: "manual" }), { cancel: true }, "wrong runtimeToken (internal)");
 }
 {
   const w = world();
   const kept = w.entries.find((entry) => entry.id === w.cut);
   kept.message = { ...kept.message, role: "assistant" };
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "non-user kept entry");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "non-user kept entry");
 }
 {
   const w = world();
   w.state.branch = w.entries.map((entry, index) => index === 0 ? { ...entry, id: "forked-root" } : index === 1 ? { ...entry, parentId: "forked-root" } : entry);
-  assert.equal(w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "prefix mismatch");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.state.branch[0].id)), { cancel: true }, "prefix mismatch");
 }
 {
   const w = world();
   w.state.branch = [...w.entries].reverse();
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "unordered branch");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "unordered branch");
 }
 {
   const w = world();
   w.setClock(PREPARE_AT + 300_001);
-  assert.equal(w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "expired pending");
+  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "expired pending");
 }
 {
   const w = world();
   const customInstructions = w.internalInstructions();
   w.setClock(PREPARE_AT + 300_001);
-  assert.deepEqual(w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions, reason: "manual" }), { cancel: true }, "expired pending (internal)");
+  assert.deepEqual(await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions, reason: "manual" }), { cancel: true }, "expired pending (internal)");
 }
 
 // A cancelled internal apply must release the coordinator. The nonce is spent before the
@@ -268,12 +268,12 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   const w = world();
   const customInstructions = w.internalInstructions();
   const foreignBranch = [...w.state.branch.slice(0, -1)];
-  const cancelled = w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions, reason: "manual", branchEntries: foreignBranch });
+  const cancelled = await w.beforeCompact({ preparation: { firstKeptEntryId: w.cut }, customInstructions, reason: "manual", branchEntries: foreignBranch });
   assert.deepEqual(cancelled, { cancel: true }, "a branch mismatch cancels the internal apply");
   assert.notEqual(w.coordinator.getPending(), undefined, "a cancelled apply does not consume the pending");
   w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
   assert.equal(w.compactCalls.length, 2, "the coordinator is not latched: a later settle issues a new internal compact");
-  const retry = w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.compactCalls[1].customInstructions, reason: "manual" });
+  const retry = await w.beforeCompact({ preparation: { firstKeptEntryId: w.entries[0].id }, customInstructions: w.compactCalls[1].customInstructions, reason: "manual" });
   assert.equal(retry.cancel, undefined, "the retried apply succeeds after the cancellation");
   assert.equal(retry.compaction.firstKeptEntryId, w.cut);
 }
