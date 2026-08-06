@@ -29,6 +29,7 @@ export type SchedulerInput = Readonly<{
   append?: (entry: PlasticEntry) => void;
   currentIdentity?: () => SchedulerIdentity;
   lifecycleReporter?: SchedulerLifecycleReporter;
+  reschedule?: () => void;
   projectSnapshot?: ProjectSnapshot | unknown;
   compaction?: {
     engine: Omit<EngineInput, "compact" | "cycles" | "projectSnapshot" | "binding">;
@@ -50,7 +51,7 @@ export type SchedulerResult = Readonly<{
   compactorJob?: Promise<CompactorResult>;
 }>;
 
-type Job = { controller: AbortController; epoch: number; promise: Promise<SchedulerResult> };
+type Job = { controller: AbortController; epoch: number; snapshotId: string; promise: Promise<SchedulerResult> };
 
 function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
   return left.sessionId === right.sessionId && left.generation === right.generation && left.branchId === right.branchId;
@@ -85,7 +86,9 @@ function report(input: SchedulerInput, event: Omit<SchedulerLifecycleEvent, "rea
 /** One edge-triggered, generation-safe worker pipeline. */
 export class CycleScheduler {
   private epoch = 0;
-  private readonly jobs = new Map<string, Job>();
+  private activeJob?: Job;
+  private rescheduleQueued = false;
+  private rescheduleCallback?: () => void;
   private readonly controllers = new Set<AbortController>();
   private readonly localRecords: SessionEntry[] = [];
   private readonly terminalSnapshots = new Set<string>();
@@ -100,18 +103,29 @@ export class CycleScheduler {
     // descendant and is legitimately outside it.
     const capturedSource = source.map((entry) => entry);
     const preview = capturedSource.length > 0 ? createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: capturedSource }) : createCompletedTurnSnapshot({ binding: input.binding, sourceEntries: [] });
-    const key = `${input.binding.sessionId}:${input.binding.generation}:${input.binding.branchId}:${preview.snapshotId}`;
-    const existing = this.jobs.get(key);
-    if (existing) return existing.promise;
+    const active = this.activeJob;
+    if (active) {
+      if (active.snapshotId === preview.snapshotId) return active.promise;
+      this.rescheduleQueued = true;
+      this.rescheduleCallback = input.reschedule;
+      return Promise.resolve({ status: "skipped", snapshot: preview, reason: "snapshot queued behind active cycle" });
+    }
     if (this.terminalSnapshots.has(preview.snapshotId)) return Promise.resolve({ status: "skipped", snapshot: preview, reason: "snapshot already closed" });
     const controller = new AbortController();
     this.controllers.add(controller);
-    const job: Job = { controller, epoch: this.epoch, promise: Promise.resolve({ status: "skipped" as const }) };
+    const job: Job = { controller, epoch: this.epoch, snapshotId: preview.snapshotId, promise: Promise.resolve({ status: "skipped" as const }) };
     job.promise = this.run(input, preview, controller, capturedSource).finally(() => {
-      this.jobs.delete(key);
+      if (this.activeJob !== job) return;
+      this.activeJob = undefined;
       this.controllers.delete(controller);
+      const callback = this.rescheduleQueued ? this.rescheduleCallback : undefined;
+      this.rescheduleQueued = false;
+      this.rescheduleCallback = undefined;
+      if (callback && this.epoch === job.epoch) {
+        try { callback(); } catch { /* rescheduling must not change the settled worker result */ }
+      }
     });
-    this.jobs.set(key, job);
+    this.activeJob = job;
     return job.promise;
   }
 
@@ -280,7 +294,9 @@ export class CycleScheduler {
     this.epoch += 1;
     for (const controller of this.controllers) controller.abort(new Error(_reason));
     this.controllers.clear();
-    this.jobs.clear();
+    this.activeJob = undefined;
+    this.rescheduleQueued = false;
+    this.rescheduleCallback = undefined;
   }
   abort(reason = "aborted"): void { this.invalidate(reason); }
   shutdown(): void { this.invalidate("shutdown"); }
