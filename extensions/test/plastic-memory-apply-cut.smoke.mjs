@@ -17,9 +17,19 @@ function fakeLuna(request) {
   return { summary: "fake summary", state: { facts: { goals: request.facts.goals }, cycleIds: [...request.cycleIds], sourceEntryIds: [...request.sourceEntryIds], sourceDigests: [...request.sourceDigests] } };
 }
 
-function fixture() {
+function fixture(includeHostPrefix = false) {
   let nextId = 0;
   const entries = [];
+  if (includeHostPrefix) {
+    entries.push({ type: "session", id: "session", parentId: null });
+    entries.push({ type: "model_change", id: "host-model", parentId: "disconnected-model" });
+    entries.push({ type: "thinking_level_change", id: "host-thinking", parentId: "disconnected-thinking" });
+    entries.push({
+      type: "custom", id: "host-bootstrap", parentId: "disconnected-bootstrap",
+      customType: "plastic.bootstrap.recorded",
+      data: { sessionId: "host-prefix", generation: 0, branchId: "host-prefix", activeEntryIds: [], historicalPrefixIds: [] },
+    });
+  }
   const append = (message) => {
     const entry = { type: "message", id: `e${++nextId}`, parentId: entries.at(-1)?.id ?? null, message, tokenCount: 1 };
     entries.push(entry);
@@ -50,7 +60,7 @@ function world(options = {}) {
   const runtimeToken = options.runtimeToken ?? "runtime-test";
   const contextWindow = options.contextWindow ?? 160_000;
   let usageTokens = Object.hasOwn(options, "usageTokens") ? options.usageTokens : 21_000;
-  const { entries, spans } = fixture();
+  const { entries, spans } = fixture(options.hostPrefix === true);
   const handlers = new Map();
   const compactCalls = [];
   const notices = [];
@@ -165,6 +175,17 @@ for (const usageTokens of [undefined, null, 0, 20_000]) {
   const result = w.beforeCompact(hostEvent(w.entries[0].id));
   assert.equal(result.compaction.firstKeptEntryId, w.cut, "plastic cut later than the host cut is accepted");
   assert.equal(result.compaction.tokensBefore, 7_777);
+}
+{
+  const w = world({ hostPrefix: true });
+  const result = w.beforeCompact(hostEvent(w.entries[0].id));
+  assert.equal(result.compaction.firstKeptEntryId, w.cut, "host-prefixed branch keeps the Plastic cut");
+}
+{
+  const w = world({ hostPrefix: true });
+  const firstSource = w.state.branch.findIndex((entry) => entry.type === "message");
+  w.state.branch = w.state.branch.map((entry, index) => index === firstSource + 1 ? { ...entry, parentId: "post-anchor-disconnected" } : entry);
+  assert.equal(w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "post-anchor mismatch rejects the coordinator hook");
 }
 {
   // A physically selected two-cycle retained suffix must survive the coordinator's

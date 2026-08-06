@@ -1,3 +1,4 @@
+import { hasOrderedContextTail } from "../session/ledger.ts";
 import type { SessionEntry } from "../session/types.ts";
 
 export type ProjectionMessage = {
@@ -42,17 +43,6 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function ids(entries: readonly SessionEntry[]): string[] {
   return entries.map((entry) => entry.id).filter((id): id is string => typeof id === "string" && id.length > 0);
-}
-
-function orderedBranch(entries: readonly SessionEntry[]): boolean {
-  const seen = new Set<string>();
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (typeof entry.id !== "string" || entry.id.length === 0 || seen.has(entry.id)) return false;
-    seen.add(entry.id);
-    if (index > 0 && entry.parentId !== entries[index - 1]?.id) return false;
-  }
-  return true;
 }
 
 function compactionDetails(entry: SessionEntry): PlasticDetails | undefined {
@@ -108,7 +98,7 @@ function subsumed(candidate: MappedCompaction, latest: MappedCompaction, branchP
  */
 export function projectPlasticContext(input: ProjectionInput): ProjectionResult {
   const messages = [...input.messages];
-  if (!orderedBranch(input.branchEntries)) {
+  if (!hasOrderedContextTail(input.branchEntries)) {
     return { messages, status: "noop", removed: 0, reason: "ambiguous branch order" };
   }
   const branchPositions = new Map(ids(input.branchEntries).map((id, index) => [id, index] as const));

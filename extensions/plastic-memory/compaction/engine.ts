@@ -1,5 +1,5 @@
 import { digestParts } from "../common/safety.ts";
-import { foldLedger, sourceDigest } from "../session/ledger.ts";
+import { foldLedger, hasOrderedContextTail, sourceDigest } from "../session/ledger.ts";
 import { makePlasticEntry } from "../session/ledger.ts";
 import { isTerminalAssistantEntry } from "../session/cycles.ts";
 import { PLASTIC_COMPACTION_APPLIED, type CompactionAppliedData, type CycleClosedData, type SessionBinding, type SessionEntry } from "../session/types.ts";
@@ -66,16 +66,6 @@ function message(entry: SessionEntry): Record<string, unknown> | undefined {
   return entry.message !== null && typeof entry.message === "object" ? entry.message as Record<string, unknown> : undefined;
 }
 function isSourceEntry(entry: SessionEntry): boolean { return entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary"; }
-function branchIsOrdered(branch: SessionEntry[]): boolean {
-  const ids = new Set<string>();
-  for (let index = 0; index < branch.length; index += 1) {
-    const entry = branch[index];
-    if (!hasId(entry) || ids.has(entry.id)) return false;
-    ids.add(entry.id);
-    if (index > 0 && entry.parentId !== branch[index - 1].id) return false;
-  }
-  return true;
-}
 function compactionIdentity(entry: CompactionEntry): string {
   return digestParts({ id: entry.id, firstKeptEntryId: entry.firstKeptEntryId, summary: entry.summary, details: entry.details }).slice(0, 32);
 }
@@ -116,7 +106,7 @@ function exactCycleSpan(cycle: CycleClosedData, branch: SessionEntry[], branchPo
   return isTerminalAssistantEntry(sourceEntries.at(-1)!);
 }
 function eligibleWindow(input: EngineWindowInput): { cycles: CycleClosedData[]; cut: CutValidation } | undefined {
-  if (!branchIsOrdered(input.branchEntries)) return undefined;
+  if (!hasOrderedContextTail(input.branchEntries)) return undefined;
   const branchIds = input.branchEntries.map((entry) => entry.id!);
   const positions = new Map(branchIds.map((id, index) => [id, index]));
   const sourcePositions = new Map(input.branchEntries.filter(isSourceEntry).map((entry, index) => [entry.id!, index]));
