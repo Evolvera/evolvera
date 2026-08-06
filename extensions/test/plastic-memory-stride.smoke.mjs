@@ -43,6 +43,10 @@ function stubRuntime(options = {}) {
 }
 
 /** Closed cycles over a contiguous synthetic branch: each cycle ends on a terminal assistant and starts on a user message. */
+function entryBudget(entries, contextWindow, fixedTokens, tokensPerEntry) {
+  return { contextWindow, fixedTokens, entryTokens: Object.fromEntries(entries.map((entry) => [entry.id, tokensPerEntry])) };
+}
+
 function branchFixture(binding, closedTurns, includeHostPrefix = false) {
   let next = 0;
   const entries = [];
@@ -96,6 +100,11 @@ async function runStride(closedTurns, options = {}) {
   const { entries, cycles, openTurn } = branchFixture(binding, closedTurns, options.hostPrefix === true);
   const sourceIds = entries.filter((entry) => entry.type === "message" || entry.type === "custom_message" || entry.type === "branch_summary").map((entry) => entry.id);
   const stub = stubRuntime(options);
+  const physicalBudget = typeof options.physicalBudgetForEntries === "function"
+    ? options.physicalBudgetForEntries(entries)
+    : options.preClosePhysicalBudget
+      ? entryBudget(entries, 170, 10, 20)
+      : options.physicalBudget;
   const lifecycle = [];
   const scheduler = schedulerModule.createCycleScheduler();
   const result = await scheduler.trigger({
@@ -112,7 +121,7 @@ async function runStride(closedTurns, options = {}) {
     append() {},
     lifecycleReporter: (event) => lifecycle.push(event),
     compaction: {
-      engine: { branchEntries: entries, cycles, activeMemoryIds: [], runtimeToken: "runtime-stride", physicalBudget: options.physicalBudget, projectSnapshot },
+      engine: { branchEntries: entries, cycles, activeMemoryIds: [], runtimeToken: "runtime-stride", physicalBudget, projectSnapshot },
       cycles,
       eligibleCycles: cycles,
       runtimeToken: "runtime-stride",
@@ -120,7 +129,7 @@ async function runStride(closedTurns, options = {}) {
     },
   });
   const compacted = result.compactorJob ? await result.compactorJob : undefined;
-  return { binding, entries, cycles, openTurn, stub, lifecycle, result, compacted };
+  return { binding, entries, cycles, openTurn, stub, lifecycle, result, compacted, physicalBudget };
 }
 
 // 1. Fewer than six valid cycles: the compactor must not be started and must not burn a model call.
@@ -183,12 +192,14 @@ async function runStride(closedTurns, options = {}) {
 // 2a. Physical emergency mode selects the same whole-cycle fold for selector, detached
 // request, and final preparation, while retaining the incomplete turn suffix.
 {
-  const cycleTokens = new Proxy({}, { get: (_target, key) => typeof key === "string" ? 20 : undefined });
-  const run = await runStride(7, { physicalBudget: { contextWindow: 54, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 4 } });
+  // The scheduler receives this map before it closes the final cycle. It is keyed
+  // only by real branch entry IDs, so the just-closed cycle has no special budget key.
+  const run = await runStride(7, { preClosePhysicalBudget: true });
   assert.ok(run.compacted?.ok, run.compacted?.reason);
   const closedCycles = [...run.cycles, run.result.cycle.data];
   const expected = closedCycles.slice(0, -2).map((cycle) => cycle.cycleId);
-  const selected = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, physicalBudget: { contextWindow: 54, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 4 }, projectSnapshot });
+  assert.equal(Object.hasOwn(run.physicalBudget.entryTokens, run.result.cycle.data.cycleId), false, "pre-close budget has no per-cycle key");
+  const selected = engine.selectEligibleStride({ binding: run.binding, branchEntries: run.entries, cycles: closedCycles, physicalBudget: entryBudget(run.entries, 170, 10, 20), projectSnapshot });
   assert.deepEqual(selected.map((cycle) => cycle.cycleId), expected, "4→2 selector folds two normally-retained cycles");
   const prompt = JSON.parse(run.stub.prompts.compactor[0]);
   assert.deepEqual(prompt.readOnlyIdentityContext.cycleIds, expected, "4→2 detached request matches selector");
@@ -198,8 +209,7 @@ async function runStride(closedTurns, options = {}) {
 // Even zero raw cycles cannot fit when the fixed/incomplete budget alone exceeds
 // the context window, so the selector and detached compactor make no call.
 {
-  const cycleTokens = new Proxy({}, { get: (_target, key) => typeof key === "string" ? 20 : undefined });
-  const run = await runStride(7, { physicalBudget: { contextWindow: 59, fixedTokens: 10, retainedCycleTokens: cycleTokens, incompleteSuffixTokens: 50 } });
+  const run = await runStride(7, { physicalBudgetForEntries: (entries) => entryBudget(entries, 59, 10, 20) });
   assert.equal(run.result.compactorJob, undefined, "impossible one-cycle-plus-incomplete-suffix window is skipped");
   assert.equal(run.stub.count("compactor"), 0, "impossible physical fit makes no compactor call");
 }

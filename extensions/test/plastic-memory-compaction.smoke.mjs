@@ -40,6 +40,14 @@ function closed(cycleData) {
 const cycles = [];
 for (let index = 1; index <= 6; index += 1) cycles.push(closed(cycle(index)));
 
+function entryBudget(entries, contextWindow, fixedTokens, tokensForEntry) {
+  return {
+    contextWindow,
+    fixedTokens,
+    entryTokens: Object.fromEntries(entries.map((entry) => [entry.id, typeof tokensForEntry === "function" ? tokensForEntry(entry) : tokensForEntry])),
+  };
+}
+
 function appendCustom(customType, data) {
   const entry = { type: "custom", id: `m${++nextId}`, parentId: entries.at(-1)?.id ?? null, customType, data };
   entries.push(entry);
@@ -87,12 +95,7 @@ assert.ok(firstRendered.summary.length <= 48_000);
 
 // A proved physical budget may fold the oldest two normally-retained cycles into
 // the same cumulative request/state. No cut is allowed to split a cycle.
-const emergencyBudget = {
-  contextWindow: 60,
-  fixedTokens: 10,
-  retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 25])),
-  incompleteSuffixTokens: 0,
-};
+const emergencyBudget = entryBudget(entries, 61, 10, (entry) => entry.type === "message" ? 6 : 1);
 const emergency = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 1_250, physicalBudget: emergencyBudget, compact: fakeLuna });
 assert.equal(emergency.eligible, true);
 assert.equal(emergency.prepared.cut.firstKeptEntryId, cycles[4].sourceStartId, "emergency advances two whole cycles");
@@ -139,12 +142,7 @@ assert.deepEqual(delayedWithSuffix.prepared.pending.preparedPrefixIds.slice(-3),
 
 // With a safe incomplete user suffix, zero raw closed cycles is representable:
 // every closed cycle folds into the same rolling summary and the suffix stays whole.
-const zeroBudget = {
-  contextWindow: 25,
-  fixedTokens: 10,
-  retainedCycleTokens: Object.fromEntries(cycles.map((cycle) => [cycle.cycleId, 25])),
-  incompleteSuffixTokens: 15,
-};
+const zeroBudget = entryBudget(entries, 25, 10, 5);
 const zeroRaw = engine.prepareSemanticCompaction({ binding, branchEntries: entries, cycles, projectSnapshot, runtimeToken: "runtime-1", now: 2_800, physicalBudget: zeroBudget, compact: fakeLuna });
 assert.equal(zeroRaw.eligible, true);
 assert.equal(zeroRaw.prepared.cut.firstKeptEntryId, suffixUser.id, "zero-raw cut begins at the safe incomplete user boundary");
