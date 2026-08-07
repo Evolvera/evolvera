@@ -9,7 +9,7 @@ import { createPendingStore, isPendingUsable, type PendingCompaction } from "../
 import { bootstrapSession } from "../session/bootstrap.ts";
 import { isProjectId } from "../project/schema.ts";
 import { createQueuedCycleRecords, reconstructCycleQueue, type QueueReconstruction } from "../session/cycles.ts";
-import { foldLedger, hasOrderedContextTail, isSourceEntry, normalSourceEntries } from "../session/ledger.ts";
+import { foldLedger, hasOrderedContextTail, isSourceEntry, normalSourceEntries, proposalQueueHead, reconstructProposalQueue } from "../session/ledger.ts";
 import {
   isPlasticRecord,
   PLASTIC_CYCLE_ATTEMPTED,
@@ -37,7 +37,7 @@ export type CoordinatorOptions = Readonly<{
   runtime?: CoordinatorRuntime;
   runtimeToken?: string;
   projectSnapshot?: ProjectSnapshot | unknown | (() => ProjectSnapshot | unknown);
-  projectId?: () => string | undefined;
+  projectId?: (ctx?: ExtensionContext) => string | undefined;
   now?: () => number;
 }>;
 
@@ -62,6 +62,10 @@ type PromotionSnapshot = Readonly<{
 const SESSION_DIGEST_PROVENANCE = "plastic-memory:session";
 const AUTO_APPLY_MIN_CONTEXT_TOKENS = 120_000;
 const INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX = "\u0000plastic-memory:internal-compaction:";
+const PROPOSAL_WIDGET_KEY = "plastic-memory-learning-queue";
+const WIDGET_TITLE_LIMIT = 160;
+const WIDGET_BODY_LIMIT = 400;
+const WIDGET_EVIDENCE_LIMIT = 480;
 function internalCompactionInstructions(id: string): string {
   return `${INTERNAL_COMPACTION_INSTRUCTIONS_PREFIX}${id}`;
 }
@@ -110,6 +114,10 @@ function bootstrapFor(branch: SessionEntry[], binding: SessionBinding): Bootstra
 function safeNoticeReason(value: unknown): string {
   const source = typeof value === "string" ? value : String(value ?? "worker did not complete");
   return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, 120) || "worker did not complete";
+}
+function widgetText(value: unknown, fallback: string, limit: number): string {
+  const source = typeof value === "string" && value.trim() ? value : fallback;
+  return scrubSensitiveText(source).replace(/[\u0000-\u001f\u007f]/gu, " ").replace(/\s+/gu, " ").trim().slice(0, limit) || fallback;
 }
 const PLASTIC_SUMMARY_TOKENS = 12_000; // SUMMARY_CAP_CHARS / conservative chars-per-token
 const COMPACTION_RESERVE_TOKENS = 16_384; // real host reserve, not an estimate; never scale it
@@ -236,6 +244,7 @@ export class PlasticMemoryCoordinator {
   private readonly preparedViews = new WeakMap<object, { summary: string; details: unknown; state: CumulativeState }>();
   private readonly reportedPreparations = new WeakSet<object>();
   private readonly promotionControllers = new Set<AbortController>();
+  private widgetContext?: ExtensionContext;
   private generation = 0;
   private branchId = "";
   private settled = false;
@@ -259,7 +268,8 @@ export class PlasticMemoryCoordinator {
 
   private enabled(): boolean { return this.active && (this.config.enabled === true); }
 
-  private invalidate(reason: string): void {
+  private invalidate(reason: string, ctx?: ExtensionContext): void {
+    this.clearProposalWidget(ctx);
     this.generation += 1;
     this.branchId = `branch:${randomUUID()}`;
     this.scheduler.invalidate(reason);
@@ -287,9 +297,9 @@ export class PlasticMemoryCoordinator {
     return typeof this.projectSnapshot === "function" ? this.projectSnapshot() : this.projectSnapshot ?? {};
   }
 
-  private projectIdFor(): string | undefined {
+  private projectIdFor(ctx?: ExtensionContext): string | undefined {
     try {
-      const projectId = this.projectId?.();
+      const projectId = this.projectId?.(ctx);
       return isProjectId(projectId) ? projectId : undefined;
     } catch {
       return undefined;
@@ -298,6 +308,53 @@ export class PlasticMemoryCoordinator {
 
   private append(record: { customType: string; data: unknown }): void {
     if (this.enabled()) this.pi.appendEntry(record.customType, record.data);
+  }
+
+  private clearProposalWidget(ctx?: ExtensionContext): void {
+    const target = ctx ?? this.widgetContext;
+    if (!target || !target.hasUI || typeof target.ui?.setWidget !== "function") return;
+    try {
+      target.ui.setWidget(PROPOSAL_WIDGET_KEY, undefined, { placement: "aboveEditor" });
+    } catch {
+      // Widget cleanup is best-effort and must never affect lifecycle state.
+    }
+  }
+
+  private proposalWidgetLines(head: { data: StructuredProjectProposalData }): string[] {
+    const candidate = head.data.candidate;
+    const evidence = Array.isArray(candidate.evidence)
+      ? candidate.evidence.map((item) => `${widgetText(item.path, "unknown path", 120)}: ${widgetText(item.claim, "no claim", 220)}`).join("; ")
+      : "no evidence recorded";
+    return [
+      "Plastic memory proposal",
+      `Title: ${widgetText(candidate.title, "untitled proposal", WIDGET_TITLE_LIMIT)}`,
+      `Target: ${widgetText(candidate.target, "unknown target", 180)}`,
+      `Rule: ${widgetText(candidate.body, "no synopsis recorded", WIDGET_BODY_LIMIT)}`,
+      `Evidence: ${widgetText(evidence, "no evidence recorded", WIDGET_EVIDENCE_LIMIT)}`,
+      `Proposal: ${head.data.proposalId}`,
+      `Accept: /memory:accept ${head.data.proposalId}`,
+      `Reject: /memory:reject ${head.data.proposalId}`,
+    ];
+  }
+
+  /** Project only the strict current-branch FIFO head into the non-modal editor widget. */
+  refreshProposalWidget(ctx: ExtensionContext): void {
+    this.widgetContext = ctx;
+    if (!ctx.hasUI || typeof ctx.ui?.setWidget !== "function") return;
+    try {
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      const binding = this.binding(ctx);
+      const queue = reconstructProposalQueue({ branchEntries: branch, binding, leafId: ctx.sessionManager.getLeafId() });
+      const head = proposalQueueHead(queue);
+      const projectId = this.projectIdFor(ctx);
+      if (!head || !sameBinding(head.data, binding) || !projectId || head.data.projectId !== projectId) {
+        this.clearProposalWidget(ctx);
+        return;
+      }
+      ctx.ui.setWidget(PROPOSAL_WIDGET_KEY, this.proposalWidgetLines(head), { placement: "aboveEditor" });
+    } catch {
+      this.clearProposalWidget(ctx);
+    }
   }
 
   private ensureBootstrap(ctx: ExtensionContext): BootstrapData | undefined {
@@ -372,7 +429,9 @@ export class PlasticMemoryCoordinator {
     const branchEntries = ctx.sessionManager.getBranch() as SessionEntry[];
     const candidates = new Map<string, SessionBinding>();
     for (const entry of branchEntries) {
-      if (!isPlasticRecord(entry) || entry.customType !== PLASTIC_CYCLE_QUEUED || entry.data.sessionId !== sessionId) continue;
+      if (!isPlasticRecord(entry)
+        || (entry.customType !== PLASTIC_CYCLE_QUEUED && !isStructuredProjectProposalRecord(entry))
+        || entry.data.sessionId !== sessionId) continue;
       const binding = { sessionId: entry.data.sessionId, generation: entry.data.generation, branchId: entry.data.branchId };
       candidates.set(`${binding.generation}\u0000${binding.branchId}`, binding);
     }
@@ -380,7 +439,10 @@ export class PlasticMemoryCoordinator {
     for (const binding of candidates.values()) {
       const bootstrap = bootstrapFor(branchEntries, binding);
       const state = bootstrap ? this.queueState(ctx, binding, bootstrap) : undefined;
-      if (state?.restartCandidate) resumable.push(binding);
+      const proposals = reconstructProposalQueue({ branchEntries, binding, leafId: ctx.sessionManager.getLeafId() });
+      const proposalHead = proposalQueueHead(proposals);
+      const proposalMatches = proposalHead !== undefined && sameBinding(proposalHead.data, binding);
+      if (state?.restartCandidate || proposalMatches) resumable.push(binding);
     }
     return resumable.length === 1 ? resumable[0] : undefined;
   }
@@ -730,7 +792,7 @@ export class PlasticMemoryCoordinator {
   /** Start only from the post-rebase binding; completion is deliberately detached from Pi's hook. */
   private launchPromotion(ctx: ExtensionContext, snapshot: PromotionSnapshot): void {
     const runtime = this.runtimeFor();
-    const projectId = this.projectIdFor();
+    const projectId = this.projectIdFor(ctx);
     const destination = cloneFrozen(this.binding(ctx));
     if (!runtime || !projectId || !destination
       || snapshot.acknowledgement.sessionId !== destination.sessionId
@@ -760,6 +822,7 @@ export class PlasticMemoryCoordinator {
       if (!sameBinding(proposal, destination) || proposal.projectId !== projectId) return;
       if (!this.promotionCurrent(ctx, destination, branchIds, snapshot, controller, proposal)) return;
       this.append({ customType: result.record.customType, data: proposal });
+      this.refreshProposalWidget(ctx);
     }).catch(() => { /* detached promoter failures never alter compaction flow */ }).finally(() => {
       this.promotionControllers.delete(controller);
     });
@@ -832,6 +895,7 @@ export class PlasticMemoryCoordinator {
         this.bootstrapAttempted = false;
       }
       this.ensureBootstrap(ctx);
+      this.refreshProposalWidget(ctx);
     });
     this.pi.on("agent_start", () => { this.settled = false; });
     this.pi.on("turn_end", (_event, ctx) => { this.ensureBootstrap(ctx); this.schedule(ctx); });
@@ -924,16 +988,16 @@ export class PlasticMemoryCoordinator {
         contextEntries: ctx.sessionManager.buildContextEntries() as SessionEntry[],
       });
     });
-    const invalidate = (reason: string) => { this.invalidate(reason); };
-    this.pi.on("session_before_switch", () => { invalidate("session-switch"); });
-    this.pi.on("session_before_fork", () => { invalidate("fork"); });
-    this.pi.on("session_before_tree", () => { invalidate("tree"); });
-    this.pi.on("session_tree", () => { invalidate("tree-complete"); });
-    this.pi.on("session_shutdown", (event) => { invalidate(event.reason); this.active = false; });
+    const invalidate = (reason: string, ctx?: ExtensionContext) => { this.invalidate(reason, ctx); };
+    this.pi.on("session_before_switch", (_event, ctx) => { invalidate("session-switch", ctx); });
+    this.pi.on("session_before_fork", (_event, ctx) => { invalidate("fork", ctx); });
+    this.pi.on("session_before_tree", (_event, ctx) => { invalidate("tree", ctx); });
+    this.pi.on("session_tree", (_event, ctx) => { invalidate("tree-complete", ctx); });
+    this.pi.on("session_shutdown", (event, ctx) => { invalidate(event.reason, ctx); this.active = false; });
   }
 
   /** Explicit lifecycle invalidation for direct embedders without Pi events. */
-  shutdown(reason = "shutdown"): void { this.invalidate(reason); this.active = false; }
+  shutdown(reason = "shutdown"): void { this.invalidate(reason, this.widgetContext); this.active = false; }
   getGeneration(): number { return this.generation; }
   getBinding(ctx: ExtensionContext): SessionBinding { return this.binding(ctx); }
   getPending(): PendingCompaction | undefined { return this.pendingStore.peek(this.now()); }
