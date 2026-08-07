@@ -1,28 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { makeChunk, makeProject } from "./schema.ts";
-import type { CanonicalChunk, CanonicalProject, ChunkFrontMatter, Evidence, ProjectFrontMatter } from "./schema.ts";
-import { chunkFilename, contentDigest, parseChunkMarkdown, parseProjectMarkdown, serializeMarkdown, validateEvidence, validateProject } from "./schema.ts";
+import type { CanonicalChunk, CanonicalProject, ProjectFrontMatter, PublicationCandidate } from "./schema.ts";
+import { chunkFilename, contentDigest, parseChunkMarkdown, parseProjectMarkdown, serializeMarkdown, validateEvidence, validateProject, validatePublicationCandidate } from "./schema.ts";
+export type { PublicationCandidate } from "./schema.ts";
 import { atomicWrite, atomicWriteJson, canonicalPaths, readJson, readUtf8, withLock } from "./io.ts";
 import type { ProjectIoOptions } from "./io.ts";
 import { projectProjections, writeProjections } from "./projection.ts";
 
 export type Acceptance = { accepted: true; rationale?: string };
-export type PublicationCandidate = {
-  category: ChunkFrontMatter["category"];
-  title: string;
-  target: string;
-  body: string;
-  confidence: ChunkFrontMatter["confidence"];
-  sourceHead?: string;
-  status?: ChunkFrontMatter["status"];
-  chunkId?: string;
-  supersedes?: string;
-  links?: string[];
-  evidence?: Evidence[];
-  expectedDigest?: string;
-  expectedSourceHead?: string;
-};
 export type ProjectPublicationInput = {
   project?: { provenance: unknown; name: string; repository: string; sourceHead?: string; body?: string };
   candidate: PublicationCandidate;
@@ -98,7 +84,8 @@ export class ProjectStore {
 
   publish(input: ProjectPublicationInput, acceptance: Acceptance): PublicationResult {
     if (!acceptance || acceptance.accepted !== true) throw new Error("explicit acceptance is required for publication");
-    return withLock(this.root, () => this.publishLocked(input), this.io);
+    const candidate = validatePublicationCandidate(input.candidate);
+    return withLock(this.root, () => this.publishLocked({ ...input, candidate }), this.io);
   }
 
   private publishLocked(input: ProjectPublicationInput): PublicationResult {
