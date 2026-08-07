@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, type PlasticMemoryConfig } from "../config.ts";
-import { sessionDigest } from "../common/ids.ts";
+import { recordDigest, sessionDigest } from "../common/ids.ts";
 import { digestParts, scrubSensitiveText } from "../common/safety.ts";
 import { acknowledgeCompaction, selectEligibleStride, type CompactionEntry, type PhysicalBudget } from "../compaction/engine.ts";
 import { projectPlasticContext } from "../compaction/projection.ts";
 import { createPendingStore, isPendingUsable, type PendingCompaction } from "../compaction/pending.ts";
 import { bootstrapSession } from "../session/bootstrap.ts";
+import { isProjectId } from "../project/schema.ts";
 import { createQueuedCycleRecords, reconstructCycleQueue, type QueueReconstruction } from "../session/cycles.ts";
 import { foldLedger, hasOrderedContextTail, isSourceEntry, normalSourceEntries } from "../session/ledger.ts";
 import {
@@ -14,15 +15,20 @@ import {
   PLASTIC_CYCLE_ATTEMPTED,
   PLASTIC_CYCLE_CLOSED,
   PLASTIC_CYCLE_QUEUED,
+  isCompactionAppliedRecord,
+  isStructuredProjectProposalRecord,
   type BootstrapData,
+  type CompactionAppliedData,
   type CycleClosedData,
   type SessionBinding,
   type SessionEntry,
+  type StructuredProjectProposalData,
 } from "../session/types.ts";
 import { createCycleScheduler, type SchedulerIdentity, type SchedulerLifecycleEvent } from "../workers/scheduler.ts";
 import { buildModelTargets, type LunaModel, type RunnerRuntime } from "../workers/runner.ts";
 import { runCompactor } from "../workers/compactor.ts";
-import type { CumulativeState, ProjectSnapshot } from "../compaction/render.ts";
+import { runProjectPromoter } from "../workers/promoter.ts";
+import { verifyCumulativeState, type CumulativeState, type ProjectSnapshot } from "../compaction/render.ts";
 
 export type CoordinatorRuntime = RunnerRuntime | (() => RunnerRuntime | undefined);
 export type CoordinatorOptions = Readonly<{
@@ -31,6 +37,7 @@ export type CoordinatorOptions = Readonly<{
   runtime?: CoordinatorRuntime;
   runtimeToken?: string;
   projectSnapshot?: ProjectSnapshot | unknown | (() => ProjectSnapshot | unknown);
+  projectId?: () => string | undefined;
   now?: () => number;
 }>;
 
@@ -47,6 +54,10 @@ type ApplyLatch = {
   readonly generation: number;
   consumed: boolean;
 };
+type PromotionSnapshot = Readonly<{
+  acknowledgement: CompactionAppliedData;
+  state: CumulativeState;
+}>;
 
 const SESSION_DIGEST_PROVENANCE = "plastic-memory:session";
 const AUTO_APPLY_MIN_CONTEXT_TOKENS = 120_000;
@@ -60,6 +71,23 @@ function entryIds(entries: readonly SessionEntry[]): string[] {
 }
 function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
   return left.sessionId === right.sessionId && left.generation === right.generation && left.branchId === right.branchId;
+}
+function samePrefix(expected: readonly string[], actual: readonly string[]): boolean {
+  return actual.length >= expected.length && expected.every((id, index) => actual[index] === id);
+}
+function cloneFrozen<T>(value: T): T | undefined {
+  try {
+    const clone = structuredClone(value);
+    const freeze = (current: unknown): void => {
+      if (!current || typeof current !== "object" || Object.isFrozen(current)) return;
+      Object.freeze(current);
+      for (const child of Object.values(current)) freeze(child);
+    };
+    freeze(clone);
+    return clone;
+  } catch {
+    return undefined;
+  }
 }
 function messageRole(entry: SessionEntry | undefined): string | undefined {
   const message = entry?.message;
@@ -200,12 +228,14 @@ export class PlasticMemoryCoordinator {
   private readonly config: PlasticMemoryConfig;
   private readonly runtime?: CoordinatorRuntime;
   private readonly projectSnapshot?: CoordinatorOptions["projectSnapshot"];
+  private readonly projectId?: CoordinatorOptions["projectId"];
   private readonly now: () => number;
   private readonly runtimeToken: string;
   private readonly scheduler = createCycleScheduler();
   private readonly pendingStore = createPendingStore();
   private readonly preparedViews = new WeakMap<object, { summary: string; details: unknown; state: CumulativeState }>();
   private readonly reportedPreparations = new WeakSet<object>();
+  private readonly promotionControllers = new Set<AbortController>();
   private generation = 0;
   private branchId = "";
   private settled = false;
@@ -221,6 +251,7 @@ export class PlasticMemoryCoordinator {
     this.config = options.config ?? { ...defaultConfig(), enabled: options.enabled === true };
     this.runtime = options.runtime;
     this.projectSnapshot = options.projectSnapshot;
+    this.projectId = options.projectId;
     this.now = options.now ?? (() => Date.now());
     this.runtimeToken = options.runtimeToken ?? `plastic-memory:${randomUUID()}`;
     this.register();
@@ -232,6 +263,8 @@ export class PlasticMemoryCoordinator {
     this.generation += 1;
     this.branchId = `branch:${randomUUID()}`;
     this.scheduler.invalidate(reason);
+    for (const controller of this.promotionControllers) controller.abort(new Error(reason));
+    this.promotionControllers.clear();
     this.pendingStore.clear();
     this.internalIntent = undefined;
     this.applyLatch = undefined;
@@ -252,6 +285,15 @@ export class PlasticMemoryCoordinator {
 
   private snapshotFor(): ProjectSnapshot | unknown {
     return typeof this.projectSnapshot === "function" ? this.projectSnapshot() : this.projectSnapshot ?? {};
+  }
+
+  private projectIdFor(): string | undefined {
+    try {
+      const projectId = this.projectId?.();
+      return isProjectId(projectId) ? projectId : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private append(record: { customType: string; data: unknown }): void {
@@ -620,6 +662,109 @@ export class PlasticMemoryCoordinator {
     }
   }
 
+  private promotionSnapshot(acknowledgement: CompactionAppliedData, state: CumulativeState): PromotionSnapshot | undefined {
+    const frozenAcknowledgement = cloneFrozen(acknowledgement);
+    const frozenState = cloneFrozen(state);
+    if (!frozenAcknowledgement || !frozenState || !verifyCumulativeState(frozenState)) return undefined;
+    return { acknowledgement: frozenAcknowledgement, state: frozenState };
+  }
+
+  /** Re-check the durable source after the detached worker has settled. */
+  private promotionSourceVisible(
+    branch: SessionEntry[],
+    destination: SessionBinding,
+    snapshot: PromotionSnapshot,
+    proposal: StructuredProjectProposalData,
+  ): boolean {
+    try {
+      const source = proposal.source;
+      if (snapshot.acknowledgement.sessionId !== destination.sessionId
+        || source.compactionEntryId !== snapshot.acknowledgement.compactionEntryId
+        || source.stateDigest !== snapshot.state.stateDigest) return false;
+      const acknowledgementDigest = recordDigest(destination.sessionId, { kind: "plastic-compaction-acknowledgement" }, snapshot.acknowledgement);
+      if (source.acknowledgementDigest !== acknowledgementDigest) return false;
+      const compactions = branch.map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.type === "compaction" && entry.id === source.compactionEntryId);
+      if (compactions.length !== 1) return false;
+      const host = compactions[0];
+      const details = host.entry.details;
+      if (!details || typeof details !== "object" || Array.isArray(details)) return false;
+      const state = (details as Record<string, unknown>).structuredState;
+      if (!state || typeof state !== "object" || Array.isArray(state) || !verifyCumulativeState(state as CumulativeState)) return false;
+      const verifiedState = state as CumulativeState;
+      if (verifiedState.stateDigest !== source.stateDigest) return false;
+      const acknowledgements = branch.map((entry, index) => ({ entry, index })).filter(({ entry, index }) => index > host.index
+        && isCompactionAppliedRecord(entry)
+        && entry.data.compactionEntryId === source.compactionEntryId
+        && recordDigest(destination.sessionId, { kind: "plastic-compaction-acknowledgement" }, entry.data) === acknowledgementDigest);
+      if (acknowledgements.length !== 1) return false;
+      const sourceDigest = recordDigest(destination.sessionId, {
+        compactionEntryId: source.compactionEntryId,
+        acknowledgementDigest,
+        stateDigest: source.stateDigest,
+      }, verifiedState.projectSnapshot);
+      return proposal.sourceDigest === sourceDigest;
+    } catch {
+      return false;
+    }
+  }
+
+  private promotionCurrent(
+    ctx: ExtensionContext,
+    destination: SessionBinding,
+    branchIds: readonly string[],
+    snapshot: PromotionSnapshot,
+    controller: AbortController,
+    proposal: StructuredProjectProposalData,
+  ): boolean {
+    if (controller.signal.aborted || !this.enabled() || !sameBinding(this.binding(ctx), destination)) return false;
+    try {
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      if (!samePrefix(branchIds, entryIds(branch)) || !bootstrapFor(branch, destination)) return false;
+      return this.promotionSourceVisible(branch, destination, snapshot, proposal);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Start only from the post-rebase binding; completion is deliberately detached from Pi's hook. */
+  private launchPromotion(ctx: ExtensionContext, snapshot: PromotionSnapshot): void {
+    const runtime = this.runtimeFor();
+    const projectId = this.projectIdFor();
+    const destination = cloneFrozen(this.binding(ctx));
+    if (!runtime || !projectId || !destination
+      || snapshot.acknowledgement.sessionId !== destination.sessionId
+      || sameBinding(snapshot.acknowledgement, destination)) return;
+    let branchIds: string[];
+    try {
+      const branch = ctx.sessionManager.getBranch() as SessionEntry[];
+      if (!bootstrapFor(branch, destination)) return;
+      branchIds = entryIds(branch);
+    } catch {
+      return;
+    }
+    const controller = new AbortController();
+    this.promotionControllers.add(controller);
+    void runProjectPromoter({
+      binding: destination,
+      projectId,
+      sourceDigest: "",
+      projectSnapshot: snapshot.state.projectSnapshot,
+      acknowledgement: snapshot.acknowledgement,
+      verifiedState: snapshot.state,
+      runtime,
+      signal: controller.signal,
+    }).then((result) => {
+      if (!result.ok || !result.record || !isStructuredProjectProposalRecord(result.record)) return;
+      const proposal = result.record.data;
+      if (!sameBinding(proposal, destination) || proposal.projectId !== projectId) return;
+      if (!this.promotionCurrent(ctx, destination, branchIds, snapshot, controller, proposal)) return;
+      this.append({ customType: result.record.customType, data: proposal });
+    }).catch(() => { /* detached promoter failures never alter compaction flow */ }).finally(() => {
+      this.promotionControllers.delete(controller);
+    });
+  }
+
   private maybeApply(ctx: ExtensionContext): void {
     if (!this.enabled() || !this.settled || this.applyLatch || this.inFlightPending) return;
     let idle = false;
@@ -766,8 +911,10 @@ export class PlasticMemoryCoordinator {
         fail("plastic compaction acknowledgement was not visible and valid on the current branch");
         return;
       }
+      const promotion = this.promotionSnapshot(acknowledged.record.data, view.state);
       this.reportLifecycle(ctx, { phase: "compaction", status: "applied" });
-      this.rebaseAfterBoundary(ctx, "acknowledged plastic compaction boundary", view.state);
+      this.rebaseAfterBoundary(ctx, "acknowledged plastic compaction boundary", promotion?.state ?? view.state);
+      if (promotion) this.launchPromotion(ctx, promotion);
     });
     this.pi.on("context", (event, ctx) => {
       if (!this.enabled()) return { messages: event.messages };
