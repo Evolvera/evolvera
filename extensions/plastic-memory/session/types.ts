@@ -6,6 +6,7 @@ import {
   isInternalId,
   isPublicId,
 } from "../common/ids.ts";
+import { isProjectId, type PublicationCandidate, validatePublicationCandidate } from "../project/schema.ts";
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -157,6 +158,20 @@ export type ProjectProposalData = SessionBinding & {
   sourceDigest: string;
   projectId: string;
 };
+export type ProjectProposalSource = {
+  kind: "plastic-compaction";
+  compactionEntryId: string;
+  acknowledgementDigest: string;
+  stateDigest: string;
+};
+export type StructuredProjectProposalData = SessionBinding & {
+  schemaVersion: 1;
+  proposalId: string;
+  sourceDigest: string;
+  projectId: string;
+  candidate: PublicationCandidate;
+  source: ProjectProposalSource;
+};
 export type ProjectProposalDecidedData = SessionBinding & {
   schemaVersion: 1;
   proposalId: string;
@@ -173,7 +188,7 @@ export type PlasticDataMap = {
   [PLASTIC_CYCLE_CLOSED]: CycleClosedData;
   [PLASTIC_COMPACTION_APPLIED]: CompactionAppliedData;
   [PLASTIC_BACKFILL_CURSOR_RECORDED]: BackfillCursorData;
-  [PLASTIC_PROJECT_PROPOSAL_RECORDED]: ProjectProposalData;
+  [PLASTIC_PROJECT_PROPOSAL_RECORDED]: ProjectProposalData | StructuredProjectProposalData;
   [PLASTIC_PROJECT_PROPOSAL_DECIDED]: ProjectProposalDecidedData;
 };
 
@@ -329,9 +344,28 @@ function isBackfillCursorData(value: unknown): value is BackfillCursorData {
   return isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "cursorId", "sourceDigest"], ["nextEntryId"])
     && isSessionBinding(value) && isString(value.cursorId) && (value.nextEntryId === undefined || isString(value.nextEntryId)) && isDigest(value.sourceDigest, RECORD_DIGEST_PATTERN);
 }
-function isProjectProposalData(value: unknown): value is ProjectProposalData {
+function isProjectProposalMetadataData(value: unknown): value is ProjectProposalData {
   return isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "proposalId", "sourceDigest", "projectId"])
     && isSessionBinding(value) && isString(value.proposalId) && isDigest(value.sourceDigest, RECORD_DIGEST_PATTERN) && isString(value.projectId);
+}
+function isProjectProposalSource(value: unknown): value is ProjectProposalSource {
+  return isRecord(value) && exactKeys(value, ["kind", "compactionEntryId", "acknowledgementDigest", "stateDigest"])
+    && value.kind === "plastic-compaction" && isString(value.compactionEntryId)
+    && isDigest(value.acknowledgementDigest, RECORD_DIGEST_PATTERN)
+    && isDigest(value.stateDigest, CONTENT_DIGEST_PATTERN);
+}
+function isProjectProposalStructuredData(value: unknown): value is StructuredProjectProposalData {
+  if (!isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "proposalId", "sourceDigest", "projectId", "candidate", "source"])) return false;
+  if (!isSessionBinding(value) || !isString(value.proposalId) || !isDigest(value.sourceDigest, RECORD_DIGEST_PATTERN) || !isProjectId(value.projectId) || !isProjectProposalSource(value.source)) return false;
+  try {
+    const candidate = validatePublicationCandidate(value.candidate);
+    return candidate !== undefined;
+  } catch {
+    return false;
+  }
+}
+function isProjectProposalData(value: unknown): value is ProjectProposalData | StructuredProjectProposalData {
+  return isProjectProposalMetadataData(value) || isProjectProposalStructuredData(value);
 }
 function isProjectProposalDecidedData(value: unknown): value is ProjectProposalDecidedData {
   return isVersioned(value, ["schemaVersion", "sessionId", "generation", "branchId", "proposalId", "decision"])
@@ -378,6 +412,15 @@ export function isBackfillCursorRecord(value: unknown): value is PlasticEntry<ty
 }
 export function isProjectProposalRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_PROJECT_PROPOSAL_RECORDED> {
   return isPlasticRecord(value) && value.customType === PLASTIC_PROJECT_PROPOSAL_RECORDED;
+}
+export function isStructuredProjectProposalData(value: unknown): value is StructuredProjectProposalData {
+  return isProjectProposalStructuredData(value);
+}
+export function isMetadataProjectProposalData(value: unknown): value is ProjectProposalData {
+  return isProjectProposalMetadataData(value);
+}
+export function isStructuredProjectProposalRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_PROJECT_PROPOSAL_RECORDED> & { data: StructuredProjectProposalData } {
+  return isPlasticRecord(value) && value.customType === PLASTIC_PROJECT_PROPOSAL_RECORDED && isProjectProposalStructuredData(value.data);
 }
 export function isProjectProposalDecidedRecord(value: unknown): value is PlasticEntry<typeof PLASTIC_PROJECT_PROPOSAL_DECIDED> {
   return isPlasticRecord(value) && value.customType === PLASTIC_PROJECT_PROPOSAL_DECIDED;

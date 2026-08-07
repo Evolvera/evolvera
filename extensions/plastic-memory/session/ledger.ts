@@ -1,6 +1,11 @@
-import { digestParts } from "../common/safety.ts";
+import { canonicalJson, digestParts } from "../common/safety.ts";
+import { recordDigest } from "../common/ids.ts";
 import {
   isAnyLegacyRecord,
+  isBootstrapRecord,
+  isCompactionAppliedRecord,
+  isProjectProposalDecidedRecord,
+  isStructuredProjectProposalRecord,
   isCycleQueuedRecord,
   isLegacyFolded,
   isLegacyObservationsDropped,
@@ -16,6 +21,7 @@ import {
   PLASTIC_OBSERVATIONS_RECORDED,
   PLASTIC_REFLECTIONS_RECORDED,
   PLASTIC_COMPACTION_APPLIED,
+  PLASTIC_PROJECT_PROPOSAL_DECIDED,
   type BootstrapData,
   type CompactionAppliedData,
   type CycleQueuedData,
@@ -24,7 +30,9 @@ import {
   type PlasticDataMap,
   type PlasticEntry,
   type PlasticType,
+  type ProjectProposalDecidedData,
   type SessionBinding,
+  type StructuredProjectProposalData,
   type SessionEntry,
 } from "./types.ts";
 
@@ -291,6 +299,162 @@ export function acceptsBoundRecord(entry: unknown, context: SessionBinding): boo
   return isPlasticRecord(entry) && entry.data.sessionId === context.sessionId
     && entry.data.generation === context.generation && entry.data.branchId === context.branchId;
 }
+
+export type ProposalQueueInput = {
+  entries?: SessionEntry[];
+  branchEntries?: SessionEntry[];
+  leafId?: string | null;
+  records?: SessionEntry[];
+  /** Optional filter for callers that are reconstructing one session from a mixed branch. */
+  binding?: SessionBinding;
+};
+export type ProposalQueueState = {
+  valid: boolean;
+  branch: SessionEntry[];
+  queued: Array<PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData }>;
+  unresolved: Array<PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData }>;
+  decisions: Array<PlasticEntry<"plastic.project.proposal.decided">>;
+  head?: PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData };
+  restartCandidate?: PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData };
+  reason?: string;
+};
+
+function objectData(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
+  return left.sessionId === right.sessionId && left.generation === right.generation && left.branchId === right.branchId;
+}
+function branchRecordIsStrict(entry: SessionEntry, branchIds: Set<string>): boolean {
+  if (!isPlasticRecord(entry)) return false;
+  const ids = recordSourceIds(entry);
+  if (ids.some((id) => !branchIds.has(id))) return false;
+  if (entry.customType === PLASTIC_COMPACTION_APPLIED) {
+    return branchIds.has(entry.data.compactionEntryId) && branchIds.has(entry.data.firstKeptEntryId);
+  }
+  if (entry.customType === "plastic.bootstrap.recorded") {
+    return entry.data.activeEntryIds.every((id) => branchIds.has(id))
+      && entry.data.historicalPrefixIds.every((id) => branchIds.has(id))
+      && (!entry.data.compactionEntryId || branchIds.has(entry.data.compactionEntryId));
+  }
+  return true;
+}
+function compactionState(entry: SessionEntry): { stateDigest: string; projectSnapshot: Record<string, unknown> } | undefined {
+  if (entry.type !== "compaction") return undefined;
+  const details = objectData(entry.details);
+  const state = objectData(details?.structuredState);
+  const snapshot = objectData(state?.projectSnapshot);
+  return typeof state?.stateDigest === "string" && snapshot ? { stateDigest: state.stateDigest, projectSnapshot: snapshot } : undefined;
+}
+function proposalSourceIsValid(
+  proposal: PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData },
+  branch: SessionEntry[],
+  branchIds: Set<string>,
+  proposalIndex: number,
+): boolean {
+  const source = proposal.data.source;
+  const compactions = branch
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => index < proposalIndex && entry.type === "compaction" && entry.id === source.compactionEntryId);
+  if (compactions.length !== 1) return false;
+  const host = compactions[0];
+  const state = compactionState(host.entry);
+  if (!state || state.stateDigest !== source.stateDigest) return false;
+
+  const acknowledgements = branch
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry, index }) => index > host.index && index < proposalIndex
+      && isCompactionAppliedRecord(entry)
+      && branchRecordIsStrict(entry, branchIds)
+      && entry.data.sessionId === proposal.data.sessionId
+      && entry.data.compactionEntryId === source.compactionEntryId);
+  if (acknowledgements.length !== 1) return false;
+  const acknowledgement = acknowledgements[0];
+  const acknowledgementDigest = recordDigest(proposal.data.sessionId, { kind: "plastic-compaction-acknowledgement" }, acknowledgement.entry.data);
+  if (source.acknowledgementDigest !== acknowledgementDigest) return false;
+  const sourceDigest = recordDigest(proposal.data.sessionId, {
+    compactionEntryId: source.compactionEntryId,
+    acknowledgementDigest,
+    stateDigest: source.stateDigest,
+  }, state.projectSnapshot);
+  if (proposal.data.sourceDigest !== sourceDigest) return false;
+
+  return branch.some((entry, index) => index < proposalIndex
+    && isBootstrapRecord(entry)
+    && branchRecordIsStrict(entry, branchIds)
+    && sameBinding(entry.data, proposal.data)
+    && entry.data.sessionId === proposal.data.sessionId);
+}
+
+/** Reconstruct only strict structured proposals whose source and destination evidence is on this Pi ancestry. */
+export function reconstructProposalQueue(input: ProposalQueueInput = {}): ProposalQueueState {
+  const supplied = input.branchEntries ?? input.entries ?? input.records;
+  const branch = supplied ? resolveCurrentBranch(supplied, input.leafId) : [];
+  if (supplied && branch.length === 0) return { valid: false, branch: [], queued: [], unresolved: [], decisions: [], reason: "invalid current branch" };
+  const branchIds = new Set(branch.flatMap((entry) => hasId(entry) ? [entry.id] : []));
+  const records = (input.records ?? branch).filter((entry) => hasId(entry) && branchIds.has(entry.id));
+  const strictProposals: Array<{ entry: PlasticEntry<"plastic.project.proposal.recorded"> & { data: StructuredProjectProposalData }; index: number }> = [];
+  for (const [index, entry] of branch.entries()) {
+    if (!isStructuredProjectProposalRecord(entry)) continue;
+    if (input.binding && entry.data.sessionId !== input.binding.sessionId) continue;
+    if (records.some((candidate) => candidate.id === entry.id)) strictProposals.push({ entry, index });
+  }
+  const strictById = new Map<string, typeof strictProposals[number]>();
+  for (const proposal of strictProposals) {
+    const previous = strictById.get(proposal.entry.data.proposalId);
+    if (previous && canonicalJson(previous.entry.data) !== canonicalJson(proposal.entry.data)) {
+      return { valid: false, branch, queued: [], unresolved: [], decisions: [], reason: "conflicting proposal duplicate" };
+    }
+    if (!previous) strictById.set(proposal.entry.data.proposalId, proposal);
+  }
+  const proposals: Array<typeof strictProposals[number]> = [];
+  for (const proposal of strictProposals) {
+    if (proposalSourceIsValid(proposal.entry, branch, branchIds, proposal.index)) proposals.push(proposal);
+  }
+  const byProposalId = new Map<string, typeof proposals[number]>();
+  for (const proposal of proposals) if (!byProposalId.has(proposal.entry.data.proposalId)) byProposalId.set(proposal.entry.data.proposalId, proposal);
+  const queued = [...byProposalId.values()].sort((left, right) => left.index - right.index).map(({ entry }) => entry);
+  const decisions = records
+    .filter((entry): entry is PlasticEntry<"plastic.project.proposal.decided"> => isProjectProposalDecidedRecord(entry))
+    .sort((left, right) => branch.findIndex((entry) => entry.id === left.id) - branch.findIndex((entry) => entry.id === right.id));
+  const terminalByProposal = new Map<string, PlasticEntry<"plastic.project.proposal.decided">>();
+  for (const proposal of [...byProposalId.values()].sort((left, right) => left.index - right.index)) {
+    const decision = decisions.find((candidate) => {
+      const index = branch.findIndex((entry) => entry.id === candidate.id);
+      return index > proposal.index && candidate.data.proposalId === proposal.entry.data.proposalId && sameBinding(candidate.data, proposal.entry.data);
+    });
+    if (decision) terminalByProposal.set(proposal.entry.data.proposalId, decision);
+  }
+  const unresolved = queued.filter((proposal) => !terminalByProposal.has(proposal.data.proposalId));
+  const head = unresolved[0];
+  return { valid: true, branch, queued, unresolved, decisions, ...(head ? { head, restartCandidate: head } : {}) };
+}
+
+export const reconstructProjectProposalQueue = reconstructProposalQueue;
+export const reconstructProposalFIFO = reconstructProposalQueue;
+export const selectOldestUnresolvedProposal = (state: ProposalQueueState): ProposalQueueState["head"] => state.valid ? state.unresolved[0] : undefined;
+export const proposalQueueHead = selectOldestUnresolvedProposal;
+
+/** Build a terminal decision using only the exact binding carried by a structured proposal. */
+export function makeProposalDecision(
+  proposal: unknown,
+  decision: ProjectProposalDecidedData["decision"],
+  expectedBinding?: SessionBinding,
+): PlasticEntry<"plastic.project.proposal.decided"> {
+  if (!isStructuredProjectProposalRecord(proposal)) throw new Error("proposal decision requires a strict structured proposal");
+  if (expectedBinding && !sameBinding(proposal.data, expectedBinding)) throw new Error("proposal binding does not match decision context");
+  const data: ProjectProposalDecidedData = {
+    schemaVersion: 1,
+    sessionId: proposal.data.sessionId,
+    generation: proposal.data.generation,
+    branchId: proposal.data.branchId,
+    proposalId: proposal.data.proposalId,
+    decision,
+  };
+  return makePlasticEntry(PLASTIC_PROJECT_PROPOSAL_DECIDED, data);
+}
+export const createProposalDecision = makeProposalDecision;
+export const decideProposal = makeProposalDecision;
 
 export function makePlasticEntry<K extends PlasticType>(customType: K, data: PlasticDataMap[K]): PlasticEntry<K> {
   return { type: "custom", customType, data } as PlasticEntry<K>;
