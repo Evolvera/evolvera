@@ -211,6 +211,7 @@ try {
     view: (args) => operationResult("view", args),
     propose: (args) => operationResult("propose", args),
     accept: (args) => operationResult("accept", args),
+    reject: (args) => operationResult("reject", args),
     migrate: (args) => operationResult("migrate", args),
     backfill: (args) => operationResult("backfill", args),
     retry: (args) => operationResult("retry", args),
@@ -231,6 +232,18 @@ try {
   assert.deepEqual(operationCalls.at(-1), ["backfill", { action: "report" }]);
   await commandMap.get("memory:propose").handler("{\"accepted\":true}", { ui: { notify() {} } });
   assert.deepEqual(operationCalls.at(-1), ["propose", { accepted: true }]);
+  await commandMap.get("memory:accept").handler("", { ui: { notify() {} } });
+  assert.deepEqual(operationCalls.at(-1), ["accept", {}]);
+  await commandMap.get("memory:accept").handler("proposal-1", { ui: { notify() {} } });
+  assert.deepEqual(operationCalls.at(-1), ["accept", { proposalId: "proposal-1" }]);
+  await commandMap.get("memory:accept").handler("{\"candidate\":true}", { ui: { notify() {} } });
+  assert.deepEqual(operationCalls.at(-1), ["accept", { candidate: true }]);
+  await commandMap.get("memory:reject").handler("proposal-1", { ui: { notify() {} } });
+  assert.deepEqual(operationCalls.at(-1), ["reject", { proposalId: "proposal-1" }]);
+  const malformedAccept = await commandMap.get("memory:accept").handler("one two", { ui: { notify() {} } });
+  assert.equal(malformedAccept.status, "error");
+  const malformedReject = await commandMap.get("memory:reject").handler("{\"proposalId\":\"proposal-1\"}", { ui: { notify() {} } });
+  assert.equal(malformedReject.status, "error");
   const beforeRejectedPath = operationCalls.length;
   await commandMap.get("memory:migrate").handler("{\"root\":\"/outside\"}", { ui: { notify() {} } });
   assert.equal(operationCalls.length, beforeRejectedPath, "commands must reject arbitrary resource selection");
