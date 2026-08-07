@@ -34,11 +34,23 @@ function fail(message) {
   process.exitCode = 1;
 }
 
+// Windows ships npm as `npm.cmd`: the bare name is not PATHEXT-resolved (ENOENT)
+// and Node refuses to spawn a .cmd without a shell (EINVAL). Both failures made
+// install.ps1 refuse the patch. Arguments stay fixed literals, so no shell
+// interpolation of external input is possible.
+function npmInvocation(platform = process.platform) {
+  return platform === 'win32'
+    ? { command: 'npm.cmd', shell: true }
+    : { command: 'npm', shell: false };
+}
+
 function npmGlobalNodeModulesRoot() {
   try {
-    const root = execFileSync('npm', ['root', '-g'], {
+    const { command, shell } = npmInvocation();
+    const root = execFileSync(command, ['root', '-g'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      shell,
     }).trim();
     if (!root) throw new Error('empty root');
     return root;
@@ -159,6 +171,7 @@ export {
   PATCHED_ANCHOR,
   UNPATCHED_SHA256,
   PATCHED_SHA256,
+  npmInvocation,
   npmGlobalNodeModulesRoot,
   packageRootFromArgs,
   patch,
