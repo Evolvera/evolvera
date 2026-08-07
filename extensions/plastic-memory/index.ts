@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePlasticMemorySettings, type ResolvedPlasticMemorySettings } from "./config.ts";
-import { CATEGORIES, CONFIDENCES, makeChunk, validateEvidence } from "./project/schema.ts";
-import { loadProject, publishProject, type PublicationCandidate } from "./project/store.ts";
+import { makeProject, validatePublicationCandidate, type PublicationCandidate } from "./project/schema.ts";
+import { loadProject, publishProject } from "./project/store.ts";
+import { makeProposalDecision, proposalQueueHead, reconstructProposalQueue } from "./session/ledger.ts";
 
 export type PlasticMemoryOwnerMode = "full" | "bridge";
 
@@ -125,27 +126,37 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     };
   };
   const memoryRootFor = (ctx: any): string => currentMemoryRoot(ctx).memoryRoot;
-  const candidateFrom = (args: JsonObject): PublicationCandidate => ({
-    category: args.category as PublicationCandidate["category"], title: args.title as string, target: args.target as string,
-    body: args.body as string, confidence: args.confidence as PublicationCandidate["confidence"],
-    ...(args.evidence !== undefined ? { evidence: args.evidence as PublicationCandidate["evidence"] } : {}),
-    ...(args.chunkId !== undefined ? { chunkId: args.chunkId as string } : {}),
-    ...(args.supersedes !== undefined ? { supersedes: args.supersedes as string } : {}),
-    ...(args.links !== undefined ? { links: args.links as string[] } : {}),
-    ...(args.status !== undefined ? { status: args.status as PublicationCandidate["status"] } : {}),
-  });
   const validateProposalCandidate = (args: JsonObject): PublicationCandidate => {
     for (const field of ["category", "title", "target", "body", "confidence"]) if (!(field in args)) throw new Error(`${field} is required`);
-    const candidate = candidateFrom(args);
-    if (!CATEGORIES.includes(candidate.category)) throw new Error("category is invalid");
-    if (!CONFIDENCES.includes(candidate.confidence)) throw new Error("confidence is invalid");
-    const evidence = candidate.evidence === undefined ? [] : Array.isArray(candidate.evidence) ? candidate.evidence.map((item) => validateEvidence(item)) : (() => { throw new Error("evidence must be an array"); })();
-    makeChunk("pm:p:" + "0".repeat(32), {
-      category: candidate.category, status: candidate.status ?? "active", confidence: candidate.confidence, title: candidate.title,
-      target: candidate.target, sourceHead: "UNKNOWN", evidenceIds: evidence.map((item) => item.id), links: candidate.links ?? [],
-      id: candidate.chunkId, supersedes: candidate.supersedes,
-    }, candidate.body);
-    return candidate;
+    return validatePublicationCandidate(args);
+  };
+  const projectFor = (ctx: any): { cwd: string; memoryRoot: string; projectId: string; project?: { provenance: { root: string }; name: string; repository: string } } => {
+    const { cwd, memoryRoot } = currentMemoryRoot(ctx);
+    const project = loadProject(memoryRoot);
+    if (project) return { cwd, memoryRoot, projectId: project.frontMatter.id };
+    const identity = { provenance: { root: cwd }, name: basename(cwd), repository: basename(cwd) };
+    return { cwd, memoryRoot, projectId: makeProject(identity.provenance, identity).id, project: identity };
+  };
+  const queueHeadFor = (args: JsonObject, ctx: any) => {
+    const branch = branchFor(ctx);
+    const queue = reconstructProposalQueue({ branchEntries: branch.entries, binding: branch.binding, leafId: branch.leafId });
+    if (!queue.valid) throw new Error(queue.reason ?? "proposal queue is invalid");
+    const head = proposalQueueHead(queue);
+    if (!head) throw new Error("proposal queue is empty");
+    if (args.proposalId !== undefined && (typeof args.proposalId !== "string" || args.proposalId !== head.data.proposalId)) throw new Error("proposal ID is not the FIFO head");
+    const project = projectFor(ctx);
+    const candidate = validateProposalCandidate(head.data.candidate as JsonObject);
+    if (head.data.projectId !== project.projectId) throw new Error("proposal project does not match the current project");
+    return { branch, queue, head, project, candidate };
+  };
+  const appendVisibleDecision = (ctx: any, head: any, binding: any, decision: "accepted" | "rejected", priorDecisionCount: number) => {
+    const record = makeProposalDecision(head, decision, binding);
+    pi.appendEntry(record.customType, record.data);
+    const visible = branchFor(ctx);
+    const after = reconstructProposalQueue({ branchEntries: visible.entries, binding: visible.binding, leafId: visible.leafId });
+    const observed = after.valid && after.decisions.filter((entry: any) => entry.data.proposalId === head.data.proposalId && entry.data.decision === decision).length === priorDecisionCount + 1;
+    if (!observed || after.unresolved.some((entry: any) => entry.data.proposalId === head.data.proposalId)) throw new Error("proposal decision was not durably appended");
+    return after;
   };
   const operations = {
     recall: (id: string, ctx: any) => {
@@ -191,11 +202,21 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
       };
     },
     accept: (args: JsonObject, ctx: any) => {
-      const { cwd, memoryRoot } = currentMemoryRoot(ctx);
-      const candidate = candidateFrom(args);
-      const input: { project?: { provenance: { root: string }; name: string; repository: string }; candidate: PublicationCandidate } = { candidate };
-      if (!loadProject(memoryRoot)) input.project = { provenance: { root: cwd }, name: basename(cwd), repository: basename(cwd) };
-      return publishProject(memoryRoot, input, { accepted: true });
+      if (!args.__manualJson && (Object.keys(args).length === 0 || "proposalId" in args)) {
+        const queued = queueHeadFor(args, ctx);
+        const result = publishProject(queued.project.memoryRoot, { ...(queued.project.project ? { project: queued.project.project } : {}), candidate: queued.candidate }, { accepted: true });
+        const after = appendVisibleDecision(ctx, queued.head, queued.branch.binding, "accepted", queued.queue.decisions.filter((entry: any) => entry.data.proposalId === queued.head.data.proposalId).length);
+        return { ...result, proposalId: queued.head.data.proposalId, decision: "accepted", queueHead: after.head?.data.proposalId };
+      }
+      const project = projectFor(ctx);
+      const candidate = validateProposalCandidate(args);
+      const result = publishProject(project.memoryRoot, { ...(project.project ? { project: project.project } : {}), candidate }, { accepted: true });
+      return result;
+    },
+    reject: (args: JsonObject, ctx: any) => {
+      const queued = queueHeadFor(args, ctx);
+      const after = appendVisibleDecision(ctx, queued.head, queued.branch.binding, "rejected", queued.queue.decisions.filter((entry: any) => entry.data.proposalId === queued.head.data.proposalId).length);
+      return { status: "rejected", proposalId: queued.head.data.proposalId, decision: "rejected", queueHead: after.head?.data.proposalId };
     },
     migrate: () => operations.unavailable("migration"),
     backfill: () => operations.unavailable("backfill execution"),

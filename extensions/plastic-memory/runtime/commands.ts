@@ -6,6 +6,7 @@ export type MemoryCommandOperations = Readonly<{
   view: (args: { mode?: string }, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   propose: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   accept: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
+  reject: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   migrate: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   backfill: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   retry: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
@@ -36,6 +37,19 @@ function parseBackfill(raw: string): Record<string, unknown> {
   const parsed = parseObject(tail, "backfill");
   return { ...parsed, action: command };
 }
+function parseProposalDecision(raw: string, label: string, allowJson: boolean): Record<string, unknown> {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  if (trimmed.startsWith("{")) {
+    if (!allowJson) throw new Error(`${label} accepts only an optional proposal ID`);
+    const parsed = parseObject(trimmed, label);
+    Object.defineProperty(parsed, "__manualJson", { value: true, enumerable: false });
+    return parsed;
+  }
+  const parts = trimmed.split(/\s+/u);
+  if (parts.length !== 1) throw new Error(`Usage: /memory:${label} [proposal-id]`);
+  return { proposalId: parts[0] };
+}
 function notify(ctx: MemoryCommandContext, value: unknown): unknown {
   ctx.ui?.notify?.(rendered(value), "info");
   return value;
@@ -58,7 +72,8 @@ export function createMemoryCommands(operations: MemoryCommandOperations): Reado
     "memory:status": status,
     "memory:view": view,
     "memory:propose": command((args, ctx) => operations.propose(parseObject(args, "proposal"), ctx)),
-    "memory:accept": command((args, ctx) => operations.accept(parseObject(args, "acceptance"), ctx)),
+    "memory:accept": command((args, ctx) => operations.accept(parseProposalDecision(args, "acceptance", true), ctx)),
+    "memory:reject": command((args, ctx) => operations.reject(parseProposalDecision(args, "rejection", false), ctx)),
     "memory:migrate": command((args, ctx) => operations.migrate(parseObject(args, "migration"), ctx)),
     "memory:backfill": command((args, ctx) => operations.backfill(parseBackfill(args), ctx)),
     "memory:retry": command((args, ctx) => operations.retry(parseObject(args, "retry"), ctx)),

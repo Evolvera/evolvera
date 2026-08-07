@@ -96,8 +96,9 @@ try {
   assert.equal(full.root.tools.length, 2, "full mode has recall/search tools");
   assert.deepEqual(full.root.tools.map((tool) => tool.name), ["memory_recall", "memory_search"]);
   assert.deepEqual(full.root.commands.map(([name]) => name), [
-    "memory:status", "memory:view", "memory:propose", "memory:accept", "memory:migrate", "memory:backfill", "memory:retry", "om:status", "om:view",
+    "memory:status", "memory:view", "memory:propose", "memory:accept", "memory:reject", "memory:migrate", "memory:backfill", "memory:retry", "om:status", "om:view",
   ]);
+  assert.equal(full.root.commands.filter(([name]) => name === "memory:reject").length, 1, "reject registers exactly once");
   assert.equal(hookNames(full.root).filter((name) => name === "before_agent_start").length, 1);
   assert.equal(hookNames(full.root).filter((name) => name === "context").length, 1);
   assert.equal(hookNames(full.root).filter((name) => name === "session_before_compact").length, 1);
