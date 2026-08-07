@@ -20,6 +20,8 @@ const {
   PATCHED_ANCHOR,
   UNPATCHED_SHA256,
   PATCHED_SHA256,
+  npmInvocation,
+  npmGlobalNodeModulesRoot,
   packageRootFromArgs,
 } = await import(pathToFileURL(patcher));
 
@@ -100,6 +102,16 @@ try {
   );
   assert.equal(resolverCalls, 1, 'default resolver seam was not used exactly once');
   assert.equal(packageRootFromArgs(['--package-root', temp]), temp, 'explicit fixture root changed');
+
+  // Regression: on Windows the bare `npm` name is unresolvable (ENOENT) and a
+  // .cmd cannot be spawned without a shell (EINVAL).
+  assert.deepEqual(npmInvocation('win32'), { command: 'npm.cmd', shell: true }, 'Windows npm invocation regressed');
+  assert.deepEqual(npmInvocation('linux'), { command: 'npm', shell: false }, 'POSIX npm invocation regressed');
+  assert.deepEqual(npmInvocation('darwin'), { command: 'npm', shell: false }, 'macOS npm invocation regressed');
+  assert.ok(
+    path.isAbsolute(npmGlobalNodeModulesRoot()),
+    'npm global root is not resolvable on this host',
+  );
 
   const original = semanticFixture(UNPATCHED_ANCHOR);
   writeFixture(original);

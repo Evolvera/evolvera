@@ -32,8 +32,32 @@ if ($nodeVersion -lt $MIN_NODE_VERSION) {
 Info ("Node " + $nodeVersion + " compativel")
 
 Info ("Garantindo @earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION + "...")
-npm install -g ("@earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION)
-if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do PI." }
+# No Windows, reinstalar o pacote global falha com EBUSY enquanto o PI esta em
+# execucao (modulo nativo travado). Se a versao exata ja estiver instalada, a
+# reinstalacao e desnecessaria e o restante da atualizacao pode prosseguir.
+# `npm.cmd` explicito: o shim `npm.ps1` corrompe os argumentos nesta forma de
+# invocacao e devolveria "Unknown command".
+$installedVersion = $null
+try {
+    # Sem `| Select-Object` aqui: filtrar no pipeline encerra npm.cmd cedo e
+    # deixa $LASTEXITCODE = -1.
+    $globalRootOutput = (& npm.cmd root -g)
+    if ($LASTEXITCODE -eq 0 -and $globalRootOutput) {
+        $globalRoot = @($globalRootOutput)[0]
+        $installedManifest = Join-Path $globalRoot.Trim() "@earendil-works\pi-coding-agent\package.json"
+        if (Test-Path $installedManifest) {
+            $installedVersion = (Get-Content $installedManifest -Raw | ConvertFrom-Json).version
+        }
+    }
+} catch {
+    $installedVersion = $null
+}
+if ($installedVersion -eq $PI_CODING_AGENT_VERSION) {
+    Info ("Versao " + $PI_CODING_AGENT_VERSION + " ja instalada; reinstalacao ignorada")
+} else {
+    npm install -g ("@earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION)
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do PI." }
+}
 & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-threshold-cancel.mjs")
 if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 0.83.0." }
 Info "Patch de continuidade do PI 0.83.0 verificado"
