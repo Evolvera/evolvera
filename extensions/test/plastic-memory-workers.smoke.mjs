@@ -13,6 +13,7 @@ const runnerRuntime = await jiti.import(path.join(root, "plastic-memory/runtime/
 const observer = await jiti.import(path.join(root, "plastic-memory/workers/observer.ts"));
 const reflector = await jiti.import(path.join(root, "plastic-memory/workers/reflector.ts"));
 const promoter = await jiti.import(path.join(root, "plastic-memory/workers/promoter.ts"));
+const safety = await jiti.import(path.join(root, "plastic-memory/common/safety.ts"));
 const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
 
 const binding = { sessionId: ids.sessionDigest("workers-smoke", { generation: 1 }), generation: 1, branchId: "main" };
@@ -244,6 +245,89 @@ const explicitPromotion = await promoter.runPromoter({ binding, projectId: "pm:p
 assert.equal(explicitPromotion.ok, true);
 assert.equal(explicitPromotion.proposalOnly, true);
 assert.equal(explicitPromotion.record.customType, "plastic.project.proposal.recorded");
+assert.deepEqual(Object.keys(explicitPromotion.record.data).sort(), ["branchId", "generation", "projectId", "proposalId", "schemaVersion", "sessionId", "sourceDigest"], "explicit promotion remains metadata-only");
+assert.equal(explicitPromotion.record.data.proposalId, ids.makeQueryId(binding.sessionId, ids.recordDigest(binding.sessionId, snapshot.span.sourceDigest.slice(0, 24), "proposal")), "explicit proposal ID remains compatible");
+
+// Automatic promotion requires a post-rebase binding and derives every identity and
+// provenance field from the verified acknowledgement/state, never from Luna output.
+const automaticProjectId = "pm:p:" + "b".repeat(32);
+const automaticSnapshot = { summary: "verified bounded project summary", activeIndex: "verified active index" };
+const automaticStateBase = {
+  version: 1,
+  cycleIds: ["cycle-auto"],
+  sourceEntryIds: [currentUser.id, currentAssistant.id],
+  sourceDigests: [snapshot.span.sourceDigest.slice(0, 24)],
+  facts: { activeMemoryIds: [], files: [], commands: [], errors: [], decisions: ["bounded decision"], constraints: [], goals: [], openLoops: [] },
+  projectSnapshot: automaticSnapshot,
+};
+const automaticState = { ...automaticStateBase, stateDigest: safety.digestParts(automaticStateBase).slice(0, 32) };
+const automaticAcknowledgement = {
+  schemaVersion: 1,
+  ...binding,
+  compactionEntryId: "cmp-automatic",
+  firstKeptEntryId: currentUser.id,
+  activeEntryIds: [currentUser.id, currentAssistant.id],
+  activeDigest: "c".repeat(32),
+};
+const automaticBinding = { ...binding, generation: binding.generation + 1, branchId: "fresh-after-rebase" };
+const automaticCandidate = {
+  category: "decisions", title: "Preserve bounded promotion provenance", target: "docs/promotion-provenance.md", body: "The automatic candidate remains proposal-only and evidence-backed.", confidence: "known",
+  evidence: [{ id: "worker-contract", path: "extensions/plastic-memory/workers/promoter.ts", claim: "The no-filesystem promoter validates the candidate in harness code." }],
+};
+let automaticOutput = { candidate: automaticCandidate, proposalId: "luna-must-not-choose", sourceDigest: "luna-must-not-choose", binding: { sessionId: "wrong" } };
+const automaticCalls = [];
+const automaticRuntime = {
+  ...runtime,
+  async agentLoop(prompts, context, config, signal) {
+    assert.equal(context.role, "project-promoter");
+    assert.equal(config.model, model);
+    automaticCalls.push({ request: JSON.parse(prompts[0].content[0].text), context, signal });
+    return automaticOutput;
+  },
+};
+const automaticPromotion = await promoter.runPromoter({
+  binding: automaticBinding,
+  projectId: automaticProjectId,
+  sourceDigest: "luna-supplied-source-must-be-ignored",
+  projectSnapshot: { summary: "unverified input must not be sent", activeIndex: "wrong" },
+  acknowledgement: automaticAcknowledgement,
+  verifiedState: automaticState,
+  runtime: automaticRuntime,
+});
+assert.equal(automaticPromotion.ok, true);
+assert.deepEqual(automaticCalls[0].context.tools, [], "project-promoter has no filesystem or host tools");
+assert.deepEqual(automaticCalls[0].request.projectSnapshot, automaticSnapshot, "only the verified state snapshot enters the automatic request");
+assert.equal("binding" in automaticCalls[0].request, false, "Luna does not receive automatic binding authority");
+const automaticAcknowledgementDigest = ids.recordDigest(automaticBinding.sessionId, { kind: "plastic-compaction-acknowledgement" }, automaticAcknowledgement);
+const automaticSourceDigest = ids.recordDigest(automaticBinding.sessionId, {
+  compactionEntryId: automaticAcknowledgement.compactionEntryId,
+  acknowledgementDigest: automaticAcknowledgementDigest,
+  stateDigest: automaticState.stateDigest,
+}, automaticSnapshot);
+assert.deepEqual(automaticPromotion.record.data.source, {
+  kind: "plastic-compaction", compactionEntryId: automaticAcknowledgement.compactionEntryId,
+  acknowledgementDigest: automaticAcknowledgementDigest, stateDigest: automaticState.stateDigest,
+});
+assert.equal(automaticPromotion.record.data.sourceDigest, automaticSourceDigest);
+assert.equal(automaticPromotion.record.data.proposalId, ids.makeQueryId(automaticBinding.sessionId, ids.recordDigest(automaticBinding.sessionId, { projectId: automaticProjectId, sourceDigest: automaticSourceDigest }, automaticCandidate)));
+assert.equal(automaticPromotion.record.data.binding, undefined, "Luna-supplied binding is never persisted");
+assert.deepEqual(automaticPromotion.record.data.candidate, automaticCandidate);
+
+for (const invalidOutput of [
+  { proposal: "free-form output", repositoryEvidence: ["extensions/plastic-memory/workers/promoter.ts"] },
+  { candidate: { ...automaticCandidate, evidence: [] } },
+  { candidate: { ...automaticCandidate, target: "../unsafe.md" } },
+]) {
+  automaticOutput = invalidOutput;
+  const rejected = await promoter.runPromoter({ binding: automaticBinding, projectId: automaticProjectId, sourceDigest: "ignored", projectSnapshot: automaticSnapshot, acknowledgement: automaticAcknowledgement, verifiedState: automaticState, runtime: automaticRuntime });
+  assert.equal(rejected.ok, false, "free-form, evidence-empty, and unsafe automatic output is rejected");
+  assert.equal(rejected.record, undefined);
+}
+const callsBeforeWrongProject = automaticCalls.length;
+assert.equal((await promoter.runPromoter({ binding: automaticBinding, projectId: automaticProjectId, sourceDigest: "ignored", projectSnapshot: automaticSnapshot, acknowledgement: { ...automaticAcknowledgement, activeDigest: "malformed" }, verifiedState: automaticState, runtime: automaticRuntime })).ok, false, "malformed acknowledgement fails closed");
+assert.equal((await promoter.runPromoter({ binding: automaticBinding, projectId: "not-a-project", sourceDigest: "ignored", projectSnapshot: automaticSnapshot, acknowledgement: automaticAcknowledgement, verifiedState: automaticState, runtime: automaticRuntime })).ok, false, "invalid project identity fails closed");
+assert.equal((await promoter.runPromoter({ binding, projectId: automaticProjectId, sourceDigest: "ignored", projectSnapshot: automaticSnapshot, acknowledgement: automaticAcknowledgement, verifiedState: automaticState, runtime: automaticRuntime })).ok, false, "pre-rebase acknowledgement binding cannot start automatic promotion");
+assert.equal(automaticCalls.length, callsBeforeWrongProject, "invalid identity/binding starts no Luna call");
 
 const staleRuntime = { ...runtime, agentLoop: async (_prompts, _context, _config, signal) => await new Promise((resolve) => signal.addEventListener("abort", () => resolve({ coverageManifest: {} }), { once: true })) };
 const staleAppended = [];

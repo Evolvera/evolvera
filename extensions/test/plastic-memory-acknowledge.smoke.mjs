@@ -159,6 +159,8 @@ const w = world();
     < w.appended.findIndex((record) => record.customType === "plastic.bootstrap.recorded" && record.data.generation === 2), true,
   "the applied record is visible before rebase/bootstrap");
   assert.deepEqual(w.coordinator.priorState, prepared.rendered.state, "rebase carries only the verified cumulative state");
+  assert.equal(w.appended.some((candidate) => candidate.customType === "plastic.project.proposal.recorded"), false,
+    "an unconfigured coordinator preserves acknowledgement/rebase order and fails promotion closed");
   const record = applied(w)[0].data;
   assert.equal(record.compactionEntryId, entry.id);
   assert.equal(record.firstKeptEntryId, prepared.cut.firstKeptEntryId);
