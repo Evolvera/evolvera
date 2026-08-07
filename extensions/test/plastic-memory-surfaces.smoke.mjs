@@ -54,6 +54,12 @@ const newObservationId = ids.makeObservationId(binding.sessionId, ids.recordDige
 append("custom", { customType: types.PLASTIC_OBSERVATIONS_RECORDED, data: { schemaVersion: 1, ...binding, observations: [{ id: newObservationId, content: "new namespaced fact", timestamp: "2026-08-03T00:00:00.000Z", relevance: "medium", sourceEntryIds: [currentAnswer.id], tokenCount: 2 }], span: { sourceStartId: currentUser.id, sourceEndId: currentAnswer.id, sourceEntryIds: [currentUser.id, currentAnswer.id], sourceDigest: ledger.sourceDigest([currentUser, currentAnswer]), completedTurnEndId: currentAnswer.id } } });
 const proposalId = ids.makeQueryId(binding.sessionId, ids.recordDigest(binding.sessionId, { kind: "proposal" }, { source: currentAnswer.id }));
 append("custom", { customType: types.PLASTIC_PROJECT_PROPOSAL_RECORDED, data: { schemaVersion: 1, ...binding, proposalId, sourceDigest: ledger.sourceDigest([currentUser, currentAnswer]), projectId: "pm:p:" + "a".repeat(32) } });
+const structuredProposalId = ids.makeQueryId(binding.sessionId, ids.recordDigest(binding.sessionId, { kind: "structured-surface-proposal" }, { source: currentAnswer.id }));
+append("custom", { customType: types.PLASTIC_PROJECT_PROPOSAL_RECORDED, data: {
+  schemaVersion: 1, ...binding, proposalId: structuredProposalId, sourceDigest: "b".repeat(24), projectId: "pm:p:" + "a".repeat(32),
+  candidate: { category: "bugs", title: "Structured surface candidate", target: "src/surface.ts", body: "A structured candidate remains recallable.", confidence: "known", evidence: [{ id: "surface-structured", path: "extensions/test/plastic-memory-surfaces.smoke.mjs", claim: "The structured fixture is explicit." }] },
+  source: { kind: "plastic-compaction", compactionEntryId: "surface-compaction", acknowledgementDigest: "c".repeat(24), stateDigest: "d".repeat(32) },
+} });
 const forkOnly = { type: "message", id: "fork-only", parentId: oldAnswer.id, message: { role: "user", content: [{ type: "text", text: "off branch secret" }] }, tokenCount: 1 };
 
 // Exact raw recall retains tombstone, reflection support gaps, and current-branch honesty.
@@ -69,6 +75,10 @@ assert.deepEqual(namespaced.sourceEntries.map((entry) => entry.id), [currentAnsw
 const proposal = recall.recallSession({ entries, binding, leafId: entries.at(-1).id, id: proposalId });
 assert.equal(proposal.kind, "proposal");
 assert.equal(proposal.proposals[0].proposal.projectId, "pm:p:" + "a".repeat(32));
+const structuredProposal = recall.recallSession({ entries, binding, leafId: entries.at(-1).id, id: structuredProposalId });
+assert.equal(structuredProposal.kind, "proposal");
+assert.equal(structuredProposal.proposals[0].proposal.candidate.title, "Structured surface candidate");
+assert.equal(structuredProposal.proposals[0].proposal.source.kind, "plastic-compaction");
 const reflected = recall.recallSession({ entries, binding, leafId: currentAnswer.id, id: reflectionId });
 assert.equal(reflected.status, "partial");
 assert.deepEqual(reflected.missingSupportingObservationIds, ["missing-support"]);
