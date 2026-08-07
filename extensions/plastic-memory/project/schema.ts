@@ -19,6 +19,22 @@ export type Evidence = {
   sourceHead?: string;
 };
 
+export type PublicationCandidate = {
+  category: Category;
+  title: string;
+  target: string;
+  body: string;
+  confidence: Confidence;
+  sourceHead?: string;
+  status?: ChunkStatus;
+  chunkId?: string;
+  supersedes?: string;
+  links?: string[];
+  evidence?: Evidence[];
+  expectedDigest?: string;
+  expectedSourceHead?: string;
+};
+
 export type ChunkFrontMatter = {
   schemaVersion: 1;
   kind: "project-chunk";
@@ -54,6 +70,7 @@ export type CanonicalProject = { frontMatter: ProjectFrontMatter; body: string; 
 const HEX_HEAD = /^(?:[0-9a-f]{40}|UNKNOWN)$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const ID = /^pm:(?:p|c):[a-f0-9]{32}$/;
+const CANONICAL_DIGEST = /^[a-f0-9]{64}$/;
 const EVIDENCE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const EXACT_PROJECT = ["schemaVersion", "kind", "id", "name", "repository", "sourceHead", "createdAt", "updatedAt"];
 const EXACT_CHUNK = ["schemaVersion", "kind", "id", "projectId", "category", "status", "confidence", "title", "target", "sourceHead", "evidenceIds", "links", "createdAt", "updatedAt", "supersedes"];
@@ -69,6 +86,7 @@ function safeText(value: unknown, max: number, label: string): asserts value is 
 function assertId(value: unknown, label: string): asserts value is string { if (typeof value !== "string" || !ID.test(value)) throw new Error(`${label} is invalid`); }
 function assertDate(value: unknown, label: string): asserts value is string { if (typeof value !== "string" || !ISO.test(value)) throw new Error(`${label} must be an ISO UTC timestamp`); }
 function assertDigest(value: unknown, label: string): asserts value is string { if (typeof value !== "string" || !HEX_HEAD.test(value)) throw new Error(`${label} is invalid`); }
+function assertCanonicalDigest(value: unknown, label: string): asserts value is string { if (typeof value !== "string" || !CANONICAL_DIGEST.test(value)) throw new Error(`${label} is invalid`); }
 function uniqueStrings(value: unknown, label: string): asserts value is string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string") || new Set(value).size !== value.length) throw new Error(`${label} must contain unique strings`);
 }
@@ -88,6 +106,29 @@ export function validateEvidence(value: unknown): Evidence {
   if (value.endLine !== undefined && value.startLine !== undefined && (value.endLine as number) < (value.startLine as number)) throw new Error("evidence endLine precedes startLine");
   if ("sourceHead" in value) assertDigest(value.sourceHead, "evidence sourceHead");
   return structuredClone(value) as Evidence;
+}
+
+export function validatePublicationCandidate(value: unknown): PublicationCandidate {
+  if (!object(value)) throw new Error("publication candidate must be an object");
+  const keys = ["category", "title", "target", "body", "confidence", "sourceHead", "status", "chunkId", "supersedes", "links", "evidence", "expectedDigest", "expectedSourceHead"];
+  const required = ["category", "title", "target", "body", "confidence"];
+  if (Object.keys(value).some((key) => !keys.includes(key))) throw new Error("publication candidate contains unsupported fields");
+  if (required.some((key) => !(key in value))) throw new Error("publication candidate is missing a required field");
+
+  const evidence = "evidence" in value
+    ? (Array.isArray(value.evidence) ? value.evidence.map(validateEvidence) : (() => { throw new Error("publication candidate evidence must be an array"); })())
+    : undefined;
+  const candidate = structuredClone(value) as PublicationCandidate;
+  if (evidence !== undefined) candidate.evidence = evidence;
+  if ("sourceHead" in candidate) assertDigest(candidate.sourceHead, "candidate sourceHead");
+  if ("expectedSourceHead" in candidate) assertDigest(candidate.expectedSourceHead, "candidate expectedSourceHead");
+  if ("expectedDigest" in candidate) assertCanonicalDigest(candidate.expectedDigest, "candidate expectedDigest");
+  makeChunk("pm:p:" + "0".repeat(32), {
+    category: candidate.category, status: candidate.status ?? "active", confidence: candidate.confidence, title: candidate.title,
+    target: candidate.target, sourceHead: candidate.sourceHead ?? "UNKNOWN", evidenceIds: evidence?.map((item) => item.id) ?? [], links: candidate.links ?? [],
+    id: candidate.chunkId, supersedes: candidate.supersedes,
+  }, candidate.body);
+  return candidate;
 }
 
 export function validateProjectFrontMatter(value: unknown): ProjectFrontMatter {
