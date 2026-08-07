@@ -79,6 +79,10 @@ function combineProjectContext(systemPrompt: unknown, block: string): string {
   return prior ? `${block}\n\n${prior}` : block;
 }
 
+function predictedProjectIdentity(cwd: string): { provenance: { root: string }; name: string; repository: string } {
+  return { provenance: { root: cwd }, name: basename(cwd), repository: basename(cwd) };
+}
+
 async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   const resolved = readPlasticMemorySettings();
   if (resolvePlasticMemoryOwnerModeFromResolved(resolved) !== "full") return;
@@ -98,6 +102,15 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, {
     config: resolved.config,
     runtime: () => currentContext ? runnerRuntimeModule.createPiRunnerRuntime(currentContext.modelRegistry) : undefined,
+    projectId: (ctx?: ExtensionContext) => {
+      const cwd = ctx ? currentMemoryRoot(ctx).cwd : currentProjectCwd;
+      if (!cwd) return undefined;
+      const memoryRoot = join(cwd, ".pi", "memory");
+      const project = loadProject(memoryRoot);
+      if (project) return project.frontMatter.id;
+      const identity = predictedProjectIdentity(cwd);
+      return makeProject(identity.provenance, identity).id;
+    },
     projectSnapshot: () => {
       if (!currentProjectCwd) return {};
       const memoryRoot = join(currentProjectCwd, ".pi", "memory");
@@ -134,7 +147,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     const { cwd, memoryRoot } = currentMemoryRoot(ctx);
     const project = loadProject(memoryRoot);
     if (project) return { cwd, memoryRoot, projectId: project.frontMatter.id };
-    const identity = { provenance: { root: cwd }, name: basename(cwd), repository: basename(cwd) };
+    const identity = predictedProjectIdentity(cwd);
     return { cwd, memoryRoot, projectId: makeProject(identity.provenance, identity).id, project: identity };
   };
   const queueHeadFor = (args: JsonObject, ctx: any) => {
@@ -156,6 +169,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     const after = reconstructProposalQueue({ branchEntries: visible.entries, binding: visible.binding, leafId: visible.leafId });
     const observed = after.valid && after.decisions.filter((entry: any) => entry.data.proposalId === head.data.proposalId && entry.data.decision === decision).length === priorDecisionCount + 1;
     if (!observed || after.unresolved.some((entry: any) => entry.data.proposalId === head.data.proposalId)) throw new Error("proposal decision was not durably appended");
+    coordinator.refreshProposalWidget(ctx);
     return after;
   };
   const operations = {
