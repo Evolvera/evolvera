@@ -145,11 +145,9 @@ if (-not $sameRoot) {
         Copy-Item $extensions.FullName $dest -Force
         Info ($extensions.Count.ToString() + " extensoes")
     }
-    $plasticMemory = Join-Path $SCRIPT_DIR "extensions\plastic-memory"
-    if (Test-Path $plasticMemory) {
-        Copy-Item $plasticMemory (Join-Path $PI_DIR "extensions") -Recurse -Force
-        Info "plastic-memory"
-    }
+    # Plastic Memory is intentionally not installed while its compaction path is disabled.
+    # Remove a stale copy during upgrades so an older install cannot reactivate it.
+    Remove-Item (Join-Path $PI_DIR "extensions\plastic-memory") -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # -- MCP Servers ------------------------------------------

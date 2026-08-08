@@ -10,55 +10,6 @@
     "npm:pi-alibaba-models@1.0.14",
     "npm:@narumitw/pi-goal@0.43.0"
   ],
-  "plastic-memory": {
-    "enabled": true,
-    "roles": {
-      "observer": {
-        "model": "openai-codex/gpt-5.6-luna",
-        "thinking": "medium",
-        "maxTurns": 8,
-        "maxToolCalls": 4,
-        "maxRuntimeMs": 60000
-      },
-      "reflector": {
-        "model": "openai-codex/gpt-5.6-luna",
-        "thinking": "medium",
-        "maxTurns": 8,
-        "maxToolCalls": 4,
-        "maxRuntimeMs": 60000
-      },
-      "compactor": {
-        "model": "openai-codex/gpt-5.6-luna",
-        "thinking": "medium",
-        "maxTurns": 8,
-        "maxToolCalls": 4,
-        "maxRuntimeMs": 60000
-      },
-      "project-promoter": {
-        "model": "openai-codex/gpt-5.6-luna",
-        "thinking": "medium",
-        "maxTurns": 8,
-        "maxToolCalls": 4,
-        "maxRuntimeMs": 60000
-      }
-    },
-    "edgeTriggers": {
-      "observeAfterTokens": 10000,
-      "reflectAfterTokens": 20000
-    },
-    "pool": {
-      "maxTokens": 20000,
-      "targetTokens": 10000
-    },
-    "automaticRetryCount": 1,
-    "pendingTtlMs": 300000,
-    "summaryCapChars": 48000,
-    "projectCaps": {
-      "summaryChars": 8000,
-      "indexChars": 4000,
-      "categoryChars": 4000
-    }
-  },
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",
   "communicationMode": "default"
