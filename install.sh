@@ -95,9 +95,13 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-# Plastic Memory is intentionally not installed while its compaction path is disabled.
-# Remove a stale copy during upgrades so an older install cannot reactivate it.
+# project-memory.ts imports this tree even when Plastic runs only in bridge mode.
+# Replace stale copies before settings activation so the installed dependency tree is coherent.
 rm -rf "$PI_DIR/extensions/plastic-memory"
+if [ -d "$SCRIPT_DIR/extensions/plastic-memory" ]; then
+    cp -r "$SCRIPT_DIR/extensions/plastic-memory" "$PI_DIR/extensions/"
+    info "plastic-memory"
+fi
 fi
 
 # ── MCP (só cria se não existe) ──────────────

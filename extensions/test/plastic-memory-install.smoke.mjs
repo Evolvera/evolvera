@@ -85,7 +85,8 @@ try {
   const fault = runInstaller(destinationHome, "fault");
   assert.notEqual(fault.status, 0, "forced staging fault must fail");
   assert.equal(readFileSync(path.join(destinationHome, ".pi", "agent/settings.json"), "utf8"), oldSettings, "fault must preserve old settings");
-  assert.equal(existsSync(path.join(destinationHome, ".pi", "agent/extensions/plastic-memory")), false, "stale plastic-memory must be removed before activation");
+  assert.equal(existsSync(path.join(destinationHome, ".pi", "agent/extensions/plastic-memory", "index.ts")), true, "plastic-memory dependency tree must stage before activation");
+  assert.equal(existsSync(path.join(destinationHome, ".pi", "agent/extensions/plastic-memory", "stale.ts")), false, "stale plastic-memory files must be removed before staging");
   assert.equal(fault.logText.includes("forced-cp-fault"), true);
   assert.equal(fault.logText.includes("settings.json"), false, "fault must precede activation write");
 
@@ -93,11 +94,11 @@ try {
   const success = runInstaller(successHome);
   assert.equal(success.status, 0, success.stderr || success.stdout);
   const destinationRoot = path.join(successHome, ".pi", "agent");
-  assert.equal(existsSync(path.join(destinationRoot, "extensions/plastic-memory")), false, "plastic-memory must not be installed");
+  assert.equal(existsSync(path.join(destinationRoot, "extensions/plastic-memory", "index.ts")), true, "project-memory dependency tree must be installed");
   assert.equal(existsSync(path.join(destinationRoot, "extensions/project-memory.ts")), true);
   assert.equal(existsSync(path.join(destinationRoot, "extensions/flat-fixture.ts")), true);
   assert.equal(readFileSync(path.join(destinationRoot, "settings.json"), "utf8"), readFileSync(path.join(sourceRoot, "config/settings.json"), "utf8"));
-  assert.equal(success.logText.includes("extensions/plastic-memory"), false, "installer must not stage plastic-memory");
+  assert.equal(success.logText.includes("extensions/plastic-memory"), true, "installer must stage plastic-memory");
   const resourceCopyIndex = success.logText.indexOf("config/mcp.json");
   const activationIndex = success.logText.lastIndexOf("config/settings.json");
   assert.equal(resourceCopyIndex >= 0 && activationIndex > resourceCopyIndex, true, "activation follows complete resource staging");
@@ -116,13 +117,13 @@ try {
   for (const [file, bytes] of sameManifest) assert.deepEqual(readFileSync(path.join(sameRoot, file)), bytes, `self-root changed ${file}`);
 
   const powershell = readFileSync(path.join(repositoryRoot, "install.ps1"), "utf8");
-  assert.equal(powershell.includes("Copy-Item $plasticMemory (Join-Path $PI_DIR \"extensions\") -Recurse -Force"), false);
+  assert.equal(powershell.includes("Copy-Item $plasticMemory (Join-Path $PI_DIR \"extensions\") -Recurse -Force"), true);
   assert.equal(powershell.includes("Remove-Item (Join-Path $PI_DIR \"extensions\\plastic-memory\") -Recurse -Force"), true);
   assert.equal(powershell.includes("if (-not $sameRoot)"), true);
   assert.equal(powershell.includes("pi-observational-memory"), false);
   assert.equal(powershell.includes("pi-provider-kimi-code"), true);
   assert.equal(powershell.indexOf('Copy-Item (Join-Path $SCRIPT_DIR "config\\settings.json")') > powershell.indexOf("# -- Packages"), true);
-  console.log("PLASTIC_MEMORY_INSTALL: PASS (plastic-memory excluded from macOS/Linux and Windows installers, stale copies removed, deferred activation fault, self-root safety, and PowerShell parity; Windows runtime UNVERIFIED)");
+  console.log("PLASTIC_MEMORY_INSTALL: PASS (plastic-memory staged with project-memory on macOS/Linux and Windows, stale copies replaced, deferred activation fault, self-root safety, and PowerShell parity; Windows runtime UNVERIFIED)");
 } finally {
   process.chdir(repositoryRoot);
   rmSync(sandbox, { recursive: true, force: true });
