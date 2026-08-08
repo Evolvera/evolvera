@@ -145,9 +145,14 @@ if (-not $sameRoot) {
         Copy-Item $extensions.FullName $dest -Force
         Info ($extensions.Count.ToString() + " extensoes")
     }
-    # Plastic Memory is intentionally not installed while its compaction path is disabled.
-    # Remove a stale copy during upgrades so an older install cannot reactivate it.
+    # project-memory.ts imports this tree even when Plastic runs only in bridge mode.
+    # Replace stale copies before settings activation so the installed dependency tree is coherent.
     Remove-Item (Join-Path $PI_DIR "extensions\plastic-memory") -Recurse -Force -ErrorAction SilentlyContinue
+    $plasticMemory = Join-Path $SCRIPT_DIR "extensions\plastic-memory"
+    if (Test-Path $plasticMemory) {
+        Copy-Item $plasticMemory (Join-Path $PI_DIR "extensions") -Recurse -Force
+        Info "plastic-memory"
+    }
 }
 
 # -- MCP Servers ------------------------------------------
