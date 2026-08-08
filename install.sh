@@ -95,10 +95,9 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-if [ -d "$SCRIPT_DIR/extensions/plastic-memory" ]; then
-    cp -r "$SCRIPT_DIR/extensions/plastic-memory" "$PI_DIR/extensions/"
-    info "plastic-memory"
-fi
+# Plastic Memory is intentionally not installed while its compaction path is disabled.
+# Remove a stale copy during upgrades so an older install cannot reactivate it.
+rm -rf "$PI_DIR/extensions/plastic-memory"
 fi
 
 # ── MCP (só cria se não existe) ──────────────

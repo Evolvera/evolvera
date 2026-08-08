@@ -126,8 +126,8 @@ Os instaladores:
 2. instalam a versão configurada de `@earendil-works/pi-coding-agent`;
 3. criam os diretórios do runtime;
 4. copiam a configuração versionada para `~/.pi/agent`;
-5. copiam agentes, skills, extensões normais e temas, incluindo a árvore `extensions/plastic-memory/` recursivamente;
-6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); a configuração versionada descreve `plastic-memory`, não `pi-observational-memory`;
+5. copiam agentes, skills, extensões normais e temas; `extensions/plastic-memory/` não é instalado enquanto seu caminho de compactação estiver desativado;
+6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); o template de configuração não ativa `plastic-memory` nem `pi-observational-memory`;
 7. criam `mcp.json` somente quando ele ainda não existe;
 8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados.
 
@@ -145,13 +145,13 @@ Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução
 
 ### Ativação, colisões e atualização
 
-A ativação é deferred e collision-aware. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito.
+A ativação é deferred e collision-aware quando o extension é disponibilizado manualmente no runtime. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito. Os instaladores atuais não copiam o extension nem ativam sua configuração.
 
 Ao executar novamente o instalador, os recursos versionados são preparados primeiro e a configuração ativadora é escrita por último:
 
 - `settings.json`, `models.json`, `SYSTEM.md`, `subagents.json` e `pi-goal.json`;
 - agents e skills versionados;
-- arquivos de extensão no nível raiz e a árvore `extensions/plastic-memory/` descoberta recursivamente;
+- arquivos de extensão no nível raiz; `extensions/plastic-memory/` é deliberadamente excluído enquanto o caminho de compactação estiver desativado;
 - temas versionados.
 
 A configuração ativa em `~/.pi/agent/settings.json` só muda quando o instalador é executado. Arquivos ou diretórios antigos do package OM que já estejam no destino ficam inertes; o instalador não os apaga nem desinstala genericamente. A atualização não promete nem executa migração de memória.
@@ -240,9 +240,9 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `config/SYSTEM.md` | Política global, segurança, workflow e regras de roteamento instaladas como `~/.pi/agent/SYSTEM.md`. |
 | `agents/*.md` | Definições dos subagentes: modelo, thinking, ferramentas e contrato operacional. |
 | `skills/*/SKILL.md` | Procedimentos carregados quando o tipo de tarefa exige aquele workflow. |
-| `extensions/` | Comandos, ferramentas e hooks executados pelo runtime PI; inclui arquivos flat e a árvore recursiva `extensions/plastic-memory/`. |
+| `extensions/` | Comandos, ferramentas e hooks executados pelo runtime PI; os instaladores copiam apenas os arquivos flat enquanto `plastic-memory` estiver desativado. |
 | `extensions/project-memory.ts` | Bridge context-only de compatibilidade para a superfície flat de memória. |
-| `config/settings.json` | Provider/modelo padrão, thinking, tema, packages e configuração `plastic-memory`; não ativa o package OM. |
+| `config/settings.json` | Provider/modelo padrão, thinking, tema e packages; não ativa `plastic-memory` nem o package OM. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
 | `config/mcp.json` | Configuração inicial de MCP; atualmente fornece `context7`. |
@@ -369,7 +369,7 @@ Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas f
 
 ## Atualizar
 
-Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash. O instalador prepara agentes, skills, extensões (inclusive `extensions/plastic-memory/`) e demais recursos primeiro; grava a configuração ativadora por último. Assim, uma colisão ou configuração inválida não habilita hooks full parcialmente. O `settings.json` ativo só é substituído durante a execução do instalador.
+Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash. O instalador prepara agentes, skills, extensões normais e demais recursos primeiro; remove uma cópia antiga de `extensions/plastic-memory/` e grava a configuração não ativadora por último. Assim, o caminho de compactação desativado não permanece ativo após uma atualização. O `settings.json` ativo só é substituído durante a execução do instalador.
 
 A atualização não remove sessões, histórico, dados append-only ou dados de projeto, e não apaga diretórios antigos de packages; arquivos OM remanescentes ficam inertes. Não há instrução de cutover ou migração nesta atualização.
 
