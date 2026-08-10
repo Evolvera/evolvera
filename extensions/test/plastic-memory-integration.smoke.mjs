@@ -9,6 +9,7 @@ const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_m
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const projection = await jiti.import(path.join(root, "plastic-memory/compaction/projection.ts"));
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
+const cyclesModule = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const runnerRuntimeModule = await jiti.import(path.join(root, "plastic-memory/runtime/runner-runtime.ts"));
 
 
@@ -174,8 +175,8 @@ assert.deepEqual([...new Set(cycleCalls.map((call) => call.model))], [cycleModel
 assert.equal(cycleCalls.every((call) => call.options.cacheRetention === "none" && call.options.apiKey === "cycle-fake" && call.options.env.CYCLE_FAKE === "yes"), true);
 ownerCoordinator.shutdown("cycle-test");
 const coordinatorSource = readFileSync(path.join(root, "plastic-memory/runtime/coordinator.ts"), "utf8");
-assert.equal(/prepareEmergencyCompaction|selectEmergencyWindow/u.test(coordinatorSource), false,
-  "the active coordinator hook graph contains no emergency path");
+assert.equal(/prepareEmergencyCompaction|selectEmergencyWindow/u.test(coordinatorSource), true,
+  "the external coordinator hook graph keeps the emergency fallback connected");
 assert.equal(/AUTO_APPLY_MIN_CONTEXT_TOKENS = 120_000[\s\S]*ctx\.compact/u.test(coordinatorSource), true,
   "the gated automatic compaction path remains connected at the 120k threshold");
 
@@ -218,6 +219,73 @@ function queueHarness(entries, runtime, sessionId = "dddddddddddddddddddddddd") 
     turn() { handlers.get("turn_end")({ type: "turn_end" }, ctx); },
   };
 }
+async function hostCompactionRefreshProbe(failuresBeforeSuccess) {
+  const entries = [];
+  for (let number = 1; number <= 7; number += 1) completedTurn(entries, `refresh-${number}`, 10_000, 10_000);
+  const sourceEntries = entries.filter((item) => item.type === "message");
+  const calls = [];
+  const runtime = {
+    modelRegistry: {
+      find(provider, id) {
+        return { provider, id, contextWindow: 200_000, maxTokens: 16_000 };
+      },
+      async getProviderAuth() { return { apiKey: "in-process-only" }; },
+    },
+    async agentLoop(prompts, context) {
+      assert.equal(context.role, "compactor");
+      calls.push({ provider: context.model?.provider, id: context.model?.id });
+      if (calls.length <= failuresBeforeSuccess) return "unstructured compactor output";
+      return JSON.stringify({ summary: "host-refresh compaction", state: { facts: {} } });
+    },
+  };
+  const state = { entries, nextCustom: 0 };
+  const handlers = new Map();
+  const notices = [];
+  const pi = {
+    on(type, handler) { handlers.set(type, handler); },
+    appendEntry(customType, data) {
+      state.entries.push({ type: "custom", id: `refresh-custom-${++state.nextCustom}`, parentId: state.entries.at(-1)?.id ?? null, customType, data });
+    },
+  };
+  const sessionManager = {
+    getSessionId: () => "121212121212121212121212",
+    getLeafId: () => state.entries.at(-1)?.id,
+    getEntries: () => state.entries,
+    getBranch: () => state.entries,
+    buildContextEntries: () => state.entries,
+  };
+  const ctx = {
+    sessionManager,
+    isIdle: () => true,
+    hasPendingMessages: () => false,
+    getContextUsage: () => ({ tokens: 21_000, contextWindow: 160_000 }),
+    getSystemPrompt: () => "synthetic system prompt",
+    compact: () => {},
+    hasUI: true,
+    ui: { notify(message, level) { notices.push({ message, level }); } },
+  };
+  const coordinator = coordinatorModule.registerPlasticMemoryCoordinator(pi, { enabled: true, runtime, now: () => 1_000 });
+  await handlers.get("session_start")({ type: "session_start", reason: "startup" }, ctx);
+  const binding = coordinator.getBinding(ctx);
+  const queued = cyclesModule.createQueuedCycleRecords({ binding, sourceEntries });
+  assert.equal(queued.length, 7);
+  for (const [index, record] of queued.entries()) {
+    pi.appendEntry(record.customType, record.data);
+    const { estimatedTokenCount: _estimatedTokenCount, ...span } = record.data;
+    const attemptId = `refresh-attempt-${index}`;
+    pi.appendEntry("plastic.cycle.attempted", { ...span, attemptId, phase: "compactor", outcome: "complete", attemptCount: 0 });
+    pi.appendEntry("plastic.cycle.closed", { ...span, attemptId, status: "empty-valid", observationIds: [], reflectionIds: [] });
+  }
+  const result = await handlers.get("session_before_compact")({
+    type: "session_before_compact",
+    branchEntries: state.entries,
+    preparation: { firstKeptEntryId: sourceEntries[6].id, tokensBefore: 7_777 },
+  }, ctx);
+  const status = coordinator.getStatus(ctx);
+  coordinator.shutdown("host-refresh-test");
+  return { calls, notices, result, status };
+}
+
 function queueRuntime(state, waitForFirstObserver) {
   return {
     modelRegistry: {
@@ -235,6 +303,35 @@ function queueRuntime(state, waitForFirstObserver) {
     },
   };
 }
+// Host-triggered refresh reports the final compactor failure and yields to native
+// compaction when no Plastic candidate prepares a safe result.
+{
+  const failed = await hostCompactionRefreshProbe(Number.POSITIVE_INFINITY);
+  assert.equal(failed.result, undefined);
+  assert.equal(failed.calls.length, 3, "host refresh tries Luna retry and Sonnet fallback");
+  assert.deepEqual(failed.notices, [{
+    message: "Plastic memory: compaction failed — compaction-failed: compactor output is not structured",
+    level: "warning",
+  }, {
+    message: "Plastic memory: using native compaction — compactor-failed: compactor output is not structured",
+    level: "warning",
+  }], "final compactor reason and native fallback are both observable");
+  assert.deepEqual(failed.status.lastCompactionDiagnostic, {
+    phase: "normal-refresh", outcome: "failed", code: "compactor-failed", reason: "compactor output is not structured",
+  });
+  assert.equal(JSON.stringify(failed.status).includes("refresh-1"), false, "diagnostic status omits source identifiers");
+
+  const fallback = await hostCompactionRefreshProbe(2);
+  assert.ok(fallback.result?.compaction, "a later fallback candidate still prepares compaction");
+  assert.equal(fallback.calls.length, 3, "fallback success occurs on the final candidate");
+  assert.equal(fallback.notices.some(({ message, level }) => level === "warning" && message.includes("compaction failed")), false,
+    "failed fallback attempts do not emit an earlier host-refresh failure");
+  assert.deepEqual(fallback.notices, [{ message: "Plastic memory: compaction prepared", level: "info" }]);
+  assert.deepEqual(fallback.status.lastCompactionDiagnostic, {
+    phase: "normal-refresh", outcome: "prepared", code: "prepared", reason: "normal compaction prepared",
+  });
+}
+
 async function waitFor(check, message) {
   for (let attempt = 0; attempt < 80 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(check(), true, message);
@@ -367,4 +464,4 @@ assert.equal(coordinator.getGeneration(), 2);
 
 // The fake owner above is the complete lifecycle boundary for this smoke: no Pi runtime,
 // provider, user session, or host patch is started during validation.
-console.log("PLASTIC_MEMORY_INTEGRATION: PASS (in-process projection, durable queue lifecycle, gated automatic ownership, and no active emergency path)");
+console.log("PLASTIC_MEMORY_INTEGRATION: PASS (in-process projection, durable queue lifecycle, gated automatic ownership, and connected external emergency hook)");

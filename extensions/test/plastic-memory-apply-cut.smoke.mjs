@@ -202,7 +202,7 @@ for (const options of [{ isIdle: false }, { pendingMessages: true }]) {
   const customInstructions = w.internalInstructions();
   w.compactCalls[0].onError(new Error("Nothing to compact (session too small)"));
   assert.notEqual(w.coordinator.getPending(), undefined, "benign host refusal retains pending");
-  assert.equal(w.notices.at(-1)?.message, "Plastic memory: compaction skipped — Nothing to compact (session too small)");
+  assert.equal(w.notices.at(-1)?.message, "Plastic memory: compaction skipped — compaction-skipped: Nothing to compact (session too small)");
   w.handlers.get("agent_settled")({ type: "agent_settled" }, w.ctx);
   assert.equal(w.compactCalls.length, 2, "a later settled edge retries once without callback recursion");
   assert.notEqual(w.compactCalls[1].customInstructions, customInstructions);
@@ -224,7 +224,7 @@ for (const options of [{ isIdle: false }, { pendingMessages: true }]) {
   const w = world({ hostPrefix: true });
   const firstSource = w.state.branch.findIndex((entry) => entry.type === "message");
   w.state.branch = w.state.branch.map((entry, index) => index === firstSource + 1 ? { ...entry, parentId: "post-anchor-disconnected" } : entry);
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.state.branch[0].id)), { cancel: true }, "post-anchor mismatch cancels rather than exposing native compaction");
+  assert.equal(await w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "post-anchor mismatch yields to native compaction");
 }
 {
   const w = world();
@@ -238,46 +238,46 @@ for (const options of [{ isIdle: false }, { pendingMessages: true }]) {
 }
 {
   const w = world();
-  assert.deepEqual(await w.beforeCompact(hostEvent("not-on-this-branch")), { cancel: true }, "unlocatable host cut cancels without native fallback");
-  assert.deepEqual(await w.beforeCompact(hostEvent(undefined)), { cancel: true }, "absent host cut cancels without native fallback");
+  assert.equal(await w.beforeCompact(hostEvent("not-on-this-branch")), undefined, "unlocatable host cut yields to native compaction");
+  assert.equal(await w.beforeCompact(hostEvent(undefined)), undefined, "absent host cut yields to native compaction");
 }
 // 2b. A descendant that makes the prepared cut physically unsafe is rejected at hook time.
 {
   const w = world();
   w.state.branch.push({ type: "message", id: "huge-descendant", parentId: w.state.branch.at(-1).id, message: { role: "user", content: [{ type: "text", text: "x".repeat(700_000) }] } });
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "hook-time budget recheck cancels an overflowing descendant");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "hook-time budget recheck yields an overflowing descendant to native compaction");
   assert.notEqual(w.coordinator.getPending(), undefined, "budget rejection retains the existing pending for retry");
 }
 
-// 3. Every pre-existing rejection still rejects.
+// 3. Every external rejection yields to native compaction; internal rejection remains fail-closed.
 {
   const w = world({ binding: (binding) => ({ ...binding, generation: binding.generation + 1 }) });
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "wrong binding");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "wrong binding yields to native compaction");
 }
 {
   const w = world({ pendingRuntimeToken: "runtime-other" });
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "wrong runtimeToken");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "wrong runtimeToken yields to native compaction");
 }
 {
   const w = world();
   const kept = w.entries.find((entry) => entry.id === w.cut);
   kept.message = { ...kept.message, role: "assistant" };
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "non-user kept entry");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "non-user kept entry yields to native compaction");
 }
 {
   const w = world();
   w.state.branch = w.entries.map((entry, index) => index === 0 ? { ...entry, id: "forked-root" } : index === 1 ? { ...entry, parentId: "forked-root" } : entry);
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.state.branch[0].id)), { cancel: true }, "prefix mismatch");
+  assert.equal(await w.beforeCompact(hostEvent(w.state.branch[0].id)), undefined, "prefix mismatch yields to native compaction");
 }
 {
   const w = world();
   w.state.branch = [...w.entries].reverse();
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "unordered branch");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "unordered branch yields to native compaction");
 }
 {
   const w = world();
   w.setClock(PREPARE_AT + 300_001);
-  assert.deepEqual(await w.beforeCompact(hostEvent(w.entries[0].id)), { cancel: true }, "expired pending");
+  assert.equal(await w.beforeCompact(hostEvent(w.entries[0].id)), undefined, "expired pending yields to native compaction");
 }
 {
   const w = world();

@@ -3,6 +3,7 @@ import { scrubSensitiveText } from "../common/safety.ts";
 export type MemoryCommandContext = { ui?: { notify?: (message: string, level?: string) => void } } & Record<string, unknown>;
 export type MemoryCommandOperations = Readonly<{
   status: (ctx: MemoryCommandContext) => unknown | Promise<unknown>;
+  plasticStatus?: (ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   view: (args: { mode?: string }, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   propose: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
   accept: (args: Record<string, unknown>, ctx: MemoryCommandContext) => unknown | Promise<unknown>;
@@ -63,6 +64,7 @@ function command(handler: (args: string, ctx: MemoryCommandContext) => Promise<u
 
 export function createMemoryCommands(operations: MemoryCommandOperations): Readonly<Record<string, Record<string, unknown>>> {
   const status = command((_args, ctx) => operations.status(ctx));
+  const plasticStatus = operations.plasticStatus === undefined ? undefined : command((_args, ctx) => operations.plasticStatus!(ctx));
   const view = command((args, ctx) => {
     const mode = args.trim();
     if (mode && mode !== "full" && mode !== "visible") throw new Error("Usage: /memory:view [full|visible]");
@@ -80,6 +82,7 @@ export function createMemoryCommands(operations: MemoryCommandOperations): Reado
     // OM aliases intentionally share only the injected active-runtime operations.
     "om:status": status,
     "om:view": view,
+    ...(plasticStatus ? { "plastic:status": plasticStatus } : {}),
   };
 }
 
