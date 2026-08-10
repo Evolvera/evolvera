@@ -15,10 +15,10 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “qual dá pa
   → Permission gate GitHub
   → Ler o kanban atual (issues + labels + PRs)  
   → Scout do projeto por módulos (evidence-first)
-  → Draft de backlog + sugestões + dúvidas abertas
-  → REVIEW GATE: usuário aprova (OK para Project + issues)
+  → Draft de backlog + candidatos a epic/área + dúvidas abertas
+  → REVIEW GATE: usuário aprova (OK para Project + issues + hierarquia)
   → Reusar Project existente ou criar Project, linkar repo(s), configurar Kanban
-  → Criar/atualizar issues como cards organizados no Project (priority + effort + status)
+  → Criar/atualizar epics e issues-filhas como cards organizados no Project (priority + effort + status) e verificar sub-issues nativas
   → Materializar `.pi/flow/<project-slug>/PLAN.md` + `SCHEDULE.md` + `DAG.json` + `INDEX.md`
   → Loop engenheiro (solo por default; paralelo apenas quando autorizado e seguro):
        ler board → puxar 1 issue ready
@@ -59,10 +59,11 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “qual dá pa
 12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na default branch. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
 13. **Project/Kanban é obrigatório para delivery Flow** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. Depois, adicionar cada issue como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo se o usuário pedir explicitamente esse modo excepcional. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
 14. **DAG adaptativo, solo-first e parallel-aware** — todo backlog criado pelo Flow ganha um plano e schedule de issues sob `.pi/flow/<project-slug>/`. O DAG ordena dependências, waves, gates e oportunidades de paralelo, mas nunca exige múltiplos executores. Paralelismo é opcional e só admite nós `ready` com dependências satisfeitas, write/validation scopes fundamentados, recursos exclusivos livres, claims distintos e worktrees isoladas.
-15. **Sem duplicar issues localmente** — título, body, ACs, status, assignee, branch, PR e comentários vivem no GitHub. `INDEX.md` mantém somente links/identidades estáveis; `PLAN.md`, `SCHEDULE.md` e `DAG.json` guardam estratégia e dependências. Estado operacional continua sendo relido do remoto e cacheado apenas em `STATE.md`.
-16. **Parallel re-entry é autônomo** — em chat novo, “qual issue dá para fazer em paralelo?” exige re-entry completo sem pedir ao usuário para recontar contexto: descobrir repo/Project, reconciliar toda evidência remota, inventariar todas as worktrees locais, ler DAG e calcular candidatos. Pergunte apenas por autoridade destrutiva/material ou ambiguidade que a evidência não resolve.
-17. **Claim exclusivo antes de agent** — implementação paralela nunca começa apenas porque o card está `Ready`. O orquestrador reserva primeiro a branch remota determinística com create-ref exclusivo, registra `FLOW_EXECUTOR_ID`, cria worktree dedicada, move o card e verifica todas as pós-condições; só então entrega esse path ao worker.
-18. **Sem falsa certeza de atividade** — diga `worker active` somente quando o orquestrador atual conhece o runtime. Fora disso, reporte `claim active`, `branch present` ou `worktree present`. Ausência local pode significar outra máquina; tempo parado nunca autoriza auto-reclaim.
+15. **Sub-issues nativas são hierarquia, não execução** — crie uma epic/área-pai quando issues-filhas compartilham um outcome, princípios, bloqueio ou sequência macro aprovados; o critério é coerência de produto, não quantidade. A pai guarda somente visão, ordem macro e progresso nativo; cada filha mantém body, ACs, dependências e histórico completos. Apenas filhas executáveis entram no DAG, `Ready`, claim, branch ou PR. Ordem visual das sub-issues não é dependência técnica; o DAG e evidência remota continuam sendo a autoridade. Divida uma epic quando ela deixar de ter um outcome compreensível, não porque atingiu um número arbitrário de filhas. Nunca crie uma filha apenas para preencher uma epic, nem aninhe hierarquias sem necessidade comprovada.
+16. **Sem duplicar issues localmente** — título, body, ACs, status, assignee, branch, PR e comentários vivem no GitHub. `INDEX.md` mantém somente links/identidades estáveis; `PLAN.md`, `SCHEDULE.md` e `DAG.json` guardam estratégia e dependências. Estado operacional continua sendo relido do remoto e cacheado apenas em `STATE.md`.
+17. **Parallel re-entry é autônomo** — em chat novo, “qual issue dá para fazer em paralelo?” exige re-entry completo sem pedir ao usuário para recontar contexto: descobrir repo/Project, reconciliar toda evidência remota, inventariar todas as worktrees locais, ler DAG e calcular candidatos. Pergunte apenas por autoridade destrutiva/material ou ambiguidade que a evidência não resolve.
+18. **Claim exclusivo antes de agent** — implementação paralela nunca começa apenas porque o card está `Ready`. O orquestrador reserva primeiro a branch remota determinística com create-ref exclusivo, registra `FLOW_EXECUTOR_ID`, cria worktree dedicada, move o card e verifica todas as pós-condições; só então entrega esse path ao worker.
+19. **Sem falsa certeza de atividade** — diga `worker active` somente quando o orquestrador atual conhece o runtime. Fora disso, reporte `claim active`, `branch present` ou `worktree present`. Ausência local pode significar outra máquina; tempo parado nunca autoriza auto-reclaim.
 
 ---
 
@@ -278,7 +279,9 @@ Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o
 ### Dedup e corte
 
 - Mesclar duplicatas (entre si e com issues GitHub já abertas)
-- Quebrar epics em 2–5 issues shippable
+- Agrupar issues-filhas shippable sob uma epic quando elas compartilham outcome, princípios, bloqueio ou sequência macro; nesse caso, propor uma única epic-pai com label `epic` e uma label `area:*` já existente ou explicitamente aprovada
+- O corpo da epic deve caber em visão de produto: objetivo macro, princípios, ordem macro, bloqueios compartilhados e o que está fora. A filha continua sendo a fonte de verdade para ACs, write scope, dependências e evidência de entrega
+- Não usar epic/sub-issue para uma única issue, para agrupar apenas por etiqueta, ou como substituto de dependência técnica; a filha mantém todas as ACs e o DAG mantém a ordem real
 - Marcar `blocked` se depender de decisão externa
 - Não criar issue para “pesquisar depois” sem outcome
 
@@ -356,6 +359,7 @@ Mostre um pacote único e legível. **Espere OK.**
 - Ordem recomendada de pull: #… → #…
 - Project/Kanban: reusar `Project <url>` **ou** criar `<nome>` sob `<owner>`, linkar `<repo(s)>`, configurar colunas Backlog → Ready → In progress → In review → Done e exibir Priority/Effort
 - Labels: criar padrão Flow **como espelho do Project** ou reusar as do repo (`…`)
+- Hierarquia nativa proposta: nenhuma **ou** `#<epic>` com filhas `#…`; mostrar por que o agrupamento é uma área/outcome real, a ordem macro e quais labels `epic`/`area:*` serão reutilizadas ou criadas
 
 ### Fora de escopo / later
 - ...
@@ -377,8 +381,8 @@ Responde com **OK** (e ajustes se quiser), ou corrige a lista.
 
 ### Regras do gate
 
-- Sem OK → **zero** `gh project create`, `gh project link` ou `gh issue create`
-- O OK só cobre Project/Kanban, links de repo e issues/cards quando nome, owner, repos, colunas e escopo estiverem explicitamente mostrados no proposal; se qualquer um desses pontos estiver ausente ou mudar materialmente, pare e peça nova confirmação
+- Sem OK → **zero** `gh project create`, `gh project link`, `gh issue create`, criação de labels ou vínculo de sub-issue
+- O OK só cobre Project/Kanban, links de repo, issues/cards e hierarquia nativa quando nome, owner, repos, colunas, escopo, epic-pai e filhas estiverem explicitamente mostrados no proposal; se qualquer um desses pontos estiver ausente ou mudar materialmente, pare e peça nova confirmação
 - Se faltar escopo `project`, owner ou acesso para configurar o board, bloqueie a criação das issues e entregue o checklist de permissão; não espalhe issues apenas com labels sem o opt-out explícito do usuário
 - Se o user ajustar 2 itens → atualize draft e **reconfirme** se a mudança for material
 - Se disser “OK cria e já puxa a primeira” → isso cobre create + start da #1; ainda confirme acceptance da #1 se estiver vaga
@@ -422,6 +426,9 @@ gh label create "effort:s" --color "C5DEF5" --description "Small" 2>/dev/null ||
 gh label create "effort:m" --color "1D76DB" --description "Medium" 2>/dev/null || true
 gh label create "effort:l" --color "5319E7" --description "Large" 2>/dev/null || true
 gh label create "effort:xl" --color "3E4B9E" --description "Extra large / split" 2>/dev/null || true
+
+gh label create "epic" --color "5319E7" --description "Macro outcome; execution stays in native sub-issues" 2>/dev/null || true
+# `area:*` is domain-specific: create or reuse only labels explicitly approved in the proposal.
 
 gh label create "type:feature" --color "A2EEEF" --description "Feature" 2>/dev/null || true
 gh label create "type:fix" --color "D73A4A" --description "Bug fix" 2>/dev/null || true
@@ -473,9 +480,35 @@ EOF
 )"
 ```
 
+### 5.0 Epic/área e sub-issues nativas (somente pós-OK)
+
+Quando a proposta aprovada tiver uma epic-pai, crie/reuse a pai e as filhas primeiro. A pai recebe `epic` e `area:*`; cada filha recebe a mesma `area:*` mais seus labels de prioridade/esforço/tipo. Não copie ACs, write scope, dependências ou estado operacional das filhas para o corpo da pai. A pai não recebe branch, claim ou PR e não pode ser puxada pelo loop de execução.
+
+Use o ID interno numérico da filha — não seu número `#N` — e `-F` para preservar o tipo inteiro exigido pela API:
+
+```bash
+CHILD_ID=$(gh api "repos/$REPO_NWO/issues/$CHILD_NUMBER" --jq '.id')
+
+gh api --method POST \
+  "repos/$REPO_NWO/issues/$EPIC_NUMBER/sub_issues" \
+  -F sub_issue_id="$CHILD_ID"
+```
+
+Antes de ligar, releia pai/filha: elas devem estar no mesmo owner, a filha não pode ter pai conflitante e o vínculo precisa constar do proposal aprovado. Não use `replace_parent`; pai existente, resposta `422`, truncamento ou identidade ambígua é `BLOCKED`, não permissão para mover/remover hierarquia. Para várias filhas, vincule uma por chamada e releia após cada uma; nunca faça criação, vínculo e verificação em um script composto.
+
+Verifique o resultado por leitura remota, não pelo exit code:
+
+```bash
+gh api --paginate "repos/$REPO_NWO/issues/$EPIC_NUMBER/sub_issues?per_page=100" \
+  --jq '.[] | {number,id,title,state}'
+gh api "repos/$REPO_NWO/issues/$EPIC_NUMBER" --jq '.sub_issues_summary'
+```
+
+A resposta deve conter exatamente as filhas aprovadas e o resumo de progresso esperado. Registre no `INDEX.md` apenas a URL/identidade da epic e os links das filhas; não replique progresso, bodies ou dependências.
+
 ### Regras
 
-- Reportar URL/número do Project e de cada issue/card
+- Reportar URL/número do Project, epic quando existir, e de cada issue/card
 - Não recriar se já existir equivalente — linkar
 - `effort:xl` → split antes de `ready`
 
@@ -587,7 +620,7 @@ Use um `project-slug` estável para o Project; em projeto de um único repo ele 
 
 Regras do DAG:
 
-1. Cada nó representa uma issue entregável do Kanban, não as subtarefas internas de builder. Se uma issue precisar de planner, o DAG menor vive em `.pi/plans/` dentro daquela entrega.
+1. Cada nó representa uma issue-filha entregável do Kanban, não uma epic-pai nem subtarefas internas de builder. Se uma issue precisar de planner, o DAG menor vive em `.pi/plans/` dentro daquela entrega.
 2. GitHub mantém a issue completa e todo estado dinâmico; não grave status/assignee/branch/PR em `INDEX.md` ou `DAG.json`.
 3. Dependência só é satisfeita quando a evidência remota exigida pelo gate existir; por default, upstream `done` significa PR merged na default + issue fechada/status coerente.
 4. Um executor solo escolhe um nó `ready` por vez na wave topológica mais antiga; `parallelGroup` é apenas uma oportunidade, nunca uma exigência.
@@ -645,6 +678,12 @@ gh api graphql --paginate \
 # Enumere issues e PRs até o fim; limites fixos não provam ausência/estado global.
 gh api --paginate "repos/$OWNER/$REPO/issues?state=all&per_page=100" \
   --jq '.[] | select(has("pull_request") | not) | {number,title,state,labels:[.labels[].name],assignees:[.assignees[].login],updated_at,closed_at,html_url}'
+
+# Para cada número de epic no escopo aprovado (atribua `EPIC_NUMBER` antes),
+# releia a hierarquia nativa. Ela dá contexto/progresso; nunca substitui
+# dependências do DAG nem autoridade do Project.
+gh api --paginate "repos/$OWNER/$REPO/issues/$EPIC_NUMBER/sub_issues?per_page=100" \
+  --jq '.[] | {number,id,title,state}'
 
 gh api --paginate "repos/$OWNER/$REPO/pulls?state=all&per_page=100" \
   --jq '.[] | {number,title,state,draft,head:.head.ref,base:.base.ref,merged_at,closed_at,html_url}'
@@ -798,7 +837,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - [ ] Área/módulos conhecidos (paths do PROJECT_MAP)
 - [ ] Priority + effort estimados com evidência
 - [ ] Dependências resolvidas **ou** explicitamente aceitas
-- [ ] Não é XL sem split (XL volta pro backlog como epics filhos)
+- [ ] Não é XL sem split (XL volta ao backlog; uma epic-pai opcional pode agrupar as filhas, mas nunca fica `Ready`)
 - [ ] Não conflita com issue/PR/claim/branch/worktree já ativos no mesmo pedaço
 - [ ] Para paralelo: `writeScopes`, recursos exclusivos e recursos de validação estão fundamentados; qualquer independência desconhecida força serialização
 - [ ] Impacto de regressão mapeado: jornadas/contratos anteriores, testes existentes e comandos obrigatórios estão identificados
