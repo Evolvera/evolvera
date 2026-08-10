@@ -202,6 +202,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   toolsModule.registerMemoryTools(pi, operations);
   commandsModule.registerMemoryCommands(pi, {
     status: operations.status,
+    plasticStatus: (ctx: any) => coordinator.getStatus(ctx),
     view: operations.view,
     propose: (args: JsonObject, ctx: any) => {
       if (typeof ctx?.cwd !== "string" || !isAbsolute(ctx.cwd)) return operations.unavailable("project promotion");

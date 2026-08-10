@@ -207,6 +207,48 @@ function spanFor(entries: SessionEntry[]): SourceSpan {
 function sameBinding(left: SessionBinding, right: SessionBinding): boolean {
   return left.sessionId === right.sessionId && left.generation === right.generation && left.branchId === right.branchId;
 }
+function exactCurrentBranchSpan(cycle: CycleClosedData, branchEntries: readonly SessionEntry[]): boolean {
+  if (cycle.status !== "complete" && cycle.status !== "empty-valid") return false;
+  const source = ledgerSourceEntries([...branchEntries]);
+  const sourceIds = source.flatMap((entry) => typeof entry.id === "string" ? [entry.id] : []);
+  if (sourceIds.length !== source.length || new Set(sourceIds).size !== sourceIds.length) return false;
+  const start = sourceIds.indexOf(cycle.sourceStartId);
+  const end = sourceIds.indexOf(cycle.sourceEndId);
+  if (start < 0 || end < start || end - start + 1 !== cycle.sourceEntryIds.length) return false;
+  const span = source.slice(start, end + 1);
+  return cycle.sourceStartId === cycle.sourceEntryIds[0]
+    && cycle.sourceEndId === cycle.sourceEntryIds.at(-1)
+    && cycle.completedTurnEndId === cycle.sourceEndId
+    && span.every((entry, index) => entry.id === cycle.sourceEntryIds[index])
+    && digestSourceEntries(span) === cycle.sourceDigest
+    && isTerminalAssistantEntry(span.at(-1)!);
+}
+
+/**
+ * Rebind only a closed cycle whose existing stable session id and exact
+ * content-addressed source ancestry prove it belongs to this current branch.
+ * The returned binding is an in-memory selector view; the durable record is
+ * never rewritten and ordinary queue/attempt identity remains exact.
+ */
+export function rebindClosedCycleForLineage(
+  cycle: CycleClosedData,
+  binding: SessionBinding,
+  branchEntries: readonly SessionEntry[],
+): CycleClosedData | undefined {
+  if (sameBinding(cycle, binding)) return cycle;
+  if (!binding.branchId || cycle.sessionId !== binding.sessionId || !exactCurrentBranchSpan(cycle, branchEntries)) return undefined;
+  return { ...cycle, ...binding };
+}
+
+/** Collect current-binding closes plus provable same-session rebind views. */
+export function closedCyclesForBinding(branchEntries: readonly SessionEntry[], binding: SessionBinding): CycleClosedData[] {
+  return branchEntries.flatMap((entry) => {
+    if (!isPlasticRecord(entry) || entry.customType !== PLASTIC_CYCLE_CLOSED) return [];
+    const rebound = rebindClosedCycleForLineage(entry.data, binding, branchEntries);
+    return rebound ? [rebound] : [];
+  });
+}
+
 function sameSpan(left: SourceSpan, right: SourceSpan): boolean {
   return left.sourceStartId === right.sourceStartId && left.sourceEndId === right.sourceEndId
     && left.completedTurnEndId === right.completedTurnEndId && left.sourceDigest === right.sourceDigest

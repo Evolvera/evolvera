@@ -72,6 +72,7 @@ try {
   process.chdir(projectRoot);
   const pi = fakePi();
   await rootModule.default(pi);
+  assert.ok(pi.calls.commands.has("plastic:status"), "plastic:status is registered alongside the existing memory commands");
   const sessionManager = {
     getSessionId: () => "command-session",
     getEntries: () => entries,
@@ -97,6 +98,19 @@ try {
   const second = proposal("Conflicting queued fact", "second queued body", "second");
   for (const item of [first, second]) custom(types.PLASTIC_PROJECT_PROPOSAL_RECORDED, { schemaVersion: 1, ...binding, proposalId: item.proposalId, sourceDigest, projectId, candidate: item.value, source });
   const invoke = (name, args = "") => pi.calls.commands.get(name).handler(args, ctx);
+  const beforeStatusEntries = entries.map((entry) => JSON.stringify(entry));
+  const beforeStatusFiles = snapshotProject();
+  const plasticStatus = await invoke("plastic:status");
+  assert.equal(plasticStatus.status, "ready");
+  assert.deepEqual(plasticStatus.context, { tokens: null, window: null });
+  assert.equal(Number.isSafeInteger(plasticStatus.binding.generation), true);
+  assert.equal(plasticStatus.lastCompactionDiagnostic, null);
+  assert.deepEqual(entries.map((entry) => JSON.stringify(entry)), beforeStatusEntries, "plastic:status does not append session entries");
+  assert.deepEqual(snapshotProject(), beforeStatusFiles, "plastic:status does not write project files");
+  const plasticStatusText = JSON.stringify(plasticStatus);
+  for (const forbidden of ["command-session", "source-user", "source-answer", "first queued body", "second queued body"]) {
+    assert.equal(plasticStatusText.includes(forbidden), false, `plastic:status does not expose ${forbidden}`);
+  }
   const accepted = await invoke("memory:accept");
   assert.equal(accepted.status, "published", accepted.reason);
   assert.equal(accepted.decision, "accepted");
@@ -139,7 +153,7 @@ try {
   const manualPublished = await invoke("memory:accept", JSON.stringify(manual));
   assert.equal(manualPublished.status, "published");
   assert.equal(manualPublished.proposalId, undefined, "manual JSON is not a queue decision");
-  console.log("PLASTIC_MEMORY_PROPOSAL_COMMANDS: PASS (FIFO guarded accept, conflict retention, no-write reject, durable decisions, and manual JSON compatibility)");
+  console.log("PLASTIC_MEMORY_PROPOSAL_COMMANDS: PASS (read-only plastic:status registration, FIFO guarded accept, conflict retention, no-write reject, durable decisions, and manual JSON compatibility)");
 } finally {
   process.chdir(repositoryRoot);
   rmSync(sandbox, { recursive: true, force: true });
