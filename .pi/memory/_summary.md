@@ -8,8 +8,8 @@
 ## Architecture Map
 
 - Source: `.pi/memory/architecture.json`; generated self-contained viewer: `.pi/memory/architecture.html`.
-- Snapshot head: `2a9b6db578393b318a70b917f512c6d066da2782`; status: `CURRENT`.
-- Counts: actors 10; components 55; data objects 18; relationships 37; flows 8; evidence 27; gaps 4.
-- Critical flows: `terminal-request-flow`, `planned-delivery-flow`, `project-memory-update-flow`, `install-update-flow`, `studio-rpc-interface-flow`, `flow-issue-delivery-flow`, `website-production-flow`, `mcp-tool-flow`.
+- Snapshot head: `9bdf6f5ee0f84bf66d88c27c5a4c6536e3a984f6`; status: `CURRENT`.
+- Counts: actors 9; components 54; data objects 18; relationships 36; flows 7; evidence 26; gaps 4.
+- Critical flows: `terminal-request-flow`, `planned-delivery-flow`, `project-memory-update-flow`, `install-update-flow`, `studio-rpc-interface-flow`, `flow-issue-delivery-flow`, `website-production-flow`.
 - Gaps: open `interface-dockerfile-version-drift`; accepted `mcp-adapter-internals`, `vscode-bridge-source-external`, `live-delivery-state-excluded`.
 - For architecture-sensitive work, inspect targeted JSON records and their `evidenceIds`, then verify the referenced repository evidence.

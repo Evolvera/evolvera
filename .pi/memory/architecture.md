@@ -7,7 +7,7 @@
 
 Evolvera PI is organized into six internal systems: the orchestration control plane owns routing and outcome closure; the workflow skill library defines repeatable scout, planning, build, testing, Flow, website, and research workflows; the runtime extension platform adds PI hooks, tools, configuration, subagents, MCP integration, and persistence; the project-memory system keeps durable Markdown plus normalized architecture data; PI Studio provides a local browser-to-RPC workspace; and the installation/distribution system deploys versioned checkout assets into the global PI runtime.
 
-The external boundary contains GitHub delivery services, model providers, Context7 MCP, and the VS Code client. These are represented only to the extent documented or configured in this repository.
+The external boundary contains GitHub delivery services, model providers, and the VS Code client. These are represented only to the extent documented or configured in this repository.
 
 ## Durable rules
 

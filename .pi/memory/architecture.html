@@ -55,9 +55,9 @@
     "repository": "https://github.com/Evolvera/evolvera"
   },
   "snapshot": {
-    "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782",
-    "generatedAt": "2026-07-23T19:17:57Z",
-    "lastVerifiedAt": "2026-07-23T19:17:57Z",
+    "sourceHead": "9bdf6f5ee0f84bf66d88c27c5a4c6536e3a984f6",
+    "generatedAt": "2026-08-26T20:39:53Z",
+    "lastVerifiedAt": "2026-08-26T20:39:53Z",
     "scope": "Tracked harness control plane, workflows, runtime extensions, PI Studio, installation, and documented external boundaries; excludes sessions, caches, plans, recovery artifacts, backups, secrets, and live delivery state.",
     "confidence": "known"
   },
@@ -132,15 +132,6 @@
       "confidence": "known",
       "evidenceIds": [
         "runtime-settings"
-      ]
-    },
-    {
-      "id": "context7-mcp",
-      "name": "Context7 MCP",
-      "kind": "external-system",
-      "confidence": "known",
-      "evidenceIds": [
-        "mcp-context7"
       ]
     },
     {
@@ -260,17 +251,6 @@
       "confidence": "known",
       "evidenceIds": [
         "runtime-settings"
-      ]
-    },
-    {
-      "id": "context7-service",
-      "name": "Context7 service",
-      "kind": "external",
-      "level": 1,
-      "parentId": "external-ecosystem",
-      "confidence": "known",
-      "evidenceIds": [
-        "mcp-context7"
       ]
     },
     {
@@ -912,7 +892,7 @@
       ],
       "confidence": "known",
       "evidenceIds": [
-        "mcp-context7"
+        "unix-installer"
       ]
     },
     {
@@ -1443,20 +1423,6 @@
         "unix-installer"
       ],
       "confidence": "known"
-    },
-    {
-      "id": "mcp-uses-context7",
-      "name": "MCP adapter uses Context7",
-      "kind": "uses",
-      "fromId": "mcp-adapter",
-      "toId": "context7-service",
-      "dataObjectIds": [
-        "mcp-configuration"
-      ],
-      "evidenceIds": [
-        "mcp-context7"
-      ],
-      "confidence": "inferred"
     },
     {
       "id": "vscode-calls-runtime",
@@ -2219,84 +2185,6 @@
         "website-pipeline"
       ],
       "confidence": "known"
-    },
-    {
-      "id": "mcp-tool-flow",
-      "name": "Lazy MCP tool call",
-      "type": "runtime",
-      "actorIds": [
-        "pi-orchestrator",
-        "context7-mcp"
-      ],
-      "entrypointIds": [
-        "runtime-configuration"
-      ],
-      "steps": [
-        {
-          "id": "mcp-tool-flow-step-1",
-          "order": 1,
-          "action": "Runtime reads MCP configuration",
-          "componentIds": [
-            "runtime-configuration"
-          ],
-          "relationshipIds": [
-            "core-reads-config"
-          ],
-          "dataObjectIds": [
-            "mcp-configuration"
-          ]
-        },
-        {
-          "id": "mcp-tool-flow-step-2",
-          "order": 2,
-          "action": "PI core invokes adapter",
-          "componentIds": [
-            "pi-core-runtime",
-            "mcp-adapter"
-          ],
-          "relationshipIds": [
-            "core-uses-mcp"
-          ],
-          "dataObjectIds": [
-            "mcp-configuration"
-          ]
-        },
-        {
-          "id": "mcp-tool-flow-step-3",
-          "order": 3,
-          "action": "Adapter lazily starts Context7 process",
-          "componentIds": [
-            "mcp-adapter",
-            "context7-service"
-          ],
-          "relationshipIds": [
-            "mcp-uses-context7"
-          ],
-          "dataObjectIds": [
-            "mcp-configuration"
-          ]
-        },
-        {
-          "id": "mcp-tool-flow-step-4",
-          "order": 4,
-          "action": "Tool result returns to orchestrator",
-          "componentIds": [
-            "pi-core-runtime"
-          ],
-          "relationshipIds": [],
-          "dataObjectIds": []
-        }
-      ],
-      "outcomes": [
-        "Context7 tool result returned through adapter"
-      ],
-      "failureModes": [
-        "Package internals and process behavior are inferred outside this repository"
-      ],
-      "evidenceIds": [
-        "mcp-context7"
-      ],
-      "confidence": "inferred"
     }
   ],
   "evidence": [
@@ -2378,14 +2266,6 @@
       "startLine": 1,
       "endLine": 3,
       "claim": "Subagent package concurrency is configured with maxConcurrent 8.",
-      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
-    },
-    {
-      "id": "mcp-context7",
-      "path": "config/mcp.json",
-      "startLine": 1,
-      "endLine": 12,
-      "claim": "MCP configuration declares a lazy Context7 server launched through npx.",
       "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
     },
     {
@@ -2536,7 +2416,6 @@
       "impact": "The map can evidence configuration and package use, but not adapter implementation details.",
       "question": "Which exact lifecycle and transport semantics does the external pi-mcp-adapter package implement?",
       "evidenceIds": [
-        "mcp-context7",
         "unix-installer"
       ]
     },
