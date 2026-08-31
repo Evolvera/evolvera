@@ -37,7 +37,7 @@ export function registerUserAttentionNotifier(
   notify: (title: string, body: string) => void = nativeNotify,
   notificationDelayMs = NOTIFICATION_DELAY_MS,
 ) {
-  let enabled = process.env.PI_ATTENTION_NOTIFICATIONS !== "0";
+  let enabled = process.env.PI_ATTENTION_NOTIFICATIONS !== "0" && !process.env.ORCA_PANE_KEY;
   let primaryOrchestrator = false;
   let lifecycleGeneration = 0;
   let pendingNotification: ReturnType<typeof setTimeout> | undefined;
