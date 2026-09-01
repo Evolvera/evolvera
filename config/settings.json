@@ -8,7 +8,8 @@
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents",
     "npm:pi-alibaba-models@1.0.14",
-    "npm:@narumitw/pi-goal@0.43.0"
+    "npm:@narumitw/pi-goal@0.43.0",
+    "npm:@gotgenes/pi-anthropic-auth@2.0.6"
   ],
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",
