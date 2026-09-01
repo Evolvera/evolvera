@@ -86,8 +86,20 @@ assert.equal(selected.contextWindow, 450_000);
 
 const modelsConfig = JSON.parse(read("config/models.json"));
 const runtimeModelsConfig = JSON.parse(read("models.json"));
-assert.equal(Object.hasOwn(modelsConfig.providers, "anthropic"), false);
 assert.deepEqual(runtimeModelsConfig, modelsConfig);
+const fable51 = modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-fable-5-1");
+assert.deepEqual(fable51, {
+  id: "claude-fable-5-1",
+  name: "Claude Fable 5.1",
+  api: "anthropic-messages",
+  reasoning: true,
+  thinkingLevelMap: { off: null, xhigh: "xhigh", max: "max" },
+  input: ["text", "image"],
+  contextWindow: 450_000,
+  maxTokens: 128_000,
+  cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+  compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+});
 const gpt56CodexModels = modelsConfig.providers["openai-codex"].models.filter(({ id }) => id.startsWith("gpt-5.6-"));
 assert.deepEqual(gpt56CodexModels.map(({ id }) => id), ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 for (const model of gpt56CodexModels) {
