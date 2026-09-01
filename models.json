@@ -40,6 +40,34 @@
         }
       ]
     },
+    "anthropic": {
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "name": "Claude Fable 5.1",
+          "api": "anthropic-messages",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 450000,
+          "maxTokens": 128000,
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cacheRead": 0.25,
+            "cacheWrite": 12.5
+          },
+          "compat": {
+            "forceAdaptiveThinking": true,
+            "supportsStrictTools": true
+          }
+        }
+      ]
+    },
     "openai-codex": {
       "models": [
         {
