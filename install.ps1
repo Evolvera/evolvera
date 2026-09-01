@@ -189,6 +189,13 @@ if ($piCmd) {
 
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
+
+    Info "pi-anthropic-auth..."
+    & pi install npm:@gotgenes/pi-anthropic-auth@2.0.6 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a compatibilidade OAuth Anthropic." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-anthropic-client-version.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "A compatibilidade OAuth Anthropic recusou o patch de versao do cliente." }
+    Info "Compatibilidade OAuth Anthropic verificada"
 }
 
 # Activating settings is intentionally the final staging write.

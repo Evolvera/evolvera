@@ -143,6 +143,16 @@ node scripts/test/patch-pi-083-threshold-cancel.smoke.mjs
 
 Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução futura de um instalador pode aplicá-lo ao pacote global correspondente e exige confirmação nova para essa consequência; a smoke não é prova de uma campanha live.
 
+### Compatibilidade OAuth do Claude Fable 5.1
+
+O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@0.83.0` e `@gotgenes/pi-anthropic-auth@2.0.6`, alterando somente os anchors conhecidos para reportar Claude Code `2.1.257`. Isso é necessário porque o OAuth do Fable 5.1 exige Claude Code `2.1.251+`; o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
+
+A operação é fail-closed, idempotente, atômica por arquivo, rollback-safe entre os dois alvos e preserva o modo e os bytes fora dos anchors. Valide-a somente com a fixture descartável:
+
+```bash
+node scripts/test/patch-anthropic-client-version.smoke.mjs
+```
+
 ### Ativação, colisões e atualização
 
 A ativação é deferred e collision-aware quando o extension é disponibilizado manualmente no runtime. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito. Os instaladores atuais não copiam o extension nem ativam sua configuração.
