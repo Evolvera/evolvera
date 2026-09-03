@@ -79,8 +79,10 @@ product repair owner.
    contract. Do not perform a general diff review.
 2. **Cold-use the harness.** Starting from PROJECT_ROOT and with no hidden shell
    state, follow the README Agent Quickstart literally. Run documented `help`,
-   `doctor`, `list`, and `coverage` commands. Manifest, README, commands, and
-   paths must agree. Any tribal knowledge required is a harness gap.
+   `doctor`, `list`, and `coverage` commands. The manifest must identify the
+   preflight command and its exact required output, `APP_VALIDATOR_PREFLIGHT=PASS`.
+   Manifest, README, commands, and paths must agree. Any tribal knowledge
+   required is a harness gap.
 3. **Verify safety receipt.** Independently check command/config/setup/teardown
    reachability for every device, filesystem root, DB/schema, storage, cache,
    queue, index, service, and provider. Execute only `NO_STATEFUL_RESOURCES` or
@@ -138,9 +140,11 @@ Evidence gaps: <environment/resource/provider/contract gaps or none>
 Next: <PASS handoff | harness builder | product repair | user/environment action>
 ```
 
-`PASS` requires all selected acceptance and preserved journeys to pass on
-TARGET with direct device observation and declared oracles. Claim whole-app
-coverage only for COMPLETE when every material app surface is inventoried, no
-material coverage gap remains, and the full suite passed. Never turn a harness
-gap, unavailable provider, unsafe resource, screenshot-only observation, or
-retry success into PASS.
+`PASS` requires cold-use and preflight to pass; every resource and teardown
+boundary to be verified safe; all selected acceptance and preserved journeys to
+pass on TARGET with direct device observation and declared oracles; the
+protected-resource postcheck to pass; and no harness or required-evidence gap
+to remain. Claim whole-app coverage only for COMPLETE when every material app
+surface is inventoried, no material coverage gap remains, and the full suite
+passed. Never turn a harness gap, unavailable provider, unsafe resource,
+screenshot-only observation, or retry success into PASS.

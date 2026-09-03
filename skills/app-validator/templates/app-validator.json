@@ -1,6 +1,7 @@
 {
-  "$schema_note": "Generic bootstrap template. Copy into the authorized test-only harness root and replace every <placeholder> before runtime execution. Existing project-native manifests may keep their own schema.",
+  "$schema_note": "Generic bootstrap template. Copy into the authorized test-only harness root and replace every <placeholder> before runtime execution. Unless explicitly absolute, paths resolve from PROJECT_ROOT. Existing project-native manifests may keep their own schema.",
   "manifest_version": 1,
+  "path_base": "PROJECT_ROOT",
   "harness_root": "qa/app-validator",
   "documentation": {
     "readme": "qa/app-validator/README.md",
@@ -8,6 +9,10 @@
     "commands_run_from": "PROJECT_ROOT"
   },
   "entrypoint": "qa/app-validator/bin/app-validator.mjs",
+  "preflight": {
+    "command": "node qa/app-validator/bin/app-validator.mjs doctor",
+    "required_output": "APP_VALIDATOR_PREFLIGHT=PASS"
+  },
   "commands": {
     "help": "node qa/app-validator/bin/app-validator.mjs help",
     "doctor": "node qa/app-validator/bin/app-validator.mjs doctor",
@@ -62,8 +67,10 @@
   },
   "evidence": {
     "root_env": "APP_VALIDATOR_EVIDENCE_ROOT",
-    "permissions": "0600",
-    "artifacts": ["ui-tree", "screenshots", "logs", "runner-result"]
+    "run_path": "$APP_VALIDATOR_EVIDENCE_ROOT/{run_id}",
+    "directory_permissions": "0700",
+    "file_permissions": "0600",
+    "artifacts": ["ui-tree", "screenshots", "logs", "runner-result", "validation-report"]
   },
   "maintenance": {
     "authoritative_harness": true,
@@ -73,7 +80,7 @@
   },
   "findings": {
     "root": "qa/app-validator/findings",
-    "pitfalls": "qa/app-validator/PITFALLS.md",
-    "validation_reports": "qa/app-validator/VALIDATION_<head8>.md"
-  }
+    "pitfalls": "qa/app-validator/PITFALLS.md"
+  },
+  "validation_report": "$APP_VALIDATOR_EVIDENCE_ROOT/{run_id}/VALIDATION_{head8}.md"
 }
