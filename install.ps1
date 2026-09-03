@@ -179,7 +179,7 @@ if ($piCmd) {
     & pi install npm:pi-mcp-adapter 2>$null
 
     Info "pi-subagents..."
-    & pi install npm:@tintinweb/pi-subagents 2>$null
+    & pi install npm:@tintinweb/pi-subagents@0.18.2 2>$null
 
     Info "pi-alibaba-models..."
     & pi install npm:pi-alibaba-models@1.0.14 2>$null

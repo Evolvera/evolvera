@@ -123,7 +123,7 @@ fi
 step "PI Packages"
 if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
-    pi install npm:@tintinweb/pi-subagents 2>/dev/null && info "pi-subagents" || true
+    pi install npm:@tintinweb/pi-subagents@0.18.2 2>/dev/null && info "pi-subagents" || true
     pi install npm:pi-alibaba-models@1.0.14 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
     pi install npm:@gotgenes/pi-anthropic-auth@2.0.6
