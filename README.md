@@ -289,7 +289,7 @@ prova independente necessária
   → teste pós-build e/ou validator
 
 prova de app em emulator/simulator
-  → app-validator descobre, cria ou mantém o harness test-only e valida o device
+  → skill app-validator: scout entende → builder mantém harness → app-validator valida device
 
 website
   → workflow específico de website ou Home Preview

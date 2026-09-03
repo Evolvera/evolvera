@@ -6,6 +6,8 @@ Outcome exercised: <approved behavior and affected capabilities>
 Platforms/devices: <platforms and sanitized identifiers>
 Harness: REUSED | EXTENDED | BOOTSTRAPPED — <authoritative root and exact changed files>
 Harness maintenance: <HARNESS_DRIFT/CONTRACT_CHANGE items, reason, and authorizing contract evidence | none>
+Coverage map: `<harness-root>/COVERAGE.md` — COVERED <n> | PARTIAL <n> | GAP <n> | PROVIDER_BOUND <n> — changed rows: <list | none>
+Whole-app claim: YES — full suite passed, no material gaps | NO — verdict bounded to <scope>
 Agent quickstart: <harness-root>/README.md — <documented command surface>
 Cold-use check: PASS | FAIL — `<help>`; `<doctor>`; `<list>`; <observations>
 Acceptance journeys:
@@ -31,8 +33,10 @@ Next: <bounded product repair | harness repair | fresh validation | validator/qa
 
 - Working directory: `<PROJECT_ROOT>`
 - Help/doctor: `<copy-paste commands>`
-- List and run one journey: `<copy-paste commands>`
+- List journeys and inspect coverage/gaps: `<copy-paste commands>`
+- Run one journey: `<copy-paste command>`
 - Run preserved/smoke suite: `<copy-paste command>`
+- Run complete known suite: `<copy-paste command>`
 - Find evidence: `<path/command using run_id>`
 - Safe run-owned teardown: `<copy-paste command>`
 - Required environment names: `<names only; no values>`
