@@ -4,12 +4,12 @@
 Target: <base>..<head>
 Outcome exercised: <approved behavior and affected capabilities>
 Platforms/devices: <platforms and sanitized identifiers>
-Harness: REUSED | EXTENDED | BOOTSTRAPPED — <authoritative root and exact changed files>
-Harness maintenance: <HARNESS_DRIFT/CONTRACT_CHANGE items, reason, and authorizing contract evidence | none>
-Coverage map: `<harness-root>/COVERAGE.md` — COVERED <n> | PARTIAL <n> | GAP <n> | PROVIDER_BOUND <n> — changed rows: <list | none>
+Harness: REUSED | EXTENDED | BOOTSTRAPPED — <authoritative root; builder-supplied changed files | reused unchanged>
+Harness maintenance: <builder-supplied HARNESS_DRIFT/CONTRACT_CHANGE items, reason, and authorizing contract evidence | none>
+Coverage map: `<harness-root>/COVERAGE.md` — COVERED <n> | PARTIAL <n> | GAP <n> | PROVIDER_BOUND <n> — builder-supplied changed rows: <list | none>
 Whole-app claim: YES — full suite passed, no material gaps | NO — verdict bounded to <scope>
 Agent quickstart: <harness-root>/README.md — <documented command surface>
-Cold-use check: PASS | FAIL — `<help>`; `<doctor>`; `<list>`; <observations>
+Cold-use/preflight: PASS | FAIL — `<help>`; `<doctor>` → `APP_VALIDATOR_PREFLIGHT=PASS`; `<list>`; <observations>
 Acceptance journeys:
 - J1 <title> — PASS | FAIL — `<journey path>` — step/oracle: <evidence>
 - J2 <title> — PASS | FAIL — `<journey path>` — step/oracle: <evidence>
@@ -23,11 +23,14 @@ Failures/flakiness: <first failure, reproduction, retries | none>
 Evidence gaps: <unsafe/unavailable/provider-bound evidence | none>
 Next: <bounded product repair | harness repair | fresh validation | validator/qa handoff | user/environment decision>
 
-## Harness change receipt
+## Supplied harness checkpoint receipt
 
-| File | Classification | Why required | Contract evidence | Validation |
+Use `not applicable — harness reused unchanged` when no builder changed the
+harness for this target. Never reconstruct or invent builder work.
+
+| File | Classification | Why required | Contract evidence | Builder validation |
 |---|---|---|---|---|
-| `<path>` | `BOOTSTRAP | HARNESS_DRIFT | CONTRACT_CHANGE` | <reason> | <OUTCOME/PRESERVE/CHANGE/REMOVE item> | <command/observation> |
+| `<builder-supplied path>` | `BOOTSTRAP | HARNESS_DRIFT | CONTRACT_CHANGE` | <reason> | <OUTCOME/PRESERVE/CHANGE/REMOVE item> | <supplied command/observation> |
 
 ## Reuse instructions verified
 

@@ -11,11 +11,13 @@ Produce trustworthy emulator/simulator evidence without making one agent both
 write and certify its own tests. This skill is the orchestration authority. It
 coordinates existing specialist roles:
 
-- the **orchestrator** confirms scope and owns checkpoints/external actions;
+- the **orchestrator** confirms scope, owns checkpoints, and authorizes and
+  bounds every external/device action;
 - **scout** understands the app, user stories, affected journeys, harness, and
   resource boundaries;
 - **builder** creates or maintains test-only harness code and documentation;
-- **app-validator** independently runs the harness and observes the device;
+- **app-validator** independently executes only the expressly delegated,
+  documented run-owned commands and observes the device;
 - generic **qa** or **validator** may consume the resulting evidence when their
   separate scope is needed, but must not duplicate the same device journey.
 
@@ -219,7 +221,7 @@ The stable interface, run from `PROJECT_ROOT`, is:
 
 ```bash
 node qa/app-validator/bin/app-validator.mjs help
-node qa/app-validator/bin/app-validator.mjs doctor
+node qa/app-validator/bin/app-validator.mjs doctor  # preflight; must emit APP_VALIDATOR_PREFLIGHT=PASS
 node qa/app-validator/bin/app-validator.mjs list
 node qa/app-validator/bin/app-validator.mjs coverage
 node qa/app-validator/bin/app-validator.mjs run <journey> --run-id <id>
@@ -265,7 +267,8 @@ surface was inventoried, no material `PARTIAL/GAP/PROVIDER_BOUND` remains, and
 `full` passed on TARGET. Otherwise the verdict states the exact bounded scope.
 
 Large evidence is never committed. Store it under
-`$APP_VALIDATOR_EVIDENCE_ROOT/<run_id>/`:
+`$APP_VALIDATOR_EVIDENCE_ROOT/<run_id>/`, with directories mode 0700 and files
+mode 0600:
 
 ```text
 screenshots/
@@ -301,8 +304,10 @@ The app-validator agent returns the structure in
 `templates/VALIDATION_REPORT.md` as its response and optional external evidence
 report, never as a repository edit. It uses exactly one SHA-bound verdict:
 
-- `PASS` — all selected acceptance and preserved journeys passed with direct
-  device observation and declared oracles;
+- `PASS` — cold-use and preflight passed; every resource and teardown boundary
+  was verified safe; all selected acceptance and preserved journeys passed with
+  direct device observation and declared oracles; the protected-resource
+  postcheck passed; and no harness or required-evidence gap remains;
 - `BLOCKED` — a concrete reproducible app mismatch exists;
 - `UNVERIFIED` — no app defect was proven because harness, environment,
   resource, provider, contract, or evidence was insufficient/unsafe.
