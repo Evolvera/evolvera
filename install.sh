@@ -129,6 +129,8 @@ if command -v pi &>/dev/null; then
     pi install npm:@gotgenes/pi-anthropic-auth@2.0.6
     node "$SCRIPT_DIR/scripts/patch-anthropic-client-version.mjs"
     info "Compatibilidade OAuth Anthropic verificada"
+    node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
+    info "Normalização dos corpos de erro dos provedores verificada"
 fi
 
 # Activating settings is intentionally the final staging write.
