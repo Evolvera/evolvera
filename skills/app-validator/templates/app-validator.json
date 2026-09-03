@@ -1,0 +1,72 @@
+{
+  "$schema_note": "Generic bootstrap template. Copy into the authorized test-only harness root and replace every <placeholder> before runtime execution. Existing project-native manifests may keep their own schema.",
+  "manifest_version": 1,
+  "harness_root": "<repo-relative-test-only-root>",
+  "documentation": {
+    "readme": "<harness-root>/README.md",
+    "quickstart_heading": "Agent Quickstart",
+    "commands_run_from": "PROJECT_ROOT"
+  },
+  "entrypoint": "<single stable repo-relative command or script>",
+  "commands": {
+    "help": "<command showing supported subcommands and arguments>",
+    "doctor": "<static command that prints APP_VALIDATOR_PREFLIGHT=PASS only after all gates pass>",
+    "list_journeys": "<command listing journey IDs and platforms>",
+    "run_journey": "<command template using {journey} and {run_id}>",
+    "run_smoke": "<command template using {run_id}>",
+    "evidence": "<command or documented path lookup using {run_id}>",
+    "teardown": "<safe command limited to resources created by {run_id}>"
+  },
+  "platforms": {
+    "<android|ios|desktop>": {
+      "app_target": "<package-id, bundle-id, executable, or launch target>",
+      "device_selector_env": "<environment-variable-name>",
+      "runner": "<repo-relative runner path or existing framework command>",
+      "ui_oracle": "<accessibility, UIAutomator, XCTest, or platform-state primitive>"
+    }
+  },
+  "journeys": {
+    "root": "<harness-root>/journeys",
+    "schema": "<harness-root>/<schema-or-step-vocabulary-doc>",
+    "fixtures_root": "<harness-root>/fixtures",
+    "smoke_suite": "<journey ID, suite file, or command-owned selector>"
+  },
+  "resources": [
+    {
+      "kind": "<emulator|simulator|database|filesystem|service|cache|other>",
+      "identity_source": "<sanitized manifest field or environment-variable-name>",
+      "ownership_proof": "<how this run proves DISPOSABLE_VERIFIED or NO_STATEFUL_RESOURCES>",
+      "created_by": "<command and run_id relationship>",
+      "fallback_forbidden": true,
+      "teardown": "<run-owned teardown command or not-applicable>"
+    }
+  ],
+  "network": {
+    "policy": "<deny|explicit-allowlist>",
+    "allowed_hosts": []
+  },
+  "credentials": {
+    "source": "<0600 credential-file path env name or not-required>",
+    "secret_input_primitive": "<harness primitive that never logs or screenshots secrets>"
+  },
+  "oracles": {
+    "ui": ["<machine-readable UI/platform oracle>"],
+    "non_ui": ["<API, DB, log, filesystem, or platform-state oracle when authorized>"]
+  },
+  "evidence": {
+    "root_env": "<environment-variable-name pointing outside the repo>",
+    "permissions": "0600",
+    "artifacts": ["ui-tree", "screenshots", "logs", "runner-result"]
+  },
+  "maintenance": {
+    "authoritative_harness": true,
+    "classifications": ["HARNESS_DRIFT", "APP_REGRESSION", "CONTRACT_CHANGE"],
+    "readme_must_match_manifest": true,
+    "cold_use_check_required": true
+  },
+  "findings": {
+    "root": "<harness-root>/findings",
+    "pitfalls": "<harness-root>/PITFALLS.md",
+    "validation_reports": "<harness-root>/VALIDATION_<head8>.md"
+  }
+}
