@@ -1,271 +1,318 @@
 ---
 name: app-validator
-description: Autonomous device-driven validation for mobile and desktop app checkpoints. Use when acceptance requires observing the running app on an emulator or simulator. It understands the requested behavior and affected app surface, discovers and extends an existing test harness or bootstraps a minimal versioned test-only harness, executes reusable journeys with UI and non-UI evidence, and returns a SHA-bound PASS/BLOCKED/UNVERIFIED. Never edits product code.
+description: Orchestrates reliable mobile/desktop device validation after implementation. It aligns with the user on PARTIAL versus COMPLETE scope, uses scout to understand the app and user-story coverage, uses builder to create or maintain one documented versioned test harness, then launches the independent read-only app-validator agent to exercise the running app on an emulator/simulator and return a SHA-bound PASS/BLOCKED/UNVERIFIED. Use when device observation is required; the validator never edits product or harness code.
 ---
 
-# App Validator — Device-Driven Harness and Validation
+# App Validator — Orchestrated Device Validation
 
 ## Purpose
 
-Prove one implementation checkpoint on a running app. The validator first
-understands the outcome, changed surface, app architecture, and existing test
-capabilities. The harness is a means, not a prerequisite:
+Produce trustworthy emulator/simulator evidence without making one agent both
+write and certify its own tests. This skill is the orchestration authority. It
+coordinates existing specialist roles:
 
-- reuse an adequate harness;
-- extend an incomplete harness inside the authorized test-only boundary; or
-- when none exists, bootstrap the smallest project-native harness needed to
-  exercise the acceptance journey.
+- the **orchestrator** confirms scope and owns checkpoints/external actions;
+- **scout** understands the app, user stories, affected journeys, harness, and
+  resource boundaries;
+- **builder** creates or maintains test-only harness code and documentation;
+- **app-validator** independently runs the harness and observes the device;
+- generic **qa** or **validator** may consume the resulting evidence when their
+  separate scope is needed, but must not duplicate the same device journey.
 
-Exploratory taps, `adb`, `simctl`, screenshots, and UI-tree inspection are
-allowed during discovery, but every final check must be left as a reproducible
-journey, assertion, fixture, or documented pitfall. The agent may change tests
-and harness code; it never changes product/app/API code.
+The harness is a maintained, versioned companion to the app. The validator is
+not its author.
 
-This skill is the procedure authority. The `app-validator` agent executes it;
-the orchestrator owns the checkpoint, scope, external operations, and final
-delivery decision.
+## First decision: PARTIAL or COMPLETE
 
-## Relationship to other gates
+Determine the requested coverage before discovery or device work:
 
-| Evidence needed | Owner |
+| Mode | Meaning |
 |---|---|
-| Focused diff/PR review | `validator` |
-| Generic unit/integration/API/browser evidence at CORE or FULL | `qa` |
-| Emulator/simulator journey and device observation | `app-validator` |
+| `PARTIAL` | Prove one change/user story plus materially affected and required preserved journeys. Update the coverage map only for discovered impact. |
+| `COMPLETE` | Inventory every app root and evidenced user-facing capability in scope, close or declare every material coverage gap, and run the complete known device suite. |
 
-Use only the gates that materially improve confidence. Device evidence from
-`app-validator` may be supplied to `qa` or `validator`; they must not rerun the
-same journey merely to duplicate a phase label.
+If the user explicitly names the mode, use it. If a bounded issue/change is the
+clear target, `PARTIAL` is a valid explicit inference stated before execution.
+If “validate the app”, “cover everything”, or cost/scope is ambiguous, ask the
+user to choose `PARTIAL` or `COMPLETE` and explain the difference in one short
+question. Never silently call a partial run complete.
 
-## Required handoff
+“User history” means evidenced user stories, acceptance criteria, product docs,
+routes/screens, existing journeys/tests, and the approved conversation outcome.
+Do not dump the entire conversation into subagents: reconcile relevant history
+into the handoff. Undocumented business behavior remains a coverage `GAP`, not
+an invented requirement.
+
+## Role boundaries
+
+| Role | May inspect | May write repo | May run device | Verdict |
+|---|---|---|---|---|
+| Scout | app/docs/tests/harness/config | no | no | evidence report only |
+| Builder | scoped app context + test surfaces | exact test-only write set | only local static/fixture checks authorized by its task; never final certification | implementation COMPLETE/BLOCKED |
+| App Validator | target contract + harness + focused app context | **no** | yes, after resource proof | APP VALIDATION PASS/BLOCKED/UNVERIFIED |
+
+The app-validator agent never repairs product code, harness code, journeys,
+selectors, fixtures, docs, or oracles. A harness gap goes back to builder; a
+product mismatch goes to the product repair owner. Any change requires a fresh
+validator session against the new checkpoint.
+
+## Orchestration workflow
+
+Load `agent-guide` before launching scout or builder. Follow its capacity,
+handoff, write-set, resource, and stop rules rather than duplicating them here.
+
+### 1. Reconcile the validation contract
+
+Record:
 
 ```text
-PROJECT_ROOT       absolute repository root
-SKILL_ROOT         absolute path to this global skill
-TARGET             base..head SHA and changed files
-OUTCOME            approved behavior and affected capabilities
-                    (PRESERVE | CHANGE | REMOVE when applicable)
-TEST_WRITE_BOUNDARY absolute or repo-relative test-only roots the agent may
-                    create or modify; may be a bounded directory, not an
-                    exhaustive file list
-ENVIRONMENT_BOUNDARY allowed platforms/devices, credentials source, network
-                    policy, runtime services, and resource ownership evidence
-NOT_TO_DO           exact product paths, operations, and protected resources
-STOP_IF             ambiguity or unsafe/unavailable evidence boundaries
+MODE                 PARTIAL | COMPLETE
+PROJECT_ROOT         absolute repository root
+TARGET               base..head SHA and changed files
+OUTCOME              approved behavior/user stories
+CAPABILITIES         PRESERVE | CHANGE | REMOVE where applicable
+PLATFORMS             android | ios | desktop and required actors/devices
+KNOWN_CONSTRAINTS     credentials, network, providers, runtime services
+DONE                  exact journeys/evidence required for the selected mode
 ```
 
-Optional: acceptance examples, existing manifest/harness path, known launch
-commands, device selectors, and preserved journeys. A manifest is not required.
-The agent derives concrete journeys from OUTCOME, the focused diff, product
-contracts, and observed app behavior. If two plausible interpretations imply
-different product behavior, stop `UNVERIFIED: CONTRACT_AMBIGUITY`; do not invent.
+A device test is not authorized merely because the mode is known. Resource
+ownership is proved separately before execution.
 
-Missing `TEST_WRITE_BOUNDARY` blocks harness writes. Missing safe device or
-resource ownership blocks execution, not static harness construction.
+### 2. Scout the app and harness
 
-## Harness discovery and ownership
+Use a bounded scout when the app/harness is not already fully grounded;
+`COMPLETE` always requires repository-wide app-surface reconnaissance, sharded
+only at real platform/product boundaries under `agent-guide` rules.
 
-1. Inspect bounded project structure: platform roots, manifests/build files,
-   app entry points, changed files, existing unit/E2E/UI tests, CI commands,
-   device tooling, and test documentation.
-2. Search for an existing device harness and manifest. Prefer the established
-   project-native framework and layout; never create a parallel harness beside
-   one that can be extended.
-3. If no harness exists, choose the smallest conventional location inside
-   `TEST_WRITE_BOUNDARY` and copy `templates/app-validator.json` as the initial
-   manifest. Resolve every placeholder before execution. Record why this path
-   is the single authority.
-4. Keep harness responsibilities separate: journeys describe intent, runner
-   code drives devices, fixtures/seeds create synthetic state, oracles inspect
-   outcomes, and reports only summarize evidence.
-5. New dependencies, lockfile edits, downloads, or external services require
-   explicit handoff authorization. Otherwise prefer tools already present and
-   report the exact missing capability as `UNVERIFIED`.
+The scout reports exact evidence for:
 
-The project manifest may use a different schema if an existing harness already
-owns these concerns. Do not migrate a functioning harness merely to match this
-template.
+- app/platform roots, build and launch entry points;
+- evidenced user stories, actors, screens/routes, navigation/deep links,
+  permissions, happy/error/recovery states, offline/realtime/provider behavior;
+- existing unit, integration, UI/E2E tests and device tooling;
+- existing harness authority, manifest, commands, journeys, fixtures, oracles,
+  documentation, CI use, and drift;
+- coverage candidates classified `COVERED | PARTIAL | GAP | PROVIDER_BOUND`;
+- every stateful resource and destructive/setup/teardown hook reachable by
+  build, app, emulator/simulator, runner, and services;
+- smallest test-only write boundary and whether the existing harness can be
+  extended or the canonical fallback is required.
 
-## Harness usability contract
+Scout never creates the harness or decides product semantics. The orchestrator
+reconciles its report into an exact builder contract and resolves material
+ambiguity with the user.
 
-A harness is incomplete if the next agent must rediscover how to use it. Its
-single root `README.md` must begin with an **Agent Quickstart** containing:
+### 3. Decide whether builder work exists
 
-- prerequisites and supported platforms;
-- required environment variable names and credential-file locations, never
-  secret values;
-- copy-paste commands, run from `PROJECT_ROOT`, for `doctor`/preflight, listing
-  journeys, running one journey, running the preserved/smoke suite, locating
-  evidence, and safe run-owned teardown;
-- the journey schema/step vocabulary and one minimal valid example;
-- how to add or update a journey, fixture, oracle, finding, and pitfall;
-- exit codes, verdict meanings, common failures, and documented remediation;
-- explicit protected-resource and network boundaries.
+- Existing harness covers the selected contract, is current, and its documented
+  command surface works → skip builder and proceed to independent validation.
+- Harness missing, incomplete, stale, undocumented, or lacking required
+  journeys/oracles → launch builder with one exact test-only write boundary.
+- Required product behavior itself is missing → do not hide it in harness work;
+  route a separate product builder only when authorized.
 
-Prefer one stable harness entry point with subcommands over a collection of
-unrelated scripts. The manifest is the machine-readable source of truth and the
-README is its human/agent interface; they must name the same commands and paths.
-Do not create a second usage document when the harness root README can own this.
+The builder must:
 
-After creating or changing the harness, perform a **cold-use check**: from
-`PROJECT_ROOT`, execute the documented help/list and static doctor commands
-exactly as written, then execute the documented journey command only after the
-resource gate passes. No command may depend on shell history, implicit `cd`, an
-unrecorded environment variable, or knowledge held only by the creating agent.
-A failed cold-use check blocks `PASS`.
+1. reuse and converge the existing harness rather than add a parallel one;
+2. bootstrap the canonical fallback only when no maintainable harness exists;
+3. create/update manifest, runner/adapters, journeys, fixtures, oracles,
+   `COVERAGE.md`, findings schema/pitfalls, and root `README.md` only as required;
+4. classify maintenance as `HARNESS_DRIFT` or authorized `CONTRACT_CHANGE`;
+5. never delete a failing preserved journey, weaken an assertion, replace an
+   independent oracle with app-rendered UI text, or alter expected behavior
+   merely to make the run green;
+6. statically validate the harness and execute its documented help/list/doctor
+   interface against disposable fixtures, but not issue the final app verdict;
+7. report exact changed files and commands for orchestrator checkpoint review.
 
-## Continuous maintenance contract
+After harness changes, the orchestrator reviews the focused diff and binds the
+result to an exact checkpoint before app-validator runs. The builder never
+certifies its own harness.
 
-The harness is a versioned companion to the app and must evolve with approved
-product changes. At every checkpoint:
+### 4. Launch independent app-validator
 
-1. compare manifest commands, platform configuration, selectors, fixtures,
-   journey schemas, expected states, and oracles against TARGET and the current
-   app;
-2. classify each mismatch as `HARNESS_DRIFT`, `APP_REGRESSION`, or
-   `CONTRACT_CHANGE`;
-3. repair `HARNESS_DRIFT` inside `TEST_WRITE_BOUNDARY` and keep README,
-   manifest, journeys, and runner behavior synchronized;
-4. update an expectation for `CONTRACT_CHANGE` only when OUTCOME or the supplied
-   `PRESERVE | CHANGE | REMOVE` classification explicitly authorizes it;
-5. treat an unapproved behavior mismatch as `APP_REGRESSION`, never as permission
-   to rewrite the oracle.
+Give a fresh `app-validator` agent this self-contained handoff:
 
-Never delete a failing preserved journey, weaken an assertion, replace a
-non-UI oracle with UI text, or create a parallel harness merely to obtain green.
-When replacing an obsolete harness mechanism, migrate its still-valid journeys
-and leave one authoritative path. Report every harness change with its reason
-and the contract evidence that permitted it.
+```text
+MODE                   PARTIAL | COMPLETE
+PROJECT_ROOT           absolute repository root
+SKILL_ROOT             absolute global app-validator skill root
+TARGET                 exact base..head SHA; changed files
+OUTCOME                approved behavior and capability classifications
+ACCEPTANCE              numbered journeys and preserved suite
+HARNESS_ROOT           absolute path
+MANIFEST               absolute manifest path
+COVERAGE_MAP           absolute COVERAGE.md path
+DOCUMENTED_COMMANDS    help, doctor, list, coverage, run, smoke/full, evidence,
+                       teardown exactly as builder verified
+ENVIRONMENT            platform/device selectors and app/service commands
+RESOURCE_RECEIPT       sanitized ownership, destructive hooks, no-fallback,
+                       credentials/egress, teardown, protected resources
+EVIDENCE_ROOT          unique run-owned external path
+NOT_TO_DO              repo writes, product/harness repair, unsafe operations
+STOP_IF                ambiguity, drift, unknown resource, mutation, missing oracle
+```
 
-## Procedure
+The validator verifies TARGET, reads the harness Agent Quickstart, executes its
+documented interface, proves resources, drives the app, observes UI/platform
+state and independent non-UI oracles, and returns exactly one verdict. It may
+use ad-hoc device commands only to diagnose a failure; needing an undocumented
+step is `UNVERIFIED: HARNESS_GAP`, not permission to edit the harness.
 
-### 1. Bind and understand
+### 5. Route the result
 
-- Verify `git rev-parse HEAD` equals TARGET head.
-- Read the focused diff and affected product contracts only to determine what
-  runtime behavior needs proving; this is not a substitute for diff review.
-- Inspect the relevant app flow and existing tests.
-- Audit the existing harness for drift against TARGET and classify mismatches
-  under the Continuous maintenance contract before editing expectations.
-- Translate OUTCOME into numbered acceptance journeys plus preserved journeys.
-  Each journey names actors, initial state, actions, expected UI state, and an
-  independent oracle when one exists.
+- `PASS` → retain report/evidence and continue only to a distinct required
+  generic QA/PR review; do not rerun the device journey.
+- `BLOCKED: APP_MISMATCH` → hand the reproducible finding to the product repair
+  owner, then validate a new checkpoint with a fresh app-validator.
+- `UNVERIFIED: HARNESS_GAP` → hand the exact gap to builder, checkpoint the
+  harness repair, then launch a fresh app-validator.
+- `UNVERIFIED: ENVIRONMENT|RESOURCE|PROVIDER_BOUND` → stop for the named user or
+  environment action; do not weaken acceptance.
+- First failure remains evidence. A later pass is flaky unless a concrete fix
+  explains the delta.
 
-### 2. Discover, extend, or bootstrap the harness
+Two unsuccessful repair/validation cycles without a new hypothesis require
+re-grounding, not another blind retry.
 
-- Reuse existing journeys and helpers before adding new ones.
-- Extend only the missing capability needed by the acceptance map.
-- If absent, create a minimal manifest, stable command entry point, journey
-  schema, first journey, evidence capture, and README satisfying the Harness
-  usability contract inside `TEST_WRITE_BOUNDARY`; do not scaffold speculative
-  platforms or abstractions.
-- If an existing harness works but requires undocumented tribal knowledge,
-  update its root README and command surface as part of the bounded extension.
-- Validate the harness statically and run the cold-use help/list/doctor checks
-  before starting any app or device.
+## Harness standard
 
-### 3. Prove resource safety before execution
+### Existing harness wins
 
-Resolve the actual build/start/test commands and every reachable resource:
+Extend established project-native `e2e/`, `ui-tests/`, `integration_test/`, or
+similar authority when it can own the requirement. Do not migrate it merely to
+match this template and do not create a second active harness.
+
+### Canonical fallback
+
+Only when no maintainable device harness exists, builder creates:
+
+```text
+qa/app-validator/
+├── app-validator.json
+├── README.md
+├── COVERAGE.md
+├── bin/
+│   └── app-validator.mjs
+├── lib/
+│   ├── runner.mjs
+│   ├── device.mjs
+│   ├── evidence.mjs
+│   └── oracles/
+├── journeys/
+│   ├── schema.json
+│   ├── acceptance/
+│   ├── preserved/
+│   └── smoke/
+├── fixtures/
+├── findings/
+│   ├── schema.json
+│   └── F-NNN.json
+└── PITFALLS.md
+```
+
+Node is already a PI prerequisite, so this fallback uses dependency-free ESM
+unless an existing project-native runtime is demonstrably simpler.
+
+The stable interface, run from `PROJECT_ROOT`, is:
+
+```bash
+node qa/app-validator/bin/app-validator.mjs help
+node qa/app-validator/bin/app-validator.mjs doctor
+node qa/app-validator/bin/app-validator.mjs list
+node qa/app-validator/bin/app-validator.mjs coverage
+node qa/app-validator/bin/app-validator.mjs run <journey> --run-id <id>
+node qa/app-validator/bin/app-validator.mjs smoke --run-id <id>
+node qa/app-validator/bin/app-validator.mjs full --run-id <id>
+node qa/app-validator/bin/app-validator.mjs evidence --run-id <id>
+node qa/app-validator/bin/app-validator.mjs teardown --run-id <id>
+```
+
+Do not create unused platform adapters or abstractions. Journeys describe
+intent; runner/adapters drive devices; fixtures create synthetic state; oracles
+inspect outcomes; evidence code captures results.
+
+### Frictionless Agent Quickstart
+
+The harness-root `README.md` starts with **Agent Quickstart** and contains:
+
+- prerequisites, platforms, and required environment variable names;
+- copy-paste commands above, with exit codes and expected output;
+- journey vocabulary/schema and one minimal example;
+- how builder adds/updates journeys, fixtures, oracles, findings, and pitfalls;
+- common failures and documented remediation;
+- credentials, network, protected-resource, evidence, and teardown boundaries.
+
+Manifest is machine-readable authority; README is its human/agent interface.
+They must agree. Builder performs a cold-use check from `PROJECT_ROOT` with no
+shell-history or implicit-directory dependency.
+
+### Coverage and maintenance
+
+`COVERAGE.md` maps each evidenced capability/user story to actors, platforms,
+journeys, oracles, and status:
+
+- `COVERED` — executable evidence exists;
+- `PARTIAL` — some required path/state/oracle is missing;
+- `GAP` — no safe executable coverage yet;
+- `PROVIDER_BOUND` — required evidence depends on unavailable external behavior.
+
+Every product checkpoint may change the map. Scout identifies drift; builder
+updates authorized harness artifacts; validator checks the resulting checkpoint.
+A whole-app claim is allowed only in `COMPLETE` mode when every material app
+surface was inventoried, no material `PARTIAL/GAP/PROVIDER_BOUND` remains, and
+`full` passed on TARGET. Otherwise the verdict states the exact bounded scope.
+
+Large evidence is never committed. Store it under
+`$APP_VALIDATOR_EVIDENCE_ROOT/<run_id>/`:
+
+```text
+screenshots/
+ui-tree/
+logs/
+result.json
+VALIDATION_<head8>.md
+```
+
+Credentials remain outside Git through `APP_VALIDATOR_CREDENTIALS_FILE` mode
+0600. The versioned repo contains only sanitized paths/schemas, journeys, and
+maintenance documentation written by builder.
+
+## Stateful safety gate
+
+Before app/device execution, independently resolve all commands and reachable
 emulator/simulator data, filesystem roots, DB/schema, storage, cache, queue,
-search index, local service, and external provider.
+search index, service, and provider. Execute only `NO_STATEFUL_RESOURCES` or
+when every resource is uniquely run-owned `DISPOSABLE_VERIFIED`, synthetic,
+scoped, fallback-free, and teardown-bounded.
 
-Execute only when each is either `NO_STATEFUL_RESOURCES` or uniquely run-owned
-`DISPOSABLE_VERIFIED`, with synthetic data, scoped credentials, no fallback,
-and bounded teardown. A pre-existing simulator/AVD is not disposable merely
-because it is local or named test. If safe ownership cannot be proven, keep any
-static harness work and return `UNVERIFIED`; do not run it.
+A local/test name, pre-existing simulator/AVD, Docker, transaction, or backup is
+not proof. Unknown means `UNVERIFIED`; never run. Preflight must emit
+`APP_VALIDATOR_PREFLIGHT=PASS` with sanitized device/resource identities,
+destructive hooks, network policy, and protected boundary. Teardown touches
+only run-owned resources using documented graceful methods. Suspected protected
+mutation freezes all writes/runs; preserve evidence and do not retry, reset,
+restore, or reseed.
 
-Before the journey, preflight must emit `APP_VALIDATOR_PREFLIGHT=PASS` and a
-sanitized receipt containing device identity, resource identities, destructive
-hooks, network policy, and protected-resource boundary.
+## Validator verdict
 
-### 4. Exercise the running app
+The app-validator agent returns the structure in
+`templates/VALIDATION_REPORT.md` as its response and optional external evidence
+report, never as a repository edit. It uses exactly one SHA-bound verdict:
 
-- Start only the authorized app/services and emulator/simulator.
-- Use one shared `run_id` and synthetic actors/data.
-- Drive every acceptance journey and required preserved/smoke journey.
-- Prefer accessibility/UIAutomator trees and platform state as primary UI
-  evidence; screenshots or video support the finding but are not the sole
-  oracle when a machine-readable one exists.
-- Assert backend/API/database/log state when it is part of acceptance and the
-  resource is explicitly authorized and disposable.
-- Retain the first failure. A later pass makes the result flaky, never clean.
-- Any exploratory manual step needed to reach the result must become a reusable
-  harness step/journey or a pitfall entry before reporting.
+- `PASS` — all selected acceptance and preserved journeys passed with direct
+  device observation and declared oracles;
+- `BLOCKED` — a concrete reproducible app mismatch exists;
+- `UNVERIFIED` — no app defect was proven because harness, environment,
+  resource, provider, contract, or evidence was insufficient/unsafe.
 
-### 5. Close safely
-
-- Stop only processes started by this run, using graceful documented methods.
-- Teardown only run-owned disposable resources; never wipe, uninstall, reset,
-  restore, or delete a pre-existing device/resource.
-- Verify protected resources remained unreachable/unchanged.
-- Store screenshots/logs outside the repository when the manifest declares an
-  evidence root; store only paths and sanitized summaries in the report.
-- Write `VALIDATION_<head8>.md` from
-  `templates/VALIDATION_REPORT.md` inside the authorized harness root.
-
-## Write and action boundaries
-
-Allowed only inside `TEST_WRITE_BOUNDARY`: manifests, runner/helpers, journeys,
-fixtures/seeds, assertions, findings, pitfalls, harness documentation, and the
-validation report.
-
-Forbidden by default: product/app/API source, migrations, production config,
-`.env*`, credentials, provider keys, firewall rules, emulator/AVD configuration,
-git history, deploys, package/lockfile changes, network downloads, and external
-services. A required action outside the boundary returns `UNVERIFIED` or
-`BLOCKED` with the exact request; it never silently broadens scope.
-
-Secrets must come from the authorized credential source, never be echoed,
-logged, screenshotted, committed, or typed through a generic plain-text step.
-Suspected mutation of protected state stops every write and run immediately;
-preserve evidence and do not retry, restore, or reseed.
-
-## Verdict
-
-Return exactly one SHA-bound device verdict:
-
-```markdown
-## APP VALIDATION: PASS | BLOCKED | UNVERIFIED
-Target: <base>..<head>
-Outcome exercised: <approved outcome>
-Platforms/devices: <platforms and sanitized identifiers>
-Harness: REUSED | EXTENDED | BOOTSTRAPPED — <root and exact changed files>
-Harness maintenance: <HARNESS_DRIFT/CONTRACT_CHANGE items and authorization>
-Agent quickstart: <README path; documented commands exercised>
-Cold-use check: PASS | FAIL — <commands and observations>
-Acceptance journeys: <J1 PASS; J2 FAIL at step/oracle; ...>
-Preserved journeys: <suite/results>
-UI evidence: <AX/UIAutomator/screenshot references>
-Non-UI oracles: <API/DB/log/platform state or none>
-Stateful resource receipt: <NO_STATEFUL_RESOURCES or DISPOSABLE_VERIFIED list>
-Protected-resource postcheck: <unchanged/unreachable evidence>
-Findings/pitfalls: <ids or none>
-Failures/flakiness: <first failure and retries or none>
-Evidence gaps: <unsafe/unavailable/provider-bound evidence or none>
-Next: <bounded repair | fresh validation | validator/qa evidence handoff | user decision>
-```
-
-`PASS` requires every acceptance journey and required preserved journey to pass
-on TARGET, with direct device observation and its declared oracle. `BLOCKED`
-requires a concrete reproducible mismatch with the approved behavior.
-`UNVERIFIED` means no defect was proven but required evidence was ambiguous,
-unavailable, or unsafe. A newly written assertion alone is not proof: pair it
-with observed device/UI state and an independent oracle when one exists. A
-newly bootstrapped or materially changed harness cannot receive `PASS` unless
-its Agent Quickstart and cold-use check also pass.
-
-## Stop rules
-
-Stop rather than improvise when: TARGET changed; product meaning is ambiguous;
-writes would leave `TEST_WRITE_BOUNDARY`; a resource is not provably disposable;
-execution requires unauthorized egress/dependency installation; credentials may
-leak; a protected resource may have changed; two attempts fail without a new
-hypothesis; or satisfying acceptance requires product code changes.
+A newly written test, screenshot alone, retry success, or partial coverage never
+becomes an unqualified PASS.
 
 ## Templates
 
-- `templates/app-validator.json` — generic bootstrap manifest; placeholders are
-  intentionally non-executable until resolved for the project.
-- `templates/VALIDATION_REPORT.md` — SHA-bound report template.
+- `templates/app-validator.json` — builder bootstrap manifest for the canonical
+  fallback; every placeholder must be resolved before device execution.
+- `templates/VALIDATION_REPORT.md` — read-only app-validator response/evidence
+  format.
