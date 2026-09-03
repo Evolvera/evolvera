@@ -68,6 +68,28 @@
         }
       ]
     },
+    "cerebras": {
+      "models": [
+        {
+          "id": "qwen-3.8-27b",
+          "name": "Qwen 3.8 27B",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 65536,
+          "maxTokens": 32768,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false
+          }
+        }
+      ]
+    },
     "openai-codex": {
       "models": [
         {
