@@ -123,7 +123,10 @@ product repair owner.
    unreachable/unchanged, evidence directories/files are recursively `0700`/
    `0600`, any validator-owned clock/timezone change was restored, and processes
    match the declared cleanup or orchestrator-owned keep-alive postcondition.
-   Never wipe/reset/uninstall a pre-existing device, delete evidence, use
+   Report every run-owned service, emulator/simulator, VM, or tunnel still
+   running, and flag any wedged one — alive while its required root is gone or
+   its health check fails — as an incident with host cost, never as normal idle
+   load. Never wipe/reset/uninstall a pre-existing device, delete evidence, use
    `kill -9`, restore, or reseed.
 8. **Report and stop.** Read `<SKILL_ROOT>/templates/VALIDATION_REPORT.md` and
    use it as the single output schema for your response; do not invent or

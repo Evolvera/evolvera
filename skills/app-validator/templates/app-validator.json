@@ -51,7 +51,19 @@
     "clock_or_process_mutation": {
       "used": false,
       "restore_in_finally": true
-    }
+    },
+    "long_lived_services": [
+      {
+        "name": "<service, emulator, VM, or tunnel>",
+        "owner": "<orchestrator|harness-run>",
+        "required_root_or_mount": "<path whose disappearance invalidates this service, or not-applicable>",
+        "health_check": "<documented command/endpoint proving it still serves>",
+        "self_terminate_when_root_or_health_lost": true,
+        "max_lifetime": "<bounded lifetime or run-scoped>",
+        "graceful_stop": "<documented stop command>"
+      }
+    ],
+    "orphaned_process_forbidden": true
   },
   "actors": [
     {
