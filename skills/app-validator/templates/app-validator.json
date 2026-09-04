@@ -32,6 +32,44 @@
       "ui_oracle": "<accessibility, UIAutomator, XCTest, or platform-state primitive>"
     }
   },
+  "execution": {
+    "real_device_execution_required": true,
+    "static_or_dry_run_is_not_pass": true,
+    "artifact_identity_must_match_target": true,
+    "host_device_tool_architecture": "<required architecture/ABI compatibility statement>",
+    "tool_provenance": {
+      "pinned_version": "<tool-version or not-applicable>",
+      "digest": "<recorded digest or not-applicable>",
+      "reverify_signature_after_copy_or_install": "<true when the platform requires signature/trust verification, otherwise not-applicable>"
+    },
+    "runtime_scratch": {
+      "durable_sources_cache_evidence": "<run-owned durable path or not-applicable>",
+      "ephemeral_runtime_path": "<reconstructible local scratch path or not-applicable>",
+      "rebuild_source_or_command": "<pinned source/documented command or not-applicable>",
+      "filesystem_semantics_required": "<locking/permissions/case/symlink/exec requirements>"
+    },
+    "clock_or_process_mutation": {
+      "used": false,
+      "restore_in_finally": true
+    }
+  },
+  "actors": [
+    {
+      "id": "<actor-id>",
+      "device_selector_env": "<environment-variable-name>",
+      "identity_source": "<sanitized device/process identity field>",
+      "distinct_device_group": "<group-name>",
+      "liveness_check": "<documented command or oracle proving this actor is live>",
+      "evidence_subpath": "<per-actor evidence subpath>",
+      "teardown": "<graceful run-owned teardown or not-applicable>"
+    }
+  ],
+  "actor_constraints": {
+    "distinct_device_per_actor_group_required": "<true only for groups whose acceptance requires distinct devices; otherwise false>",
+    "duplicate_device_identifiers_forbidden_when_distinct_required": true,
+    "simultaneous_liveness_required": "<true when the user story requires concurrent actors; otherwise false>",
+    "routing_consistency_check": "<documented check that traffic reached the intended actor, or not-applicable>"
+  },
   "coverage": {
     "map": "qa/app-validator/COVERAGE.md",
     "statuses": ["COVERED", "PARTIAL", "GAP", "PROVIDER_BOUND"],
@@ -41,7 +79,9 @@
     "root": "qa/app-validator/journeys",
     "schema": "qa/app-validator/journeys/schema.json",
     "fixtures_root": "qa/app-validator/fixtures",
-    "smoke_suite": "qa/app-validator/journeys/smoke"
+    "smoke_suite": "qa/app-validator/journeys/smoke",
+    "inventory_source": "discovered-journeys",
+    "hardcoded_counts_forbidden": true
   },
   "resources": [
     {
@@ -55,11 +95,16 @@
   ],
   "network": {
     "policy": "<deny|explicit-allowlist>",
-    "allowed_hosts": []
+    "allowed_hosts": [],
+    "fallback_route_forbidden": true
   },
   "credentials": {
     "source": "APP_VALIDATOR_CREDENTIALS_FILE",
-    "secret_input_primitive": "<harness primitive that never logs or screenshots secrets, or not-required>"
+    "file_permissions": "0600",
+    "parent_directory_permissions": "0700",
+    "secret_input_primitive": "<harness primitive that never logs or screenshots secrets, or not-required>",
+    "secret_input_must_trigger_app_change_semantics": true,
+    "secret_input_acceptance_oracle": "<observable app state proving acceptance without revealing the secret, or not-required>"
   },
   "oracles": {
     "ui": ["<machine-readable UI/platform oracle>"],
@@ -70,13 +115,21 @@
     "run_path": "$APP_VALIDATOR_EVIDENCE_ROOT/{run_id}",
     "directory_permissions": "0700",
     "file_permissions": "0600",
-    "artifacts": ["ui-tree", "screenshots", "logs", "runner-result", "validation-report"]
+    "permissions_recursive_at_creation": true,
+    "artifacts": ["ui-tree", "screenshots", "logs", "result.json", "validation-report"],
+    "authoritative_result": {
+      "path": "$APP_VALIDATOR_EVIDENCE_ROOT/{run_id}/result.json",
+      "note": "Canonical fallback authority. An existing project-native equivalent may be declared here instead; do not rename an existing one.",
+      "report_must_match_authoritative_result": true
+    }
   },
   "maintenance": {
     "authoritative_harness": true,
     "classifications": ["HARNESS_DRIFT", "APP_REGRESSION", "CONTRACT_CHANGE"],
     "readme_must_match_manifest": true,
-    "cold_use_check_required": true
+    "cold_use_check_required": true,
+    "cold_use_forbids_undeclared_prepared_state_or_irreplaceable_scratch": true,
+    "harness_repair_requires_new_target_head_and_fresh_validator": true
   },
   "findings": {
     "root": "qa/app-validator/findings",

@@ -1,15 +1,19 @@
 # App Validation — <head8>
 
 ## APP VALIDATION: PASS | BLOCKED | UNVERIFIED
-Target: <base>..<head>
+Target: <base>..<head>   Mode: PARTIAL | COMPLETE
+Run ID: <run_id>
 Outcome exercised: <approved behavior and affected capabilities>
 Platforms/devices: <platforms and sanitized identifiers>
+Actor/device map: <actor → sanitized device/process identity; distinct groups and liveness | single actor>
+Runtime execution: REAL | NOT_PROVEN — <evidence that journeys ran against the device, not static/dry-run>
+Artifact/runtime identity: <app artifact/build identity exercised vs TARGET>
 Harness: REUSED | EXTENDED | BOOTSTRAPPED — <authoritative root; builder-supplied changed files | reused unchanged>
 Harness maintenance: <builder-supplied HARNESS_DRIFT/CONTRACT_CHANGE items, reason, and authorizing contract evidence | none>
 Coverage map: `<harness-root>/COVERAGE.md` — COVERED <n> | PARTIAL <n> | GAP <n> | PROVIDER_BOUND <n> — builder-supplied changed rows: <list | none>
 Whole-app claim: YES — full suite passed, no material gaps | NO — verdict bounded to <scope>
 Agent quickstart: <harness-root>/README.md — <documented command surface>
-Cold-use/preflight: PASS | FAIL — `<help>`; `<doctor>` → `APP_VALIDATOR_PREFLIGHT=PASS`; `<list>`; <observations>
+Cold-use/preflight: PASS | FAIL — `<help>`; `<list>`; then after the resource receipt `<doctor>` → `APP_VALIDATOR_PREFLIGHT=PASS`; <observations>
 Acceptance journeys:
 - J1 <title> — PASS | FAIL — `<journey path>` — step/oracle: <evidence>
 - J2 <title> — PASS | FAIL — `<journey path>` — step/oracle: <evidence>
@@ -17,9 +21,12 @@ Preserved journeys: <suite/journeys and results>
 UI evidence: <AX/UIAutomator/platform-state and screenshot references>
 Non-UI oracles: <API/DB/log/filesystem/platform state | none>
 Stateful resource receipt: <NO_STATEFUL_RESOURCES or sanitized DISPOSABLE_VERIFIED resources, ownership, destructive hooks, network boundary, teardown>
-Protected-resource postcheck: <unchanged/unreachable evidence>
+Result consistency: <manifest-declared authoritative runner result path; inventory/results derived from it and from discovered journeys; agrees | disagrees>
+Protected-resource postcheck: <unchanged/unreachable evidence; recursive evidence permissions 0700/0600; validator-owned clock/timezone cleanup; declared process cleanup or orchestrator-owned keep-alive state>
+Proof commands: <all final proof came from documented harness commands | ad-hoc command required → HARNESS_GAP>
 Findings/pitfalls: <IDs/titles | none>
 Failures/flakiness: <first failure, reproduction, retries | none>
+Harness gaps: <exact builder repair required | none>
 Evidence gaps: <unsafe/unavailable/provider-bound evidence | none>
 Next: <bounded product repair | harness repair | fresh validation | validator/qa handoff | user/environment decision>
 

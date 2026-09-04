@@ -128,9 +128,16 @@ The builder must:
    interface against disposable fixtures, but not issue the final app verdict;
 7. report exact changed files and commands for orchestrator checkpoint review.
 
+Builder static, interface, dry-run, and exit-zero checks certify authorship
+readiness only; they never certify runtime behavior on a device. Static or
+dry-run success, a zero exit code, or a screenshot alone can never produce
+`PASS`.
+
 After harness changes, the orchestrator reviews the focused diff and binds the
-result to an exact checkpoint before app-validator runs. The builder never
-certifies its own harness.
+result to an exact checkpoint before app-validator runs. The validation TARGET
+head must therefore include the harness maintenance commit, and any harness or
+product repair requires a new head plus a fresh validator session. The builder
+never certifies its own harness.
 
 ### 4. Launch independent app-validator
 
@@ -247,10 +254,55 @@ The harness-root `README.md` starts with **Agent Quickstart** and contains:
 - credentials, network, protected-resource, evidence, and teardown boundaries.
 
 Manifest is machine-readable authority; README is its human/agent interface.
-They must agree. Builder performs a cold-use check from `PROJECT_ROOT` with no
-shell-history or implicit-directory dependency.
+They must agree. Builder cold-uses only the static/interface surface from
+`PROJECT_ROOT` in a fresh shell using declared inputs: no hidden shell history,
+undeclared inherited exports, implicit working directory, undeclared prepared
+process/session, or irreplaceable ephemeral scratch. This checks authorship, not
+runtime behavior. A cold start that legitimately requires a declared service,
+device, build, or reconstructible scratch remains subject to the stateful safety
+gate and fresh-validator proof rather than a documentation check.
+
+### Live-use hardening
+
+Keep these declarative in the manifest/README; they are recurring real-run
+failure modes, not new phases:
+
+- **Runtime scratch** — distinguish durable sources/cache/evidence from
+  reconstructible ephemeral runtime scratch, and place native/runtime state
+  only on a filesystem whose semantics (locking, permissions, case, symlink,
+  exec) the runtime supports; unsupported semantics may hang or corrupt state
+  instead of failing.
+- **Architecture compatibility** — host, device/image, app artifact, and tool
+  binaries must share a compatible architecture/ABI; mismatch is an environment
+  gap, not a product defect.
+- **Tool provenance** — pin tool/artifact versions with a recorded digest, and
+  after any copy or install re-verify platform signature/trust; copied signed
+  tooling frequently loses integrity or trust attributes.
+- **Network policy** — the effective policy is deny or an explicit allowlist
+  with no silent fallback route.
+- **Clock and processes** — record original clock/timezone/process state and
+  restore validator-owned mutations in a `finally` path; the postcheck verifies
+  cleanup or the declared keep-alive state for orchestrator-owned processes.
+- **Evidence permissions** — create the evidence tree with directories `0700`
+  and files `0600` recursively at creation time, not by later fix-up.
+- **Secret input** — enter credentials only through the declared secret-input
+  primitive that exercises the real framework change/commit semantics of the
+  input, never echoing, logging, or screenshotting the value; setting a native
+  or accessibility value directly may not trigger app callbacks or state.
+- **Multiple actors** — when acceptance needs more than one participant,
+  declare explicit actor→device/process identity, require distinct devices per
+  actor group, reject duplicate identifiers, prove simultaneous liveness,
+  check routing/addressing consistency, capture per-actor evidence, and tear
+  down each actor gracefully.
 
 ### Coverage and maintenance
+
+Journey inventory, per-journey results, and any totals must be derived
+dynamically from the journeys actually discovered and from the manifest-declared
+authoritative runner result (`result.json` in the canonical fallback, or the
+existing project-native equivalent). Never hardcode journey counts and never
+reconstruct results by manual arithmetic in a report; a report that disagrees
+with the authoritative runner result is an evidence gap.
 
 `COVERAGE.md` maps each evidenced capability/user story to actors, platforms,
 journeys, oracles, and status:
@@ -291,10 +343,16 @@ when every resource is uniquely run-owned `DISPOSABLE_VERIFIED`, synthetic,
 scoped, fallback-free, and teardown-bounded.
 
 A local/test name, pre-existing simulator/AVD, Docker, transaction, or backup is
-not proof. Unknown means `UNVERIFIED`; never run. Preflight must emit
+not proof. Unknown means `UNVERIFIED`; never run. Confirm the effective network
+policy is deny or an explicit allowlist with no fallback, that device/actor
+identities are reachable and distinct when acceptance requires it, and that any
+validator-owned clock or long-lived process mutation has a restoring `finally`
+path. Preflight must emit
 `APP_VALIDATOR_PREFLIGHT=PASS` with sanitized device/resource identities,
 destructive hooks, network policy, and protected boundary. Teardown touches
-only run-owned resources using documented graceful methods. Suspected protected
+only run-owned resources using documented graceful methods, and the postcheck
+confirms clock/timezone restoration, the declared cleanup/keep-alive process
+state, and recursive evidence permissions. Suspected protected
 mutation freezes all writes/runs; preserve evidence and do not retry, reset,
 restore, or reseed.
 
