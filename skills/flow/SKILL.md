@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Transform a backlog into an approved GitHub Project with issues plus an adaptive plan/DAG, then ship safely through the kanban with one branch and isolated worktree per concurrent issue. Supports autonomous new-chat re-entry: reconciles Project, issues, claims, PRs, remote branches, local worktrees, dependencies, and shared hazards to recommend safe parallel work without requiring the user to repeat context. Always scouts first, proposes before acting, and requires explicit user approval for external or material changes.
+description: "Transform a backlog into an approved GitHub Project with issues plus an adaptive plan/DAG, then ship safely through the kanban with one branch and isolated worktree per concurrent issue. Supports autonomous new-chat re-entry: reconciles Project, issues, claims, PRs, remote branches, local worktrees, dependencies, and shared hazards to recommend safe parallel work without requiring the user to repeat context. Always scouts first, proposes before acting, and requires explicit user approval for external or material changes."
 ---
 
 # Flow — Backlog → Issues → Ship
