@@ -283,6 +283,15 @@ failure modes, not new phases:
 - **Clock and processes** — record original clock/timezone/process state and
   restore validator-owned mutations in a `finally` path; the postcheck verifies
   cleanup or the declared keep-alive state for orchestrator-owned processes.
+- **Supervised services and host cost** — a long-lived run-owned service,
+  emulator/simulator, VM, or tunnel must declare an owner, a health check, and a
+  bounded lifetime, and must terminate itself when its required root, mount,
+  parent, or health check disappears. Losing a mounted/removable/network root
+  under a running process can revoke its descriptors and leave it spinning at
+  full CPU for hours: the endpoint stops answering, `SIGTERM` may be ignored,
+  and the host silently overheats and drains battery. Detect this as a wedged
+  service (root absent or health failing while the process is alive), never as
+  normal idle background load.
 - **Evidence permissions** — create the evidence tree with directories `0700`
   and files `0600` recursively at creation time, not by later fix-up.
 - **Secret input** — enter credentials only through the declared secret-input
@@ -352,7 +361,12 @@ path. Preflight must emit
 destructive hooks, network policy, and protected boundary. Teardown touches
 only run-owned resources using documented graceful methods, and the postcheck
 confirms clock/timezone restoration, the declared cleanup/keep-alive process
-state, and recursive evidence permissions. Suspected protected
+state, and recursive evidence permissions. No orphaned run-owned service,
+emulator/simulator, VM, tunnel, or watchdog may be left behind: every one is
+stopped, or explicitly declared as an owner-kept resource with its health and
+cost accounted for. A wedged service that ignores graceful stop is an incident;
+escalate only with the exact evidence (required root absent, health failing,
+no open handles on that root) and explicit authorization. Suspected protected
 mutation freezes all writes/runs; preserve evidence and do not retry, reset,
 restore, or reseed.
 
