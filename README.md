@@ -361,6 +361,18 @@ revisa este PR somente contra o escopo aprovado
 
 O PI deve investigar o repositório antes de fazer perguntas factuais que o código possa responder. Ações destrutivas, deploy, force push, merge, compra ou mudanças ambíguas de segurança continuam exigindo autorização explícita.
 
+### Modos de autorização
+
+O contrato canônico vive em `SYSTEM.md` (espelhado em `config/SYSTEM.md`) e vale para qualquer trabalho — pesquisa, análise, documentos, configuração, código e operações autorizadas. Não há comando nem flag nova: você pede outro modo em linguagem natural quando quiser sair do default.
+
+| Modo | O que cobre | Onde para |
+|---|---|---|
+| `SUPERVISIONADO` | Você aprova cada estágio ou efeito proposto | Antes de cada estágio novo; comandos dentro de um estágio já aprovado não são reperguntados |
+| `AUTÔNOMO` (**default**) | Levar o resultado autorizado até o fim: evidência, trabalho no escopo, validação segura e entrega | Nenhum efeito externo final inventado; em entrega de software autorizada vai até o PR e para antes do merge |
+| `YOLO` | Autoridade de fechamento mais ampla no escopo da tarefa, incluindo merge após review independente do head SHA final e dos checks | Deploy, migração e outras operações consequentes só quando nomeadas e aprovadas à parte |
+
+`AUTÔNOMO` é o default quando você não pediu outro modo, e o PI não repergunta a mesma autorização enquanto ação, alvo, método, limites e evidência não mudarem — troca de fase, de ferramenta ou de agente não expira aprovação. A fronteira do PR vale só para entrega de software de verdade: pedido de explicação, revisão, plano ou rascunho termina no artefato pedido, sem PR, publicação ou envio inventados. Gates de evidência e de segurança são separados do modo: ação destrutiva, recurso não descartável, deploy, migração, credencial e teste com estado continuam exigindo os gates exatos, e nenhum modo é bypass de runtime.
+
 ### Entrega por issue com Flow Orca
 
 A entrega de backlog → issues → PR usa uma única skill, `flow-orca`, que substitui o antigo `flow`:
@@ -370,10 +382,10 @@ A entrega de backlog → issues → PR usa uma única skill, `flow-orca`, que su
 User: [lista] — cria as issues e toca a campanha
 ```
 
-No intake da campanha você escolhe duas coisas que o PI não assume sozinho:
+No intake da campanha, o modo global já resolvido é reaproveitado (sem pergunta separada de modo), mas o PI ainda pede um grant de campanha explícito e escopado — o default sozinho não autoriza campanha:
 
 - a **base branch por repositório** (nada de `main` presumida; multi-repo usa uma base por repo);
-- um **modo**: `SUPERVISIONADO` aprova cada início de issue, commit, push e PR; `AUTÔNOMO ATÉ PR` cobre agendamento, workspaces, implementação, commit, push e PR; `YOLO` acrescenta o merge, só depois de review independente do head SHA final e dos checks exigidos, e cobre deploy/migração apenas quando essas operações forem nomeadas e aprovadas à parte. `YOLO` é escopo de aprovação, nunca bypass de segurança.
+- o **modo** aplicado à campanha: `SUPERVISIONADO` aprova cada início de issue, commit, push e PR; `AUTÔNOMO` (alias legado aceito: `AUTÔNOMO ATÉ PR`) cobre agendamento, workspaces, implementação, commit, push e PR; `YOLO` acrescenta o merge, só depois de review independente do head SHA final e dos checks exigidos, e cobre deploy/migração apenas quando essas operações forem nomeadas e aprovadas à parte. `YOLO` é escopo de aprovação, nunca bypass de segurança.
 
 **O GitHub controla tudo.** O grant da campanha (escopo, bases, modo, teto, operações nomeadas e a proveniência da aprovação) fica numa seção `## Campaign grant` do README do próprio GitHub Project, preservando o resto do texto; as ACs, os escopos e as dependências (sempre como URL completa da issue + gate) ficam no body de cada issue; progresso, blockers e resultados ficam nos comentários. Esse registro remoto é evidência de uma aprovação que você já deu — ele não se autoriza sozinho e não desliga nenhum gate de segurança. Não existe issue de controle, backlog paralelo nem plano/DAG/estado local de entrega: a ordem de execução é derivada em memória a cada releitura do GitHub, e uma pasta `.pi/flow/` antiga vale só como histórico opcional, sem autoridade.
 

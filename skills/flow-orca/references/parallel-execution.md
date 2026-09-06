@@ -104,7 +104,7 @@ The active owner is the unique executor whose marker agrees with the unique actu
 
 A candidate may be admitted only when **all** conditions pass:
 
-- the campaign grant covers this action, target, and method, or the mode requires and obtained an explicit OK;
+- the campaign grant covers this action, target, and method, or the mode requires and obtained an explicit OK — the global default mode alone never authorizes a campaign, and a missing, ambiguous, or invalid grant blocks the candidate;
 - a slot is free within the approved ceiling (never more than six active issue PI workers);
 - Project Status is `Ready` and the issue passes Definition of Ready;
 - no open external dependency; otherwise the issue and its dependents go to `Blocked` with the required user action recorded;
@@ -250,7 +250,7 @@ A locked, orphan, stale-candidate, or incident-frozen resource is reported with 
 ```md
 ## Flow Orca concurrent resume — OWNER/REPO
 - Verified at: <UTC>
-- Mode: <SUPERVISIONADO | AUTÔNOMO ATÉ PR | YOLO>; base per repo: <repo → base>
+- Mode: <SUPERVISIONADO | AUTÔNOMO (alias legado: AUTÔNOMO ATÉ PR) | YOLO>; base per repo: <repo → base>
 - Ceiling 6; approved concurrency: <N>; active issue PI workers: <N>
 - Project/board authority: <owner/number>
 - Coordinator checkout: branch@SHA; clean|dirty (owned paths summarized)
