@@ -412,7 +412,7 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 
 Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
-O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão limita a oito continuações automáticas e pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
+O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão não limita continuações automáticas (`continuationLimits.automaticTurns: null`), mas pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
 
 As operações canônicas usam `memory_recall` (ID exato `pm:p:`/`pm:c:`) e `memory_search` (filtros bounded; metadados/snippets). `/memory:status` e `/memory:view [visible|full]` mostram status/contexto, com aliases `/om:status` e `/om:view [visible|full]`. No root checked-in, `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill` e `/memory:retry` retornam `unavailable`: não publicam, não migram, não executam backfill/retry e não chamam provider.
 
