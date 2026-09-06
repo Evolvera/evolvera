@@ -164,7 +164,12 @@
             "cacheWrite": 1.25
           }
         }
-      ]
+      ],
+      "modelOverrides": {
+        "gpt-6-astra": {
+          "contextWindow": 300000
+        }
+      }
     }
   }
 }
