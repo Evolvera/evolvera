@@ -236,6 +236,11 @@ has(SKILL, /pi --continue --provider openai-codex --model gpt-5\.6-sol --thinkin
 has(SKILL, /openai-codex\/gpt-5\.6-sol` com `high`/, "fresh PI output must verify Sol/high");
 has(SKILL, /nunca envie `--model`\/`--effort` ao Orca/, "model flags remain forbidden on Orca");
 has(SKILL, /não altera as rotas de planner\/plan-heavy internos/, "worker base model must not alter planner routing");
+has(SKILL, /gh api user -q \.login/, "admission must resolve the authenticated GitHub user");
+has(SKILL, /gh issue edit <N> --add-assignee "\$EXECUTOR"/, "admission must assign the logged-in user");
+has(SKILL, /FLOW_ASSIGNEE_MISMATCH/, "admission must prove the assignee before progressing");
+has(SKILL, /nunca remova outro assignee automaticamente/, "admission must not remove an existing owner");
+has(REFERENCE, /assign the issue to that exact user, and re-read that it is the sole assignee/, "reference must require verified logged-user assignment");
 has(SKILL, /Fixe e verifique o modo no mesmo terminal PI preparado/, "new PI workers must pin the grant mode before dispatch");
 has(SKILL, /terminal wait --terminal <handle exato> --for tui-idle --timeout-ms/, "mode pin must wait for tui-idle");
 has(SKILL, /terminal read --terminal <handle exato> --limit <n> --json/, "initial mode read must not invent a cursor");
