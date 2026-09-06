@@ -128,11 +128,27 @@ for (const path of [SKILL, REFERENCE]) {
 }
 has(REFERENCE, /PI engineering plans and transient readiness artifacts inside a single issue workspace remain allowed/, "in-workspace PI plans must stay allowed");
 
+// ── 1c.1. Central coordinator resumes persisted Orca state ──────────────────
+has(SKILL, /### 6\.0\.1 Retomar o Run e as mensagens persistidas/, "resume must discover the existing Run before dispatch inspection");
+has(SKILL, /ORCA orchestration run-list --json/, "resume must enumerate Runs without creating one");
+has(SKILL, /ORCA orchestration run-show --id <run-id> --json/, "resume must inspect exact Run identity");
+has(SKILL, /ORCA orchestration task-list --run <run-id> --json/, "resume must recover full Task specs and their issue references");
+has(SKILL, /URL do Project, repositórios\/bases aprovados e URLs das issues/, "Run selection must reconcile campaign identity against GitHub");
+has(SKILL, /título parecido, idade ou terminal ocioso não provam identidade/, "Run selection must not infer ownership from labels or age");
+has(SKILL, /Não use `run-create` para recuperar contexto perdido/, "lost context must not create a duplicate Run");
+has(SKILL, /Run ausente, inacessível ou ambíguo com WIP existente/, "missing or ambiguous runtime state must block affected admission");
+has(SKILL, /`run-use` só depois da prova de propriedade ou handoff explícito/, "binding must retain ownership authorization gates");
+has(SKILL, /ORCA orchestration check --peek --json/, "pending delivery inspection must be non-consuming");
+has(SKILL, /perguntas, escalations e resultados pendentes antes de admitir novo trabalho/, "pending work must be reconciled before new admission");
+has(SKILL, /antes do ack do Delivery exato/, "settlement and reply handling must precede acknowledgement");
+has(SKILL, /Após compactação ou perda de contexto, use re-entry completo/, "compacted coordinator must revalidate rather than trust its summary");
+has(REFERENCE, /Phase 6\.0\.1/, "concurrent inventory must reuse the authoritative Run-resume procedure");
+
 // ── 1d. Orchestration commands carry their namespace ────────────────────────
 // Only executable command forms are checked: a bare subcommand inside a fenced
 // block or an `ORCA <subcommand>` invocation. Prose that merely names a
 // subcommand (or forbids one) is intentionally not matched.
-const ORCH = "run-create|run-use|task-create|worker-start|dispatch-show|worker-show|worker-read|check|send|ask|reply|worker-release";
+const ORCH = "run-create|run-list|run-show|run-use|task-create|task-list|worker-start|dispatch-show|worker-show|worker-read|check|send|ask|reply|worker-release";
 for (const path of [SKILL, REFERENCE]) {
   lacks(path, new RegExp(String.raw`ORCA\s+(?:${ORCH})\b`), "ORCA invocations must use the orchestration namespace");
   lacks(path, new RegExp(String.raw`^\s*(?:orca\s+)?(?:${ORCH})\s+--`, "m"), "executable orchestration examples must name the orchestration namespace");
