@@ -166,6 +166,12 @@ Ao executar novamente o instalador, os recursos versionados são preparados prim
 
 A configuração ativa em `~/.pi/agent/settings.json` só muda quando o instalador é executado. Arquivos ou diretórios antigos do package OM que já estejam no destino ficam inertes; o instalador não os apaga nem desinstala genericamente. A atualização não promete nem executa migração de memória.
 
+#### Corte seguro na atualização de Flow
+
+Durante a transição, `install.sh` (Linux/macOS) e `install.ps1` (Windows) param antes de qualquer mutação quando o checkout contém `skills/flow-orca` e o runtime ainda contém o skill legado em `~/.pi/agent/skills/flow` (no Windows, `$HOME\.pi\agent\skills\flow`). Isso evita que as duas skills sejam descobertas juntas.
+
+Nesse caso, preserve os dados da campanha em `.pi/flow`; eles não são o skill legado. Preserve também o diretório legado e mova-o manualmente para fora da árvore de descoberta de skills, por exemplo para uma pasta de backup fora de `~/.pi/agent/skills` (ou de `$HOME\.pi\agent\skills` no Windows). Nenhum instalador apaga ou move esse diretório automaticamente. Depois, execute novamente o instalador da sua plataforma.
+
 ### O que é preservado
 
 - autenticação local;

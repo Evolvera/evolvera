@@ -11,6 +11,16 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
+
+# ── Corte seguro do Flow ───────────────────────
+if [ -d "$SCRIPT_DIR/skills/flow-orca" ] && [ -d "$PI_DIR/skills/flow" ]; then
+    echo "Atualização interrompida: o skill Flow Orca e o skill Flow legado estão presentes." >&2
+    echo "Preserve o skill Flow legado e mova-o manualmente para fora da árvore de descoberta de skills ($PI_DIR/skills)." >&2
+    echo "Nenhum skill foi movido ou apagado automaticamente." >&2
+    echo "Preserve também os dados da campanha em .pi/flow; eles não são o skill legado." >&2
+    exit 1
+fi
+
 PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-0.83.0}"
 MIN_NODE_VERSION="22.19.0"
 same_root=false

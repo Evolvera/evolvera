@@ -18,6 +18,18 @@ function Step($name) { Write-Host "`n--- $name ---" -ForegroundColor $CYAN }
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $SCRIPT_DIR) { $SCRIPT_DIR = $PWD.Path }
 $PI_DIR = Join-Path $env:USERPROFILE ".pi\agent"
+
+# -- Corte seguro do Flow ---------------------------------
+if (
+    (Test-Path (Join-Path $SCRIPT_DIR "skills\flow-orca") -PathType Container) -and
+    (Test-Path (Join-Path $PI_DIR "skills\flow") -PathType Container)
+) {
+    throw ("Atualizacao interrompida: o skill Flow Orca e o skill Flow legado estao presentes. " +
+        "Preserve o skill Flow legado e mova-o manualmente para fora da arvore de descoberta de skills (" +
+        (Join-Path $PI_DIR "skills") + "). Nenhum skill foi movido ou apagado automaticamente. " +
+        "Preserve tambem os dados da campanha em .pi/flow; eles nao sao o skill legado.")
+}
+
 $sameRoot = $false
 
 # -- PI ---------------------------------------------------
