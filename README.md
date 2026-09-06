@@ -420,6 +420,16 @@ A segurança semântica é conservadora: cada ciclo é um turno concluído cont�
 
 Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas ferramentas acima. `pi-observational-memory` permanece somente como compatibilidade legacy; se houver package OM efetivo, ou configuração plastic inválida/ausente/desabilitada, o plastic-memory fica bridge context-only sem hooks full. O modo flat-only permanece legado com marcador; o histórico pré-plastic fica `historical-unindexed` até backfill explícito report-first, cursor-bounded, de uma janela de turno concluído por vez, com pausa/retoma/retry e recovery-safe. O root atual não expõe seus comandos de autoridade.
 
+## Releases canônicas do perfil Ymir
+
+A entrega do perfil portátil do Ymir é uma promoção manual e explicitamente aprovada; o `main` privado não é um canal de entrega em runtime. O formato, o inventário e os limites do bundle estão definidos em [`docs/ymir-profile-bundle.md`](docs/ymir-profile-bundle.md). Para promover uma revisão, o orquestrador dispara manualmente o workflow **Release Ymir PI profile** com o SHA exato de 40 caracteres do commit aprovado e alcançável pelo `main` atualizado.
+
+Antes de qualquer criação de tag ou release, o workflow consulta somente por `GET /repos/Evolvera/evolvera/immutable-releases` e exige `{enabled:true}`. Essa é uma configuração externa, prospectiva e aplicada pelo provedor: o workflow não habilita nem altera settings e a primeira promoção fica bloqueada enquanto o endpoint não for observado como `enabled:true`. A recusa de overwrite pelo workflow não equivale à imutabilidade do GitHub.
+
+Cada promoção cria a release não-prerelease `ymir-profile-<SHA>` a partir desse commit e publica somente depois de a construção, os testes e os três assets fixos serem verificados. Depois da publicação, o workflow consulta a API da release e exige `immutable:true`, o SHA-alvo e os assets esperados, além de confirmar que ela é a release latest. Tags e releases existentes são recusadas: não há overwrite, force, clobber ou substituição de releases anteriores. Para rollback, escolha uma release imutável anterior e projete seus assets; isso não reescreve tags, apaga releases nem altera o checkout local.
+
+A smoke `scripts/test/release-ymir-profile-workflow.smoke.py` verifica offline a política do workflow e deste texto; ela não dispara o workflow, não publica assets, não consulta o provedor e não é prova de uma promoção live, de setting imutável ou de attestation. A aprovação manual, a habilitação externa e a publicação real continuam sendo responsabilidade do orquestrador.
+
 ## Atualizar
 
 Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash. O instalador prepara agentes, skills, extensões normais e demais recursos primeiro; remove uma cópia antiga de `extensions/plastic-memory/` e grava a configuração não ativadora por último. Assim, o caminho de compactação desativado não permanece ativo após uma atualização. O `settings.json` ativo só é substituído durante a execução do instalador.
