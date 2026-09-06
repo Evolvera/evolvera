@@ -103,6 +103,7 @@ const mandatoryLocalPlan =
   /(?:materializar|grave|escreva|atualize|crie|reconcilie|leia)[^.\n]{0,120}`?(?:PLAN\.md|SCHEDULE\.md|DAG\.json|INDEX\.md|STATE\.md)`?/i;
 for (const path of [SKILL, REFERENCE]) {
   lacks(path, mandatoryLocalPlan, "must not require producing or reconciling a local delivery plan/schedule/DAG/index/state file");
+  lacks(path, /(?:atualiz(?:ar|e)|updat(?:e|ing))\s+(?:(?:os?|the|local)\s+)?caches?\b/i, "transition and continue paths must not prescribe local cache updates");
 }
 // The retired local templates must be gone, not merely contradicted.
 lacks(SKILL, /\.pi\/flow\/<project-slug>\/(?:PERMISSIONS|PROJECT_MAP)\.md/, "access and discovery reports must not write into read-only campaign history");

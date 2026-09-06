@@ -1159,7 +1159,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA/workspace e próximas admissões
 7. Aplicar o modo registrado: se o grant já cobre esta ação/alvo/método, siga sem repetir a pergunta; se o modo é SUPERVISIONADO ou o pedido é só informativo, pare para OK
 8. Reconciliar novamente a candidata imediatamente antes do claim; admitir só se assignee/claim/branch/PR/workspaces/hazards/vagas permitirem
-9. Executar cada transição com pós-condição verificada e relida, atualizar caches e shippar
+9. Executar cada transição com pós-condição verificada e relida, registrar a evidência no GitHub e entregar conforme o grant
 10. Após done verificado e assentamento seguro, voltar à Phase 6 com a vaga livre
 
 ### O que **não** fazer no continue
@@ -1169,7 +1169,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 - Perguntar de novo base/modo já aprovados quando os fatos não mudaram
 - Admitir issue do backlog sem DoR, com bloqueio externo aberto ou já reclamada por outro executor
 - Trabalhar em branch aleatória ou no checkout canônico do coordenador
-- Avançar cards sem verificar pós-condições, reler o Project e atualizar caches
+- Avançar cards sem verificar pós-condições, reler o Project e registrar a evidência no GitHub
 
 ---
 
