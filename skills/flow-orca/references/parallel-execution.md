@@ -145,7 +145,7 @@ Only rows marked `ADMIT` may proceed. Blocking one row never authorizes changing
 The coordinator admits **serially**, even when implementation runs in parallel. For each admitted issue, in this order:
 
 1. re-read its Project item, issue, claims, PRs, remote branches, and workspaces;
-2. apply the unique assignee, post the claim marker, set Project `In progress`, and **re-read** each of them;
+2. resolve the authenticated GitHub user with `gh api user -q .login`, assign the issue to that exact user, and re-read that it is the sole assignee; only then post the claim marker and set Project `In progress`. A different or multiple assignee blocks admission; never remove another assignee automatically;
 3. inspect and authorize the setup policy and default terminals **before** creating anything — they can mutate state even with `--setup skip`, and the wait-for-setup policy is preserved;
 4. create the workspace with the documented form, using the base approved for that repository:
 

@@ -1011,7 +1011,7 @@ Handoff exige evidência explícita no GitHub (assignee/marker atualizado e come
 O coordenador admite **em série**, mesmo quando a implementação vai correr em paralelo. GitHub e Orca não oferecem transação única nem claim atômico entre máquinas: o que existe é intenção visível + releitura antes do dispatch. Para cada issue admitida:
 
 1. **Recheque** imediatamente antes: Project item, issue, claim markers, PRs, branch remota e workspaces/terminais.
-2. **Publique a intenção no GitHub** (assignee único, marker de claim, `In progress`), e releia:
+2. **Publique a intenção no GitHub**: resolva o usuário autenticado por `gh api user -q .login`, atribua a issue a ele e prove que ele é o único assignee antes de marker de claim e `In progress`. Assignee existente diferente ou múltiplos assignees bloqueiam a admissão; nunca remova outro assignee automaticamente. Em seguida, releia:
 
 ```bash
 EXECUTOR=$(gh api user -q .login)
@@ -1019,8 +1019,9 @@ FLOW_EXECUTOR_ID=${FLOW_EXECUTOR_ID:-primary}
 BASE="<base aprovada para este repositório>"
 BASE_SHA=$(git rev-parse "origin/$BASE")
 
-gh issue edit <N> --add-assignee "$EXECUTOR" \
-  --remove-label "status:ready" --remove-label "status:backlog" \
+gh issue edit <N> --add-assignee "$EXECUTOR"
+gh issue view <N> --json assignees --jq '.assignees | if length == 1 and .[0].login == env.EXECUTOR then .[0].login else error("FLOW_ASSIGNEE_MISMATCH") end'
+gh issue edit <N> --remove-label "status:ready" --remove-label "status:backlog" \
   --add-label "status:in-progress"
 gh issue comment <N> --body "$(cat <<EOF
 <!-- pi-flow-claim:v1 issue=<N> executor=$FLOW_EXECUTOR_ID base=$BASE@$BASE_SHA -->
@@ -1039,7 +1040,7 @@ flow_project_items   # releia: o item precisa mostrar In progress
 6. **Prepare e verifique o modelo-base no terminal PI recém-criado, antes de criar a Task ou fazer `worker-start`**. Espere `tui-idle` com `ORCA terminal wait --terminal <handle exato> --for tui-idle --timeout-ms <n> --json`; sem prompt de trabalho injetado, leia `ORCA terminal read --terminal <handle exato> --limit <n> --json` e salve o `nextCursor` real. Envie `ORCA terminal send --terminal <handle exato> --text "/quit" --enter --json`; espere o prompt de shell real, então envie `ORCA terminal send --terminal <handle exato> --text "pi --continue --provider openai-codex --model gpt-5.6-sol --thinking high" --enter --json`. Espere `tui-idle` e leia apenas a saída nova desde o cursor salvo. Aceite somente a indicação nova e exata de `openai-codex/gpt-5.6-sol` com `high` na UI/saída do PI; echo do comando, saída stale, inferência pela configuração global ou exit 0 não são prova. Falha, timeout, saída ausente ou modelo/esforço divergente bloqueiam aquele dispatch e preservam workspace/terminal: nunca faça fallback, nunca envie `--model`/`--effort` ao Orca, e nunca reconfigure worker ativo não relacionado. Esta preparação é exclusiva do PI de issue; não altera as rotas de planner/plan-heavy internos.
 7. **Fixe e verifique o modo no mesmo terminal PI preparado, antes de criar a Task ou fazer `worker-start`**. Salve o `nextCursor` da leitura anterior e envie o pin nativo `ORCA terminal send --terminal <handle exato> --text "/execution-mode <canonical grant mode> session" --enter --json`; espere `tui-idle` novamente e leia apenas a saída nova com `--cursor <cursor anterior>`. Aceite somente o receipt exato e novo `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}`. Echo do comando, saída stale, prosa do agente ou exit 0 não são prova. Sem receipt esperado, erro, timeout ou extensão indisponível, bloqueie o dispatch afetado e preserve workspace/terminal: nunca faça fallback para dispatch nem altere settings global/project. Registre os receipts de modelo e modo no progresso existente da issue/Task handoff, não em artefato local de controle. Em reuso/resume, repita essas provas antes de cada dispatch subsequente no PI próprio assentado; não interrompa nem reconfigure worker ativo não relacionado.
 8. **Só então** crie a Task de tentativa daquela issue (`orchestration task-create`, referenciando a URL da issue e o timestamp da leitura) e injete: `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json`, confirmando com `orchestration dispatch-show`/`orchestration worker-show`.
-8. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. A tabela de reconciliação continua em memória.
+9. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. A tabela de reconciliação continua em memória.
 
 O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se qualquer passo falhar: **pare aquela linha**, releia tudo e complete apenas a parte ausente quando a propriedade continuar inequívoca; caso contrário registre `partial-claim` com branch, assignees, status, SHA e erro exatos. Não faça “rollback” apagando branch, workspace ou terminal, e não sobrescreva trabalho do usuário.
 
