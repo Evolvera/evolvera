@@ -1,6 +1,6 @@
 {
   "continuationLimits": {
-    "automaticTurns": 8,
+    "automaticTurns": null,
     "noProgressTurns": 3
   },
   "experimental": {
