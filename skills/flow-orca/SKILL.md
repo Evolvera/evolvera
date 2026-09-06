@@ -620,6 +620,8 @@ Conflito é reconciliado entre as fontes, nunca apagado pela primeira que parece
 
 ### 6.0 Re-entry remoto: fast path vs completo
 
+Após compactação ou perda de contexto, use re-entry completo: o resumo do chat é uma pista, nunca inventário atual nem prova de autoridade. Persistência não é sincronização automática.
+
 **Fast path (mesma sessão, uma issue):** se o coordenador já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a workspace/terminal Orca atribuídos**. Se tudo confere, prossiga. Qualquer pedido de concorrência, cálculo de nova candidata, divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo. Re-entry de campanha nunca usa fast path.
 
 **Re-entry completo** — execute nesta ordem no início de um chat novo, antes de puxar issue diferente, e após anomalia/handoff:
@@ -672,7 +674,7 @@ git -C "$ROOT" branch --show-current
 git -C "$ROOT" rev-parse HEAD
 ```
 
-Depois, inventarie a execução viva pelo Orca (somente leitura, conforme o guia carregado no preflight): `worktree ps --json`, `terminal list --json` e, para cada dispatch conhecido da campanha, `orchestration dispatch-show --task`, `orchestration worker-show --dispatch` e `orchestration worker-read --dispatch`. Registre issue, repositório, **branch real**, base, ID do workspace, handle do terminal, status de workspace e dono. Descoberta nunca cria, remove, arquiva, reatribui ou fecha nada.
+Depois, inventarie workspaces e terminais com `worktree ps --json` e `terminal list --json`. Após resolver o Project e seu grant abaixo, siga **6.0.1** para descobrir o Run, enumerar suas Tasks e só então inspecionar Dispatches — não dependa de IDs lembrados pelo chat. Registre issue, repositório, **branch real**, base, ID do workspace, handle do terminal, status de workspace e dono. Descoberta nunca cria, remove, arquiva, reatribui ou fecha nada.
 
 Quando a intenção mencionar concorrência, múltiplos chats/agentes ou outra issue simultânea, leia `references/parallel-execution.md` **antes** de classificar candidatos. Essa referência é obrigatória para recomendação e execução concorrente; não peça ao usuário contexto que Project/issues/claims/PRs/branches/workspaces/DAG conseguem reconstruir.
 
@@ -717,6 +719,31 @@ flow_project_fields
 Confirme as duas igualdades antes de usar Project como autoridade; truncamento de items ou fields bloqueia classificação global. Para uma issue/PR candidata, complemente com `gh issue view <N> --json number,title,state,labels,assignees,closedAt,url`, `gh pr view <PR> --json number,url,state,isDraft,headRefName,baseRefName,headRefOid,mergedAt,closedAt,reviewDecision,statusCheckRollup` e, quando necessário, `gh pr checks <PR>`.
 
 Um histórico local em `.pi/flow/` pode ser lido **por último e apenas como dica**; ele nunca é autoridade, nunca é reconciliado como fonte, e sua ausência nunca bloqueia nem atrasa o re-entry. Nada precisa ser escrito lá. Registre o instante real da leitura remota em UTC, não o horário lembrado pelo chat.
+
+### 6.0.1 Retomar o Run e as mensagens persistidas
+
+GitHub persiste a entrega; Orca persiste o Run, suas Tasks/Dispatches e a caixa de mensagens. O chat central reconstrói a visão desses dois sistemas, sem arquivo adicional. O vínculo nativo `worktree create --issue` associa a workspace à issue real; o Run supervisiona a execução, não substitui esse vínculo nem o Project.
+
+1. **Descobrir sem mutar.** Com Project e grant já relidos, enumere Runs; siga a paginação documentada até conseguir excluir correspondências conflitantes. Para cada candidato relevante, leia seu registro e as Tasks completas (`--brief` trunca o spec e não prova identidade):
+
+```text
+ORCA orchestration run-list --json
+ORCA orchestration run-show --id <run-id> --json
+ORCA orchestration task-list --run <run-id> --json
+```
+
+2. **Provar o vínculo.** Cruze URL do Project, repositórios/bases aprovados e URLs das issues com o objetivo do Run, specs das Tasks, claims e vínculos nativos das workspaces. IDs vêm das respostas; título parecido, idade ou terminal ocioso não provam identidade nem propriedade. Para as Tasks identificadas, use `orchestration dispatch-show --task <task-id> --json`, depois `orchestration worker-show --dispatch <dispatch-id> --json` e `orchestration worker-read --dispatch <dispatch-id> --json`. Task sem Dispatch ainda não foi comprovadamente iniciada; preserve e reconcilie, sem criar substituta.
+3. **Reusar, não duplicar.** Não use `run-create` para recuperar contexto perdido. Run ausente, inacessível ou ambíguo com WIP existente bloqueia novas admissões afetadas; preserve workers e reporte a lacuna. Não crie outro Run/Task/workspace para contornar isso. Somente numa campanha realmente nova, autorizada e sem execução/claim correspondente, crie um Run; seu `--objective` deve citar a URL do Project e o mapeamento de repos/bases, sem segredo nem path local. Isso facilita descoberta, mas nunca concede autorização. Runs legados sem esses dados precisam de vínculo comprovado pelas Tasks/claims, não de recriação.
+4. **Vincular com autoridade.** Se o terminal atual já tem o vínculo correto comprovado, mantenha-o. Em outro terminal, `run-use` só depois da prova de propriedade ou handoff explícito e conforme a autoridade aceita pelo runtime: `orchestration run-use --id <run-id> --json`. Não use `--from` nem `--takeover-legacy` como atalho para tomar uma campanha atual; um coordenador concorrente ou autoridade desconhecida bloqueia o vínculo.
+5. **Recuperar pendências antes de seguir.** No Run vinculado, inspecione sem consumir:
+
+```text
+ORCA orchestration check --peek --json
+```
+
+Reconcilie perguntas, escalations e resultados pendentes antes de admitir novo trabalho. Processe o lote FIFO completo; responda apenas perguntas ainda pendentes com `orchestration reply --id <message-id> --body <resposta> --json`, preservando seus IDs em vez de abrir perguntas duplicadas. Verifique cada resultado contra a issue/Dispatch e resolva a liberação ou retenção autorizada do terminal **antes do ack do Delivery exato**. Se o peek não fornecer Delivery acionável, obtenha-o pelo `check` documentado depois da inspeção; nunca invente ID de ack nem considere o peek consumo. Depois retome a espera limitada da Phase 7.4.
+
+O resumo no chat mostra Project, Run verificado, issues/workers ativos, perguntas/blockers pendentes, último instante de releitura e próxima ação segura. É uma visão derivada, não outra fonte persistente. Runtime indisponível não vira prova de worker encerrado ou vaga livre; a retomada real após reinício depende de o Orca conseguir comprovar o estado preservado.
 
 ### 6.1 Tabela de reconciliação em memória
 
@@ -932,7 +959,7 @@ Todos os comandos de orquestração (`run-create`, `run-use`, `task-create`, `wo
 
 | Objetivo | Comando | Regras de uso |
 |---|---|---|
-| Namespace da campanha | `orchestration run-create --objective ... --json`; `orchestration run-use --id <id> --json` | Um Run por mapeamento campanha/base; Run é inbox/namespace, **não** scheduler. `run-use` só após reconciliar propriedade; nunca takeover cego. Detalhe interno: não exponha Run ao usuário como se fosse o board |
+| Namespace da campanha | `orchestration run-create --objective ... --json`; `orchestration run-use --id <id> --json` | Um Run por mapeamento campanha/base; Run é inbox/namespace, **não** scheduler. Antes de criar ou vincular, aplique 6.0.1: descubra/reuse a execução existente; `run-use` só após reconciliar propriedade, nunca takeover cego. Detalhe interno: não exponha Run ao usuário como se fosse o board |
 | Registro de tentativa | `orchestration task-create --spec ... --run <id> --json` | Estados `pending`/`ready`/`dispatched`/`completed`/`failed`/`blocked`. Uma Task é **registro de supervisão de uma tentativa**, nunca uma issue, backlog ou fonte de ACs/status. Crie **uma Task só no momento da admissão**, para a issue corrente; nunca pré-crie tasks para o board inteiro. `completed` é desfecho de tentativa, nunca prova de merge/dependência satisfeita |
 | Workspace + branch + terminal PI | `worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --no-parent --agent pi --setup <policy> --json` | Cria a branch e o primeiro terminal PI. **Não existe** flag documentada de nome de branch nem de attach em branch existente: não invente. `--no-parent` controla linhagem de sidebar, não a base Git. Leia da resposta o ID do workspace, a **branch real** e o handle do terminal; nunca derive branch do `--name` |
 | Preparar antes de injetar | `worktree create` com `--agent pi` e **sem** prompt de trabalho | Permite preparar o PI e conferir claim/setup/status antes de qualquer edição. Inspecione e autorize política de setup e terminais default **antes** do create: eles podem mutar estado mesmo com `--setup skip`. Preserve a política de wait-for-setup |

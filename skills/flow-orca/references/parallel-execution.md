@@ -50,7 +50,7 @@ Bounded aliases such as `pi-01`, `pi-02` are valid when one coordinator controls
 
 ## 3. Full workspace inventory
 
-Run during every full re-entry, before admitting new work, before a new claim, after a worker failure/handoff, and before any settlement decision. Use only read-only Orca commands from the guide loaded in the preflight:
+Run during every full re-entry, before admitting new work, before a new claim, after a worker failure/handoff, and before any settlement decision. After compaction or lost chat context, use the main skill's **Phase 6.0.1** to discover the existing Run and its full Task specs before inspecting Dispatches; never create replacements because IDs were forgotten. Preserve the ownership gate before binding, then reconcile pending questions/results and exact Delivery acknowledgement before new admission. Use only read-only Orca commands from the guide loaded in the preflight:
 
 ```text
 ORCA worktree ps --json
