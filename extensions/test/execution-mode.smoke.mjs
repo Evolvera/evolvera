@@ -91,6 +91,8 @@ try {
     executionMode: "autonomous",
   });
   assert.match(globalContext.notices.at(-1).message, /^EXECUTION_MODE=\{"mode":"autonomous","source":"global"\}$/);
+  assert.equal(globalContext.statuses.get("execution-mode"), "MODE  AUTÔNOMO · GLOBAL");
+  assert.equal(mod.formatExecutionModeStatus({ mode: "yolo", source: "session" }), "MODE  YOLO · SESSION");
   assert.notEqual(readFileSync(globalSettings, "utf8"), globalBefore);
   chmodSync(globalSettings, 0o600);
   await command("autonomous global", globalContext);

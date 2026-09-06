@@ -231,7 +231,12 @@ has(SKILL, /Inspecione e autorize política de setup e terminais default \*\*ant
 has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effect free");
 has(SKILL, /worker-start --task <id> --terminal <handle exato> --run <id> --json/, "dispatch must adopt the exact prepared terminal");
 has(SKILL, /`worker-start` aceita `--base-branch`, mas \*\*não\*\* aceita `--issue`/, "worker-start must not be given --issue");
-has(SKILL, /Fixe e verifique o modo no terminal PI preparado/, "new PI workers must pin the grant mode before dispatch");
+has(SKILL, /Prepare e verifique o modelo-base no terminal PI recém-criado/, "new PI workers must verify the base model before dispatch");
+has(SKILL, /pi --continue --provider openai-codex --model gpt-5\.6-sol --thinking high/, "issue workers must restart to Sol/high before dispatch");
+has(SKILL, /openai-codex\/gpt-5\.6-sol` com `high`/, "fresh PI output must verify Sol/high");
+has(SKILL, /nunca envie `--model`\/`--effort` ao Orca/, "model flags remain forbidden on Orca");
+has(SKILL, /não altera as rotas de planner\/plan-heavy internos/, "worker base model must not alter planner routing");
+has(SKILL, /Fixe e verifique o modo no mesmo terminal PI preparado/, "new PI workers must pin the grant mode before dispatch");
 has(SKILL, /terminal wait --terminal <handle exato> --for tui-idle --timeout-ms/, "mode pin must wait for tui-idle");
 has(SKILL, /terminal read --terminal <handle exato> --limit <n> --json/, "initial mode read must not invent a cursor");
 has(SKILL, /salve o `nextCursor` real/, "mode pin must retain the returned cursor");
@@ -239,9 +244,11 @@ has(SKILL, /terminal send --terminal <handle exato> --text [^\n]*execution-mode 
 has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispatch requires the exact session receipt");
 has(SKILL, /saída stale, prosa do agente ou exit 0 não são prova/, "stale output and exit status must not prove the pin");
 has(SKILL, /nunca faça fallback para dispatch nem altere settings global\/project/, "pin failure must block without fallback or global mutation");
+has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-5\.6-sol --thinking high[^\n]*--enter --json/, "reference must start issue workers with Sol/high");
+has(REFERENCE, /do not alter planner\/plan-heavy internal routing/, "reference must preserve planner routing");
 has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter --json/, "reference must use the native mode pin command");
-has(REFERENCE, /same check before subsequent dispatch on a settled owned PI/, "reuse/resume must reverify the session pin");
-has(SKILL, /`--model`\/`--effort` valem para Claude\/Codex\/Cursor e \*\*não\*\* para PI/, "PI model/effort must stay untouched");
+has(REFERENCE, /Repeat both checks before subsequent dispatch on a settled owned PI/, "reuse/resume must reverify model and session pin");
+has(SKILL, /`--model`\/`--effort` valem para Claude\/Codex\/Cursor e \*\*não\*\* para PI/, "PI model/effort flags must stay off Orca");
 has(SKILL, /worktree set --worktree <id exato> --issue <N> --workspace-status <id> --comment \.\.\. --json/, "workspace metadata command must be exact");
 has(SKILL, /`Blocked` \*\*não\*\* é status Orca conhecido[\s\S]{0,200}comentário de bloqueio/, "Blocked must not be invented as an Orca status");
 has(SKILL, /check --wait --types worker_done,escalation,question --timeout-ms/, "bounded waiting must use the documented check form");

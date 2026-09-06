@@ -143,6 +143,11 @@ export function formatExecutionModeReceipt(state: ResolvedExecutionMode): string
   return `EXECUTION_MODE=${JSON.stringify({ mode: state.mode, source: state.source, ...(state.diagnostic ? { valid: false } : {}) })}`;
 }
 
+/** Human-facing footer label. Keep the machine receipt separate for Flow admission. */
+export function formatExecutionModeStatus(state: Pick<ResolvedExecutionMode, "mode" | "source">): string {
+  return `MODE  ${MODE_LABELS[state.mode]} · ${state.source.toUpperCase()}`;
+}
+
 function writeConfiguredMode(path: string, mode: ExecutionMode): void {
   let settings: Record<string, unknown> = {};
   let fileMode: number | undefined;
@@ -179,7 +184,7 @@ function cleanInjectedInstruction(prompt: string): string {
 
 function showState(ctx: ExtensionContext, state: ResolvedExecutionMode, notify = true): void {
   const receipt = formatExecutionModeReceipt(state);
-  ctx.ui?.setStatus?.("execution-mode", receipt);
+  ctx.ui?.setStatus?.("execution-mode", formatExecutionModeStatus(state));
   if (notify) ctx.ui?.notify?.(receipt, "info");
   if (state.diagnostic) ctx.ui?.notify?.(SAFE_CONFIGURATION_DIAGNOSTIC, "warning");
 }
@@ -255,7 +260,7 @@ export default function executionModeExtension(pi: ExtensionAPI) {
     const state = resolveExecutionModeState(ctx.cwd, ctx.isProjectTrusted(), getAgentDir(), ctx.sessionManager);
     const diagnostic = state.diagnostic ? `\nCONFIGURATION DIAGNOSTIC: ${state.diagnostic}` : "";
     const instruction = `${INSTRUCTION_START}\n${formatExecutionModeReceipt(state)}\n${executionInstruction(state.mode)}${diagnostic}\n${INSTRUCTION_END}`;
-    ctx.ui?.setStatus?.("execution-mode", formatExecutionModeReceipt(state));
+    ctx.ui?.setStatus?.("execution-mode", formatExecutionModeStatus(state));
     if (state.diagnostic) ctx.ui?.notify?.(SAFE_CONFIGURATION_DIAGNOSTIC, "warning");
     const base = cleanInjectedInstruction(event.systemPrompt ?? "");
     return { systemPrompt: `${base}${base ? "\n\n" : ""}${instruction}` };
