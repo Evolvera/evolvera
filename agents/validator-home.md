@@ -104,7 +104,7 @@ Check:
 Run the validation commands from `TASK_builder-home.md`, including:
 
 ```bash
-node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html
+node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html
 ```
 
 Also inspect for:

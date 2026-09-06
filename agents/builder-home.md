@@ -107,9 +107,9 @@ grep -qi "<style" .pi/previews/<slug>/index.html
 grep -qi "<main" .pi/previews/<slug>/index.html
 grep -qi "prefers-reduced-motion" .pi/previews/<slug>/index.html
 grep -qi "focus-visible" .pi/previews/<slug>/index.html
-node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html
+node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html
 # If TASK_builder-home.md requests visual snapshots:
-node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs .pi/previews/<slug>/index.html .pi/previews/<slug>/screenshots
+node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/capture-home-screenshots.mjs" .pi/previews/<slug>/index.html .pi/previews/<slug>/screenshots
 test -f .pi/previews/<slug>/screenshots/portrait.png
 test -f .pi/previews/<slug>/screenshots/landscape.png
 ```

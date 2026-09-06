@@ -55,7 +55,7 @@ You are a scout. Quickly investigate a codebase...
 ```
 
 **Localizações**:
-- `~/.pi/agent/agents/*.md` — User-level (sempre carregado)
+- `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/agents/*.md` — User-level (sempre carregado)
 - `.pi/agents/*.md` — Project-level (só com `agentScope: "project"` ou `"both"`)
 
 **Limitações**: Output truncado em collapsed view, parallel limitado a 8 tasks, 4 concurrent.
@@ -265,7 +265,7 @@ Agentes herdam extensões do pai. `extensions: false` para desativar.
 `memory: project` → memória persistente via `MEMORY.md`.
 
 ### Com AGENTS.md
-PI carrega `~/.pi/agent/AGENTS.md` e `<cwd>/AGENTS.md` automaticamente.
+PI carrega `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/AGENTS.md` e `<cwd>/AGENTS.md` automaticamente.
 
 ---
 
@@ -293,8 +293,8 @@ Ao criar um agente, adicione routing no `AGENTS.md` aplicável seguindo o format
 
 ## RESOURCES
 
-- **Documentação PI**: `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/docs/`
-- **Exemplos**: `/Users/j.henrique/npm-global/lib/node_modules/@mariozechner/pi-coding-agent/examples/extensions/`
+- **Documentação PI**: `$(npm root -g)/@earendil-works/pi-coding-agent/docs/`
+- **Exemplos**: `$(npm root -g)/@earendil-works/pi-coding-agent/examples/extensions/`
 - **pi-subagents**: https://github.com/tintinweb/pi-subagents
 - **pi-teams**: https://github.com/burggraf/pi-teams
 - **taskplane**: https://github.com/HenryLach/taskplane
