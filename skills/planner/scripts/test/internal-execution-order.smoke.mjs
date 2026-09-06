@@ -17,7 +17,7 @@ const builderPrompts = [
   "agents/builder-heavy-design.md",
 ];
 const builderSkills = ["skills/builder/SKILL.md", "skills/agent-guide/SKILL.md"];
-const flowPath = "skills/flow/SKILL.md";
+const flowPath = "skills/flow-orca/SKILL.md";
 const templatePaths = ["templates/builder/TILL-DO.md", "templates/builder/TODO.md"];
 const files = [
   "SYSTEM.md",
@@ -95,7 +95,7 @@ assert.match(
 
 requireMatch(flowPath, /Internal Execution Order bridge/i, "missing Flow bridge");
 requireMatch(flowPath, /TILL-DO_<task-id>\.md[\s\S]{0,100}TODO_<task-id>\.md/i, "Flow must preserve both lifecycle artifacts");
-requireMatch(flowPath, /(apenas dentro|only within)[^.\n]*workspace[^.\n]*(checkout canônico|worktree)/i, "artifacts must remain local to the issue workspace in solo and parallel modes");
+requireMatch(flowPath, /(apenas dentro|only within)[^.\n]*workspace Orca[^.\n]*(nunca|never)[^.\n]*checkout canônico/i, "artifacts must remain inside the issue's Orca workspace and never the canonical checkout");
 requireMatch(flowPath, /nunca os converta[^.\n]*Flow\/GitHub/i, "artifacts must not become Flow/GitHub state");
 requireMatch(flowPath, /nem os inclua no commit|not[^.\n]*commit/i, "artifacts must not be committed by default");
 requireMatch(flowPath, /bloqueado[^.\n]*não cria TODO[^.\n]*mutação de fonte/i, "blocked readiness must prevent TODO and source mutation");
@@ -138,4 +138,4 @@ for (const forbidden of ["Nazca", "CRM", "Portal", "DFC"]) {
 assert.doesNotMatch(contractText, /(?:exactly|universal(?:ly)?)\s+(?:ten|10|four|4)[- ]phase|(?:ten|10|four|4)\s+phases/i, "contract must not prescribe a universal exact phase recipe");
 assert.doesNotMatch(contractText, /Phase 1[\s\S]{0,120}Phase 2[\s\S]{0,120}Phase 3[\s\S]{0,120}Phase 4/i, "contract must not hardcode a fixed phase sequence");
 
-console.log(`internal-execution-order smoke: PASS (${plannerFiles.length} planner surfaces, ${builderPrompts.length} builder prompts, ${builderSkills.length} builder skills, Flow, templates, SYSTEM mirrors)`);
+console.log(`internal-execution-order smoke: PASS (${plannerFiles.length} planner surfaces, ${builderPrompts.length} builder prompts, ${builderSkills.length} builder skills, Flow Orca, templates, SYSTEM mirrors)`);

@@ -7,10 +7,10 @@
     "repository": "https://github.com/Evolvera/evolvera"
   },
   "snapshot": {
-    "sourceHead": "9bdf6f5ee0f84bf66d88c27c5a4c6536e3a984f6",
+    "sourceHead": "UNKNOWN",
     "generatedAt": "2026-08-26T20:39:53Z",
-    "lastVerifiedAt": "2026-08-26T20:39:53Z",
-    "scope": "Tracked harness control plane, workflows, runtime extensions, PI Studio, installation, and documented external boundaries; excludes sessions, caches, plans, recovery artifacts, backups, secrets, and live delivery state.",
+    "lastVerifiedAt": "2026-09-06T18:00:22Z",
+    "scope": "Tracked harness control plane, workflows, runtime extensions, PI Studio, installation, and documented external boundaries; excludes sessions, caches, plans, recovery artifacts, backups, secrets, and live delivery state. Freshness is bounded: at lastVerifiedAt only the Flow Orca delivery records (flow-issue-delivery, flow-reentry-claim, orca-runtime, flow-uses-github, flow-calls-planner, flow-calls-builder, flow-uses-orca, github-delivery-records, flow-issue-delivery-flow, flow-contract, flow-artifacts) were re-verified against an uncommitted working tree, so sourceHead is UNKNOWN; every other record retains its earlier verification from source head 9bdf6f5ee0f84bf66d88c27c5a4c6536e3a984f6.",
     "confidence": "known"
   },
   "actors": [
@@ -195,6 +195,18 @@
       ]
     },
     {
+      "id": "orca-runtime",
+      "name": "Orca runtime",
+      "kind": "external",
+      "level": 1,
+      "parentId": "external-ecosystem",
+      "description": "External Orca CLI/app (verified 1.4.192) that creates the issue workspace, actual branch, and PI terminal, and dispatches the prepared session.",
+      "confidence": "known",
+      "evidenceIds": [
+        "flow-contract"
+      ]
+    },
+    {
       "id": "model-provider-services",
       "name": "Model provider services",
       "kind": "external",
@@ -350,14 +362,15 @@
     },
     {
       "id": "flow-issue-delivery",
-      "name": "Flow issue delivery",
+      "name": "Flow Orca issue delivery",
       "kind": "library",
       "level": 2,
       "parentId": "workflow-skill-library",
       "confidence": "known",
       "evidenceIds": [
         "flow-contract"
-      ]
+      ],
+      "description": "Single delivery skill: GitHub owns delivery (Project README campaign grant, issue bodies, comments, Project Status), the scheduling graph is derived in memory from a fresh remote read with no local delivery-control artifact, and each issue gets one Orca workspace, actual branch, and PI session under a six-worker work-conserving ceiling."
     },
     {
       "id": "website-production-pipeline",
@@ -405,14 +418,15 @@
     },
     {
       "id": "flow-reentry-claim",
-      "name": "Flow re-entry and claim",
+      "name": "Flow Orca re-entry and serial admission",
       "kind": "domain",
       "level": 3,
       "parentId": "flow-issue-delivery",
       "confidence": "known",
       "evidenceIds": [
         "flow-contract"
-      ]
+      ],
+      "description": "Autonomous re-entry from remote evidence alone plus single-coordinator serial admission: GitHub-visible intent and recheck before dispatch, never atomic cross-host locking; missing or contradictory remote authority blocks the affected admission instead of inferring permission."
     },
     {
       "id": "website-stage-chain",
@@ -1113,6 +1127,20 @@
       "kind": "uses",
       "fromId": "flow-issue-delivery",
       "toId": "github-service",
+      "dataObjectIds": [
+        "github-delivery-records"
+      ],
+      "evidenceIds": [
+        "flow-contract"
+      ],
+      "confidence": "known"
+    },
+    {
+      "id": "flow-uses-orca",
+      "name": "Flow Orca uses the Orca runtime",
+      "kind": "uses",
+      "fromId": "flow-issue-delivery",
+      "toId": "orca-runtime",
       "dataObjectIds": [
         "github-delivery-records"
       ],
@@ -1908,12 +1936,14 @@
         {
           "id": "flow-issue-delivery-flow-step-1",
           "order": 1,
-          "action": "Re-enter from GitHub authority",
+          "action": "Re-enter from GitHub authority and live Orca evidence",
           "componentIds": [
-            "flow-reentry-claim"
+            "flow-reentry-claim",
+            "orca-runtime"
           ],
           "relationshipIds": [
-            "flow-uses-github"
+            "flow-uses-github",
+            "flow-uses-orca"
           ],
           "dataObjectIds": [
             "github-delivery-records"
@@ -1922,7 +1952,7 @@
         {
           "id": "flow-issue-delivery-flow-step-2",
           "order": 2,
-          "action": "Use approved issue and DAG",
+          "action": "Read the Project README grant and issue bodies, then derive the scheduling DAG in memory",
           "componentIds": [
             "flow-issue-delivery"
           ],
@@ -1934,12 +1964,14 @@
         {
           "id": "flow-issue-delivery-flow-step-3",
           "order": 3,
-          "action": "Claim exclusive branch and worktree",
+          "action": "Admit serially, then create the Orca workspace, branch, PI session, and the single attempt Task for that issue",
           "componentIds": [
-            "flow-reentry-claim"
+            "flow-reentry-claim",
+            "orca-runtime"
           ],
           "relationshipIds": [
-            "flow-uses-github"
+            "flow-uses-github",
+            "flow-uses-orca"
           ],
           "dataObjectIds": [
             "github-delivery-records"
@@ -1979,7 +2011,7 @@
         {
           "id": "flow-issue-delivery-flow-step-6",
           "order": 6,
-          "action": "Merge and close status",
+          "action": "Merge serially into the chosen base, then close and reread status",
           "componentIds": [
             "flow-issue-delivery"
           ],
@@ -1992,10 +2024,10 @@
         }
       ],
       "outcomes": [
-        "Policy-compliant merged delivery and coherent GitHub status"
+        "Merged delivery on the approved base with a closed issue and coherent reread GitHub status"
       ],
       "failureModes": [
-        "No approval, ambiguous claim, hazard, or failed review blocks progress"
+        "Missing grant, ambiguous claim, external blocker, hazard, failed review, or unproven merge blocks progress and keeps the slot occupied"
       ],
       "evidenceIds": [
         "flow-contract"
@@ -2270,19 +2302,19 @@
     },
     {
       "id": "flow-contract",
-      "path": "skills/flow/SKILL.md",
+      "path": "skills/flow-orca/SKILL.md",
       "startLine": 1,
-      "endLine": 180,
-      "claim": "Flow defines GitHub-first re-entry, approval gates, issue/DAG delivery, exclusive claims, branch/worktree isolation, review, and closure policy.",
-      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+      "endLine": 73,
+      "claim": "Flow Orca is the single delivery identity: GitHub owns delivery authority (Project README campaign grant, issue bodies, comments, Project Status) with live Orca evidence above an optional authority-free local cache, campaign intake with per-repository base and one of three modes, one Orca workspace/actual branch/PI session per issue, serial admission by one coordinator, a work-conserving six-worker ceiling, merged-evidence Done, and incident freeze.",
+      "sourceHead": "UNKNOWN"
     },
     {
       "id": "flow-artifacts",
-      "path": "skills/flow/SKILL.md",
-      "startLine": 520,
-      "endLine": 600,
-      "claim": "Flow defines durable Project plan, schedule, DAG, and index artifacts while excluding dynamic delivery state from memory.",
-      "sourceHead": "2a9b6db578393b318a70b917f512c6d066da2782"
+      "path": "skills/flow-orca/SKILL.md",
+      "startLine": 558,
+      "endLine": 596,
+      "claim": "Flow Orca keeps the campaign grant in the GitHub Project README and the issue contract (acceptance criteria, fully qualified dependency URLs with gates, delivery scopes) in issue bodies, derives the scheduling DAG in memory from a fresh remote read, and requires no local plan, schedule, DAG, index, or state artifact.",
+      "sourceHead": "UNKNOWN"
     },
     {
       "id": "website-pipeline",

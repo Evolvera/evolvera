@@ -361,6 +361,26 @@ revisa este PR somente contra o escopo aprovado
 
 O PI deve investigar o repositório antes de fazer perguntas factuais que o código possa responder. Ações destrutivas, deploy, force push, merge, compra ou mudanças ambíguas de segurança continuam exigindo autorização explícita.
 
+### Entrega por issue com Flow Orca
+
+A entrega de backlog → issues → PR usa uma única skill, `flow-orca`, que substitui o antigo `flow`:
+
+```text
+/skill:flow-orca
+User: [lista] — cria as issues e toca a campanha
+```
+
+No intake da campanha você escolhe duas coisas que o PI não assume sozinho:
+
+- a **base branch por repositório** (nada de `main` presumida; multi-repo usa uma base por repo);
+- um **modo**: `SUPERVISIONADO` aprova cada início de issue, commit, push e PR; `AUTÔNOMO ATÉ PR` cobre agendamento, workspaces, implementação, commit, push e PR; `YOLO` acrescenta o merge, só depois de review independente do head SHA final e dos checks exigidos, e cobre deploy/migração apenas quando essas operações forem nomeadas e aprovadas à parte. `YOLO` é escopo de aprovação, nunca bypass de segurança.
+
+**O GitHub controla tudo.** O grant da campanha (escopo, bases, modo, teto, operações nomeadas e a proveniência da aprovação) fica numa seção `## Campaign grant` do README do próprio GitHub Project, preservando o resto do texto; as ACs, os escopos e as dependências (sempre como URL completa da issue + gate) ficam no body de cada issue; progresso, blockers e resultados ficam nos comentários. Esse registro remoto é evidência de uma aprovação que você já deu — ele não se autoriza sozinho e não desliga nenhum gate de segurança. Não existe issue de controle, backlog paralelo nem plano/DAG/estado local de entrega: a ordem de execução é derivada em memória a cada releitura do GitHub, e uma pasta `.pi/flow/` antiga vale só como histórico opcional, sem autoridade.
+
+Durante a campanha, cada issue recebe uma workspace do Orca, uma branch real criada por ele e uma sessão PI. Os registros Run/Task/Dispatch do Orca são supervisão de runtime de **uma tentativa** da issue admitida, nunca uma segunda lista de trabalho. O scheduler é contínuo com teto de **seis** workers PI de issue simultâneos; a vaga só volta quando aquele worker assenta com segurança — timeout ou terminal ocioso não liberam vaga. O board usa `Backlog`, `Ready`, `In progress`, `In review`, `Blocked` e `Done`; `Blocked` é aditivo em boards existentes e recebe as issues com dependência externa (credencial, acesso, decisão humana), junto com seus dependentes. Todo status é atualizado **e relido**, e `Done` exige PR com `mergedAt` real na base escolhida, checks/review, issue fechada e status relido — `worker_done`, PR aberto ou PR fechado sem merge não são `Done`. Workspaces e branches concluídas são preservadas; não há limpeza automática.
+
+Esta versão do harness traz a skill e a política verificadas **estaticamente** (validação de skill, smokes de contrato, mirrors e arquitetura). Nenhuma campanha live, operação Orca, mutação de GitHub ou deployment foi executada aqui: não é certificação de campanha live.
+
 ### Comandos úteis
 
 | Comando | Uso |
