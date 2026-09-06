@@ -31,18 +31,13 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await
   read("extensions/subagent-watchdog.ts"),
 ]);
 
-// Model routing oracle: the planner frontmatter is the single model/effort authority for both the
-// normal planner and the plan-heavy final synthesis. Static text regression only, not a behavioral
-// certification of the planner model.
-assert.match(planner, /^model: openai-codex\/gpt-6-astra$/m);
-assert.match(planner, /^thinking: medium$/m);
-assert.match(planner, /^display_name: .*GPT-6 Astra · medium$/m);
-assert.match(planner, /Model: openai-codex\/gpt-6-astra medium\./);
-assert.doesNotMatch(
-  planner,
-  /gpt-5\.6-sol|\bxhigh\b|\bmax\b/i,
-  "planner must carry no stale Sol/xhigh/max routing",
-);
+// Routing authority: normal planner follows frontmatter (Sol/high); plan-heavy final
+// synthesis deliberately overrides only model/effort to Astra/high. Static contract regression.
+assert.match(planner, /^model: openai-codex\/gpt-5\.6-sol$/m);
+assert.match(planner, /^thinking: high$/m);
+assert.match(planner, /^display_name: .*GPT-5\.6 Sol · high$/m);
+assert.match(planner, /Model: openai-codex\/gpt-5\.6-sol high\./);
+assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|thinking:\s*(?:medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
@@ -57,16 +52,16 @@ assert.match(briefer55, /brief_gpt55\.md/);
 
 assert.match(planHeavy, /launch a fresh `planner` session/i);
 assert.match(planHeavy, new RegExp(finalDescription));
-assert.match(planHeavy, /Pass no `model` or `thinking` override/);
-assert.match(planHeavy, /planner agent's frontmatter defaults/);
+assert.match(planHeavy, /explicit plan-heavy override `model: openai-codex\/gpt-6-astra` and `thinking: high`/);
+assert.match(planHeavy, /plan-heavy synthesis is deliberately Astra\/high/);
 assert.match(planHeavy, /unchanged prompt from `agents\/planner\.md`/);
 assert.match(planHeavy, /Prompt rules for this launch/);
 assert.match(planHeavy, /lean, clear, and outcome-first/);
 assert.match(planHeavy, /three strategy briefs and a final planner synthesis/);
 assert.doesNotMatch(
   planHeavy,
-  /gpt-5\.6-sol|FINAL_PLANNER_EFFORT|max-effort|Claude Fable 5 prompt rules/i,
-  "plan-heavy must not hardcode a Sol/max/xhigh final-planner override",
+  /FINAL_PLANNER_EFFORT|max-effort|Claude Fable 5 prompt rules/i,
+  "plan-heavy must use only the approved Astra/high final-planner override",
 );
 assert.match(planHeavy, /plan-briefer-gpt55/);
 assert.match(planHeavy, /read the handoff and all briefs first/i);
@@ -75,7 +70,7 @@ assert.match(plannerSkill, /reads the handoff plus all briefs, reconciles them/i
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
 assert.match(
   system,
-  /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt on the planner agent's own default model\/effort, with no forced model or effort override/i,
+  /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt with explicit `openai-codex\/gpt-6-astra` \/ `high` routing/i,
 );
 assert.match(plannerSkill, /no hardcoded model or effort override/i);
 
