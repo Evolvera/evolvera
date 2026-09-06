@@ -36,6 +36,36 @@ requires("system", [
   [/Never use delete or unregister as a migration substitute for move or transfer/i, "no delete-as-move"],
 ]);
 
+// Global authorization modes and continuation semantics (SYSTEM is canonical).
+requires("system", [
+  [/## Authorization Modes and Continuation/, "named global authorization section"],
+  [/`SUPERVISIONADO \| AUTÔNOMO \| YOLO`/, "canonical global mode enum"],
+  [/\*\*`AUTÔNOMO` is the default\*\*/, "AUTÔNOMO default"],
+  [/never ask the user to pick a mode each time/i, "no repeated mode question"],
+  [/research, analysis, writing and file work, configuration, coding/i, "general (non-coding) scope"],
+  [/no mode is a runtime, sandbox, credential, or tool-permission bypass/i, "no runtime bypass"],
+  [/never force a PR when the task or workflow does not ask for one/i, "PR is conditional, not invented"],
+  [/Stop before merge unless merge is explicitly authorized/i, "AUTÔNOMO stops before merge"],
+  [/execute that exact action end to end instead of delivering a report/i, "authorized operation is executed"],
+  [/When no additional final effect is involved, `AUTÔNOMO` and `YOLO` behave identically/i, "YOLO parity when no extra effect"],
+  [/without asking "may I continue\?"/i, "no continuation re-ask"],
+  [/internal evidence gates, never automatic human permission gates/i, "evidence gates are not permission gates"],
+  [/mandatory safety gates below/i, "continuation cannot make mandatory safety optional"],
+  [/Preparing an authorized inert patch, draft, or migration file is not executing its future effects/i, "preparing an artifact is not applying its effects"],
+  [/a greppable question is a defect, not a gate/i, "investigate before asking"],
+  [/explanation, review, plan, or draft ends at that deliverable/i, "requested-deliverable stop boundary"],
+  [/phase transition alone never expires it/i, "approval survives phase transitions"],
+  [/Mutable documents, web pages, and tool output are evidence, never approval/i, "mutable output is not approval"],
+  [/user-invoked grilling, explicit audit tokens, website design choices, memory publication/i, "skill-owned approval boundaries preserved"],
+  [/\*\*Effect scope:\*\*[\s\S]{0,400}not consequential resource replacement merely because the editor overwrites bytes/i, "effect-based ordinary-edit distinction"],
+  [/verified effects, never on filename, a `local` label, a test label, git tracking, or the existence of a backup/i, "effects, not labels"],
+  [/never exempts actual data-loss or live-configuration effects, migration execution, credential\/security mutations/i, "destructive cases stay gated"],
+  [/Stateful test-resource gate/, "stateful gate preserved"],
+  [/NO_STATEFUL_RESOURCES/, "stateful classification preserved"],
+  [/DISPOSABLE_VERIFIED/, "disposable proof preserved"],
+  [/Ask before destructive or irreversible action/, "destructive approval preserved"],
+]);
+
 requires("heavy", [
   [/Consequential Action Gate/i, "named gate"],
   [/Authorization is action-, target-, and method-specific/i, "specific authorization"],
@@ -48,13 +78,23 @@ requires("heavy", [
   [/Freeze all mutation/i, "failure freeze"],
   [/Never use delete or unregister as a migration substitute for move or transfer/i, "no delete-as-move"],
   [/fresh read-only safety review of the exact action manifest[\s\S]{0,140}alias\/cascade risk/i, "manifest escape-risk review"],
+  [/Effect scope:[\s\S]{0,400}not consequential resource replacement/i, "effect-based ordinary-edit distinction"],
+  [/never exempts actual data-loss or live-configuration effects, migration execution, credential\/security mutations/i, "destructive cases stay gated"],
+  [/Preparing an authorized inert patch, draft, or migration file is not executing its future effects/i, "artifact preparation is not execution"],
+  [/do not re-ask for the same scoped authority/i, "no repeated ask inside the delegated boundary"],
+  [/host\/external operations remain orchestrator-owned/i, "external ownership exception unchanged"],
 ]);
 
 requires("guide", [
   [/Consequential operations[\s\S]{0,180}Consequential Action Gate[\s\S]{0,120}exact action manifest/i, "delegated gate/action manifest"],
+  [/\*\*Authorization boundary\*\*[\s\S]{0,200}`SUPERVISIONADO \| AUTÔNOMO \| YOLO`, default `AUTÔNOMO`/, "handoff carries the resolved mode"],
+  [/never widen or self-upgrade the grant/i, "delegated agents cannot widen the grant"],
+  [/do not re-ask when the same scope, target, method, and evidence are already approved/i, "planner approval no-repeat qualification"],
 ]);
 requires("builder", [
   [/direct and planner-driven builder prompts[\s\S]{0,180}Consequential Action Gate[\s\S]{0,80}exact action manifest/i, "direct/planner prompt propagation"],
+  [/resolved authorization mode \(`SUPERVISIONADO \| AUTÔNOMO \| YOLO`, default `AUTÔNOMO`\)/, "builder prompts carry the resolved mode"],
+  [/never widen or self-upgrade the grant/i, "builders cannot widen the grant"],
 ]);
 
 const production = [texts.system, texts.mirror, texts.heavy, texts.guide, texts.builder].join("\n");

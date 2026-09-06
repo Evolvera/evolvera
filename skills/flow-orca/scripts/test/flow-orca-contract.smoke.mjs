@@ -189,8 +189,22 @@ has(SKILL, /bloqueado[^.\n]*não cria TODO[^.\n]*mutação de fonte/, "a blocked
 
 // ── 4. Campaign intake: three modes and per-repository base ─────────────────
 has(SKILL, /SUPERVISIONADO/, "mode SUPERVISIONADO must exist");
-has(SKILL, /AUTÔNOMO ATÉ PR/, "mode AUTÔNOMO ATÉ PR must exist");
+has(SKILL, /\*\*AUTÔNOMO\*\*/, "canonical mode AUTÔNOMO must exist");
 has(SKILL, /\bYOLO\b/, "mode YOLO must exist");
+// The global contract owns the mode vocabulary; Flow consumes it.
+has(SYSTEM, /`SUPERVISIONADO \| AUTÔNOMO \| YOLO`/, "SYSTEM must own the canonical global mode enum");
+has(SYSTEM, /\*\*`AUTÔNOMO` is the default\*\*/, "SYSTEM must make AUTÔNOMO the default mode");
+has(SKILL, /default `AUTÔNOMO`/, "intake must consume the global default mode");
+has(SKILL, /não faça uma pergunta separada de escolha de modo/, "intake must not re-ask a separate mode question");
+lacks(SKILL, /- \[ \] Modo da campanha:/, "cold start must not present the defaulted mode as missing");
+lacks(SKILL, /Base por repositório e modo da campanha \| escolha explícita/, "cold start must distinguish explicit base selection from resolved mode");
+has(SKILL, /O modo default \*\*não autoriza a campanha por si só\*\*/, "the default mode must never authorize a campaign by itself");
+has(SKILL, /alias legado\*\* de `AUTÔNOMO`/, "AUTÔNOMO ATÉ PR must remain an accepted legacy alias");
+has(SKILL, /AUTÔNOMO ATÉ PR/, "the legacy alias literal must remain documented");
+has(SKILL, /Grants existentes válidos permanecem como estão/, "existing valid grants must be preserved without migration");
+has(SKILL, /o modo default nunca preenche um grant ausente/, "a missing grant must never be filled by the default mode");
+has(REFERENCE, /AUTÔNOMO \(alias legado: AUTÔNOMO ATÉ PR\)/, "reference report must use the canonical mode plus its legacy alias");
+has(REFERENCE, /the global default mode alone never authorizes a campaign/, "reference admission must reject default-mode campaign authorization");
 has(SKILL, /\*\*SUPERVISIONADO\*\*[^|]*\|[^|]*\|[^|]*início de issue[\s\S]{0,80}commit[\s\S]{0,40}push[\s\S]{0,40}PR/i, "SUPERVISIONADO must gate start, commit, push, and PR individually");
 has(SKILL, /YOLO é \*\*escopo de aprovação\*\*, não flag de runtime nem bypass de segurança/, "YOLO must be scope, never a safety bypass");
 has(SKILL, /YOLO[\s\S]{0,400}review independente do head SHA final/, "YOLO merge requires an independent final-SHA review");
@@ -298,6 +312,9 @@ assert.ok(psGuard > -1 && psMutation > -1 && psGuard < psMutation, "install.ps1:
 // ── 12. User-facing documentation ───────────────────────────────────────────
 has(README, /\/skill:flow-orca/, "README must document the flow-orca command");
 has(README, /SUPERVISIONADO[\s\S]{0,400}AUTÔNOMO ATÉ PR[\s\S]{0,400}YOLO/, "README must list the three campaign modes");
+has(README, /### Modos de autorização/, "README must document the general authorization modes");
+has(README, /`SYSTEM\.md`/, "README must point at the canonical global contract");
+has(README, /`AUTÔNOMO` \(\*\*default\*\*\)/, "README must state the global default mode");
 has(README, /por repositório/, "README must state the per-repository base choice");
 has(README, /seis/, "README must state the six-worker ceiling");
 has(README, /`Blocked`/, "README must mention the Blocked Project status");

@@ -131,6 +131,8 @@ Use outcome-first prompts. Describe the destination, constraints, available cont
 
 For direct and planner-driven builder prompts involving a consequential operation on `NONDISPOSABLE` state, carry the Consequential Action Gate and exact action manifest into the prompt: authorization is action-, target-, and method-specific and expires on material change; prove a supported documented method, semantic identity/blast radius, recovery independence, and deletion/effect semantics; obtain fresh exact confirmation after evidence; allow one irreversible effect per tool call; freeze on unexpected/ambiguous effects. An unexpected result is an `INCIDENT` authorizing read-only diagnosis only and suspending prior mutation/destruction approval—no cleanup, retry, rollback, restoration, recreation, or hypothesis mutation without fresh explicit authorization. Never substitute delete/unregister for move/transfer. Require a fresh read-only review of the exact manifest when it can catch alias/cascade risk.
 
+Every builder prompt, direct or planner-driven, also carries the resolved authorization mode (`SUPERVISIONADO | AUTÔNOMO | YOLO`, default `AUTÔNOMO`) and the approved stage/action boundary for this task. Inside that boundary the builder executes the authorized work to completion without re-asking for the same scoped authority while action, target, method, limits, and evidence are unchanged. A builder may never widen or self-upgrade the grant: authority beyond the boundary, a new external effect, or a human decision returns `BLOCKED` to the orchestrator, which owns user decisions and host/external operations unless the user explicitly asked for a subagent.
+
 Template:
 
 ```text
