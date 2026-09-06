@@ -363,7 +363,9 @@ O PI deve investigar o repositório antes de fazer perguntas factuais que o cód
 
 ### Modos de autorização
 
-O contrato canônico vive em `SYSTEM.md` (espelhado em `config/SYSTEM.md`) e vale para qualquer trabalho — pesquisa, análise, documentos, configuração, código e operações autorizadas. Não há comando nem flag nova: você pede outro modo em linguagem natural quando quiser sair do default.
+O comportamento de execução é propriedade de runtime de `extensions/execution-mode.ts`, não de memória do chat nem de uma promessa textual do modelo. A extensão persiste a escolha e injeta automaticamente apenas o modo ativo, mais o contrato comum de continuação/autoridade, em todas as sessões PI que a carregam — inclusive prompts customizados e workers PI do Orca. Agentes customizados com `extensions: false` não recebem esse hook; seus handoffs delimitados continuam carregando modo e escopo pelo contrato de `agent-guide`/`builder`.
+
+Use `/execution-mode` para abrir o seletor, ou `/execution-mode <supervised|autonomous|yolo> [global|project|session]`; aliases `SUPERVISIONADO`, `AUTÔNOMO` e `AUTÔNOMO ATÉ PR` são aceitos e os valores persistidos são `supervised`, `autonomous` e `yolo`. O escopo default é `global`; precedência verificada é `session > project confiável > global > autonomous`. `/execution-mode status` e cada gravação exibem `EXECUTION_MODE={"mode":"…","source":"…"}`. O valor ausente resolve para `autonomous`; configuração inválida resolve fail-safe para `supervised` com diagnóstico sanitizado e receipt marcado `valid:false`, nunca confirmação válida para dispatch. O pin de sessão usa entradas nativas fora do contexto do modelo; numa sessão nova, o SDK grava essas entradas junto da primeira resposta do assistente. O Flow verifica o pin antes de cada dispatch, inclusive após retomada. `SYSTEM.md` (espelhado em `config/SYSTEM.md`) mantém a autoridade permanente, a segurança e o ponteiro para esse owner de runtime.
 
 | Modo | O que cobre | Onde para |
 |---|---|---|
