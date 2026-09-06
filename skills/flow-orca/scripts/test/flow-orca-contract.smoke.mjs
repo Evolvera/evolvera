@@ -13,6 +13,7 @@ const SKILL = "skills/flow-orca/SKILL.md";
 const REFERENCE = "skills/flow-orca/references/parallel-execution.md";
 const SYSTEM = "SYSTEM.md";
 const SYSTEM_MIRROR = "config/SYSTEM.md";
+const EXECUTION_MODE = "extensions/execution-mode.ts";
 const MEMORY_SKILL = "skills/project-memory/SKILL.md";
 const PLANNER_SMOKE = "skills/planner/scripts/test/internal-execution-order.smoke.mjs";
 const README = "README.md";
@@ -22,7 +23,7 @@ const ARCH_JSON = ".pi/memory/architecture.json";
 const ARCH_HTML = ".pi/memory/architecture.html";
 
 const files = [
-  SKILL, REFERENCE, SYSTEM, SYSTEM_MIRROR, MEMORY_SKILL,
+  SKILL, REFERENCE, SYSTEM, SYSTEM_MIRROR, EXECUTION_MODE, MEMORY_SKILL,
   PLANNER_SMOKE, README, INSTALL_SH, INSTALL_PS1, ARCH_JSON, ARCH_HTML,
 ];
 const text = new Map(
@@ -191,9 +192,13 @@ has(SKILL, /bloqueado[^.\n]*não cria TODO[^.\n]*mutação de fonte/, "a blocked
 has(SKILL, /SUPERVISIONADO/, "mode SUPERVISIONADO must exist");
 has(SKILL, /\*\*AUTÔNOMO\*\*/, "canonical mode AUTÔNOMO must exist");
 has(SKILL, /\bYOLO\b/, "mode YOLO must exist");
-// The global contract owns the mode vocabulary; Flow consumes it.
-has(SYSTEM, /`SUPERVISIONADO \| AUTÔNOMO \| YOLO`/, "SYSTEM must own the canonical global mode enum");
-has(SYSTEM, /\*\*`AUTÔNOMO` is the default\*\*/, "SYSTEM must make AUTÔNOMO the default mode");
+// The runtime extension owns selection/defaults/behavior; SYSTEM retains only permanent authority and safety.
+has(EXECUTION_MODE, /registerCommand\("execution-mode"/, "runtime must own the execution-mode command");
+has(EXECUTION_MODE, /before_agent_start/, "runtime must inject the active mode before each agent loop");
+has(EXECUTION_MODE, /appendEntry\(SESSION_ENTRY_TYPE/, "session mode must use a durable custom entry");
+has(SYSTEM, /`extensions\/execution-mode\.ts` owns mode selection, persistence, defaults, and active behavior/, "SYSTEM must point to one runtime owner");
+has(EXECUTION_MODE, /return \{ mode: "autonomous", source: "default" \}/, "runtime must own the autonomous default");
+lacks(SYSTEM, /- \*\*SUPERVISIONADO\*\*:/, "SYSTEM must not duplicate runtime-owned per-mode behavior");
 has(SKILL, /default `AUTÔNOMO`/, "intake must consume the global default mode");
 has(SKILL, /não faça uma pergunta separada de escolha de modo/, "intake must not re-ask a separate mode question");
 lacks(SKILL, /- \[ \] Modo da campanha:/, "cold start must not present the defaulted mode as missing");
@@ -226,6 +231,16 @@ has(SKILL, /Inspecione e autorize política de setup e terminais default \*\*ant
 has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effect free");
 has(SKILL, /worker-start --task <id> --terminal <handle exato> --run <id> --json/, "dispatch must adopt the exact prepared terminal");
 has(SKILL, /`worker-start` aceita `--base-branch`, mas \*\*não\*\* aceita `--issue`/, "worker-start must not be given --issue");
+has(SKILL, /Fixe e verifique o modo no terminal PI preparado/, "new PI workers must pin the grant mode before dispatch");
+has(SKILL, /terminal wait --terminal <handle exato> --for tui-idle --timeout-ms/, "mode pin must wait for tui-idle");
+has(SKILL, /terminal read --terminal <handle exato> --limit <n> --json/, "initial mode read must not invent a cursor");
+has(SKILL, /salve o `nextCursor` real/, "mode pin must retain the returned cursor");
+has(SKILL, /terminal send --terminal <handle exato> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter/, "mode pin must use the native terminal send");
+has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispatch requires the exact session receipt");
+has(SKILL, /saída stale, prosa do agente ou exit 0 não são prova/, "stale output and exit status must not prove the pin");
+has(SKILL, /nunca faça fallback para dispatch nem altere settings global\/project/, "pin failure must block without fallback or global mutation");
+has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter --json/, "reference must use the native mode pin command");
+has(REFERENCE, /same check before subsequent dispatch on a settled owned PI/, "reuse/resume must reverify the session pin");
 has(SKILL, /`--model`\/`--effort` valem para Claude\/Codex\/Cursor e \*\*não\*\* para PI/, "PI model/effort must stay untouched");
 has(SKILL, /worktree set --worktree <id exato> --issue <N> --workspace-status <id> --comment \.\.\. --json/, "workspace metadata command must be exact");
 has(SKILL, /`Blocked` \*\*não\*\* é status Orca conhecido[\s\S]{0,200}comentário de bloqueio/, "Blocked must not be invented as an Orca status");

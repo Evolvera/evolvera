@@ -10,6 +10,7 @@ const paths = {
   heavy: "agents/builder-heavy.md",
   guide: "skills/agent-guide/SKILL.md",
   builder: "skills/builder/SKILL.md",
+  execution: "extensions/execution-mode.ts",
 };
 const texts = Object.fromEntries(
   await Promise.all(Object.entries(paths).map(async ([key, path]) => [key, await readFile(resolve(root, path), "utf8")])),
@@ -39,15 +40,7 @@ requires("system", [
 // Global authorization modes and continuation semantics (SYSTEM is canonical).
 requires("system", [
   [/## Authorization Modes and Continuation/, "named global authorization section"],
-  [/`SUPERVISIONADO \| AUTÔNOMO \| YOLO`/, "canonical global mode enum"],
-  [/\*\*`AUTÔNOMO` is the default\*\*/, "AUTÔNOMO default"],
-  [/never ask the user to pick a mode each time/i, "no repeated mode question"],
-  [/research, analysis, writing and file work, configuration, coding/i, "general (non-coding) scope"],
   [/no mode is a runtime, sandbox, credential, or tool-permission bypass/i, "no runtime bypass"],
-  [/never force a PR when the task or workflow does not ask for one/i, "PR is conditional, not invented"],
-  [/Stop before merge unless merge is explicitly authorized/i, "AUTÔNOMO stops before merge"],
-  [/execute that exact action end to end instead of delivering a report/i, "authorized operation is executed"],
-  [/When no additional final effect is involved, `AUTÔNOMO` and `YOLO` behave identically/i, "YOLO parity when no extra effect"],
   [/without asking "may I continue\?"/i, "no continuation re-ask"],
   [/internal evidence gates, never automatic human permission gates/i, "evidence gates are not permission gates"],
   [/mandatory safety gates below/i, "continuation cannot make mandatory safety optional"],
@@ -64,6 +57,18 @@ requires("system", [
   [/NO_STATEFUL_RESOURCES/, "stateful classification preserved"],
   [/DISPOSABLE_VERIFIED/, "disposable proof preserved"],
   [/Ask before destructive or irreversible action/, "destructive approval preserved"],
+]);
+
+requires("execution", [
+  [/return \{ mode: "autonomous", source: "default" \}/, "runtime owns autonomous default"],
+  [/behavior preference, not proof of action authority/i, "preference never grants authority"],
+  [/registerCommand\("execution-mode"/, "runtime command owner"],
+  [/before_agent_start/, "automatic prompt injection"],
+  [/This general execution mode applies to research, analysis, writing, configuration, coding, file work/i, "generalist mode semantics"],
+  [/The user approves each meaningful proposed stage or effect/i, "supervised behavior"],
+  [/Carry the authorized outcome through evidence, in-scope work, safe validation, and delivery/i, "autonomous behavior"],
+  [/explicit task-scoped broader finishing authority/i, "yolo behavior"],
+  [/not runtime, sandbox, credential, or tool-permission access/i, "runtime is not a permission bypass"],
 ]);
 
 requires("heavy", [
@@ -97,7 +102,7 @@ requires("builder", [
   [/never widen or self-upgrade the grant/i, "builders cannot widen the grant"],
 ]);
 
-const production = [texts.system, texts.mirror, texts.heavy, texts.guide, texts.builder].join("\n");
+const production = [texts.system, texts.mirror, texts.heavy, texts.guide, texts.builder, texts.execution].join("\n");
 assert.doesNotMatch(production, /\bUTM\b/i, "production contract must remain domain-neutral");
 assert.doesNotMatch(
   production,
