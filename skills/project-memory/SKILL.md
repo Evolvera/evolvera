@@ -13,9 +13,9 @@ Toda memória de projeto fica em: `{cwd}/.pi/memory/`
 > - `.pi/build/` — checklists temporários de execução (TILL-DO.md, TODO.md)
 > - `.pi/validate/` — artefatos de validação (REVIEW.md, FIX_REQUIRED.md)
 > - `.pi/memory/` — memória persistente do projeto (este skill)
-> - `.pi/flow/` — cache operacional rebuildable de entrega, de propriedade do skill `flow`
+> - `.pi/flow/` — histórico local **opcional** e somente-leitura da entrega, de propriedade do skill `flow-orca`; nada ali é autoridade e sua ausência nunca bloqueia retomada
 >
-> `.pi/memory/` registra contexto e conhecimento genérico; não possui claims nem o estado de entrega do Flow. Para Flow, o estado remoto atual do GitHub sempre prevalece sobre `.pi/flow/`, `.pi/memory/` e contexto de chat. Ausência ou desatualização desses caches nunca autoriza recriar backlog, assumir issue ou sobrescrever estado remoto.
+> `.pi/memory/` registra contexto e conhecimento genérico; não possui claims nem o estado de entrega. Para entrega, o estado atual do GitHub sempre prevalece (grant no README do Project, bodies das issues, comentários e Project Status), seguido da evidência viva de workspaces/terminais do Orca; ambos prevalecem sobre `.pi/flow/`, `.pi/memory/` e contexto de chat. Ausência ou desatualização desses caches nunca autoriza recriar backlog, assumir issue, criar workspace ou sobrescrever estado remoto.
 
 | Arquivo | Descrição |
 |---------|-----------|
@@ -49,7 +49,7 @@ Compatibilidade operacional: em ambiente legado com `pi-observational-memory` at
 
 Se `.pi/memory/` estiver ausente, não trate ausência como confirmação de projeto novo.
 
-**Exceção Flow:** quando a intenção atual for continuar board/issues/PRs via skill `flow`, a Phase 6 de re-entry remoto do Flow acontece primeiro. Memória ausente não significa projeto novo quando o GitHub já contém board, issues, branches ou PRs. Só depois da reconciliação remota crie/atualize memória, se isso ainda for necessário; nunca deixe memória bloquear retomada do WIP remoto.
+**Exceção de entrega:** quando a intenção atual for continuar board/issues/PRs via skill `flow-orca`, o re-entry completo daquela skill acontece primeiro. Memória ausente não significa projeto novo quando o GitHub já contém board, issues, branches ou PRs, ou quando o Orca já tem workspaces da campanha. Só depois da reconciliação remota crie/atualize memória, se isso ainda for necessário; nunca deixe memória bloquear retomada do WIP remoto.
 
 ---
 
@@ -182,7 +182,7 @@ Execute mentalmente antes de CADA resposta:
 [ ] Eu executei alguma ação que gerou ou alterou conhecimento do projeto?
 [ ] Registrei no arquivo `.md` correto e atualizei projeções (`_summary.md`/índices) somente se um caminho canônico explícito suportou a publicação bounded?
 [ ] Se houve mudança arquitetural/material, validei `architecture.json` e gerei `architecture.html` antes de qualquer projeção publicada?
-[ ] Preservei Flow/GitHub como autoridade e segui a regra de evidência?
+[ ] Preservei GitHub (e a evidência viva do Orca) como autoridade de entrega e segui a regra de evidência?
 [ ] Evitei scan global automático e comandos/recall sem id explícito?
 [ ] Considerei delegar para builder se a operação for ampla?
 ```
