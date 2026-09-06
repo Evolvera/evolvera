@@ -1,0 +1,264 @@
+name: Release Ymir PI profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character lowercase commit SHA reachable from main
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ymir-profile-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the requested source commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove the source commit is an exact main descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "source_sha must be exactly 40 lowercase hexadecimal characters" >&2
+            exit 1
+          fi
+          gh auth setup-git
+          git fetch --no-tags origin main
+          test "$(git rev-parse --verify "$SOURCE_SHA^{commit}")" = "$SOURCE_SHA"
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+
+      - name: Run the offline release policy smoke gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test/release-ymir-profile-workflow.smoke.py
+
+      - name: Run the offline producer smoke gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test/build-ymir-profile-smoke.py
+
+      - name: Build the exact source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT_DIR="$(mktemp -d "${RUNNER_TEMP}/ymir-profile.XXXXXX")"
+          test -z "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)"
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/build-ymir-profile.py \
+            --source-sha "$SOURCE_SHA" \
+            --output-dir "$OUTPUT_DIR"
+          {
+            printf '%s\n' "$OUTPUT_DIR" >> "$GITHUB_ENV"
+          }
+
+      - name: Verify the fixed bundle assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')" = 3
+          test ! -e "$OUTPUT_DIR/extra"
+          (
+            cd "$OUTPUT_DIR"
+            sha256sum --check ymir-profile.sha256
+          )
+          python3 - "$OUTPUT_DIR" "$SOURCE_SHA" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          output = pathlib.Path(sys.argv[1])
+          source_sha = sys.argv[2]
+          expected = {
+              "ymir-profile.tar.gz",
+              "ymir-profile.manifest.json",
+              "ymir-profile.sha256",
+          }
+          assert {path.name for path in output.iterdir()} == expected
+          manifest = json.loads((output / "ymir-profile.manifest.json").read_text())
+          assert manifest["source_sha"] == source_sha
+          assert manifest["archive"]["name"] == "ymir-profile.tar.gz"
+          assert manifest["archive"]["sha256"]
+          assert manifest["files"]
+          PY
+
+      - name: Require provider immutable releases before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_enabled="$(gh api --method GET repos/Evolvera/evolvera/immutable-releases --jq '.enabled')"
+          test "$immutable_enabled" = true
+
+      - name: Refuse existing tags and releases before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          tag_status=0
+          git ls-remote --exit-code --refs origin "refs/tags/$TAG" >/dev/null 2>&1 || tag_status=$?
+          if (( tag_status == 0 )); then
+            echo "refusing to overwrite existing tag $TAG" >&2
+            exit 1
+          fi
+          if (( tag_status != 2 )); then
+            echo "could not prove that tag $TAG is absent" >&2
+            exit "$tag_status"
+          fi
+
+          release_status=0
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || release_status=$?
+          if (( release_status == 0 )); then
+            echo "refusing to overwrite existing release $TAG" >&2
+            exit 1
+          fi
+          if (( release_status != 1 )); then
+            echo "could not prove that release $TAG is absent" >&2
+            exit "$release_status"
+          fi
+
+      - name: Create the immutable draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --draft \
+            --title "Ymir PI profile ${SOURCE_SHA}" \
+            --notes "Canonical Ymir PI profile built from exact source commit ${SOURCE_SHA}."
+
+      - name: Verify draft metadata before attaching assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          draft_json="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,tagName,targetCommitish)"
+          python3 - "$draft_json" "$TAG" "$SOURCE_SHA" <<'PY'
+          import json
+          import sys
+
+          draft = json.loads(sys.argv[1])
+          assert draft["isDraft"] is True
+          assert draft["tagName"] == sys.argv[2]
+          assert draft["targetCommitish"] == sys.argv[3]
+          PY
+
+      - name: Upload the fixed release assets without clobbering
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          gh release upload "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            "$OUTPUT_DIR/ymir-profile.tar.gz" \
+            "$OUTPUT_DIR/ymir-profile.manifest.json" \
+            "$OUTPUT_DIR/ymir-profile.sha256"
+
+      - name: Verify the draft is complete before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          asset_names="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | sort | join("\n")')"
+          expected_names=$'ymir-profile.manifest.json\nymir-profile.sha256\nymir-profile.tar.gz'
+          test "$asset_names" = "$expected_names"
+          draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          test "$draft" = true
+
+      - name: Publish the complete release as the latest immutable version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease=false \
+            --latest
+
+      - name: Verify the published release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          release_state="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | join(" ")')"
+          test "$release_state" = "false false"
+          published_tag="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
+          test "$published_tag" = "$TAG"
+
+      - name: Verify latest release points to this promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          latest_json="$(gh api --method GET "repos/$GITHUB_REPOSITORY/releases/latest")"
+          python3 - "$latest_json" "$TAG" <<'PY'
+          import json
+          import sys
+
+          latest = json.loads(sys.argv[1])
+          assert latest["tag_name"] == sys.argv[2]
+          PY
+
+      - name: Verify provider immutability and release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          release_json="$(gh api --method GET "repos/Evolvera/evolvera/releases/tags/$TAG")"
+          python3 - "$release_json" "$TAG" "$SOURCE_SHA" <<'PY'
+          import json
+          import sys
+
+          release = json.loads(sys.argv[1])
+          tag = sys.argv[2]
+          source_sha = sys.argv[3]
+          assert release["immutable"] is True
+          assert release["draft"] is False
+          assert release["prerelease"] is False
+          assert release["tag_name"] == tag
+          assert release["target_commitish"] == source_sha
+          assert {asset["name"] for asset in release["assets"]} == {
+              "ymir-profile.tar.gz",
+              "ymir-profile.manifest.json",
+              "ymir-profile.sha256",
+          }
+          PY
+
+      - name: Verify the published remote tag resolves to the source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ymir-profile-${SOURCE_SHA}"
+          tag_refs="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          python3 - "$tag_refs" "$TAG" "$SOURCE_SHA" <<'PY'
+          import sys
+
+          refs = {}
+          for line in sys.argv[1].splitlines():
+              sha, ref = line.split()
+              refs[ref] = sha
+          tag = sys.argv[2]
+          source_sha = sys.argv[3]
+          direct = refs.get(f"refs/tags/{tag}")
+          peeled = refs.get(f"refs/tags/{tag}^{{}}")
+          assert direct is not None
+          assert peeled == source_sha if peeled is not None else direct == source_sha
+          PY
