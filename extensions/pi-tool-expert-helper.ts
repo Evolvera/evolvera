@@ -7,6 +7,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -24,8 +25,8 @@ export default function (pi: ExtensionAPI) {
       ], { description: "Level of detail", default: "summary" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const home = process.env.HOME || "/Users/j.henrique";
-      const piDir = path.join(home, ".pi", "agent");
+      const home = process.env.HOME || os.homedir();
+      const piDir = process.env.PI_CODING_AGENT_DIR || path.join(home, ".pi", "agent");
       
       const result: Record<string, unknown> = {};
       

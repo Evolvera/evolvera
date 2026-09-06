@@ -25,16 +25,16 @@ Antes de criar ou alterar algo que dependa do ambiente, verifique o mínimo nece
 
 ```bash
 # 1. Estrutura do PI
-ls ~/.pi/agent/extensions/
-ls ~/.pi/agent/skills/
-cat ~/.pi/agent/settings.json
-cat ~/.pi/agent/mcp.json 2>/dev/null
+ls "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/"
+ls "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/"
+cat "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json"
+cat "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/mcp.json" 2>/dev/null
 
 # 2. Documentação do PI
-ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/
+ls "$(npm root -g)/@earendil-works/pi-coding-agent/docs/"
 
 # 3. Exemplos disponíveis
-ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/
+ls "$(npm root -g)/@earendil-works/pi-coding-agent/examples/extensions/"
 ```
 
 **Regra de ouro:** Se o resultado depende de algo existente, observe antes de editar.
@@ -59,7 +59,7 @@ Defina outcome, success criteria e validação antes de implementar.
 2. Segue o padrão: `export default function (pi: ExtensionAPI) { ... }`
 3. Valida imports: `@earendil-works/pi-coding-agent`, `typebox`
 4. Testa com `pi -e ./extensao.ts`
-5. Só depois move para `~/.pi/agent/extensions/`
+5. Só depois move para `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/`
 
 **Para Skills:**
 1. Cria diretório com nome válido (lowercase, hyphens, max 64 chars)
@@ -69,7 +69,7 @@ Defina outcome, success criteria e validação antes de implementar.
 
 **Para MCP:**
 1. Verifica se `pi-mcp-adapter` está instalado
-2. Edita `~/.pi/agent/mcp.json` (nunca settings.json diretamente para MCP)
+2. Edita `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/mcp.json` (nunca settings.json diretamente para MCP)
 3. Valida JSON antes de salvar
 4. Testa com `/mcp-status`
 
@@ -155,14 +155,14 @@ export default function (pi: ExtensionAPI) {
 
 | O quê | Onde |
 |-------|------|
-| Extensões globais | `~/.pi/agent/extensions/*.ts` |
+| Extensões globais | `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/*.ts` |
 | Extensões locais | `.pi/extensions/*.ts` |
-| Skills globais | `~/.pi/agent/skills/` |
+| Skills globais | `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/` |
 | Skills locais | `.pi/skills/` |
-| Configuração | `~/.pi/agent/settings.json` |
-| MCP Servers | `~/.pi/agent/mcp.json` |
-| Documentação PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/` |
-| Exemplos PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/` |
+| Configuração | `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json` |
+| MCP Servers | `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/mcp.json` |
+| Documentação PI | `$(npm root -g)/@earendil-works/pi-coding-agent/docs/` |
+| Exemplos PI | `$(npm root -g)/@earendil-works/pi-coding-agent/examples/extensions/` |
 
 ### Tipos de Eventos Críticos
 
@@ -212,5 +212,5 @@ pi.on("before_agent_start", async (event, ctx) => {
 
 - [API Reference](references/api-reference.md)
 - [Validation Checklist](references/validation-checklist.md)
-- Documentação PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/`
-- Exemplos PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/`
+- Documentação PI: `$(npm root -g)/@earendil-works/pi-coding-agent/docs/`
+- Exemplos PI: `$(npm root -g)/@earendil-works/pi-coding-agent/examples/extensions/`
