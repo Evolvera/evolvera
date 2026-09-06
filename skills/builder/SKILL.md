@@ -30,6 +30,12 @@ Follow an explicit `## Internal Execution Order` in order. Before any source edi
 
 The TODO records each phase's outcome, primary authorized files/symbols, material prerequisite, local exit evidence, `pending | in_progress | complete | blocked` status, exact completed/current/next phase, and changed files. Resume verifies it against repository/diff evidence and continues from the first incomplete phase. Budget exhaustion stops at a coherent boundary with a `PARTIAL` Resume Receipt grounded in TODO and repo state. TILL-DO/TODO are transient task execution state, not tasks, IDs, DAG nodes, commits, checkpoints, validity boundaries, Flow state, or parallel authorization; exclude them from the selective product commit unless explicitly tracked.
 
+## Workload Admission
+
+Every builder call, direct or planner-driven, carries at most two complex fronts, and two only when they are tightly coupled inside one coherent outcome with clear bounded validation; one front is preferred. A complex front is an independently changing behavioral contract, state/lifecycle model, algorithm, or semantic transformation that needs its own correctness reasoning — count actual changes even inside one file, domain, or feature. Tests, docs, generated outputs, and mechanical propagation of the same settled contract to its consumers follow their owning front. `agents/planner.md` owns the canonical definition.
+
+The cap applies to every tier, including `builder-heavy` and `builder-heavy-design`; a stronger model, a Wide-Task Receipt, or `## Internal Execution Order` never waives it, and path count alone never triggers it. Reject an over-limit assignment before delegation: split it through evidenced valid compatible checkpoints or serial calls, and if no within-limit decomposition is valid, stop `BLOCKED: BUILDER_COMPLEXITY_LIMIT` instead of launching it. Never invent an arbitrary broken split, flag, adapter, or service merely to pass the limit. A builder must not grow its scope into a new complex front; that returns `BLOCKED` rather than expanding.
+
 ## Agent Choice
 
 | Agent | Use When | Avoid When |
@@ -97,7 +103,7 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 
 1. Read `.pi/plans/SCHEDULE.md` and use its `Agent` and dependency columns as the execution authority.
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
-3. Before launching a task with more than 20 declared changed paths or three or more semantic regions, verify its `Proof` contains a grounded Wide-Task Receipt. It must show compatibility seams/cuts attempted and either a safe split or exact checkpoint evidence for atomicity. Missing or generic claims such as coupling, one typecheck/checkpoint, internal phases, or stronger model are `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`; never let one builder absorb an unproven wide scope.
+3. Before launching any writing task, verify its `Proof` workload receipt shows at most two complex fronts, with two only when tightly coupled; more is `BLOCKED: BUILDER_COMPLEXITY_LIMIT` before delegation. Before launching a task with more than 20 declared changed paths or three or more semantic regions, also verify its `Proof` contains a grounded Wide-Task Receipt. It must show compatibility seams/cuts attempted and either a safe split or exact checkpoint evidence for atomicity. Missing or generic claims such as coupling, one typecheck/checkpoint, internal phases, or stronger model are `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`; never let one builder absorb an unproven wide scope.
 4. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
 5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. Prefer groups of 2–4; do not start one member and wait while another independent member is already ready.
 6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
@@ -205,7 +211,7 @@ Every delegated prompt containing a potentially stateful command must include `S
 
 Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
 
-For one coherent non-wide outcome, default to one builder. A direct or planner-driven assignment with more than 20 declared changed paths or three or more semantic regions must first pass the Wide-Task Parallelization Gate: seek repository-supported compatibility seams and safe fan-out; if it remains atomic, require the exact Wide-Task Receipt. Internal phases or a stronger model do not satisfy this gate.
+For one coherent non-wide outcome, default to one builder within the two-complex-front admission limit; a large homogeneous or mechanical batch may stay one builder after proportional proof. A direct or planner-driven assignment with more than 20 declared changed paths or three or more semantic regions must first pass the Wide-Task Parallelization Gate: seek repository-supported compatibility seams and safe fan-out; if it remains atomic, require the exact Wide-Task Receipt. Internal phases or a stronger model do not satisfy this gate.
 
 Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, or configuration surface—with focused tests traveling alongside the production slice they verify. At each wave, launch all safe ready members together rather than serially dispatching independent work. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
 
@@ -239,6 +245,7 @@ Before spawning builder, verify:
 - [ ] Every potentially stateful validation has `STATEFUL RESOURCE PROOF`; `UNKNOWN` or pre-existing data means the command will not run.
 - [ ] Diff review is required before COMPLETE.
 - [ ] Checkpoint commit expectation is clear for planner-driven tasks.
+- [ ] Task carries at most two complex fronts, and two only when tightly coupled in one coherent outcome; otherwise split it or stop `BLOCKED: BUILDER_COMPLEXITY_LIMIT`.
 - [ ] Task is small enough for a delegated model; if it declares more than 20 changed paths or spans three or more semantic regions, its grounded Wide-Task Receipt proves the split or exact atomicity, otherwise stop `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`.
 - [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified narrowly, no broad discovery/contract judgment is required, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).

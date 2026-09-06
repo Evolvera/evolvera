@@ -31,8 +31,18 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await
   read("extensions/subagent-watchdog.ts"),
 ]);
 
-assert.match(planner, /model: openai-codex\/gpt-5\.6-sol/);
-assert.match(planner, /thinking: xhigh/);
+// Model routing oracle: the planner frontmatter is the single model/effort authority for both the
+// normal planner and the plan-heavy final synthesis. Static text regression only, not a behavioral
+// certification of the planner model.
+assert.match(planner, /^model: openai-codex\/gpt-6-astra$/m);
+assert.match(planner, /^thinking: medium$/m);
+assert.match(planner, /^display_name: .*GPT-6 Astra · medium$/m);
+assert.match(planner, /Model: openai-codex\/gpt-6-astra medium\./);
+assert.doesNotMatch(
+  planner,
+  /gpt-5\.6-sol|\bxhigh\b|\bmax\b/i,
+  "planner must carry no stale Sol/xhigh/max routing",
+);
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
@@ -47,19 +57,27 @@ assert.match(briefer55, /brief_gpt55\.md/);
 
 assert.match(planHeavy, /launch a fresh `planner` session/i);
 assert.match(planHeavy, new RegExp(finalDescription));
-assert.match(planHeavy, /openai-codex\/gpt-5\.6-sol/);
-assert.match(planHeavy, /thinking: `max`|thinking: "max"/);
+assert.match(planHeavy, /Pass no `model` or `thinking` override/);
+assert.match(planHeavy, /planner agent's frontmatter defaults/);
 assert.match(planHeavy, /unchanged prompt from `agents\/planner\.md`/);
-assert.match(planHeavy, /GPT-5\.6 Sol prompt rules for this launch/);
-assert.match(planHeavy, /lean and outcome-first/);
-assert.match(planHeavy, /three strategy briefs and a max-effort planner/);
-assert.doesNotMatch(planHeavy, /Claude Fable 5 prompt rules|three strategy briefs and an xhigh planner/);
+assert.match(planHeavy, /Prompt rules for this launch/);
+assert.match(planHeavy, /lean, clear, and outcome-first/);
+assert.match(planHeavy, /three strategy briefs and a final planner synthesis/);
+assert.doesNotMatch(
+  planHeavy,
+  /gpt-5\.6-sol|FINAL_PLANNER_EFFORT|max-effort|Claude Fable 5 prompt rules/i,
+  "plan-heavy must not hardcode a Sol/max/xhigh final-planner override",
+);
 assert.match(planHeavy, /plan-briefer-gpt55/);
 assert.match(planHeavy, /read the handoff and all briefs first/i);
 assert.match(planHeavy, /If any brief is missing or empty[\s\S]*stop/i);
 assert.match(plannerSkill, /reads the handoff plus all briefs, reconciles them/i);
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
-assert.match(system, /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt on GPT-5\.6 Sol max/i);
+assert.match(
+  system,
+  /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt on the planner agent's own default model\/effort, with no forced model or effort override/i,
+);
+assert.match(plannerSkill, /no hardcoded model or effort override/i);
 
 assert.match(watchdog, /const TARGET_AGENT = "planner"/);
 assert.match(watchdog, new RegExp(`const PLAN_HEAVY_DESCRIPTION = "${finalDescription}"`));
@@ -108,7 +126,10 @@ try {
     "../../npm-global/lib/node_modules/@tintinweb/pi-subagents/node_modules/jiti/lib/jiti.cjs",
   );
   const { createJiti } = require(jitiPath);
-  const jiti = createJiti(import.meta.url);
+  // STATEFUL RESOURCE PROOF: jiti's default `fsCache: true` writes a transpile cache into
+  // `node_modules/.cache/jiti` or `{TMP_DIR}/jiti` (jiti/lib/types.d.ts), which is not owned by this
+  // run. Disabling both caches keeps every write inside the run-created mkdtemp sandbox.
+  const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
   const mod = await jiti.import(extensionCopy);
 
   assert.equal(mod.isPlanHeavyPlanner("planner", finalDescription), true);
