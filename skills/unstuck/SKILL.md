@@ -1,7 +1,7 @@
 ---
 name: unstuck
-description: Last-resort workflow for a genuinely stuck problem, invoked only by the user after normal attempts and model recall have failed. Treats internal knowledge as hypothesis instead of evidence, performs an epistemic reset, and keeps a compact Markdown scientific notebook. Forbids repeating a failed causal path without new evidence, ranks candidate experiments by discrimination, novelty, risk, and reversibility, and converges through pre-registered falsifiable predictions graded by external or deterministic feedback. Escalates representation, upstream/web evidence, independent context, and disposable reproduction only as far as uncertainty requires, entirely within existing authorization and safety gates. Never model-invoked, never auto-suggested, and never a substitute for asking the user what evidence cannot resolve.
-disable-model-invocation: true
+description: Last-resort workflow for a genuinely stuck problem. Invoke manually or activate automatically when normal attempts stop producing new evidence, especially after two failed attempts without a new evidence-backed hypothesis. Treats internal knowledge as hypothesis, performs an epistemic reset, and keeps a compact Markdown scientific notebook. Forbids repeating failed causal paths without new evidence and uses falsifiable predictions graded by external or deterministic feedback. Escalates framing, upstream evidence, independent context, and disposable reproduction only as uncertainty requires. Automatic activation stays inside existing scope, authorization, budget, and safety gates; never substitutes for a user decision or missing permission.
+disable-model-invocation: false
 ---
 
 # Unstuck
@@ -10,7 +10,9 @@ Being stuck is an information problem, not an effort problem. This workflow does
 
 ## Activation boundary
 
-Run this only when the user invokes `/skill:unstuck`. Never self-activate, never suggest it, never enter it because time passed or attempts failed. Elapsed time and repeated failure explain *why a user* would invoke it; they are not triggers.
+Run when the user invokes `/skill:unstuck`, or activate automatically when the authorized task is genuinely stuck: normal attempts no longer produce decision-changing evidence, especially after two failed attempts without a new evidence-backed hypothesis. Automatic activation starts diagnostic re-grounding, not another fix attempt. Briefly tell the user why you are switching approach; no separate permission is needed merely to load this workflow within the approved scope. Elapsed time alone or one ordinary error is not a trigger.
+
+Do not auto-activate against an explicit user opt-out or exhausted budget, and never use activation to bypass a blocker requiring user authority, credentials, resource isolation, or an external action. An incident remains read-only; activation cannot resume mutations. If no safe evidence-gathering path remains, report the blocker instead of restarting this workflow.
 
 Invocation grants **no new authorization**. It does not permit destructive, external, stateful, production, or irreversible actions, and it never weakens the global authorization, consequential-action, stateful-resource, or external-operation gates. Everything here runs inside the scope the user already approved for the underlying task.
 
