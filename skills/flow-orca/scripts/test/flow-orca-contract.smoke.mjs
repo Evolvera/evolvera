@@ -275,6 +275,16 @@ has(SKILL, /orchestration ask --resume <message_id> --timeout-ms <n> --json/, "p
 has(SKILL, /`stage`, `effects` e `residualResources`/, "partial starts must inspect native effect receipts");
 has(REFERENCE, /Resume a pending ask by its existing message ID/, "concurrent monitoring must avoid duplicate questions");
 
+// Resuming authorized work must not manufacture a human handoff checkpoint.
+has(SKILL, /Continuidade autorizada não exige novo handoff humano/, "settled continuation must not require redundant approval");
+has(SKILL, /issue e o trabalho restante já estão no escopo aprovado/, "continuation must retain the approved scope boundary");
+has(SKILL, /PR merged sozinho não prova que um worker parou/, "merged history must not authorize taking over a live worker");
+has(SKILL, /crie uma nova tentativa pela admissão normal.*preservando branch\/PR antigos/, "settled history without an active workspace must not deadlock authorized work");
+has(SKILL, /executor de estado desconhecido.*continuam bloqueando/, "unknown active ownership remains protected");
+has(SKILL, /não autoriza testes mutáveis em staging/, "continuation does not authorize unsafe live testing");
+has(REFERENCE, /not another human handoff approval/, "parallel reference must allow authorized continuity");
+lacks(REFERENCE, /no assignee, claim marker, branch, PR, or workspace already claims the issue;/, "historical artifacts must not remain an unconditional admission veto");
+
 // ── 6. Single-coordinator admission and scheduling ──────────────────────────
 has(SKILL, /coordenador admite \*\*em série\*\*/, "admission must be serial under one coordinator");
 has(SKILL, /não oferecem transação única nem claim atômico entre máquinas/, "no false atomicity claim");

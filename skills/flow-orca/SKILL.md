@@ -790,20 +790,26 @@ Issue fechada, PR fechado sem merge, `worker_done` ou task `completed` **não** 
 
 ### 6.3 Casos determinísticos de reconciliação
 
+**Continuidade autorizada não exige novo handoff humano.** Se a issue e o trabalho restante já estão no escopo aprovado, a sessão anterior estar encerrada ou o trabalho ter vindo de outro chat não exige pedir “autorizo assumir”. Reconcilie GitHub e Orca com as leituras já previstas, diferencie histórico de WIP e registre a continuidade no comentário normal da issue, sem criar uma etapa de aprovação. Aplique as aprovações efetivamente retidas pelo usuário/modo; não invente uma aprovação de ownership adicional.
+
+Um PR histórico merged, com execução anterior comprovadamente encerrada e sem claim/worker concorrente ou trabalho divergente, é histórico preservado, não reserva perpétua. Reuse a workspace compatível quando existir; se não existir workspace ativa atribuída e a preparação estiver coberta pela autorização vigente, crie uma nova tentativa pela admissão normal, na base aprovada, preservando branch/PR antigos. Isso não é duplicar execução ativa. PR merged sozinho não prova que um worker parou, e workspace ausente, silêncio ou idade não provam liberação. Quando a evidência ainda é insuficiente, faça a investigação read-only disponível; pergunte apenas pela decisão ou acesso que realmente faltar.
+
+Outro assignee, claim ativo conflitante, executor de estado desconhecido, recurso compartilhado inseguro, escopo novo ou incidente continuam bloqueando a ação afetada. A autorização de continuar engenharia não autoriza testes mutáveis em staging nem operações live.
+
 | Evidência remota | Classificação e ação segura |
 |------------------|-----------------------------|
-| `ready` + branch da issue já publicada | Claim incompleto. Verifique assignee/PR/workspace; se é do executor e não há conflito, complete `in-progress`; senão reporte e não admita. |
+| `ready` + branch da issue já publicada | Se for histórico encerrado, siga a continuidade autorizada acima. Caso represente WIP, reconcilie o claim incompleto: verifique assignee/PR/workspace; se é do executor e não há conflito, complete `in-progress`; senão reporte e não admita. |
 | `in-progress` sem branch remota | Claim quebrado. Pare implementação; releia assignee/marker/PR e o resultado real de `worktree create`. Complete somente se o `FLOW_EXECUTOR_ID` reconciliado é dono inequívoco e não há trabalho divergente; caso contrário marque/reporte `anomaly`. |
 | Resultado de `worktree create`/`worker-start` desconhecido | Reconciliação, nunca retry cego: releia `worktree ps`, `terminal list` e o dispatch antes de qualquer nova chamada; jamais crie uma segunda workspace para a mesma issue. |
 | PR aberto com label/status errado | PR prevalece para o estágio; verifique head/base e então corrija para `in-review`, confirmando pós-condição. |
-| PR merged + issue/status stale | Verifique `mergedAt` e vínculo; feche issue se não auto-fechou, remova status stale e marque done. |
+| PR merged + issue/status stale | Verifique `mergedAt`, vínculo e todos os aceites. Só com a entrega completa feche a issue e marque done. Aceites remanescentes já aprovados seguem a continuidade autorizada, sem novo handoff por causa do PR histórico. |
 | PR closed, `mergedAt=null` | Não é done. Classifique `blocked`/`anomaly`; decida com usuário se reabrir ou criar PR substituto. |
 | Issue closed sem PR merged | Não é done. Preserve o close e reporte motivo/anomalia; reabra/retome somente após decisão explícita, mas não aplique `done` sem PR merged. |
-| 2+ branches da issue ou 2+ PRs da issue | Ambíguo. Não escolha nem apague; liste URLs/SHAs/owners e peça decisão/handoff. |
+| 2+ branches da issue ou 2+ PRs da issue | Separe histórico encerrado de tentativas ativas. Histórico por si só não é conflito; tentativas concorrentes ou ownership não reconciliado são ambíguos. Não escolha nem apague trabalho divergente; peça decisão somente se a evidência não resolver. |
 | vários assignees ou assignee ≠ owner reconciliado | Outro dono/claim ambíguo. Não admita; exija handoff explícito no GitHub e nova reconciliação. |
-| branch/claim remoto sem workspace Orca neste host | `reserved-remote`; pode estar em outro host. Não libere nem duplique. |
+| branch/claim remoto de execução ativa ou desconhecida sem workspace Orca neste host | `reserved-remote`; pode estar em outro host. Não libere nem duplique. Histórico comprovadamente encerrado segue a continuidade autorizada acima. |
 | workspace Orca de issue sem claim/branch/status coerentes | `partial-claim` ou `orphan`; não edite, não remova, não arquive e não ofereça a issue. |
-| 2+ workspaces para a mesma issue/branch, ou workspace divergente | `ambiguous`; bloqueie os envolvidos e reporte IDs, branches e SHAs. |
+| 2+ workspaces ativas ou de estado desconhecido para a mesma issue/branch, ou workspace divergente | `ambiguous`; bloqueie os envolvidos e reporte IDs, branches e SHAs. Histórico encerrado preservado não conta como executor concorrente. |
 | claim aparentemente antigo sem atividade observável | `stale-candidate`, nunca livre por idade. Takeover requer handoff/decisão GitHub-visível e nova reconciliação. |
 | reserva/claim legado do esquema antigo de branch determinística | Continua **ocupado**. Reconcilie explicitamente com o usuário; nunca recrie, apague ou simule o esquema antigo com uma segunda branch/serviço de reserva. |
 
@@ -991,7 +997,7 @@ O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é ex
 | Regra | Detalhe |
 |-------|---------|
 | 1 issue → 1 workspace → 1 branch real | Nunca misture duas issues na mesma branch/workspace; a branch é a que o Orca criou e retornou |
-| Workspace | Uma workspace por issue neste ambiente; o checkout canônico do coordenador nunca é editado por worker |
+| Workspace | Uma workspace ativa atribuída por issue neste ambiente; histórico encerrado é preservado conforme 6.3. O checkout canônico do coordenador nunca é editado por worker |
 | Base | A **base escolhida no intake para aquele repositório**, passada em `--base-branch`; nunca a default implícita. SHA da base registrado no claim |
 | Nome | O nome do workspace é rótulo humano; identidade real = ID do workspace + branch retornada. Branches legadas continuam reconhecidas e nunca duplicadas |
 | Executor | `FLOW_EXECUTOR_ID` único e estável por issue; login GitHub sozinho não separa chats/agentes |
@@ -1002,9 +1008,9 @@ O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é ex
 | Reuso | Só com prova exata de issue, repositório, branch real, base, PR e dono; nome parecido, idade ou terminal ocioso não são prova |
 | Cleanup | Não há limpeza automática: workspaces concluídas são preservadas, branches não são apagadas, terminais só são liberados quando settled |
 
-Antes do claim, complete a Phase 6, inventarie as workspaces/terminais existentes e classifique **todas** as branches remotas, procurando claim marker, branch ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição. Se já há branch/PR/workspace ligada, reconcilie e retome; não crie outra. Não admita se outro login/marker é dono, se há múltiplos assignees/markers, ou se o `FLOW_EXECUTOR_ID` proposto já tem WIP.
+Antes do claim, complete a Phase 6, inventarie as workspaces/terminais existentes e classifique **todas** as branches remotas, procurando claim marker, branch ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição. Se já há branch/PR/workspace ligada a WIP ativo ou desconhecido, reconcilie e retome; não crie outra execução. Para histórico encerrado, aplique 6.3. Não admita se outro login/marker ativo é dono, se há múltiplos assignees/claims ativos não reconciliados, ou se o `FLOW_EXECUTOR_ID` proposto já tem WIP.
 
-Handoff exige evidência explícita no GitHub (assignee/marker atualizado e comentário/decisão identificável), recursos em estado seguro e nova reconciliação. Multi-assignee, multi-marker ou dois coordenadores é `ambiguous`, não colaboração implícita: pare até restar um responsável ou o usuário documentar outra política.
+Transferência de ownership ativo exige evidência explícita no GitHub (assignee/marker atualizado e comentário/decisão identificável), recursos em estado seguro e nova reconciliação. Continuidade autorizada de histórico encerrado segue 6.3 sem novo pedido humano de handoff. Multi-assignee, claims ativos incompatíveis ou dois coordenadores concorrentes são `ambiguous`, não colaboração implícita: pare até restar um responsável ou o usuário documentar outra política.
 
 ### 7.2 Admissão, workspace e dispatch como transições verificadas
 
