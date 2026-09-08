@@ -197,7 +197,7 @@ Watch with bounded waits and process the whole batch:
 ORCA orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json
 ```
 
-Acknowledge the exact Delivery for every item received. A timeout or empty batch is neither failure, nor completion, nor a free slot. Use `orchestration send --to dispatch:<id>` for guidance and `orchestration ask`/`orchestration reply` for questions, never an impersonated `--from` and never a broadcast lifecycle message.
+Acknowledge the exact Delivery for every item received. A timeout or empty batch is neither failure, nor completion, nor a free slot. For bounded output reads, follow the main skill’s 7.4 cursor/source rules; `source_changed` requires a new read without the previous cursor. Resume a pending ask by its existing message ID, not by sending a duplicate question. Inspect start receipts (`stage`, `effects`, `residualResources`) before recovery; setup still running is not a failed worker. Use `orchestration send --to dispatch:<id>` for guidance and `orchestration ask`/`orchestration reply` for questions, never an impersonated `--from` and never a broadcast lifecycle message.
 
 Before accepting each worker result and before every push, re-read the issue claim/status, the PR, the workspace, and the remote branch SHA. Stop the affected row when:
 
