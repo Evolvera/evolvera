@@ -265,6 +265,16 @@ has(SKILL, /Nunca faça retry cego nem crie uma segunda workspace\/terminal para
 has(SKILL, /run-create --objective|orchestration run-create/, "the campaign Run must use the documented command");
 has(SKILL, /`completed` é desfecho de tentativa, nunca prova de merge/, "task completion must not imply dependency satisfaction");
 
+// Native Orca operational context; no extra delivery state or live commands.
+has(SKILL, /ORCA skills get --help/, "guide detail lookup must follow installed CLI support");
+has(SKILL, /ORCA skills get orchestration --full/, "full native guide remains available for detail");
+has(SKILL, /`agentTerminalHandle`.*`startupTerminal.handle`/, "handle lookup must use the native response fields");
+has(SKILL, /nunca envie aos dois/, "stale handle recovery must not dual-send");
+has(SKILL, /`source_changed`.*sem o cursor antigo/, "changed output source must reset the read cursor");
+has(SKILL, /orchestration ask --resume <message_id> --timeout-ms <n> --json/, "pending asks must resume by existing identity");
+has(SKILL, /`stage`, `effects` e `residualResources`/, "partial starts must inspect native effect receipts");
+has(REFERENCE, /Resume a pending ask by its existing message ID/, "concurrent monitoring must avoid duplicate questions");
+
 // ── 6. Single-coordinator admission and scheduling ──────────────────────────
 has(SKILL, /coordenador admite \*\*em série\*\*/, "admission must be serial under one coordinator");
 has(SKILL, /não oferecem transação única nem claim atômico entre máquinas/, "no false atomicity claim");
