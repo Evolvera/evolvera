@@ -166,6 +166,8 @@ Ao executar novamente o instalador, os recursos versionados são preparados prim
 
 A configuração ativa em `~/.pi/agent/settings.json` só muda quando o instalador é executado. Arquivos ou diretórios antigos do package OM que já estejam no destino ficam inertes; o instalador não os apaga nem desinstala genericamente. A atualização não promete nem executa migração de memória.
 
+A extensão `native-compaction-routing.ts` roteia a compactação nativa os gatilhos manual, threshold e overflow para `openai-codex/gpt-5.6-luna` em `xhigh`, sem trocar o modelo da conversa, preservando a preparação e o resultado do SDK; falha, ausência de modelo/autenticação, abort ou resultado inválido cancela com o histórico intacto, sem fallback silencioso. Depois de alterar a extensão, use `/reload`; com extensões desativadas ou a extensão ausente, a compactação nativa padrão continua responsável. O contexto público da extensão não expõe stream/retry da sessão, então essa rota usa os defaults do `compact` para esses opcionais, sem inventar um prompt, alterar configuração global ou reescrever o provider. As instruções do usuário em `/compact` são preservadas. Não ative simultaneamente outro handler que substitua a compactação, como o modo completo de Plastic Memory.
+
 #### Corte seguro na atualização de Flow
 
 Durante a transição, `install.sh` (Linux/macOS) e `install.ps1` (Windows) param antes de qualquer mutação quando o checkout contém `skills/flow-orca` e o runtime ainda contém o skill legado em `~/.pi/agent/skills/flow` (no Windows, `$HOME\.pi\agent\skills\flow`). Isso evita que as duas skills sejam descobertas juntas.
