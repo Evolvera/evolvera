@@ -40,11 +40,11 @@ Rules:
 - allowed form: `[A-Za-z0-9._-]{1,40}`;
 - assign explicitly in the claim record; do not derive identity only from GitHub login, PID, chat title, workspace name, or terminal handle;
 - one `FLOW_EXECUTOR_ID` owns at most one active issue;
-- one active issue attempt has exactly one executor, one assigned Orca workspace, and one actual branch; settled historical attempts remain preserved, not concurrent owners;
+- one issue has exactly one executor, one Orca workspace, and one actual branch;
 - **at most six active issue PI workers in total**, across every repository and host in the campaign, and never above the ceiling approved at intake; six is a limit, not a target;
 - the scheduler is continuous and work-conserving: a freed slot is refilled as soon as an `ADMIT` candidate exists and no hazard blocks it — there is no immutable wave and no all-workers barrier;
 - a slot is freed only when its writer has **settled safely** (result read, GitHub/Project transition re-read, terminal released or explicitly retained with reason). Timeout, idle, an empty `check` batch, or a quiet terminal never frees a slot; a blocked or unknown-state writer that is still live keeps its slot;
-- a new chat never impersonates an existing executor ID merely because it can see a claim. Follow main skill 6.3: already-authorized continuation after proven settlement needs reconciliation and the normal issue progress record, not another human handoff approval. Active conflicting or unknown ownership still blocks; a new chat alone is not a conflict.
+- a new chat never adopts an existing executor ID merely because it can see the claim; changing/resuming ownership requires a GitHub-visible handoff or other explicit ownership evidence plus full reconciliation before edits resume.
 
 Bounded aliases such as `pi-01`, `pi-02` are valid when one coordinator controls the whole campaign. Identity is operational metadata, not a person name.
 
@@ -98,7 +98,7 @@ Flow Orca claim: executor `<FLOW_EXECUTOR_ID>` is working issue #<N> on `<ACTUAL
 
 A handoff or release must be a new GitHub-visible event that names the previous and next executor (or completed state), the actual branch, and the verified SHA. Never infer release from silence, elapsed time, a missing workspace, an idle terminal, or a dead chat. Do not put secrets, hostnames, absolute paths, tokens, capabilities, or process IDs in claim comments.
 
-The active owner is the unique executor whose marker agrees with the unique actual branch and current issue/PR state. Multiple incompatible active claims or branches, or disagreement with current assignee/status, is `ambiguous` and blocks work. Settled historical markers/merged PRs do not alone create an ownership conflict; apply main skill 6.3 before asking the user.
+The active owner is the unique executor whose marker agrees with the unique actual branch and current issue/PR state. Multiple unreconciled markers, multiple branches, or disagreement with assignee/status is `ambiguous` and blocks work.
 
 ## 5. Admission gate
 
@@ -109,7 +109,7 @@ A candidate may be admitted only when **all** conditions pass:
 - Project Status is `Ready` and the issue passes Definition of Ready;
 - no open external dependency; otherwise the issue and its dependents go to `Blocked` with the required user action recorded;
 - every dependency declared in the issue body is satisfied remotely, read as a fully qualified issue URL plus its gate — for the default gate, upstream work is merged into **the chosen base** with its issue closed. A missing URL, a missing gate, an unreachable dependency, or a contradiction between grant, body, and Project Status blocks that candidate for bounded reconciliation instead of admitting it;
-- no conflicting active or unresolved assignee/claim/branch/PR/workspace owns the work; settled history is handled by main skill 6.3, not treated as a perpetual reservation;
+- no assignee, claim marker, branch, PR, or workspace already claims the issue;
 - `FLOW_EXECUTOR_ID` is unique and has no active WIP;
 - the candidate's write scope, exclusive resources, and validation scope are grounded **in its issue body**, not inferred;
 - the candidate does not collide with any active/admitted node;

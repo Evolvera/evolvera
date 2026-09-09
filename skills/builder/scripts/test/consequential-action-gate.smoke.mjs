@@ -40,6 +40,10 @@ requires("system", [
 // Global authorization modes and continuation semantics (SYSTEM is canonical).
 requires("system", [
   [/## Authorization Modes and Continuation/, "named global authorization section"],
+  [/Exercise ordinary judgment/, "global ordinary-action discretion"],
+  [/even if they did not name that exact step/i, "safe necessary details need no separate authorization"],
+  [/Confirm material ambiguity, not routine complexity/, "complexity alone is not a confirmation gate"],
+  [/concrete unresolved user decision, material consequence, or explicit approval boundary/, "questions require a substantive reason"],
   [/no mode is a runtime, sandbox, credential, or tool-permission bypass/i, "no runtime bypass"],
   [/without asking "may I continue\?"/i, "no continuation re-ask"],
   [/internal evidence gates, never automatic human permission gates/i, "evidence gates are not permission gates"],
@@ -64,6 +68,8 @@ requires("execution", [
   [/behavior preference, not proof of action authority/i, "preference never grants authority"],
   [/registerCommand\("execution-mode"/, "runtime command owner"],
   [/before_agent_start/, "automatic prompt injection"],
+  [/safe and reversible in-scope steps without requesting separate approval/, "runtime carries ordinary-action discretion"],
+  [/not for ordinary safe implementation details inside that stage/, "supervised mode does not reintroduce trivial approval gates"],
   [/This general execution mode applies to research, analysis, writing, configuration, coding, file work/i, "generalist mode semantics"],
   [/The user approves each meaningful proposed stage or effect/i, "supervised behavior"],
   [/Carry the authorized outcome through evidence, in-scope work, safe validation, and delivery/i, "autonomous behavior"],
