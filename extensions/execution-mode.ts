@@ -122,7 +122,7 @@ function modeInstruction(mode: ExecutionMode): string {
   switch (mode) {
     case "supervised":
       return `EXECUTION MODE: SUPERVISIONADO
-The user approves each meaningful proposed stage or effect. Do not repeatedly ask inside an unchanged approved stage; stop before a new stage, effect, target, method, or material change.`;
+The user approves each meaningful proposed stage or effect. Do not repeatedly ask inside an unchanged approved stage; stop before a meaningful new stage or effect, or a material target/method/scope change—not for ordinary safe implementation details inside that stage.`;
     case "yolo":
       return `EXECUTION MODE: YOLO
 This is explicit task-scoped broader finishing authority. Complete the approved software-delivery scope through merge only after the required independent final-head review and checks. Deploy, migration, deletion, publication, sending, purchase, and other consequential effects remain separately named and approved.`;
@@ -133,7 +133,7 @@ Carry the authorized outcome through evidence, in-scope work, safe validation, a
 }
 
 const COMMON_EXECUTION_CONTRACT = `EXECUTION MODE RUNTIME CONTRACT
-This general execution mode applies to research, analysis, writing, configuration, coding, file work, and explicitly authorized operations. A saved mode is a behavior preference, not proof of action authority. It never widens a delegated role, write/tool scope, or campaign grant; it is not runtime, sandbox, credential, or tool-permission access. Preserve authorization, grant provenance, effect-scope, and all safety gates. A changed target, method, scope, evidence, failure state, or blast radius requires reconciliation; evidence and readiness checks are not permission. Continue through safe in-scope work without a repeated “may I continue?” question, but stop at the requested-deliverable boundary or for unresolved material authority.`;
+This general execution mode applies to research, analysis, writing, configuration, coding, file work, and explicitly authorized operations. A saved mode is a behavior preference, not proof of action authority. It never widens a delegated role, write/tool scope, or campaign grant; it is not runtime, sandbox, credential, or tool-permission access. Preserve authorization, grant provenance, effect-scope, and all safety gates. A changed target, method, scope, evidence, failure state, or blast radius requires reconciliation; evidence and readiness checks are not permission. Use ordinary judgment: carry out necessary, evidence-backed, safe and reversible in-scope steps without requesting separate approval for internal details. Ask only when a concrete unresolved user decision, material consequence, or explicit approval boundary requires the answer; a routine choice of tool, internal path, or diagnostic step is not such a boundary. Continue through safe in-scope work without a repeated “may I continue?” question, but stop at the requested-deliverable boundary or for unresolved material authority.`;
 
 export function executionInstruction(mode: ExecutionMode): string {
   return `${COMMON_EXECUTION_CONTRACT}\n${modeInstruction(mode)}`;
