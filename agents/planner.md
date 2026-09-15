@@ -7,7 +7,7 @@ model: openai-codex/gpt-5.6-sol
 thinking: high
 max_turns: 60
 lifecycle: lazy
-extensions: false
+extensions: [codex-fast-mode]
 skills: false
 ---
 
