@@ -3,6 +3,30 @@ import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-
 
 const STATUS_KEY = "codex-fast-mode";
 const FAST_REQUEST_TIER = "priority";
+const FAST_STATE_KEY = Symbol.for("evolvera.codex-fast-mode.state");
+
+interface SharedFastState {
+  enabled: boolean;
+  ownerSessionId?: string;
+}
+
+const globalState = globalThis as typeof globalThis & { [key: symbol]: unknown };
+
+function getSharedFastState(): SharedFastState {
+  const existing = globalState[FAST_STATE_KEY];
+  if (existing) return existing as SharedFastState;
+
+  const state: SharedFastState = { enabled: false };
+  globalState[FAST_STATE_KEY] = state;
+  return state;
+}
+
+function resetFastStateForOwner(sessionId: string): void {
+  const state = getSharedFastState();
+  if (state.ownerSessionId !== sessionId) return;
+  state.enabled = false;
+  state.ownerSessionId = undefined;
+}
 
 interface ModelIdentity {
   provider?: unknown;
@@ -16,12 +40,12 @@ interface ProviderPayload {
 export function isFastEligibleModel(model: ModelIdentity | undefined): boolean {
   if (model?.provider !== "openai-codex" || typeof model.id !== "string") return false;
 
-  // OpenAI currently advertises Fast mode for GPT-5.6, GPT-5.5, and GPT-5.4.
-  // The configured GPT-5.6 Sol/Terra/Luna IDs are variants of the 5.6 family.
+  // The configured GPT-5.6 Sol/Terra/Luna IDs and GPT-6 Astra route support Fast mode.
   return model.id.startsWith("gpt-5.6-")
     || model.id === "gpt-5.6"
     || model.id === "gpt-5.5"
-    || model.id === "gpt-5.4";
+    || model.id === "gpt-5.4"
+    || model.id === "gpt-6-astra";
 }
 
 export function creditMultiplierFor(model: ModelIdentity | undefined): string {
@@ -87,6 +111,9 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       }
 
       if (action === "on") {
+        const sharedState = getSharedFastState();
+        sharedState.enabled = true;
+        sharedState.ownerSessionId = ctx.sessionManager.getSessionId();
         enabled = true;
         eligibleModelSelected = true;
         fastRequestInFlight = false;
@@ -97,6 +124,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       }
 
       if (action === "off") {
+        resetFastStateForOwner(ctx.sessionManager.getSessionId());
         enabled = false;
         fastRequestInFlight = false;
         fastRequestAccepted = false;
@@ -110,6 +138,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    resetFastStateForOwner(sessionId);
     eligibleModelSelected = isFastEligibleModel(ctx.model);
     enabled = false;
     fastRequestInFlight = false;
@@ -142,6 +172,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
     if (modelChanged) {
+      resetFastStateForOwner(ctx.sessionManager.getSessionId());
       enabled = false;
       fastRequestInFlight = false;
       fastRequestAccepted = false;
@@ -150,7 +181,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    if (!enabled || !isFastEligibleModel(ctx.model)) return undefined;
+    if (!getSharedFastState().enabled || !isFastEligibleModel(ctx.model)) return undefined;
     fastRequestInFlight = true;
     return applyFastServiceTier(event.payload);
   });
@@ -163,6 +194,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_event, ctx) => {
+    resetFastStateForOwner(ctx.sessionManager.getSessionId());
     enabled = false;
     eligibleModelSelected = false;
     fastRequestInFlight = false;

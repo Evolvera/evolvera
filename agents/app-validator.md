@@ -8,7 +8,7 @@ thinking: high
 max_turns: 120
 prompt_mode: replace
 inherit_context: false
-extensions: false
+extensions: [codex-fast-mode]
 skills: false
 ---
 

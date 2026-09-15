@@ -403,7 +403,7 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 |---|---|
 | `/login` | Autenticar ou selecionar provider/modelo. |
 | `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
-| `/fast on` / `/fast off` | Alternar o fast mode fornecido pela extensão local. |
+| `/fast on` / `/fast off` | Alternar o fast mode fornecido pela extensão local; quando ativo, propaga `service_tier: "priority"` aos subagentes Agent suportados e não isolados; subagentes isolados permanecem no tier padrão. |
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
