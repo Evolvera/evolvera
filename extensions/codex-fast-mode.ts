@@ -1,12 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 
 const STATUS_KEY = "codex-fast-mode";
 const FAST_REQUEST_TIER = "priority";
 const FAST_STATE_KEY = Symbol.for("evolvera.codex-fast-mode.state");
 
+type FastMode = "off" | "all" | "subagents";
+
 interface SharedFastState {
+  // Keep enabled for compatibility with extensions loaded before /reload.
   enabled: boolean;
+  mode?: FastMode;
   ownerSessionId?: string;
 }
 
@@ -16,16 +19,26 @@ function getSharedFastState(): SharedFastState {
   const existing = globalState[FAST_STATE_KEY];
   if (existing) return existing as SharedFastState;
 
-  const state: SharedFastState = { enabled: false };
+  const state: SharedFastState = { enabled: false, mode: "off" };
   globalState[FAST_STATE_KEY] = state;
   return state;
+}
+
+function getFastMode(state: SharedFastState): FastMode {
+  if (state.mode === "all" || state.mode === "subagents" || state.mode === "off") return state.mode;
+  return state.enabled ? "all" : "off";
+}
+
+function setFastMode(state: SharedFastState, mode: FastMode, ownerSessionId?: string): void {
+  state.mode = mode;
+  state.enabled = mode !== "off";
+  state.ownerSessionId = mode === "off" ? undefined : ownerSessionId;
 }
 
 function resetFastStateForOwner(sessionId: string): void {
   const state = getSharedFastState();
   if (state.ownerSessionId !== sessionId) return;
-  state.enabled = false;
-  state.ownerSessionId = undefined;
+  setFastMode(state, "off");
 }
 
 interface ModelIdentity {
@@ -57,27 +70,23 @@ export function applyFastServiceTier(payload: unknown): unknown {
   return { ...(payload as ProviderPayload), service_tier: FAST_REQUEST_TIER };
 }
 
-export function filterFastCommandSuggestions(
-  suggestions: Awaited<ReturnType<AutocompleteProvider["getSuggestions"]>>,
-  eligible: boolean,
-): Awaited<ReturnType<AutocompleteProvider["getSuggestions"]>> {
-  if (eligible || !suggestions) return suggestions;
-
-  const items = suggestions.items.filter((item: AutocompleteItem) => item.value !== "fast" && item.label !== "fast");
-  return items.length > 0 ? { ...suggestions, items } : null;
-}
-
 export default function codexFastModeExtension(pi: ExtensionAPI) {
-  let enabled = false;
   let eligibleModelSelected = false;
   let fastRequestInFlight = false;
   let fastRequestAccepted = false;
-  let autocompleteInstalled = false;
 
-  const updateStatus = (ctx: { ui: { setStatus(key: string, text: string | undefined): void } }) => {
-    const status = enabled && eligibleModelSelected
-      ? fastRequestAccepted ? "⚡🟢" : "⚡🟡"
-      : undefined;
+  const updateStatus = (ctx: {
+    sessionManager: { getSessionId(): string };
+    ui: { setStatus(key: string, text: string | undefined): void };
+  }) => {
+    const state = getSharedFastState();
+    const mode = getFastMode(state);
+    const isOwner = state.ownerSessionId === ctx.sessionManager.getSessionId();
+    const status = isOwner && mode === "subagents"
+      ? "⚡ECO"
+      : isOwner && mode === "all" && eligibleModelSelected
+        ? fastRequestAccepted ? "⚡🟢" : "⚡🟡"
+        : undefined;
     ctx.ui.setStatus(STATUS_KEY, status);
   };
 
@@ -91,12 +100,21 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     );
   };
 
+  const notifyEcoEnabled = (ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }) => {
+    ctx.ui.notify(
+      "Fast Mode ECO ativado: a sessão principal permanece no service tier padrão; apenas subagentes OpenAI Codex compatíveis usam Fast e consomem créditos adicionais.",
+      "warning",
+    );
+  };
+
   pi.registerCommand("fast", {
-    description: "Toggle OpenAI Codex Fast mode: /fast on | /fast off",
+    description: "Toggle OpenAI Codex Fast mode: /fast on | /fast eco | /fast off",
     getArgumentCompletions: async (prefix) => {
-      if (!eligibleModelSelected) return null;
       const options = [
-        { value: "on", label: "on", description: "1,5× faster; 2,5× GPT-5.6/5.5 credits" },
+        ...(eligibleModelSelected
+          ? [{ value: "on", label: "on", description: "1,5× faster; 2,5× GPT-5.6/5.5 credits" }]
+          : []),
+        { value: "eco", label: "eco", description: "Fast for eligible subagents only" },
         { value: "off", label: "off", description: "Use standard service tier" },
       ];
       return options.filter((option) => option.value.startsWith(prefix.trim().toLowerCase()));
@@ -104,28 +122,10 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     handler: async (rawArgs, ctx) => {
       const action = rawArgs.trim().toLowerCase();
       const model = ctx.model;
-
-      if (!isFastEligibleModel(model)) {
-        ctx.ui.notify("Fast Mode is available only for supported OpenAI Codex models (GPT-5.6, GPT-5.5, or GPT-5.4).", "warning");
-        return;
-      }
-
-      if (action === "on") {
-        const sharedState = getSharedFastState();
-        sharedState.enabled = true;
-        sharedState.ownerSessionId = ctx.sessionManager.getSessionId();
-        enabled = true;
-        eligibleModelSelected = true;
-        fastRequestInFlight = false;
-        fastRequestAccepted = false;
-        updateStatus(ctx);
-        notifyEnabled(ctx, model);
-        return;
-      }
+      const sessionId = ctx.sessionManager.getSessionId();
 
       if (action === "off") {
-        resetFastStateForOwner(ctx.sessionManager.getSessionId());
-        enabled = false;
+        resetFastStateForOwner(sessionId);
         fastRequestInFlight = false;
         fastRequestAccepted = false;
         updateStatus(ctx);
@@ -133,7 +133,33 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
         return;
       }
 
-      ctx.ui.notify("Uso: /fast on | /fast off", "warning");
+      if (action === "eco") {
+        const sharedState = getSharedFastState();
+        setFastMode(sharedState, "subagents", sessionId);
+        fastRequestInFlight = false;
+        fastRequestAccepted = false;
+        updateStatus(ctx);
+        notifyEcoEnabled(ctx);
+        return;
+      }
+
+      if (action !== "on") {
+        ctx.ui.notify("Uso: /fast on | /fast eco | /fast off", "warning");
+        return;
+      }
+
+      if (!isFastEligibleModel(model)) {
+        ctx.ui.notify("Fast Mode is available only for supported OpenAI Codex models (GPT-5.6, GPT-5.5, GPT-5.4, or GPT-6 Astra).", "warning");
+        return;
+      }
+
+      const sharedState = getSharedFastState();
+      setFastMode(sharedState, "all", sessionId);
+      eligibleModelSelected = true;
+      fastRequestInFlight = false;
+      fastRequestAccepted = false;
+      updateStatus(ctx);
+      notifyEnabled(ctx, model);
     },
   });
 
@@ -141,39 +167,21 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     const sessionId = ctx.sessionManager.getSessionId();
     resetFastStateForOwner(sessionId);
     eligibleModelSelected = isFastEligibleModel(ctx.model);
-    enabled = false;
     fastRequestInFlight = false;
     fastRequestAccepted = false;
     updateStatus(ctx);
-
-    if (ctx.mode !== "tui" || autocompleteInstalled) return;
-    autocompleteInstalled = true;
-    ctx.ui.addAutocompleteProvider((current) => ({
-      triggerCharacters: current.triggerCharacters,
-      async getSuggestions(lines, cursorLine, cursorCol, options) {
-        const suggestions = await current.getSuggestions(lines, cursorLine, cursorCol, options);
-        const textBeforeCursor = (lines[cursorLine] ?? "").slice(0, cursorCol);
-        const showingTopLevelSlashCommands = textBeforeCursor.startsWith("/") && !textBeforeCursor.includes(" ");
-        return showingTopLevelSlashCommands
-          ? filterFastCommandSuggestions(suggestions, eligibleModelSelected)
-          : suggestions;
-      },
-      applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
-        return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
-      },
-      shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
-        return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
-      },
-    }));
   });
 
   pi.on("model_select", (event, ctx) => {
     const modelChanged = event.previousModel?.provider !== event.model.provider
       || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
-    if (modelChanged) {
+    const state = getSharedFastState();
+    const isOwner = state.ownerSessionId === ctx.sessionManager.getSessionId();
+    if (modelChanged && isOwner && getFastMode(state) === "all") {
       resetFastStateForOwner(ctx.sessionManager.getSessionId());
-      enabled = false;
+    }
+    if (modelChanged) {
       fastRequestInFlight = false;
       fastRequestAccepted = false;
     }
@@ -181,7 +189,11 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    if (!getSharedFastState().enabled || !isFastEligibleModel(ctx.model)) return undefined;
+    const state = getSharedFastState();
+    const mode = getFastMode(state);
+    const isOwner = state.ownerSessionId === ctx.sessionManager.getSessionId();
+    const appliesToRequest = mode === "all" || (mode === "subagents" && !isOwner);
+    if (!appliesToRequest || !isFastEligibleModel(ctx.model)) return undefined;
     fastRequestInFlight = true;
     return applyFastServiceTier(event.payload);
   });
@@ -195,7 +207,6 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", (_event, ctx) => {
     resetFastStateForOwner(ctx.sessionManager.getSessionId());
-    enabled = false;
     eligibleModelSelected = false;
     fastRequestInFlight = false;
     fastRequestAccepted = false;
