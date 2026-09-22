@@ -1,9 +1,9 @@
 ---
 name: website-polisher
-description: "General full-site UI/UX polish planner. Audits implemented websites against strategy/design/content plans and writes precise POLISH_PLAN.md fixes for trust, conversion, responsive behavior, accessibility, and visual quality. Model: openai-codex/gpt-5.6-sol low."
-display_name: ✨ Website Polisher · GPT-5.6 Sol · low
+description: "General full-site UI/UX polish planner. Audits implemented websites against strategy/design/content plans and writes precise POLISH_PLAN.md fixes for trust, conversion, responsive behavior, accessibility, and visual quality. Model: openai-codex/gpt-6-sol low."
+display_name: ✨ Website Polisher · GPT-6 Sol · low
 tools: read, grep, find, ls, bash, write
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 thinking: low
 max_turns: 50
 lifecycle: lazy

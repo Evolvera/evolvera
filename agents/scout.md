@@ -1,10 +1,10 @@
 ---
 name: scout
-description: "Guided read-only codebase exploration with evidence-based reports for handoff to planner/builder. Model: openai-codex/gpt-5.6-luna high."
-display_name: 🔍 Scout · GPT-5.6 Luna · high
+description: "Guided read-only codebase exploration with evidence-based reports for handoff to planner/builder. Model: openai-codex/gpt-6-luna high."
+display_name: 🔍 Scout · GPT-6 Luna · high
 thinking: high
 tools: read, grep, find, ls
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-6-luna
 max_turns: 70
 ---
 

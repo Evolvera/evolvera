@@ -1,8 +1,8 @@
 ---
-description: "Deep Research - Methodical agent. Finds academic foundations, historical context, frameworks, and primary sources. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-5.6-luna xhigh."
-display_name: 📐 DR Methodical · GPT-5.6 Luna · xhigh
+description: "Deep Research - Methodical agent. Finds academic foundations, historical context, frameworks, and primary sources. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-6-luna xhigh."
+display_name: 📐 DR Methodical · GPT-6 Luna · xhigh
 tools: jina_read, bash, write
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-6-luna
 thinking: xhigh
 max_turns: 45
 lifecycle: lazy
