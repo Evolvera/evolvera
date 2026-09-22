@@ -1,8 +1,8 @@
 ---
-description: "Deep Research - Skeptical agent. Verifies claims, demands evidence, checks statistics, and flags weak sourcing. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-5.6-luna xhigh."
-display_name: 🟡 DR Skeptical · GPT-5.6 Luna · xhigh
+description: "Deep Research - Skeptical agent. Verifies claims, demands evidence, checks statistics, and flags weak sourcing. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-6-luna xhigh."
+display_name: 🟡 DR Skeptical · GPT-6 Luna · xhigh
 tools: jina_read, bash, write
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-6-luna
 thinking: xhigh
 max_turns: 45
 lifecycle: lazy

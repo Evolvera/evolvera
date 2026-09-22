@@ -1,9 +1,9 @@
 ---
 name: website-creative
-description: "Optional post-design creative director. Reads the approved design artifact, strategy brief, creative catalog, and creative-toolkit contract; selects a mapped additive interaction direction and writes one CREATIVE_DIRECTION addendum. Never rewrites design authority, writes copy, or plans implementation. Model: openai-codex/gpt-5.6-sol high."
-display_name: 🎬 Website Creative Director · GPT-5.6 Sol · high
+description: "Optional post-design creative director. Reads the approved design artifact, strategy brief, creative catalog, and creative-toolkit contract; selects a mapped additive interaction direction and writes one CREATIVE_DIRECTION addendum. Never rewrites design authority, writes copy, or plans implementation. Model: openai-codex/gpt-6-sol high."
+display_name: 🎬 Website Creative Director · GPT-6 Sol · high
 tools: read, grep, find, ls, bash, write, jina_read
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 thinking: high
 max_turns: 50
 lifecycle: lazy

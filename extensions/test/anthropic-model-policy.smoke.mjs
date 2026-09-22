@@ -178,7 +178,7 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.match(frontmatter, new RegExp(`^model: ${model.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, "m"));
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
-assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-5\.6-luna$/m);
+assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6-luna$/m);
 assert.match(read("agents/builder-heavy.md"), /^thinking: max$/m);
 for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);

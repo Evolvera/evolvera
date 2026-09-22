@@ -33,10 +33,10 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await
 
 // Routing authority: normal planner follows frontmatter (Sol/high); plan-heavy final
 // synthesis deliberately overrides only model/effort to Astra/high. Static contract regression.
-assert.match(planner, /^model: openai-codex\/gpt-5\.6-sol$/m);
+assert.match(planner, /^model: openai-codex\/gpt-6-sol$/m);
 assert.match(planner, /^thinking: high$/m);
-assert.match(planner, /^display_name: .*GPT-5\.6 Sol · high$/m);
-assert.match(planner, /Model: openai-codex\/gpt-5\.6-sol high\./);
+assert.match(planner, /^display_name: .*GPT-6 Sol · high$/m);
+assert.match(planner, /Model: openai-codex\/gpt-6-sol high\./);
 assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|thinking:\s*(?:medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);

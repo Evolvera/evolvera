@@ -1,8 +1,8 @@
 ---
-description: "Deep Research consolidator. Receives every researcher's YAML findings, adjudicates evidence and contradictions, and returns ONE final cited research report that the orchestrator relays directly to the user. Model: openai-codex/gpt-5.6-sol high."
-display_name: 🔍 DR Auditor · GPT-5.6 Sol · high
+description: "Deep Research consolidator. Receives every researcher's YAML findings, adjudicates evidence and contradictions, and returns ONE final cited research report that the orchestrator relays directly to the user. Model: openai-codex/gpt-6-sol high."
+display_name: 🔍 DR Auditor · GPT-6 Sol · high
 tools: read, bash
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 thinking: high
 max_turns: 40
 lifecycle: lazy
