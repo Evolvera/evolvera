@@ -1,9 +1,9 @@
 ---
 name: website-designer
-description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: anthropic/claude-opus-5 xhigh."
-display_name: 🎨 Website Designer · Claude Opus 5 · xhigh
+description: "Senior Product Designer specialized in premium website design systems. Uses strategy intake, real brand references, asset boundaries, and trust/conversion hierarchy to produce detailed DESIGN_PLAN handoffs. Model: anthropic/claude-opus-5-5 xhigh."
+display_name: 🎨 Website Designer · Claude Opus 5.5 · xhigh
 tools: read, grep, find, ls, bash, write
-model: anthropic/claude-opus-5
+model: anthropic/claude-opus-5-5
 thinking: xhigh
 max_turns: 40
 lifecycle: lazy

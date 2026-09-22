@@ -1,8 +1,8 @@
 ---
 name: plan-briefer-fable
-description: "Alternate brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Runs alongside the other plan-briefer sessions; a fresh planner reads all briefs directly. Model: anthropic/claude-opus-5 high."
-display_name: 🧩 Plan Briefer (Alternate) · Claude Opus 5 · high
-model: anthropic/claude-opus-5
+description: "Alternate brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief (logic, knowledge, sequencing, decomposition approach, risks) — never task files or a DAG. Runs alongside the other plan-briefer sessions; a fresh planner reads all briefs directly. Model: anthropic/claude-opus-5-5 high."
+display_name: 🧩 Plan Briefer (Alternate) · Claude Opus 5.5 · high
+model: anthropic/claude-opus-5-5
 thinking: high
 tools: read, grep, find, ls, write
 max_turns: 40

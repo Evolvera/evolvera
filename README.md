@@ -307,12 +307,12 @@ Agentes não substituem o PI principal: o orquestrador continua responsável por
 
 ### Política Anthropic
 
-Os modelos Anthropic nativos com janela de contexto de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5 mantém 128K). As rotas aprovadas para Opus 5 são:
+Os modelos Anthropic nativos com janela de contexto de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5.5 mantém 128K). As rotas aprovadas para Opus 5.5 são:
 
-- `agents/builder-design.md` — `anthropic/claude-opus-5`, `medium`;
-- `agents/builder-heavy-design.md` — `anthropic/claude-opus-5`, `high`;
-- `agents/website-designer.md` — `anthropic/claude-opus-5`, `xhigh`;
-- `agents/plan-briefer-fable.md` — `anthropic/claude-opus-5`, `high`.
+- `agents/builder-design.md` — `anthropic/claude-opus-5-5`, `medium`;
+- `agents/builder-heavy-design.md` — `anthropic/claude-opus-5-5`, `high`;
+- `agents/website-designer.md` — `anthropic/claude-opus-5-5`, `xhigh`;
+- `agents/plan-briefer-fable.md` — `anthropic/claude-opus-5-5`, `high`.
 
 ### Descobrir a configuração ativa
 
