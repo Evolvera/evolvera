@@ -3,7 +3,7 @@
   "followUpMode": "one-at-a-time",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6-sol",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "medium",
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:@tintinweb/pi-subagents@0.18.2",
