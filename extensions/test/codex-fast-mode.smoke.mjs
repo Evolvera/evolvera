@@ -19,6 +19,10 @@ try {
   const gpt56 = { provider: "openai-codex", id: "gpt-5.6-sol" };
   const gpt54 = { provider: "openai-codex", id: "gpt-5.4" };
   const astra = { provider: "openai-codex", id: "gpt-6-astra" };
+  const gpt6Sol = { provider: "openai-codex", id: "gpt-6-sol" };
+  const gpt6Luna = { provider: "openai-codex", id: "gpt-6-luna" };
+  assert.equal(mod.isFastEligibleModel(gpt6Sol), true);
+  assert.equal(mod.isFastEligibleModel(gpt6Luna), true);
   const spark = { provider: "openai-codex", id: "gpt-5.3-codex-spark" };
   const claude = { provider: "anthropic", id: "claude-fable-5" };
 

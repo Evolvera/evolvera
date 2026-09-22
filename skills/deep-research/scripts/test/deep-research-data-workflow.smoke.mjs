@@ -18,7 +18,7 @@ const [skill, system, systemMirror, dataAgent, auditor, ...workerTexts] = await 
 ]);
 
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
-assert.match(system, /Launch five perspective researchers in parallel; add the Terra xhigh public official-API\/data ETL specialist only when/i);
+assert.match(system, /Launch five perspective researchers in parallel; add the Sol high public official-API\/data ETL specialist only when/i);
 assert.match(skill, /Five Perspectives, Optional Data Analyst, One Auditor/);
 assert.match(skill, /deep-research-data/);
 assert.match(skill, /Data-analyst invocation gate/);
@@ -38,10 +38,10 @@ assert.match(skill, /final report cites official sources.*not local artifact pat
 assert.match(skill, /no credentials\/project data\/package installs/i);
 
 assert.match(dataAgent, /^name: deep-research-data$/m);
-assert.match(dataAgent, /^model: openai-codex\/gpt-5\.6-terra$/m);
-assert.match(dataAgent, /^thinking: xhigh$/m);
+assert.match(dataAgent, /^model: openai-codex\/gpt-6-sol$/m);
+assert.match(dataAgent, /^thinking: high$/m);
 assert.match(dataAgent, /^max_turns: 70$/m);
-assert.match(dataAgent, /^display_name: 📊 DR Data · GPT-5\.6 Terra · xhigh$/m);
+assert.match(dataAgent, /^display_name: 📊 DR Data · GPT-6 Sol · high$/m);
 assert.match(dataAgent, /^tools: jina_read, bash, write, read$/m);
 assert.match(dataAgent, /official public APIs, open datasets, downloadable CSV\/JSON\/XLSX/i);
 assert.match(dataAgent, /read-only retrieval: `GET`\/`HEAD`/);
