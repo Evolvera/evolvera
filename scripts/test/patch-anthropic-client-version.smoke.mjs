@@ -190,6 +190,25 @@ try {
     });
   }
 
+  // The adapted 2.0.1 must keep all bytes except the version constant.
+  const adaptedSource = sourceAround(patcher.AUTH_SUPERSEDED_ANCHORS[0].anchor)
+    + '\nexport const customAdaptation = "preserve-me";\n';
+  createFixture({
+    authVersion: '2.0.1',
+    piSource: sourceAround(patcher.PI_SUPERSEDED_ANCHORS[0].anchor),
+    authSource: adaptedSource,
+  });
+  const metadataBefore = fs.readFileSync(path.join(authRoot, 'package.json'));
+  const adaptedRun = runPatcher();
+  assert.equal(adaptedRun.status, 0, adaptedRun.stderr);
+  assert.deepEqual(fs.readFileSync(authTarget), expectedReplacement(
+    adaptedSource, patcher.AUTH_SUPERSEDED_ANCHORS[0].anchor, patcher.AUTH_PATCHED_ANCHOR,
+  ));
+  assert.deepEqual(fs.readFileSync(path.join(authRoot, 'package.json')), metadataBefore);
+  const adaptedSnapshot = fixtureSnapshot();
+  assert.equal(runPatcher().status, 0);
+  assert.deepEqual(fixtureSnapshot(), adaptedSnapshot);
+
   assertRefused('wrong PI package name', { piName: 'wrong/package' });
   assertRefused('wrong PI package version', { piVersion: '0.83.1' });
   assertRefused('wrong auth package name', { authName: 'wrong/auth' });

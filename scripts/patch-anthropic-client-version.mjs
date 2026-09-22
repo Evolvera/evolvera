@@ -10,6 +10,8 @@ const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_PACKAGE_VERSION = '0.83.0';
 const AUTH_PACKAGE_NAME = '@gotgenes/pi-anthropic-auth';
 const AUTH_PACKAGE_VERSION = '2.0.6';
+// Preserve the installed adapted 2.0.1 instead of reinstalling its OAuth path.
+const AUTH_SUPPORTED_VERSIONS = [AUTH_PACKAGE_VERSION, '2.0.1'];
 const PI_TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js';
 const AUTH_TARGET_RELATIVE_PATH = 'src/constants.ts';
 const PI_UNPATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.75";';
@@ -128,7 +130,8 @@ async function readPackage(packageRoot, expectedName, expectedVersion) {
   if (!packageStat.isDirectory() || !metadataStat.isFile()) {
     throw new Error('package metadata has unsafe type');
   }
-  if (metadata.name !== expectedName || metadata.version !== expectedVersion) {
+  const versions = Array.isArray(expectedVersion) ? expectedVersion : [expectedVersion];
+  if (metadata.name !== expectedName || !versions.includes(metadata.version)) {
     throw new Error(`package identity mismatch for ${expectedName}`);
   }
 }
@@ -240,7 +243,7 @@ async function verifyTarget(target, expectedBytes) {
 async function patchPackageRoots(piPackageRoot, authPackageRoot, { renameFile = rename } = {}) {
   await Promise.all([
     readPackage(piPackageRoot, PI_PACKAGE_NAME, PI_PACKAGE_VERSION),
-    readPackage(authPackageRoot, AUTH_PACKAGE_NAME, AUTH_PACKAGE_VERSION),
+    readPackage(authPackageRoot, AUTH_PACKAGE_NAME, AUTH_SUPPORTED_VERSIONS),
   ]);
 
   // Both targets are read, validated, and prepared before either file can be renamed.
