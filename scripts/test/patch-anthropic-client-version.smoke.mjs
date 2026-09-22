@@ -153,6 +153,43 @@ try {
   assert.equal(second.status, 0, second.stderr);
   assert.deepEqual(fixtureSnapshot(), patchedSnapshot, 'second patch changed fixture bytes');
 
+  // An install carrying a client version this patcher wrote earlier migrates
+  // to the current target instead of being refused.
+  assert.ok(patcher.PI_SUPERSEDED_ANCHORS.length > 0 && patcher.AUTH_SUPERSEDED_ANCHORS.length > 0);
+  for (const [piSuperseded, authSuperseded] of patcher.PI_SUPERSEDED_ANCHORS.map(
+    (pi, index) => [pi, patcher.AUTH_SUPERSEDED_ANCHORS[index]],
+  )) {
+    assert.ok(authSuperseded, 'superseded anchor lists are not paired');
+    assert.notEqual(piSuperseded.anchor, patcher.PI_PATCHED_ANCHOR);
+    assert.notEqual(authSuperseded.anchor, patcher.AUTH_PATCHED_ANCHOR);
+    createFixture({
+      piSource: sourceAround(piSuperseded.anchor),
+      authSource: sourceAround(authSuperseded.anchor),
+    });
+    const piSupersededBefore = fs.readFileSync(piTarget);
+    const authSupersededBefore = fs.readFileSync(authTarget);
+    const migration = runPatcher();
+    assert.equal(migration.status, 0, migration.stderr);
+    assert.deepEqual(
+      fs.readFileSync(piTarget),
+      expectedReplacement(piSupersededBefore.toString('utf8'), piSuperseded.anchor, patcher.PI_PATCHED_ANCHOR),
+    );
+    assert.deepEqual(
+      fs.readFileSync(authTarget),
+      expectedReplacement(authSupersededBefore.toString('utf8'), authSuperseded.anchor, patcher.AUTH_PATCHED_ANCHOR),
+    );
+    const migratedSnapshot = fixtureSnapshot();
+    const migrationAgain = runPatcher();
+    assert.equal(migrationAgain.status, 0, migrationAgain.stderr);
+    assert.deepEqual(fixtureSnapshot(), migratedSnapshot, 'migration is not idempotent');
+    assertRefused('mixed superseded/current PI anchors', {
+      piSource: `${sourceAround(piSuperseded.anchor)}\n${patcher.PI_PATCHED_ANCHOR}`,
+    });
+    assertRefused('mixed superseded/pristine auth anchors', {
+      authSource: `${sourceAround(authSuperseded.anchor)}\n${patcher.AUTH_UNPATCHED_ANCHOR}`,
+    });
+  }
+
   assertRefused('wrong PI package name', { piName: 'wrong/package' });
   assertRefused('wrong PI package version', { piVersion: '0.83.1' });
   assertRefused('wrong auth package name', { authName: 'wrong/auth' });

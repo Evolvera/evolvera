@@ -13,13 +13,31 @@ const AUTH_PACKAGE_VERSION = '2.0.6';
 const PI_TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js';
 const AUTH_TARGET_RELATIVE_PATH = 'src/constants.ts';
 const PI_UNPATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.75";';
-const PI_PATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.257";';
+const PI_PATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.280";';
 const AUTH_UNPATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.206";';
-const AUTH_PATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.257";';
+const AUTH_PATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.280";';
 const PI_UNPATCHED_SHA256 = 'af2514d6f1a4a4f4e92499c9ff996b5f12792e882cdf55a7687aa09aed7b9a9e';
-const PI_PATCHED_SHA256 = 'ca9165b796800e97b0946541d95c586cac8fb963d148673935d46091eacd9cd6';
+const PI_PATCHED_SHA256 = 'eaa26ecdb63f379a96b5bc556bda397fa8d747ea6a3aa94922656f1496fcce41';
 const AUTH_UNPATCHED_SHA256 = 'e327b67cd75d719f06910db06468f9b39fd03e657b5fb593555ca6e4cbe349f8';
-const AUTH_PATCHED_SHA256 = 'b01a4eb50efa8fecd6bf8e3ebdd525337f30d57ad43d2562c7b2cbd62f50efff';
+const AUTH_PATCHED_SHA256 = 'bfbe5a011ae42f04765567d4b177f164a048eaca33f3d89043fa0672360691c3';
+/**
+ * Client versions this patcher previously wrote. An install already carrying
+ * one of them is migrated to the current target with the same fail-closed
+ * identity, cardinality, and rollback guarantees as a pristine install; every
+ * other value is still refused.
+ */
+const PI_SUPERSEDED_ANCHORS = [
+  {
+    anchor: 'const claudeCodeVersion = "2.1.257";',
+    sha256: 'ca9165b796800e97b0946541d95c586cac8fb963d148673935d46091eacd9cd6',
+  },
+];
+const AUTH_SUPERSEDED_ANCHORS = [
+  {
+    anchor: 'export const CLAUDE_CODE_VERSION = "2.1.257";',
+    sha256: 'b01a4eb50efa8fecd6bf8e3ebdd525337f30d57ad43d2562c7b2cbd62f50efff',
+  },
+];
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -115,7 +133,10 @@ async function readPackage(packageRoot, expectedName, expectedVersion) {
   }
 }
 
-async function prepareTarget({ packageRoot, relativePath, unpatchedAnchor, patchedAnchor, unpatchedSha256, patchedSha256 }) {
+async function prepareTarget({
+  packageRoot, relativePath, unpatchedAnchor, patchedAnchor, unpatchedSha256, patchedSha256,
+  supersededAnchors = [],
+}) {
   const targetPath = path.join(packageRoot, relativePath);
   let original;
   let targetStat;
@@ -129,13 +150,18 @@ async function prepareTarget({ packageRoot, relativePath, unpatchedAnchor, patch
   }
 
   const source = decodeUtf8(original);
-  const unpatchedCount = countOccurrences(source, unpatchedAnchor);
+  // Exactly one known client-version anchor may appear, exactly once: a
+  // pristine install, one this patcher wrote earlier, or the current target.
+  const sourceAnchors = [{ anchor: unpatchedAnchor, sha256: unpatchedSha256 }, ...supersededAnchors];
   const patchedCount = countOccurrences(source, patchedAnchor);
-  if (unpatchedCount === 1 && patchedCount === 0) {
-    if (sha256(unpatchedAnchor) !== unpatchedSha256) {
-      throw new Error(`unpatched anchor digest mismatch: ${relativePath}`);
-    }
-  } else if (unpatchedCount === 0 && patchedCount === 1) {
+  const present = sourceAnchors
+    .map((candidate) => ({ ...candidate, count: countOccurrences(source, candidate.anchor) }))
+    .filter((candidate) => candidate.count > 0);
+  const total = patchedCount + present.reduce((sum, candidate) => sum + candidate.count, 0);
+  if (total !== 1) {
+    throw new Error(`anchor cardinality mismatch: ${relativePath}`);
+  }
+  if (patchedCount === 1) {
     if (sha256(patchedAnchor) !== patchedSha256) {
       throw new Error(`patched anchor digest mismatch: ${relativePath}`);
     }
@@ -148,17 +174,20 @@ async function prepareTarget({ packageRoot, relativePath, unpatchedAnchor, patch
       unpatchedAnchor,
       patchedAnchor,
     };
-  } else {
-    throw new Error(`anchor cardinality mismatch: ${relativePath}`);
   }
+  const [replaced] = present;
+  if (sha256(replaced.anchor) !== replaced.sha256) {
+    throw new Error(`unpatched anchor digest mismatch: ${relativePath}`);
+  }
+  const sourceAnchor = replaced.anchor;
 
-  const index = source.indexOf(unpatchedAnchor);
+  const index = source.indexOf(sourceAnchor);
   const output = Buffer.concat([
     Buffer.from(source.slice(0, index), 'utf8'),
     Buffer.from(patchedAnchor, 'utf8'),
-    Buffer.from(source.slice(index + unpatchedAnchor.length), 'utf8'),
+    Buffer.from(source.slice(index + sourceAnchor.length), 'utf8'),
   ]);
-  if (output.equals(original) || countOccurrences(output.toString('utf8'), unpatchedAnchor) !== 0
+  if (output.equals(original) || countOccurrences(output.toString('utf8'), sourceAnchor) !== 0
       || countOccurrences(output.toString('utf8'), patchedAnchor) !== 1
       || sha256(patchedAnchor) !== patchedSha256) {
     throw new Error(`patched output verification failed: ${relativePath}`);
@@ -223,6 +252,7 @@ async function patchPackageRoots(piPackageRoot, authPackageRoot, { renameFile = 
       patchedAnchor: PI_PATCHED_ANCHOR,
       unpatchedSha256: PI_UNPATCHED_SHA256,
       patchedSha256: PI_PATCHED_SHA256,
+      supersededAnchors: PI_SUPERSEDED_ANCHORS,
     }),
     prepareTarget({
       packageRoot: authPackageRoot,
@@ -231,6 +261,7 @@ async function patchPackageRoots(piPackageRoot, authPackageRoot, { renameFile = 
       patchedAnchor: AUTH_PATCHED_ANCHOR,
       unpatchedSha256: AUTH_UNPATCHED_SHA256,
       patchedSha256: AUTH_PATCHED_SHA256,
+      supersededAnchors: AUTH_SUPERSEDED_ANCHORS,
     }),
   ]);
   const changedTargets = targets.filter((target) => target.changed);
@@ -316,6 +347,8 @@ export {
   PI_PATCHED_SHA256,
   AUTH_UNPATCHED_SHA256,
   AUTH_PATCHED_SHA256,
+  PI_SUPERSEDED_ANCHORS,
+  AUTH_SUPERSEDED_ANCHORS,
   npmInvocation,
   npmGlobalNodeModulesRoot,
   authPackageRootFromEnvironment,
