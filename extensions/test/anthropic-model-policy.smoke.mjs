@@ -117,7 +117,31 @@ assert.deepEqual(
   JSON.parse(read("models.json")).providers.anthropic,
   modelsConfig.providers.anthropic,
 );
-const gpt56CodexModels = modelsConfig.providers["openai-codex"].models.filter(({ id }) => id.startsWith("gpt-5.6-"));
+const codexModels = modelsConfig.providers["openai-codex"].models;
+const runtimeCodexModels = JSON.parse(read("models.json")).providers["openai-codex"].models;
+const gpt6CodexExpectations = {
+  "gpt-6-sol": { name: "GPT-6 Sol", cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 } },
+  "gpt-6-luna": { name: "GPT-6 Luna", cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 } },
+};
+for (const [id, expected] of Object.entries(gpt6CodexExpectations)) {
+  const model = codexModels.find((entry) => entry.id === id);
+  assert.deepEqual(model, {
+    api: "openai-codex-responses",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null, minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max",
+    },
+    input: ["text", "image"],
+    contextWindow: 300_000,
+    maxTokens: 128_000,
+    id,
+    name: expected.name,
+    cost: expected.cost,
+  });
+  assert.deepEqual(runtimeCodexModels.find((entry) => entry.id === id), model, `${id} drifted between models.json and config/models.json`);
+}
+const gpt56CodexModels = codexModels.filter(({ id }) => id.startsWith("gpt-5.6-"));
 assert.deepEqual(gpt56CodexModels.map(({ id }) => id), ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 for (const model of gpt56CodexModels) {
   assert.equal(model.thinkingLevelMap.max, "max", `${model.id} must expose max reasoning effort`);
