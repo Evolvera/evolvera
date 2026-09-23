@@ -5,36 +5,46 @@ import { join } from "node:path";
 
 /**
  * Maestro: before each user prompt, picks the main session's model tier and
- * reasoning effort for that whole turn: a pure continuation keeps the current
- * pair; otherwise local intent rules decide; only unrecognized prompts go to
- * TypeDec (two independent `choice` questions, doubt -> Opus 5.5 / high).
+ * reasoning effort for that whole turn.
  *
- * Invariants:
- * - Every request carries exactly one question in `short` mode (ANE), whose
- *   hard limit is 96 tokens = question prefix + state + 1 separator. No
- *   tokenizer is loaded (it cost ~430 MB RAM): the prompt is cut by a char
- *   limit per question (94 model / 82 effort), set from the Laya tokenizer so ~95% of real PT/EN/code
- *   text fits on the first try. On 413 the state is cut 25% and resent (up to
- *   4 times, not counted as retries).
- * - Failure never blocks the prompt: transient errors are retried up to 3
- *   times within a 6 s deadline, then the current model/effort stay unchanged.
+ * - A pure continuation ("continua", "ok pode fazer") keeps the current pair.
+ * - Otherwise one Jev (TypeSafe AI) `choice` call classifies the message and
+ *   the highest-probability tier wins. Effort follows the tier: Luna and Sol
+ *   start at medium, Opus at high. Measured on 217 labeled prompts (80 of them
+ *   unseen when the question was written): 99% model accuracy on the unseen
+ *   set, 1 under-powered pick, 0 over-powered. Per-class biases and a doubt
+ *   threshold were tried and generalized worse, so plain argmax is used.
+ * - Only the first 480 chars of the message are sent (<= ~128 state tokens).
+ * - Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
+ *   within 6 s; after that, or on any other failure, model/effort stay as they are.
  * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
  *   precedence over caller parameters), so only the main session is routed.
- * - Within a run, effort adapts per step without extra TypeDec calls: tool
- *   errors or a repeated identical tool call raise it one level; three clean
- *   steps in a row lower it one level, never below one level under the
- *   prompt's base. The model never changes mid-run. PI re-reads the thinking
- *   level before each step (prepareNextTurn), so a change applies to the next
- *   step. At agent_end the base is restored, because setThinkingLevel also
- *   persists defaultThinkingLevel and in-run swings must not leak there.
- * - The API key comes from TYPEDEC_API_KEY, else ~/.config/typedec/api_key
- *   (outside any repo, mode 600). It is never logged.
+ * - Within a run, effort adapts per step without API calls: tool errors or a
+ *   repeated identical tool call raise it one level; three clean steps lower
+ *   it one level, never below one level under the prompt's base. The model
+ *   never changes mid-run. At agent_end the base is restored, because
+ *   setThinkingLevel also persists defaultThinkingLevel.
+ * - Key: JEV_API_KEY / TYPESAFE_API_KEY, else ~/.config/jev/api_key (installed
+ *   by install.sh / install.ps1, mode 600). Never logged.
  */
 
 export const MAESTRO_ENTRY_TYPE = "maestro";
-export const KEY_FILE = join(homedir(), ".config", "typedec", "api_key");
+const ENDPOINT = process.env.JEV_BASE_URL
+  ? `${process.env.JEV_BASE_URL.replace(/\/$/, "")}/systemone`
+  : "https://api.typesafe.ai/v1/systemone";
+const JEV_MODEL = process.env.JEV_MODEL ?? "jev-latest";
+const TIMEOUT_MS = 2_500;
+export const STATE_MAX_CHARS = 480;
+
+export type RetryPolicy = { retries: number; backoffMs: number[]; deadlineMs: number };
+export const RETRY: RetryPolicy = { retries: 3, backoffMs: [200, 400, 800], deadlineMs: 6_000 };
+export function isRetryable(status: number): boolean {
+  return status === 0 || status === 429 || status >= 500;
+}
+
+export const KEY_FILE = join(homedir(), ".config", "jev", "api_key");
 export function readApiKey(file = KEY_FILE): string | undefined {
-  const fromEnv = process.env.TYPEDEC_API_KEY?.trim();
+  const fromEnv = (process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY)?.trim();
   if (fromEnv) return fromEnv;
   try {
     return readFileSync(file, "utf8").trim() || undefined;
@@ -42,20 +52,6 @@ export function readApiKey(file = KEY_FILE): string | undefined {
     return undefined;
   }
 }
-const ENDPOINT = process.env.TYPEDEC_URL ?? "https://typedec.evolvera.com.br/v1/systemone";
-const TIMEOUT_MS = 2_500;
-/**
- * Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
- * with backoff, but the whole question is bounded by deadlineMs because the
- * user's prompt waits on it. 400/401/403/422 are deterministic: never retried.
- * Retrying is safe: a choice inference has no side effect beyond usage.
- */
-export type RetryPolicy = { retries: number; backoffMs: number[]; deadlineMs: number };
-export const RETRY: RetryPolicy = { retries: 3, backoffMs: [200, 400, 800], deadlineMs: 6_000 };
-export function isRetryable(status: number): boolean {
-  return status === 0 || status === 429 || status >= 500;
-}
-export const ANE_MAX_TOKENS = 96;
 
 export const MODEL_TARGETS = {
   luna: { provider: "openai-codex", id: "gpt-6-luna", label: "Luna 6" },
@@ -65,70 +61,73 @@ export const MODEL_TARGETS = {
 export type ModelChoice = keyof typeof MODEL_TARGETS;
 export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 export type EffortChoice = (typeof EFFORTS)[number];
+export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high" };
 
-const MODEL_QUESTION = {
+export const ROUTE_QUESTION = {
   type: "choice",
-  instructions: "Complexidade da tarefa?",
+  instructions: "A developer sent this message to a coding assistant. Pick the model tier for the hardest task it actually asks for; ignore tone, context and words used in another sense.",
   criteria: {
-    luna: "Trivial: pergunta curta, commit, ajuste simples",
-    sol: "Média: implementar ou revisar algo delimitado",
-    opus: "Complexa: debug difícil, arquitetura, design, escrita",
-    duvida: "Incerto: não dá para saber",
-  },
-};
-// Effort buys a longer chain of dependent inferences made without feedback;
-// it does not replace missing information (tools) or mechanical work.
-const EFFORT_QUESTION = {
-  type: "choice",
-  instructions: "Passos de raciocínio encadeados sem testar?",
-  criteria: {
-    low: "Nenhum: executar, commitar",
-    medium: "Poucos: mudança delimitada",
-    high: "Vários: bug, estado, lógica",
-    xhigh: "Muitos: causa desconhecida, arquitetura",
-    duvida: "Incerto",
+    luna: "Mechanical or quick: run/commit/revert/rename/bump, small config, text or style edit, a quick factual question, a status check.",
+    sol: "Normal implementation with a known approach: add a feature, field, validation or endpoint, write tests, refactor, fix an error whose cause is visible in the message.",
+    opus: "Needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts.",
   },
 };
 
-/**
- * Char limits per question. Fixed engine cost is 50 (model) and 60 (effort)
- * tokens, leaving 46 and 36 for the state; on real text those fit >=135 and
- * >=104 chars in 95% of samples (measured with laya_coreml). The smoke test
- * re-measures the fixed costs when the engine venv exists.
- */
-export const QUESTIONS = {
-  model: { question: MODEL_QUESTION, maxChars: 94, fixedTokens: 63 },
-  effort: { question: EFFORT_QUESTION, maxChars: 82, fixedTokens: 67 },
-} as const;
-
-/**
- * Doubt resolves upward: an explicit `duvida` answer, or a winning probability
- * below the threshold, picks Opus 5.5 / high. Thresholds are uncalibrated
- * starting points (confidence = top probability; 3-4 real options).
- */
-export const DOUBT = { model: "opus", effort: "high", minConfidence: { model: 0.5, effort: 0.4 } } as const;
-export const SHRINK_ON_413 = 0.75;
-export const MAX_SHRINKS = 4;
-
-/** Collapse whitespace (the engine also blanks <mask>) and keep the head within maxChars, at a word boundary when possible. */
-export function cutState(text: string, maxChars: number): string {
-  const flat = text.replaceAll("<mask>", " ").replace(/\s+/g, " ").trim();
-  const chars = Array.from(flat);
-  if (chars.length <= maxChars) return flat;
-  const head = chars.slice(0, Math.max(0, maxChars)).join("");
-  const space = head.lastIndexOf(" ");
-  return space > head.length * 0.6 ? head.slice(0, space) : head;
+export function cutState(text: string, maxChars = STATE_MAX_CHARS): string {
+  return Array.from(text.replace(/\s+/g, " ").trim()).slice(0, maxChars).join("");
 }
 
-// ---------------------------------------------------------------------------
-// Local intent rules (first pass)
-// ---------------------------------------------------------------------------
-// Measured on 46 labeled prompts, Laya alone reached only 40-55% on the
-// 3-way model choice (7/18 on a held-out set): it reacts to words, not task
-// complexity. So explicit intent is routed locally (free, deterministic) and
-// TypeDec only decides what no rule recognizes.
+/** Highest-probability tier; falls back to `choice` when probabilities are absent. */
+export function pickTier(answer: { choice?: unknown; probabilities?: Record<string, unknown> } | undefined): ModelChoice | undefined {
+  const probs = answer?.probabilities;
+  if (probs) {
+    let best: ModelChoice | undefined;
+    for (const tier of Object.keys(MODEL_TARGETS) as ModelChoice[]) {
+      const p = probs[tier];
+      if (typeof p === "number" && (best === undefined || p > (probs[best] as number))) best = tier;
+    }
+    if (best) return best;
+  }
+  return typeof answer?.choice === "string" && answer.choice in MODEL_TARGETS ? (answer.choice as ModelChoice) : undefined;
+}
 
-export type Route = { model: ModelChoice; effort: EffortChoice; rule: string };
+type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+
+/** One Jev call with bounded retries; undefined on any non-recoverable failure. */
+export async function classify(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch, retry: RetryPolicy = RETRY): Promise<ModelChoice | undefined> {
+  const deadline = Date.now() + retry.deadlineMs;
+  let retriesLeft = retry.retries;
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return undefined;
+    let status = 0;
+    let response: Response | undefined;
+    try {
+      response = await fetchImpl(ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ state: cutState(prompt), model: JEV_MODEL, questions: { q: ROUTE_QUESTION } }),
+        signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
+      });
+      status = response.status;
+    } catch {
+      status = 0;
+    }
+    if (response?.ok) {
+      try {
+        const body = (await response.json()) as { answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> } } };
+        return pickTier(body.answers?.q);
+      } catch {
+        return undefined;
+      }
+    }
+    if (!isRetryable(status) || retriesLeft <= 0) return undefined;
+    const delay = retry.backoffMs[retry.retries - retriesLeft] ?? retry.backoffMs.at(-1) ?? 0;
+    retriesLeft -= 1;
+    if (Date.now() + delay >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
 
 export function fold(text: string): string {
   return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
@@ -136,38 +135,6 @@ export function fold(text: string): string {
 
 // Order is priority. Patterns are general PT/EN intent classes over folded
 // (lowercase, accent-free) text, not phrase lists.
-const W = (words: string) => new RegExp(`\\b(${words})`);
-const CONFIG_FILE = "gitignore|\\.env|config|nvmrc|package\\.json|docker-?compose|\\.ya?ml|tsconfig|eslint|prettier|dockerfile|makefile|readme";
-const RULES: Array<{ rule: string; model: ModelChoice; effort: EffortChoice; re: RegExp; short?: boolean }> = [
-  // Explicitly trivial, whatever the length ("e so tirar o import", "quick one", "just bump").
-  { rule: "trivial", model: "luna", effort: "low", re: W("(e|eh) so (o|a|um|uma|tirar|trocar|mudar|corrigir|remover|apagar)|so (isso|tira|troca|muda|corrige|remove|apaga)\\b|so corrigir|quick one|just (bump|change|rename|remove|fix the typo|update)|typo|erro de digitacao|rapidinho") },
-  // Asking for a review is a review, even when it names a bug class.
-  { rule: "review", model: "opus", effort: "high", re: W("revis(a|e|ar) .*(pr|codigo|code|bug|seguranc|concorr|race|lock|problema)|review (this|the|my|our)? ?(pr|code|diff)|code review|audit") },
-  // Unknown cause: something is wrong and the reason is not known.
-  { rule: "debug", model: "opus", effort: "xhigh", re: new RegExp([
-    "\\b(investig|descobr|depur|debug|diagnostic|root cause|causa raiz|vazamento|leak|race condition|deadlock|flaky|intermitent)",
-    "\\b(travand|trava |crash|estour|quebrou|quebrad|parou de|nao funciona|not working|doesn t work|is failing|keeps failing|is broken|do nada|out of nowhere)",
-    "\\b(fic|fik)\\w* lent|got slow|became slow|is slow now",
-    "\\b(por que|pq|porque|why)\\b.*\\b(falh|erro|error|quebr|trav|lent|slow|demor|take|fail|crash|nao|retorn|fica|acontec|pendent|duplic|twice|duas vezes|as vezes|sometimes|sum|stale)",
-    "\\bo que (esta|ta) acontecendo|what s going on|figure out why|\\b(acha|encontra|find) (o|a|the) (bug|vazamento|leak|problema|erro|causa)",
-  ].join("|")) },
-  { rule: "architecture", model: "opus", effort: "xhigh", re: W("arquitetur|architect|system design|escalabil|scalab|multi-?tenan|downtime|sem parar|\\bplan (the|a|our) |migration plan|plano de migracao|estrategia de (migracao|deploy|cache|dados)|planej|projet(a|ar) (o|a|um|uma) (sistema|arquitetura|estrutura|modelo de dados|schema)") },
-  { rule: "compare", model: "opus", effort: "high", re: W("compar|versus|\\bvs\\b|recomend|recommend|vale a pena|trade-?off|pros e contras|pros and cons|qual (faz mais sentido|e melhor|vc usaria)|which (one )?(should|would)|como (vc|voce) (faria|estruturaria|organizaria|modelaria)|how would you") },
-  // Writing needs a writing verb or an unambiguous prose noun ("email" alone may be a feature).
-  { rule: "writing", model: "opus", effort: "medium", re: W("(escrev|redig|write|draft|compose|rascunh)\\w* (o |a |um |uma |the |an |a |our )?(texto|copy|artigo|article|post|email|e-mail|mensagem|message|carta|letter|proposta|proposal|pitch|descricao|description|documentacao|docs|bio|roteiro|anuncio|newsletter|landing)|artigo|newsletter|blog|pitch|copywrit|roteiro|apresentacao|presentation|anuncio") },
-  { rule: "understand", model: "opus", effort: "high", re: W("entend|explic|explain|how does|how .* works|como funciona|como (isso|ele|ela|o|a) funcion|tem como|da pra fazer|e possivel|is it possible|system prompt|reescrev\\w* o prompt") },
-  { rule: "design", model: "opus", effort: "high", re: W("design|desenh|redesenh|layout|identidade visual|visual identity|branding|landing|wireframe|prototip|mockup|\\bux\\b|\\bui\\b|paleta|tipografia|typography") },
-  { rule: "refactor", model: "sol", effort: "high", re: W("refator|refactor|reestrutur|reorganiz|desacopl|decouple|modulariz") },
-  // Mechanical actions: leading verb (after optional filler) on a short message, or a one-line config edit.
-  { rule: "chore", model: "luna", effort: "low", short: true, re: new RegExp([
-    "^(git |faz o |faz |faca o |da um |pode |vc pode |please |pls |can you |could you )?(commit|push|pull|merge|roda|rode|run|executa|execute|lista|list|mostra|show me|instala|install|troca|renomei|rename|sobe|bump|atualiza|update|muda|deleta|delete|remove|apaga|formata|format|deploya|abre|open|checa|check|verifica|cade|where is|gera o changelog|limpa|clean|status)\\b(?!,)",
-    `\\b(adiciona|add|coloca|poe|troca|muda|remove|tira)\\b.*\\b(no|na|in|to|from|do|da) (o |a |the )?(${CONFIG_FILE})`,
-  ].join("|")) },
-  { rule: "build", model: "sol", effort: "medium", re: W("implement|adicion|adicione|\\badd\\b|cri(a|e|ar) (um|uma|o|a|os|as)|create|build (a|an|the)|construi|gera(r)? (um|uma)|escrev\\w* (os )?test|write (the )?tests|tests? (de|para|for)|convert|migr|integr|corrig|conserta|\\bfix\\b|faz (a|o) .* funcionar|make .* work|suporte a|support for|automatiz|retry|endpoint|validac|paginac|webhook|script|job|(vc|voce) (consegue|pode) (fazer|criar|implementar|montar)|can you (make|build|implement|set up)|faz (o|a|um|uma) (upload|login|tela|pagina|endpoint|integracao|feature|funcionalidade)") },
-  { rule: "question", model: "luna", effort: "low", short: true, re: /^(e |and )?(qual|quais|quanto|quantos|quantas|onde|o que|oque|quando|existe|tem |what|which|where|when|is there|does|do |can )|\?$/ },
-];
-const SHORT_WORDS = 14;
-
 /**
  * Pure continuation: a short message made only of go-ahead / retry words, with
  * no content word. "ok, agora faz o mesmo pro endpoint" has content, so it is
@@ -179,16 +146,6 @@ const CONTINUATION_WORDS = new Set(("continua continue continuar segue seguir pr
 export function isContinuation(text: string): boolean {
   const words = fold(text).replace(/[^a-z0-9 ]/g, " ").split(" ").filter(Boolean);
   return words.length > 0 && words.length <= 6 && words.every((word) => CONTINUATION_WORDS.has(word));
-}
-
-export function ruleRoute(text: string): Route | undefined {
-  const t = fold(text);
-  const short = t.split(" ").length <= SHORT_WORDS;
-  for (const r of RULES) {
-    if (r.short && !short) continue;
-    if (r.re.test(t)) return { model: r.model, effort: r.effort, rule: r.rule };
-  }
-  return undefined;
 }
 
 export type AdaptState = { base: EffortChoice; current: EffortChoice; okStreak: number; seen: Set<string> };
@@ -231,77 +188,6 @@ export function stepSignal(event: TurnEndLike): StepSignal {
   return { toolCalls, errored: (event.toolResults ?? []).some((result) => result?.isError === true) };
 }
 
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-
-/** One single-question request; returns the chosen key or undefined. */
-export async function askChoice(
-  entry: { question: Record<string, unknown>; maxChars: number },
-  prompt: string,
-  allowed: readonly string[],
-  apiKey: string,
-  fetchImpl: FetchLike = fetch,
-  retry: RetryPolicy = RETRY,
-  minConfidence = 0,
-): Promise<string | undefined> {
-  const deadline = Date.now() + retry.deadlineMs;
-  let maxChars = entry.maxChars;
-  let shrinks = 0;
-  let retriesLeft = retry.retries;
-  for (;;) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) return undefined;
-    let status: number;
-    let response: Response | undefined;
-    try {
-      response = await fetchImpl(ENDPOINT, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          state: cutState(prompt, maxChars),
-          model: "laya-multilingual",
-          mode: "short",
-          questions: { q: entry.question },
-        }),
-        signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
-      });
-      status = response.status;
-    } catch {
-      status = 0; // network error or timeout
-    }
-    if (response?.ok) {
-      const body = (await response.json()) as { answers?: { q?: { choice?: unknown; confidence?: unknown } } };
-      const choice = body.answers?.q?.choice;
-      if (typeof choice !== "string" || !allowed.includes(choice)) return undefined;
-      const confidence = body.answers?.q?.confidence;
-      if (choice === "duvida" || (typeof confidence === "number" && confidence < minConfidence)) return "duvida";
-      return choice;
-    }
-    if (status === 413 && shrinks < MAX_SHRINKS) {
-      // Dense text (code, emoji, other scripts) exceeded 96 tokens: cut 25% and resend, no backoff.
-      shrinks += 1;
-      maxChars = Math.floor(maxChars * SHRINK_ON_413);
-      continue;
-    }
-    if (!isRetryable(status) || retriesLeft <= 0) return undefined;
-    const delay = retry.backoffMs[retry.retries - retriesLeft] ?? retry.backoffMs.at(-1) ?? 0;
-    retriesLeft -= 1;
-    if (Date.now() + delay >= deadline) return undefined;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-}
-
-/** Both questions in parallel, each cut to its own exact budget; a field is undefined when its call failed. */
-export async function decide(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch) {
-  const [model, effort] = await Promise.all([
-    askChoice(QUESTIONS.model, prompt, [...Object.keys(MODEL_TARGETS), "duvida"], apiKey, fetchImpl, RETRY, DOUBT.minConfidence.model).catch(() => undefined),
-    askChoice(QUESTIONS.effort, prompt, [...EFFORTS, "duvida"], apiKey, fetchImpl, RETRY, DOUBT.minConfidence.effort).catch(() => undefined),
-  ]);
-  return {
-    model: (model === "duvida" ? DOUBT.model : model) as ModelChoice | undefined,
-    effort: (effort === "duvida" ? DOUBT.effort : effort) as EffortChoice | undefined,
-  };
-}
-
 function restoreEnabled(ctx: ExtensionContext): boolean {
   let enabled = false;
   try {
@@ -325,16 +211,16 @@ export default function maestro(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("maestro", {
-    description: "Auto-escolhe modelo (Luna 6 / Sol 6 / Opus 5.5) e esforço por prompt via TypeDec: /maestro on|off|status",
+    description: "Auto-escolhe modelo (Luna 6 / Sol 6 / Opus 5.5) e esforço por prompt via Jev: /maestro on|off|status",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "on" || arg === "off") {
         if (arg === "on" && !readApiKey()) {
-          ctx.ui.notify("Maestro: defina TYPEDEC_API_KEY ou ~/.config/typedec/api_key antes de ativar.", "error");
+          ctx.ui.notify("Maestro: defina JEV_API_KEY ou ~/.config/jev/api_key antes de ativar.", "error");
           return;
         }
         enabled = arg === "on";
-            pi.appendEntry(MAESTRO_ENTRY_TYPE, { enabled });
+        pi.appendEntry(MAESTRO_ENTRY_TYPE, { enabled });
         setStatus(ctx, enabled ? "🎼 maestro" : undefined);
       }
       ctx.ui.notify(`Maestro ${enabled ? "ativo" : "desligado"}.`, "info");
@@ -348,22 +234,17 @@ export default function maestro(pi: ExtensionAPI): void {
     }
     if (!event.text.trim()) return { action: "continue" };
 
-    // 1. Continuation keeps the current model/effort. 2. Local intent rules. 3. TypeDec (doubt -> Opus/high).
+    // Pure continuation keeps the current model/effort; anything else is classified by Jev.
     if (isContinuation(event.text)) {
       const base = pi.getThinkingLevel();
       adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
       setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${base} (continua)`);
       return { action: "continue" };
     }
-    let source = "regra";
-    let decision: { model?: ModelChoice; effort?: EffortChoice } | undefined = ruleRoute(event.text);
-    if (!decision) {
-      const apiKey = readApiKey();
-      if (!apiKey) return { action: "continue" };
-      decision = await decide(event.text, apiKey);
-      source = "typedec";
-    }
-    const { model: modelChoice, effort } = decision;
+    const apiKey = readApiKey();
+    if (!apiKey) return { action: "continue" };
+    const modelChoice = await classify(event.text, apiKey);
+    const effort = modelChoice ? EFFORT_FOR[modelChoice] : undefined;
     let label = "";
     if (modelChoice) {
       const target = MODEL_TARGETS[modelChoice];
@@ -379,10 +260,10 @@ export default function maestro(pi: ExtensionAPI): void {
     const base = pi.getThinkingLevel();
     adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
     if (!modelChoice && !effort) {
-      ctx.ui.notify("Maestro: TypeDec indisponível; modelo e esforço mantidos.", "warning");
+      ctx.ui.notify("Maestro: Jev indisponível; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
-    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()} (${source})`);
+    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}`);
     return { action: "continue" };
   });
 

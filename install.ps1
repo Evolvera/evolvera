@@ -161,6 +161,15 @@ if (-not $sameRoot) {
         Info ($extensions.Count.ToString() + " extensoes")
         # Maestro is a single file again; drop its old directory form (vendored tokenizer).
         Remove-Item (Join-Path $dest "maestro") -Recurse -Force -ErrorAction SilentlyContinue
+        # Maestro's Jev key: installed once, never overwritten, current user only.
+        $jevSrc = Join-Path $SCRIPT_DIR "config\jev\api_key"
+        $jevKey = Join-Path $HOME ".config\jev\api_key"
+        if ((Test-Path $jevSrc) -and -not (Test-Path $jevKey)) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $jevKey) | Out-Null
+            Copy-Item $jevSrc $jevKey
+            icacls $jevKey /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
+            Info "maestro: chave Jev instalada"
+        }
     }
     # Plastic Memory is intentionally not installed while its compaction path is disabled.
     # Its project-memory bridge imports that tree, so neither may remain installed alone.
