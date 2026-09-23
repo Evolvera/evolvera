@@ -96,7 +96,9 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer, including simple questions about the assistant itself." },
   small_edit: { model: "luna", effort: "medium", criterion: "One small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
   multi_small: { model: "luna", effort: "medium", criterion: "Several independent small mechanical edits, each trivial on its own." },
-  doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template, write a spreadsheet formula." },
+  doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template." },
+  spreadsheet: { model: "sol", effort: "medium", criterion: "Create or edit a spreadsheet (xlsx, csv, Google Sheets): formulas, tables, pivots, charts, data cleanup." },
+  research: { model: "sol", effort: "medium", criterion: "Look something up: search docs or the web, find how a library or API works, gather a few facts." },
   ui_change: { model: "sol", effort: "medium", criterion: "Change a screen or component to a given spec: add a field, button, state or layout adjustment, without redesigning it." },
   code_feature: { model: "sol", effort: "medium", criterion: "Implement a feature, endpoint, validation, test, script or integration with a known approach." },
   fix_known: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is known: stated by the user, visible in the message, or already found by the assistant." },
@@ -123,6 +125,8 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   deploy: { model: "opus", effort: "medium", criterion: "Deploy, release, publish or roll back an application or service." },
   risky_ops: { model: "opus", effort: "high", criterion: "Other live or irreversible operations: running a production database migration, deleting data, security or access changes." },
   design: { model: "opus", effort: "high", criterion: "UX, UI or visual design or redesign of screens, flows or brand." },
+  deep_research: { model: "opus", effort: "high", criterion: "Deep research: investigate a topic across many sources, compare evidence and write a cited report or recommendation." },
+  document: { model: "opus", effort: "high", criterion: "Produce a finished document for people: PDF, Word/docx, slides or deck, report, contract or proposal with layout." },
   writing: { model: "opus", effort: "high", criterion: "Write or substantially rewrite text for people: copy, articles, emails, proposals, prompts, or a document with many requested changes." },
   business: { model: "opus", effort: "high", criterion: "Business judgment: pricing, plans, discounts, financial projections, unit economics, legal or regulatory questions, strategy, product rules." },
   analysis: { model: "opus", effort: "high", criterion: "Explain how a system works, compare options and recommend, or review code for subtle problems or security." },
@@ -183,6 +187,28 @@ export function cutState(text: string, maxChars = STATE_MAX_CHARS): string {
   return Array.from(text.replace(/\s+/g, " ").trim()).slice(0, maxChars).join("");
 }
 
+/**
+ * Credentials pasted in chat are detected locally and routed to Opus high
+ * WITHOUT calling Jev or Luna, so a secret never leaves for the classifier.
+ * Secrets in PREVIOUS are redacted before it is sent.
+ */
+const SECRET_PATTERNS: RegExp[] = [
+  /\b(sk|pk|rk)[-_](live|test|proj|ant|or)?[-_]?[A-Za-z0-9_-]{16,}/,
+  /\b(td_live|td_test|apikey|api_key|ghp|gho|ghs|github_pat|glpat|xox[abpr]|hf|AIza|ya29)[_-]?[A-Za-z0-9_-]{16,}/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+  /\b(postgres|postgresql|mysql|mongodb(\+srv)?|redis|amqp):\/\/[^\s:@]+:[^\s@]+@/,
+  /\b(api[_ -]?key|token|secret|senha|password|chave)\b\s*[:=]?\s*["']?[A-Za-z0-9_\-./+]{24,}/i,
+];
+export function containsSecret(text: string): boolean {
+  return SECRET_PATTERNS.some((re) => re.test(text));
+}
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce((out, re) => out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"), "[REDACTED]"), text);
+}
+export const SECRET_ROUTE = { model: "opus", effort: "high", category: "secret" } as const;
+
 /** The end of the previous reply carries its question/proposal, so keep its tail. */
 export const PREVIOUS_MAX_CHARS = 400;
 export function tailOf(text: string, maxChars = PREVIOUS_MAX_CHARS): string {
@@ -190,7 +216,7 @@ export function tailOf(text: string, maxChars = PREVIOUS_MAX_CHARS): string {
   return chars.length <= maxChars ? chars.join("") : `…${chars.slice(-maxChars).join("")}`;
 }
 export function buildState(prompt: string, previous = ""): string {
-  const prev = tailOf(previous);
+  const prev = tailOf(redactSecrets(previous));
   return `PREVIOUS: ${prev || "(none)"}\nUSER: ${cutState(prompt)}`;
 }
 
@@ -407,6 +433,15 @@ export default function maestro(pi: ExtensionAPI): void {
       const base = pi.getThinkingLevel();
       adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
       setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${base} (continua)`);
+      return { action: "continue" };
+    }
+    if (containsSecret(event.text)) {
+      const target = MODEL_TARGETS.opus;
+      const model = ctx.modelRegistry.find(target.provider, target.id);
+      if (model && (ctx.model?.provider !== model.provider || ctx.model?.id !== model.id)) await pi.setModel(model);
+      pi.setThinkingLevel("high");
+      adapt = newAdaptState("high");
+      setStatus(ctx, `🎼 ${target.label} · high · secret`);
       return { action: "continue" };
     }
     const apiKey = readApiKey();

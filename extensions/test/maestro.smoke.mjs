@@ -21,6 +21,7 @@ for (const [name, c] of Object.entries(m.CATEGORIES)) {
   if (c.model === "luna") assert.notEqual(c.effort, "low", "Luna never starts at low");
 }
 assert.equal(m.CATEGORIES.writing.model, "opus");
+assert.deepEqual(["research", "deep_research", "document", "spreadsheet"].map((c) => m.CATEGORIES[c].model), ["sol", "opus", "opus", "sol"]);
 assert.deepEqual([m.CATEGORIES.deploy.model, m.CATEGORIES.deploy.effort], ["opus", "medium"]);
 const R = (category) => ({ ...m.pickRoute({ choice: category }) });
 const eff = (c, n) => { const r = m.scaleByCount(R(c), n); return `${r.model}/${r.effort}`; };
@@ -99,6 +100,19 @@ assert.equal(m.buildState("oi"), "PREVIOUS: (none)\nUSER: oi");
 await m.classify("sim faz", "k", ok("apply_plan"), undefined, "Quer que eu aplique?");
 assert.match(seen.at(-1).body.state, /^PREVIOUS: Quer que eu aplique\?\nUSER: sim faz$/);
 
+// 2d. Secrets: detected locally, never sent to Jev, redacted from PREVIOUS.
+for (const text of [
+  "adiciona api key td_live_8d4dbdafb1e40e4a0f1873ccab93bb5e0ae683f2",
+  "apikey_2191fc30606976534b70b498dd95d656a9f7_b0c19500de3c5d884708c18526e3809d3540145ecbc889e8bd43019f159e4d97 agora testa",
+  "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+  "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+  "AKIAIOSFODNN7EXAMPLE",
+  "DATABASE_URL=postgres://user:s3cr3tpass@db.host:5432/app",
+  "-----BEGIN RSA PRIVATE KEY-----",
+]) assert.equal(m.containsSecret(text), true, text);
+for (const text of ["adiciona api key no maestro", "o token expira em 1h", "commit e push", "roda o sk-learn", "senha do wifi é qual?"]) assert.equal(m.containsSecret(text), false, text);
+assert.ok(!m.buildState("ok", "usa a chave td_live_8d4dbdafb1e40e4a0f1873ccab93bb5e0ae683f2 aqui").includes("td_live_8d4"), "PREVIOUS redacted");
+
 // 3. Continuation detection; the benchmark fixture is present and complete.
 const bench = JSON.parse(readFileSync(path.join(root, "extensions/test/fixtures/maestro-benchmark.json"), "utf8"));
 assert.equal(Object.values(bench.sets).flat().length, 531);
@@ -153,6 +167,12 @@ try {
   calls.length = 0;
   await handlers.input({ text: "vc é burro? reverte isso agora", source: "interactive" }, ctx);
   assert.deepEqual(calls, [["model", "gpt-6-astra"], ["thinking", "high"]], "frustration -> Astra high");
+  let jevCalled = false;
+  globalThis.fetch = async () => { jevCalled = true; return reply(200, {}); };
+  calls.length = 0;
+  await handlers.input({ text: "usa essa key sk-proj-abcdefghijklmnopqrstuvwxyz123456", source: "interactive" }, ctx);
+  assert.equal(jevCalled, false, "secret never sent to the classifier");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "high"]], "secret -> Opus high");
   calls.length = 0;
   for (const e of [
     { text: "continua", source: "interactive" },
