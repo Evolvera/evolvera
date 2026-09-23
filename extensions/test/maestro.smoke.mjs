@@ -21,7 +21,7 @@ for (const [name, c] of Object.entries(m.CATEGORIES)) {
   if (c.model === "luna") assert.notEqual(c.effort, "low", "Luna never starts at low");
 }
 assert.equal(m.CATEGORIES.writing.model, "opus");
-assert.deepEqual(["research", "deep_research", "document", "spreadsheet"].map((c) => m.CATEGORIES[c].model), ["sol", "opus", "opus", "sol"]);
+assert.deepEqual(["research", "deep_research", "document", "spreadsheet", "chart"].map((c) => m.CATEGORIES[c].model), ["sol", "opus", "opus", "sol", "opus"]);
 assert.deepEqual([m.CATEGORIES.deploy.model, m.CATEGORIES.deploy.effort], ["opus", "medium"]);
 const R = (category) => ({ ...m.pickRoute({ choice: category }) });
 const eff = (c, n) => { const r = m.scaleByCount(R(c), n); return `${r.model}/${r.effort}`; };
