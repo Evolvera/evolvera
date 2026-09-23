@@ -2,7 +2,7 @@ import { scrubSensitiveText } from "../common/safety.ts";
 import type { PlasticMemoryRole, RoleConfig } from "../config.ts";
 
 export const LUNA_PROVIDER = "openai-codex" as const;
-export const LUNA_MODEL = "gpt-5.6-luna" as const;
+export const LUNA_MODEL = "gpt-6-luna" as const;
 export const LUNA_MODEL_REF = `${LUNA_PROVIDER}/${LUNA_MODEL}` as const;
 export const SONNET_PROVIDER = "anthropic" as const;
 export const SONNET_MODEL = "claude-sonnet-5" as const;

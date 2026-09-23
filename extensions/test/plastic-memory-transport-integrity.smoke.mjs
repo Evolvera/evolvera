@@ -31,7 +31,7 @@ const assistant = message("assistant", 40_000, "current terminal answer with no 
 const snapshot = cycles.createCompletedTurnSnapshot({ binding, sourceEntries: [user, assistant], activeEntryIds: [user.id, assistant.id], maxTokens: 100_000 });
 assert.equal(snapshot.status, "ready");
 
-const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const registry = {
   find: () => model,
   getProviderAuth: async () => ({ apiKey: "fake-only" }),

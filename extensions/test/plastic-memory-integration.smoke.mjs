@@ -80,11 +80,11 @@ assert.equal(ambiguous.removed, 0);
 // Full-mode scheduling crosses the adapter boundary without a provider: fake
 // registry/auth/complete calls produce valid observer and reflector outputs,
 // and the coordinator closes one plastic cycle from the current host branch.
-const cycleModel = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const cycleModel = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const cycleCalls = [];
 let cycleMode = "observations";
 const cycleRuntime = runnerRuntimeModule.createPiRunnerRuntime({
-  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return cycleModel; },
+  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return cycleModel; },
   async getApiKeyAndHeaders(model) { assert.equal(model, cycleModel); return { ok: true, apiKey: "cycle-fake", headers: { "x-cycle": "fake" }, env: { CYCLE_FAKE: "yes" } }; },
 }, async (model, context, options) => {
   cycleCalls.push({ model, context, options });
@@ -289,7 +289,7 @@ async function hostCompactionRefreshProbe(failuresBeforeSuccess) {
 function queueRuntime(state, waitForFirstObserver) {
   return {
     modelRegistry: {
-      find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return cycleModel; },
+      find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return cycleModel; },
       async getProviderAuth() { return { apiKey: "in-process-only" }; },
     },
     async agentLoop(prompts, context) {

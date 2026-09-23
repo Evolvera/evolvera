@@ -1,8 +1,13 @@
 export const ROLE_NAMES = ["observer", "reflector", "compactor", "project-promoter"] as const;
+const CURRENT_ROLE_MODEL = "openai-codex/gpt-6-luna" as const;
+const PREVIOUS_ROLE_MODEL = "openai-codex/gpt-5.6-luna" as const;
+function supportedRoleModel(value: unknown): boolean {
+  return value === CURRENT_ROLE_MODEL || value === PREVIOUS_ROLE_MODEL;
+}
 export type PlasticMemoryRole = (typeof ROLE_NAMES)[number];
 
 export type RoleConfig = {
-  model: "openai-codex/gpt-5.6-luna";
+  model: "openai-codex/gpt-6-luna";
   thinking: "medium";
   maxTurns: 8;
   maxToolCalls: 4;
@@ -22,7 +27,7 @@ export type PlasticMemoryConfig = {
 
 function role(): RoleConfig {
   return {
-    model: "openai-codex/gpt-5.6-luna",
+    model: "openai-codex/gpt-6-luna",
     thinking: "medium",
     maxTurns: 8,
     maxToolCalls: 4,
@@ -60,7 +65,7 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boo
 
 function validRole(value: unknown): value is RoleConfig {
   return isRecord(value) && exactKeys(value, ["model", "thinking", "maxTurns", "maxToolCalls", "maxRuntimeMs"])
-    && value.model === "openai-codex/gpt-5.6-luna" && value.thinking === "medium"
+    && supportedRoleModel(value.model) && value.thinking === "medium"
     && value.maxTurns === 8 && value.maxToolCalls === 4 && value.maxRuntimeMs === 60_000;
 }
 
@@ -83,7 +88,15 @@ export function loadConfig(value?: unknown): PlasticMemoryConfig {
   if (!isRecord(value)) return defaults(false);
   if (Object.keys(value).length === 1 && value.enabled === true) return defaults(true);
   if (!validConfig(value)) return defaults(false);
-  return structuredClone(value) as PlasticMemoryConfig;
+  // Existing explicit role settings remain enabled; only their resolved
+  // in-memory model changes. Never write to the user's settings files.
+  const resolved = structuredClone(value) as PlasticMemoryConfig;
+  for (const name of ROLE_NAMES) {
+    if ((resolved.roles[name].model as string) === PREVIOUS_ROLE_MODEL) {
+      resolved.roles[name].model = CURRENT_ROLE_MODEL;
+    }
+  }
+  return resolved;
 }
 
 export function isEnabled(config: PlasticMemoryConfig): boolean {
@@ -128,7 +141,7 @@ function mergeSettings(base: Record<string, unknown>, override: Record<string, u
 function validRoleFragment(value: unknown): boolean {
   if (!isRecord(value) || !Object.keys(value).every((key) => ["model", "thinking", "maxTurns", "maxToolCalls", "maxRuntimeMs"].includes(key))) return false;
   return Object.entries(value).every(([key, entry]) => {
-    if (key === "model") return entry === "openai-codex/gpt-5.6-luna";
+    if (key === "model") return supportedRoleModel(entry);
     if (key === "thinking") return entry === "medium";
     if (key === "maxTurns") return entry === 8;
     if (key === "maxToolCalls") return entry === 4;

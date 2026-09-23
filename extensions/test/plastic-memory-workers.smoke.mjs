@@ -28,7 +28,7 @@ const old = message("user", 7_000_000, "historical prefix must never be sent");
 message("assistant", 1, "historical answer");
 const currentUser = message("user", 50_000, "current goal: preserve the exact bounded snapshot");
 const currentAssistant = message("assistant", 50_000, "current terminal answer");
-const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const calls = [];
 let failureMode = false;
 let observerMode = "valid";
@@ -36,7 +36,7 @@ let reflectorFailOnce = false;
 const reflectorPrompts = [];
 const runtime = {
   modelRegistry: {
-    find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
+    find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return model; },
     async getProviderAuth(provider) { assert.equal(provider, "openai-codex"); return { apiKey: "fake-only" }; },
   },
   async agentLoop(prompts, context, config, signal) {
@@ -76,7 +76,7 @@ const runtime = {
 
 const adapterCalls = [];
 const adapterRegistry = {
-  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.6-luna"); return model; },
+  find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return model; },
   async getApiKeyAndHeaders(receivedModel) {
     assert.equal(receivedModel, model);
     return { ok: true, apiKey: "adapter-key", headers: { "x-test": "adapter" }, env: { ADAPTER_TEST: "yes" } };
@@ -110,7 +110,7 @@ assert.equal((await runner.resolveLunaRole("observer", modelFailureRuntime)).rea
 assert.equal(runnerRuntime.createPiRunnerRuntime({ find: () => model }), undefined, "invalid registry fails closed");
 
 for (const role of ["observer", "reflector", "compactor", "project-promoter"]) {
-  assert.deepEqual(runner.ROLE_CONFIGS[role], { model: "openai-codex/gpt-5.6-luna", thinking: "medium", maxTurns: 8, maxToolCalls: 4, maxRuntimeMs: 60_000 });
+  assert.deepEqual(runner.ROLE_CONFIGS[role], { model: "openai-codex/gpt-6-luna", thinking: "medium", maxTurns: 8, maxToolCalls: 4, maxRuntimeMs: 60_000 });
   const resolved = await runner.resolveLunaRole(role, runtime);
   assert.equal(resolved.contextWindow, 200_000);
 }
@@ -160,7 +160,7 @@ const exhaustedRuntime = {
   visibleModel: { provider: "google", id: "visible", contextWindow: 200_000, maxTokens: 16_000 },
   modelRegistry: {
     find(_provider, id) {
-      if (id === "gpt-5.6-luna") return model;
+      if (id === "gpt-6-luna") return model;
       if (id === "claude-sonnet-5") return { provider: "anthropic", id, contextWindow: 200_000, maxTokens: 16_000 };
       return { provider: "google", id, contextWindow: 200_000, maxTokens: 16_000 };
     },

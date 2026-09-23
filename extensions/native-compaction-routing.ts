@@ -7,7 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 export const NATIVE_COMPACTION_PROVIDER = "openai-codex";
-export const NATIVE_COMPACTION_MODEL = "gpt-5.6-luna";
+export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
 export const NATIVE_COMPACTION_THINKING_LEVEL = "xhigh" as const;
 
 function notifyFailure(ctx: ExtensionContext): void {
