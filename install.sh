@@ -141,6 +141,16 @@ if command -v pi &>/dev/null; then
     pi install npm:pi-alibaba-models@1.0.14 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
     pi install npm:@juicesharp/rpiv-todo@2.11.0 2>/dev/null && info "rpiv-todo" || true
+    # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
+    case "${XDG_CONFIG_HOME:-}" in /*) todo_cfg_root="$XDG_CONFIG_HOME" ;; *) todo_cfg_root="$HOME/.config" ;; esac
+    todo_cfg="$todo_cfg_root/rpiv-todo/config.json"
+    if [ ! -e "$todo_cfg" ]; then
+        mkdir -p "$(dirname "$todo_cfg")" && cp "$SCRIPT_DIR/config/rpiv-todo/config.json" "$todo_cfg" && info "rpiv-todo guidance instalada"
+    elif cmp -s "$SCRIPT_DIR/config/rpiv-todo/config.json" "$todo_cfg"; then
+        info "rpiv-todo guidance atual"
+    else
+        echo "[!] rpiv-todo: $todo_cfg existente preservado; compare com config/rpiv-todo/config.json"
+    fi
     pi install npm:@gotgenes/pi-anthropic-auth@2.0.6
     node "$SCRIPT_DIR/scripts/patch-anthropic-client-version.mjs"
     info "Compatibilidade OAuth Anthropic verificada"
