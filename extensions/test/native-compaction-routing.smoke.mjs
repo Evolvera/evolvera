@@ -74,7 +74,7 @@ try {
   const handler = handlers.get("session_before_compact");
   assert.equal(typeof handler, "function");
 
-  const conversationModel = { provider: "openai-codex", id: "conversation-model" };
+  const conversationModel = { provider: "openai-codex", id: "gpt-6-sol" };
   const lunaModel = { provider: "openai-codex", id: "gpt-6-luna" };
   const state = {
     findCalls: [],
@@ -118,8 +118,8 @@ try {
     ["openai-codex", "gpt-6-luna"],
   ]);
 
-  // Cross-tokenizer guard: right after Anthropic -> OpenAI, threshold compaction waits until 450k.
-  const msg = (provider, totalTokens, extra = {}) => ({ type: "message", message: { role: "assistant", provider, usage: { totalTokens }, ...extra } });
+  // Cross-tokenizer guard: Claude 4.8+ -> any GPT, only before GPT has its own count.
+  const msg = (provider, totalTokens, extra = {}) => ({ type: "message", message: { role: "assistant", provider, model: provider === "anthropic" ? "claude-opus-5-5" : "gpt-6-sol", usage: { totalTokens }, ...extra } });
   const opusBranch = [msg("openai-codex", 200_000), msg("anthropic", 350_000), msg("anthropic", 0, { stopReason: "error" })];
   const guardEvent = (reason, tokensBefore, branchEntries = opusBranch) => ({
     type: "session_before_compact", preparation: { ...preparation(), tokensBefore }, branchEntries, reason, willRetry: false, signal: new AbortController().signal,
@@ -134,8 +134,21 @@ try {
   assert.deepEqual(await handler(guardEvent("overflow", 350_000), makeContext(state, conversationModel)), { compaction: result }, "real overflow still recovers");
   assert.deepEqual(await handler(guardEvent("manual", 350_000), makeContext(state, conversationModel)), { compaction: result }, "manual /compact unaffected");
   assert.deepEqual(await handler(guardEvent("threshold", 290_000, [...opusBranch, msg("openai-codex", 290_000)]), makeContext(state, conversationModel)), { compaction: result }, "once GPT counted, normal rule");
-  assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, { provider: "anthropic", id: "claude-opus-5-5" })), { compaction: result }, "only when the current model is OpenAI");
-  assert.equal(mod.lastUsageProvider(opusBranch), "anthropic", "error/zero-usage messages are skipped like PI does");
+  assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, { provider: "anthropic", id: "claude-opus-5-5" })), { compaction: result }, "current model must be GPT");
+  for (const claude of ["claude-sonnet-4-8", "claude-haiku-4-9", "claude-fable-5-1", "claude-opus-5-5"]) {
+    for (const gpt of [{ provider: "openai-codex", id: "gpt-5.6-terra" }, { provider: "openai", id: "gpt-6-astra" }]) {
+      const branch = [msg("anthropic", 350_000, { model: claude })];
+      assert.deepEqual(await handler(guardEvent("threshold", 350_000, branch), makeContext(state, gpt)), { cancel: true }, `${claude} -> ${gpt.provider}/${gpt.id}`);
+    }
+  }
+  for (const claude of ["claude-opus-4-7", "claude-opus-4-1", "legacy-model", undefined]) {
+    const branch = [msg("anthropic", 350_000, { model: claude })];
+    assert.deepEqual(await handler(guardEvent("threshold", 350_000, branch), makeContext(state, conversationModel)), { compaction: result }, `${claude} must not suppress compaction`);
+  }
+  for (const target of [{ provider: "openai-codex", id: "o3" }, { provider: "openai-codex", id: "non-gpt" }, { provider: "openai-compatible", id: "gpt-6-sol" }]) {
+    assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, target)), { compaction: result }, `${target.provider}/${target.id} is outside scope`);
+  }
+  assert.deepEqual(mod.lastUsageSource(opusBranch), { provider: "anthropic", model: "claude-opus-5-5" }, "error/zero-usage messages are skipped like PI does");
 
   state.findResult = undefined;
   let context = makeContext(state, conversationModel);
