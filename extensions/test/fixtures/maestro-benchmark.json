@@ -1,5 +1,5 @@
 {
- "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there).",
+ "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there). biz = software+business set used to choose the category question (91%).",
  "sets": {
   "edge100": [
    [
@@ -1162,6 +1162,358 @@
     "lideranca clinica, 2 a ideia e so mudar os locais da cabine pra farmacia e parceiros, basicamente, que ai seria juridicamente como uma balanca, nao uma balanca em si, o custo seria o mesmo, a unica coisa que ia mudar ia ser como ia ser usado no marketing, e nao nao tem essa de conteudo feito por ia nao entra tatno a fundo assim na parada, o retorno de 30 dias já é padrao no agendamento mas no plantao nao teria isso. E além disso, também agora a gente não vai atender só médicos, também psiquiatras e psicólogos, eles não vão entrar no plano de descontos, os cupons só funcionam se assinarem o plano mente. Coloca tipo o plano vida mesmo, só que ao invés de 60% de desconto eles ganham metade; nutricao tb, todos os cupons valem metade pra esses 3",
     "opus",
     "high"
+   ]
+  ],
+  "biz": [
+   [
+    "muda o preço do plano básico pra 89 na página de planos",
+    "luna",
+    "low"
+   ],
+   [
+    "qual a diferença entre CNPJ MEI e ME mesmo? rapidinho",
+    "luna",
+    "low"
+   ],
+   [
+    "corrige o typo no email de boas vindas, ta escrito 'obrgado'",
+    "luna",
+    "low"
+   ],
+   [
+    "converte 3500 dolares pra reais com cotação de 5,40",
+    "luna",
+    "low"
+   ],
+   [
+    "faz o commit disso aí com mensagem 'ajusta tabela de precos'",
+    "luna",
+    "low"
+   ],
+   [
+    "how many rows are in the leads sheet right now",
+    "luna",
+    "low"
+   ],
+   [
+    "renomeia a aba 'Planilha1' pra 'Clinicas Ativas'",
+    "luna",
+    "low"
+   ],
+   [
+    "coloca essa lista em ordem alfabetica: Unimed, Amil, Bradesco Saude, SulAmerica, Hapvida",
+    "luna",
+    "low"
+   ],
+   [
+    "quanto é 12% de 47 mil",
+    "luna",
+    "low"
+   ],
+   [
+    "troca o whatsapp do rodapé pra 11 98877-6655",
+    "luna",
+    "low"
+   ],
+   [
+    "status do deploy de ontem deu certo?",
+    "luna",
+    "low"
+   ],
+   [
+    "fix the typo in the README, it says 'recieve'",
+    "luna",
+    "low"
+   ],
+   [
+    "tira o ponto final dos bullets do slide 4 pfv",
+    "luna",
+    "low"
+   ],
+   [
+    "qual a data de vencimento do DAS esse mes",
+    "luna",
+    "low"
+   ],
+   [
+    "roda os testes ai",
+    "luna",
+    "low"
+   ],
+   [
+    "bump the version to 1.4.2 in package.json",
+    "luna",
+    "low"
+   ],
+   [
+    "Então, contexto rápido, a gente tá fechando o trimestre, eu passei a manhã inteira com o contador revisando as notas das clínicas, teve uma confusão com a clínica de Campinas que emitiu nota duplicada, já resolvemos, a Fernanda ligou lá e cancelaram uma, o financeiro já tá ciente, o relatório pro investidor vai sair semana que vem com os números novos e tal, enfim, tudo isso pra dizer que tá tudo certo, mas na planilha de faturamento a célula do total de março tá com o valor antigo 48.320, muda pra 45.870 que é o valor certo depois do cancelamento, só isso mesmo",
+    "luna",
+    "low"
+   ],
+   [
+    "Ok so background: we migrated the landing page to the new hosting last week, the marketing agency was supposed to update the tracking pixels but they only did half of it, I spent two days chasing them, then our designer went on vacation, and the client from the dental chain keeps asking for the new brochure link, which honestly is a whole other story because they changed their logo twice. Anyway none of that matters right now. Can you just change the footer copyright year from 2024 to 2025 on the landing page?",
+    "luna",
+    "low"
+   ],
+   [
+    "cara, deixa eu te falar, hoje foi um dia daqueles, reunião com plano de saúde que durou 3 horas, o cara do comercial deles falando um monte de coisa sobre reajuste, sobre sinistralidade, que a carteira deles tá pesada, que vão rever os contratos com os credenciados, porra, enfim, não tem muito o que fazer agora, a gente vai ver isso com calma semana que vem com o advogado, mas agora o que eu preciso é bem bobo: me lembra qual o email do Ricardo da operadora que eu passei ontem pra vc, só isso",
+    "luna",
+    "low"
+   ],
+   [
+    "formata esses numeros como moeda brasileira na coluna D",
+    "luna",
+    "low"
+   ],
+   [
+    "escreve uma formula no sheets que soma o faturamento da coluna C só quando a coluna B for 'Clinica' e o mes na coluna A for marco",
+    "sol",
+    "medium"
+   ],
+   [
+    "faz um script python que lê o csv de leads e remove duplicados por email e telefone",
+    "sol",
+    "medium"
+   ],
+   [
+    "write unit tests for the invoice calculation module, cover discounts and taxes",
+    "sol",
+    "medium"
+   ],
+   [
+    "preenche esse template de proposta comercial com os dados da Clinica Sorriso: 3 unidades, plano pro, inicio em junho, valor 2.400 mensal",
+    "sol",
+    "low"
+   ],
+   [
+    "resume esse contrato de 12 páginas em tópicos pra eu ler no celular",
+    "sol",
+    "medium"
+   ],
+   [
+    "implementa o endpoint de exportar relatorio em pdf, igual o de csv que ja existe",
+    "sol",
+    "medium"
+   ],
+   [
+    "atualiza o documento de onboarding: troca o passo 3 pra 'enviar contrato pelo ClickSign' e adiciona um passo 5 'agendar kickoff em até 7 dias'",
+    "sol",
+    "low"
+   ],
+   [
+    "faz uma formula PROCV que puxa o nome da operadora pelo codigo ANS da outra aba",
+    "sol",
+    "low"
+   ],
+   [
+    "build a Google Apps Script that emails the weekly sales summary every Monday at 9am",
+    "sol",
+    "medium"
+   ],
+   [
+    "monta um email pro cliente avisando que a manutencao vai ser sabado das 22h às 2h, tom educado, curto",
+    "sol",
+    "low"
+   ],
+   [
+    "cria a tabela de cap table no sheets com as colunas socio, acoes, percentual, e o percentual calculando sozinho",
+    "sol",
+    "medium"
+   ],
+   [
+    "adiciona paginação na listagem de pacientes, igual a de agendamentos",
+    "sol",
+    "medium"
+   ],
+   [
+    "transcreve essa lista de tarefas da reunião numa tabela com responsavel e prazo: Joao faz proposta ate sexta, Ana revisa contrato ate dia 10, eu ligo pro banco segunda",
+    "sol",
+    "low"
+   ],
+   [
+    "Então, contexto: a gente tem aquele relatório mensal que manda pras clínicas parceiras, ele tem uma seção de indicadores com atendimentos, no-show, ticket médio, e a Ana pediu pra incluir também a taxa de retorno de pacientes em 90 dias, a definição a gente já fechou ontem, é paciente que teve consulta e voltou em até 90 dias dividido pelo total de pacientes únicos do período, os dados tão na tabela consultas com paciente_id e data. Implementa esse indicador no gerador do relatório seguindo o mesmo padrão dos outros, com teste",
+    "sol",
+    "medium"
+   ],
+   [
+    "We have a list of 40 clinic contacts in a messy Google Doc, names, phones, emails all mixed in paragraphs because the sales guy just typed whatever during calls. Some have two phone numbers, some have no email. I need this turned into a clean spreadsheet with columns name, clinic, phone1, phone2, email, city, and anything missing left blank. Here's the doc content pasted below, just extract it properly.",
+    "sol",
+    "medium"
+   ],
+   [
+    "como a gente deveria precificar o plano pra clinicas pequenas? hoje é 149 fixo mas as de 1 dentista reclamam",
+    "opus",
+    "high"
+   ],
+   [
+    "pensa num cupom de lançamento pro plano anual que nao canibalize o mensal",
+    "opus",
+    "high"
+   ],
+   [
+    "faz uma projeção financeira de 18 meses considerando que a gente fecha 8 clinicas por mes e churn de 3%",
+    "opus",
+    "high"
+   ],
+   [
+    "qual nosso CAC e LTV se gastamos 22 mil em ads, fechamos 14 clientes, ticket 380 e churn mensal 4%? e isso ta saudavel?",
+    "opus",
+    "high"
+   ],
+   [
+    "a gente pode guardar o CPF e o historico de consulta dos pacientes no nosso servidor ou precisa de algum cuidado de LGPD? dado de saude é sensivel né",
+    "opus",
+    "high"
+   ],
+   [
+    "escreve o texto da landing pra vender pra dono de clinica que odeia tecnologia",
+    "opus",
+    "medium"
+   ],
+   [
+    "should we build our own scheduling engine or integrate with an existing one? we have 2 devs",
+    "opus",
+    "high"
+   ],
+   [
+    "o sistema de agendamento tá duplicando horarios às vezes e ninguem sabe pq, só acontece em producao",
+    "opus",
+    "high"
+   ],
+   [
+    "monta a estrutura de um pitch deck pra rodada seed de 2 milhoes",
+    "opus",
+    "high"
+   ],
+   [
+    "esse contrato da operadora tem uma clausula de exclusividade, isso me ferra?",
+    "opus",
+    "high"
+   ],
+   [
+    "how should we position ourselves against Doctoralia without looking like a cheap copy",
+    "opus",
+    "high"
+   ],
+   [
+    "regra de negocio: se o paciente cancela com menos de 24h a clinica cobra? como a gente deixa configuravel sem virar bagunça",
+    "opus",
+    "medium"
+   ],
+   [
+    "vale mais a pena contratar um vendedor CLT ou PJ comissionado agora?",
+    "opus",
+    "medium"
+   ],
+   [
+    "redesenha o fluxo de onboarding da clinica, o pessoal abandona no passo de importar pacientes",
+    "opus",
+    "high"
+   ],
+   [
+    "qual desconto dar pra rede com 15 unidades sem quebrar nossa margem",
+    "opus",
+    "high"
+   ],
+   [
+    "escreve um email pro cliente que tá puto com o atraso da integracao, sem prometer data que a gente não consegue cumprir",
+    "opus",
+    "medium"
+   ],
+   [
+    "the investor offered a SAFE with a 6M cap and 20% discount, is that good for us at this stage?",
+    "opus",
+    "high"
+   ],
+   [
+    "quanto de equity eu devo dar pro CTO que vai entrar agora, sei lá, tô perdido",
+    "opus",
+    "high"
+   ],
+   [
+    "precisa de registro na ANVISA ou algum orgao pra nossa ferramenta de triagem?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "arquitetura multi-tenant: um banco por clinica ou schema compartilhado?",
+    "opus",
+    "high"
+   ],
+   [
+    "tipo, a gente perde lead no whatsapp direto, que estrategia usar pra nao perder",
+    "opus",
+    "medium"
+   ],
+   [
+    "Então vou ditar aqui porque tô no carro. A gente tem hoje três planos, o básico a 149, o pro a 299 e o enterprise que é negociado. O que tá acontecendo é que quase todo mundo pega o básico e aí liga no suporte pedindo coisa do pro, tipo lembrete por whatsapp e relatório financeiro, e o suporte acaba liberando porque fica chato negar, né. Aí o pro tá vendendo sei lá, 10% só. Eu tava pensando em tirar o básico, ou subir ele, ou criar um add-on de whatsapp separado, mas tenho medo de perder as clínicas pequenas que são tipo 60% da base. Também tem a questão de que o concorrente cobra 99. Me diz o que tu faria, com os prós e contras de cada caminho e uma recomendação",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "Contexto: estamos negociando com uma operadora de plano de saúde regional pra ser o sistema oficial de agendamento dos credenciados deles. Eles querem pagar por clínica ativa, uns 40 reais por mês, mas querem que a gente dê acesso aos dados de agendamento pra eles fazerem auditoria de sinistro. As clínicas não sabem disso ainda. O volume seria tipo 800 clínicas, o que triplicaria nossa receita. O jurídico deles mandou uma minuta com cláusula de compartilhamento de dados bem aberta e multa pesada se a gente sair antes de 36 meses. Porra, é muito dinheiro mas eu tô com um pé atrás. Avalia isso pra mim, do lado LGPD, do lado de relacionamento com as clínicas e do lado financeiro, e fala se a gente assina, negocia ou recusa",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "So here's the situation. We launched the referral program three months ago: each clinic that refers another gets one month free. It brought 22 new clinics, which is great, but finance noticed that 9 of those referrals came from the same 3 clinics, and a couple of the referred ones look like they are the same owner under a different CNPJ. Meanwhile our paid ads CAC went up to around 1,900 reais and referral cost is basically the free months. Some people on the team want to kill it, others want to double the reward. I need you to think through whether to keep, change or kill the program, and if we change it, what the new rules should be to stop gaming without annoying honest clients.",
+    "opus",
+    "high"
+   ],
+   [
+    "olha, vou explicar, o app das clínicas tem uma tela de agenda que tá lenta pra caramba, tipo 8 segundos pra carregar quando a clínica tem muito profissional, já olhamos o banco e as queries parecem ok, o índice tá lá, no local roda rápido, em produção é que fica lento, e não é sempre, parece que piora de manhã quando todo mundo abre ao mesmo tempo, o cache a gente não tem, e o front faz umas 6 chamadas em paralelo. o Pedro acha que é o banco, o Lucas acha que é o front, eu sinceramente sei lá. investiga e me diz qual é a causa mais provável e o que a gente faz primeiro",
+    "opus",
+    "high"
+   ],
+   [
+    "Contexto: a gente vai fazer uma campanha de marketing pra clínicas de fisioterapia no interior de SP, verba de 15 mil, prazo de dois meses. O público é dono de clínica, geralmente o próprio fisioterapeuta, uns 35 a 50 anos, que usa agenda de papel ou planilha e acha software caro. A gente tem cases de duas clínicas em Ribeirão que reduziram no-show em 30%. Canais que a gente cogita: Instagram, Google, parceria com o conselho regional e evento presencial. Quero que você monte a estratégia, divida a verba e escreva as três primeiras peças de copy",
+    "opus",
+    "high"
+   ],
+   [
+    "Ok long story, bear with me. My cofounder and I split equity 50/50 two years ago. Since then I've been full time and he's been part time because of his other job, he says he'll go full time after the seed. Now the investors are asking about vesting and the cap table and one of them said 50/50 with a part-timer is a red flag. I don't want to blow up the friendship, and honestly he did bring the first three clients. We also have an advisor with 2% and an option pool that doesn't exist yet. What should the cap table look like going into the round and how do I bring this up with him?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "então, é o seguinte, a gente decidiu que vai lançar um módulo financeiro pras clínicas, controle de recebíveis, repasse pros profissionais, conciliação com a maquininha, essas coisas, o time tem 3 devs, a gente usa Postgres e Node, e hoje o sistema é um monolito que já tá meio grande, já tem umas partes bem acopladas. O pessoal quer fazer como microserviço separado, eu acho exagero mas não sei. Tem também a questão de que dinheiro não pode ter erro, né. Me ajuda a decidir a arquitetura e como modelar isso sem se ferrar daqui a um ano",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "deixa eu dar o contexto, a clínica Vida Plena quer cancelar o contrato no meio do período anual, eles pagaram 12 meses adiantado com 20% de desconto, tão no mês 5, dizem que o sistema não atendeu mas na real eles nunca terminaram o onboarding, o contrato fala em multa de 30% do saldo mas não fala nada sobre o desconto, e eles são amigos de um investidor nosso. O que a gente faz, cobra, devolve, negocia? e escreve a resposta pra eles",
+    "opus",
+    "high"
+   ],
+   [
+    "We're preparing the board update. Revenue grew 14% month over month but gross margin dropped from 78 to 69 because of the WhatsApp API costs and the extra support hire. Burn is 95k per month and we have 11 months of runway. The board will ask whether we should raise now or cut costs and push for profitability. Put together the numbers narrative and give me your recommendation with the reasoning.",
+    "opus",
+    "high"
+   ],
+   [
+    "vou ditar rapidinho, tô pensando em oferecer um plano gratuito pra clinica com ate 1 profissional pra puxar volume, mas tenho medo de encher de gente que nunca paga e o suporte explodir, e tem investidor que adora freemium e outro que odeia, faz sentido pra gente?",
+    "opus",
+    "high"
+   ],
+   [
+    "me ajuda a escrever o termo de consentimento do paciente pro uso dos dados no app, precisa ta certinho com a LGPD",
+    "opus",
+    "high"
+   ],
+   [
+    "o cliente pediu pra gente assinar um NDA com clausula de nao concorrencia de 5 anos, aceito?",
+    "opus",
+    "high"
+   ],
+   [
+    "faz um modelo de unit economics por plano considerando custo de whatsapp, servidor e suporte",
+    "opus",
+    "high"
+   ],
+   [
+    "qual copy funciona melhor no anuncio: 'reduza faltas em 30%' ou 'sua agenda cheia sem esforço'? explica",
+    "opus",
+    "medium"
    ]
   ]
  }
