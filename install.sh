@@ -107,6 +107,11 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
+# Maestro is a directory extension (index.ts + vendored tokenizer); drop its old single-file form.
+rm -f "$PI_DIR/extensions/maestro.ts"
+rm -rf "$PI_DIR/extensions/maestro"
+cp -R "$SCRIPT_DIR/extensions/maestro" "$PI_DIR/extensions/maestro"
+info "maestro"
 # Plastic Memory is intentionally not installed while its compaction path is disabled.
 # Its project-memory bridge imports that tree, so neither may remain installed alone.
 rm -f "$PI_DIR/extensions/project-memory.ts"
