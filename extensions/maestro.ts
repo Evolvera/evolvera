@@ -70,42 +70,54 @@ export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", s
 
 /**
  * A frustrated/angry user gets Astra 6 high regardless of task tier. Asked in
- * the same Jev request as the route question. On the 230-message benchmark,
- * >= 0.9 caught all 9 cursing/insulting/sarcastic messages with no false
- * positive; 0.84-0.89 held urgent or stressed but not hostile messages.
+ * the same Jev request as the route question. With the PREVIOUS/USER state,
+ * all 9 hostile benchmark messages score >= 0.95 while urgent or stressed but
+ * not hostile ones reach 0.90-0.91, hence 0.94.
  */
 export const FRUSTRATION_QUESTION = {
   type: "noul",
-  instructions: "The user is frustrated, angry or annoyed with the assistant or the situation (cursing, insults, sarcasm, complaining that something broke again, shouting).",
+  instructions: "In USER, the user is frustrated, angry or annoyed with the assistant or the situation (cursing, insults, sarcasm, complaining that something broke again, shouting). Ignore PREVIOUS.",
 };
-export const FRUSTRATION_THRESHOLD = 0.9;
+export const FRUSTRATION_THRESHOLD = 0.94;
 
 /**
  * Jev classifies the task type; the type decides model and starting effort.
- * Measured (one call, choice): biz 91% with 2 under-powered picks (tier
- * question: 83%, 11 under), blind3 95% with 0 under, blind2 100%, edge100 91%.
+ * Jev picks only the category; this table decides model and effort. The
+ * state carries the tail of the previous assistant reply (PREVIOUS) so short
+ * answers like "sim faz" or "a opção 2" are classified by what they approve.
+ * Measured: unseen context set 93% (2 under), biz 91%, blind3 95% (0 under),
+ * blind2 100%, edge100 86%. Laya with the same question: 37-57%.
  * `duvida` lets Jev say it cannot tell instead of forcing a type; it maps to Opus/high.
  */
 export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoice; criterion: string }> = {
   chore: { model: "luna", effort: "medium", criterion: "Run a command, commit/push/revert, check status, rename, bump a version, change a setting." },
-  question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer." },
-  small_edit: { model: "luna", effort: "medium", criterion: "A small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
+  question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer, including simple questions about the assistant itself." },
+  small_edit: { model: "luna", effort: "medium", criterion: "One small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
+  multi_small: { model: "luna", effort: "medium", criterion: "Several independent small mechanical edits, each trivial on its own." },
   doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template, write a spreadsheet formula." },
-  code_feature: { model: "sol", effort: "medium", criterion: "Implement a feature, endpoint, field, validation, test, script or integration with a known approach." },
-  code_fix: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is visible or stated in the message." },
-  refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code." },
-  debug: { model: "opus", effort: "xhigh", criterion: "Find an unknown cause: outage, slowness, intermittent, production-only or unexplained failure." },
-  architecture: { model: "opus", effort: "xhigh", criterion: "System architecture, data modeling, scalability, risky migration planning." },
-  design: { model: "opus", effort: "high", criterion: "UX, UI or visual design of screens, flows or brand." },
+  ui_change: { model: "sol", effort: "medium", criterion: "Change a screen or component to a given spec: add a field, button, state or layout adjustment, without redesigning it." },
+  code_feature: { model: "sol", effort: "medium", criterion: "Implement a feature, endpoint, validation, test, script or integration with a known approach." },
+  fix_known: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is known: stated by the user, visible in the message, or already found by the assistant." },
+  apply_plan: { model: "sol", effort: "high", criterion: "Carry out a plan, fix or option the assistant already proposed and the user approved." },
+  multi_moderate: { model: "sol", effort: "high", criterion: "Several moderate changes across files or documents with clear instructions." },
+  setup: { model: "sol", effort: "medium", criterion: "Install, configure or wire up tools, dependencies, CI, environment or credentials." },
+  refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code without changing behavior." },
+  debug_unknown: { model: "opus", effort: "xhigh", criterion: "Find an unknown cause: outage, slowness, intermittent, production-only or unexplained failure." },
+  multi_complex: { model: "opus", effort: "xhigh", criterion: "Many interdependent complex changes or requirements in one request, where getting one wrong breaks others." },
+  plan: { model: "opus", effort: "high", criterion: "Plan a multi-step change: break down work, sequence it, decide scope before implementing." },
+  architecture: { model: "opus", effort: "xhigh", criterion: "System architecture, data modeling, scalability or a risky migration design." },
+  risky_ops: { model: "opus", effort: "high", criterion: "Live or irreversible operations: production deploy, database migration, data deletion, security or access changes." },
+  design: { model: "opus", effort: "high", criterion: "UX, UI or visual design or redesign of screens, flows or brand." },
   writing: { model: "opus", effort: "high", criterion: "Write or substantially rewrite text for people: copy, articles, emails, proposals, prompts, or a document with many requested changes." },
   business: { model: "opus", effort: "high", criterion: "Business judgment: pricing, plans, discounts, financial projections, unit economics, legal or regulatory questions, strategy, product rules." },
-  analysis: { model: "opus", effort: "high", criterion: "Explain how a system works, compare options and recommend, or review for subtle problems." },
-  duvida: { model: "opus", effort: "high", criterion: "Unclear: the message does not make the task clear enough to classify." },
+  analysis: { model: "opus", effort: "high", criterion: "Explain how a system works, compare options and recommend, or review code for subtle problems or security." },
+  correction: { model: "opus", effort: "high", criterion: "The user says the assistant's previous work or answer was wrong and must be redone differently." },
+  duvida: { model: "opus", effort: "high", criterion: "Unclear: even with the previous assistant message, the task cannot be classified." },
 };
 
 export const ROUTE_QUESTION = {
   type: "choice",
-  instructions: "A user sent this message to an AI assistant that does software and business work. Classify the hardest task the message actually asks for; ignore tone, long context and words used in another sense.",
+  instructions: "An AI agent that does software and business work sent PREVIOUS (end of its last reply); the user answered USER. Classify the hardest task USER actually asks for now. Use PREVIOUS only to resolve references like 'sim', 'faz isso', 'a opção 2'; ignore tone and words used in another sense.",
   criteria: Object.fromEntries(Object.entries(CATEGORIES).map(([name, c]) => [name, c.criterion])),
 };
 
@@ -131,10 +143,34 @@ export function cutState(text: string, maxChars = STATE_MAX_CHARS): string {
   return Array.from(text.replace(/\s+/g, " ").trim()).slice(0, maxChars).join("");
 }
 
+/** The end of the previous reply carries its question/proposal, so keep its tail. */
+export const PREVIOUS_MAX_CHARS = 400;
+export function tailOf(text: string, maxChars = PREVIOUS_MAX_CHARS): string {
+  const chars = Array.from(text.replace(/\s+/g, " ").trim());
+  return chars.length <= maxChars ? chars.join("") : `…${chars.slice(-maxChars).join("")}`;
+}
+export function buildState(prompt: string, previous = ""): string {
+  const prev = tailOf(previous);
+  return `PREVIOUS: ${prev || "(none)"}\nUSER: ${cutState(prompt)}`;
+}
+
+/** Text of the last assistant message on the current branch. */
+export function lastAssistantText(entries: unknown[]): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i] as { type?: string; message?: { role?: string; content?: unknown } };
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") continue;
+    const content = entry.message.content;
+    const text = typeof content === "string" ? content
+      : Array.isArray(content) ? content.filter((part) => part?.type === "text").map((part) => part.text ?? "").join(" ") : "";
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /** One Jev call with bounded retries; undefined on any non-recoverable failure. */
-export async function classify(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch, retry: RetryPolicy = RETRY): Promise<Route | undefined> {
+export async function classify(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch, retry: RetryPolicy = RETRY, previous = ""): Promise<Route | undefined> {
   const deadline = Date.now() + retry.deadlineMs;
   let retriesLeft = retry.retries;
   for (;;) {
@@ -146,7 +182,7 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
       response = await fetchImpl(ENDPOINT, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ state: cutState(prompt), model: JEV_MODEL, questions: { q: ROUTE_QUESTION, f: FRUSTRATION_QUESTION } }),
+        body: JSON.stringify({ state: buildState(prompt, previous), model: JEV_MODEL, questions: { q: ROUTE_QUESTION, f: FRUSTRATION_QUESTION } }),
         signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
       });
       status = response.status;
@@ -332,7 +368,9 @@ export default function maestro(pi: ExtensionAPI): void {
       return { action: "continue" };
     }
     const apiKey = readApiKey();
-    let route = apiKey ? await classify(event.text, apiKey) : undefined;
+    let previous = "";
+    try { previous = lastAssistantText(ctx.sessionManager.getBranch() as unknown[]); } catch { /* no context */ }
+    let route = apiKey ? await classify(event.text, apiKey, fetch, RETRY, previous) : undefined;
     let via = "jev";
     if (!route) {
       route = await classifyWithLuna(event.text, ctx);
