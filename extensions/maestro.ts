@@ -8,8 +8,8 @@ import { join } from "node:path";
  * reasoning effort for that whole turn.
  *
  * - A pure continuation ("continua", "ok pode fazer") keeps the current pair.
- * - Otherwise one Jev (TypeSafe AI) `choice` call classifies the message and
- *   the highest-probability tier wins. Effort follows the tier: Luna and Sol
+ * - Otherwise one Jev (TypeSafe AI) `choice` call classifies the task type
+ *   (see CATEGORIES, with a `duvida` option); the type sets model and effort. Effort follows the tier: Luna and Sol
  *   start at medium, Opus at high. Measured on 217 labeled prompts (80 of them
  *   unseen when the question was written): 99% model accuracy on the unseen
  *   set, 1 under-powered pick, 0 over-powered. Per-class biases and a doubt
@@ -80,38 +80,61 @@ export const FRUSTRATION_QUESTION = {
 };
 export const FRUSTRATION_THRESHOLD = 0.9;
 
+/**
+ * Jev classifies the task type; the type decides model and starting effort.
+ * Measured (one call, choice): biz 91% with 2 under-powered picks (tier
+ * question: 83%, 11 under), blind3 95% with 0 under, blind2 100%, edge100 91%.
+ * `duvida` lets Jev say it cannot tell instead of forcing a type; it maps to Opus/high.
+ */
+export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoice; criterion: string }> = {
+  chore: { model: "luna", effort: "medium", criterion: "Run a command, commit/push/revert, check status, rename, bump a version, change a setting." },
+  question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer." },
+  small_edit: { model: "luna", effort: "medium", criterion: "A small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
+  doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template, write a spreadsheet formula." },
+  code_feature: { model: "sol", effort: "medium", criterion: "Implement a feature, endpoint, field, validation, test, script or integration with a known approach." },
+  code_fix: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is visible or stated in the message." },
+  refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code." },
+  debug: { model: "opus", effort: "xhigh", criterion: "Find an unknown cause: outage, slowness, intermittent, production-only or unexplained failure." },
+  architecture: { model: "opus", effort: "xhigh", criterion: "System architecture, data modeling, scalability, risky migration planning." },
+  design: { model: "opus", effort: "high", criterion: "UX, UI or visual design of screens, flows or brand." },
+  writing: { model: "opus", effort: "high", criterion: "Write or substantially rewrite text for people: copy, articles, emails, proposals, prompts, or a document with many requested changes." },
+  business: { model: "opus", effort: "high", criterion: "Business judgment: pricing, plans, discounts, financial projections, unit economics, legal or regulatory questions, strategy, product rules." },
+  analysis: { model: "opus", effort: "high", criterion: "Explain how a system works, compare options and recommend, or review for subtle problems." },
+  duvida: { model: "opus", effort: "high", criterion: "Unclear: the message does not make the task clear enough to classify." },
+};
+
 export const ROUTE_QUESTION = {
   type: "choice",
-  instructions: "A user sent this message to an AI assistant that does software and business work. Pick the model tier for the hardest task it actually asks for; ignore tone, context and words used in another sense.",
-  criteria: {
-    luna: "Mechanical or quick: run/commit/revert/rename/bump, small config, text or style edit, a quick factual question, a status check.",
-    sol: "Normal implementation with a known approach: add a feature, field, validation or endpoint, write tests, refactor, fix an error whose cause is visible in the message.",
-    opus: "Needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts, business decisions: pricing, plans, discounts, financial projections, strategy or product rules described at length.",
-  },
+  instructions: "A user sent this message to an AI assistant that does software and business work. Classify the hardest task the message actually asks for; ignore tone, long context and words used in another sense.",
+  criteria: Object.fromEntries(Object.entries(CATEGORIES).map(([name, c]) => [name, c.criterion])),
 };
+
+export type Route = { model: ModelChoice; effort: EffortChoice; category: string };
+
+/** The category Jev chose (argmax of probabilities, else `choice`), resolved to model + effort. */
+export function pickRoute(answer: { choice?: unknown; probabilities?: Record<string, unknown> } | undefined): Route | undefined {
+  let category = typeof answer?.choice === "string" ? answer.choice : undefined;
+  const probs = answer?.probabilities;
+  if (probs) {
+    let best: string | undefined;
+    for (const name of Object.keys(CATEGORIES)) {
+      const p = probs[name];
+      if (typeof p === "number" && (best === undefined || p > (probs[best] as number))) best = name;
+    }
+    category = best ?? category;
+  }
+  const hit = category ? CATEGORIES[category] : undefined;
+  return hit && category ? { model: hit.model, effort: hit.effort, category } : undefined;
+}
 
 export function cutState(text: string, maxChars = STATE_MAX_CHARS): string {
   return Array.from(text.replace(/\s+/g, " ").trim()).slice(0, maxChars).join("");
 }
 
-/** Highest-probability tier; falls back to `choice` when probabilities are absent. */
-export function pickTier(answer: { choice?: unknown; probabilities?: Record<string, unknown> } | undefined): ModelChoice | undefined {
-  const probs = answer?.probabilities;
-  if (probs) {
-    let best: ModelChoice | undefined;
-    for (const tier of TIERS) {
-      const p = probs[tier];
-      if (typeof p === "number" && (best === undefined || p > (probs[best] as number))) best = tier;
-    }
-    if (best) return best;
-  }
-  return typeof answer?.choice === "string" && (TIERS as readonly string[]).includes(answer.choice) ? (answer.choice as ModelChoice) : undefined;
-}
-
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /** One Jev call with bounded retries; undefined on any non-recoverable failure. */
-export async function classify(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch, retry: RetryPolicy = RETRY): Promise<ModelChoice | undefined> {
+export async function classify(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch, retry: RetryPolicy = RETRY): Promise<Route | undefined> {
   const deadline = Date.now() + retry.deadlineMs;
   let retriesLeft = retry.retries;
   for (;;) {
@@ -136,8 +159,8 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
           answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> }; f?: { noul?: unknown } };
         };
         const frustration = body.answers?.f?.noul;
-        if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return "astra";
-        return pickTier(body.answers?.q);
+        if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return { model: "astra", effort: "high", category: "frustrado" };
+        return pickRoute(body.answers?.q);
       } catch {
         return undefined;
       }
@@ -236,7 +259,7 @@ export function parseLunaRoute(text: string): ModelChoice | undefined {
 
 type Completer = (model: unknown, context: unknown, options: Record<string, unknown>) => Promise<{ content?: Array<{ type?: string; text?: string }> }>;
 
-export async function classifyWithLuna(prompt: string, ctx: Pick<ExtensionContext, "modelRegistry">, complete?: Completer): Promise<ModelChoice | undefined> {
+export async function classifyWithLuna(prompt: string, ctx: Pick<ExtensionContext, "modelRegistry">, complete?: Completer): Promise<Route | undefined> {
   try {
     const model = ctx.modelRegistry.find("openai-codex", "gpt-6-luna");
     if (!model) return undefined;
@@ -249,7 +272,8 @@ export async function classifyWithLuna(prompt: string, ctx: Pick<ExtensionContex
       { systemPrompt: LUNA_ROUTER_SYSTEM, messages: [{ role: "user", content: [{ type: "text", text: cutState(prompt) }], timestamp: Date.now() }] },
       { apiKey: auth.apiKey, headers: auth.headers, reasoning: "minimal", maxTokens: 400, signal: AbortSignal.timeout(10_000) },
     );
-    return parseLunaRoute((reply.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join(""));
+    const tier = parseLunaRoute((reply.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join(""));
+    return tier ? { model: tier, effort: EFFORT_FOR[tier], category: tier === "astra" ? "frustrado" : tier } : undefined;
   } catch {
     return undefined;
   }
@@ -308,13 +332,14 @@ export default function maestro(pi: ExtensionAPI): void {
       return { action: "continue" };
     }
     const apiKey = readApiKey();
-    let modelChoice = apiKey ? await classify(event.text, apiKey) : undefined;
+    let route = apiKey ? await classify(event.text, apiKey) : undefined;
     let via = "jev";
-    if (!modelChoice) {
-      modelChoice = await classifyWithLuna(event.text, ctx);
+    if (!route) {
+      route = await classifyWithLuna(event.text, ctx);
       via = "luna";
     }
-    const effort = modelChoice ? EFFORT_FOR[modelChoice] : undefined;
+    const modelChoice = route?.model;
+    const effort = route?.effort;
     let label = "";
     if (modelChoice) {
       const target = MODEL_TARGETS[modelChoice];
@@ -333,7 +358,7 @@ export default function maestro(pi: ExtensionAPI): void {
       ctx.ui.notify("Maestro: Jev e Luna indisponíveis; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
-    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}${via === "luna" ? " (luna)" : ""}`);
+    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()} · ${route?.category}${via === "luna" ? " (luna)" : ""}`);
     return { action: "continue" };
   });
 
