@@ -21,6 +21,16 @@ for (const [name, c] of Object.entries(m.CATEGORIES)) {
   if (c.model === "luna") assert.notEqual(c.effort, "low", "Luna never starts at low");
 }
 assert.equal(m.CATEGORIES.writing.model, "opus");
+assert.deepEqual([m.CATEGORIES.deploy.model, m.CATEGORIES.deploy.effort], ["opus", "medium"]);
+const R = (category) => ({ ...m.pickRoute({ choice: category }) });
+const eff = (c, n) => { const r = m.scaleByCount(R(c), n); return `${r.model}/${r.effort}`; };
+assert.equal(eff("multi_complex", "two"), "opus/medium");
+assert.equal(eff("multi_complex", "three_four"), "opus/high");
+assert.equal(eff("multi_complex", "many"), "opus/xhigh");
+assert.equal(eff("multi_moderate", "two"), "sol/high");
+assert.equal(eff("multi_moderate", "three_four"), "opus/medium");
+assert.equal(eff("multi_moderate", "many"), "opus/medium");
+assert.equal(eff("chore", "many"), "luna/medium", "count only affects multi_*");
 assert.equal(m.CATEGORIES.business.model, "opus");
 
 // 2. One Jev request per message with the route question; retries only transient failures.
@@ -33,7 +43,7 @@ assert.equal((await m.classify("commit e push", "k", ok("chore"))).model, "luna"
 assert.equal(seen.length, 1);
 assert.match(seen[0].url, /\/systemone$/);
 assert.equal(seen[0].auth, "Bearer k");
-assert.deepEqual(Object.keys(seen[0].body.questions), ["q", "f"], "route + frustration in one request");
+assert.deepEqual(Object.keys(seen[0].body.questions), ["q", "f", "n"], "route + frustration + count in one request");
 assert.deepEqual(Object.keys(seen[0].body.questions.q.criteria), Object.keys(m.CATEGORIES));
 const angry = (noul) => async () => reply(200, { answers: { q: { choice: "chore" }, f: { noul } } });
 assert.deepEqual(await m.classify("porra quebrou tudo de novo", "k", angry(0.94)), { model: "astra", effort: "high", category: "frustrado" });

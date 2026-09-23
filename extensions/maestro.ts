@@ -120,7 +120,8 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   multi_complex: { model: "opus", effort: "xhigh", criterion: "Many interdependent complex changes or requirements in one request, where getting one wrong breaks others." },
   plan: { model: "opus", effort: "high", criterion: "Plan a multi-step change: break down work, sequence it, decide scope before implementing." },
   architecture: { model: "opus", effort: "xhigh", criterion: "System architecture, data modeling, scalability or a risky migration design." },
-  risky_ops: { model: "opus", effort: "high", criterion: "Live or irreversible operations: production deploy, database migration, data deletion, security or access changes." },
+  deploy: { model: "opus", effort: "medium", criterion: "Deploy, release, publish or roll back an application or service." },
+  risky_ops: { model: "opus", effort: "high", criterion: "Other live or irreversible operations: running a production database migration, deleting data, security or access changes." },
   design: { model: "opus", effort: "high", criterion: "UX, UI or visual design or redesign of screens, flows or brand." },
   writing: { model: "opus", effort: "high", criterion: "Write or substantially rewrite text for people: copy, articles, emails, proposals, prompts, or a document with many requested changes." },
   business: { model: "opus", effort: "high", criterion: "Business judgment: pricing, plans, discounts, financial projections, unit economics, legal or regulatory questions, strategy, product rules." },
@@ -136,6 +137,31 @@ export const ROUTE_QUESTION = {
 };
 
 export type Route = { model: ModelChoice; effort: EffortChoice; category: string };
+
+/** How many distinct changes the user asks for; only multi_* categories use it. */
+export const COUNT_QUESTION = {
+  type: "choice",
+  instructions: "How many distinct changes or requests does USER ask for now? Use PREVIOUS only to resolve references like 'faz tudo' or 'aplica os 3'.",
+  criteria: { one: "One change or request.", two: "Two changes.", three_four: "Three or four changes.", many: "Five or more changes." },
+};
+export type ChangeCount = keyof typeof COUNT_QUESTION.criteria;
+
+/**
+ * Size scaling for multi-change requests:
+ * - multi_complex: up to 2 -> Opus medium, 3-4 -> Opus high, 5+ -> Opus xhigh.
+ * - multi_moderate: up to 2 -> Sol high, 3+ -> Opus medium.
+ */
+export function scaleByCount(route: Route, count: ChangeCount | undefined): Route {
+  if (!count) return route;
+  const small = count === "one" || count === "two";
+  if (route.category === "multi_complex") {
+    return { ...route, model: "opus", effort: small ? "medium" : count === "three_four" ? "high" : "xhigh" };
+  }
+  if (route.category === "multi_moderate") {
+    return small ? { ...route, model: "sol", effort: "high" } : { ...route, model: "opus", effort: "medium" };
+  }
+  return route;
+}
 
 /** The category Jev chose (argmax of probabilities, else `choice`), resolved to model + effort. */
 export function pickRoute(answer: { choice?: unknown; probabilities?: Record<string, unknown> } | undefined): Route | undefined {
@@ -196,7 +222,7 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
       response = await fetchImpl(ENDPOINT, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ state: buildState(prompt, previous), model: JEV_MODEL, questions: { q: ROUTE_QUESTION, f: FRUSTRATION_QUESTION } }),
+        body: JSON.stringify({ state: buildState(prompt, previous), model: JEV_MODEL, questions: { q: ROUTE_QUESTION, f: FRUSTRATION_QUESTION, n: COUNT_QUESTION } }),
         signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
       });
       status = response.status;
@@ -206,11 +232,13 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
     if (response?.ok) {
       try {
         const body = (await response.json()) as {
-          answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> }; f?: { noul?: unknown } };
+          answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> }; f?: { noul?: unknown }; n?: { choice?: unknown } };
         };
         const frustration = body.answers?.f?.noul;
         if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return { model: "astra", effort: "high", category: "frustrado" };
-        return pickRoute(body.answers?.q);
+        const route = pickRoute(body.answers?.q);
+        const count = body.answers?.n?.choice;
+        return route && scaleByCount(route, typeof count === "string" && count in COUNT_QUESTION.criteria ? (count as ChangeCount) : undefined);
       } catch {
         return undefined;
       }
