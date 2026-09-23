@@ -1,5 +1,5 @@
 {
- "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there). biz = software+business set used to choose the category question (91%).",
+ "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there). biz = software+business set used to choose the category question (91%). context = [assistant_prev, user, model, effort], unseen when categories/context were written (Jev 93%).",
  "sets": {
   "edge100": [
    [
@@ -1514,6 +1514,548 @@
     "qual copy funciona melhor no anuncio: 'reduza faltas em 30%' ou 'sua agenda cheia sem esforço'? explica",
     "opus",
     "medium"
+   ]
+  ],
+  "context": [
+   [
+    "Corrigi o typo no README e rodei o lint, tudo verde. Quer que eu faça o commit?",
+    "sim, commita e dá push",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "run the tests for the api package",
+    "luna",
+    "low"
+   ],
+   [
+    "O build passou. Alterações em src/components/Header.tsx e src/styles/header.css, nada commitado ainda.",
+    "qual branch eu to?",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "what's the node version installed here?",
+    "luna",
+    "low"
+   ],
+   [
+    "Renomeei a função `getUsr` para `getUser` em 3 arquivos e atualizei os imports. Testes passando.",
+    "troca tb o nome da variável usr pra user no mesmo arquivo",
+    "luna",
+    "low"
+   ],
+   [
+    "Encontrei 4 ocorrências do texto antigo 'Fale conosco': Header, Footer, ContactPage e o template de email. Quer que eu troque todas por 'Entre em contato'?",
+    "sim troca",
+    "luna",
+    "low"
+   ],
+   [
+    "Deploy de staging concluído. Health check OK, versão 2.4.1 no ar.",
+    "valeu. qual o link do staging mesmo?",
+    "luna",
+    "low"
+   ],
+   [
+    "Salvei as alterações do formulário mas não rodei nada ainda. Tem também uns arquivos gerados pelo build que ficaram fora do .gitignore.",
+    "git status",
+    "luna",
+    "low"
+   ],
+   [
+    "Adicionei `zod` no package.json e criei o schema em src/schemas/user.ts. O lockfile não foi atualizado porque você pediu pra esperar antes de instalar.",
+    "pode rodar o npm install agora",
+    "luna",
+    "low"
+   ],
+   [
+    "O PR #142 com o filtro de datas está aberto. CI verde, 1 aprovação, sem conflitos com a main.",
+    "merge it",
+    "luna",
+    "low"
+   ],
+   [
+    "Release notes da 1.3 prontas em docs/releases/1.3.md. A versão no package.json ainda está 1.2.4.",
+    "bump pra 1.3.0",
+    "luna",
+    "low"
+   ],
+   [
+    "Pronto: mudei a cor do botão primário para #2563EB no tailwind.config.js.",
+    "deixa o border radius dele 8px tb",
+    "luna",
+    "low"
+   ],
+   [
+    "Os logs mostram erros 500 em /api/checkout na última hora, todos com timeout do gateway de pagamento, que já normalizou segundo o status page deles.",
+    "how many requests failed? count them in the log",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "quanto é 15% de 4.380?",
+    "luna",
+    "low"
+   ],
+   [
+    "Terminei a migração dos ícones para lucide-react. Sobrou `src/icons-old.ts`, que não é importado em lugar nenhum (conferi com grep e com o build).",
+    "apaga ele",
+    "luna",
+    "low"
+   ],
+   [
+    "Criei o .env.example com DATABASE_URL, STRIPE_KEY e SENTRY_DSN.",
+    "add REDIS_URL too",
+    "luna",
+    "low"
+   ],
+   [
+    "O clone está demorando porque o repositório tem 1.8GB. Suspeito de assets binários commitados por engano.",
+    "lista os arquivos maiores que 1MB",
+    "luna",
+    "low"
+   ],
+   [
+    "A refatoração está completa: 12 arquivos alterados, testes verdes, resumo no PR #88.",
+    "thanks!",
+    "luna",
+    "low"
+   ],
+   [
+    "Atualizei o CHANGELOG com as entradas da v2.0. Quer que eu crie a tag?",
+    "cria a v2.0.0 e dá push da tag",
+    "luna",
+    "low"
+   ],
+   [
+    "Criei o script de setup. Ele usa `mkdir -p` pra montar a estrutura de pastas de logs e cache.",
+    "what does -p do there?",
+    "luna",
+    "low"
+   ],
+   [
+    "Ajustei os três placeholders do formulário de cadastro conforme você pediu.",
+    "no telefone coloca (11) 99999-9999 de exemplo",
+    "luna",
+    "low"
+   ],
+   [
+    "Achei 3 bugs: 1) typo 'Endreço' no label do checkout, 2) o total ignora o cupom de frete grátis, 3) race condition na reserva de estoque que às vezes vende o mesmo item duas vezes.",
+    "corrige o primeiro",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "roda o prettier em src/ e commita com 'chore: format'",
+    "luna",
+    "low"
+   ],
+   [
+    "Sim, o job de limpeza roda todo dia às 3h UTC, definido em infra/cron.yaml linha 14.",
+    "muda pra 4h",
+    "luna",
+    "low"
+   ],
+   [
+    "Removi os console.log de debug do checkout. Ainda existem mais 7 em outros módulos (auth, cart, profile).",
+    "tira esses tb",
+    "luna",
+    "low"
+   ],
+   [
+    "Os E2E falharam só no Safari por timeout de rede no runner; rodei de novo e passou tudo.",
+    "nice, open the PR",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "me lembra o comando pra ver os logs de um pod no kubectl",
+    "luna",
+    "low"
+   ],
+   [
+    "Fiz as mudanças de copy na landing que você mandou. Quer revisar o diff antes ou já commito?",
+    "ship it",
+    "luna",
+    "low"
+   ],
+   [
+    "Deixei o layout da tabela pronto conforme o Figma, mas os ícones de ação ainda são placeholders genéricos.",
+    "troca pelos do lucide: Pencil, Copy e Trash2",
+    "luna",
+    "low"
+   ],
+   [
+    "Atualizei o título da página de preços pra 'Planos e Preços'. A meta description ainda fala em 'tabela de valores'.",
+    "ajusta a meta description pra combinar",
+    "luna",
+    "medium"
+   ],
+   [
+    "Achei a causa: o `useEffect` do carrinho não tem `storeId` nas dependências, então quando o usuário troca de loja o total fica desatualizado. A correção é adicionar a dependência e resetar o estado local do carrinho.",
+    "faz a correção",
+    "sol",
+    "medium"
+   ],
+   [
+    "Mapeei o módulo de usuários: GET /api/users/:id usa o repository pattern com validação zod e paginação via helper `paginate()`.",
+    "cria GET /api/users/:id/orders paginado no mesmo padrão",
+    "sol",
+    "medium"
+   ],
+   [
+    "Plano pronto em docs/plan-export-csv.md: 1) serviço de export, 2) endpoint, 3) botão na tabela de pedidos, 4) testes. Quer que eu execute?",
+    "aplica o plano",
+    "sol",
+    "medium"
+   ],
+   [
+    "Implementei o filtro por status na lista de pedidos. Não criei testes ainda.",
+    "write unit tests for it",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "adiciona dark mode no site usando o ThemeProvider do next-themes, as cores dark já tão definidas no globals.css, só falta o toggle no header",
+    "sol",
+    "medium"
+   ],
+   [
+    "O erro 'Cannot read properties of undefined (reading map)' vem do OrderList: a API retorna `null` quando não há pedidos e o componente espera array.",
+    "corrige isso",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "set up eslint + prettier + husky with lint-staged running on pre-commit",
+    "sol",
+    "medium"
+   ],
+   [
+    "Tenho duas opções pro formulário de checkout: 1) react-hook-form + zod, 2) manter estado manual. Recomendo a 1 pela validação tipada e menos re-renders.",
+    "vai de 1",
+    "sol",
+    "medium"
+   ],
+   [
+    "Checked the auth service: the backend already accepts a `remember` flag on /login and issues a 30-day refresh token when it's true.",
+    "cool, add a 'remember me' checkbox to the login form that sends it",
+    "sol",
+    "low"
+   ],
+   [
+    "Revisei o spec do modal de exclusão: título, texto de aviso, botões Cancelar/Excluir, fecha com ESC e clique fora, foco inicial no Cancelar. Posso implementar?",
+    "pode",
+    "sol",
+    "medium"
+   ],
+   [
+    "O scripts/backup.sh faz dump do postgres, comprime com gzip e sobe pro S3 com a data no nome. Ele quebra no Windows dos devs.",
+    "reescreve em node com a mesma lógica",
+    "sol",
+    "medium"
+   ],
+   [
+    "Documentei os endpoints de auth no docs/api.md. Faltam os de billing e de webhooks.",
+    "documenta os que faltam",
+    "sol",
+    "medium"
+   ],
+   [
+    "O teste `order.spec.ts` falha porque o mock de Date foi removido no último refactor; ele assume que hoje é antes de 2025-01-01.",
+    "fix the test",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "instala e configura o Sentry no projeto next, client e server, DSN já tá no .env",
+    "sol",
+    "medium"
+   ],
+   [
+    "Implementei a paginação por cursor no backend (/api/feed?cursor=). O front ainda carrega tudo de uma vez.",
+    "agora faz o front usar isso com scroll infinito",
+    "sol",
+    "medium"
+   ],
+   [
+    "O cadastro de clientes usa Prisma; o model Customer fica em prisma/schema.prisma e o form em app/customers/form.tsx.",
+    "adiciona um campo 'observações' opcional: migration, model, form e mostrar no detalhe",
+    "sol",
+    "medium"
+   ],
+   [
+    "Identifiquei: o relatório de comissões faz N+1 no loop de vendedores (1 query por vendedor, ~400 queries). Dá pra resolver com JOIN manual ou com `include` do Prisma.",
+    "go with include",
+    "sol",
+    "medium"
+   ],
+   [
+    "As rotas da API estão espalhadas entre src/routes/*.ts e alguns handlers legados em src/legacy/.",
+    "gera um markdown listando todas as rotas com método e arquivo",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "create a github action that runs tests and build on every PR to main",
+    "sol",
+    "medium"
+   ],
+   [
+    "O bug de fuso vem de `new Date(str)` interpretando strings sem offset como horário local do servidor. Precisa trocar por `parseISO` + `toZonedTime` com o fuso do usuário em 6 lugares.",
+    "corrige nos 6",
+    "sol",
+    "medium"
+   ],
+   [
+    "Mapeei o fluxo de cadastro: POST /signup cria o usuário e envia email com token, GET /confirm valida, POST /login autentica. Supertest já está configurado.",
+    "escreve teste de integração cobrindo esse fluxo todo",
+    "sol",
+    "medium"
+   ],
+   [
+    "Terminei o componente de upload. Aceita imagens até 5MB com preview.",
+    "aceita pdf tb e mostra o nome do arquivo em vez do preview quando for pdf",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "atualiza o next de 14 pra 15 seguindo o guia oficial de migração, o projeto é pequeno",
+    "sol",
+    "high"
+   ],
+   [
+    "Montei a planilha de custos com as linhas de infraestrutura por fornecedor. Falta formatar e colocar os totais.",
+    "formata e bota total por mês e total geral",
+    "sol",
+    "low"
+   ],
+   [
+    "O /api/auth já usa @upstash/ratelimit com sliding window de 10 req/min por IP, via middleware em lib/ratelimit.ts.",
+    "aplica 100 req/min por IP nas rotas /api/public do mesmo jeito",
+    "sol",
+    "medium"
+   ],
+   [
+    "Encontrei o problema do webhook: a assinatura do Stripe é validada sobre o body já parseado em JSON, mas precisa ser sobre o raw body.",
+    "ah that makes sense, fix it",
+    "sol",
+    "medium"
+   ],
+   [
+    "Os arquivos de i18n estão em locales/pt-BR.json (~200 strings). en e es ainda não existem.",
+    "cria en e es traduzindo tudo",
+    "sol",
+    "medium"
+   ],
+   [
+    "Pronto, o formulário de endereço está validando CEP pela ViaCEP.",
+    "no mobile o botão salvar fica escondido atrás do teclado. coloca padding usando visualViewport quando o teclado abrir",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "o app tá ficando lento depois de umas 2h aberto, a memória só sobe. não sei o que é",
+    "opus",
+    "high"
+   ],
+   [
+    "Apliquei a correção de invalidação do cache do saldo e os testes passaram.",
+    "continua errado, alguns clientes ainda veem saldo antigo. investiga de novo",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "preciso decidir se cobro por usuário ou por uso no nosso SaaS de agendamento. o que você recomenda?",
+    "opus",
+    "high"
+   ],
+   [
+    "Terminei o redesign do onboarding com os 4 passos e a barra de progresso.",
+    "it looks ugly and confusing, redo it",
+    "opus",
+    "high"
+   ],
+   [
+    "Mapeei o monolito: billing está acoplado a users, orders e notifications via 23 imports diretos e 4 tabelas compartilhadas.",
+    "desenha como a gente separa billing num serviço próprio",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "Migration pronta: renomeia `email` pra `email_address` na tabela users (12M linhas) e recria os índices. Testei no banco local.",
+    "roda em produção",
+    "opus",
+    "high"
+   ],
+   [
+    "O PR #231 troca a sessão por JWT com refresh token e mexe no middleware de auth.",
+    "revisa com foco em segurança",
+    "opus",
+    "high"
+   ],
+   [
+    "Pra fila de jobs tenho 3 caminhos: 1) Redis/BullMQ, 2) SQS, 3) tabela no Postgres com SKIP LOCKED. Cada um tem trade-offs de custo e operação.",
+    "which would you pick and why?",
+    "opus",
+    "medium"
+   ],
+   [
+    "Levantei os números: custo de infra subiu 35% no ano e o preço atual está congelado desde 2022.",
+    "escreve o post pro blog explicando pros clientes que o preço vai subir 20%",
+    "opus",
+    "high"
+   ],
+   [
+    "O teste de integração de pagamento falha intermitente no CI (~1 em 5 execuções), nunca localmente. Não achei padrão nos logs ainda.",
+    "figure out what it is",
+    "opus",
+    "high"
+   ],
+   [
+    "Troquei o `forEach` por `for...of` e agora os uploads esperam corretamente.",
+    "pq isso resolveu? me explica direito o que acontece com await dentro do forEach",
+    "opus",
+    "medium"
+   ],
+   [
+    "Plano de refatoração: extrair o módulo de pagamentos, trocar Sequelize por Prisma e unificar os 3 tipos de usuário numa tabela. São ~40 arquivos com dependências cruzadas entre as três frentes.",
+    "manda ver, faz tudo",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "",
+    "preciso de um plano pra migrar os dados do firebase pro postgres sem downtime",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "Implementei o login com Google conforme você pediu, com o NextAuth.",
+    "não era isso, eu queria SSO SAML pros clientes enterprise",
+    "opus",
+    "high"
+   ],
+   [
+    "Olhei o checkout: o botão de pagar desabilita no clique, e o backend chama o gateway direto no POST /charge.",
+    "mas mesmo assim tem cliente sendo cobrado duas vezes, aconteceu 3x essa semana",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "Resumo do contrato do fornecedor: exclusividade de 24 meses, multa de 30% do valor restante em caso de rescisão, reajuste anual pelo IGP-M.",
+    "vale a pena assinar? o que eu negocio?",
+    "opus",
+    "high"
+   ],
+   [
+    "Achei 3 bugs: 1) typo 'Endreço' no label do checkout, 2) o total ignora o cupom de frete grátis, 3) race condition na reserva de estoque que às vezes vende o mesmo item duas vezes.",
+    "o terceiro",
+    "opus",
+    "high"
+   ],
+   [
+    "Mapeei a navegação: 5 abas no bottom bar, configurações duplicadas em Perfil e em Conta, e 3 níveis de menu até chegar em notificações.",
+    "os usuários se perdem nisso, repensa a navegação toda",
+    "opus",
+    "high"
+   ],
+   [
+    "Deploy da v3 feito às 14h. Desde então o 502 no load balancer subiu de 0,1% pra 4%, mas os logs da aplicação não mostram erro nenhum.",
+    "what's going on?",
+    "opus",
+    "high"
+   ],
+   [
+    "Session summary: I ran the cleanup script and removed stale folders, including db/migrations, which had no recent changes.",
+    "wait, why did you delete migrations?? explain exactly what happened and how we recover",
+    "opus",
+    "high"
+   ],
+   [
+    "Criei a landing com hero, features e depoimentos usando o template padrão do shadcn.",
+    "tá genérica demais, quero cara de marca premium. pensa o visual do zero",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "escreve o email pros investidores com o update do tri: MRR 120k, churn 3%, 2 contratações, perdemos um cliente grande",
+    "opus",
+    "medium"
+   ],
+   [
+    "Rotacionei a chave do Stripe no staging. Em produção a chave antiga ainda está ativa e é usada por 3 serviços (api, worker, cron de cobrança).",
+    "rotaciona em prod também",
+    "opus",
+    "high"
+   ],
+   [
+    "Rodei a suíte de finance: tudo verde, mas o total do parcelamento em 12x difere em R$0,03 do que o banco calcula.",
+    "descobre onde tá o erro de arredondamento",
+    "opus",
+    "high"
+   ],
+   [
+    "O endpoint de upload aceita qualquer extensão e salva no bucket público com o nome original do arquivo.",
+    "is that a security issue? what would you do?",
+    "opus",
+    "high"
+   ],
+   [
+    "Esse harness tem 14 agentes e 25 skills; o orquestrador roda no modelo mais caro em toda mensagem.",
+    "como reorganizo isso pra reduzir custo sem perder qualidade?",
+    "opus",
+    "high"
+   ],
+   [
+    "Terminei os 5 itens do plano. Todos os testes passam, 31 arquivos alterados.",
+    "revisa tudo com olho crítico antes de eu mergear, principalmente a parte de concorrência no estoque",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "a gente tá pensando em abrir filial em portugal. o que muda em impostos e contratação pra uma empresa de software?",
+    "opus",
+    "high"
+   ],
+   [
+    "Ajustei o algoritmo de recomendação pra priorizar itens recentes. No A/B de 7 dias o CTR caiu 8%.",
+    "por que caiu? e o que a gente faz?",
+    "opus",
+    "high"
+   ],
+   [
+    "Hoje as permissões são 3 roles fixos (admin, editor, viewer) checados com if espalhados em ~60 lugares.",
+    "planeja a migração pra RBAC com permissões granulares",
+    "opus",
+    "high"
+   ],
+   [
+    "Pro modo offline tem duas abordagens: sync com CRDT ou fila de operações com resolução de conflito no servidor.",
+    "I don't get the difference, explain",
+    "opus",
+    "medium"
+   ],
+   [
+    "Deixei a tela de configurações funcionando, mas ficou uma lista longa de 30 toggles.",
+    "melhora a UX disso, ninguém vai achar nada",
+    "opus",
+    "high"
    ]
   ]
  }

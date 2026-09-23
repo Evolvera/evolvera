@@ -12,7 +12,7 @@ const reply = (status, body) => new Response(JSON.stringify(body), { status });
 // 1. State cut and tier pick (argmax over probabilities, choice as fallback).
 assert.equal(m.cutState("a  \n b"), "a b");
 assert.equal(Array.from(m.cutState("x".repeat(2000))).length, m.STATE_MAX_CHARS);
-assert.deepEqual(m.pickRoute({ choice: "chore", probabilities: { chore: 0.3, debug: 0.6 } }), { model: "opus", effort: "xhigh", category: "debug" });
+assert.deepEqual(m.pickRoute({ choice: "chore", probabilities: { chore: 0.3, debug_unknown: 0.6 } }), { model: "opus", effort: "xhigh", category: "debug_unknown" });
 assert.deepEqual(m.pickRoute({ choice: "code_feature" }), { model: "sol", effort: "medium", category: "code_feature" });
 assert.deepEqual(m.pickRoute({ choice: "duvida" }), { model: "opus", effort: "high", category: "duvida" }, "doubt -> Opus high");
 assert.equal(m.pickRoute({ choice: "gpt-9" }), undefined);
@@ -44,7 +44,7 @@ const scripted = (statuses) => {
   const f = async () => {
     const s = statuses[i++]; f.n = i;
     if (s === "throw") throw new Error("net");
-    return s === 200 ? reply(200, { answers: { q: { choice: "code_fix" } } }) : reply(s, {});
+    return s === 200 ? reply(200, { answers: { q: { choice: "fix_known" } } }) : reply(s, {});
   };
   return f;
 };
@@ -75,9 +75,23 @@ assert.equal(lunaCall.options.reasoning, "minimal");
 assert.equal(await m.classifyWithLuna("x", { modelRegistry: { find: () => undefined } }, async () => ({})), undefined);
 assert.equal(await m.classifyWithLuna("x", lunaCtx, async () => { throw new Error("down"); }), undefined);
 
+// 2c. Context: last assistant text, tail-truncated, labeled apart from the user message.
+const branch = [
+  { type: "message", message: { role: "assistant", content: [{ type: "text", text: "old" }] } },
+  { type: "message", message: { role: "user", content: "x" } },
+  { type: "message", message: { role: "assistant", content: [{ type: "toolCall" }, { type: "text", text: "Achei a causa. Quer que eu aplique o fix?" }] } },
+];
+assert.equal(m.lastAssistantText(branch), "Achei a causa. Quer que eu aplique o fix?");
+assert.equal(m.lastAssistantText([]), "");
+const st = m.buildState("sim faz", "a".repeat(1000) + " Quer que eu aplique?");
+assert.ok(st.startsWith("PREVIOUS: …") && st.includes("Quer que eu aplique?") && st.endsWith("USER: sim faz"));
+assert.equal(m.buildState("oi"), "PREVIOUS: (none)\nUSER: oi");
+await m.classify("sim faz", "k", ok("apply_plan"), undefined, "Quer que eu aplique?");
+assert.match(seen.at(-1).body.state, /^PREVIOUS: Quer que eu aplique\?\nUSER: sim faz$/);
+
 // 3. Continuation detection; the benchmark fixture is present and complete.
 const bench = JSON.parse(readFileSync(path.join(root, "extensions/test/fixtures/maestro-benchmark.json"), "utf8"));
-assert.equal(Object.values(bench.sets).flat().length, 301);
+assert.equal(Object.values(bench.sets).flat().length, 391);
 for (const text of ["continua", "ok pode fazer", "yep go ahead", "tenta de novo ai"]) assert.equal(m.isContinuation(text), true, text);
 for (const text of ["ok, agora faz o mesmo pro endpoint de produtos", "blz agora commita", "tenta de novo mas descobre pq falha"]) {
   assert.equal(m.isContinuation(text), false, text);
@@ -121,7 +135,7 @@ try {
   await commands.maestro.handler("on", ctx);
   await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
   assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "medium"]], "Luna starts at medium");
-  globalThis.fetch = ok("debug");
+  globalThis.fetch = ok("debug_unknown");
   calls.length = 0;
   await handlers.input({ text: "o site caiu", source: "interactive" }, ctx);
   assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "debug -> Opus xhigh");
