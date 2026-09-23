@@ -1,0 +1,1161 @@
+{
+ "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there).",
+ "sets": {
+  "edge100": [
+   [
+    "ok",
+    "keep",
+    "keep"
+   ],
+   [
+    "manda",
+    "keep",
+    "keep"
+   ],
+   [
+    "vai",
+    "keep",
+    "keep"
+   ],
+   [
+    "ok mas antes explica pq o cache de sessão invalida quando o token renova",
+    "opus",
+    "high"
+   ],
+   [
+    "sim, e tb adiciona paginação no endpoint de pedidos",
+    "sol",
+    "medium"
+   ],
+   [
+    "blz agora commita",
+    "luna",
+    "low"
+   ],
+   [
+    "nao, faz diferente: usa uma fila com retry exponencial em vez de chamar o webhook direto",
+    "sol",
+    "high"
+   ],
+   [
+    "go ahead",
+    "keep",
+    "keep"
+   ],
+   [
+    "pode seguir, mas roda os testes antes de abrir o PR",
+    "luna",
+    "low"
+   ],
+   [
+    "yes, but first tell me if that migration can be rolled back safely",
+    "opus",
+    "high"
+   ],
+   [
+    "isso, continua",
+    "keep",
+    "keep"
+   ],
+   [
+    "nao era isso, eu queria o total por mês e não por dia no relatório",
+    "sol",
+    "medium"
+   ],
+   [
+    "desfaz o ultimo commit",
+    "luna",
+    "low"
+   ],
+   [
+    "volta como tava",
+    "luna",
+    "low"
+   ],
+   [
+    "errado, o bug é em outro lugar, o valor já chega zerado no serviço de pagamento",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "no, I meant the staging env, not prod",
+    "keep",
+    "keep"
+   ],
+   [
+    "that's wrong, revert the rename and keep the old function name",
+    "luna",
+    "low"
+   ],
+   [
+    "não, não apaga a coluna, só marca como deprecated no comentário",
+    "luna",
+    "low"
+   ],
+   [
+    "nao nao, o problema nao é o timeout, a conexão cai só quando tem mais de 50 usuários simultaneos, investiga direito",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "wrong approach — don't poll, subscribe to the websocket events and update the store",
+    "sol",
+    "medium"
+   ],
+   [
+    "TypeError: Cannot read properties of undefined (reading 'map') at OrderList (OrderList.tsx:42:18) arruma",
+    "sol",
+    "medium"
+   ],
+   [
+    "pq? ERROR: duplicate key value violates unique constraint \"users_email_key\"",
+    "luna",
+    "low"
+   ],
+   [
+    "{\"status\":\"error\",\"code\":429,\"message\":\"rate limit exceeded\"} o que é isso",
+    "luna",
+    "low"
+   ],
+   [
+    "curl -I https://api.exemplo.com → HTTP/2 301, location: https://www.api.exemplo.com/ — what does this mean?",
+    "luna",
+    "low"
+   ],
+   [
+    "FATAL: remaining connection slots are reserved for non-replication superuser connections — aparece toda sexta à noite e some sozinho",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "java.lang.OutOfMemoryError: GC overhead limit exceeded no worker de export, só em produção. pq?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "does `const sorted = arr.sort()` mutate the original array?",
+    "luna",
+    "low"
+   ],
+   [
+    "Module not found: Can't resolve 'date-fns/locale' — acho que é só instalar o pacote, instala",
+    "luna",
+    "low"
+   ],
+   [
+    "npm ERR! ERESOLVE unable to resolve dependency tree: react@19 vs peer react@\"^18\" from @x/editor. resolve isso",
+    "sol",
+    "medium"
+   ],
+   [
+    "panic: runtime error: invalid memory address or nil pointer dereference [signal SIGSEGV] main.(*Server).handle server.go:88 — config.DB é nil quando falta env, adiciona validação no boot",
+    "sol",
+    "medium"
+   ],
+   [
+    "03:14:07 WARN retrying job id=8812 attempt=5 / 03:14:09 WARN retrying job id=8812 attempt=6 / 03:14:11 WARN retrying job id=8812 attempt=7 ... is this normal?",
+    "opus",
+    "high"
+   ],
+   [
+    "muda a cor do design token primary pra #1E40AF",
+    "luna",
+    "low"
+   ],
+   [
+    "roda o debug build",
+    "luna",
+    "low"
+   ],
+   [
+    "renomeia a pasta architecture pra docs/arch",
+    "luna",
+    "low"
+   ],
+   [
+    "corrige o typo no template de email: 'recieve' → 'receive'",
+    "luna",
+    "low"
+   ],
+   [
+    "run the test suite and tell me how many fail",
+    "luna",
+    "low"
+   ],
+   [
+    "deploy.sh ta sem permissão de execução, da um chmod +x",
+    "luna",
+    "low"
+   ],
+   [
+    "faz o migrate da variavel userId pra accountId só no auth.ts (é só rename)",
+    "luna",
+    "low"
+   ],
+   [
+    "adiciona 'memory leak' na lista de labels do issue template do github",
+    "luna",
+    "low"
+   ],
+   [
+    "what's the review status on PR 482?",
+    "luna",
+    "low"
+   ],
+   [
+    "bump da versão do architecture-lint pra 2.3.1",
+    "luna",
+    "low"
+   ],
+   [
+    "o botão 'Build your plan' tá desalinhado 2px, centraliza",
+    "luna",
+    "low"
+   ],
+   [
+    "só uma perguntinha rápida: por que nosso p99 dobrou depois do upgrade do Postgres?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "quick fix: make the whole app multi-tenant",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "502 de novo",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "ta lento",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "vazando memoria",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "flaky",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "deadlock otra vez",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "desenha o sistema de billing",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "redesenha o onboarding",
+    "opus",
+    "high"
+   ],
+   [
+    "why is prod slower?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "race condition no checkout",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "a gente teve reunião ontem com produto e, depois de muita discussão sobre posicionamento e público, decidiram mudar o nome do app de 'Tarefa' pra 'Tarefas'. troca no package.json",
+    "luna",
+    "low"
+   ],
+   [
+    "We've gone back and forth with the client for three weeks, legal finally signed off and marketing is happy. Can you just update the footer copyright year to 2025?",
+    "luna",
+    "low"
+   ],
+   [
+    "olha, o cliente reclamou, o gerente reclamou, o CTO mandou mensagem às 23h, foi um caos o dia inteiro. no fim era só isso: troca o texto do botão de 'Enviar' pra 'Salvar'",
+    "luna",
+    "low"
+   ],
+   [
+    "contexto: esse repo é o monolito antigo de pagamentos, tem 8 anos, ninguém mexe, a arquitetura é bem confusa e tem integração com três gateways. só preciso saber: qual versão do node tá no .nvmrc?",
+    "luna",
+    "low"
+   ],
+   [
+    "I know it touches the auth service and last quarter's migration, and security reviewed it twice, but I really just need the log level changed from debug to info",
+    "luna",
+    "low"
+   ],
+   [
+    "bom dia! ontem fiquei até tarde tentando entender por que o pipeline tava falhando, descobri que era o runner mesmo, já resolveram. agora é só dar git pull na main e rodar o npm install",
+    "luna",
+    "low"
+   ],
+   [
+    "a história é longa: o fornecedor mudou de CNPJ, o jurídico pediu pra atualizar tudo, o financeiro já atualizou o ERP. aqui no código só tem uma constante SUPPLIER_TAX_ID em config/constants.ts, troca pro novo 12.345.678/0001-90",
+    "luna",
+    "low"
+   ],
+   [
+    "After a long retro we agreed the team was losing time on PR friction, lots of back-and-forth about formatting. Decision: add .prettierrc with singleQuote true and printWidth 100",
+    "luna",
+    "low"
+   ],
+   [
+    "cara, semana puxada, sprint atrasada, dois devs de férias e o PO cobrando demo amanhã. me faz um favor rapidinho: vê se tem algum console.log esquecido no src e remove",
+    "luna",
+    "low"
+   ],
+   [
+    "commita isso e depois investiga por que o login às vezes retorna 401 mesmo com token válido",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "arruma o typo no README, adiciona o campo phone no cadastro com validação e faz push",
+    "sol",
+    "medium"
+   ],
+   [
+    "bump version to 1.4.2, update the changelog, and tag the release",
+    "luna",
+    "low"
+   ],
+   [
+    "roda o lint, corrige o que der e me explica como funciona o fluxo de refresh token do nosso auth de ponta a ponta",
+    "opus",
+    "high"
+   ],
+   [
+    "add a /health endpoint, write tests for it, and then help me decide between Redis and Postgres for the job queue",
+    "opus",
+    "high"
+   ],
+   [
+    "troca o favicon e escreve o email pros clientes avisando da manutenção de sábado",
+    "opus",
+    "medium"
+   ],
+   [
+    "cria o script de backup diário do bucket e agenda no cron, e renomeia a branch pra feat/backup",
+    "sol",
+    "medium"
+   ],
+   [
+    "fix the null check in parseDate (it crashes when input is empty), then review the whole payments PR for subtle concurrency bugs",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "qual modelo vc é?",
+    "luna",
+    "low"
+   ],
+   [
+    "quanto custa em tokens essa conversa até agora?",
+    "luna",
+    "low"
+   ],
+   [
+    "vc consegue rodar o docker aqui?",
+    "luna",
+    "low"
+   ],
+   [
+    "quanto tempo leva pra migrar esse monolito pra microserviços?",
+    "opus",
+    "high"
+   ],
+   [
+    "o que vc acha, vale a pena trocar o Jest pelo Vitest nesse projeto?",
+    "opus",
+    "high"
+   ],
+   [
+    "can you see my screen?",
+    "luna",
+    "low"
+   ],
+   [
+    "why did you pick that approach instead of just adding an index?",
+    "opus",
+    "medium"
+   ],
+   [
+    "vc lembra o que a gente fez ontem no repo?",
+    "luna",
+    "low"
+   ],
+   [
+    "porra quebrou tudo de novo",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "que merda é essa",
+    "opus",
+    "high"
+   ],
+   [
+    "vc é burro? eu falei pra NÃO mexer no schema, reverte isso agora",
+    "luna",
+    "low"
+   ],
+   [
+    "ótimo, parabéns, agora nada compila 👏👏",
+    "sol",
+    "medium"
+   ],
+   [
+    "wow, amazing, you deleted the tests instead of fixing them. brilliant",
+    "sol",
+    "medium"
+   ],
+   [
+    "caralho finalmente funcionou kkkkk valeu",
+    "keep",
+    "keep"
+   ],
+   [
+    "this is the third time the build fails for the same stupid reason, I'm losing my mind",
+    "opus",
+    "high"
+   ],
+   [
+    "puta que pariu, quem colocou o timeout de 1s no gateway? aumenta pra 30s",
+    "luna",
+    "low"
+   ],
+   [
+    "joder, estoy harto de este error de CORS, arréglalo de una vez",
+    "sol",
+    "medium"
+   ],
+   [
+    "URGENTE!!! O SITE CAIU",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "faz o merge da feature branch e da o deploy no staging pls 🙏",
+    "luna",
+    "low"
+   ],
+   [
+    "cnsegue ajsutar o paddng do hedaer pra 16px?",
+    "luna",
+    "low"
+   ],
+   [
+    "adicionaumendpointquelistaosusuariosinativos",
+    "sol",
+    "medium"
+   ],
+   [
+    "¿puedes explicarme cómo funciona el sistema de colas que usamos y por qué a veces se duplican los mensajes?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "Peux-tu écrire un texte d'accueil chaleureux pour la page d'inscription ?",
+    "opus",
+    "medium"
+   ],
+   [
+    "crea un endpoint para exportar los pedidos en CSV",
+    "sol",
+    "medium"
+   ],
+   [
+    "🔥🔥🔥 deploy deu bom?",
+    "luna",
+    "low"
+   ],
+   [
+    "refatora o useCart hook pra usar reducer, tá mt bagunçado 😵‍💫 and add types pls",
+    "sol",
+    "high"
+   ],
+   [
+    "https://github.com/acme/api/issues/1287",
+    "opus",
+    "high"
+   ],
+   [
+    "#482",
+    "opus",
+    "high"
+   ],
+   [
+    "src/services/billing/invoice.ts",
+    "luna",
+    "low"
+   ],
+   [
+    "https://sentry.io/organizations/acme/issues/4411/?project=12",
+    "opus",
+    "xhigh"
+   ]
+  ],
+  "blind2": [
+   [
+    "roda terraform fmt em todos os modulos e commita com msg 'fmt'",
+    "luna",
+    "low"
+   ],
+   [
+    "bump the version in app.json to 2.4.1 and the android versionCode to 42",
+    "luna",
+    "low"
+   ],
+   [
+    "qual o comando do dbt pra rodar so um model e os filhos dele?",
+    "luna",
+    "low"
+   ],
+   [
+    "rename the dag_id from daily_orders_v2 to daily_orders, nothing else",
+    "luna",
+    "low"
+   ],
+   [
+    "entao, ontem na daily o pessoal reclamou que o nome do job no github actions ta confuso, ta 'build-thing' e ninguem sabe o que faz. troca pra 'android-release' por favor, so o nome mesmo",
+    "luna",
+    "low"
+   ],
+   [
+    "tem um typo no help do cli, 'recieve' em vez de 'receive', corrige la",
+    "luna",
+    "low"
+   ],
+   [
+    "what port is the nginx ingress controller exposing in our helm values?",
+    "luna",
+    "low"
+   ],
+   [
+    "da um kubectl get pods no namespace staging e ve se ta tudo Running",
+    "luna",
+    "low"
+   ],
+   [
+    "o design token de espacamento base ta 12, muda pra 16",
+    "luna",
+    "low"
+   ],
+   [
+    "would you mind adding .expo and ios/Pods to the gitignore?",
+    "luna",
+    "low"
+   ],
+   [
+    "roda os testes do pacote do cli e me fala se passou",
+    "luna",
+    "low"
+   ],
+   [
+    "blz, agora commita isso e sobe a branch",
+    "luna",
+    "low"
+   ],
+   [
+    "deu 'command not found: dbt' aqui, qual o comando pra ativar o venv do projeto msm?",
+    "luna",
+    "low"
+   ],
+   [
+    "cria um endpoint no app do shopify que lista pedidos pendentes de fulfillment, paginado de 50 em 50",
+    "sol",
+    "medium"
+   ],
+   [
+    "add a --dry-run flag to the deploy CLI that prints the terraform plan without applying",
+    "sol",
+    "medium"
+   ],
+   [
+    "escreve testes pro hook useCart do app RN, cobrindo adicionar, remover e limpar carrinho",
+    "sol",
+    "medium"
+   ],
+   [
+    "convert src/sync/uploader.js from callbacks to async/await, keep the public API the same",
+    "sol",
+    "high"
+   ],
+   [
+    "create an incremental dbt model fct_payments with unique_key payment_id and merge strategy",
+    "sol",
+    "medium"
+   ],
+   [
+    "o placar ta errado pq a gente soma o score antes de resetar o round. inverte a ordem e poe um teste pra isso",
+    "sol",
+    "medium"
+   ],
+   [
+    "integrate expo-notifications so the app gets a push when the order ships",
+    "sol",
+    "medium"
+   ],
+   [
+    "write a script that lists every k8s secret name per namespace and dumps it to csv",
+    "sol",
+    "medium"
+   ],
+   [
+    "o campo email do cadastro ta aceitando texto sem @, adiciona validacao ali",
+    "sol",
+    "low"
+   ],
+   [
+    "sera que vc consegue criar um sensor no airflow que espera o arquivo cair no s3 antes de disparar o dbt run?",
+    "sol",
+    "medium"
+   ],
+   [
+    "refatora o notebook de treino pra um modulo python com funcoes train e evaluate, sem mudar os resultados",
+    "sol",
+    "high"
+   ],
+   [
+    "show, agora faz a mesma paginacao pro endpoint de produtos tb",
+    "sol",
+    "medium"
+   ],
+   [
+    "TypeError: Cannot read properties of undefined (reading 'price') no carrinho. eh pq o produto pode vir null da api, trata e mostra um placeholder",
+    "sol",
+    "low"
+   ],
+   [
+    "o app expo crasha so no build release do android, em debug roda liso. nao tem stack trace util no logcat. me ajuda?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "why did our dbt run go from 8 min to 45 min since tuesday? nobody touched the models",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "uns pods ficam em CrashLoopBackOff de vez em quando, tipo 1 a cada 20 deploys, as vezes OOMKilled as vezes nao",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "preciso desenhar o backend do multiplayer do jogo, servidor autoritativo, ate 64 players por sala. como vc estruturaria?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "escreve um email pros lojistas avisando que o checkout vai ficar fora sabado de madrugada, tom tranquilo e sem jargao",
+    "opus",
+    "medium"
+   ],
+   [
+    "me explica como o scheduler do airflow decide quando uma task vai pra queued e nao pra scheduled, to boiando",
+    "opus",
+    "high"
+   ],
+   [
+    "should we go with Zustand or Redux Toolkit for the RN app? we have offline sync and around 40 screens",
+    "opus",
+    "high"
+   ],
+   [
+    "can you review the inventory decrement PR for race conditions? something about it smells off",
+    "opus",
+    "high"
+   ],
+   [
+    "reescreve o system prompt do bot de suporte da loja, ele fica prometendo reembolso que a gente nao oferece",
+    "opus",
+    "high"
+   ],
+   [
+    "plan the migration of the orders postgres from EC2 to RDS with minimal downtime, we can't lose writes",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "a tela de onboarding ta muito poluida e a galera abandona no passo 2, redesenha ela pra mim",
+    "opus",
+    "high"
+   ],
+   [
+    "memory leak no worker de export. acha",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "pq o nginx da 502 so as vezes?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "escreve um post pro blog de eng contando como a gente saiu do cron pro airflow, uns 1000 palavras",
+    "opus",
+    "medium"
+   ],
+   [
+    "o modelo da 0.97 de acuracia no notebook mas em prod ta chutando, o que pode estar acontecendo?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "compara terraform workspaces vs pasta separada por ambiente e me recomenda um, temos 3 contas aws",
+    "opus",
+    "high"
+   ],
+   [
+    "getting random 'ETIMEDOUT' on Shopify Admin API calls, only in prod, can't reproduce locally at all",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "ok continue, but first explain why clearing a DAG run reprocesses old dates even with catchup off",
+    "opus",
+    "high"
+   ],
+   [
+    "continua ai",
+    "keep",
+    "keep"
+   ],
+   [
+    "ok pode seguir",
+    "keep",
+    "keep"
+   ],
+   [
+    "go ahead",
+    "keep",
+    "keep"
+   ],
+   [
+    "blz, manda ver",
+    "keep",
+    "keep"
+   ],
+   [
+    "yes, keep going with the rest",
+    "keep",
+    "keep"
+   ],
+   [
+    "isso, segue ai",
+    "keep",
+    "keep"
+   ]
+  ],
+  "blind3": [
+   [
+    "roda o pytest so no modulo de conciliacao e me fala se passou",
+    "luna",
+    "low"
+   ],
+   [
+    "commita isso ai com a msg 'fix: ajusta calculo do iof' e da push na main",
+    "luna",
+    "low"
+   ],
+   [
+    "bump na versao do app pra 3.4.1, no pubspec e no build.gradle",
+    "luna",
+    "low"
+   ],
+   [
+    "what baud rate is the debug uart set to on the stm32 board? just check the config header",
+    "luna",
+    "low"
+   ],
+   [
+    "renomeia calc_dose pra calcular_dose_mg no arquivo todo, tbm nos testes",
+    "luna",
+    "low"
+   ],
+   [
+    "typo in the README, 'recieve' should be 'receive'",
+    "luna",
+    "low"
+   ],
+   [
+    "reverte o ultimo commit pfv, subi coisa errada kkk",
+    "luna",
+    "low"
+   ],
+   [
+    "muda a cor do botao de finalizar compra pra #1E88E5 no tema do woocommerce",
+    "luna",
+    "low"
+   ],
+   [
+    "contexto: to migrando a telemetria das camaras frias, firmware mudou o payload, o time de dados reclamou de coluna nula, amanha tem reuniao sobre isso... mas agora so roda um git status e me diz oq ta modificado",
+    "luna",
+    "low"
+   ],
+   [
+    "no design_tokens.json troca o spacing md de 16 pra 12",
+    "luna",
+    "low"
+   ],
+   [
+    "add 'Reviewed-by: Ana Costa' to the last commit message and amend it",
+    "luna",
+    "low"
+   ],
+   [
+    "no docs/architecture.md troca 'ledger-v1' por 'ledger' em todo lugar",
+    "luna",
+    "low"
+   ],
+   [
+    "coloca o leak_report.csv no .gitignore, nao eh pra subir isso",
+    "luna",
+    "low"
+   ],
+   [
+    "o deploy do staging do app de entregas ja terminou? olha no gh run list",
+    "luna",
+    "low"
+   ],
+   [
+    "qual modelo vc ta usando agora?",
+    "luna",
+    "low"
+   ],
+   [
+    "src/firmware/hal/i2c.c",
+    "luna",
+    "low"
+   ],
+   [
+    "na aba Precos o PROCV da D2 ta puxando a coluna 3, era pra ser 4. arruma e arrasta pra baixo",
+    "luna",
+    "low"
+   ],
+   [
+    "so we spent the whole sprint arguing about the feature store schema, the data team wants wide tables, platform wants narrow, whatever, not your problem. just sort the imports in features.py and run black",
+    "luna",
+    "low"
+   ],
+   [
+    "parabens pra quem deixou console.log(senha) no login do app kkkk tira isso agr",
+    "luna",
+    "low"
+   ],
+   [
+    "cambia el timeout del healthcheck de 5s a 10s en el docker-compose",
+    "luna",
+    "low"
+   ],
+   [
+    "quick q: is GDScript 2.0 the default in godot 4?",
+    "luna",
+    "low"
+   ],
+   [
+    "gera o build do apk release e me passa o caminho do arquivo",
+    "luna",
+    "low"
+   ],
+   [
+    "troca o email de contato no rodape do site wp pra contato@clinicavida.com.br",
+    "luna",
+    "low"
+   ],
+   [
+    "nao, eu queria a branch chamada feat/pix-qrcode e nao feature/pix. renomeia ai",
+    "luna",
+    "low"
+   ],
+   [
+    "desliga o debug no wp-config, WP_DEBUG false e WP_DEBUG_LOG false tbm",
+    "luna",
+    "low"
+   ],
+   [
+    "adiciona campo cpf_responsavel no cadastro de paciente menor de idade, com validacao do digito verificador no back e no front",
+    "sol",
+    "medium"
+   ],
+   [
+    "write unit tests for the haversine distance helper in the route optimizer, include antimeridian and same-point cases",
+    "sol",
+    "medium"
+   ],
+   [
+    "cria endpoint POST /transferencias que valida saldo e retorna 422 com codigo SALDO_INSUFICIENTE",
+    "sol",
+    "medium"
+   ],
+   [
+    "TypeError: Cannot read properties of undefined (reading 'lat') at mapEntregas (rotas.js:42) -- acontece qdo o motorista nao tem rota no dia e o array vem vazio. trata isso",
+    "sol",
+    "medium"
+   ],
+   [
+    "converte o notebook de churn de pandas pra polars, mantendo os msm outputs",
+    "sol",
+    "high"
+   ],
+   [
+    "apps script: funcao que roda todo dia 8h e manda email com as linhas da aba Estoque onde qtd < 10",
+    "sol",
+    "medium"
+   ],
+   [
+    "integrate sentry into the react native app, just crash reporting and release tracking, dsn is in .env",
+    "sol",
+    "medium"
+   ],
+   [
+    "refatora o modulo de cobranca pra tirar aquele switch gigante de tipo de boleto, usa strategy",
+    "sol",
+    "high"
+   ],
+   [
+    "implementa um ring buffer em C pras amostras do ADC, 256 posicoes, sem malloc, um produtor na ISR e um consumidor no main",
+    "sol",
+    "medium"
+   ],
+   [
+    "sensor.h:12: error: 'uint8_t' does not name a type -- missing stdint include I guess, fix it",
+    "sol",
+    "low"
+   ],
+   [
+    "add a /healthz endpoint to the go service that pings postgres and redis and returns 503 if either fails",
+    "sol",
+    "medium"
+   ],
+   [
+    "agrega paginacion por cursor al endpoint de historial de transacciones",
+    "sol",
+    "medium"
+   ],
+   [
+    "escreve um CronJob do k8s que faz pg_dump toda noite as 3h e sobe pro bucket s3 de backups",
+    "sol",
+    "medium"
+   ],
+   [
+    "cria um shortcode [agenda_consultas] que lista os proximos horarios livres do medico puxando da nossa API",
+    "sol",
+    "medium"
+   ],
+   [
+    "add a dash to the unity player controller: 0.2s, 1s cooldown, costs 20 stamina, i-frames during the dash",
+    "sol",
+    "medium"
+   ],
+   [
+    "commita o que ta ai e depois cria teste de integracao pro webhook do stripe simulando payment_intent.succeeded",
+    "sol",
+    "medium"
+   ],
+   [
+    "claro, pra que validar input ne, deixa entrar qualquer lixo. adiciona zod no body de todas as rotas de /pedidos",
+    "sol",
+    "medium"
+   ],
+   [
+    "migrate the dashboard package tests from jest to vitest",
+    "sol",
+    "medium"
+   ],
+   [
+    "script python que le os csv de leitura dos medidores de energia e grava parquet particionado por dia",
+    "sol",
+    "medium"
+   ],
+   [
+    "nao, eu queria backoff exponencial com jitter no reconnect do mqtt, nao esse retry fixo de 2s",
+    "sol",
+    "medium"
+   ],
+   [
+    "implement pull-to-refresh on the orders list screen in flutter, reuse the existing fetchOrders",
+    "sol",
+    "medium"
+   ],
+   [
+    "testes pro parser de NF-e",
+    "sol",
+    "medium"
+   ],
+   [
+    "extrai o calculo de frete do controller pra um service e cobre com teste",
+    "sol",
+    "high"
+   ],
+   [
+    "oye, añade los campos lote y fecha_vencimiento al modelo Medicamento con su migration, porfa",
+    "sol",
+    "medium"
+   ],
+   [
+    "CI quebrou: error TS2345: Argument of type 'string' is not assignable to parameter of type 'Date' em agenda.ts:88. conserta",
+    "sol",
+    "low"
+   ],
+   [
+    "firmware reseta sozinho a cada poucas horas no campo, na bancada nunca. watchdog? brownout? me ajuda a investigar",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "preciso desenhar a ingestao de telemetria pra uns 200k dispositivos via mqtt, com reprocessamento e retencao de 2 anos. por onde comeco?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "redesenha o onboarding do app de telemedicina, 60% abandona na etapa de foto do documento",
+    "opus",
+    "high"
+   ],
+   [
+    "escreve um email pro cliente explicando que o repasse do pix atrasou 2 dias por falha nossa, serio mas sem juridiques",
+    "opus",
+    "high"
+   ],
+   [
+    "revisa o PR de debito na carteira, tenho medo de race condition com dois debitos simultaneos no msm saldo",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "reescreve o system prompt do bot de triagem, ele ta dando diagnostico qdo devia so classificar urgencia e encaminhar",
+    "opus",
+    "high"
+   ],
+   [
+    "preciso migrar o id da tabela de transacoes (2 bi de linhas) de int pra bigint sem downtime. monta o plano",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "memory leak no servidor do jogo. heap so cresce.",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "so em prod: ECONNRESET em ~2% das chamadas pro gateway do banco. local e staging nunca. ja aumentei timeout, nada",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "HardFault de novo, PC = 0x08004A3C que cai dentro do memcpy. LR nao ajuda. quem ta corrompendo isso??",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "bump o node pra 22, roda os testes e depois me explica pq o job de fechamento de caixa as vezes duplica lancamento",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "sinceramente, gitflow com 4 ambientes pra um time de 3 pessoas faz sentido ou to me sabotando?",
+    "opus",
+    "high"
+   ],
+   [
+    "nao, nao quero que vc aumente o timeout, quero entender pq a fila do rabbit acumula so de madrugada",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "me explica como o bootloader escolhe qual particao OTA bootar e oq rola se a atualizacao cair no meio",
+    "opus",
+    "high"
+   ],
+   [
+    "p99 on the ledger service tripled since tuesday and nothing obvious got deployed. help me find out why",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "how does settlement reconciliation actually work end to end here? I'm new and the code is a maze",
+    "opus",
+    "high"
+   ],
+   [
+    "rtos task deadlocks only when wifi reconnects. why",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "wtf, grafana is all green and half our users can't log in. figure out what the hell is going on",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "write the README for our open-source BLE provisioning lib, audience is firmware devs who've never touched it",
+    "opus",
+    "high"
+   ],
+   [
+    "react native or flutter for a new logistics app that needs bluetooth thermal printers and offline-first?",
+    "opus",
+    "high"
+   ],
+   [
+    "need a save system that survives game updates, current saves are raw binary dumps of structs. how should I design this?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "review this ISR and the shared flag in the main loop, something smells off but all tests pass",
+    "opus",
+    "high"
+   ],
+   [
+    "the inventory screen on the warehouse scanner app is unusable with gloves on, redesign the layout",
+    "opus",
+    "high"
+   ],
+   [
+    "quick question: why does k8s OOMKill my pod when the limit is 2Gi and the app only uses ~800MB?",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "¿por qué el modelo de fraude da 0.95 de AUC en validación y en producción no detecta casi nada? no cambiamos features",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "mira, el endpoint de conciliacion funciona pero tarda 40s con clientes grandes y no sé dónde. ayudame a encontrar el cuello de botella",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "escribe el aviso para los hospitales sobre la ventana de mantenimiento del sistema de historias clinicas, claro y sin tecnicismos",
+    "opus",
+    "high"
+   ],
+   [
+    "¿kafka o rabbitmq para los eventos de rastreo de camiones? unos 5k eventos/s y el equipo es chico",
+    "opus",
+    "high"
+   ],
+   [
+    "https://sentry.io/organizations/fintrack/issues/4471902/",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "https://github.com/medtrack/firmware/pull/231",
+    "opus",
+    "high"
+   ]
+  ]
+ }
+}
