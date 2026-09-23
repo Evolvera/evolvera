@@ -199,6 +199,9 @@ if ($piCmd) {
     Info "pi-goal..."
     & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
 
+    Info "rpiv-todo..."
+    & pi install npm:@juicesharp/rpiv-todo@2.11.0 2>$null
+
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
 
