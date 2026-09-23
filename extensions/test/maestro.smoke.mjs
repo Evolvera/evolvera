@@ -33,6 +33,21 @@ assert.ok(requests.every((r) => r.auth === "Bearer k"));
 assert.deepEqual(await m.decide("oi", "k", async () => reply(200, { answers: { q: { choice: "gpt-9" } } })), { model: undefined, effort: undefined });
 assert.deepEqual(await m.decide("oi", "k", async () => { throw new Error("net"); }), { model: undefined, effort: undefined });
 
+
+// Adaptive effort: errors/repeats raise, 3 clean steps lower, floor = base-1, final answer inert.
+const s = m.newAdaptState("medium");
+const call = (n, a = {}) => ({ type: "toolCall", name: n, arguments: a });
+const step = (calls, err = false) => m.stepSignal({ message: { content: calls }, toolResults: calls.map(() => ({ isError: err })) });
+assert.equal(m.adaptEffort(s, step([call("bash", { c: "test" })], true)), "high", "tool error raises");
+assert.equal(m.adaptEffort(s, step([call("bash", { c: "test" })])), "xhigh", "identical repeated call raises");
+assert.equal(m.adaptEffort(s, step([call("read", { p: "a" })])), "xhigh");
+assert.equal(m.adaptEffort(s, step([call("read", { p: "b" })])), "xhigh");
+assert.equal(m.adaptEffort(s, step([call("read", { p: "c" })])), "high", "three clean steps lower one level");
+for (const p of ["d", "e", "f", "g", "h", "i", "j", "k", "l"]) m.adaptEffort(s, step([call("read", { p })]));
+assert.equal(s.current, "low", "floor is one level below base");
+assert.equal(m.adaptEffort(s, step([])), "low", "final answer step changes nothing");
+assert.equal(m.adaptEffort(m.newAdaptState("xhigh"), step([call("x")], true)), "xhigh", "capped at xhigh");
+
 // Extension wiring: routes an interactive prompt, skips streaming/commands.
 process.env.TYPEDEC_API_KEY = "k";
 const handlers = {}; const commands = {}; const calls = [];
@@ -65,6 +80,13 @@ try {
   await handlers.input({ text: "mais", source: "interactive", streamingBehavior: "steer" }, ctx);
   await handlers.input({ text: "/reload", source: "interactive" }, ctx);
   assert.deepEqual(calls, [], "no routing mid-run or for commands");
+  // In-run: error step raises effort via setThinkingLevel; agent_end restores the prompt base.
+  await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
+  calls.length = 0;
+  await handlers.turn_end({ message: { content: [{ type: "toolCall", name: "bash", arguments: {} }] }, toolResults: [{ isError: true }] }, ctx);
+  assert.deepEqual(calls, [["thinking", "medium"]]);
+  await handlers.agent_end({}, ctx);
+  assert.deepEqual(calls, [["thinking", "medium"], ["thinking", "low"]], "base restored at agent_end");
 } finally {
   globalThis.fetch = realFetch;
 }

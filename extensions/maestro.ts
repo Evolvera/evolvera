@@ -12,6 +12,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
  * - Failure never blocks the prompt: the current model/effort stay unchanged.
  * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
  *   precedence over caller parameters), so only the main session is routed.
+ * - Within a run, effort adapts per step without extra TypeDec calls: tool
+ *   errors or a repeated identical tool call raise it one level; three clean
+ *   steps in a row lower it one level, never below one level under the
+ *   prompt's base. The model never changes mid-run. PI re-reads the thinking
+ *   level before each step (prepareNextTurn), so a change applies to the next
+ *   step. At agent_end the base is restored, because setThinkingLevel also
+ *   persists defaultThinkingLevel and in-run swings must not leak there.
  * - The API key comes only from TYPEDEC_API_KEY and is never logged.
  */
 
@@ -39,16 +46,58 @@ const MODEL_QUESTION = {
     opus: "Complexa: debug difícil, arquitetura, entender sistema",
   },
 };
+// Effort buys a longer chain of dependent inferences made without feedback;
+// it does not replace missing information (tools) or mechanical work.
 const EFFORT_QUESTION = {
   type: "choice",
-  instructions: "Quanto raciocínio exige?",
+  instructions: "Quantos passos de raciocínio encadeados, sem poder testar?",
   criteria: {
-    low: "Quase nenhum",
-    medium: "Moderado",
-    high: "Alto",
-    xhigh: "Máximo, problema difícil",
+    low: "Nenhum: executar, commitar, responder direto",
+    medium: "Poucos: mudança delimitada seguindo padrão",
+    high: "Vários: bug, estado, lógica entre partes",
+    xhigh: "Muitos: causa desconhecida, arquitetura, erro caro",
   },
 };
+
+export type AdaptState = { base: EffortChoice; current: EffortChoice; okStreak: number; seen: Set<string> };
+export type StepSignal = { toolCalls: string[]; errored: boolean };
+const CLEAN_STEPS_TO_LOWER = 3;
+
+export function newAdaptState(base: EffortChoice): AdaptState {
+  return { base, current: base, okStreak: 0, seen: new Set() };
+}
+
+/** Pure per-step rule. Steps with no tool call (final answer) change nothing. */
+export function adaptEffort(state: AdaptState, step: StepSignal): EffortChoice {
+  if (step.toolCalls.length === 0) return state.current;
+  const repeated = step.toolCalls.some((sig) => state.seen.has(sig));
+  for (const sig of step.toolCalls) state.seen.add(sig);
+  const index = EFFORTS.indexOf(state.current);
+  if (step.errored || repeated) {
+    state.okStreak = 0;
+    state.current = EFFORTS[Math.min(index + 1, EFFORTS.length - 1)];
+    return state.current;
+  }
+  state.okStreak += 1;
+  const floor = Math.max(EFFORTS.indexOf(state.base) - 1, 0);
+  if (state.okStreak >= CLEAN_STEPS_TO_LOWER && index > floor) {
+    state.okStreak = 0;
+    state.current = EFFORTS[index - 1];
+  }
+  return state.current;
+}
+
+type TurnEndLike = {
+  message?: { content?: Array<{ type?: string; name?: string; arguments?: unknown }> };
+  toolResults?: Array<{ isError?: boolean }>;
+};
+export function stepSignal(event: TurnEndLike): StepSignal {
+  const content = Array.isArray(event.message?.content) ? event.message!.content! : [];
+  const toolCalls = content
+    .filter((part) => part?.type === "toolCall")
+    .map((part) => `${part.name}:${JSON.stringify(part.arguments ?? {})}`);
+  return { toolCalls, errored: (event.toolResults ?? []).some((result) => result?.isError === true) };
+}
 
 /** Collapse whitespace and keep the head of the prompt within the char budget. */
 export function promptExcerpt(text: string, maxChars = STATE_MAX_CHARS): string {
@@ -110,6 +159,7 @@ function restoreEnabled(ctx: ExtensionContext): boolean {
 
 export default function maestro(pi: ExtensionAPI): void {
   let enabled = false;
+  let adapt: AdaptState | undefined;
   const setStatus = (ctx: ExtensionContext, text: string | undefined) => ctx.ui.setStatus("maestro", text);
 
   pi.on("session_start", async (_event, ctx) => {
@@ -155,11 +205,30 @@ export default function maestro(pi: ExtensionAPI): void {
       label = target.label;
     }
     if (effort) pi.setThinkingLevel(effort);
+    const base = pi.getThinkingLevel();
+    adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
     if (!modelChoice && !effort) {
       ctx.ui.notify("Maestro: TypeDec indisponível; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
     setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}`);
     return { action: "continue" };
+  });
+
+  pi.on("turn_end", async (event, ctx) => {
+    if (!enabled || !adapt) return;
+    const before = adapt.current;
+    const next = adaptEffort(adapt, stepSignal(event as TurnEndLike));
+    if (next !== before) {
+      pi.setThinkingLevel(next);
+      setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${next} (${EFFORTS.indexOf(next) > EFFORTS.indexOf(before) ? "↑" : "↓"})`);
+    }
+  });
+
+  pi.on("agent_end", async (_event, ctx) => {
+    if (!adapt) return;
+    if (adapt.current !== adapt.base) pi.setThinkingLevel(adapt.base);
+    if (enabled) setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${adapt.base}`);
+    adapt = undefined;
   });
 }
