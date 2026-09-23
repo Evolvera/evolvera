@@ -17,7 +17,8 @@ import { join } from "node:path";
  * - A frustrated/cursing user (same request, noul >= 0.9) gets Astra 6 high.
  * - Only the first 480 chars of the message are sent (<= ~128 state tokens).
  * - Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
- *   within 6 s; after that, or on any other failure, model/effort stay as they are.
+ *   within 6 s; if Jev still fails (or has no key), gpt-6-luna makes the same
+ *   decision; if that fails too, model/effort stay as they are.
  * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
  *   precedence over caller parameters), so only the main session is routed.
  * - Within a run, effort adapts per step without API calls: tool errors or a
@@ -208,6 +209,52 @@ export function stepSignal(event: TurnEndLike): StepSignal {
   return { toolCalls, errored: (event.toolResults ?? []).some((result) => result?.isError === true) };
 }
 
+// ---------------------------------------------------------------------------
+// Luna fallback: same decision by gpt-6-luna when Jev is unavailable
+// ---------------------------------------------------------------------------
+// Measured on the same benchmark (reasoning minimal, one call): edge100 94%,
+// blind2 100%, blind3 99%; frustration 9/9 hostile, 0 false positives. It is
+// ~2 s p50 versus ~0.35 s for Jev, so it runs only when Jev fails.
+
+export const LUNA_ROUTER_SYSTEM = `You route a developer's chat message to a coding assistant tier. Pick the tier for the hardest task the message actually asks for; ignore tone, context and words used in another sense.
+luna: mechanical or quick: run/commit/revert/rename/bump, small config, text or style edit, a quick factual question, a status check.
+sol: normal implementation with a known approach: add a feature, field, validation or endpoint, write tests, refactor, fix an error whose cause is visible in the message.
+opus: needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts.
+frustrated: true if the user is angry or fed up: any cursing or profanity (porra, merda, caralho, wtf, fuck, "what the hell", joder), insulting the assistant, exasperation ("I'm losing my mind", "estoy harto"), or hostile sarcasm about what the assistant just did. false for plain corrections ("that's wrong, revert"), urgency or ALL CAPS alerts, stressful context, a problem that happened again stated without anger, and jokes or sarcasm about teammates or old code.
+Reply with JSON only: {"tier":"luna|sol|opus","frustrated":true|false}`;
+
+/** Parses the fallback reply; frustration wins, as in the Jev path. */
+export function parseLunaRoute(text: string): ModelChoice | undefined {
+  try {
+    const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { tier?: unknown; frustrated?: unknown };
+    if (json.frustrated === true) return "astra";
+    return typeof json.tier === "string" && (TIERS as readonly string[]).includes(json.tier) ? (json.tier as ModelChoice) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type Completer = (model: unknown, context: unknown, options: Record<string, unknown>) => Promise<{ content?: Array<{ type?: string; text?: string }> }>;
+
+export async function classifyWithLuna(prompt: string, ctx: Pick<ExtensionContext, "modelRegistry">, complete?: Completer): Promise<ModelChoice | undefined> {
+  try {
+    const model = ctx.modelRegistry.find("openai-codex", "gpt-6-luna");
+    if (!model) return undefined;
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+    if (!auth.ok) return undefined;
+    // Loaded lazily: PI aliases this specifier for extensions; tests inject `complete`.
+    const run = complete ?? ((await import("@earendil-works/pi-ai")) as unknown as { completeSimple: Completer }).completeSimple;
+    const reply = await run(
+      model,
+      { systemPrompt: LUNA_ROUTER_SYSTEM, messages: [{ role: "user", content: [{ type: "text", text: cutState(prompt) }], timestamp: Date.now() }] },
+      { apiKey: auth.apiKey, headers: auth.headers, reasoning: "minimal", maxTokens: 400, signal: AbortSignal.timeout(10_000) },
+    );
+    return parseLunaRoute((reply.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join(""));
+  } catch {
+    return undefined;
+  }
+}
+
 function restoreEnabled(ctx: ExtensionContext): boolean {
   let enabled = false;
   try {
@@ -236,8 +283,7 @@ export default function maestro(pi: ExtensionAPI): void {
       const arg = args.trim().toLowerCase();
       if (arg === "on" || arg === "off") {
         if (arg === "on" && !readApiKey()) {
-          ctx.ui.notify("Maestro: defina JEV_API_KEY ou ~/.config/jev/api_key antes de ativar.", "error");
-          return;
+          ctx.ui.notify("Maestro: sem chave do Jev; usando só o Luna (mais lento).", "warning");
         }
         enabled = arg === "on";
         pi.appendEntry(MAESTRO_ENTRY_TYPE, { enabled });
@@ -262,8 +308,12 @@ export default function maestro(pi: ExtensionAPI): void {
       return { action: "continue" };
     }
     const apiKey = readApiKey();
-    if (!apiKey) return { action: "continue" };
-    const modelChoice = await classify(event.text, apiKey);
+    let modelChoice = apiKey ? await classify(event.text, apiKey) : undefined;
+    let via = "jev";
+    if (!modelChoice) {
+      modelChoice = await classifyWithLuna(event.text, ctx);
+      via = "luna";
+    }
     const effort = modelChoice ? EFFORT_FOR[modelChoice] : undefined;
     let label = "";
     if (modelChoice) {
@@ -280,10 +330,10 @@ export default function maestro(pi: ExtensionAPI): void {
     const base = pi.getThinkingLevel();
     adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
     if (!modelChoice && !effort) {
-      ctx.ui.notify("Maestro: Jev indisponível; modelo e esforço mantidos.", "warning");
+      ctx.ui.notify("Maestro: Jev e Luna indisponíveis; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
-    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}`);
+    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}${via === "luna" ? " (luna)" : ""}`);
     return { action: "continue" };
   });
 
