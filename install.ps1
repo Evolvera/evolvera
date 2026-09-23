@@ -208,6 +208,19 @@ if ($piCmd) {
 
     Info "rpiv-todo..."
     & pi install npm:@juicesharp/rpiv-todo@2.11.0 2>$null
+    # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
+    $todoRoot = if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME ".config" }
+    $todoCfg = Join-Path (Join-Path $todoRoot "rpiv-todo") "config.json"
+    $todoSrc = Join-Path $SCRIPT_DIR "config\rpiv-todo\config.json"
+    if (-not (Test-Path $todoCfg)) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $todoCfg) | Out-Null
+        Copy-Item $todoSrc $todoCfg
+        Info "rpiv-todo guidance instalada"
+    } elseif ((Get-FileHash $todoSrc).Hash -eq (Get-FileHash $todoCfg).Hash) {
+        Info "rpiv-todo guidance atual"
+    } else {
+        Write-Host "[!] rpiv-todo: $todoCfg existente preservado; compare com config\rpiv-todo\config.json" -ForegroundColor Yellow
+    }
 
     Info "pi-provider-kimi-code..."
     & pi install npm:pi-provider-kimi-code 2>$null
