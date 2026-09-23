@@ -118,6 +118,25 @@ try {
     ["openai-codex", "gpt-6-luna"],
   ]);
 
+  // Cross-tokenizer guard: right after Anthropic -> OpenAI, threshold compaction waits until 450k.
+  const msg = (provider, totalTokens, extra = {}) => ({ type: "message", message: { role: "assistant", provider, usage: { totalTokens }, ...extra } });
+  const opusBranch = [msg("openai-codex", 200_000), msg("anthropic", 350_000), msg("anthropic", 0, { stopReason: "error" })];
+  const guardEvent = (reason, tokensBefore, branchEntries = opusBranch) => ({
+    type: "session_before_compact", preparation: { ...preparation(), tokensBefore }, branchEntries, reason, willRetry: false, signal: new AbortController().signal,
+  });
+  const callsBefore = mockSdk.state.calls.length;
+  let guardCtx = makeContext(state, conversationModel);
+  assert.deepEqual(await handler(guardEvent("threshold", 350_000), guardCtx), { cancel: true }, "350k Opus tokens must not compact on GPT");
+  assert.equal(guardCtx.notices.length, 0, "the skip is silent, not a failure");
+  assert.equal(mockSdk.state.calls.length, callsBefore, "no summarization call");
+  assert.deepEqual(await handler(guardEvent("threshold", 450_000), makeContext(state, conversationModel)), { cancel: true }, "450k is still within the bound");
+  assert.deepEqual(await handler(guardEvent("threshold", 450_001), makeContext(state, conversationModel)), { compaction: result }, "above 450k compacts");
+  assert.deepEqual(await handler(guardEvent("overflow", 350_000), makeContext(state, conversationModel)), { compaction: result }, "real overflow still recovers");
+  assert.deepEqual(await handler(guardEvent("manual", 350_000), makeContext(state, conversationModel)), { compaction: result }, "manual /compact unaffected");
+  assert.deepEqual(await handler(guardEvent("threshold", 290_000, [...opusBranch, msg("openai-codex", 290_000)]), makeContext(state, conversationModel)), { compaction: result }, "once GPT counted, normal rule");
+  assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, { provider: "anthropic", id: "claude-opus-5-5" })), { compaction: result }, "only when the current model is OpenAI");
+  assert.equal(mod.lastUsageProvider(opusBranch), "anthropic", "error/zero-usage messages are skipped like PI does");
+
   state.findResult = undefined;
   let context = makeContext(state, conversationModel);
   assertSafeCancel(await handler({ preparation: preparation(), signal: new AbortController().signal }, context), context);
