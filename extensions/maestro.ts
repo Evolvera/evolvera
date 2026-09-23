@@ -4,30 +4,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Maestro: before each user prompt, picks the main session's model tier and
- * reasoning effort for that whole turn.
- *
- * - A pure continuation ("continua", "ok pode fazer") keeps the current pair.
- * - Otherwise one Jev (TypeSafe AI) `choice` call classifies the task type
- *   (see CATEGORIES, with a `duvida` option); the type sets model and effort. Effort follows the tier: Luna and Sol
- *   start at medium, Opus at high. Measured on 217 labeled prompts (80 of them
- *   unseen when the question was written): 99% model accuracy on the unseen
- *   set, 1 under-powered pick, 0 over-powered. Per-class biases and a doubt
- *   threshold were tried and generalized worse, so plain argmax is used.
- * - A frustrated/cursing user (same request, noul >= 0.9) gets Astra 6 high.
- * - Only the first 480 chars of the message are sent (<= ~128 state tokens).
- * - Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
- *   within 6 s; if Jev still fails (or has no key), gpt-6-luna makes the same
- *   decision; if that fails too, model/effort stay as they are.
- * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
- *   precedence over caller parameters), so only the main session is routed.
- * - Within a run, effort adapts per step without API calls: tool errors or a
- *   repeated identical tool call raise it one level; three clean steps lower
- *   it one level, never below one level under the prompt's base. The model
- *   never changes mid-run. At agent_end the base is restored, because
- *   setThinkingLevel also persists defaultThinkingLevel.
- * - Key: JEV_API_KEY / TYPESAFE_API_KEY, else ~/.config/jev/api_key (installed
- *   by install.sh / install.ps1, mode 600). Never logged.
+ * Maestro chooses the main session's model before each fresh user prompt.
+ * Jev classifies the task; the Luna fallback handles Jev failures. Pure
+ * continuations and in-flight turns keep the model. The extension never sets
+ * reasoning effort: PI preserves or clamps it when switching models.
  */
 
 export const MAESTRO_ENTRY_TYPE = "maestro";
@@ -96,6 +76,7 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer, including simple questions about the assistant itself." },
   small_edit: { model: "luna", effort: "medium", criterion: "One small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
   multi_small: { model: "luna", effort: "medium", criterion: "Several independent small mechanical edits, each trivial on its own." },
+  install_simple: { model: "luna", effort: "medium", criterion: "Download, install and run a named tool or release using its documented installer or release instructions, without custom integration, debugging or deployment." },
   doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template." },
   spreadsheet: { model: "sol", effort: "medium", criterion: "Create or edit a spreadsheet (xlsx, csv, Google Sheets): formulas, tables, pivots, data cleanup, without charts." },
   chart: { model: "opus", effort: "high", criterion: "Create or change a chart, graph, dashboard visualization or data visualization, including charts inside a spreadsheet." },
@@ -105,7 +86,7 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   fix_known: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is known: stated by the user, visible in the message, or already found by the assistant." },
   apply_plan: { model: "sol", effort: "high", criterion: "Carry out a plan, fix or option the assistant already proposed and the user approved." },
   multi_moderate: { model: "sol", effort: "high", criterion: "Several moderate changes across files or documents with clear instructions." },
-  setup: { model: "sol", effort: "medium", criterion: "Install, configure or wire up tools, dependencies, CI, environment or credentials." },
+  setup: { model: "sol", effort: "medium", criterion: "Configure or wire up tools, dependencies, CI, environment or credentials, or install with custom integration or debugging beyond documented installation." },
   refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code without changing behavior." },
   tests: { model: "sol", effort: "medium", criterion: "Write, extend or fix automated tests, fixtures, mocks or seed data." },
   ci_fix: { model: "sol", effort: "medium", criterion: "Make failing lint, type-check, build or CI pass when the error output is visible." },
@@ -297,46 +278,6 @@ export function isContinuation(text: string): boolean {
   return words.length > 0 && words.length <= 6 && words.every((word) => CONTINUATION_WORDS.has(word));
 }
 
-export type AdaptState = { base: EffortChoice; current: EffortChoice; okStreak: number; seen: Set<string> };
-export type StepSignal = { toolCalls: string[]; errored: boolean };
-const CLEAN_STEPS_TO_LOWER = 3;
-
-export function newAdaptState(base: EffortChoice): AdaptState {
-  return { base, current: base, okStreak: 0, seen: new Set() };
-}
-
-/** Pure per-step rule. Steps with no tool call (final answer) change nothing. */
-export function adaptEffort(state: AdaptState, step: StepSignal): EffortChoice {
-  if (step.toolCalls.length === 0) return state.current;
-  const repeated = step.toolCalls.some((sig) => state.seen.has(sig));
-  for (const sig of step.toolCalls) state.seen.add(sig);
-  const index = EFFORTS.indexOf(state.current);
-  if (step.errored || repeated) {
-    state.okStreak = 0;
-    state.current = EFFORTS[Math.min(index + 1, EFFORTS.length - 1)];
-    return state.current;
-  }
-  state.okStreak += 1;
-  const floor = Math.max(EFFORTS.indexOf(state.base) - 1, 0);
-  if (state.okStreak >= CLEAN_STEPS_TO_LOWER && index > floor) {
-    state.okStreak = 0;
-    state.current = EFFORTS[index - 1];
-  }
-  return state.current;
-}
-
-type TurnEndLike = {
-  message?: { content?: Array<{ type?: string; name?: string; arguments?: unknown }> };
-  toolResults?: Array<{ isError?: boolean }>;
-};
-export function stepSignal(event: TurnEndLike): StepSignal {
-  const content = Array.isArray(event.message?.content) ? event.message!.content! : [];
-  const toolCalls = content
-    .filter((part) => part?.type === "toolCall")
-    .map((part) => `${part.name}:${JSON.stringify(part.arguments ?? {})}`);
-  return { toolCalls, errored: (event.toolResults ?? []).some((result) => result?.isError === true) };
-}
-
 // ---------------------------------------------------------------------------
 // Luna fallback: same decision by gpt-6-luna when Jev is unavailable
 // ---------------------------------------------------------------------------
@@ -398,7 +339,6 @@ function restoreEnabled(ctx: ExtensionContext): boolean {
 
 export default function maestro(pi: ExtensionAPI): void {
   let enabled = false;
-  let adapt: AdaptState | undefined;
   const setStatus = (ctx: ExtensionContext, text: string | undefined) => ctx.ui.setStatus("maestro", text);
 
   pi.on("session_start", async (_event, ctx) => {
@@ -407,7 +347,7 @@ export default function maestro(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("maestro", {
-    description: "Auto-escolhe modelo (Luna 6 / Sol 6 / Opus 5.5) e esforço por prompt via Jev: /maestro on|off|status",
+    description: "Auto-escolhe modelo (Luna 6 / Sol 6 / Opus 5.5) por prompt via Jev, sem alterar esforço: /maestro on|off|status",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "on" || arg === "off") {
@@ -429,20 +369,16 @@ export default function maestro(pi: ExtensionAPI): void {
     }
     if (!event.text.trim()) return { action: "continue" };
 
-    // Pure continuation keeps the current model/effort; anything else is classified by Jev.
+    // A pure continuation keeps the current model and the user's effort setting.
     if (isContinuation(event.text)) {
-      const base = pi.getThinkingLevel();
-      adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
-      setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${base} (continua)`);
+      setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${pi.getThinkingLevel()} (continua)`);
       return { action: "continue" };
     }
     if (containsSecret(event.text)) {
       const target = MODEL_TARGETS.opus;
       const model = ctx.modelRegistry.find(target.provider, target.id);
       if (model && (ctx.model?.provider !== model.provider || ctx.model?.id !== model.id)) await pi.setModel(model);
-      pi.setThinkingLevel("high");
-      adapt = newAdaptState("high");
-      setStatus(ctx, `🎼 ${target.label} · high · secret`);
+      setStatus(ctx, `🎼 ${target.label} · ${pi.getThinkingLevel()} · secret`);
       return { action: "continue" };
     }
     const apiKey = readApiKey();
@@ -455,7 +391,6 @@ export default function maestro(pi: ExtensionAPI): void {
       via = "luna";
     }
     const modelChoice = route?.model;
-    const effort = route?.effort;
     let label = "";
     if (modelChoice) {
       const target = MODEL_TARGETS[modelChoice];
@@ -467,31 +402,11 @@ export default function maestro(pi: ExtensionAPI): void {
       }
       label = target.label;
     }
-    if (effort) pi.setThinkingLevel(effort);
-    const base = pi.getThinkingLevel();
-    adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
-    if (!modelChoice && !effort) {
+    if (!modelChoice) {
       ctx.ui.notify("Maestro: Jev e Luna indisponíveis; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
     setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()} · ${route?.category}${via === "luna" ? " (luna)" : ""}`);
     return { action: "continue" };
-  });
-
-  pi.on("turn_end", async (event, ctx) => {
-    if (!enabled || !adapt) return;
-    const before = adapt.current;
-    const next = adaptEffort(adapt, stepSignal(event as TurnEndLike));
-    if (next !== before) {
-      pi.setThinkingLevel(next);
-      setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${next} (${EFFORTS.indexOf(next) > EFFORTS.indexOf(before) ? "↑" : "↓"})`);
-    }
-  });
-
-  pi.on("agent_end", async (_event, ctx) => {
-    if (!adapt) return;
-    if (adapt.current !== adapt.base) pi.setThinkingLevel(adapt.base);
-    if (enabled) setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${adapt.base}`);
-    adapt = undefined;
   });
 }
