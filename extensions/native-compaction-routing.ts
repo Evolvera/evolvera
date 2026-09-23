@@ -10,6 +10,42 @@ export const NATIVE_COMPACTION_PROVIDER = "openai-codex";
 export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
 export const NATIVE_COMPACTION_THINKING_LEVEL = "xhigh" as const;
 
+/**
+ * Cross-tokenizer guard. PI's threshold check compares the last assistant
+ * usage against the CURRENT model's window, even when that usage was counted
+ * by another provider (its overflow check already skips other models). Right
+ * after switching from Anthropic (Opus 450k window) to an OpenAI model (300k),
+ * the Anthropic count is ~1.5x the OpenAI count for the same context, so a
+ * 350k Opus context falsely crosses the GPT threshold (300k - reserve). Until
+ * the new model produces its own usage, threshold compaction runs only above
+ * this Anthropic-token bound. Manual and overflow compaction are unaffected,
+ * so a real overflow on the new model still recovers normally.
+ */
+export const ANTHROPIC_TO_OPENAI_THRESHOLD = 450_000;
+
+type BranchEntry = { type?: string; message?: { role?: string; provider?: string; stopReason?: string; usage?: Record<string, number> } };
+
+/** Provider of the last assistant message with usable usage (same rule PI uses for its estimate). */
+export function lastUsageProvider(entries: unknown[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const message = (entries[i] as BranchEntry)?.message;
+    if ((entries[i] as BranchEntry)?.type !== "message" || message?.role !== "assistant") continue;
+    if (message.stopReason === "aborted" || message.stopReason === "error") continue;
+    const u = message.usage;
+    const total = u ? (u.totalTokens || (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0)) : 0;
+    if (total > 0) return message.provider;
+  }
+  return undefined;
+}
+
+export function isStaleCrossProviderThreshold(event: SessionBeforeCompactEvent, ctx: ExtensionContext): boolean {
+  return event.reason === "threshold"
+    && typeof ctx.model?.provider === "string"
+    && ctx.model.provider.startsWith("openai")
+    && lastUsageProvider(event.branchEntries ?? []) === "anthropic"
+    && (event.preparation?.tokensBefore ?? 0) <= ANTHROPIC_TO_OPENAI_THRESHOLD;
+}
+
 function notifyFailure(ctx: ExtensionContext): void {
   try {
     ctx.ui.notify("Native compaction was not completed; conversation history was preserved.", "warning");
@@ -32,6 +68,8 @@ function isValidCompactionResult(value: unknown): value is CompactionResult {
 
 async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext) {
   try {
+    if (isStaleCrossProviderThreshold(event, ctx)) return { cancel: true };
+
     if (event.signal.aborted) {
       notifyFailure(ctx);
       return { cancel: true };
