@@ -91,7 +91,7 @@ assert.match(seen.at(-1).body.state, /^PREVIOUS: Quer que eu aplique\?\nUSER: si
 
 // 3. Continuation detection; the benchmark fixture is present and complete.
 const bench = JSON.parse(readFileSync(path.join(root, "extensions/test/fixtures/maestro-benchmark.json"), "utf8"));
-assert.equal(Object.values(bench.sets).flat().length, 391);
+assert.equal(Object.values(bench.sets).flat().length, 531);
 for (const text of ["continua", "ok pode fazer", "yep go ahead", "tenta de novo ai"]) assert.equal(m.isContinuation(text), true, text);
 for (const text of ["ok, agora faz o mesmo pro endpoint de produtos", "blz agora commita", "tenta de novo mas descobre pq falha"]) {
   assert.equal(m.isContinuation(text), false, text);

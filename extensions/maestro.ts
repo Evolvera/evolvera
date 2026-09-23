@@ -85,8 +85,10 @@ export const FRUSTRATION_THRESHOLD = 0.94;
  * Jev picks only the category; this table decides model and effort. The
  * state carries the tail of the previous assistant reply (PREVIOUS) so short
  * answers like "sim faz" or "a opção 2" are classified by what they approve.
- * Measured: unseen context set 93% (2 under), biz 91%, blind3 95% (0 under),
- * blind2 100%, edge100 86%. Laya with the same question: 37-57%.
+ * Measured: unseen context set 92%, biz 91%, blind3 93%, edge100 82%; the 12
+ * extra Sol kinds (tests .. automation) were written before two unseen
+ * Sol-heavy sets and took them from 76/80 to 80/80 Sol with 0 under-powered
+ * picks. Run-to-run noise is about ±2 items per set. Laya: 37-57%.
  * `duvida` lets Jev say it cannot tell instead of forcing a type; it maps to Opus/high.
  */
 export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoice; criterion: string }> = {
@@ -102,6 +104,18 @@ export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoi
   multi_moderate: { model: "sol", effort: "high", criterion: "Several moderate changes across files or documents with clear instructions." },
   setup: { model: "sol", effort: "medium", criterion: "Install, configure or wire up tools, dependencies, CI, environment or credentials." },
   refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code without changing behavior." },
+  tests: { model: "sol", effort: "medium", criterion: "Write, extend or fix automated tests, fixtures, mocks or seed data." },
+  ci_fix: { model: "sol", effort: "medium", criterion: "Make failing lint, type-check, build or CI pass when the error output is visible." },
+  data_script: { model: "sol", effort: "medium", criterion: "Write a query, report, data conversion, import/export or one-off script with a clear expected result." },
+  upgrade: { model: "sol", effort: "medium", criterion: "Upgrade a dependency, framework or runtime version and adapt the code to its changes." },
+  integrate_api: { model: "sol", effort: "medium", criterion: "Integrate a third-party API, SDK or webhook by following its documentation." },
+  review_feedback: { model: "sol", effort: "medium", criterion: "Apply code review comments, resolve merge conflicts or rebase a branch." },
+  observability: { model: "sol", effort: "medium", criterion: "Add or adjust logging, metrics, alerts, tracing or feature flags." },
+  port_translate: { model: "sol", effort: "medium", criterion: "Port code to another language or framework, or translate/localize UI strings." },
+  dev_docs: { model: "sol", effort: "medium", criterion: "Update developer documentation, README, comments, changelog or API docs to match the code." },
+  perf_known: { model: "sol", effort: "high", criterion: "Speed up code or queries when the bottleneck is already identified." },
+  migration_file: { model: "sol", effort: "medium", criterion: "Write a database migration or schema change to a given spec, without running it in production." },
+  automation: { model: "sol", effort: "medium", criterion: "Set up a cron job, scheduled task, CI workflow step or automation script." },
   debug_unknown: { model: "opus", effort: "xhigh", criterion: "Find an unknown cause: outage, slowness, intermittent, production-only or unexplained failure." },
   multi_complex: { model: "opus", effort: "xhigh", criterion: "Many interdependent complex changes or requirements in one request, where getting one wrong breaks others." },
   plan: { model: "opus", effort: "high", criterion: "Plan a multi-step change: break down work, sequence it, decide scope before implementing." },

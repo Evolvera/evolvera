@@ -1,5 +1,5 @@
 {
- "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there). biz = software+business set used to choose the category question (91%). context = [assistant_prev, user, model, effort], unseen when categories/context were written (Jev 93%).",
+ "about": "[message, expected model, expected effort]; keep = pure continuation. blind3 was unseen when ROUTE_QUESTION was written (99% there). biz = software+business set used to choose the category question (91%). context = [assistant_prev, user, model, effort], unseen when categories/context were written (Jev 93%). sol_a/sol_b = Sol-heavy unseen harness sets [prev, user, model, effort].",
  "sets": {
   "edge100": [
    [
@@ -2054,6 +2054,850 @@
    [
     "Deixei a tela de configurações funcionando, mas ficou uma lista longa de 30 toggles.",
     "melhora a UX disso, ninguém vai achar nada",
+    "opus",
+    "high"
+   ]
+  ],
+  "sol_a": [
+   [
+    "Pronto, adicionei o endpoint GET /invoices/:id com validacao do tenant. Rodei os testes existentes e passaram.",
+    "agora escreve os testes de integracao pra esse endpoint, cobrindo 404 e tenant errado",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "write a SQL query that returns monthly revenue per customer for the last 12 months, tables are orders and customers",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "write a python script that converts the exported csv in data/leads.csv to the json format our importer expects (see importer/schema.ts)",
+    "sol",
+    "medium"
+   ],
+   [
+    "Atualizei o package.json. O build quebrou em 3 lugares por causa da mudanca de API do zod v4 (errorMap virou error).",
+    "arruma esses 3 lugares ai",
+    "sol",
+    "medium"
+   ],
+   [
+    "O rebase parou com conflito em src/billing/service.ts e src/billing/types.ts. Os dois lados mexeram no calculo de impostos.",
+    "resolve os conflitos mantendo as duas mudancas",
+    "sol",
+    "medium"
+   ],
+   [
+    "Busquei o PR #412: 6 comentarios abertos do revisor, todos pequenos (nomes, um early return, um teste faltando).",
+    "aplica os comentarios do review",
+    "sol",
+    "medium"
+   ],
+   [
+    "CI falhou no job typecheck: src/api/users.ts(45,12): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'. Mais 4 erros parecidos no mesmo arquivo.",
+    "corrige isso",
+    "sol",
+    "low"
+   ],
+   [
+    "O worker de webhooks ja esta processando a fila normalmente de novo.",
+    "add structured logging and a latency histogram to the webhook worker, use the logger and prometheus client we already have",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "traduz as strings da tela de checkout pra espanhol, os arquivos de i18n ficam em locales/",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "port the slugify function from utils/slug.py to typescript, same behavior, with tests",
+    "sol",
+    "medium"
+   ],
+   [
+    "Os modulos orders e payments seguem o mesmo layout: controller, service, dto/ e module.",
+    "cria o boilerplate de um novo modulo 'notifications' igual os outros",
+    "sol",
+    "medium"
+   ],
+   [
+    "Aqui esta o schema aprovado: tabela subscriptions (id uuid, customer_id fk, plan text, status enum, renews_at timestamptz).",
+    "escreve a migration pra isso seguindo o padrao do repo, nao roda",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "integra com a api de frete da Melhor Envio pra calcular cotacao no carrinho, a doc ta em docs/melhorenvio.md",
+    "sol",
+    "high"
+   ],
+   [
+    "Banco local zerado e migrations aplicadas.",
+    "gera seed com uns 50 produtos e 10 clientes ficticios pro ambiente local",
+    "sol",
+    "low"
+   ],
+   [
+    "Rodei o axe no formulario de cadastro: 7 violacoes (labels ausentes, contraste do botao, aria-describedby nos erros).",
+    "corrige essas violacoes",
+    "sol",
+    "medium"
+   ],
+   [
+    "Mergeei a troca do auth de sessions pra JWT.",
+    "atualiza o README e o docs/auth.md pra refletir isso",
+    "sol",
+    "low"
+   ],
+   [
+    "O profiling mostrou que 80% do tempo do /reports/sales ta num N+1 no loop de itens (uma query por pedido).",
+    "fix the n+1 then",
+    "sol",
+    "medium"
+   ],
+   [
+    "A nova busca esta pronta na branch feature/search-v2.",
+    "coloca ela atras de feature flag usando o unleash, default off",
+    "sol",
+    "medium"
+   ],
+   [
+    "Os arquivos temporarios do bucket uploads-tmp estao acumulando, tem uns 40GB la.",
+    "faz um script cron que roda 3h e apaga os temporarios com mais de 7 dias. so gera o script e o crontab, eu subo",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "add a healthcheck and multi-stage build to the api Dockerfile, image is huge right now",
+    "sol",
+    "medium"
+   ],
+   [
+    "Carreguei data/q2.xlsx: 3 abas, 12k linhas de vendas com regiao, valor e data.",
+    "calcula ticket medio por regiao e faz um grafico simples",
+    "sol",
+    "medium"
+   ],
+   [
+    "Achei a causa: o parser de data ignora timezone quando a string vem sem offset.",
+    "escreve um teste que reproduz isso antes de corrigir",
+    "sol",
+    "low"
+   ],
+   [
+    "Os tokens de cor e espacamento do design system ja estao em styles/tokens.css.",
+    "implementa o novo card de pedido conforme o figma exportado em design/order-card.png",
+    "sol",
+    "medium"
+   ],
+   [
+    "Plano aprovado salvo em plans/export-csv.md, 4 tarefas.",
+    "pode executar o plano",
+    "sol",
+    "high"
+   ],
+   [
+    "",
+    "the /users list endpoint needs pagination (cursor based, like /orders already does)",
+    "sol",
+    "medium"
+   ],
+   [
+    "Hoje o repo nao tem nenhum workflow em .github/workflows.",
+    "configura o github actions pra rodar lint e testes em PR e cachear o node_modules",
+    "sol",
+    "medium"
+   ],
+   [
+    "O handler do webhook do Stripe hoje faz cast direto do body pra any.",
+    "create a zod schema for the checkout.session.completed payload and use it in the handler",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "escreve um script bash que faz backup do postgres local com pg_dump e compacta com data no nome",
+    "sol",
+    "low"
+   ],
+   [
+    "Os testes E2E do login estao flaky por causa de timeout fixo de 2s antes do click.",
+    "troca esses waits fixos por espera pelo elemento, sao uns 8 specs",
+    "sol",
+    "medium"
+   ],
+   [
+    "O OrderService tem 600 linhas e o calculo de desconto esta misturado com acesso ao banco.",
+    "refatora pra extrair o calculo de desconto numa funcao pura e cobre com testes, sem mudar comportamento",
+    "sol",
+    "medium"
+   ],
+   [
+    "Upload pro S3 falhou 2x ontem com 503 e o usuario perdeu o arquivo.",
+    "add retry with exponential backoff to the S3 upload helper, max 3 attempts, only on 5xx and network errors",
+    "sol",
+    "medium"
+   ],
+   [
+    "O backend atualizou o openapi.yaml com os campos novos de pedido.",
+    "gera os tipos typescript a partir dele e troca os tipos manuais do client por eles",
+    "sol",
+    "medium"
+   ],
+   [
+    "A listagem de pedidos ja aceita filtros por status, periodo e cliente.",
+    "add an export endpoint that returns the filtered orders as csv, reuse the listing filter",
+    "sol",
+    "medium"
+   ],
+   [
+    "Upgrade do next 14 pro 15 feito; o build reclama que params agora e Promise em 5 pages.",
+    "ajusta essas pages",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "write a regex-based parser for these nginx access logs and output top 20 endpoints by p95 latency",
+    "sol",
+    "medium"
+   ],
+   [
+    "O tema do painel admin ja define --bg, --fg e --accent como css vars.",
+    "adiciona dark mode no painel admin usando essas vars",
+    "sol",
+    "medium"
+   ],
+   [
+    "Publiquei a 0.4.0 do pacote sdk/ internamente.",
+    "escreve docstrings e um exemplo de uso pra cada funcao publica do sdk",
+    "sol",
+    "low"
+   ],
+   [
+    "O Redis ja esta configurado em lib/redis.ts e usado pro cache de sessao.",
+    "add per-ip rate limiting to the login endpoint, 5 attempts per minute, using that redis",
+    "sol",
+    "medium"
+   ],
+   [
+    "Migrei o formulario de perfil pro react-hook-form.",
+    "faz o mesmo com os formularios de endereco e pagamento",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "convert our jest config and tests to vitest, it's about 30 test files, mostly straightforward",
+    "sol",
+    "high"
+   ],
+   [
+    "Terminei, 3 arquivos alterados.",
+    "commita e da push",
+    "luna",
+    "low"
+   ],
+   [
+    "Achei a variavel no auth.ts, ela aparece 4 vezes na funcao login.",
+    "renomeia usr pra user",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "qual a versao do node que ta no .nvmrc?",
+    "luna",
+    "low"
+   ],
+   [
+    "Os testes passaram, 142 ok.",
+    "run lint too",
+    "luna",
+    "low"
+   ],
+   [
+    "A tela de perfil tem um botao unico no rodape do formulario.",
+    "troca o texto do botao de 'Enviar' pra 'Salvar'",
+    "luna",
+    "low"
+   ],
+   [
+    "Changelog atualizado com as entradas da semana.",
+    "bump the version to 2.3.1 in package.json and the changelog header",
+    "luna",
+    "low"
+   ],
+   [
+    "Encontrei timeout: 5000 em 4 arquivos de client http.",
+    "muda pra 10000 nos 4",
+    "luna",
+    "low"
+   ],
+   [
+    "PR #88 aberto.",
+    "ta passando o ci?",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "what does the --frozen-lockfile flag do in pnpm?",
+    "luna",
+    "low"
+   ],
+   [
+    "Criei o .env.local com as variaveis de exemplo.",
+    "adiciona ele no gitignore",
+    "luna",
+    "low"
+   ],
+   [
+    "Deixei um console.log de debug no handler de pagamento.",
+    "tira esse log",
+    "luna",
+    "low"
+   ],
+   [
+    "Achei 'recieve' escrito errado em 3 comentarios e 1 nome de variavel em src/.",
+    "fix the typo everywhere in src",
+    "luna",
+    "low"
+   ],
+   [
+    "Adicionei o servico do redis no docker-compose.yml.",
+    "sobe o compose local",
+    "luna",
+    "low"
+   ],
+   [
+    "Branch feature/cupom criada a partir da main.",
+    "faz checkout de volta pra main e puxa as atualizacoes",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "quantos endpoints tem no arquivo routes/api.ts?",
+    "luna",
+    "low"
+   ],
+   [
+    "Suporte abriu mais 2 tickets hoje sobre o checkout.",
+    "checkout keeps failing for some customers sometimes and there's nothing in the logs, no idea why",
+    "opus",
+    "high"
+   ],
+   [
+    "Migration de subscriptions escrita e testada no banco local, arquivo em db/migrations.",
+    "roda ela em producao agora",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "escreve o texto da landing page do novo plano pro, precisa converter",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "should we split the billing module into its own service or keep it in the monolith? we're 6 devs",
+    "opus",
+    "high"
+   ],
+   [
+    "Implementei o card de pedido conforme entendi.",
+    "ficou tudo errado, nao era nada disso, refaz",
+    "opus",
+    "high"
+   ],
+   [
+    "Abri o PR #120: troca de refresh token rotativo e invalidacao de sessao no logout.",
+    "revisa esse PR com olhar de seguranca",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "quanto devo cobrar no plano enterprise? hoje o pro e 99/mes e temos clientes pedindo SSO",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "me explica direito pq o react re-renderiza tudo quando mudo esse context, nao to entendendo o modelo",
+    "opus",
+    "medium"
+   ],
+   [
+    "Funil do onboarding exportado: 62% abandonam no passo 2 (dados da empresa).",
+    "redesenha essa tela, ta confusa",
+    "opus",
+    "high"
+   ],
+   [
+    "Os testes passam local mas falham no CI de forma intermitente, sem padrao claro.",
+    "figure out what's going on",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "plan the migration from our REST api to graphql across web and mobile clients",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "",
+    "prisma ou drizzle pra esse projeto novo? me recomenda um",
+    "opus",
+    "medium"
+   ],
+   [
+    "Metricas do pod worker-2: memoria sobe linear de 300MB ate 2GB e ele toma OOMKill.",
+    "isso acontece depois de umas 6h, nenhum erro obvio, investiga",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "",
+    "escreve os termos de uso e a politica de reembolso do app",
+    "opus",
+    "high"
+   ],
+   [
+    "Deploy da v2.4 feito em staging, smoke ok.",
+    "faz rollback da producao pra v2.3, clientes reclamando de cobranca duplicada",
+    "opus",
+    "high"
+   ]
+  ],
+  "sol_b": [
+   [
+    "",
+    "cria um endpoint GET /agendamentos/:id no controller de agendamentos da clinica, seguindo o mesmo padrao do /pacientes/:id, com 404 se nao achar",
+    "sol",
+    "medium"
+   ],
+   [
+    "Pronto, o serviço `calcularFrete` agora aceita CEP com ou sem hífen e retorna o valor em centavos.",
+    "beleza, escreve os testes unitarios pra ele cobrindo cep invalido, cep sem hifen e frete gratis acima de 200 reais",
+    "sol",
+    "medium"
+   ],
+   [
+    "Feito. O relatório de pedidos pendentes já está salvo em reports/pendentes.sql.",
+    "preciso de uma query sql que me de o faturamento por mes dos ultimos 12 meses, separado por loja, tabela orders com created_at, store_id e total_cents",
+    "sol",
+    "medium"
+   ],
+   [
+    "Rodei `npm run lint` e apareceram 23 erros, a maioria `no-unused-vars` e `react-hooks/exhaustive-deps` em src/screens.",
+    "corrige esses erros ai sem mudar comportamento",
+    "sol",
+    "medium"
+   ],
+   [
+    "The service now starts cleanly with `uvicorn app.main:app`. Let me know if you want containerization next.",
+    "write a Dockerfile for our FastAPI service, python 3.12, uvicorn, multi-stage so the image stays small. requirements.txt is at the root",
+    "sol",
+    "medium"
+   ],
+   [
+    "O repositório ainda não tem nenhum workflow em .github/workflows.",
+    "cria um github actions que roda lint e teste em todo PR pra main, projeto é node 20 com pnpm",
+    "sol",
+    "medium"
+   ],
+   [
+    "Schema do Prisma lido: `Cliente` tem nome, email, cpf e endereco.",
+    "adiciona uma coluna `telefone_whatsapp` opcional na tabela de clientes, gera a migration no padrao do prisma e atualiza o schema",
+    "sol",
+    "low"
+   ],
+   [
+    "Achei a função `validarDocumento` em src/utils/validators.ts, hoje ela só checa se tem 11 dígitos.",
+    "faz ela validar cpf direito com digito verificador, e cnpj tambem se tiver 14 digitos",
+    "sol",
+    "medium"
+   ],
+   [
+    "Criei a pasta data/raw e movi o export pra lá.",
+    "tenho um csv de 40 mil linhas exportado do erp com separador ponto e virgula e valores tipo 1.234,56. escreve um script python que limpa isso e salva em parquet",
+    "sol",
+    "medium"
+   ],
+   [
+    "Encontrei 14 usos de `getUserData` espalhados em src/ e mais 3 nos testes.",
+    "renomeia pra fetchUserProfile em todo lugar, inclusive nos testes",
+    "sol",
+    "low"
+   ],
+   [
+    "`/orders` uses `?cursor=<id>&limit=` and returns `nextCursor` in the body.",
+    "the /products endpoint returns everything at once and it's getting slow. add cursor pagination with limit default 20 max 100, same style as /orders",
+    "sol",
+    "medium"
+   ],
+   [
+    "O app já está configurado com i18next e os textos em pt-BR ficam em locales/pt.json.",
+    "traduz as chaves novas do checkout pro ingles e espanhol, cria os arquivos en.json e es.json com as mesmas chaves",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "atualiza o README com a secao de setup local: clonar, copiar .env.example, subir docker compose, rodar migrations e seed. ta tudo no makefile ja",
+    "sol",
+    "low"
+   ],
+   [
+    "O script /opt/scripts/backup_pg.sh roda ok manualmente e gera /backups/db_YYYYMMDD.sql.gz.",
+    "configura um cron no servidor que roda o script de backup do postgres todo dia 3h da manha e apaga dump com mais de 7 dias da pasta /backups",
+    "sol",
+    "medium"
+   ],
+   [
+    "Nginx está servindo o front em / e a API em /api via proxy_pass pra porta 3000.",
+    "adiciona gzip, cache de 30 dias pros assets estaticos e redireciona http pra https",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "add a STRIPE_WEBHOOK_SECRET env var to the config module with validation via zod, and wire it into the webhook handler instead of the hardcoded string",
+    "sol",
+    "low"
+   ],
+   [
+    "O formulário de cadastro usa react-hook-form mas não tem validação nenhuma ainda.",
+    "coloca validacao com zod: email valido, senha minimo 8 com numero, telefone brasileiro, e mostra erro embaixo de cada campo",
+    "sol",
+    "medium"
+   ],
+   [
+    "A navegação já tem a rota `OrderDetails` registrada, mas aponta pra um componente vazio.",
+    "cria a tela de detalhes do pedido no app react native, mostra itens, status, endereco e um botao de rastrear. usa os componentes que ja existem em src/components",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "tenho um dataframe de vendas com datas em string tipo 03/02/2024 e uns valores nulos em quantidade. converte as datas, preenche nulo com zero e agrupa por semana",
+    "sol",
+    "low"
+   ],
+   [
+    "Métrica de retenção D30 já está no Metabase, mas só por coorte mensal.",
+    "faz a query de retencao d7 e d30 por coorte semanal, mesma logica da mensal",
+    "sol",
+    "medium"
+   ],
+   [
+    "Rota POST /webhooks/mercadopago criada, por enquanto só loga o body e responde 200.",
+    "implementa o handler do webhook do mercado pago pra atualizar o status do pedido quando o pagamento for aprovado, valida a assinatura conforme a doc deles",
+    "sol",
+    "high"
+   ],
+   [
+    "Dependabot abriu PR subindo axios de 1.6.2 pra 1.7.4.",
+    "atualiza isso e roda os testes pra ver se quebrou algo",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "gera os tipos typescript a partir desse json de resposta da api de nota fiscal que colei no arquivo samples/nfe.json",
+    "sol",
+    "low"
+   ],
+   [
+    "Em infra/modules existe `s3_bucket` com variáveis name, versioning e tags.",
+    "escreve um terraform pra criar um bucket s3 privado pra uploads de exames, com versionamento e lifecycle movendo pra glacier depois de 90 dias. segue o modulo que ja tem em infra/modules",
+    "sol",
+    "medium"
+   ],
+   [
+    "O deployment `api` no cluster não tem requests/limits definidos e o HPA não funciona sem isso.",
+    "coloca requests e limits razoaveis e configura o hpa de 2 a 6 replicas por cpu 70%",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "o log ta cheio de 'ECONNRESET' vindo do worker de email desde ontem, filtra os logs das ultimas 24h e me diz quantas ocorrencias por hora e quais jobs",
+    "sol",
+    "medium"
+   ],
+   [
+    "A query de listagem de consultas por médico está fazendo seq scan em `appointments` (1.2M linhas).",
+    "cria o indice certo pra doctor_id + scheduled_at e manda a migration",
+    "sol",
+    "low"
+   ],
+   [
+    "O openapi.yaml hoje só cobre /products e /orders.",
+    "documenta os endpoints de /auth e /users no openapi.yaml, request e response com exemplo. o codigo ta em src/routes",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "cria o template de email transacional de confirmacao de agendamento em mjml, com nome do paciente, data, hora, endereco da clinica e botao de cancelar",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "in the stock sheet I need a formula that flags products where current stock is below the average weekly sales of the last 4 weeks times 2. columns are in the tab Vendas",
+    "sol",
+    "low"
+   ],
+   [
+    "O módulo legado `pagamentos.js` usa callbacks aninhados em quase todas as funções.",
+    "converte pra async/await mantendo as mesmas assinaturas exportadas",
+    "sol",
+    "medium"
+   ],
+   [
+    "Rodei a suíte: 1 falha em tests/cart.test.ts.",
+    "o teste `should apply coupon` ta falhando com 'expected 90 received 90.00000001', arruma",
+    "sol",
+    "low"
+   ],
+   [
+    "",
+    "implement a presigned URL endpoint so the mobile app can upload profile photos directly to S3, 5 min expiry, only jpeg/png, max 5MB",
+    "sol",
+    "medium"
+   ],
+   [
+    "O endpoint /catalogo leva em média 800ms e os dados mudam só uma vez por dia.",
+    "bota cache no redis com ttl de 1h e invalida quando o admin salvar produto",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "as datas das consultas tao aparecendo 3h adiantadas no app, o backend salva em utc. ajusta a formatacao no front pra America/Sao_Paulo",
+    "sol",
+    "low"
+   ],
+   [
+    "Pronto, o pedido agora guarda `store_snapshot` com CNPJ e endereço da loja no momento da compra.",
+    "gera o pdf do recibo do pedido com logo, itens, total e dados da loja, usando a lib que ja ta no projeto (pdfkit)",
+    "sol",
+    "medium"
+   ],
+   [
+    "Migrations applied locally; the database is empty.",
+    "write a seed script that creates 50 fake patients, 10 doctors and 200 appointments spread over the next 30 days for local dev",
+    "sol",
+    "low"
+   ],
+   [
+    "Seguem as notas da reunião de planejamento que você colou, com 9 pontos discutidos.",
+    "transforma isso em issues no formato do nosso template, com titulo, contexto e criterio de aceite",
+    "sol",
+    "medium"
+   ],
+   [
+    "A DAG `shopify_customers` está em dags/shopify_customers.py e usa a connection `shopify_api`.",
+    "cria uma DAG no airflow que puxa os pedidos da api da shopify todo dia 6h e carrega na tabela raw.shopify_orders no bigquery, igual a dag de clientes",
+    "sol",
+    "medium"
+   ],
+   [
+    "",
+    "adiciona aria-label e role nos botoes de icone da navbar e do carrinho, o lighthouse ta reclamando de acessibilidade",
+    "sol",
+    "low"
+   ],
+   [
+    "Pronto, commit criado: `feat: adiciona filtro por status`.",
+    "manda o push",
+    "luna",
+    "low"
+   ],
+   [
+    "Subi o docker compose, os três serviços iniciaram sem erro.",
+    "qual o comando pra ver os containers rodando no docker",
+    "luna",
+    "low"
+   ],
+   [
+    "Ajustei o texto do botão para \"Finalizar compra\".",
+    "valeu",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "renomeia o arquivo utils/helper.ts pra utils/formatters.ts",
+    "luna",
+    "low"
+   ],
+   [
+    "Os testes passaram: 142 passed, 0 failed.",
+    "ok roda o build tambem",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "whats the default port for postgres",
+    "luna",
+    "low"
+   ],
+   [
+    "Tema aplicado. A cor primária é usada em botões, links e no header.",
+    "muda a cor primaria no tailwind.config de #2563eb pra #16a34a",
+    "luna",
+    "low"
+   ],
+   [
+    "Criei a branch `feat/cupom-desconto` a partir da main.",
+    "abre o arquivo package.json e me fala a versao do next",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "formata esse json pra mim: {\"id\":1,\"nome\":\"Ana\",\"ativo\":true}",
+    "luna",
+    "low"
+   ],
+   [
+    "O PR #87 foi aberto com a descrição do changelog.",
+    "coloca o label bug nele",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "corrige o typo 'Agendamendo' pra 'Agendamento' no header",
+    "luna",
+    "low"
+   ],
+   [
+    "Instalei `date-fns` como dependência.",
+    "instala o dayjs tambem como dev dependency, nao, esquece, remove o dayjs, so date-fns mesmo",
+    "luna",
+    "low"
+   ],
+   [
+    "",
+    "convert 1714500000 unix timestamp to date",
+    "luna",
+    "low"
+   ],
+   [
+    "Atualizei o .env.example com as novas variáveis.",
+    "blz, faz o commit disso",
+    "luna",
+    "low"
+   ],
+   [
+    "Criei o hook `useDebounce` em src/hooks.",
+    "lista os arquivos da pasta src/hooks",
+    "luna",
+    "low"
+   ],
+   [
+    "Os logs do último deploy não mostram erros no build nem no startup.",
+    "o checkout ta caindo de vez em quando com timeout mas so em producao, nao consigo reproduzir local, sem padrao claro de horario. me ajuda a descobrir o que ta acontecendo",
+    "opus",
+    "high"
+   ],
+   [
+    "Implementei o cache no redis do /catalogo com TTL de 1h.",
+    "na verdade ta errado, os precos promocionais nao atualizam e cliente ta vendo preco velho. refaz isso pensando direito na invalidacao",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "a gente vai lancar multi-clinica, hoje tudo assume uma clinica so. como eu devo modelar isso no banco e na api sem quebrar os clientes atuais?",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "should we move from our single Postgres to a read replica or just add caching? traffic doubled this quarter, reports are slow, team is 3 devs",
+    "opus",
+    "high"
+   ],
+   [
+    "O endpoint de exportação de prontuários retorna o PDF a partir do `patientId` passado na URL.",
+    "revisa esse endpoint do ponto de vista de seguranca e lgpd, quero ter certeza que um medico nao consegue ver paciente de outro",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "escreve um email pro cliente explicando que o app ficou fora 4 horas ontem, sem parecer desculpa esfarrapada, e oferecendo um mes de credito. ele ta bem irritado",
+    "opus",
+    "medium"
+   ],
+   [
+    "A coluna `price` em `orders` é `double precision` e aparece em 6 queries do relatório financeiro.",
+    "preciso rodar uma migration que muda o tipo da coluna price de float pra numeric na tabela de pedidos em producao, 8 milhoes de linhas, sem derrubar o site. como faz",
+    "opus",
+    "high"
+   ],
+   [
+    "Aqui está o diff do PR #112 que refatora o fluxo de autenticação com refresh token.",
+    "faz um review serio disso, e o tipo de coisa que se passar bug a gente so descobre quando alguem for deslogado ou pior",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "planeja a migracao do app de expo managed pra bare workflow, a gente precisa de um sdk nativo de pagamento e tem release na app store daqui 3 semanas",
+    "opus",
+    "high"
+   ],
+   [
+    "Hoje o checkout usa o formulário transparente do gateway e não armazenamos nada do cartão.",
+    "o cliente quer que a gente guarde o cartao do usuario pra compra com um clique. vale a pena fazer isso nos mesmos ou usar tokenizacao do gateway? quero uma recomendacao",
+    "opus",
+    "medium"
+   ],
+   [
+    "Os números do dashboard de vendas de março divergem 7% do relatório do financeiro.",
+    "descobre de onde vem essa diferenca, ja olhei timezone e cancelamentos e nao eh isso",
+    "opus",
+    "high"
+   ],
+   [
+    "",
+    "write the pitch section of our proposal to a hospital chain explaining why our scheduling system reduces no-shows. needs to convince a non-technical board",
+    "opus",
+    "medium"
+   ],
+   [
+    "",
+    "a gente recebeu uma notificacao da anpd sobre um pedido de titular de dados. o que a gente precisa fazer e em que prazo, e como responder",
+    "opus",
+    "high"
+   ],
+   [
+    "Mapeei 11 serviços que chamam direto a tabela `inventory`.",
+    "quero separar o estoque num servico proprio com eventos. desenha a arquitetura e a ordem de migracao sem parar as vendas",
+    "opus",
+    "xhigh"
+   ],
+   [
+    "O painel hoje tem só um booleano `is_admin` na tabela users.",
+    "desenha o esquema de permissoes do painel interno: admin, gerente de loja, atendente, financeiro. tem casos chatos tipo gerente de duas lojas e atendente temporario",
     "opus",
     "high"
    ]
