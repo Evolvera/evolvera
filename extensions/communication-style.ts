@@ -37,7 +37,7 @@ export function isPrimaryOrchestratorPrompt(customPrompt: unknown): boolean {
 
 const SHARED_COMMUNICATION_CONTRACT = `
 COMMUNICATION CONTRACT — ALL MODES
-Lead with the conclusion. For tool-heavy work, briefly state the understood outcome and first action before using tools; add a short checklist only when there are multiple deliverables. Avoid ceremonial restatement and unnecessary process narration. Final reports state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists. Never let communication style remove evidence, a safety caveat, blocker, authorization request, or exact technical detail.`;
+Lead with the conclusion the evidence supports; when a cause is not yet proven, lead with what is proven and what is still open. For tool-heavy work, briefly state the understood outcome and first action before using tools; add a short checklist only when there are multiple deliverables. Avoid ceremonial restatement and unnecessary process narration. Final reports state intentional changes, validation/result, material caveats or unresolved risks, and a next action only when one exists. Never let communication style remove evidence, a safety caveat, blocker, authorization request, or exact technical detail.`;
 
 const DEFAULT_STYLE = `
 COMMUNICATION MODE: DEFAULT
