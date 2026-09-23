@@ -1,4 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Maestro: before each user prompt, asks TypeDec two independent `choice`
@@ -6,9 +9,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
  * the answer for that whole turn, including its tool/agent loop.
  *
  * Invariants:
- * - Every request carries exactly one question in `short` mode, so it runs
- *   on the ANE and stays within its 96-token budget. The prompt excerpt is
- *   truncated to fit; on 413 we retry once with half the excerpt.
+ * - Every request carries exactly one question in `short` mode (ANE), whose
+ *   hard limit is 96 tokens = question prefix + state + 1 separator, counted
+ *   by the engine with the Laya tokenizer. Before sending, the prompt is cut
+ *   locally to the exact remaining budget using the same tokenizer.json
+ *   (@huggingface/tokenizers, vendored) after whitespace normalization, which
+ *   matched laya_coreml exactly on 1,895 samples. If the tokenizer is not
+ *   available, a proven upper bound (UTF-8 bytes + 1) is used instead, so a
+ *   413 is not expected either way; one is still retried once at half budget.
  * - Failure never blocks the prompt: the current model/effort stay unchanged.
  * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
  *   precedence over caller parameters), so only the main session is routed.
@@ -25,8 +33,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 export const MAESTRO_ENTRY_TYPE = "maestro";
 const ENDPOINT = process.env.TYPEDEC_URL ?? "https://typedec.evolvera.com.br/v1/systemone";
 const TIMEOUT_MS = 2_500;
-/** ~3 chars/token for PT/EN text leaves room for instructions + criteria within 96 tokens. */
-export const STATE_MAX_CHARS = 150;
+export const ANE_MAX_TOKENS = 96;
 
 export const MODEL_TARGETS = {
   luna: { provider: "openai-codex", id: "gpt-6-luna", label: "Luna 6" },
@@ -50,14 +57,118 @@ const MODEL_QUESTION = {
 // it does not replace missing information (tools) or mechanical work.
 const EFFORT_QUESTION = {
   type: "choice",
-  instructions: "Quantos passos de raciocínio encadeados, sem poder testar?",
+  instructions: "Passos de raciocínio encadeados sem testar?",
   criteria: {
-    low: "Nenhum: executar, commitar, responder direto",
-    medium: "Poucos: mudança delimitada seguindo padrão",
-    high: "Vários: bug, estado, lógica entre partes",
-    xhigh: "Muitos: causa desconhecida, arquitetura, erro caro",
+    low: "Nenhum: executar, commitar",
+    medium: "Poucos: mudança delimitada",
+    high: "Vários: bug, estado, lógica",
+    xhigh: "Muitos: causa desconhecida, arquitetura",
   },
 };
+
+/**
+ * Fixed engine cost per question (prefix + separator), measured with the
+ * engine's own laya_coreml TokenCounter. Editing a question's text changes
+ * these; the smoke test re-measures them whenever the engine venv exists.
+ */
+export const QUESTIONS = {
+  model: { question: MODEL_QUESTION, fixedTokens: 50 },
+  effort: { question: EFFORT_QUESTION, fixedTokens: 60 },
+} as const;
+
+// ---------------------------------------------------------------------------
+// Exact token budgeting
+// ---------------------------------------------------------------------------
+
+export type TokenCounter = (text: string) => number;
+
+/** Same normalization the engine applies to <mask>, plus whitespace collapse (keeps JS == Python counts). */
+export function normalizeState(text: string): string {
+  return text.replaceAll("<mask>", " ").replace(/\s+/g, " ").trim();
+}
+
+/** Upper bound for this byte-fallback BPE: every char is at most its UTF-8 bytes, plus the prepended ▁. */
+export const boundCounter: TokenCounter = (text) => Buffer.byteLength(text, "utf8") + 1;
+
+/** Longest head of the normalized prompt whose exact count fits the budget; never returns an over-budget string. */
+export function fitState(text: string, budget: number, count: TokenCounter): string {
+  const flat = normalizeState(text);
+  if (budget <= 0) return "";
+  if (count(flat) <= budget) return flat;
+  const words = flat.split(" ");
+  let lo = 0;
+  let hi = words.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (count(words.slice(0, mid).join(" ")) <= budget) lo = mid;
+    else hi = mid - 1;
+  }
+  let head = words.slice(0, lo).join(" ");
+  if (lo === 0) {
+    const chars = Array.from(flat);
+    let a = 0;
+    let b = chars.length;
+    while (a < b) {
+      const mid = Math.ceil((a + b) / 2);
+      if (count(chars.slice(0, mid).join("")) <= budget) a = mid;
+      else b = mid - 1;
+    }
+    head = chars.slice(0, a).join("");
+  }
+  // Counts need not be monotone in prefix length; only a verified string is returned.
+  while (head && count(head) > budget) head = Array.from(head).slice(0, -1).join("").trimEnd();
+  return head;
+}
+
+const TOKENIZER_REPO = "aac6fef/laya-multilingual-coreml-ane";
+const TOKENIZER_REVISION = "39d6a9b3d0f67f06da74fbade6121ea134cbdb21";
+const TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json"] as const;
+
+function tokenizerDirCandidates(): string[] {
+  const hfHub = process.env.HF_HUB_CACHE ?? join(process.env.HF_HOME ?? join(homedir(), ".cache", "huggingface"), "hub");
+  const snapshots = join(hfHub, `models--${TOKENIZER_REPO.replace("/", "--")}`, "snapshots");
+  const pinned = join(snapshots, TOKENIZER_REVISION, "tokenizer");
+  const others = existsSync(snapshots) ? readdirSync(snapshots).map((rev) => join(snapshots, rev, "tokenizer")) : [];
+  return [process.env.MAESTRO_TOKENIZER_DIR, pinned, ...others, join(homedir(), ".cache", "maestro", TOKENIZER_REVISION)]
+    .filter((dir): dir is string => Boolean(dir));
+}
+
+async function downloadTokenizer(dir: string): Promise<void> {
+  mkdirSync(dir, { recursive: true });
+  for (const file of TOKENIZER_FILES) {
+    const url = `https://huggingface.co/${TOKENIZER_REPO}/resolve/${TOKENIZER_REVISION}/tokenizer/${file}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) throw new Error(`tokenizer download ${response.status}`);
+    const temporary = join(dir, `${file}.part`);
+    writeFileSync(temporary, Buffer.from(await response.arrayBuffer()));
+    renameSync(temporary, join(dir, file));
+  }
+}
+
+let exactCounter: Promise<TokenCounter | undefined> | undefined;
+
+/** Lazily loads the exact Laya counter once (cache first, one pinned download otherwise). */
+export function loadExactCounter(): Promise<TokenCounter | undefined> {
+  exactCounter ??= (async () => {
+    try {
+      let dir = tokenizerDirCandidates().find((d) => TOKENIZER_FILES.every((f) => existsSync(join(d, f))));
+      if (!dir) {
+        dir = join(homedir(), ".cache", "maestro", TOKENIZER_REVISION);
+        await downloadTokenizer(dir);
+      }
+      const { Tokenizer } = await import("./vendor/tokenizers.min.mjs");
+      const tokenizer = new Tokenizer(
+        JSON.parse(readFileSync(join(dir, "tokenizer.json"), "utf8")),
+        JSON.parse(readFileSync(join(dir, "tokenizer_config.json"), "utf8")),
+      );
+      return (text: string) => tokenizer.encode(text, { add_special_tokens: false }).ids.length;
+    } catch {
+      exactCounter = undefined; // allow a later retry; the bound counter covers this prompt
+      return undefined;
+    }
+  })();
+  return exactCounter;
+}
 
 export type AdaptState = { base: EffortChoice; current: EffortChoice; okStreak: number; seen: Set<string> };
 export type StepSignal = { toolCalls: string[]; errored: boolean };
@@ -99,35 +210,31 @@ export function stepSignal(event: TurnEndLike): StepSignal {
   return { toolCalls, errored: (event.toolResults ?? []).some((result) => result?.isError === true) };
 }
 
-/** Collapse whitespace and keep the head of the prompt within the char budget. */
-export function promptExcerpt(text: string, maxChars = STATE_MAX_CHARS): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= maxChars ? flat : `${flat.slice(0, maxChars - 1)}…`;
-}
-
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /** One single-question request; returns the chosen key or undefined. */
 export async function askChoice(
-  question: Record<string, unknown>,
+  entry: { question: Record<string, unknown>; fixedTokens: number },
   prompt: string,
   allowed: readonly string[],
   apiKey: string,
+  count: TokenCounter,
   fetchImpl: FetchLike = fetch,
 ): Promise<string | undefined> {
-  for (const maxChars of [STATE_MAX_CHARS, Math.floor(STATE_MAX_CHARS / 2)]) {
+  const budget = ANE_MAX_TOKENS - entry.fixedTokens;
+  for (const stateBudget of [budget, Math.floor(budget / 2)]) {
     const response = await fetchImpl(ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        state: promptExcerpt(prompt, maxChars),
+        state: fitState(prompt, stateBudget, count),
         model: "laya-multilingual",
         mode: "short",
-        questions: { q: question },
+        questions: { q: entry.question },
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (response.status === 413) continue;
+    if (response.status === 413) continue; // local count diverged from the engine (e.g. different tokenizer revision)
     if (!response.ok) return undefined;
     const body = (await response.json()) as { answers?: { q?: { choice?: unknown } } };
     const choice = body.answers?.q?.choice;
@@ -136,11 +243,11 @@ export async function askChoice(
   return undefined;
 }
 
-/** Both questions in parallel; each field is undefined when its call failed. */
-export async function decide(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch) {
+/** Both questions in parallel, each cut to its own exact budget; a field is undefined when its call failed. */
+export async function decide(prompt: string, apiKey: string, count: TokenCounter = boundCounter, fetchImpl: FetchLike = fetch) {
   const [model, effort] = await Promise.all([
-    askChoice(MODEL_QUESTION, prompt, Object.keys(MODEL_TARGETS), apiKey, fetchImpl).catch(() => undefined),
-    askChoice(EFFORT_QUESTION, prompt, EFFORTS, apiKey, fetchImpl).catch(() => undefined),
+    askChoice(QUESTIONS.model, prompt, Object.keys(MODEL_TARGETS), apiKey, count, fetchImpl).catch(() => undefined),
+    askChoice(QUESTIONS.effort, prompt, EFFORTS, apiKey, count, fetchImpl).catch(() => undefined),
   ]);
   return { model: model as ModelChoice | undefined, effort: effort as EffortChoice | undefined };
 }
@@ -160,10 +267,14 @@ function restoreEnabled(ctx: ExtensionContext): boolean {
 export default function maestro(pi: ExtensionAPI): void {
   let enabled = false;
   let adapt: AdaptState | undefined;
+  // Loaded in the background; until ready, the proven upper-bound counter is used (never blocks a prompt).
+  let counter: TokenCounter | undefined;
+  const warmCounter = () => void loadExactCounter().then((loaded) => { counter = loaded ?? counter; });
   const setStatus = (ctx: ExtensionContext, text: string | undefined) => ctx.ui.setStatus("maestro", text);
 
   pi.on("session_start", async (_event, ctx) => {
     enabled = restoreEnabled(ctx);
+    if (enabled) warmCounter();
     setStatus(ctx, enabled ? "🎼 maestro" : undefined);
   });
 
@@ -177,6 +288,7 @@ export default function maestro(pi: ExtensionAPI): void {
           return;
         }
         enabled = arg === "on";
+        if (enabled) warmCounter();
         pi.appendEntry(MAESTRO_ENTRY_TYPE, { enabled });
         setStatus(ctx, enabled ? "🎼 maestro" : undefined);
       }
@@ -192,7 +304,7 @@ export default function maestro(pi: ExtensionAPI): void {
     const apiKey = process.env.TYPEDEC_API_KEY;
     if (!apiKey || !event.text.trim()) return { action: "continue" };
 
-    const { model: modelChoice, effort } = await decide(event.text, apiKey);
+    const { model: modelChoice, effort } = await decide(event.text, apiKey, counter ?? boundCounter);
     let label = "";
     if (modelChoice) {
       const target = MODEL_TARGETS[modelChoice];

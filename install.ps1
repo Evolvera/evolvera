@@ -159,6 +159,11 @@ if (-not $sameRoot) {
         $dest = Join-Path $PI_DIR "extensions"
         Copy-Item $extensions.FullName $dest -Force
         Info ($extensions.Count.ToString() + " extensoes")
+        # Maestro is a directory extension (index.ts + vendored tokenizer); drop its old single-file form.
+        Remove-Item (Join-Path $dest "maestro.ts") -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $dest "maestro") -Recurse -Force -ErrorAction SilentlyContinue
+        Copy-Item (Join-Path $SCRIPT_DIR "extensions\maestro") (Join-Path $dest "maestro") -Recurse -Force
+        Info "maestro"
     }
     # Plastic Memory is intentionally not installed while its compaction path is disabled.
     # Its project-memory bridge imports that tree, so neither may remain installed alone.
