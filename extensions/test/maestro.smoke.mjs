@@ -22,12 +22,12 @@ const prompts = [
 ];
 
 // 1. Char cut: whitespace collapsed, head of prompt, within limit.
-for (const text of prompts) for (const max of [10, 104, 135]) {
+for (const text of prompts) for (const max of [10, 82, 94]) {
   const cut = m.cutState(text, max);
   assert.ok(Array.from(cut).length <= max);
   assert.ok(text.replaceAll("<mask>", " ").replace(/\s+/g, " ").trim().startsWith(cut));
 }
-assert.equal(m.cutState("a  \n b", 104), "a b");
+assert.equal(m.cutState("a  \n b", 82), "a b");
 
 // 2. Engine oracle (when its venv exists): fixed costs match and typical prompts fit 96 at the char limit.
 const venvPython = path.join(homedir(), "snake-game/server/.venv/bin/python");
@@ -107,6 +107,16 @@ const started = Date.now();
 f = async () => { throw new Error("net"); };
 assert.equal(await m.askChoice(q, "oi", ["luna"], "k", f, { retries: 3, backoffMs: [300, 300, 300], deadlineMs: 500 }), undefined);
 assert.ok(Date.now() - started < 700, "deadline bounds total wait");
+
+// 3c. Doubt resolves upward: explicit "duvida" or low confidence -> Opus 5.5 / high.
+const answer = (model, effort, conf = 0.9) => async (_u, init) => {
+  const isModel = "opus" in JSON.parse(init.body).questions.q.criteria;
+  return reply(200, { answers: { q: { choice: isModel ? model : effort, confidence: conf } } });
+};
+assert.deepEqual(await m.decide("oi", "k", answer("duvida", "duvida")), { model: "opus", effort: "high" });
+assert.deepEqual(await m.decide("oi", "k", answer("luna", "low", 0.34)), { model: "opus", effort: "high" }, "low confidence is doubt");
+assert.deepEqual(await m.decide("oi", "k", answer("luna", "low", 0.45)), { model: "opus", effort: "low" }, "thresholds are per question");
+assert.deepEqual(await m.decide("oi", "k", answer("luna", "low")), { model: "luna", effort: "low" });
 
 // 4. Adaptive effort: errors/repeats raise, 3 clean steps lower, floor = base-1, final answer inert.
 const s = m.newAdaptState("medium");
