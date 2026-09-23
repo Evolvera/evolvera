@@ -61,6 +61,8 @@ requires("system", [
   [/NO_STATEFUL_RESOURCES/, "stateful classification preserved"],
   [/DISPOSABLE_VERIFIED/, "disposable proof preserved"],
   [/Ask before destructive or irreversible action/, "destructive approval preserved"],
+  [/\*\*Routine product operations:\*\*[\s\S]{0,700}needs no recovery artifact, backup, or the gate above/i, "routine product flows are not destructive"],
+  [/Actual deletion, truncation, migration execution, irreversible loss, or state with no restoring flow stays under the gate/i, "real destruction stays gated"],
 ]);
 
 requires("execution", [

@@ -46,13 +46,12 @@ for (const [name, text] of [
   assert.doesNotMatch(text, /(?:launch|use normally|one)\s+(?:every ready\s+)?2[–-]4[^\n]{0,40}scout/i, `${name}: stale arbitrary scout-wave cap`);
 }
 
-assert.match(system, /inventory every product\/client\/runtime root in scope/i);
-assert.match(system, /ADMIT \| DEFER \| MERGE \| SYNTHESIS/);
-assert.match(system, /shard-breadth audit, not automatic splitting/i);
-assert.match(system, /Launch every ready `ADMIT` shard up to free configured capacity/i);
-assert.match(system, /never an arbitrary 2–4 cap/i);
-assert.match(system, /a root excluded as inactive\/legacy needs evidence or remains `UNKNOWN`/i);
-assert.match(system, /never a task, write-set proof, or parallel authorization/i);
+// The detailed fan-out procedure lives in agent-guide/scout; SYSTEM keeps only the routing pointer.
+assert.match(system, /the Scout Fan-out Map in `agent-guide`\/`scout` decides the wave/i);
+assert.match(system, /do not launch more scouts to reconfirm it/i);
+assert.match(plannerSkill, /inventory every product\/client\/runtime root in scope/i);
+assert.match(agentGuide, /ADMIT \| DEFER \| MERGE \| SYNTHESIS/);
+assert.match(agentGuide, /shard-breadth audit, not automatic splitting/i);
 
 assert.match(agentGuide, /\*\*Scout capacity and breadth rule:\*\*/);
 assert.match(agentGuide, /configured background capacity, active agents, and free slots/i);
