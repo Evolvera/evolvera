@@ -55,6 +55,21 @@ for (const code of [400, 401, 403, 422]) {
   assert.equal(f.n, 1, `${code} not retried`);
 }
 
+// 2b. Luna fallback: parse, frustration first, injected completer.
+assert.equal(m.parseLunaRoute('{"tier":"sol","frustrated":false}'), "sol");
+assert.equal(m.parseLunaRoute('ok ```{"tier":"luna","frustrated":true}```'), "astra");
+assert.equal(m.parseLunaRoute('{"tier":"gpt-9"}'), undefined);
+assert.equal(m.parseLunaRoute("not json"), undefined);
+const lunaCtx = { modelRegistry: { find: (p, id) => ({ provider: p, id }), getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "x" }) } };
+let lunaCall;
+assert.equal(await m.classifyWithLuna("o site caiu", lunaCtx, async (model, context, options) => {
+  lunaCall = { model, context, options }; return { content: [{ type: "text", text: '{"tier":"opus","frustrated":false}' }] };
+}), "opus");
+assert.equal(lunaCall.model.id, "gpt-6-luna");
+assert.equal(lunaCall.options.reasoning, "minimal");
+assert.equal(await m.classifyWithLuna("x", { modelRegistry: { find: () => undefined } }, async () => ({})), undefined);
+assert.equal(await m.classifyWithLuna("x", lunaCtx, async () => { throw new Error("down"); }), undefined);
+
 // 3. Continuation detection; the benchmark fixture is present and complete.
 const bench = JSON.parse(readFileSync(path.join(root, "extensions/test/fixtures/maestro-benchmark.json"), "utf8"));
 assert.equal(Object.values(bench.sets).flat().length, 230);
