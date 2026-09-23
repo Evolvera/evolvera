@@ -23,7 +23,6 @@ assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
 
 const trigger = /more than 20 (?:declared )?changed paths or (?:spans )?three or more (?:distinct )?semantic regions/i;
 for (const [name, text] of [
-  ["SYSTEM", system],
   ["planner agent", planner],
   ["planner skill", plannerSkill],
   ["plan-heavy skill", planHeavy],
@@ -33,10 +32,11 @@ for (const [name, text] of [
   assert.match(text, /WIDE_TASK_DECOMPOSITION_UNPROVEN/, `${name}: missing fail-closed verdict`);
 }
 
-assert.match(system, /triggers a decomposition audit, never an automatic split, file cap, or parallel authorization/i);
-assert.match(system, /breadth detector separate from the workload budget/i);
-assert.match(system, /Atomic checkpoint does not imply single builder/i);
-assert.match(system, /Full write-set, validation-resource, stateful-resource, recovery, and external-effect isolation remain mandatory/i);
+// SYSTEM delegates planning detail to its owners and scopes it away from direct work.
+assert.match(system, /\*\*Planning detail belongs to the planner:\*\*/);
+assert.match(system, /never to direct work, a lookup, an explanation, or a routine operation/i);
+assert.match(plannerSkill, /breadth detector separate from the workload budget/i);
+assert.match(planner, /Atomic checkpoint does not imply single builder/i);
 
 assert.match(planner, /## Wide-Task Parallelization Gate/);
 assert.match(planner, /threshold triggers a decomposition audit only: it is not a file cap, automatic split/i);
@@ -64,7 +64,6 @@ assert.match(builderSkill, /databases, fixtures, caches, and external targets ca
 // receipt, or internal-phase waiver, and without becoming a file cap.
 const frontCap = /(hard maximum (?:is )?two|at most two complex fronts|maximum two)/i;
 for (const [name, text] of [
-  ["SYSTEM", system],
   ["planner agent", planner],
   ["planner skill", plannerSkill],
   ["plan-heavy skill", planHeavy],
@@ -94,7 +93,7 @@ assert.match(builderSkill, /A builder must not grow its scope into a new complex
 assert.match(agentGuide, /\*\*Builder workload admission:\*\*/);
 assert.match(agentGuide, /counts coherent commits\/tasks rather than complex fronts/i);
 assert.match(
-  system,
+  planner,
   /large homogeneous, mirrored, or mechanical batch may remain one task after proportional proof/i,
 );
 
