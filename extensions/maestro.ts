@@ -1,4 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Maestro: before each user prompt, asks TypeDec two independent `choice`
@@ -23,10 +26,21 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
  *   level before each step (prepareNextTurn), so a change applies to the next
  *   step. At agent_end the base is restored, because setThinkingLevel also
  *   persists defaultThinkingLevel and in-run swings must not leak there.
- * - The API key comes only from TYPEDEC_API_KEY and is never logged.
+ * - The API key comes from TYPEDEC_API_KEY, else ~/.config/typedec/api_key
+ *   (outside any repo, mode 600). It is never logged.
  */
 
 export const MAESTRO_ENTRY_TYPE = "maestro";
+export const KEY_FILE = join(homedir(), ".config", "typedec", "api_key");
+export function readApiKey(file = KEY_FILE): string | undefined {
+  const fromEnv = process.env.TYPEDEC_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return readFileSync(file, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 const ENDPOINT = process.env.TYPEDEC_URL ?? "https://typedec.evolvera.com.br/v1/systemone";
 const TIMEOUT_MS = 2_500;
 /**
@@ -243,8 +257,8 @@ export default function maestro(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "on" || arg === "off") {
-        if (arg === "on" && !process.env.TYPEDEC_API_KEY) {
-          ctx.ui.notify("Maestro: defina TYPEDEC_API_KEY no ambiente do PI antes de ativar.", "error");
+        if (arg === "on" && !readApiKey()) {
+          ctx.ui.notify("Maestro: defina TYPEDEC_API_KEY ou ~/.config/typedec/api_key antes de ativar.", "error");
           return;
         }
         enabled = arg === "on";
@@ -260,7 +274,7 @@ export default function maestro(pi: ExtensionAPI): void {
     if (!enabled || event.streamingBehavior || event.source === "extension" || event.text.trim().startsWith("/")) {
       return { action: "continue" };
     }
-    const apiKey = process.env.TYPEDEC_API_KEY;
+    const apiKey = readApiKey();
     if (!apiKey || !event.text.trim()) return { action: "continue" };
 
     const { model: modelChoice, effort } = await decide(event.text, apiKey);
