@@ -14,6 +14,7 @@ import { join } from "node:path";
  *   unseen when the question was written): 99% model accuracy on the unseen
  *   set, 1 under-powered pick, 0 over-powered. Per-class biases and a doubt
  *   threshold were tried and generalized worse, so plain argmax is used.
+ * - A frustrated/cursing user (same request, noul >= 0.9) gets Astra 6 high.
  * - Only the first 480 chars of the message are sent (<= ~128 state tokens).
  * - Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
  *   within 6 s; after that, or on any other failure, model/effort stay as they are.
@@ -57,11 +58,26 @@ export const MODEL_TARGETS = {
   luna: { provider: "openai-codex", id: "gpt-6-luna", label: "Luna 6" },
   sol: { provider: "openai-codex", id: "gpt-6-sol", label: "Sol 6" },
   opus: { provider: "anthropic", id: "claude-opus-5-5", label: "Opus 5.5" },
+  astra: { provider: "openai-codex", id: "gpt-6-astra", label: "Astra 6" },
 } as const;
 export type ModelChoice = keyof typeof MODEL_TARGETS;
+/** Tiers the route question chooses between; astra is reached only through frustration. */
+export const TIERS = ["luna", "sol", "opus"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 export type EffortChoice = (typeof EFFORTS)[number];
-export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high" };
+export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high", astra: "high" };
+
+/**
+ * A frustrated/angry user gets Astra 6 high regardless of task tier. Asked in
+ * the same Jev request as the route question. On the 230-message benchmark,
+ * >= 0.9 caught all 9 cursing/insulting/sarcastic messages with no false
+ * positive; 0.84-0.89 held urgent or stressed but not hostile messages.
+ */
+export const FRUSTRATION_QUESTION = {
+  type: "noul",
+  instructions: "The user is frustrated, angry or annoyed with the assistant or the situation (cursing, insults, sarcasm, complaining that something broke again, shouting).",
+};
+export const FRUSTRATION_THRESHOLD = 0.9;
 
 export const ROUTE_QUESTION = {
   type: "choice",
@@ -82,13 +98,13 @@ export function pickTier(answer: { choice?: unknown; probabilities?: Record<stri
   const probs = answer?.probabilities;
   if (probs) {
     let best: ModelChoice | undefined;
-    for (const tier of Object.keys(MODEL_TARGETS) as ModelChoice[]) {
+    for (const tier of TIERS) {
       const p = probs[tier];
       if (typeof p === "number" && (best === undefined || p > (probs[best] as number))) best = tier;
     }
     if (best) return best;
   }
-  return typeof answer?.choice === "string" && answer.choice in MODEL_TARGETS ? (answer.choice as ModelChoice) : undefined;
+  return typeof answer?.choice === "string" && (TIERS as readonly string[]).includes(answer.choice) ? (answer.choice as ModelChoice) : undefined;
 }
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -106,7 +122,7 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
       response = await fetchImpl(ENDPOINT, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ state: cutState(prompt), model: JEV_MODEL, questions: { q: ROUTE_QUESTION } }),
+        body: JSON.stringify({ state: cutState(prompt), model: JEV_MODEL, questions: { q: ROUTE_QUESTION, f: FRUSTRATION_QUESTION } }),
         signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
       });
       status = response.status;
@@ -115,7 +131,11 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
     }
     if (response?.ok) {
       try {
-        const body = (await response.json()) as { answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> } } };
+        const body = (await response.json()) as {
+          answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> }; f?: { noul?: unknown } };
+        };
+        const frustration = body.answers?.f?.noul;
+        if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return "astra";
         return pickTier(body.answers?.q);
       } catch {
         return undefined;
