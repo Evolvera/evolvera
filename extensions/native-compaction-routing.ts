@@ -8,7 +8,7 @@ import type {
 
 export const NATIVE_COMPACTION_PROVIDER = "openai-codex";
 export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
-export const NATIVE_COMPACTION_THINKING_LEVEL = "xhigh" as const;
+export const NATIVE_COMPACTION_THINKING_LEVEL = "medium" as const;
 
 /**
  * Cross-tokenizer guard. PI's threshold check compares the last assistant

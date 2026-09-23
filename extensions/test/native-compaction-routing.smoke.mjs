@@ -106,7 +106,7 @@ try {
     assert.deepEqual(args[3], { "x-test": "header" });
     assert.equal(args[4], "Preserve the migration acceptance criteria", "preserve user /compact instructions without inventing a prompt");
     assert.equal(args[5], signal);
-    assert.equal(args[6], "xhigh");
+    assert.equal(args[6], "medium");
     assert.equal(args[7], undefined, "the public hook does not expose a session stream function");
     assert.deepEqual(args[8], { TEST_ENV: "owned" });
     assert.equal(context.notices.length, 0);
@@ -220,12 +220,12 @@ try {
     { "x-test": "header" },
     undefined,
     realSignal,
-    "xhigh",
+    "medium",
     streamFn,
     { TEST_ENV: "owned" },
   );
   assert.equal(streamRequest.model, realModel);
-  assert.equal(streamRequest.options.reasoning, "xhigh");
+  assert.equal(streamRequest.options.reasoning, "medium");
   assert.equal(streamRequest.options.apiKey, "synthetic-key");
   assert.deepEqual(streamRequest.options.headers, { "x-test": "header" });
   assert.deepEqual(streamRequest.options.env, { TEST_ENV: "owned" });
@@ -244,13 +244,13 @@ try {
   const requests = [];
   const splitResult = await realSdk.compact(
     split, realModel, "synthetic-key", undefined, "preserve custom focus marker", realSignal,
-    "xhigh", async (model, context, options) => {
+    "medium", async (model, context, options) => {
       requests.push({ model, context, options });
       return { result: async () => ({ ...assistant, content: [{ type: "text", text: requests.length === 1 ? "history summary" : "prefix summary" }] }) };
     },
   );
   assert.equal(requests.length, 2);
-  assert.ok(requests.every((r) => r.model === realModel && r.options.reasoning === "xhigh" && r.options.signal === realSignal));
+  assert.ok(requests.every((r) => r.model === realModel && r.options.reasoning === "medium" && r.options.signal === realSignal));
   assert.match(JSON.stringify(requests[0].context), /preserve custom focus marker/);
   assert.match(JSON.stringify(requests[0].context), /previous/);
   assert.match(JSON.stringify(requests[1].context), /split prefix marker/);
