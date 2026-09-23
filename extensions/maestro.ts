@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
  * - Every request carries exactly one question in `short` mode (ANE), whose
  *   hard limit is 96 tokens = question prefix + state + 1 separator. No
  *   tokenizer is loaded (it cost ~430 MB RAM): the prompt is cut by a char
- *   limit per question, set from the Laya tokenizer so ~95% of real PT/EN/code
+ *   limit per question (94 model / 82 effort), set from the Laya tokenizer so ~95% of real PT/EN/code
  *   text fits on the first try. On 413 the state is cut 25% and resent (up to
  *   4 times, not counted as retries).
  * - Failure never blocks the prompt: transient errors are retried up to 3
@@ -57,7 +57,8 @@ const MODEL_QUESTION = {
   criteria: {
     luna: "Trivial: pergunta curta, commit, ajuste simples",
     sol: "Média: implementar ou revisar algo delimitado",
-    opus: "Complexa: debug difícil, arquitetura, entender sistema",
+    opus: "Complexa: debug difícil, arquitetura, design, escrita",
+    duvida: "Incerto: não dá para saber",
   },
 };
 // Effort buys a longer chain of dependent inferences made without feedback;
@@ -70,6 +71,7 @@ const EFFORT_QUESTION = {
     medium: "Poucos: mudança delimitada",
     high: "Vários: bug, estado, lógica",
     xhigh: "Muitos: causa desconhecida, arquitetura",
+    duvida: "Incerto",
   },
 };
 
@@ -80,9 +82,16 @@ const EFFORT_QUESTION = {
  * re-measures the fixed costs when the engine venv exists.
  */
 export const QUESTIONS = {
-  model: { question: MODEL_QUESTION, maxChars: 135, fixedTokens: 50 },
-  effort: { question: EFFORT_QUESTION, maxChars: 104, fixedTokens: 60 },
+  model: { question: MODEL_QUESTION, maxChars: 94, fixedTokens: 63 },
+  effort: { question: EFFORT_QUESTION, maxChars: 82, fixedTokens: 67 },
 } as const;
+
+/**
+ * Doubt resolves upward: an explicit `duvida` answer, or a winning probability
+ * below the threshold, picks Opus 5.5 / high. Thresholds are uncalibrated
+ * starting points (confidence = top probability; 3-4 real options).
+ */
+export const DOUBT = { model: "opus", effort: "high", minConfidence: { model: 0.5, effort: 0.4 } } as const;
 export const SHRINK_ON_413 = 0.75;
 export const MAX_SHRINKS = 4;
 
@@ -146,6 +155,7 @@ export async function askChoice(
   apiKey: string,
   fetchImpl: FetchLike = fetch,
   retry: RetryPolicy = RETRY,
+  minConfidence = 0,
 ): Promise<string | undefined> {
   const deadline = Date.now() + retry.deadlineMs;
   let maxChars = entry.maxChars;
@@ -173,9 +183,12 @@ export async function askChoice(
       status = 0; // network error or timeout
     }
     if (response?.ok) {
-      const body = (await response.json()) as { answers?: { q?: { choice?: unknown } } };
+      const body = (await response.json()) as { answers?: { q?: { choice?: unknown; confidence?: unknown } } };
       const choice = body.answers?.q?.choice;
-      return typeof choice === "string" && allowed.includes(choice) ? choice : undefined;
+      if (typeof choice !== "string" || !allowed.includes(choice)) return undefined;
+      const confidence = body.answers?.q?.confidence;
+      if (choice === "duvida" || (typeof confidence === "number" && confidence < minConfidence)) return "duvida";
+      return choice;
     }
     if (status === 413 && shrinks < MAX_SHRINKS) {
       // Dense text (code, emoji, other scripts) exceeded 96 tokens: cut 25% and resend, no backoff.
@@ -194,10 +207,13 @@ export async function askChoice(
 /** Both questions in parallel, each cut to its own exact budget; a field is undefined when its call failed. */
 export async function decide(prompt: string, apiKey: string, fetchImpl: FetchLike = fetch) {
   const [model, effort] = await Promise.all([
-    askChoice(QUESTIONS.model, prompt, Object.keys(MODEL_TARGETS), apiKey, fetchImpl).catch(() => undefined),
-    askChoice(QUESTIONS.effort, prompt, EFFORTS, apiKey, fetchImpl).catch(() => undefined),
+    askChoice(QUESTIONS.model, prompt, [...Object.keys(MODEL_TARGETS), "duvida"], apiKey, fetchImpl, RETRY, DOUBT.minConfidence.model).catch(() => undefined),
+    askChoice(QUESTIONS.effort, prompt, [...EFFORTS, "duvida"], apiKey, fetchImpl, RETRY, DOUBT.minConfidence.effort).catch(() => undefined),
   ]);
-  return { model: model as ModelChoice | undefined, effort: effort as EffortChoice | undefined };
+  return {
+    model: (model === "duvida" ? DOUBT.model : model) as ModelChoice | undefined,
+    effort: (effort === "duvida" ? DOUBT.effort : effort) as EffortChoice | undefined,
+  };
 }
 
 function restoreEnabled(ctx: ExtensionContext): boolean {
