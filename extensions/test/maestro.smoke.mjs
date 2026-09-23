@@ -15,7 +15,8 @@ assert.equal(Array.from(m.cutState("x".repeat(2000))).length, m.STATE_MAX_CHARS)
 assert.equal(m.pickTier({ choice: "luna", probabilities: { luna: 0.3, sol: 0.1, opus: 0.6 } }), "opus");
 assert.equal(m.pickTier({ choice: "sol" }), "sol");
 assert.equal(m.pickTier({ choice: "gpt-9" }), undefined);
-assert.deepEqual(m.EFFORT_FOR, { luna: "medium", sol: "medium", opus: "high" });
+assert.deepEqual(m.EFFORT_FOR, { luna: "medium", sol: "medium", opus: "high", astra: "high" });
+assert.equal(m.pickTier({ choice: "astra" }), undefined, "astra is not a route tier");
 
 // 2. One Jev request per message with the route question; retries only transient failures.
 const seen = [];
@@ -27,8 +28,11 @@ assert.equal(await m.classify("commit e push", "k", ok("luna")), "luna");
 assert.equal(seen.length, 1);
 assert.match(seen[0].url, /\/systemone$/);
 assert.equal(seen[0].auth, "Bearer k");
-assert.deepEqual(Object.keys(seen[0].body.questions), ["q"]);
+assert.deepEqual(Object.keys(seen[0].body.questions), ["q", "f"], "route + frustration in one request");
 assert.deepEqual(Object.keys(seen[0].body.questions.q.criteria), ["luna", "sol", "opus"]);
+const angry = (noul) => async () => reply(200, { answers: { q: { choice: "luna", probabilities: { luna: 1, sol: 0, opus: 0 } }, f: { noul } } });
+assert.equal(await m.classify("porra quebrou tudo de novo", "k", angry(0.94)), "astra");
+assert.equal(await m.classify("URGENTE o site caiu", "k", angry(0.87)), "luna", "below threshold keeps the tier");
 const fast = { retries: 3, backoffMs: [1, 1, 1], deadlineMs: 5_000 };
 const scripted = (statuses) => {
   let i = 0;
@@ -101,6 +105,10 @@ try {
   calls.length = 0;
   await handlers.input({ text: "o site caiu", source: "interactive" }, ctx);
   assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "high"]]);
+  globalThis.fetch = angry(0.98);
+  calls.length = 0;
+  await handlers.input({ text: "vc é burro? reverte isso agora", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [["model", "gpt-6-astra"], ["thinking", "high"]], "frustration -> Astra high");
   calls.length = 0;
   for (const e of [
     { text: "continua", source: "interactive" },
