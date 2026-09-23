@@ -21,6 +21,8 @@ for (const [name, c] of Object.entries(m.CATEGORIES)) {
   if (c.model === "luna") assert.notEqual(c.effort, "low", "Luna never starts at low");
 }
 assert.equal(m.CATEGORIES.writing.model, "opus");
+assert.equal(m.CATEGORIES.install_simple.model, "luna", "documented download/install/run uses Luna");
+assert.equal(m.CATEGORIES.setup.model, "sol", "custom setup and integration stay on Sol");
 assert.deepEqual(["research", "deep_research", "document", "spreadsheet", "chart"].map((c) => m.CATEGORIES[c].model), ["sol", "opus", "opus", "sol", "opus"]);
 assert.deepEqual([m.CATEGORIES.deploy.model, m.CATEGORIES.deploy.effort], ["opus", "medium"]);
 const R = (category) => ({ ...m.pickRoute({ choice: category }) });
@@ -121,18 +123,7 @@ for (const text of ["ok, agora faz o mesmo pro endpoint de produtos", "blz agora
   assert.equal(m.isContinuation(text), false, text);
 }
 
-// 4. Adaptive effort.
-const s = m.newAdaptState("medium");
-const call = (n, a = {}) => ({ type: "toolCall", name: n, arguments: a });
-const step = (calls, err = false) => m.stepSignal({ message: { content: calls }, toolResults: calls.map(() => ({ isError: err })) });
-assert.equal(m.adaptEffort(s, step([call("bash", { c: "t" })], true)), "high");
-assert.equal(m.adaptEffort(s, step([call("bash", { c: "t" })])), "xhigh", "repeat raises");
-for (const p of ["a", "b"]) m.adaptEffort(s, step([call("read", { p })]));
-assert.equal(m.adaptEffort(s, step([call("read", { p: "c" })])), "high", "three clean steps lower");
-for (const p of "defghijkl") m.adaptEffort(s, step([call("read", { p })]));
-assert.equal(s.current, "low", "floor one below base");
-
-// 5. Wiring: Jev choice sets model + mapped effort; continuation/steer/commands untouched; base restored.
+// 4. Wiring: routing changes only the model, never the user's effort.
 delete process.env.JEV_API_KEY;
 delete process.env.TYPESAFE_API_KEY;
 assert.equal(m.readApiKey("/nonexistent"), undefined);
@@ -144,7 +135,7 @@ m.default({
   registerCommand: (n, c) => { commands[n] = c; },
   appendEntry: () => {},
   setModel: async (model) => { calls.push(["model", model.id]); return true; },
-  setThinkingLevel: (l) => { thinking = l; calls.push(["thinking", l]); },
+  setThinkingLevel: () => { throw new Error("Maestro must not change effort"); },
   getThinkingLevel: () => thinking,
 });
 const ctx = {
@@ -158,21 +149,25 @@ try {
   globalThis.fetch = ok("chore");
   await commands.maestro.handler("on", ctx);
   await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "medium"]], "Luna starts at medium");
+  assert.deepEqual(calls, [["model", "gpt-6-luna"]], "Luna routing preserves effort");
+  globalThis.fetch = ok("install_simple");
+  calls.length = 0;
+  await handlers.input({ text: "baixa, instala e roda https://github.com/unreallabsai/unreal-agent/releases", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [["model", "gpt-6-luna"]], "simple install -> Luna without effort change");
   globalThis.fetch = ok("debug_unknown");
   calls.length = 0;
   await handlers.input({ text: "o site caiu", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "debug -> Opus xhigh");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "debug -> Opus without effort change");
   globalThis.fetch = angry(0.98);
   calls.length = 0;
   await handlers.input({ text: "vc é burro? reverte isso agora", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-astra"], ["thinking", "high"]], "frustration -> Astra high");
+  assert.deepEqual(calls, [["model", "gpt-6-astra"]], "frustration -> Astra without effort change");
   let jevCalled = false;
   globalThis.fetch = async () => { jevCalled = true; return reply(200, {}); };
   calls.length = 0;
   await handlers.input({ text: "usa essa key sk-proj-abcdefghijklmnopqrstuvwxyz123456", source: "interactive" }, ctx);
   assert.equal(jevCalled, false, "secret never sent to the classifier");
-  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "high"]], "secret -> Opus high");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "secret -> Opus without effort change");
   calls.length = 0;
   for (const e of [
     { text: "continua", source: "interactive" },
@@ -180,9 +175,9 @@ try {
     { text: "/reload", source: "interactive" },
   ]) await handlers.input(e, ctx);
   assert.deepEqual(calls, []);
-  await handlers.turn_end({ message: { content: [call("bash")] }, toolResults: [{ isError: true }] }, ctx);
-  await handlers.agent_end({}, ctx);
-  assert.deepEqual(calls.at(-1), ["thinking", "high"], "base restored");
+  assert.equal(handlers.turn_end, undefined, "no in-turn effort adaptation");
+  assert.equal(handlers.agent_end, undefined, "no effort reset at agent end");
+  assert.equal(thinking, "low", "user-selected effort remains unchanged");
 } finally {
   globalThis.fetch = realFetch;
 }
