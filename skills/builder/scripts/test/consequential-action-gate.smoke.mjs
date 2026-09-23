@@ -44,6 +44,7 @@ requires("system", [
   [/even if they did not name that exact step/i, "safe necessary details need no separate authorization"],
   [/Confirm material ambiguity, not routine complexity/, "complexity alone is not a confirmation gate"],
   [/never end a turn announcing a check you can perform now; perform it in the same turn/i, "announced checks are performed, not deferred"],
+  [/Never propose a fix—or ask to deploy one—for an unproven link/i, "no fix for an unproven cause"],
   [/concrete unresolved user decision, material consequence, or explicit approval boundary/, "questions require a substantive reason"],
   [/no mode is a runtime, sandbox, credential, or tool-permission bypass/i, "no runtime bypass"],
   [/without asking "may I continue\?"/i, "no continuation re-ask"],
