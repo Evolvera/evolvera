@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
 const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
-const m = await jiti.import(path.join(root, "extensions/maestro/index.ts"));
+const m = await jiti.import(path.join(root, "extensions/maestro.ts"));
 
 const prompts = [
   "commit e push",
@@ -21,36 +21,22 @@ const prompts = [
   readFileSync(path.join(root, "SYSTEM.md"), "utf8").slice(0, 4000),
 ];
 
-// 1. Budget cutting is never over budget and keeps short prompts whole (bound counter, no files needed).
-for (const text of prompts) {
-  for (const budget of [1, 10, 36, 46]) {
-    const cut = m.fitState(text, budget, m.boundCounter);
-    assert.ok(m.boundCounter(cut) <= budget, "bound-cut state fits");
-    assert.ok(m.normalizeState(text).startsWith(cut), "cut is a head of the normalized prompt");
-  }
+// 1. Char cut: whitespace collapsed, head of prompt, within limit.
+for (const text of prompts) for (const max of [10, 104, 135]) {
+  const cut = m.cutState(text, max);
+  assert.ok(Array.from(cut).length <= max);
+  assert.ok(text.replaceAll("<mask>", " ").replace(/\s+/g, " ").trim().startsWith(cut));
 }
-assert.equal(m.fitState("commit e push", 36, m.boundCounter), "commit e push");
-assert.equal(m.fitState("a  \n b", 36, m.boundCounter), "a b");
+assert.equal(m.cutState("a  \n b", 104), "a b");
 
-// 2. Exact counter (real Laya tokenizer.json) and the engine's own laya_coreml as oracle, when present.
-const exact = await m.loadExactCounter();
+// 2. Engine oracle (when its venv exists): fixed costs match and typical prompts fit 96 at the char limit.
 const venvPython = path.join(homedir(), "snake-game/server/.venv/bin/python");
-if (exact) {
-  for (const text of prompts) {
-    const n = m.normalizeState(text);
-    assert.ok(m.boundCounter(n) >= exact(n), "byte bound is an upper bound");
-    for (const [name, entry] of Object.entries(m.QUESTIONS)) {
-      const cut = m.fitState(text, 96 - entry.fixedTokens, exact);
-      assert.ok(exact(cut) <= 96 - entry.fixedTokens, `${name}: exact-cut state fits`);
-    }
+if (existsSync(venvPython)) {
+  const cases = [];
+  for (const text of prompts.slice(0, 3)) for (const [name, entry] of Object.entries(m.QUESTIONS)) {
+    cases.push({ name, question: entry.question, fixed: entry.fixedTokens, state: m.cutState(text, entry.maxChars) });
   }
-  if (existsSync(venvPython)) {
-    // End to end: the engine's TokenCounter must see every request we would send as <= 96.
-    const cases = [];
-    for (const text of prompts) for (const [name, entry] of Object.entries(m.QUESTIONS)) {
-      cases.push({ name, question: entry.question, fixed: entry.fixedTokens, state: m.fitState(text, 96 - entry.fixedTokens, exact) });
-    }
-    const script = `
+  const script = `
 import json, sys
 from pathlib import Path
 import laya_coreml, laya_coreml.tokenizer, laya_coreml.common as c
@@ -62,18 +48,12 @@ for case in json.load(sys.stdin):
     st = c.serialize_state(case["state"]).replace(tok.mask_token, " ")
     out.append([len(prefix) + 1, len(prefix) + len(tok(st, add_special_tokens=False)["input_ids"]) + 1])
 print(json.dumps(out))`;
-    const result = JSON.parse(execFileSync(venvPython, ["-c", script], { input: JSON.stringify(cases), encoding: "utf8" }));
-    result.forEach(([fixed, total], i) => {
-      assert.equal(fixed, cases[i].fixed, `${cases[i].name}: fixedTokens constant matches the engine`);
-      assert.ok(total <= 96, `${cases[i].name}: engine count ${total} <= 96`);
-    });
-    const fullest = Math.max(...result.map(([, total]) => total));
-    console.log(`maestro: engine oracle verified ${result.length} requests, max ${fullest}/96 tokens`);
-  } else {
-    console.log("maestro: engine venv absent; oracle check skipped");
-  }
-} else {
-  console.log("maestro: tokenizer unavailable; exact checks skipped (bound counter still safe)");
+  const result = JSON.parse(execFileSync(venvPython, ["-c", script], { input: JSON.stringify(cases), encoding: "utf8" }));
+  result.forEach(([fixed, total], i) => {
+    assert.equal(fixed, cases[i].fixed, `${cases[i].name}: fixedTokens matches the engine`);
+    assert.ok(total <= 96, `${cases[i].name}: typical prompt ${total} <= 96 at char limit`);
+  });
+  console.log(`maestro: engine oracle verified ${result.length} requests, max ${Math.max(...result.map(([, t]) => t))}/96 tokens`);
 }
 
 // 3. Requests: one short-mode question each, state within budget, 413 retried once at half budget.
@@ -86,16 +66,18 @@ const fakeFetch = async (_url, init) => {
   assert.equal(body.mode, "short");
   assert.deepEqual(Object.keys(body.questions), ["q"]);
   const isModel = "opus" in body.questions.q.criteria;
-  const fixed = isModel ? m.QUESTIONS.model.fixedTokens : m.QUESTIONS.effort.fixedTokens;
-  assert.ok(m.boundCounter(body.state) + fixed <= 96, "every sent request fits 96 tokens");
+  const limit = isModel ? m.QUESTIONS.model.maxChars : m.QUESTIONS.effort.maxChars;
+  assert.ok(Array.from(body.state).length <= limit, "state within char limit");
   if (reject413 && isModel) { reject413 = false; return reply(413, {}); }
   return reply(200, { answers: { q: { choice: isModel ? "opus" : "xhigh" } } });
 };
-assert.deepEqual(await m.decide(prompts[2], "k", m.boundCounter, fakeFetch), { model: "opus", effort: "xhigh" });
-assert.equal(requests.length, 3, "only the rejected question is retried");
+assert.deepEqual(await m.decide(prompts[2], "k", fakeFetch), { model: "opus", effort: "xhigh" });
+assert.equal(requests.length, 3, "only the rejected question is resent");
+const modelStates = requests.filter((r) => "opus" in r.body.questions.q.criteria).map((r) => Array.from(r.body.state).length);
+assert.ok(modelStates[1] <= Math.floor(m.QUESTIONS.model.maxChars * 0.75), "413 cuts 25%");
 assert.ok(requests.every((r) => r.auth === "Bearer k"));
-assert.deepEqual(await m.decide("oi", "k", m.boundCounter, async () => reply(200, { answers: { q: { choice: "gpt-9" } } })), { model: undefined, effort: undefined });
-assert.deepEqual(await m.decide("oi", "k", m.boundCounter, async () => { throw new Error("net"); }), { model: undefined, effort: undefined });
+assert.deepEqual(await m.decide("oi", "k", async () => reply(200, { answers: { q: { choice: "gpt-9" } } })), { model: undefined, effort: undefined });
+assert.deepEqual(await m.decide("oi", "k", async () => { throw new Error("net"); }), { model: undefined, effort: undefined });
 
 // 3b. Retry: transient errors retried up to 3 times; deterministic errors never; deadline bounds it.
 const fast = { retries: 3, backoffMs: [1, 1, 1], deadlineMs: 5_000 };
@@ -106,21 +88,24 @@ const scripted = (statuses) => { let i = 0; const f = async () => {
   return s === 200 ? reply(200, { answers: { q: { choice: "sol" } } }) : reply(s, {});
 }; return f; };
 let f = scripted([503, "throw", 429, 200]);
-assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), "sol", "succeeds on 4th attempt");
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", f, fast), "sol", "succeeds on 4th attempt");
 assert.equal(f.n, 4);
 f = scripted([500, 502, 503, 504, 200]);
-assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), undefined, "gives up after 3 retries");
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", f, fast), undefined, "gives up after 3 retries");
 assert.equal(f.n, 4);
 for (const code of [400, 401, 403, 422]) {
   f = scripted([code, 200]);
-  assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), undefined);
+  assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", f, fast), undefined);
   assert.equal(f.n, 1, `${code} is not retried`);
 }
+f = scripted([413, 413, 413, 413, 413, 200]);
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", f, fast), undefined, "at most 4 cuts on 413");
+assert.equal(f.n, 5);
 f = scripted([413, 503, 200]);
-assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), "sol", "413 shrink does not consume a retry");
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", f, fast), "sol", "413 shrink does not consume a retry");
 const started = Date.now();
 f = async () => { throw new Error("net"); };
-assert.equal(await m.askChoice(q, "oi", ["luna"], "k", m.boundCounter, f, { retries: 3, backoffMs: [300, 300, 300], deadlineMs: 500 }), undefined);
+assert.equal(await m.askChoice(q, "oi", ["luna"], "k", f, { retries: 3, backoffMs: [300, 300, 300], deadlineMs: 500 }), undefined);
 assert.ok(Date.now() - started < 700, "deadline bounds total wait");
 
 // 4. Adaptive effort: errors/repeats raise, 3 clean steps lower, floor = base-1, final answer inert.
