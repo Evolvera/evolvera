@@ -82,11 +82,11 @@ export const FRUSTRATION_THRESHOLD = 0.9;
 
 export const ROUTE_QUESTION = {
   type: "choice",
-  instructions: "A developer sent this message to a coding assistant. Pick the model tier for the hardest task it actually asks for; ignore tone, context and words used in another sense.",
+  instructions: "A user sent this message to an AI assistant that does software and business work. Pick the model tier for the hardest task it actually asks for; ignore tone, context and words used in another sense.",
   criteria: {
     luna: "Mechanical or quick: run/commit/revert/rename/bump, small config, text or style edit, a quick factual question, a status check.",
     sol: "Normal implementation with a known approach: add a feature, field, validation or endpoint, write tests, refactor, fix an error whose cause is visible in the message.",
-    opus: "Needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts.",
+    opus: "Needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts, business decisions: pricing, plans, discounts, financial projections, strategy or product rules described at length.",
   },
 };
 
@@ -216,10 +216,10 @@ export function stepSignal(event: TurnEndLike): StepSignal {
 // blind2 100%, blind3 99%; frustration 9/9 hostile, 0 false positives. It is
 // ~2 s p50 versus ~0.35 s for Jev, so it runs only when Jev fails.
 
-export const LUNA_ROUTER_SYSTEM = `You route a developer's chat message to a coding assistant tier. Pick the tier for the hardest task the message actually asks for; ignore tone, context and words used in another sense.
+export const LUNA_ROUTER_SYSTEM = `You route a user's chat message to an AI assistant tier (software and business work). Pick the tier for the hardest task the message actually asks for; ignore tone, context and words used in another sense.
 luna: mechanical or quick: run/commit/revert/rename/bump, small config, text or style edit, a quick factual question, a status check.
 sol: normal implementation with a known approach: add a feature, field, validation or endpoint, write tests, refactor, fix an error whose cause is visible in the message.
-opus: needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts.
+opus: needs judgment: find an unknown cause (outage, slowness, intermittent or prod-only failure), architecture, UX or visual design, prose for people (emails, copy, articles), explaining a system, recommending between options, reviewing for subtle bugs, rewriting prompts, business decisions: pricing, plans, discounts, financial projections, strategy or product rules described at length.
 frustrated: true if the user is angry or fed up: any cursing or profanity (porra, merda, caralho, wtf, fuck, "what the hell", joder), insulting the assistant, exasperation ("I'm losing my mind", "estoy harto"), or hostile sarcasm about what the assistant just did. false for plain corrections ("that's wrong, revert"), urgency or ALL CAPS alerts, stressful context, a problem that happened again stated without anger, and jokes or sarcasm about teammates or old code.
 Reply with JSON only: {"tier":"luna|sol|opus","frustrated":true|false}`;
 
