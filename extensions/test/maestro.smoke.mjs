@@ -132,6 +132,12 @@ assert.equal(s.current, "low", "floor is one level below base");
 assert.equal(m.adaptEffort(s, step([])), "low", "final answer step changes nothing");
 assert.equal(m.adaptEffort(m.newAdaptState("xhigh"), step([call("x")], true)), "xhigh", "capped at xhigh");
 
+// 4b. Key resolution: env wins, then file; missing file is undefined.
+delete process.env.TYPEDEC_API_KEY;
+assert.equal(m.readApiKey("/nonexistent/key"), undefined);
+process.env.TYPEDEC_API_KEY = " envkey ";
+assert.equal(m.readApiKey("/nonexistent/key"), "envkey");
+
 // 5. Extension wiring: routes an interactive prompt, skips streaming/commands, adapts in-run, restores base.
 process.env.TYPEDEC_API_KEY = "k";
 const handlers = {}; const commands = {}; const calls = [];
