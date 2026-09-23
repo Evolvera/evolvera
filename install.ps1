@@ -73,6 +73,9 @@ if ($installedVersion -eq $PI_CODING_AGENT_VERSION) {
 & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-threshold-cancel.mjs")
 if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 0.83.0." }
 Info "Patch de continuidade do PI 0.83.0 verificado"
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-ultra-thinking.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de thinking ultra 0.83.0." }
+Info "Suporte a thinking ultra do PI 0.83.0 verificado"
 
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if (-not $piCmd) { throw "PI nao encontrado apos a instalacao." }
@@ -192,6 +195,10 @@ if ($piCmd) {
 
     Info "pi-subagents..."
     & pi install npm:@tintinweb/pi-subagents@0.18.2 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-subagents." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-ultra-thinking.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de thinking ultra." }
+    Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."
     & pi install npm:pi-alibaba-models@1.0.14 2>$null

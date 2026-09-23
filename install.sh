@@ -46,6 +46,8 @@ info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
 npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
 node "$SCRIPT_DIR/scripts/patch-pi-083-threshold-cancel.mjs"
 info "Patch de continuidade do PI 0.83.0 verificado"
+node "$SCRIPT_DIR/scripts/patch-pi-083-ultra-thinking.mjs"
+info "Suporte a thinking ultra do PI 0.83.0 verificado"
 command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
 info "PI $PI_CODING_AGENT_VERSION instalado"
 
@@ -134,6 +136,8 @@ step "PI Packages"
 if command -v pi &>/dev/null; then
     pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
     pi install npm:@tintinweb/pi-subagents@0.18.2 2>/dev/null && info "pi-subagents" || true
+    node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
+    info "Suporte a thinking ultra dos subagentes verificado"
     pi install npm:pi-alibaba-models@1.0.14 2>/dev/null && info "pi-alibaba-models" || true
     pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
     pi install npm:@juicesharp/rpiv-todo@2.11.0 2>/dev/null && info "rpiv-todo" || true
