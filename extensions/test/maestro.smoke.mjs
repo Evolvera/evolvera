@@ -118,6 +118,32 @@ assert.deepEqual(await m.decide("oi", "k", answer("luna", "low", 0.34)), { model
 assert.deepEqual(await m.decide("oi", "k", answer("luna", "low", 0.45)), { model: "opus", effort: "low" }, "thresholds are per question");
 assert.deepEqual(await m.decide("oi", "k", answer("luna", "low")), { model: "luna", effort: "low" });
 
+// 3d. Local intent rules and continuation (TypeDec only for what no rule recognizes).
+const expect = [
+  ["commit e push", "luna", "low"],
+  ["o build quebrou, e so o eslint reclamando de import nao usado, tira ele ai", "luna", "low"],
+  ["adiciona .env.local no gitignore", "luna", "low"],
+  ["qual versao do next ta instalada?", "luna", "low"],
+  ["implementa rate limiting no login com redis", "sol", "medium"],
+  ["cria um job diario que cancela assinatura vencida e manda email pro cliente", "sol", "medium"],
+  ["refatora o modulo de pagamentos", "sol", "high"],
+  ["pq o webhook do stripe as vezes processa o mesmo evento duas vezes??", "opus", "xhigh"],
+  ["why does our Next.js build take 12 minutes now?", "opus", "xhigh"],
+  ["desenha a arquitetura multi-tenant", "opus", "xhigh"],
+  ["redesenha a tela de onboarding", "opus", "high"],
+  ["compare Prisma and Drizzle and tell me which one to pick", "opus", "high"],
+  ["draft an email to customers explaining the outage", "opus", "medium"],
+  ["plan the migration of the orders postgres to RDS with minimal downtime", "opus", "xhigh"],
+  ["show, agora faz a mesma paginacao pro endpoint de produtos", "sol", "medium"],
+];
+for (const [text, model, effort] of expect) {
+  const r = m.ruleRoute(text);
+  assert.ok(r, `rule expected for: ${text}`);
+  assert.deepEqual([r.model, r.effort], [model, effort], `${text} -> ${r.rule}`);
+}
+for (const text of ["continua", "ok pode fazer", "yep go ahead", "tenta de novo ai", "entao melhora ele"]) assert.equal(m.isContinuation(text), true, text);
+for (const text of ["ok, agora faz o mesmo pro endpoint de produtos", "tenta de novo mas descobre pq falha"]) assert.equal(m.isContinuation(text), false, text);
+
 // 4. Adaptive effort: errors/repeats raise, 3 clean steps lower, floor = base-1, final answer inert.
 const s = m.newAdaptState("medium");
 const call = (n, a = {}) => ({ type: "toolCall", name: n, arguments: a });
@@ -170,6 +196,8 @@ try {
   await handlers.input({ text: "mais", source: "interactive", streamingBehavior: "steer" }, ctx);
   await handlers.input({ text: "/reload", source: "interactive" }, ctx);
   assert.deepEqual(calls, [], "no routing mid-run or for commands");
+  await handlers.input({ text: "continua", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [], "continuation keeps model and effort");
   await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
   calls.length = 0;
   await handlers.turn_end({ message: { content: [{ type: "toolCall", name: "bash", arguments: {} }] }, toolResults: [{ isError: true }] }, ctx);

@@ -4,9 +4,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Maestro: before each user prompt, asks TypeDec two independent `choice`
- * questions (model tier, reasoning effort) and switches the main session to
- * the answer for that whole turn, including its tool/agent loop.
+ * Maestro: before each user prompt, picks the main session's model tier and
+ * reasoning effort for that whole turn: a pure continuation keeps the current
+ * pair; otherwise local intent rules decide; only unrecognized prompts go to
+ * TypeDec (two independent `choice` questions, doubt -> Opus 5.5 / high).
  *
  * Invariants:
  * - Every request carries exactly one question in `short` mode (ANE), whose
@@ -117,6 +118,77 @@ export function cutState(text: string, maxChars: number): string {
   const head = chars.slice(0, Math.max(0, maxChars)).join("");
   const space = head.lastIndexOf(" ");
   return space > head.length * 0.6 ? head.slice(0, space) : head;
+}
+
+// ---------------------------------------------------------------------------
+// Local intent rules (first pass)
+// ---------------------------------------------------------------------------
+// Measured on 46 labeled prompts, Laya alone reached only 40-55% on the
+// 3-way model choice (7/18 on a held-out set): it reacts to words, not task
+// complexity. So explicit intent is routed locally (free, deterministic) and
+// TypeDec only decides what no rule recognizes.
+
+export type Route = { model: ModelChoice; effort: EffortChoice; rule: string };
+
+export function fold(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Order is priority. Patterns are general PT/EN intent classes over folded
+// (lowercase, accent-free) text, not phrase lists.
+const W = (words: string) => new RegExp(`\\b(${words})`);
+const CONFIG_FILE = "gitignore|\\.env|config|nvmrc|package\\.json|docker-?compose|\\.ya?ml|tsconfig|eslint|prettier|dockerfile|makefile|readme";
+const RULES: Array<{ rule: string; model: ModelChoice; effort: EffortChoice; re: RegExp; short?: boolean }> = [
+  // Explicitly trivial, whatever the length ("e so tirar o import", "quick one", "just bump").
+  { rule: "trivial", model: "luna", effort: "low", re: W("(e|eh) so (o|a|um|uma|tirar|trocar|mudar|corrigir|remover|apagar)|so (isso|tira|troca|muda|corrige|remove|apaga)\\b|so corrigir|quick one|just (bump|change|rename|remove|fix the typo|update)|typo|erro de digitacao|rapidinho") },
+  // Asking for a review is a review, even when it names a bug class.
+  { rule: "review", model: "opus", effort: "high", re: W("revis(a|e|ar) .*(pr|codigo|code|bug|seguranc|concorr|race|lock|problema)|review (this|the|my|our)? ?(pr|code|diff)|code review|audit") },
+  // Unknown cause: something is wrong and the reason is not known.
+  { rule: "debug", model: "opus", effort: "xhigh", re: new RegExp([
+    "\\b(investig|descobr|depur|debug|diagnostic|root cause|causa raiz|vazamento|leak|race condition|deadlock|flaky|intermitent)",
+    "\\b(travand|trava |crash|estour|quebrou|quebrad|parou de|nao funciona|not working|doesn t work|is failing|keeps failing|is broken|do nada|out of nowhere)",
+    "\\b(fic|fik)\\w* lent|got slow|became slow|is slow now",
+    "\\b(por que|pq|porque|why)\\b.*\\b(falh|erro|error|quebr|trav|lent|slow|demor|take|fail|crash|nao|retorn|fica|acontec|pendent|duplic|twice|duas vezes|as vezes|sometimes|sum|stale)",
+    "\\bo que (esta|ta) acontecendo|what s going on|figure out why|\\b(acha|encontra|find) (o|a|the) (bug|vazamento|leak|problema|erro|causa)",
+  ].join("|")) },
+  { rule: "architecture", model: "opus", effort: "xhigh", re: W("arquitetur|architect|system design|escalabil|scalab|multi-?tenan|downtime|sem parar|\\bplan (the|a|our) |migration plan|plano de migracao|estrategia de (migracao|deploy|cache|dados)|planej|projet(a|ar) (o|a|um|uma) (sistema|arquitetura|estrutura|modelo de dados|schema)") },
+  { rule: "compare", model: "opus", effort: "high", re: W("compar|versus|\\bvs\\b|recomend|recommend|vale a pena|trade-?off|pros e contras|pros and cons|qual (faz mais sentido|e melhor|vc usaria)|which (one )?(should|would)|como (vc|voce) (faria|estruturaria|organizaria|modelaria)|how would you") },
+  // Writing needs a writing verb or an unambiguous prose noun ("email" alone may be a feature).
+  { rule: "writing", model: "opus", effort: "medium", re: W("(escrev|redig|write|draft|compose|rascunh)\\w* (o |a |um |uma |the |an |a |our )?(texto|copy|artigo|article|post|email|e-mail|mensagem|message|carta|letter|proposta|proposal|pitch|descricao|description|documentacao|docs|bio|roteiro|anuncio|newsletter|landing)|artigo|newsletter|blog|pitch|copywrit|roteiro|apresentacao|presentation|anuncio") },
+  { rule: "understand", model: "opus", effort: "high", re: W("entend|explic|explain|how does|how .* works|como funciona|como (isso|ele|ela|o|a) funcion|tem como|da pra fazer|e possivel|is it possible|system prompt|reescrev\\w* o prompt") },
+  { rule: "design", model: "opus", effort: "high", re: W("design|desenh|redesenh|layout|identidade visual|visual identity|branding|landing|wireframe|prototip|mockup|\\bux\\b|\\bui\\b|paleta|tipografia|typography") },
+  { rule: "refactor", model: "sol", effort: "high", re: W("refator|refactor|reestrutur|reorganiz|desacopl|decouple|modulariz") },
+  // Mechanical actions: leading verb (after optional filler) on a short message, or a one-line config edit.
+  { rule: "chore", model: "luna", effort: "low", short: true, re: new RegExp([
+    "^(git |faz o |faz |faca o |da um |pode |vc pode |please |pls |can you |could you )?(commit|push|pull|merge|roda|rode|run|executa|execute|lista|list|mostra|show me|instala|install|troca|renomei|rename|sobe|bump|atualiza|update|muda|deleta|delete|remove|apaga|formata|format|deploya|abre|open|checa|check|verifica|cade|where is|gera o changelog|limpa|clean|status)\\b(?!,)",
+    `\\b(adiciona|add|coloca|poe|troca|muda|remove|tira)\\b.*\\b(no|na|in|to|from|do|da) (o |a |the )?(${CONFIG_FILE})`,
+  ].join("|")) },
+  { rule: "build", model: "sol", effort: "medium", re: W("implement|adicion|adicione|\\badd\\b|cri(a|e|ar) (um|uma|o|a|os|as)|create|build (a|an|the)|construi|gera(r)? (um|uma)|escrev\\w* (os )?test|write (the )?tests|tests? (de|para|for)|convert|migr|integr|corrig|conserta|\\bfix\\b|faz (a|o) .* funcionar|make .* work|suporte a|support for|automatiz|retry|endpoint|validac|paginac|webhook|script|job|(vc|voce) (consegue|pode) (fazer|criar|implementar|montar)|can you (make|build|implement|set up)|faz (o|a|um|uma) (upload|login|tela|pagina|endpoint|integracao|feature|funcionalidade)") },
+  { rule: "question", model: "luna", effort: "low", short: true, re: /^(e |and )?(qual|quais|quanto|quantos|quantas|onde|o que|oque|quando|existe|tem |what|which|where|when|is there|does|do |can )|\?$/ },
+];
+const SHORT_WORDS = 14;
+
+/**
+ * Pure continuation: a short message made only of go-ahead / retry words, with
+ * no content word. "ok, agora faz o mesmo pro endpoint" has content, so it is
+ * classified normally.
+ */
+const CONTINUATION_WORDS = new Set(("continua continue continuar segue seguir prossegue prossiga proceed ok okay blz beleza sim yes yep yeah sure " +
+  "pode podes pf pfv por favor please pls manda ver vai ir bora go ahead keep going sounds good isso ai la faz fazer faca do it " +
+  "tenta tentar try de novo again denovo entao entao melhora melhore ele ela isso mesmo certo perfeito show top valeu thanks").split(" "));
+export function isContinuation(text: string): boolean {
+  const words = fold(text).replace(/[^a-z0-9 ]/g, " ").split(" ").filter(Boolean);
+  return words.length > 0 && words.length <= 6 && words.every((word) => CONTINUATION_WORDS.has(word));
+}
+
+export function ruleRoute(text: string): Route | undefined {
+  const t = fold(text);
+  const short = t.split(" ").length <= SHORT_WORDS;
+  for (const r of RULES) {
+    if (r.short && !short) continue;
+    if (r.re.test(t)) return { model: r.model, effort: r.effort, rule: r.rule };
+  }
+  return undefined;
 }
 
 export type AdaptState = { base: EffortChoice; current: EffortChoice; okStreak: number; seen: Set<string> };
@@ -274,10 +346,24 @@ export default function maestro(pi: ExtensionAPI): void {
     if (!enabled || event.streamingBehavior || event.source === "extension" || event.text.trim().startsWith("/")) {
       return { action: "continue" };
     }
-    const apiKey = readApiKey();
-    if (!apiKey || !event.text.trim()) return { action: "continue" };
+    if (!event.text.trim()) return { action: "continue" };
 
-    const { model: modelChoice, effort } = await decide(event.text, apiKey);
+    // 1. Continuation keeps the current model/effort. 2. Local intent rules. 3. TypeDec (doubt -> Opus/high).
+    if (isContinuation(event.text)) {
+      const base = pi.getThinkingLevel();
+      adapt = (EFFORTS as readonly string[]).includes(base) ? newAdaptState(base as EffortChoice) : undefined;
+      setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${base} (continua)`);
+      return { action: "continue" };
+    }
+    let source = "regra";
+    let decision: { model?: ModelChoice; effort?: EffortChoice } | undefined = ruleRoute(event.text);
+    if (!decision) {
+      const apiKey = readApiKey();
+      if (!apiKey) return { action: "continue" };
+      decision = await decide(event.text, apiKey);
+      source = "typedec";
+    }
+    const { model: modelChoice, effort } = decision;
     let label = "";
     if (modelChoice) {
       const target = MODEL_TARGETS[modelChoice];
@@ -296,7 +382,7 @@ export default function maestro(pi: ExtensionAPI): void {
       ctx.ui.notify("Maestro: TypeDec indisponível; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
     }
-    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()}`);
+    setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()} (${source})`);
     return { action: "continue" };
   });
 
