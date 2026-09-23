@@ -143,6 +143,18 @@ node scripts/test/patch-pi-083-threshold-cancel.smoke.mjs
 
 Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução futura de um instalador pode aplicá-lo ao pacote global correspondente e exige confirmação nova para essa consequência; a smoke não é prova de uma campanha live.
 
+### Thinking `ultra` no PI 0.83.0
+
+Os instaladores executam `scripts/patch-pi-083-ultra-thinking.mjs` logo após o patch de continuidade e `scripts/patch-pi-subagents-ultra-thinking.mjs` depois de instalar `@tintinweb/pi-subagents@0.18.2`. Os patchers adicionam `ultra` às superfícies de tipo, CLI, catálogo de níveis, schema de modelos, TUI e subagentes. O valor só aparece para modelos cujo `thinkingLevelMap` declara suporte; `models.json` habilita `ultra: "ultra"` para `openai-codex/gpt-6-astra`.
+
+Na TUI, `ultra` usa duas cores opcionais, `thinkingUltra` e `thinkingUltraAlt`, alternadas a cada 350 ms. Temas antigos permanecem válidos: ambas caem para `thinkingMax` e depois `thinkingXhigh`. Os temas embutidos usam cores mais intensas que `max` e próximas entre si.
+
+As trocas são fail-closed por nome/versão/cardinalidade, idempotentes, atômicas por arquivo e preparadas com rollback. Validação sem recursos stateful:
+
+```bash
+node scripts/test/patch-ultra-thinking.smoke.mjs
+```
+
 ### Compatibilidade OAuth do Claude Fable 5.1
 
 O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@0.83.0` e `@gotgenes/pi-anthropic-auth@2.0.6` ou a instalação adaptada `2.0.1` (preservada sem reinstalação), alterando somente os anchors conhecidos para reportar Claude Code `2.1.280`. Isso é necessário porque o OAuth do Opus 5.5 exige Claude Code `2.1.280+` (o Fable 5.1 exigia `2.1.251+`); o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
