@@ -17,7 +17,8 @@ import { join } from "node:path";
  *   matched laya_coreml exactly on 1,895 samples. If the tokenizer is not
  *   available, a proven upper bound (UTF-8 bytes + 1) is used instead, so a
  *   413 is not expected either way; one is still retried once at half budget.
- * - Failure never blocks the prompt: the current model/effort stay unchanged.
+ * - Failure never blocks the prompt: transient errors are retried up to 3
+ *   times within a 6 s deadline, then the current model/effort stay unchanged.
  * - Subagents keep their frontmatter routes (pi-subagents gives frontmatter
  *   precedence over caller parameters), so only the main session is routed.
  * - Within a run, effort adapts per step without extra TypeDec calls: tool
@@ -33,6 +34,17 @@ import { join } from "node:path";
 export const MAESTRO_ENTRY_TYPE = "maestro";
 const ENDPOINT = process.env.TYPEDEC_URL ?? "https://typedec.evolvera.com.br/v1/systemone";
 const TIMEOUT_MS = 2_500;
+/**
+ * Transient failures (network/timeout, 429, 5xx) are retried up to 3 times
+ * with backoff, but the whole question is bounded by deadlineMs because the
+ * user's prompt waits on it. 400/401/403/422 are deterministic: never retried.
+ * Retrying is safe: a choice inference has no side effect beyond usage.
+ */
+export type RetryPolicy = { retries: number; backoffMs: number[]; deadlineMs: number };
+export const RETRY: RetryPolicy = { retries: 3, backoffMs: [200, 400, 800], deadlineMs: 6_000 };
+export function isRetryable(status: number): boolean {
+  return status === 0 || status === 429 || status >= 500;
+}
 export const ANE_MAX_TOKENS = 96;
 
 export const MODEL_TARGETS = {
@@ -220,27 +232,50 @@ export async function askChoice(
   apiKey: string,
   count: TokenCounter,
   fetchImpl: FetchLike = fetch,
+  retry: RetryPolicy = RETRY,
 ): Promise<string | undefined> {
-  const budget = ANE_MAX_TOKENS - entry.fixedTokens;
-  for (const stateBudget of [budget, Math.floor(budget / 2)]) {
-    const response = await fetchImpl(ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        state: fitState(prompt, stateBudget, count),
-        model: "laya-multilingual",
-        mode: "short",
-        questions: { q: entry.question },
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (response.status === 413) continue; // local count diverged from the engine (e.g. different tokenizer revision)
-    if (!response.ok) return undefined;
-    const body = (await response.json()) as { answers?: { q?: { choice?: unknown } } };
-    const choice = body.answers?.q?.choice;
-    return typeof choice === "string" && allowed.includes(choice) ? choice : undefined;
+  const deadline = Date.now() + retry.deadlineMs;
+  let stateBudget = ANE_MAX_TOKENS - entry.fixedTokens;
+  let halved = false;
+  let retriesLeft = retry.retries;
+  for (;;) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return undefined;
+    let status: number;
+    let response: Response | undefined;
+    try {
+      response = await fetchImpl(ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          state: fitState(prompt, stateBudget, count),
+          model: "laya-multilingual",
+          mode: "short",
+          questions: { q: entry.question },
+        }),
+        signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
+      });
+      status = response.status;
+    } catch {
+      status = 0; // network error or timeout
+    }
+    if (response?.ok) {
+      const body = (await response.json()) as { answers?: { q?: { choice?: unknown } } };
+      const choice = body.answers?.q?.choice;
+      return typeof choice === "string" && allowed.includes(choice) ? choice : undefined;
+    }
+    if (status === 413 && !halved) {
+      // Local count diverged from the engine (e.g. another tokenizer revision): shrink once, no backoff.
+      halved = true;
+      stateBudget = Math.floor(stateBudget / 2);
+      continue;
+    }
+    if (!isRetryable(status) || retriesLeft <= 0) return undefined;
+    const delay = retry.backoffMs[retry.retries - retriesLeft] ?? retry.backoffMs.at(-1) ?? 0;
+    retriesLeft -= 1;
+    if (Date.now() + delay >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
-  return undefined;
 }
 
 /** Both questions in parallel, each cut to its own exact budget; a field is undefined when its call failed. */

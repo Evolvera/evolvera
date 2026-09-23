@@ -97,6 +97,32 @@ assert.ok(requests.every((r) => r.auth === "Bearer k"));
 assert.deepEqual(await m.decide("oi", "k", m.boundCounter, async () => reply(200, { answers: { q: { choice: "gpt-9" } } })), { model: undefined, effort: undefined });
 assert.deepEqual(await m.decide("oi", "k", m.boundCounter, async () => { throw new Error("net"); }), { model: undefined, effort: undefined });
 
+// 3b. Retry: transient errors retried up to 3 times; deterministic errors never; deadline bounds it.
+const fast = { retries: 3, backoffMs: [1, 1, 1], deadlineMs: 5_000 };
+const q = m.QUESTIONS.model;
+const scripted = (statuses) => { let i = 0; const f = async () => {
+  const s = statuses[i++]; f.n = i;
+  if (s === "throw") throw new Error("net");
+  return s === 200 ? reply(200, { answers: { q: { choice: "sol" } } }) : reply(s, {});
+}; return f; };
+let f = scripted([503, "throw", 429, 200]);
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), "sol", "succeeds on 4th attempt");
+assert.equal(f.n, 4);
+f = scripted([500, 502, 503, 504, 200]);
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), undefined, "gives up after 3 retries");
+assert.equal(f.n, 4);
+for (const code of [400, 401, 403, 422]) {
+  f = scripted([code, 200]);
+  assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), undefined);
+  assert.equal(f.n, 1, `${code} is not retried`);
+}
+f = scripted([413, 503, 200]);
+assert.equal(await m.askChoice(q, "oi", ["luna", "sol", "opus"], "k", m.boundCounter, f, fast), "sol", "413 shrink does not consume a retry");
+const started = Date.now();
+f = async () => { throw new Error("net"); };
+assert.equal(await m.askChoice(q, "oi", ["luna"], "k", m.boundCounter, f, { retries: 3, backoffMs: [300, 300, 300], deadlineMs: 500 }), undefined);
+assert.ok(Date.now() - started < 700, "deadline bounds total wait");
+
 // 4. Adaptive effort: errors/repeats raise, 3 clean steps lower, floor = base-1, final answer inert.
 const s = m.newAdaptState("medium");
 const call = (n, a = {}) => ({ type: "toolCall", name: n, arguments: a });
