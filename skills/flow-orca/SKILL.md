@@ -1150,7 +1150,7 @@ Se restar apenas trabalho bloqueado ou em review e nenhum worker ativo, encerre 
 | S, local | direta / `builder` |
 | M | pre-plan leve → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| Alto risco | `planner` → menor builder adequado + gates seletivos; operações externas ficam com o orquestrador, salvo pedido explícito do usuário para usar um subagente; heavy somente para integração local excepcional; quando o usuário pedir o ensemble plan-heavy, usar a skill `plan-heavy` (três briefs + uma sessão nova de planner usando o prompt original em GPT-5.6 Sol max) |
+| Alto risco | `planner` → menor builder adequado + gates seletivos; operações externas ficam com o orquestrador, salvo pedido explícito do usuário para usar um subagente; heavy somente para integração local excepcional; quando o usuário pedir o ensemble plan-heavy, usar a skill `plan-heavy` (três briefs + uma sessão nova de planner usando o prompt original em GPT-6 Astra high) |
 
 Sempre:
 

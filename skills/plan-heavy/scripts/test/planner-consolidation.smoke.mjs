@@ -31,13 +31,13 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await
   read("extensions/subagent-watchdog.ts"),
 ]);
 
-// Routing authority: normal planner follows frontmatter (Sol/high); plan-heavy final
-// synthesis deliberately overrides only model/effort to Astra/high. Static contract regression.
-assert.match(planner, /^model: openai-codex\/gpt-6-sol$/m);
+// Routing authority: normal planner and plan-heavy final synthesis both route to
+// Astra/high through the planner frontmatter. Static contract regression.
+assert.match(planner, /^model: openai-codex\/gpt-6-astra$/m);
 assert.match(planner, /^thinking: high$/m);
-assert.match(planner, /^display_name: .*GPT-6 Sol · high$/m);
-assert.match(planner, /Model: openai-codex\/gpt-6-sol high\./);
-assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|thinking:\s*(?:medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/medium/xhigh/max routing");
+assert.match(planner, /^display_name: .*GPT-6 Astra · high$/m);
+assert.match(planner, /Model: openai-codex\/gpt-6-astra high\./);
+assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-sol|thinking:\s*(?:medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Sol/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
