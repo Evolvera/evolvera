@@ -75,7 +75,7 @@ try {
   assert.equal(typeof handler, "function");
 
   const conversationModel = { provider: "openai-codex", id: "conversation-model" };
-  const lunaModel = { provider: "openai-codex", id: "gpt-5.6-luna" };
+  const lunaModel = { provider: "openai-codex", id: "gpt-6-luna" };
   const state = {
     findCalls: [],
     authCalls: [],
@@ -113,9 +113,9 @@ try {
     assert.equal(context.model, conversationModel, "conversation model must remain unchanged");
   }
   assert.deepEqual(state.findCalls, [
-    ["openai-codex", "gpt-5.6-luna"],
-    ["openai-codex", "gpt-5.6-luna"],
-    ["openai-codex", "gpt-5.6-luna"],
+    ["openai-codex", "gpt-6-luna"],
+    ["openai-codex", "gpt-6-luna"],
+    ["openai-codex", "gpt-6-luna"],
   ]);
 
   state.findResult = undefined;
@@ -164,9 +164,9 @@ try {
   let streamRequest;
   const realModel = {
     provider: "openai-codex",
-    id: "gpt-5.6-luna",
+    id: "gpt-6-luna",
     api: "openai-codex-responses",
-    name: "GPT-5.6 Luna",
+    name: "GPT-6 Luna",
     reasoning: true,
     contextWindow: 300000,
     maxTokens: 16000,

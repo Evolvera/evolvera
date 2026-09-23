@@ -12,7 +12,7 @@ const engine = await jiti.import(path.join(root, "plastic-memory/compaction/engi
 const types = await jiti.import(path.join(root, "plastic-memory/session/types.ts"));
 
 const projectSnapshot = { summary: "bounded emergency project", activeIndex: "[]" };
-const luna = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const luna = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const sonnet = { provider: "anthropic", id: "claude-sonnet-5", contextWindow: 200_000, maxTokens: 16_000 };
 const visible = { provider: "google", id: "visible-hook-model", contextWindow: 200_000, maxTokens: 16_000 };
 const models = new Map([
@@ -298,7 +298,7 @@ for (const reason of ["manual", "threshold", "overflow"]) {
   assert.equal(await w.beforeCompact("manual"), undefined);
   assert.equal(w.state.branch.length, before, "emergency exhaustion has no semantic/source/pending side effect");
   assert.deepEqual(w.state.traces.map((trace) => trace.model), [
-    "openai-codex/gpt-5.6-luna", "openai-codex/gpt-5.6-luna", "anthropic/claude-sonnet-5", "google/visible-hook-model",
+    "openai-codex/gpt-6-luna", "openai-codex/gpt-6-luna", "anthropic/claude-sonnet-5", "google/visible-hook-model",
   ], "emergency observer exhausts the shared fallback order before cancellation");
   assert.equal(w.state.branch.some((entry) => entry.customType === types.PLASTIC_OBSERVATIONS_RECORDED || entry.customType === types.PLASTIC_REFLECTIONS_RECORDED), false);
   const status = w.coordinator.getStatus(w.ctx);

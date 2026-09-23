@@ -35,12 +35,12 @@ const expectedCoverageManifest = {
 
 const calls = [];
 let compactorMode = "valid";
-const model = { provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const runtime = {
   modelRegistry: {
     find(provider, id) {
       assert.equal(provider, "openai-codex");
-      assert.equal(id, "gpt-5.6-luna");
+      assert.equal(id, "gpt-6-luna");
       return model;
     },
     async getProviderAuth() { return { apiKey: "test-only" }; },
