@@ -45,6 +45,8 @@ requires("system", [
   [/Confirm material ambiguity, not routine complexity/, "complexity alone is not a confirmation gate"],
   [/never end a turn announcing a check you can perform now; perform it in the same turn/i, "announced checks are performed, not deferred"],
   [/Never propose a fix—or ask to deploy one—for an unproven link/i, "no fix for an unproven cause"],
+  [/running record of everything the user has asked for[\s\S]{0,300}every new ask, correction, or follow-up the user adds mid-work/i, "todo tracks accumulated and mid-work requests"],
+  [/never drop an open item silently/i, "open requests are not dropped"],
   [/concrete unresolved user decision, material consequence, or explicit approval boundary/, "questions require a substantive reason"],
   [/no mode is a runtime, sandbox, credential, or tool-permission bypass/i, "no runtime bypass"],
   [/without asking "may I continue\?"/i, "no continuation re-ask"],
