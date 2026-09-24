@@ -6,8 +6,9 @@ import { join } from "node:path";
 /**
  * Maestro chooses the main session's model before each fresh user prompt.
  * Jev classifies the task; the Luna fallback handles Jev failures. Pure
- * continuations and in-flight turns keep the model. The extension never sets
- * reasoning effort: PI preserves or clamps it when switching models.
+ * continuations and in-flight turns keep the model. Effort is left to the user
+ * (PI preserves or clamps it when switching models), except for a frustrated
+ * user: Opus 5.5 xhigh, with the user's level restored on the next routed prompt.
  */
 
 export const MAESTRO_ENTRY_TYPE = "maestro";
@@ -39,17 +40,16 @@ export const MODEL_TARGETS = {
   luna: { provider: "openai-codex", id: "gpt-6-luna", label: "Luna 6" },
   sol: { provider: "openai-codex", id: "gpt-6-sol", label: "Sol 6" },
   opus: { provider: "anthropic", id: "claude-opus-5-5", label: "Opus 5.5" },
-  astra: { provider: "openai-codex", id: "gpt-6-astra", label: "Astra 6" },
 } as const;
 export type ModelChoice = keyof typeof MODEL_TARGETS;
-/** Tiers the route question chooses between; astra is reached only through frustration. */
+/** Tiers the route question chooses between. */
 export const TIERS = ["luna", "sol", "opus"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 export type EffortChoice = (typeof EFFORTS)[number];
-export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high", astra: "high" };
+export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high" };
 
 /**
- * A frustrated/angry user gets Astra 6 high regardless of task tier. Asked in
+ * A frustrated/angry user gets Opus 5.5 xhigh regardless of task tier. Asked in
  * the same Jev request as the route question. With the PREVIOUS/USER state,
  * all 9 hostile benchmark messages score >= 0.95 while urgent or stressed but
  * not hostile ones reach 0.90-0.91, hence 0.94.
@@ -123,6 +123,8 @@ export const ROUTE_QUESTION = {
 };
 
 export type Route = { model: ModelChoice; effort: EffortChoice; category: string };
+/** The only route whose effort Maestro applies; every other route keeps the user's level. */
+export const FRUSTRATION_ROUTE: Route = { model: "opus", effort: "xhigh", category: "frustrado" };
 
 /** How many distinct changes the user asks for; only multi_* categories use it. */
 export const COUNT_QUESTION = {
@@ -243,7 +245,7 @@ export async function classify(prompt: string, apiKey: string, fetchImpl: FetchL
           answers?: { q?: { choice?: unknown; probabilities?: Record<string, unknown> }; f?: { noul?: unknown }; n?: { choice?: unknown } };
         };
         const frustration = body.answers?.f?.noul;
-        if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return { model: "astra", effort: "high", category: "frustrado" };
+        if (typeof frustration === "number" && frustration >= FRUSTRATION_THRESHOLD) return FRUSTRATION_ROUTE;
         const route = pickRoute(body.answers?.q);
         const count = body.answers?.n?.choice;
         return route && scaleByCount(route, typeof count === "string" && count in COUNT_QUESTION.criteria ? (count as ChangeCount) : undefined);
@@ -293,11 +295,13 @@ frustrated: true if the user is angry or fed up: any cursing or profanity (porra
 Reply with JSON only: {"tier":"luna|sol|opus","frustrated":true|false}`;
 
 /** Parses the fallback reply; frustration wins, as in the Jev path. */
-export function parseLunaRoute(text: string): ModelChoice | undefined {
+export function parseLunaRoute(text: string): Route | undefined {
   try {
     const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { tier?: unknown; frustrated?: unknown };
-    if (json.frustrated === true) return "astra";
-    return typeof json.tier === "string" && (TIERS as readonly string[]).includes(json.tier) ? (json.tier as ModelChoice) : undefined;
+    if (json.frustrated === true) return FRUSTRATION_ROUTE;
+    if (typeof json.tier !== "string" || !(TIERS as readonly string[]).includes(json.tier)) return undefined;
+    const tier = json.tier as ModelChoice;
+    return { model: tier, effort: EFFORT_FOR[tier], category: tier };
   } catch {
     return undefined;
   }
@@ -318,8 +322,7 @@ export async function classifyWithLuna(prompt: string, ctx: Pick<ExtensionContex
       { systemPrompt: LUNA_ROUTER_SYSTEM, messages: [{ role: "user", content: [{ type: "text", text: cutState(prompt) }], timestamp: Date.now() }] },
       { apiKey: auth.apiKey, headers: auth.headers, reasoning: "minimal", maxTokens: 400, signal: AbortSignal.timeout(10_000) },
     );
-    const tier = parseLunaRoute((reply.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join(""));
-    return tier ? { model: tier, effort: EFFORT_FOR[tier], category: tier === "astra" ? "frustrado" : tier } : undefined;
+    return parseLunaRoute((reply.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join(""));
   } catch {
     return undefined;
   }
@@ -339,6 +342,12 @@ function restoreEnabled(ctx: ExtensionContext): boolean {
 
 export default function maestro(pi: ExtensionAPI): void {
   let enabled = false;
+  /** The user's effort before a frustration route raised it; restored on the next routed prompt. */
+  let userEffort: ReturnType<ExtensionAPI["getThinkingLevel"]> | undefined;
+  const restoreUserEffort = () => {
+    if (userEffort !== undefined) pi.setThinkingLevel(userEffort);
+    userEffort = undefined;
+  };
   const setStatus = (ctx: ExtensionContext, text: string | undefined) => ctx.ui.setStatus("maestro", text);
 
   pi.on("session_start", async (_event, ctx) => {
@@ -378,6 +387,7 @@ export default function maestro(pi: ExtensionAPI): void {
       const target = MODEL_TARGETS.opus;
       const model = ctx.modelRegistry.find(target.provider, target.id);
       if (model && (ctx.model?.provider !== model.provider || ctx.model?.id !== model.id)) await pi.setModel(model);
+      restoreUserEffort();
       setStatus(ctx, `🎼 ${target.label} · ${pi.getThinkingLevel()} · secret`);
       return { action: "continue" };
     }
@@ -405,6 +415,13 @@ export default function maestro(pi: ExtensionAPI): void {
     if (!modelChoice) {
       ctx.ui.notify("Maestro: Jev e Luna indisponíveis; modelo e esforço mantidos.", "warning");
       return { action: "continue" };
+    }
+    // Effort is applied after setModel, which re-clamps the level for the new model.
+    if (route?.category === FRUSTRATION_ROUTE.category) {
+      userEffort ??= pi.getThinkingLevel();
+      pi.setThinkingLevel(FRUSTRATION_ROUTE.effort);
+    } else {
+      restoreUserEffort();
     }
     setStatus(ctx, `🎼 ${label || ctx.model?.id || "?"} · ${pi.getThinkingLevel()} · ${route?.category}${via === "luna" ? " (luna)" : ""}`);
     return { action: "continue" };
