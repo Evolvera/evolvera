@@ -7,8 +7,9 @@ import { join } from "node:path";
  * Maestro chooses the main session's model before each fresh user prompt.
  * Jev classifies the task; the Luna fallback handles Jev failures. Pure
  * continuations and in-flight turns keep the model. Effort is left to the user
- * (PI preserves or clamps it when switching models), except for a frustrated
- * user: Opus 5.5 xhigh, with the user's level restored on the next routed prompt.
+ * (PI preserves or clamps it when switching models) on Opus, except for a
+ * frustrated user: Opus 5.5 xhigh. GPT routes use Luna high / Sol xhigh on
+ * fresh prompts; the user's previous level is restored after frustration.
  */
 
 export const MAESTRO_ENTRY_TYPE = "maestro";
@@ -46,7 +47,7 @@ export type ModelChoice = keyof typeof MODEL_TARGETS;
 export const TIERS = ["luna", "sol", "opus"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 export type EffortChoice = (typeof EFFORTS)[number];
-export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "medium", sol: "medium", opus: "high" };
+export const EFFORT_FOR: Record<ModelChoice, EffortChoice> = { luna: "high", sol: "xhigh", opus: "high" };
 
 /**
  * A frustrated/angry user gets Opus 5.5 xhigh regardless of task tier. Asked in
@@ -61,8 +62,8 @@ export const FRUSTRATION_QUESTION = {
 export const FRUSTRATION_THRESHOLD = 0.94;
 
 /**
- * Jev classifies the task type; the type decides model and starting effort.
- * Jev picks only the category; this table decides model and effort. The
+ * Jev classifies the task type; the type decides model and GPT effort.
+ * Jev picks only the category; this table decides model and GPT effort. The
  * state carries the tail of the previous assistant reply (PREVIOUS) so short
  * answers like "sim faz" or "a opção 2" are classified by what they approve.
  * Measured: unseen context set 92%, biz 91%, blind3 93%, edge100 82%; the 12
@@ -72,34 +73,34 @@ export const FRUSTRATION_THRESHOLD = 0.94;
  * `duvida` lets Jev say it cannot tell instead of forcing a type; it maps to Opus/high.
  */
 export const CATEGORIES: Record<string, { model: ModelChoice; effort: EffortChoice; criterion: string }> = {
-  chore: { model: "luna", effort: "medium", criterion: "Run a command, commit/push/revert, check status, rename, bump a version, change a setting." },
-  question: { model: "luna", effort: "medium", criterion: "A quick factual question with a short direct answer, including simple questions about the assistant itself." },
-  small_edit: { model: "luna", effort: "medium", criterion: "One small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
-  multi_small: { model: "luna", effort: "medium", criterion: "Several independent small mechanical edits, each trivial on its own." },
-  install_simple: { model: "luna", effort: "medium", criterion: "Download, install and run a named tool or release using its documented installer or release instructions, without custom integration, debugging or deployment." },
-  doc_routine: { model: "sol", effort: "medium", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template." },
-  spreadsheet: { model: "sol", effort: "medium", criterion: "Create or edit a spreadsheet (xlsx, csv, Google Sheets): formulas, tables, pivots, data cleanup, without charts." },
+  chore: { model: "luna", effort: "high", criterion: "Run a command, commit/push/revert, check status, rename, bump a version, change a setting." },
+  question: { model: "luna", effort: "high", criterion: "A quick factual question with a short direct answer, including simple questions about the assistant itself." },
+  small_edit: { model: "luna", effort: "high", criterion: "One small edit to existing text, number, style or config: fix a typo, change a value, tweak spacing or color." },
+  multi_small: { model: "luna", effort: "high", criterion: "Several independent small mechanical edits, each trivial on its own." },
+  install_simple: { model: "luna", effort: "high", criterion: "Download, install and run a named tool or release using its documented installer or release instructions, without custom integration, debugging or deployment." },
+  doc_routine: { model: "sol", effort: "xhigh", criterion: "Routine document work on given content: summarize, transcribe, reformat, fill a template." },
+  spreadsheet: { model: "sol", effort: "xhigh", criterion: "Create or edit a spreadsheet (xlsx, csv, Google Sheets): formulas, tables, pivots, data cleanup, without charts." },
   chart: { model: "opus", effort: "high", criterion: "Create or change a chart, graph, dashboard visualization or data visualization, including charts inside a spreadsheet." },
-  research: { model: "sol", effort: "medium", criterion: "Look something up: search docs or the web, find how a library or API works, gather a few facts." },
-  ui_change: { model: "sol", effort: "medium", criterion: "Change a screen or component to a given spec: add a field, button, state or layout adjustment, without redesigning it." },
-  code_feature: { model: "sol", effort: "medium", criterion: "Implement a feature, endpoint, validation, test, script or integration with a known approach." },
-  fix_known: { model: "sol", effort: "medium", criterion: "Fix a bug whose cause is known: stated by the user, visible in the message, or already found by the assistant." },
-  apply_plan: { model: "sol", effort: "high", criterion: "Carry out a plan, fix or option the assistant already proposed and the user approved." },
-  multi_moderate: { model: "sol", effort: "high", criterion: "Several moderate changes across files or documents with clear instructions." },
-  setup: { model: "sol", effort: "medium", criterion: "Configure or wire up tools, dependencies, CI, environment or credentials, or install with custom integration or debugging beyond documented installation." },
-  refactor: { model: "sol", effort: "high", criterion: "Refactor, restructure or convert existing code without changing behavior." },
-  tests: { model: "sol", effort: "medium", criterion: "Write, extend or fix automated tests, fixtures, mocks or seed data." },
-  ci_fix: { model: "sol", effort: "medium", criterion: "Make failing lint, type-check, build or CI pass when the error output is visible." },
-  data_script: { model: "sol", effort: "medium", criterion: "Write a query, report, data conversion, import/export or one-off script with a clear expected result." },
-  upgrade: { model: "sol", effort: "medium", criterion: "Upgrade a dependency, framework or runtime version and adapt the code to its changes." },
-  integrate_api: { model: "sol", effort: "medium", criterion: "Integrate a third-party API, SDK or webhook by following its documentation." },
-  review_feedback: { model: "sol", effort: "medium", criterion: "Apply code review comments, resolve merge conflicts or rebase a branch." },
-  observability: { model: "sol", effort: "medium", criterion: "Add or adjust logging, metrics, alerts, tracing or feature flags." },
-  port_translate: { model: "sol", effort: "medium", criterion: "Port code to another language or framework, or translate/localize UI strings." },
-  dev_docs: { model: "sol", effort: "medium", criterion: "Update developer documentation, README, comments, changelog or API docs to match the code." },
-  perf_known: { model: "sol", effort: "high", criterion: "Speed up code or queries when the bottleneck is already identified." },
-  migration_file: { model: "sol", effort: "medium", criterion: "Write a database migration or schema change to a given spec, without running it in production." },
-  automation: { model: "sol", effort: "medium", criterion: "Set up a cron job, scheduled task, CI workflow step or automation script." },
+  research: { model: "sol", effort: "xhigh", criterion: "Look something up: search docs or the web, find how a library or API works, gather a few facts." },
+  ui_change: { model: "sol", effort: "xhigh", criterion: "Change a screen or component to a given spec: add a field, button, state or layout adjustment, without redesigning it." },
+  code_feature: { model: "sol", effort: "xhigh", criterion: "Implement a feature, endpoint, validation, test, script or integration with a known approach." },
+  fix_known: { model: "sol", effort: "xhigh", criterion: "Fix a bug whose cause is known: stated by the user, visible in the message, or already found by the assistant." },
+  apply_plan: { model: "sol", effort: "xhigh", criterion: "Carry out a plan, fix or option the assistant already proposed and the user approved." },
+  multi_moderate: { model: "sol", effort: "xhigh", criterion: "Several moderate changes across files or documents with clear instructions." },
+  setup: { model: "sol", effort: "xhigh", criterion: "Configure or wire up tools, dependencies, CI, environment or credentials, or install with custom integration or debugging beyond documented installation." },
+  refactor: { model: "sol", effort: "xhigh", criterion: "Refactor, restructure or convert existing code without changing behavior." },
+  tests: { model: "sol", effort: "xhigh", criterion: "Write, extend or fix automated tests, fixtures, mocks or seed data." },
+  ci_fix: { model: "sol", effort: "xhigh", criterion: "Make failing lint, type-check, build or CI pass when the error output is visible." },
+  data_script: { model: "sol", effort: "xhigh", criterion: "Write a query, report, data conversion, import/export or one-off script with a clear expected result." },
+  upgrade: { model: "sol", effort: "xhigh", criterion: "Upgrade a dependency, framework or runtime version and adapt the code to its changes." },
+  integrate_api: { model: "sol", effort: "xhigh", criterion: "Integrate a third-party API, SDK or webhook by following its documentation." },
+  review_feedback: { model: "sol", effort: "xhigh", criterion: "Apply code review comments, resolve merge conflicts or rebase a branch." },
+  observability: { model: "sol", effort: "xhigh", criterion: "Add or adjust logging, metrics, alerts, tracing or feature flags." },
+  port_translate: { model: "sol", effort: "xhigh", criterion: "Port code to another language or framework, or translate/localize UI strings." },
+  dev_docs: { model: "sol", effort: "xhigh", criterion: "Update developer documentation, README, comments, changelog or API docs to match the code." },
+  perf_known: { model: "sol", effort: "xhigh", criterion: "Speed up code or queries when the bottleneck is already identified." },
+  migration_file: { model: "sol", effort: "xhigh", criterion: "Write a database migration or schema change to a given spec, without running it in production." },
+  automation: { model: "sol", effort: "xhigh", criterion: "Set up a cron job, scheduled task, CI workflow step or automation script." },
   debug_unknown: { model: "opus", effort: "xhigh", criterion: "Find an unknown cause: outage, slowness, intermittent, production-only or unexplained failure." },
   multi_complex: { model: "opus", effort: "xhigh", criterion: "Many interdependent complex changes or requirements in one request, where getting one wrong breaks others." },
   plan: { model: "opus", effort: "high", criterion: "Plan a multi-step change: break down work, sequence it, decide scope before implementing." },
@@ -123,7 +124,7 @@ export const ROUTE_QUESTION = {
 };
 
 export type Route = { model: ModelChoice; effort: EffortChoice; category: string };
-/** The only route whose effort Maestro applies; every other route keeps the user's level. */
+/** Frustration overrides the model and effort until the next routed prompt. */
 export const FRUSTRATION_ROUTE: Route = { model: "opus", effort: "xhigh", category: "frustrado" };
 
 /** How many distinct changes the user asks for; only multi_* categories use it. */
@@ -137,7 +138,7 @@ export type ChangeCount = keyof typeof COUNT_QUESTION.criteria;
 /**
  * Size scaling for multi-change requests:
  * - multi_complex: up to 2 -> Opus medium, 3-4 -> Opus high, 5+ -> Opus xhigh.
- * - multi_moderate: up to 2 -> Sol high, 3+ -> Opus medium.
+ * - multi_moderate: up to 2 -> Sol xhigh, 3+ -> Opus medium.
  */
 export function scaleByCount(route: Route, count: ChangeCount | undefined): Route {
   if (!count) return route;
@@ -146,7 +147,7 @@ export function scaleByCount(route: Route, count: ChangeCount | undefined): Rout
     return { ...route, model: "opus", effort: small ? "medium" : count === "three_four" ? "high" : "xhigh" };
   }
   if (route.category === "multi_moderate") {
-    return small ? { ...route, model: "sol", effort: "high" } : { ...route, model: "opus", effort: "medium" };
+    return small ? { ...route, model: "sol", effort: "xhigh" } : { ...route, model: "opus", effort: "medium" };
   }
   return route;
 }
@@ -356,7 +357,7 @@ export default function maestro(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("maestro", {
-    description: "Auto-escolhe modelo (Luna 6 / Sol 6 / Opus 5.5) por prompt via Jev, sem alterar esforço: /maestro on|off|status",
+    description: "Auto-escolhe Luna high / Sol xhigh / Opus por prompt via Jev: /maestro on|off|status",
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "on" || arg === "off") {
@@ -378,7 +379,7 @@ export default function maestro(pi: ExtensionAPI): void {
     }
     if (!event.text.trim()) return { action: "continue" };
 
-    // A pure continuation keeps the current model and the user's effort setting.
+    // A pure continuation keeps the current model and effort.
     if (isContinuation(event.text)) {
       setStatus(ctx, `🎼 ${ctx.model?.id ?? "?"} · ${pi.getThinkingLevel()} (continua)`);
       return { action: "continue" };
@@ -419,7 +420,12 @@ export default function maestro(pi: ExtensionAPI): void {
     // Effort is applied after setModel, which re-clamps the level for the new model.
     if (route?.category === FRUSTRATION_ROUTE.category) {
       userEffort ??= pi.getThinkingLevel();
-      pi.setThinkingLevel(FRUSTRATION_ROUTE.effort);
+      if (pi.getThinkingLevel() !== FRUSTRATION_ROUTE.effort) pi.setThinkingLevel(FRUSTRATION_ROUTE.effort);
+    } else if (modelChoice === "luna" || modelChoice === "sol") {
+      // GPT routes set their own effort; do not restore an intermediate value first.
+      userEffort = undefined;
+      const desired = route!.effort;
+      if (pi.getThinkingLevel() !== desired) pi.setThinkingLevel(desired);
     } else {
       restoreUserEffort();
     }
