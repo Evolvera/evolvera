@@ -13,12 +13,13 @@ const reply = (status, body) => new Response(JSON.stringify(body), { status });
 assert.equal(m.cutState("a  \n b"), "a b");
 assert.equal(Array.from(m.cutState("x".repeat(2000))).length, m.STATE_MAX_CHARS);
 assert.deepEqual(m.pickRoute({ choice: "chore", probabilities: { chore: 0.3, debug_unknown: 0.6 } }), { model: "opus", effort: "xhigh", category: "debug_unknown" });
-assert.deepEqual(m.pickRoute({ choice: "code_feature" }), { model: "sol", effort: "medium", category: "code_feature" });
+assert.deepEqual(m.pickRoute({ choice: "code_feature" }), { model: "sol", effort: "xhigh", category: "code_feature" });
 assert.deepEqual(m.pickRoute({ choice: "duvida" }), { model: "opus", effort: "high", category: "duvida" }, "doubt -> Opus high");
 assert.equal(m.pickRoute({ choice: "gpt-9" }), undefined);
 for (const [name, c] of Object.entries(m.CATEGORIES)) {
   assert.ok(["luna", "sol", "opus"].includes(c.model), name);
-  if (c.model === "luna") assert.notEqual(c.effort, "low", "Luna never starts at low");
+  if (c.model === "luna") assert.equal(c.effort, "high", "Luna routes use high");
+  if (c.model === "sol") assert.equal(c.effort, "xhigh", "Sol routes use xhigh");
 }
 assert.equal(m.CATEGORIES.writing.model, "opus");
 assert.equal(m.CATEGORIES.install_simple.model, "luna", "documented download/install/run uses Luna");
@@ -30,10 +31,10 @@ const eff = (c, n) => { const r = m.scaleByCount(R(c), n); return `${r.model}/${
 assert.equal(eff("multi_complex", "two"), "opus/medium");
 assert.equal(eff("multi_complex", "three_four"), "opus/high");
 assert.equal(eff("multi_complex", "many"), "opus/xhigh");
-assert.equal(eff("multi_moderate", "two"), "sol/high");
+assert.equal(eff("multi_moderate", "two"), "sol/xhigh");
 assert.equal(eff("multi_moderate", "three_four"), "opus/medium");
 assert.equal(eff("multi_moderate", "many"), "opus/medium");
-assert.equal(eff("chore", "many"), "luna/medium", "count only affects multi_*");
+assert.equal(eff("chore", "many"), "luna/high", "count only affects multi_*");
 assert.equal(m.CATEGORIES.business.model, "opus");
 
 // 2. One Jev request per message with the route question; retries only transient failures.
@@ -74,7 +75,7 @@ for (const code of [400, 401, 403, 422]) {
 }
 
 // 2b. Luna fallback: parse, frustration first, injected completer.
-assert.deepEqual(m.parseLunaRoute('{"tier":"sol","frustrated":false}'), { model: "sol", effort: "medium", category: "sol" });
+assert.deepEqual(m.parseLunaRoute('{"tier":"sol","frustrated":false}'), { model: "sol", effort: "xhigh", category: "sol" });
 assert.deepEqual(m.parseLunaRoute('ok ```{"tier":"luna","frustrated":true}```'), { model: "opus", effort: "xhigh", category: "frustrado" }, "fallback frustration -> Opus xhigh");
 assert.equal(m.parseLunaRoute('{"tier":"gpt-9"}'), undefined);
 assert.equal(m.parseLunaRoute("not json"), undefined);
@@ -149,29 +150,33 @@ try {
   globalThis.fetch = ok("chore");
   await commands.maestro.handler("on", ctx);
   await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-luna"]], "Luna routing preserves effort");
+  assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "high"]], "Luna route uses high");
   globalThis.fetch = ok("install_simple");
   calls.length = 0;
   await handlers.input({ text: "baixa, instala e roda https://github.com/unreallabsai/unreal-agent/releases", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-luna"]], "simple install -> Luna without effort change");
+  assert.deepEqual(calls, [["model", "gpt-6-luna"]], "simple install -> Luna, already high");
+  globalThis.fetch = ok("code_feature");
+  calls.length = 0;
+  await handlers.input({ text: "adiciona uma validacao", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [["thinking", "xhigh"]], "Sol route uses xhigh without changing model");
   globalThis.fetch = ok("debug_unknown");
   calls.length = 0;
   await handlers.input({ text: "o site caiu", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "debug -> Opus without effort change");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "Opus route leaves effort unchanged");
   globalThis.fetch = angry(0.98);
   calls.length = 0;
   await handlers.input({ text: "vc é burro? reverte isso agora", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "frustration -> Opus 5.5 xhigh");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "frustration -> Opus 5.5, already xhigh");
   calls.length = 0;
   await handlers.input({ text: "continua", source: "interactive" }, ctx);
   assert.deepEqual(calls, [], "a continuation keeps the frustration effort");
   globalThis.fetch = angry(0.99);
   await handlers.input({ text: "de novo essa merda", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "repeated frustration stays xhigh");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"]], "repeated frustration stays xhigh without rewriting effort");
   globalThis.fetch = ok("chore");
   calls.length = 0;
   await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "low"]], "next routed prompt restores the user's effort");
+  assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "high"]], "next GPT route chooses high without an intermediate effort change");
   let jevCalled = false;
   globalThis.fetch = async () => { jevCalled = true; return reply(200, {}); };
   calls.length = 0;
@@ -187,7 +192,7 @@ try {
   assert.deepEqual(calls, []);
   assert.equal(handlers.turn_end, undefined, "no in-turn effort adaptation");
   assert.equal(handlers.agent_end, undefined, "no effort reset at agent end");
-  assert.equal(thinking, "low", "user-selected effort remains unchanged");
+  assert.equal(thinking, "high", "GPT route now ends at high");
 } finally {
   globalThis.fetch = realFetch;
 }
