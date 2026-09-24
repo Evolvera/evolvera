@@ -49,7 +49,7 @@ assert.equal(seen[0].auth, "Bearer k");
 assert.deepEqual(Object.keys(seen[0].body.questions), ["q", "f", "n"], "route + frustration + count in one request");
 assert.deepEqual(Object.keys(seen[0].body.questions.q.criteria), Object.keys(m.CATEGORIES));
 const angry = (noul) => async () => reply(200, { answers: { q: { choice: "chore" }, f: { noul } } });
-assert.deepEqual(await m.classify("porra quebrou tudo de novo", "k", angry(0.94)), { model: "astra", effort: "high", category: "frustrado" });
+assert.deepEqual(await m.classify("porra quebrou tudo de novo", "k", angry(0.94)), { model: "opus", effort: "xhigh", category: "frustrado" });
 assert.equal((await m.classify("URGENTE o site caiu", "k", angry(0.87))).model, "luna", "below threshold keeps the category");
 const fast = { retries: 3, backoffMs: [1, 1, 1], deadlineMs: 5_000 };
 const scripted = (statuses) => {
@@ -74,8 +74,8 @@ for (const code of [400, 401, 403, 422]) {
 }
 
 // 2b. Luna fallback: parse, frustration first, injected completer.
-assert.equal(m.parseLunaRoute('{"tier":"sol","frustrated":false}'), "sol");
-assert.equal(m.parseLunaRoute('ok ```{"tier":"luna","frustrated":true}```'), "astra");
+assert.deepEqual(m.parseLunaRoute('{"tier":"sol","frustrated":false}'), { model: "sol", effort: "medium", category: "sol" });
+assert.deepEqual(m.parseLunaRoute('ok ```{"tier":"luna","frustrated":true}```'), { model: "opus", effort: "xhigh", category: "frustrado" }, "fallback frustration -> Opus xhigh");
 assert.equal(m.parseLunaRoute('{"tier":"gpt-9"}'), undefined);
 assert.equal(m.parseLunaRoute("not json"), undefined);
 const lunaCtx = { modelRegistry: { find: (p, id) => ({ provider: p, id }), getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "x" }) } };
@@ -135,7 +135,7 @@ m.default({
   registerCommand: (n, c) => { commands[n] = c; },
   appendEntry: () => {},
   setModel: async (model) => { calls.push(["model", model.id]); return true; },
-  setThinkingLevel: () => { throw new Error("Maestro must not change effort"); },
+  setThinkingLevel: (l) => { thinking = l; calls.push(["thinking", l]); },
   getThinkingLevel: () => thinking,
 });
 const ctx = {
@@ -161,7 +161,17 @@ try {
   globalThis.fetch = angry(0.98);
   calls.length = 0;
   await handlers.input({ text: "vc é burro? reverte isso agora", source: "interactive" }, ctx);
-  assert.deepEqual(calls, [["model", "gpt-6-astra"]], "frustration -> Astra without effort change");
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "frustration -> Opus 5.5 xhigh");
+  calls.length = 0;
+  await handlers.input({ text: "continua", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [], "a continuation keeps the frustration effort");
+  globalThis.fetch = angry(0.99);
+  await handlers.input({ text: "de novo essa merda", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [["model", "claude-opus-5-5"], ["thinking", "xhigh"]], "repeated frustration stays xhigh");
+  globalThis.fetch = ok("chore");
+  calls.length = 0;
+  await handlers.input({ text: "commit e push", source: "interactive" }, ctx);
+  assert.deepEqual(calls, [["model", "gpt-6-luna"], ["thinking", "low"]], "next routed prompt restores the user's effort");
   let jevCalled = false;
   globalThis.fetch = async () => { jevCalled = true; return reply(200, {}); };
   calls.length = 0;
