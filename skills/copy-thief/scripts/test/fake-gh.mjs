@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // gh simulado para testar ct.mjs sem tocar no GitHub. Estado em $CT_FAKE_STATE (JSON).
 // CT_FAKE_DROP_EDIT=1 faz item-edit "funcionar" (exit 0) sem gravar — simula board divergente.
+// CT_FAKE_CREATE_ERR=1 faz issue create gravar e MESMO ASSIM sair com erro — simula queda de rede.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const file = process.env.CT_FAKE_STATE;
@@ -67,5 +68,16 @@ else if (c1 === "api" && a.includes("--paginate")) {
   const body = readFileSync(0, "utf8");
   S.comments.push({ issue: Number(a[2]), body }); S.log.push("comment"); save();
 } else if (c1 === "pr" && c2 === "list") print(S.prs);
+else if (c1 === "issue" && c2 === "create") {
+  const number = Math.max(0, ...S.issues.map((i) => i.number)) + 1;
+  S.issues.push({ number, title: flag("--title"), state: "OPEN", assignees: [], labels: (flag("--label") || "").split(",").filter(Boolean), body: readFileSync(0, "utf8") });
+  S.log.push("create"); save();
+  if (process.env.CT_FAKE_CREATE_ERR) die("connection reset");
+  print(`https://github.com/${S.repo}/issues/${number}`);
+} else if (c1 === "issue" && c2 === "list" && flag("--json") === "number,title,state") {
+  // CT_FAKE_SEARCH_LAG=1: a busca (--search) ainda não indexou nada; a listagem simples vê tudo
+  const lag = process.env.CT_FAKE_SEARCH_LAG && flag("--search");
+  print(lag ? [] : S.issues.map((i) => ({ number: i.number, title: i.title, state: i.state })));
+}
 else if (c1 === "issue" && c2 === "list") print(S.issues.filter((i) => i.state === "OPEN" && i.labels.includes("copy-thief")).map((i) => ({ number: i.number })));
 else die(`fake-gh: comando não simulado: ${a.join(" ")}`);

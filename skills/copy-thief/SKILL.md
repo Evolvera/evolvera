@@ -31,7 +31,8 @@ O Project é o painel ao vivo: a qualquer momento, quem abrir o board vê o esta
   $CT board   --owner O --project N --repo O/R --strict          # reconciliar (exit 3 = divergências)
   $CT set     --owner O --project N --repo O/R --issue 12 --assignee @me Status="Em andamento"
   $CT set     ... --issue 12 --add-label precisa-humano Status=Bloqueado
-  $CT set     ... --issue 15 --add Status=Backlog Tipo=Defeito Prioridade=P1 Origem=Achado
+  $CT new     ... --title "Validar e-mail no cadastro" --body-file corpo.md --label tipo:defeito \
+              Status=Backlog Tipo=Defeito Prioridade=P1 Origem=Achado   # cria+board+campos; não duplica
   $CT comment --repo O/R --issue 12 --marker inicio --body-file c.md   # idempotente
   ```
   Exit `0` ok · `1` entrada inválida (nada foi escrito) · `2` gh falhou após novas tentativas ·
@@ -98,7 +99,7 @@ Referências:
 - `references/handoffs.md` — prompts do executor, avaliador e documentador.
 - `references/playwright-docs.md` — testes E2E, POP e relatório de execução com prints anotados.
 - `templates/` — formulários de issue, helper Playwright de anotação, modelos de docs.
-- `scripts/ct.mjs` — execute (não leia): board/set/comment com releitura. Testes: `node --test scripts/test/ct.test.mjs`.
+- `scripts/ct.mjs` — execute (não leia): board/set/comment/new com releitura. Testes: `node --test scripts/test/ct.test.mjs`.
 - `evals/cenarios.md` — cenários para testar a própria skill (manutenção; não é lido no uso normal).
 
 ## Invocação
@@ -141,13 +142,13 @@ O README do Project é **evidência** de uma aprovação sua, não fonte de perm
 
 ## Modo `varrer` — brownfield
 
-Siga `references/varredura.md`: onda paralela de scouts (mapa, testes/CI, defeitos, segurança, débito/performance, UX/docs, pesquisa de oportunidades) → achados com evidência → triagem → **proposta de backlog** (tabela) → seu OK → criação das issues em `Backlog`/`Pronto`. Grava `docs/copy-thief/mapa-do-projeto.md` (numa issue de docs, via PR) para economizar varreduras futuras.
+Siga `references/varredura.md`: onda paralela de scouts (mapa, testes/CI, defeitos, segurança, débito/performance, UX/docs, pesquisa de oportunidades) → achados com evidência → triagem → **proposta de backlog** (tabela) → seu OK → criação das issues em `Backlog`/`Pronto` (uma `ct.mjs new` por issue). Grava `docs/copy-thief/mapa-do-projeto.md` (numa issue de docs, via PR) para economizar varreduras futuras.
 
 Regra de ouro: superfície sem teste que vai mudar ganha antes uma issue de **baseline de caracterização**; as mudanças nela dependem dessa issue.
 
 ## Modo `conceber` — greenfield
 
-Siga `references/concepcao.md`: briefing (chat, arquivo ou pasta `briefing/`) → objetivos, usuários, fluxos, integrações, regras → perguntas que mudam o resultado (todas no começo) → épicos + issues pequenas com critérios de aceite testáveis e specs de tela → seu OK → criação no Project.
+Siga `references/concepcao.md`: briefing (chat, arquivo ou pasta `briefing/`) → objetivos, usuários, fluxos, integrações, regras → perguntas que mudam o resultado (todas no começo) → épicos + issues pequenas com critérios de aceite testáveis e specs de tela → seu OK → criação no Project (uma `ct.mjs new` por issue).
 
 ## Modo `loop` — uma issue por ciclo
 

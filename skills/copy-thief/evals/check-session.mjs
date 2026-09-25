@@ -25,8 +25,8 @@ for (const line of readFileSync(file, "utf8").split("\n")) {
     if (name === "read") ev.push({ k: "read", path: String(a.path || "").replace(/\\/g, "/"), partial: a.offset != null || a.limit != null });
     else if (name === "bash") {
       const cmd = String(a.command || "");
-      for (const x of cmd.matchAll(/(?:ct\.mjs|\$\{?CT\}?)\s+(board|set|comment)\b([^\n;&|]*)/g)) ev.push({ k: "ct", sub: x[1], args: x[2] });
-      if (/gh\s+project\s+item-edit|gh\s+issue\s+(comment|edit)\b/.test(cmd)) ev.push({ k: "rawgh", cmd: cmd.slice(0, 120) });
+      for (const x of cmd.matchAll(/(?:ct\.mjs|\$\{?CT\}?)\s+(board|set|comment|new)\b([^\n;&|]*)/g)) ev.push({ k: "ct", sub: x[1], args: x[2] });
+      if (/gh\s+project\s+item-edit|gh\s+issue\s+(comment|edit|create)\b/.test(cmd)) ev.push({ k: "rawgh", cmd: cmd.slice(0, 120) });
       if (/(cat|head|sed|less)\s+[^\n]*(SKILL\.md|metodo-trabalho\.md)/.test(cmd)) ev.push({ k: "read", path: cmd.match(/\S*(SKILL\.md|metodo-trabalho\.md)/)[0], viaBash: true });
     } else if (name === "agent") ev.push({ k: "agent", type: a.subagent_type, prompt: String(a.prompt || ""), id: c.id });
   }
@@ -58,7 +58,7 @@ ev.forEach((x, i) => {
 
 // 3) Escritas pelo script, não gh cru
 const raw = ev.filter((x) => x.k === "rawgh");
-add("Nenhuma escrita recorrente com gh cru (item-edit / issue comment / issue edit)", raw.length === 0, raw.map((x) => x.cmd).join(" | "));
+add("Nenhuma escrita recorrente com gh cru (item-edit / issue create / issue comment / issue edit)", raw.length === 0, raw.map((x) => x.cmd).join(" | "));
 
 // 4) Reconciliação no início e no fim
 const writes = ev.map((x, i) => (x.k === "ct" && x.sub !== "board" ? i : -1)).filter((i) => i >= 0);

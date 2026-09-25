@@ -174,8 +174,9 @@ gh project item-edit --id "$ITEM" --project-id "$PID" --field-id <FID> --single-
 gh project item-edit --id "$ITEM" --project-id "$PID" --field-id <FID_EVID> --text "<url>"
 ```
 Um `item-edit` por campo. Releia com `gh project item-list "$PN" --owner OWNER --format json --limit 500`.
-Preferido: depois do `gh issue create`, rode
-`ct.mjs set ... --issue <N> --add Status=Backlog Tipo=... Prioridade=... Origem=...` (adiciona, preenche e confere).
+Preferido: um comando só, verificado e sem duplicar (idempotente por título exato):
+`ct.mjs new --owner OWNER --project PN --repo REPO --title "<título>" --body-file corpo.md --label tipo:defeito Status=Backlog Tipo=Defeito Prioridade=P1 Origem=Varredura`.
+Pré-requisito: as labels já existem no repo (§2). Sub-issues de épico continuam pelo `gh api` acima.
 
 ## 6. Comentários do ciclo (marcadores `ct:*`)
 
