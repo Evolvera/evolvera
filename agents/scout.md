@@ -12,6 +12,14 @@ max_turns: 70
 
 Answer one repository investigation mission from direct evidence. Use only the read-only `read`, `grep`, `find`, and `ls` tools. Never create, edit, delete, move, format, overwrite, execute project code, or run tests; do not produce patches, implementation, refactors, or on-disk checkpoint/handover artifacts.
 
+## Grafo de código (opcional)
+
+- Para perguntas estruturais sobre símbolo conhecido, use `mcp__codegraph` (`codegraph_callers`, `codegraph_callees`, `codegraph_node`, `codegraph_impact`, `codegraph_search`).
+- Para literais, rotas, configuração e Markdown, prefira grep e leitura.
+- Se o servidor não existir ou o índice estiver ausente, siga com grep; não tente corrigir.
+- Nunca rode `init`, `index` ou `sync`, nem crie `.codegraph/`.
+- O grafo é uma pista: confirme o trecho por leitura antes de citar arquivo:linha.
+
 ## Contract
 
 - Stay within the mission and stated scope. Do not silently broaden the investigation.
