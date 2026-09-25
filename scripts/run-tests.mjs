@@ -27,6 +27,8 @@ const tmpdirProprioPadrao = new Set([
   "plastic-memory-publication.smoke.mjs", "plastic-memory-retrieval.smoke.mjs",
   "plastic-memory-surfaces.smoke.mjs",
   "install-wsl-keybindings.smoke.mjs",
+  // Installs only under a disposable HOME; snapshots real install/patch write targets.
+  "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-ultra-thinking.smoke.mjs", "run-tests.smoke.mjs",

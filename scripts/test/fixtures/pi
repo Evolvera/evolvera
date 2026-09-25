@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+if [ "$#" -eq 1 ] && [ "$1" = --version ]; then
+    printf 'pi fake 0.83.0\n'
+    exit 0
+fi
+printf '%s\n' "$*" >> "$FAKE_INSTALL_LOG"
+case "$*" in
+  "install npm:@tintinweb/pi-subagents@0.18.2")
+    mkdir -p "$HOME/.pi/agent/npm/node_modules/@tintinweb"
+    cp -R "$FAKE_SUBAGENTS_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@tintinweb/pi-subagents"
+    ;;
+  "install npm:@gotgenes/pi-anthropic-auth@2.0.6")
+    mkdir -p "$HOME/.pi/agent/npm/node_modules/@gotgenes"
+    cp -R "$FAKE_AUTH_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@gotgenes/pi-anthropic-auth"
+    ;;
+esac
+if [ "${FAKE_PI_FAIL:-}" != "" ] && [ "$*" = "install $FAKE_PI_FAIL" ]; then
+    exit 1
+fi
+exit 0
