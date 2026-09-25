@@ -56,6 +56,8 @@ const semEstadoPadrao = new Set([
   "plastic-memory-promotion-lifecycle.smoke.mjs",
   "plastic-memory-proposal-queue.smoke.mjs", "plastic-memory-queue.smoke.mjs",
   "plastic-memory-session.smoke.mjs", "plastic-memory-stride.smoke.mjs",
+  // Backfill uses only in-memory history and an array-backed fake append sink.
+  "plastic-memory-backfill.smoke.mjs",
   "plastic-memory-token-calibration.smoke.mjs",
   "plastic-memory-transport-integrity.smoke.mjs",
   "plastic-memory-worker-contract.smoke.mjs", "plastic-memory-workers.smoke.mjs",
