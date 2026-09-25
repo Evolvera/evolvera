@@ -87,11 +87,13 @@ try {
   completions = await fastCommand.getArgumentCompletions("e");
   assert.deepEqual(completions.map((item) => item.value), ["eco"]);
 
-  // Selecting a compatible GPT exposes on while keeping Fast off by default.
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" }, "Fast ECO is the root default");
+
+  // Selecting a compatible GPT exposes on while ECO still keeps the main session standard.
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   assert.equal(notifications.length, 0);
-  assert.equal(statuses.at(-1).text, undefined);
+  assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "eco", "off"]);
   const defaultPayload = await handlers.get("before_provider_request")(
@@ -100,7 +102,7 @@ try {
   );
   assert.equal(defaultPayload, undefined);
 
-  // A separately-created child starts standard, then reads the owner's shared state dynamically.
+  // A child receives Fast by default through the owner's ECO state.
   const child = createExtensionHarness();
   const childCtx = {
     mode: "headless",
@@ -120,7 +122,7 @@ try {
     { payload: { model: gpt56.id } },
     childCtx,
   );
-  assert.equal(defaultChildPayload, undefined);
+  assert.equal(defaultChildPayload.service_tier, "priority");
 
   // Manual on injects the priority tier for both owner and child and reports request acceptance.
   await fastCommand.handler("on", ctx);
@@ -240,11 +242,41 @@ try {
   );
   assert.equal(afterOwnerModelChange, undefined);
 
-  // Owner shutdown resets the registry; a fresh root starts Fast off.
+  // `/new` keeps the explicit Fast mode and transfers ownership to the new maestro.
   ctx.model = gpt56;
+  await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
+  await fastCommand.handler("on", ctx);
+  const newOwner = createExtensionHarness();
+  const newStatuses = [];
+  const newCtx = {
+    mode: "tui",
+    model: gpt56,
+    sessionManager: {
+      getSessionId() {
+        return "new-owner-session";
+      },
+    },
+    ui: {
+      notify() {},
+      setStatus(key, text) {
+        newStatuses.push({ key, text });
+      },
+    },
+  };
+  await handlers.get("session_shutdown")({ reason: "new", targetSessionFile: "new-session" }, ctx);
+  await newOwner.handlers.get("session_start")({ reason: "new", previousSessionFile: "old-session" }, newCtx);
+  assert.deepEqual(newStatuses.at(-1), { key: "codex-fast-mode", text: "⚡🟡" });
+  const continuedSessionPayload = await newOwner.handlers.get("before_provider_request")(
+    { payload: { model: gpt56.id } },
+    newCtx,
+  );
+  assert.equal(continuedSessionPayload.service_tier, "priority");
+
+  // A real owner shutdown clears the session state; a fresh root starts in ECO by default.
   const freshOwner = createExtensionHarness();
+  const freshStatuses = [];
   const freshCtx = {
-    mode: "headless",
+    mode: "tui",
     model: gpt56,
     sessionManager: {
       getSessionId() {
@@ -253,15 +285,16 @@ try {
     },
     ui: {
       notify() {},
-      setStatus() {},
+      setStatus(key, text) { freshStatuses.push({ key, text }); },
     },
   };
-  await handlers.get("session_shutdown")({ reason: "quit" }, ctx);
+  await newOwner.handlers.get("session_shutdown")({ reason: "quit" }, newCtx);
   await freshOwner.handlers.get("session_start")({ reason: "startup" }, freshCtx);
   const newSessionPayload = await freshOwner.handlers.get("before_provider_request")(
     { payload: { model: gpt56.id } },
     freshCtx,
   );
+  assert.deepEqual(freshStatuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
   assert.equal(newSessionPayload, undefined);
 
   // Astra is eligible and receives the priority service tier after explicit activation.

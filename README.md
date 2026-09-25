@@ -417,7 +417,7 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 |---|---|
 | `/login` | Autenticar ou selecionar provider/modelo. |
 | `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
-| `/fast on` / `/fast eco` / `/fast off` | Alternar o fast mode fornecido pela extensão local: `on` usa `service_tier: "priority"` na sessão principal e nos subagentes Agent elegíveis; `eco` mantém a sessão principal no tier padrão e usa Fast apenas nos subagentes OpenAI Codex compatíveis; `off` usa o tier padrão em todos. Subagentes isolados permanecem no tier padrão. |
+| `/fast on` / `/fast eco` / `/fast off` | ECO é o padrão: a sessão principal usa o tier padrão e apenas subagentes OpenAI Codex elegíveis usam Fast (`service_tier: "priority"`). `on` ativa Fast na principal e nos subagentes elegíveis; `off` desativa Fast em todos. O modo explícito continua no novo chat raiz criado por `/new`; subagentes isolados permanecem no tier padrão. |
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
