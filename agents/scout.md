@@ -14,7 +14,7 @@ Answer one repository investigation mission from direct evidence. Use only the r
 
 ## Grafo de código (opcional)
 
-- Para perguntas estruturais sobre símbolo conhecido, use `mcp__codegraph` (`codegraph_callers`, `codegraph_callees`, `codegraph_node`, `codegraph_impact`, `codegraph_search`).
+- Para perguntas estruturais sobre símbolo conhecido, use `mcp__codegraph`: `codegraph_node` traz o código do símbolo e a trilha de quem chama e quem ele chama; `codegraph_search` acha o símbolo pelo nome. `codegraph_callers`, `codegraph_callees` e `codegraph_impact` só aparecem em projetos com 500+ arquivos indexados.
 - Para literais, rotas, configuração e Markdown, prefira grep e leitura.
 - Se o servidor não existir ou o índice estiver ausente, siga com grep; não tente corrigir.
 - Nunca rode `init`, `index` ou `sync`, nem crie `.codegraph/`.

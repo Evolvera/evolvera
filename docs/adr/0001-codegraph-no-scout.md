@@ -37,6 +37,14 @@ configuração e Markdown continuam com grep e leitura. O resultado do grafo é
 pista: confirmar o trecho antes de citar `arquivo:linha`. O agente não executa
 `init`, `index` ou `sync`, não instala o binário e não cria `.codegraph/`.
 
+Limite descoberto na avaliação (QA de 2026-09-25): o codegraph 1.2.0 anuncia
+só `search`, `node` e `explore` em projetos com menos de 500 arquivos
+indexados, qualquer que seja a lista configurada (`lib/dist/mcp/tools.js`,
+`TINY_REPO_FILE_THRESHOLD`). Com `explore` fora, sobram `node` e `search` em
+repositórios pequenos como este (243 arquivos). Isso basta: a saída de `node`
+já inclui a trilha "Called by"/"Calls". `callers`, `callees` e `impact`
+ficam na lista para projetos maiores.
+
 ## Alternativas rejeitadas
 
 - **Graphify sem LLM:** build mais demorado, `update` de 70 s não incremental e
