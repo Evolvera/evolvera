@@ -216,7 +216,7 @@ Requirements:
 - Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
 - Preserve and operationalize the designer's mobile-first + desktop/landscape strategy.
 - Write an Asset Provenance Ledger in HOME_PLAN.md from the designer's canonical asset inventory, using one machine-readable `- data-asset-source: \`<exact source>\`` line per asset, then copy it verbatim into TASK_builder-home.md. Only exact user/repo-provided or primary-canonical-source assets retrieved during this run may be ledger entries. Every allowed `<svg>` must have the ledger's exact `data-asset-source="https://..."` or `data-asset-source="provided:<path-or-id>"`; if no asset qualifies, require zero `<svg>` tags and text/CSS/semantic HTML alternatives.
-- Include this validation command in TASK_builder-home.md: `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`
+- Include this validation command in TASK_builder-home.md: `node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html`
 - The builder output must be exactly .pi/previews/<slug>/index.html
 - No full project, no package.json, no framework, no build step.
 ```
@@ -244,7 +244,7 @@ Hard constraints:
 - Do not choose a new design direction; implement the planner's selected/fused direction and only the addendum's mapped mechanics in named existing zones.
 - Preserve the design artifact's hierarchy, tokens, content, layout, accessibility, normal scroll, keyboard/touch parity, visible focus, reduced-motion/static fallback, and native-only Home boundary; do not resolve a DESIGN_CONFLICT by redesigning.
 - Use only inline SVG assets copied into TASK_builder-home.md's Asset Provenance Ledger. Never invent SVG markup/path data; every allowed `<svg>` needs its exact ledger `data-asset-source`. If the ledger authorizes none, emit zero `<svg>` tags and use text/CSS/semantic HTML alternatives, never emoji/font glyph substitutes.
-- Run the validation commands listed in TASK_builder-home.md, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.
+- Run the validation commands listed in TASK_builder-home.md, including `node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html`.
 ```
 
 Expected output:
@@ -260,7 +260,7 @@ Capture screenshots in both portrait and landscape so agents can evaluate the pa
 Run from the repository root:
 
 ```bash
-node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/capture-home-screenshots.mjs \
+node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/capture-home-screenshots.mjs" \
   .pi/previews/<slug>/index.html \
   .pi/previews/<slug>/screenshots
 ```
@@ -329,7 +329,7 @@ Hard constraints:
 - Do not create any extra files.
 - Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
 - Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
-- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.
+- Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes, including `node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html`.
 - Preserve Asset Provenance Ledger restrictions: do not invent SVG markup/path data; use only its exact source-backed inline SVG assets or text/CSS/semantic HTML alternatives.
 - Refresh screenshots after polish using the Visual Snapshot Capture command above.
 ```
@@ -358,7 +358,7 @@ Validate:
 - exactly one index.html output, no extra project files required;
 - semantic HTML structure;
 - inline CSS present;
-- `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html` passes; every inline SVG is authorized by HOME_PLAN.md's Asset Provenance Ledger with valid, traceable `data-asset-source`, and no `data:image/svg+xml` exists;
+- `node "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs" .pi/previews/<slug>/index.html` passes; every inline SVG is authorized by HOME_PLAN.md's Asset Provenance Ledger with valid, traceable `data-asset-source`, and no `data:image/svg+xml` exists;
 - responsive layout rules;
 - accessible landmarks/headings/buttons/links;
 - visible focus states;
