@@ -1,0 +1,26 @@
+name: ✨ Nova funcionalidade
+description: Algo novo que o sistema deve fazer
+title: "[Feature] "
+labels: ["copy-thief", "tipo:feature"]
+body:
+  - type: textarea
+    id: resumo
+    attributes: { label: Resumo, description: O quê e por quê (qual problema resolve, para quem) }
+    validations: { required: true }
+  - type: textarea
+    id: fluxo
+    attributes: { label: Como deve funcionar, placeholder: "1. O usuário...\n2. O sistema..." }
+    validations: { required: true }
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      description: Cada item deve ser observável e testável
+      value: "- [ ] CA1 — \n- [ ] CA2 — \n- [ ] Sem regressão na suíte completa\n- [ ] POP atualizado (se houver tela)"
+    validations: { required: true }
+  - type: textarea
+    id: fora
+    attributes: { label: Fora de escopo }
+  - type: textarea
+    id: referencias
+    attributes: { label: Referências, description: Sistemas parecidos, prints, links (o que vale "roubar") }
