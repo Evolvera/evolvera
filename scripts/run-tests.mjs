@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,7 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // Evidência de estado: tmpdir contém apenas smokes que criam mkdtemp e fazem
 // limpeza explícita; in-memory não cria arquivo/serviço persistente. Revisado
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
-const tmpdirProprio = new Set([
+const tmpdirProprioPadrao = new Set([
   "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
@@ -31,19 +31,60 @@ const tmpdirProprio = new Set([
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-ultra-thinking.smoke.mjs", "run-tests.smoke.mjs",
 ]);
+const semEstadoPadrao = new Set([
+  "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
+  "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
+  "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
+  "plastic-memory-compaction.smoke.mjs",
+  "plastic-memory-context-injection.smoke.mjs",
+  "plastic-memory-emergency-hook.smoke.mjs",
+  "plastic-memory-emergency-pipeline.smoke.mjs",
+  "plastic-memory-emergency-queue.smoke.mjs",
+  "plastic-memory-emergency-selection.smoke.mjs",
+  "plastic-memory-emergency-summary.smoke.mjs",
+  "plastic-memory-fresh-session.smoke.mjs",
+  "plastic-memory-integration.smoke.mjs",
+  "plastic-memory-lifecycle-observability.smoke.mjs",
+  "plastic-memory-model-fallback.smoke.mjs",
+  "plastic-memory-promotion-lifecycle.smoke.mjs",
+  "plastic-memory-proposal-queue.smoke.mjs", "plastic-memory-queue.smoke.mjs",
+  "plastic-memory-session.smoke.mjs", "plastic-memory-stride.smoke.mjs",
+  "plastic-memory-token-calibration.smoke.mjs",
+  "plastic-memory-transport-integrity.smoke.mjs",
+  "plastic-memory-worker-contract.smoke.mjs", "plastic-memory-workers.smoke.mjs",
+  "plastic-memory-rebind-observability.smoke.mjs",
+  "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
+]);
+let tmpdirProprio = tmpdirProprioPadrao;
+let semEstado = semEstadoPadrao;
+if (root !== repoRoot) {
+  // Árvore falsa pode fornecer classificação isolada; a classificação real
+  // permanece neste runner e não depende de arquivo do repositório.
+  try {
+    const fakeClasses = JSON.parse(readFileSync(
+      path.join(root, "scripts/test/.classificacao.json"), "utf8",
+    ));
+    tmpdirProprio = new Set(fakeClasses.tmpdirProprio ?? []);
+    semEstado = new Set(fakeClasses.semEstado ?? []);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
 // Escrita isolada é provada nos smoke tests; estes exceções acessam dado externo.
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
   ["npm test (interface)", "servidor lê ~/.pi/agent; smoke usa rede loopback e repo real"],
 ]);
 
-const resultados = { aprovados: [], falhos: [], excluidos: [] };
+const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
 function executar(nome, comando, args, cwd) {
   const child = spawnSync(comando, args, {
     cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 1024 * 1024,
   });
-  if (child.stdout) process.stdout.write(child.stdout);
-  if (child.stderr) process.stderr.write(child.stderr);
+  if (child.error?.code !== "ENOBUFS") {
+    if (child.stdout) process.stdout.write(child.stdout);
+    if (child.stderr) process.stderr.write(child.stderr);
+  }
   const failed = child.error || child.status !== 0;
   if (failed) {
     const motivo = child.error?.code === "ETIMEDOUT"
@@ -70,7 +111,12 @@ for (const dir of ["extensions/test", "scripts/test"]) {
       resultados.excluidos.push(`${name} — ${reason}`);
       continue;
     }
-    const classe = tmpdirProprio.has(name) ? "tmpdir próprio" : "sem estado persistente";
+    const classe = tmpdirProprio.has(name) ? "tmpdir próprio"
+      : semEstado.has(name) ? "sem estado persistente" : null;
+    if (!classe) {
+      resultados.naoClassificados.push(name);
+      continue;
+    }
     console.log(`\n[${classe}] ${name}`);
     executar(name, process.execPath, [path.join(absoluteDir, name)], root);
   }
@@ -90,6 +136,10 @@ console.log("\nResumo final");
 console.log(`Aprovados: ${resultados.aprovados.length}`);
 console.log(`Falhos: ${resultados.falhos.length}`);
 console.log(`Excluídos: ${resultados.excluidos.length}`);
+console.log(`Não classificados: ${resultados.naoClassificados.length}`);
 for (const failure of resultados.falhos) console.log(`Falha: ${failure}`);
 for (const excluded of resultados.excluidos) console.log(`Excluído: ${excluded}`);
+for (const name of resultados.naoClassificados) {
+  console.log(`Não classificado: ${name} — classifique-o antes de executar`);
+}
 if (resultados.falhos.length) process.exitCode = 1;
