@@ -305,7 +305,7 @@ Em instalações existentes, mescle manualmente esta entrada em `~/.pi/agent/mcp
 }
 ```
 
-Para excluir caminhos do índice, configure `codegraph.json`, por exemplo `{"exclude": [".pi/recovery/**"]}`. O diretório `.codegraph/` se auto-ignora no Git. Para parar um daemon em segundo plano, rode `codegraph daemon` (alias `daemons`): ele lista os daemons ativos e para o que você escolher com Enter (menu interativo, sem opção não interativa na 1.2.0). O grafo não indexa Markdown nem responde perguntas por literais; `explore` fica desativada por seu custo observado. Nesses casos, o scout usa grep e leitura.
+Para excluir caminhos do índice, configure `codegraph.json`, por exemplo `{"exclude": [".pi/recovery/**"]}`. O diretório `.codegraph/` se auto-ignora no Git. Para parar um daemon em segundo plano, rode `codegraph daemon` (alias `daemons`): ele lista os daemons ativos e para o que você escolher com Enter (menu interativo, sem opção não interativa na 1.2.0). O grafo não indexa Markdown nem responde perguntas por literais; `explore` fica desativada por seu custo observado. Em projetos com menos de 500 arquivos indexados, o codegraph 1.2.0 anuncia só `codegraph_node` e `codegraph_search` (os demais aparecem em projetos maiores); `node` já mostra quem chama e quem é chamado. Nesses casos, o scout usa grep e leitura.
 
 ### Roteamento
 

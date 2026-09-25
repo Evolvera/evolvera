@@ -62,7 +62,7 @@ for (const [descricao, ancora] of [
   // Cada âncora usa [^\n]* (e não [\s\S]*): a regra inteira precisa estar
   // numa mesma linha, para que uma palavra solta em outro trecho do prompt
   // não baste para o teste passar.
-  ["as ferramentas estruturais", /mcp__codegraph[^\n]*codegraph_callers[^\n]*codegraph_callees[^\n]*codegraph_node[^\n]*codegraph_impact[^\n]*codegraph_search/],
+  ["as ferramentas estruturais e o limite de projetos pequenos", /mcp__codegraph[^\n]*codegraph_node[^\n]*codegraph_search[^\n]*codegraph_callers[^\n]*codegraph_callees[^\n]*codegraph_impact[^\n]*500/],
   ["a preferência por grep para literais, rotas, configuração e Markdown", /literais[^\n]*rotas[^\n]*configuração[^\n]*Markdown[^\n]*grep/i],
   ["fallback sem corrigir servidor ou índice ausentes", /servidor[^\n]*não existir[^\n]*índice[^\n]*ausente[^\n]*grep[^\n]*não tente corrigir/i],
   ["a proibição de inicializar ou indexar", /nunca[^\n]*init[^\n]*index[^\n]*sync[^\n]*\.codegraph\//i],
