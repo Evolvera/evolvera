@@ -1,3 +1,6 @@
+// Snapshot only installer/patcher write targets, not all of ~/.pi/agent: the
+// active PI session continually writes sessions, logs, and runtime memory there.
+// The scoped destinations below are the approved CA2 boundary.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -122,8 +125,20 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   }
   fs.copyFileSync(path.join(root, 'scripts/test/fixtures/npm.cmd'), path.join(fakeBin, 'npm.cmd'));
   const log = path.join(parent, 'install.log');
-  const env = {
+  // Poison inherited destination selectors so this smoke catches accidental
+  // fallback to the caller's PI/npm configuration.
+  const inheritedEnv = {
     ...process.env,
+    PI_CODING_AGENT_DIR: path.join(parent, 'inherited-pi-agent'),
+    PI_TEST_DESTINATION: path.join(parent, 'inherited-pi-target'),
+    npm_config_prefix: path.join(parent, 'inherited-npm-prefix'),
+    npm_config_cache: path.join(parent, 'inherited-npm-cache'),
+  };
+  const safeInheritedEnv = Object.fromEntries(
+    Object.entries(inheritedEnv).filter(([key]) => !/^(PI_|npm_config_)/i.test(key)),
+  );
+  const env = {
+    ...safeInheritedEnv,
     HOME: home,
     USERPROFILE: home,
     XDG_CONFIG_HOME: path.join(home, '.config'),
@@ -132,12 +147,13 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     FAKE_NPM_ROOT: fakeGlobalModules,
     FAKE_SUBAGENTS_FIXTURE: fakeSubagents,
     FAKE_AUTH_FIXTURE: fakeAuth,
+    PI_CODING_AGENT_DIR: path.join(home, '.pi', 'agent'),
   };
   delete env.WSL_DISTRO_NAME;
   delete env.WSL_INTEROP;
   if (failPackage) env.FAKE_PI_FAIL = failPackage;
   else delete env.FAKE_PI_FAIL;
-  return { label, parent, home, env, log, fakeGlobalModules };
+  return { label, parent, home, env, log, fakeBin, fakeGlobalModules };
 }
 function runInstall(testCase) {
   const child = spawnSync(bash, [path.join(root, 'install.sh')], {
@@ -150,36 +166,73 @@ function runInstall(testCase) {
 function assertInstalled(testCase, mcpExpected) {
   const agent = path.join(testCase.home, '.pi', 'agent');
   for (const name of ['agents', 'skills', 'extensions']) assert.ok(fs.statSync(path.join(agent, name)).isDirectory(), `${testCase.label}: ${name}`);
-  assert.ok(fs.statSync(path.join(agent, 'settings.json')).isFile(), `${testCase.label}: settings.json`);
-  assert.ok(fs.statSync(path.join(agent, 'mcp.json')).isFile(), `${testCase.label}: mcp.json`);
-  const mcp = fs.readFileSync(path.join(agent, 'mcp.json'), 'utf8');
-  if (mcpExpected !== null) assert.equal(mcp, mcpExpected, `${testCase.label}: mcp.json was not preserved`);
-  assert.ok(fs.readdirSync(path.join(agent, 'agents')).length > 0, `${testCase.label}: no agents copied`);
-  assert.ok(fs.readdirSync(path.join(agent, 'skills')).length > 0, `${testCase.label}: no skills copied`);
-  assert.ok(fs.readdirSync(path.join(agent, 'extensions')).length > 0, `${testCase.label}: no extensions copied`);
+  assert.ok(fs.existsSync(path.join(agent, 'agents', 'scout.md')), `${testCase.label}: agents/scout.md`);
+  assert.ok(fs.existsSync(path.join(agent, 'skills', 'copy-thief', 'SKILL.md')), `${testCase.label}: skills/copy-thief/SKILL.md`);
+  assert.ok(fs.existsSync(path.join(agent, 'extensions', 'execution-mode.ts')), `${testCase.label}: extensions/execution-mode.ts`);
+  const settingsPath = path.join(agent, 'settings.json');
+  assert.ok(fs.statSync(settingsPath).isFile(), `${testCase.label}: settings.json`);
+  assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).compaction.reserveTokens,
+    JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).compaction.reserveTokens,
+    `${testCase.label}: settings.json compaction.reserveTokens`);
+  const mcpPath = path.join(agent, 'mcp.json');
+  assert.ok(fs.statSync(mcpPath).isFile(), `${testCase.label}: mcp.json`);
+  if (mcpExpected !== null) {
+    assert.deepEqual(fs.readFileSync(mcpPath), mcpExpected, `${testCase.label}: mcp.json bytes differ`);
+  }
+}
+function hostPathFromBash(value) {
+  if (process.platform === 'win32' && /^\/[a-z]\//i.test(value)) {
+    return path.resolve(`${value[1].toUpperCase()}:${value.slice(2).replaceAll('/', path.sep)}`);
+  }
+  return path.resolve(value);
+}
+function runPreflight(testCase) {
+  const command = process.platform === 'win32'
+    ? 'set -e; npm_bin=$(command -v npm); npm_root=$(npm root -g); pi_bin=$(command -v pi); printf "%s\\n%s\\n%s\\n" "$(cygpath -aw "$npm_bin")" "$(cygpath -aw "$npm_root")" "$(cygpath -aw "$pi_bin")"'
+    : 'command -v npm; npm root -g; command -v pi';
+  const probe = spawnSync(bash, ['-c', command], {
+    cwd: root, encoding: 'utf8', env: testCase.env, timeout: 5_000,
+  });
+  assert.equal(probe.error, undefined, `${testCase.label}: preflight bash: ${probe.error?.message ?? ''}`);
+  assert.equal(probe.status, 0, `${testCase.label}: preflight failed: ${probe.stderr}`);
+  const lines = probe.stdout.trim().split(/\r?\n/);
+  assert.equal(lines.length, 3, `${testCase.label}: preflight must return npm, npm root -g, pi`);
+  assert.equal(hostPathFromBash(lines[0]), path.resolve(testCase.fakeBin, 'npm'), 'command -v npm did not resolve to tmp stub');
+  assert.equal(hostPathFromBash(lines[1]), path.resolve(testCase.fakeGlobalModules), 'npm root -g did not resolve to tmp root');
+  assert.equal(hostPathFromBash(lines[2]), path.resolve(testCase.fakeBin, 'pi'), 'command -v pi did not resolve to tmp stub');
+  if (process.platform === 'win32') {
+    const npmCmdRoot = execFileSync('npm.cmd', ['root', '-g'], {
+      encoding: 'utf8', env: testCase.env, shell: true, timeout: 5_000,
+    }).trim();
+    assert.equal(hostPathFromBash(npmCmdRoot), path.resolve(testCase.fakeGlobalModules), 'npm.cmd did not resolve to tmp root');
+  }
 }
 
 // STATEFUL RESOURCE PROOF: this unique mkdtemp owns HOME, USERPROFILE, XDG_CONFIG_HOME,
 // fake npm-global, fixtures, and logs. Bash resolves fake pi/npm first on PATH; the fake
-// npm root -g reports the tmpdir root. Neither stub accesses network. The real-home
-// snapshot is limited to install/patch write targets below; sessions, logs, and runtime
-// memory are explicitly excluded because the active PI session writes there continuously.
+// npm root -g reports the tmpdir root. PI_* destination overrides and npm_config_*
+// selectors are stripped, then PI_CODING_AGENT_DIR is pinned to this HOME. Neither
+// stub accesses network. The real-home snapshot is limited to install/patch write
+// targets; sessions, logs, and runtime memory are excluded because PI writes there.
 const realTargetsBefore = snapshotTargets();
 const home = makeCase('instalação limpa e HOME com espaço', { space: true });
 try {
   for (const key of ['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME']) {
     assert.ok(path.resolve(home.env[key]).startsWith(`${path.resolve(home.parent)}${path.sep}`), `${key} fora do tmpdir`);
   }
-  const npmRoot = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g'], {
-    encoding: 'utf8', env: home.env, shell: process.platform === 'win32',
-  }).trim();
-  assert.equal(path.resolve(npmRoot), path.resolve(home.fakeGlobalModules), 'npm root -g fora do tmpdir');
-  assert.ok(path.resolve(npmRoot).startsWith(`${path.resolve(home.parent)}${path.sep}`), 'npm root -g fora do tmpdir');
+  const expectedAgent = path.join(home.home, '.pi', 'agent');
+  assert.equal(home.env.PI_CODING_AGENT_DIR, expectedAgent, 'PI_CODING_AGENT_DIR fora do HOME temporário');
+  assert.deepEqual(
+    Object.keys(home.env).filter((key) => /^(PI_|npm_config_)/i.test(key) && key !== 'PI_CODING_AGENT_DIR'),
+    [],
+    'variáveis PI_ ou npm_config_ herdadas',
+  );
+  runPreflight(home);
 
   runInstall(home);
-  assertInstalled(home, null);
+  assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp.json')));
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
-  const expected = '{"preserve-me":true}\n';
+  const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);
   runInstall(home);
   assertInstalled(home, expected);
