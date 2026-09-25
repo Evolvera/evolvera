@@ -136,7 +136,7 @@ assert.equal(ownerEntries.some((item) => item.customType === "plastic.observatio
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.reflections.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.closed"), true);
 assert.equal(ownerCompactCalls.length, 0, "one 20k closed cycle cannot pass the six-cycle automatic-application gate");
-assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[0-9,]+-token snapshot$/u.test(message)), true);
+assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[\p{Number}.,\u00a0\u202f ]+-token snapshot$/u.test(message)), true);
 assert.equal(ownerNotices.every(({ message }) => !message.includes("cycle fact") && !message.includes("OC")), true);
 async function lifecycleProbe(mode) {
   const entries = [{ ...entry(`${mode}-1`, undefined), tokenCount: 10_000 }, { ...entry(`${mode}-2`, `${mode}-1`, "assistant"), tokenCount: 10_000 }];

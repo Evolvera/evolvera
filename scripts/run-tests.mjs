@@ -21,6 +21,7 @@ const tmpdirProprioPadrao = new Set([
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
   "plastic-memory-host.smoke.mjs", "plastic-memory-install.smoke.mjs",
+  "plastic-memory-context-injection.smoke.mjs", // writes only to its owned mkdtemp sandbox and removes it in finally
   "plastic-memory-learning-queue-ui.smoke.mjs",
   "plastic-memory-migration.smoke.mjs", "plastic-memory-project.smoke.mjs",
   "plastic-memory-proposal-commands.smoke.mjs",
@@ -41,7 +42,6 @@ const semEstadoPadrao = new Set([
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",
-  "plastic-memory-context-injection.smoke.mjs",
   "plastic-memory-emergency-hook.smoke.mjs",
   "plastic-memory-emergency-pipeline.smoke.mjs",
   "plastic-memory-emergency-queue.smoke.mjs",
