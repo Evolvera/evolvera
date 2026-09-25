@@ -399,6 +399,33 @@ function handleExtensionUi(req) {
   }
 }
 
+function createUiResponder(requestId, sendResponse) {
+  // Um envio por vez: chamadas concorrentes aguardam o mesmo envio e falham
+  // junto, para nenhum handler fechar o diálogo antes de o PI receber resposta.
+  let inFlight = null;
+  let responded = false;
+  const respond = (payload) => {
+    if (responded) return Promise.resolve();
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      try {
+        await sendResponse(requestId, payload);
+        responded = true;
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+  return {
+    respond,
+    cancel(event) {
+      event.preventDefault();
+      return respond({ cancelled: true });
+    },
+  };
+}
+
 function openUiDialog(req) {
   els.dialogTitle.textContent = req.title || "PI precisa de resposta";
   els.dialogBody.replaceChildren();
@@ -444,15 +471,29 @@ function openUiDialog(req) {
     getValue = () => ({ value: input.value });
   }
 
+  const uiResponder = createUiResponder(req.id, sendUiResponse);
+  els.dialog.oncancel = (event) => {
+    uiResponder.cancel(event)
+      .then(() => els.dialog.close())
+      .catch((error) => toast(error.message, "error"));
+  };
   els.dialogOk.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, getValue());
-    els.dialog.close();
+    try {
+      await uiResponder.respond(getValue());
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialogCancel.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, { cancelled: true });
-    els.dialog.close();
+    try {
+      await uiResponder.respond({ cancelled: true });
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialog.showModal();
 }
