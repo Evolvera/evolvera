@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,12 +41,7 @@ try {
   // The installed SDK is imported only through a sandbox symlink, and the
   // agent directory is owned by this run before any command callback exists.
   process.env.PI_CODING_AGENT_DIR = agentDir;
-  const packageCandidates = [
-    path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-    path.resolve(root, "../../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-  ];
-  const packageRoot = packageCandidates.find((candidate) => existsSync(candidate));
-  assert.ok(packageRoot, "a local installed SDK is required for this smoke");
+  const packageRoot = resolvePiSdkRoot(import.meta.url);
   const sdkScope = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(sdkScope, { recursive: true });
   symlinkSync(packageRoot, path.join(sdkScope, "pi-coding-agent"), "dir");
