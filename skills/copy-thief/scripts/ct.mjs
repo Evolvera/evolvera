@@ -96,13 +96,31 @@ const valuesOf = (item) => {
   return v;
 };
 
+function projectItemForIssue(repo, number, project) {
+  if (!project) return null;
+  let after = null;
+  do {
+    const d = gql(`query($p:ID!,$a:String){node(id:$p){... on ProjectV2{items(first:100,after:$a){
+      pageInfo{hasNextPage endCursor}
+      nodes{id ${FV} content{... on Issue{number repository{nameWithOwner}}}}
+    }}}}`, after ? { p: project.id, a: after } : { p: project.id });
+    const page = d.node.items;
+    const item = page.nodes.find((x) => x.content?.number === Number(number)
+      && norm(x.content.repository?.nameWithOwner) === norm(repo));
+    if (item) return item;
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (after);
+  return null;
+}
+
 function readIssue(repo, number, project) {
   const { owner, name } = splitRepo(repo);
   const d = gql(`query($o:String!,$n:String!,$i:Int!){repository(owner:$o,name:$n){issue(number:$i){
     id number title state url assignees(first:10){nodes{login}} labels(first:50){nodes{name}}
     projectItems(first:50){nodes{id project{id} ${FV}}}}}}`, { o: owner, n: name, i: Number(number) });
   const iss = d?.repository?.issue || fail(`issue #${number} não encontrada em ${repo}`);
-  const item = project ? iss.projectItems.nodes.find((x) => x.project.id === project.id) : null;
+  const item = (project && iss.projectItems.nodes.find((x) => x.project.id === project.id))
+    || projectItemForIssue(repo, number, project);
   return {
     id: iss.id, number: iss.number, title: iss.title, state: iss.state, url: iss.url,
     assignees: iss.assignees.nodes.map((x) => x.login), labels: iss.labels.nodes.map((x) => x.name),
