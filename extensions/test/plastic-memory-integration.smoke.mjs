@@ -1,11 +1,11 @@
+import { loadJiti } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
-const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
+const { createJiti } = await loadJiti(import.meta.url);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const projection = await jiti.import(path.join(root, "plastic-memory/compaction/projection.ts"));
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
