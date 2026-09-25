@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +22,7 @@ function writeJson(file, value) {
 }
 
 try {
-  const packageRoot = path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent");
+  const packageRoot = resolvePiSdkRoot(import.meta.url);
   const scopeDir = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(scopeDir, { recursive: true });
   symlinkSync(packageRoot, path.join(scopeDir, "pi-coding-agent"), "dir");

@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +10,7 @@ const root = path.resolve(testDir, "../..");
 const sandbox = mkdtempSync(path.join(tmpdir(), "codex-fast-mode-smoke-"));
 
 try {
-  const packageRoot = path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent");
+  const packageRoot = resolvePiSdkRoot(import.meta.url);
   const scopeDir = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(scopeDir, { recursive: true });
   symlinkSync(packageRoot, path.join(scopeDir, "pi-coding-agent"), "dir");
