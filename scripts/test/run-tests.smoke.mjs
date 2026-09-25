@@ -49,6 +49,33 @@ try {
   assert.match(result.stdout, /dois\.smoke\.mjs/);
   assert.match(result.stdout, /tempo limite/i);
 
+  // Suíte lenta falsa passa pelo timeout próprio, mas a suíte comum excede
+  // o --timeout explícito; --timeout não pode reduzir o limite próprio.
+  const slowSuite = path.join(fakeRoot, "skills", "copy-thief", "scripts", "test");
+  mkdirSync(slowSuite, { recursive: true });
+  writeFileSync(path.join(slowSuite, "ct.test.mjs"), 'await new Promise((resolve) => setTimeout(resolve, 650));\n');
+  writeFileSync(path.join(smokeDir, "um.smoke.mjs"), 'console.error("aviso");\n');
+  writeFileSync(path.join(smokeDir, "dois.smoke.mjs"), 'process.exitCode = 0;\n');
+  writeFileSync(path.join(smokeDir, "normal.smoke.mjs"), 'await new Promise((resolve) => setTimeout(resolve, 650));\n');
+  writeFileSync(path.join(smokeDir, ".classificacao.json"), JSON.stringify({
+    semEstado: ["um.smoke.mjs", "dois.smoke.mjs", "normal.smoke.mjs"], tmpdirProprio: [],
+  }));
+  result = spawnSync(process.execPath, [runner, "--root", fakeRoot, "--timeout", "500"], {
+    cwd: repoRoot, encoding: "utf8", timeout: 5_000, maxBuffer: 1024 * 1024,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /Aprovados: 3/);
+  assert.match(result.stdout, /Falha: normal\.smoke\.mjs \(tempo limite \(500 ms\)\)/);
+  assert.match(result.stdout, /ct\.test\.mjs/);
+  result = spawnSync(process.execPath, [runner, "--root", fakeRoot, "--timeout", "130000"], {
+    cwd: repoRoot, encoding: "utf8", timeout: 5_000, maxBuffer: 1024 * 1024,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Aprovados: 4/);
+  assert.match(result.stdout, /Falhos: 0/);
+  rmSync(path.join(smokeDir, "normal.smoke.mjs"));
+  rmSync(path.join(fakeRoot, "skills"), { recursive: true, force: true });
+
   // Saída acima do limite deve falhar com motivo nomeado sem travar o runner.
   writeFileSync(path.join(smokeDir, "dois.smoke.mjs"), 'process.exitCode = 0;\n');
   writeFileSync(path.join(smokeDir, "grande.smoke.mjs"),
