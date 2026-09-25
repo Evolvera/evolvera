@@ -1,3 +1,4 @@
+import { loadJiti } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,8 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
-const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
+const { createJiti } = await loadJiti(import.meta.url);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const schema = await jiti.import(path.join(repositoryRoot, "extensions/plastic-memory/project/schema.ts"));
 const io = await jiti.import(path.join(repositoryRoot, "extensions/plastic-memory/project/io.ts"));

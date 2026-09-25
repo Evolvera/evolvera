@@ -32,11 +32,14 @@ const tmpdirProprioPadrao = new Set([
   "patch-anthropic-client-version.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-ultra-thinking.smoke.mjs", "run-tests.smoke.mjs",
+  "pi-sdk-resolution.smoke.mjs",
 ]);
 const semEstadoPadrao = new Set([
   "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
   // só lê config/mcp.json e agents/scout.md do repo; sem escrita, rede ou processo
   "codegraph-mcp-config.smoke.mjs",
+  // só lê config/settings.json do repo; sem escrita, rede ou processo
+  "config-settings.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",

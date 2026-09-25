@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
+import net from "node:net";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,19 +29,43 @@ function waitForServer(child) {
   });
 }
 
-async function post(base, pathname, body) {
+async function post(base, pathname, body, token, headers = {}) {
   const res = await fetch(`${base}${pathname}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: new URL(base).origin, ...(token ? { "x-pi-studio-token": token } : {}), ...headers },
     body: JSON.stringify(body ?? {}),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(`${pathname}: ${data.error || res.status}`);
-  return data;
+  return { res, data };
 }
 
-function collectSse(base, eventsPath, onEvent) {
-  const req = http.get(`${base}${eventsPath}`, (res) => {
+function getWithHeaders(base, pathname, headers) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`${base}${pathname}`, { headers }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("error", reject);
+  });
+}
+
+function rawRequest(base, headers) {
+  const target = new URL(base);
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(Number(target.port), target.hostname, () => {
+      socket.write(`GET /api/health HTTP/1.1\r\n${headers.join("\r\n")}\r\nConnection: close\r\n\r\n`);
+    });
+    let response = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => { response += chunk; });
+    socket.on("end", () => resolve(Number(response.match(/^HTTP\/1\.1 (\d+)/)?.[1])));
+    socket.on("error", reject);
+  });
+}
+
+function collectSse(base, eventsPath, onEvent, cookie) {
+  const req = http.get(`${base}${eventsPath}`, { headers: { cookie: `pi-studio-token=${cookie}` } }, (res) => {
     res.setEncoding("utf8");
     let buffer = "";
     res.on("data", (chunk) => {
@@ -68,11 +95,13 @@ async function waitFor(predicate, timeoutMs = 5000) {
   throw new Error("Timed out waiting for expected event");
 }
 
+const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-"));
 const child = spawn(process.execPath, [path.join(root, "server.mjs")], {
   cwd: root,
   env: {
     ...process.env,
     PI_WEB_PORT: "0",
+    PI_AGENT_DIR: agentDir,
     PI_PROJECT_ROOTS: root,
     PI_WEB_PI_BIN: process.execPath,
     PI_WEB_PI_BIN_ARGS: JSON.stringify([fakePi]),
@@ -84,31 +113,82 @@ let sse;
 try {
   const port = await waitForServer(child);
   const base = `http://127.0.0.1:${port}`;
-  const health = await (await fetch(`${base}/api/health`)).json();
-  if (!health.ok) throw new Error("health check failed");
+  const page = await fetch(base);
+  const html = await page.text();
+  const token = html.match(/<meta name="pi-studio-token" content="([a-f0-9]+)">/)?.[1];
+  const cookie = page.headers.get("set-cookie")?.match(/pi-studio-token=([^;]+)/)?.[1];
+  if (!token || !cookie || token !== cookie) throw new Error("frontend did not receive auth token and SSE cookie");
 
-  const agents = await (await fetch(`${base}/api/agents`)).json();
+  // Sem token, uma rota de leitura e uma de comando devem ser bloqueadas antes de qualquer efeito.
+  const denied = await fetch(`${base}/api/health`);
+  if (denied.status !== 401) throw new Error(`missing token returned ${denied.status}, expected 401`);
+  const wrong = await post(base, "/api/sessions", { cwd: root }, "wrong-token");
+  if (wrong.res.status !== 401) throw new Error(`wrong token returned ${wrong.res.status}, expected 401`);
+  // Headers duplicados são ambíguos e não podem contornar a autenticação.
+  const duplicateToken = await rawRequest(base, [
+    `Host: 127.0.0.1:${port}`,
+    `X-PI-Studio-Token: ${token}`,
+    `X-PI-Studio-Token: ${token}`,
+  ]);
+  if (duplicateToken !== 401) throw new Error(`duplicate token headers returned ${duplicateToken}, expected 401`);
+  // Uma rajada de pedidos sem token deve ser rejeitada sem iniciar processo ou criar estado.
+  const burst = await Promise.all(Array.from({ length: 64 }, () => fetch(`${base}/api/health`)));
+  if (burst.some((res) => res.status !== 401)) throw new Error("bulk requests without token were not uniformly rejected");
+
+  // Defesa em profundidade (achado do QA da #7): num DNS rebinding, evil.example
+  // aponta para 127.0.0.1. A página que carrega o token não pode ser servida
+  // para esse Host, senão o token vaza para a página do atacante.
+  const badHostPage = await getWithHeaders(base, "/", { host: `evil.example:${port}` });
+  if (badHostPage.status !== 403 || badHostPage.body.includes(token)) {
+    throw new Error(`HTML with token served to foreign Host (status ${badHostPage.status})`);
+  }
+
+  // Host externo e Origin externo são rejeitados antes do despacho para o PI.
+  const badHost = await getWithHeaders(base, "/api/health", { "x-pi-studio-token": token, host: `evil.example:${port}` });
+  if (badHost.status !== 403) throw new Error(`foreign Host returned ${badHost.status}, expected 403`);
+  const badOrigin = await fetch(`${base}/api/health`, { headers: { "x-pi-studio-token": token, origin: "https://evil.example" } });
+  if (badOrigin.status !== 403) throw new Error(`foreign Origin returned ${badOrigin.status}, expected 403`);
+  const nullOrigin = await fetch(`${base}/api/health`, { headers: { "x-pi-studio-token": token, origin: "null" } });
+  if (nullOrigin.status !== 403) throw new Error(`null Origin returned ${nullOrigin.status}, expected 403`);
+  const ownOrigin = await fetch(`${base}/api/health`, { headers: { "x-pi-studio-token": token, origin: new URL(base).origin } });
+  if (!ownOrigin.ok) throw new Error(`own Origin returned ${ownOrigin.status}`);
+
+  // Origin ausente e Host aceito com variação de caixa/ponto final preservam clientes CLI.
+  const healthRes = await getWithHeaders(base, "/api/health", { "x-pi-studio-token": token, host: `LOCALHOST.:${port}` });
+  if (healthRes.status !== 200 || !JSON.parse(healthRes.body).ok) throw new Error("valid token/Host without Origin should pass");
+  const ipv6Host = await getWithHeaders(base, "/api/health", { "x-pi-studio-token": token, host: `[::1]:${port}` });
+  if (ipv6Host.status !== 200) throw new Error(`IPv6 loopback Host returned ${ipv6Host.status}`);
+
+  const health = await fetch(`${base}/api/health`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
+  if (!health.ok) throw new Error("health check failed");
+  if (health.sessions !== 0) throw new Error("unauthorized requests created a PI session");
+  const agents = await fetch(`${base}/api/agents`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
   if (!Array.isArray(agents.agents)) throw new Error("agents endpoint did not return an array");
 
-  const bootstrap = await (await fetch(`${base}/api/bootstrap`)).json();
+  const bootstrap = await fetch(`${base}/api/bootstrap`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
   if (!Array.isArray(bootstrap.projects) || bootstrap.projects.length === 0) throw new Error("bootstrap did not discover projects");
   const projectId = bootstrap.projects[0].id;
-  const opened = await post(base, `/api/projects/${projectId}/open`, {});
-  if (!opened.session?.id) throw new Error("project open did not start a session");
+  const opened = await post(base, `/api/projects/${projectId}/open`, {}, token);
+  if (!opened.res.ok || !opened.data.session?.id) throw new Error("project open did not start a session");
 
   const seen = [];
-  sse = collectSse(base, `/api/projects/${projectId}/events`, (event, payload) => seen.push({ event, payload }));
+  sse = collectSse(base, `/api/projects/${projectId}/events`, (event, payload) => seen.push({ event, payload }), cookie);
 
-  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-1", type: "prompt", message: "hello" });
+  const prompt = await post(base, `/api/projects/${projectId}/command`, { id: "smoke-1", type: "prompt", message: "hello" }, token);
+  if (prompt.res.status !== 202) throw new Error(`prompt returned ${prompt.res.status}`);
   await waitFor(() => seen.some((item) => item.event === "rpc" && item.payload.type === "message_update"));
   await waitFor(() => seen.some((item) => item.event === "rpc" && item.payload.type === "agent_end"));
 
-  await post(base, `/api/projects/${projectId}/command`, { id: "state-1", type: "get_state" });
+  await post(base, `/api/projects/${projectId}/command`, { id: "state-1", type: "get_state" }, token);
   await waitFor(() => seen.some((item) => item.payload?.type === "response" && item.payload.command === "get_state"));
+  const uiResponse = await post(base, `/api/projects/${projectId}/ui-response`, { id: "ui-smoke", value: "ok" }, token);
+  if (uiResponse.res.status !== 202) throw new Error(`dialog response returned ${uiResponse.res.status}`);
 
-  await post(base, `/api/projects/${projectId}/stop`, {});
-  console.log("smoke ok");
+  await post(base, `/api/projects/${projectId}/stop`, {}, token);
+  console.log("smoke ok (security cases + fake PI workflow)");
 } finally {
   if (sse) sse.destroy();
   child.kill("SIGTERM");
+  await new Promise((resolve) => child.once("exit", resolve));
+  await rm(agentDir, { recursive: true, force: true });
 }

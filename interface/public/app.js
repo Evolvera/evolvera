@@ -54,10 +54,12 @@ function mutedDate(value) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const apiToken = document.querySelector('meta[name="pi-studio-token"]')?.content || "";
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { "content-type": "application/json", ...(options.headers || {}) },
+    headers: { "content-type": "application/json", "x-pi-studio-token": apiToken, ...(options.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
