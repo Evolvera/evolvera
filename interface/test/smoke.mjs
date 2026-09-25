@@ -43,6 +43,15 @@ await assert.rejects(retryResponder.respond({ value: "tentar novamente" }), /fal
 await retryResponder.respond({ value: "tentar novamente" });
 assert.equal(attempts, 2, "falha de envio deve liberar uma nova tentativa");
 assert.deepEqual(retryResponses, [{ id: "ui-retry", value: "tentar novamente" }]);
+// Esc durante o envio do OK: a 2ª chamada aguarda o MESMO envio e falha junto,
+// para o handler dela não fechar o diálogo antes de saber se houve resposta.
+let rejectInFlight;
+const inFlightResponder = createUiResponder("ui-inflight", () => new Promise((_, reject) => { rejectInFlight = reject; }));
+const first = inFlightResponder.respond({ value: "ok" });
+const second = inFlightResponder.cancel(cancelEvent);
+rejectInFlight(new Error("rede caiu"));
+await assert.rejects(first, /rede caiu/);
+await assert.rejects(second, /rede caiu/, "chamada concorrente deve falhar junto com o envio em voo");
 
 function waitForServer(child) {
   return new Promise((resolve, reject) => {

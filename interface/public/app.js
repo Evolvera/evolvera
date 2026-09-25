@@ -400,19 +400,18 @@ function handleExtensionUi(req) {
 }
 
 function createUiResponder(requestId, sendResponse) {
-  let inFlight = false;
+  // Um envio por vez: chamadas concorrentes aguardam o mesmo envio e falham
+  // junto, para nenhum handler fechar o diálogo antes de o PI receber resposta.
+  let inFlight = null;
   let responded = false;
-  const respond = async (payload) => {
-    if (inFlight || responded) return;
-    inFlight = true;
-    try {
-      await sendResponse(requestId, payload);
-      responded = true;
-    } catch (error) {
-      inFlight = false;
-      throw error;
-    }
-    inFlight = false;
+  const respond = (payload) => {
+    if (responded) return Promise.resolve();
+    if (inFlight) return inFlight;
+    inFlight = Promise.resolve()
+      .then(() => sendResponse(requestId, payload))
+      .then(() => { responded = true; })
+      .finally(() => { inFlight = null; });
+    return inFlight;
   };
   return {
     respond,
