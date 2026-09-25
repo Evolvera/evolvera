@@ -7,10 +7,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 
 // Normaliza BOM e quebras Windows para que a validação aceite arquivos válidos
 // independentemente da plataforma que os gravou.
+function normalizeText(text) {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+}
+
 function readText(relativePath) {
-  return readFileSync(path.join(root, relativePath), "utf8")
-    .replace(/^\uFEFF/, "")
-    .replace(/\r\n/g, "\n");
+  return normalizeText(readFileSync(path.join(root, relativePath), "utf8"));
 }
 
 function verificar(descricao, callback) {
@@ -20,6 +22,11 @@ function verificar(descricao, callback) {
     throw new Error(`Falha na verificação: ${descricao}: ${error.message}`, { cause: error });
   }
 }
+
+// Confere a normalização em memória para cobrir arquivos BOM/CRLF sem escrita.
+verificar("a leitura deve tolerar BOM e CRLF", () => {
+  assert.equal(normalizeText("\uFEFFlinha 1\r\nlinha 2"), "linha 1\nlinha 2");
+});
 
 const config = verificar("config/mcp.json deve ser JSON válido", () => JSON.parse(readText("config/mcp.json")));
 verificar("mcpServers deve continuar sendo um objeto", () => {
