@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { canonicalPaths } from "./io.ts";
 import { ProjectStore } from "./store.ts";
 import { projectProjections } from "./projection.ts";
@@ -55,7 +56,9 @@ function unavailable(id: string, kind: "project" | "chunk", reason: string): Rec
   return { id, kind, state: "unavailable", status: "unavailable", reason } as RecallResult;
 }
 function load(root: string): { project?: CanonicalProject; error?: string } {
-  if (typeof root !== "string" || !root.startsWith("/")) throw new Error("project root must be an absolute path");
+  const malformedWindowsDeviceRoot = typeof root === "string"
+    && root === `${path.win32.sep}${path.win32.sep}?${path.win32.sep}`;
+  if (typeof root !== "string" || root.length === 0 || !path.isAbsolute(root) || malformedWindowsDeviceRoot) throw new Error("project root must be an absolute path");
   try { return { project: new ProjectStore(root).load() }; } catch (error: any) { return { error: error?.message ?? String(error) }; }
 }
 function derivedState(root: string, project: CanonicalProject): "current" | "stale" | "missing" {

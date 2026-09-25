@@ -60,6 +60,8 @@ const semEstadoPadrao = new Set([
   "plastic-memory-transport-integrity.smoke.mjs",
   "plastic-memory-worker-contract.smoke.mjs", "plastic-memory-workers.smoke.mjs",
   "plastic-memory-rebind-observability.smoke.mjs",
+  // Só valida raízes de busca; o carregador consulta arquivos, sem gravar estado.
+  "plastic-memory-search-root.smoke.mjs",
   "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
 ]);
 let tmpdirProprio = tmpdirProprioPadrao;
