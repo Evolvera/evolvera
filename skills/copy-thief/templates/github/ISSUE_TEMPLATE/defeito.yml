@@ -1,0 +1,30 @@
+name: 🐞 Defeito
+description: Algo não funciona como deveria
+title: "[Defeito] "
+labels: ["copy-thief", "tipo:defeito"]
+body:
+  - type: textarea
+    id: resumo
+    attributes: { label: Resumo, description: O que está errado e onde }
+    validations: { required: true }
+  - type: textarea
+    id: reproduzir
+    attributes: { label: Como reproduzir, placeholder: "1. Acesse...\n2. Clique em...\n3. Veja..." }
+    validations: { required: true }
+  - type: textarea
+    id: esperado
+    attributes: { label: Esperado }
+    validations: { required: true }
+  - type: textarea
+    id: obtido
+    attributes: { label: Obtido, description: Mensagem de erro, print, log (sem dados pessoais) }
+    validations: { required: true }
+  - type: dropdown
+    id: severidade
+    attributes: { label: Severidade, options: ["P0 — bloqueia uso", "P1 — fluxo principal afetado", "P2 — contornável", "P3 — cosmético"] }
+    validations: { required: true }
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      value: "- [ ] Teste que reproduz o defeito falha antes e passa depois\n- [ ] Sem regressão na suíte completa"

@@ -1,0 +1,18 @@
+name: 🧹 Débito técnico / melhoria
+description: Código, teste, segurança ou performance que precisa melhorar sem mudar o comportamento
+title: "[Débito] "
+labels: ["copy-thief", "tipo:debito"]
+body:
+  - type: textarea
+    id: problema
+    attributes: { label: Problema, description: Onde (arquivo/módulo) e qual o custo de deixar como está }
+    validations: { required: true }
+  - type: textarea
+    id: proposta
+    attributes: { label: Proposta }
+    validations: { required: true }
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      value: "- [ ] Comportamento atual protegido por testes antes da mudança\n- [ ] Suíte completa verde\n- [ ] "

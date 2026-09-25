@@ -1,0 +1,18 @@
+name: 🔎 Pesquisa
+description: Investigar antes de decidir (tecnologia, abordagem, benchmark, dúvida de causa)
+title: "[Pesquisa] "
+labels: ["copy-thief", "tipo:pesquisa"]
+body:
+  - type: textarea
+    id: pergunta
+    attributes: { label: Pergunta }
+    validations: { required: true }
+  - type: textarea
+    id: decisao
+    attributes: { label: Decisão que apoia, description: O que muda dependendo da resposta }
+    validations: { required: true }
+  - type: textarea
+    id: encerramento
+    attributes:
+      label: Critério de encerramento
+      value: "- [ ] Recomendação com pelo menos 2 alternativas comparadas\n- [ ] Fontes primárias citadas\n- [ ] Issues de implementação propostas"
