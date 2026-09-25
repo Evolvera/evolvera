@@ -37,11 +37,71 @@ function fresh() {
     prs: [{ number: 9, headRefName: "ct/4-x", state: "OPEN", url: "https://github.com/o/r/pull/9" }],
   }));
   const run = (args, env = {}) => {
-    const r = spawnSync(process.execPath, [CT, ...args], { encoding: "utf8", env: { ...process.env, CT_GH: FAKE, CT_FAKE_STATE: state, ...env } });
+    let fake = FAKE;
+    if (env.CT_FAKE_PROJECT_ONLY) {
+      fake = join(dir, "fake-gh-project-only.mjs");
+      let source = readFileSync(FAKE, "utf8");
+      source = source.replace(
+        'projectItems: { nodes: it ? [{ id: it.id, project: { id: S.projectId }, fieldValues: fv(it) }] : [] }',
+        'projectItems: { nodes: [] }',
+      );
+      source = source.replace(
+        /else if \(q\.includes\("items\(first:100"\)\) \{[\s\S]*?\n  \} else die\("query desconhecida"\);/,
+        `else if (q.includes("items(first:100")) {
+    const cursor = a.find((x) => x.startsWith("a="))?.slice(2);
+    const start = cursor ? Number(cursor) : 0;
+    const page = S.items.slice(start, start + 100);
+    print({ data: { node: { items: { pageInfo: { hasNextPage: start + 100 < S.items.length, endCursor: String(start + 100) }, nodes: page.map((it) => ({
+      id: it.id, fieldValues: fv(it), content: { __typename: "Issue", ...issueNode(issue(it.issue)), repository: { nameWithOwner: it.repository || S.repo } } })) } } } });
+  } else die("query desconhecida");`,
+      );
+      writeFileSync(fake, source);
+    }
+    const r = spawnSync(process.execPath, [CT, ...args], { encoding: "utf8", env: { ...process.env, CT_GH: fake, CT_FAKE_STATE: state, ...env } });
     return { code: r.status, out: r.stdout, err: r.stderr, json: r.stdout ? JSON.parse(r.stdout) : null };
   };
-  return { dir, run, S: () => JSON.parse(readFileSync(state, "utf8")) };
+  return { dir, run, S: () => JSON.parse(readFileSync(state, "utf8")), save: (value) => writeFileSync(state, JSON.stringify(value)) };
 }
+
+test("set encontra item visível só pelo Project e relê os campos", () => {
+  const { run } = fresh();
+  const r = run(["set", ...P, "--issue", "1", "Status=Em andamento", "Prioridade=P1"], { CT_FAKE_PROJECT_ONLY: "1" });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.status, "Em andamento");
+  assert.equal(r.json.values.Prioridade, "P1");
+});
+
+test("new inclui item e relê campos pelo Project quando issue.projectItems está vazio", () => {
+  const { run, dir } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "corpo");
+  const r = run(["new", ...P, "--title", "Nova issue pelo Project", "--body-file", f, "Status=Backlog", "Prioridade=P2"], { CT_FAKE_PROJECT_ONLY: "1" });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.status, "Backlog");
+  assert.equal(r.json.values.Prioridade, "P2");
+});
+
+test("set pagina o Project, ignora outro repo e compara owner/repo sem caixa", () => {
+  const { run, S, save } = fresh();
+  const state = S();
+  state.repo = "EVOLVERA/R";
+  state.items = Array.from({ length: 100 }, (_, n) => ({ id: `PVTI_OUTRO_${n}`, issue: 1, repository: "outro/repo", values: {} }));
+  state.items.push({ id: "PVTI_CORRETO", issue: 1, repository: "evolvera/r", values: { Status: "Pronto" } });
+  save(state);
+  const r = run(["set", "--owner", "o", "--project", "1", "--repo", "EVOLVERA/R", "--issue", "1", "Status=Em andamento"], { CT_FAKE_PROJECT_ONLY: "1" });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.status, "Em andamento");
+});
+
+test("set não confunde o mesmo número de issue em outro repositório", () => {
+  const { run, S, save } = fresh();
+  const state = S();
+  state.items = [{ id: "PVTI_OUTRO_REPO", issue: 2, repository: "outro/repo", values: { Status: "Pronto" } }];
+  save(state);
+  const r = run(["set", ...P, "--issue", "2", "Status=Backlog"], { CT_FAKE_PROJECT_ONLY: "1" });
+  assert.equal(r.code, 3);
+  assert.match(r.err, /não está no Project 1; use --add/);
+});
 
 test("set grava, atribui e confere por releitura", () => {
   const { run } = fresh();
