@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -95,14 +95,16 @@ async function waitFor(predicate, timeoutMs = 5000) {
   throw new Error("Timed out waiting for expected event");
 }
 
-const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-"));
+const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-agent-"));
+const projectDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-project-"));
+await writeFile(path.join(projectDir, "package.json"), "{}\n");
 const child = spawn(process.execPath, [path.join(root, "server.mjs")], {
   cwd: root,
   env: {
     ...process.env,
     PI_WEB_PORT: "0",
     PI_AGENT_DIR: agentDir,
-    PI_PROJECT_ROOTS: root,
+    PI_PROJECT_ROOTS: projectDir,
     PI_WEB_PI_BIN: process.execPath,
     PI_WEB_PI_BIN_ARGS: JSON.stringify([fakePi]),
   },
@@ -162,11 +164,19 @@ try {
   const health = await fetch(`${base}/api/health`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
   if (!health.ok) throw new Error("health check failed");
   if (health.sessions !== 0) throw new Error("unauthorized requests created a PI session");
-  const agents = await fetch(`${base}/api/agents`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
+  const agents = await fetch(`${base}/api/agents?cwd=${encodeURIComponent(projectDir)}`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
   if (!Array.isArray(agents.agents)) throw new Error("agents endpoint did not return an array");
 
   const bootstrap = await fetch(`${base}/api/bootstrap`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
-  if (!Array.isArray(bootstrap.projects) || bootstrap.projects.length === 0) throw new Error("bootstrap did not discover projects");
+  if (!Array.isArray(bootstrap.projects) || bootstrap.projects.length !== 1 || bootstrap.projects[0].cwd !== projectDir) {
+    throw new Error("bootstrap read projects outside the temporary project directory");
+  }
+  if (bootstrap.config.agentDir !== agentDir || bootstrap.config.agentDir === path.join(os.homedir(), ".pi", "agent")) {
+    throw new Error("server did not use its temporary agent directory");
+  }
+  if (bootstrap.config.projectRoots.length !== 1 || bootstrap.config.projectRoots[0] !== projectDir) {
+    throw new Error("server did not restrict project roots to the temporary project directory");
+  }
   const projectId = bootstrap.projects[0].id;
   const opened = await post(base, `/api/projects/${projectId}/open`, {}, token);
   if (!opened.res.ok || !opened.data.session?.id) throw new Error("project open did not start a session");
@@ -191,4 +201,5 @@ try {
   child.kill("SIGTERM");
   await new Promise((resolve) => child.once("exit", resolve));
   await rm(agentDir, { recursive: true, force: true });
+  await rm(projectDir, { recursive: true, force: true });
 }
