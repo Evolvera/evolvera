@@ -14,5 +14,8 @@
   ],
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",
-  "communicationMode": "default"
+  "communicationMode": "default",
+  "compaction": {
+    "reserveTokens": 65536
+  }
 }
