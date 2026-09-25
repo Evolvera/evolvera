@@ -96,7 +96,7 @@ try {
   assert.equal(full.root.tools.length, 2, "full mode has recall/search tools");
   assert.deepEqual(full.root.tools.map((tool) => tool.name), ["memory_recall", "memory_search"]);
   assert.deepEqual(full.root.commands.map(([name]) => name), [
-    "memory:status", "memory:view", "memory:propose", "memory:accept", "memory:reject", "memory:migrate", "memory:backfill", "memory:retry", "om:status", "om:view",
+    "memory:status", "memory:view", "memory:propose", "memory:accept", "memory:reject", "memory:migrate", "memory:backfill", "memory:retry", "om:status", "om:view", "plastic:status",
   ]);
   assert.equal(full.root.commands.filter(([name]) => name === "memory:reject").length, 1, "reject registers exactly once");
   assert.equal(hookNames(full.root).filter((name) => name === "before_agent_start").length, 1);
@@ -105,17 +105,16 @@ try {
   assert.equal(hookNames(full.root).filter((name) => name === "session_before_compact").length + full.bridge.hooks.size, 1);
   assert.equal(hookNames(full.root).filter((name) => name === "before_agent_start").length + full.bridge.hooks.size, 1);
 
-  // The checked-in source configuration enables plastic-memory. Loading the
-  // real entries must therefore give the root full ownership and keep the
-  // legacy project bridge inert.
+  // The checked-in source has no plastic-memory opt-in settings. Loading the
+  // real entries must therefore leave the root inert and preserve bridge mode.
   process.chdir(repositoryRoot);
   const sourceRootPi = fakePi();
   const sourceBridgePi = fakePi();
   await (await jiti.import(path.join(repositoryRoot, "extensions/plastic-memory/index.ts"))).default(sourceRootPi);
   (await jiti.import(path.join(repositoryRoot, "extensions/project-memory.ts"))).default(sourceBridgePi);
-  assert.equal(sourceRootPi.calls.tools.length, 2, "source plastic root tools");
-  assert.equal(sourceRootPi.calls.hooks.has("session_before_compact"), true, "source plastic root compaction hook");
-  assert.deepEqual(hookNames(sourceBridgePi.calls), [], "source plastic bridge");
+  assert.equal(sourceRootPi.calls.tools.length, 0, "source root stays inert without explicit opt-in");
+  assert.equal(sourceRootPi.calls.hooks.has("session_before_compact"), false, "source root has no compaction hook without opt-in");
+  assert.deepEqual(hookNames(sourceBridgePi.calls), ["before_agent_start"], "source bridge remains active without full ownership");
 
   const proposalCommand = full.root.commands.find(([name]) => name === "memory:propose")[1];
   const unavailableProposal = await proposalCommand.handler("{}", { ui: { notify() {} } });
