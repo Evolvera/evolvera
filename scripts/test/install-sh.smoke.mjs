@@ -161,7 +161,7 @@ function runInstall(testCase) {
   });
   assert.equal(child.error, undefined, `${testCase.label}: ${child.error?.message ?? ''}`);
   assert.equal(child.status, 0, `${testCase.label}: ${child.stderr}\n${child.stdout}`);
-  return child.stdout;
+  return `${child.stdout}${child.stderr}`;
 }
 function assertInstalled(testCase, mcpExpected) {
   const agent = path.join(testCase.home, '.pi', 'agent');
@@ -229,12 +229,27 @@ try {
   );
   runPreflight(home);
 
-  runInstall(home);
+  const cleanOutput = runInstall(home);
   assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp.json')));
+  assert.ok(cleanOutput.includes('Setup completo!'), 'clean install should still report full success');
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);
-  runInstall(home);
+  const failedPackage = 'npm:@tintinweb/pi-subagents@0.18.2';
+  fs.rmSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents'),
+    { recursive: true, force: true });
+  home.env.FAKE_PI_FAIL = failedPackage;
+  home.env.FAKE_PI_FAIL_REASON = 'simulated registry unavailable';
+  const output = runInstall(home);
+  assert.ok(output.includes('Falha ao instalar npm:@tintinweb/pi-subagents@0.18.2: simulated registry unavailable'),
+    'warning must identify package and summarized cause');
+  assert.ok(output.includes('Pacotes com falha: npm:@tintinweb/pi-subagents@0.18.2'),
+    'final summary must list the failed package');
+  assert.ok(output.includes('Setup completo com ressalvas'), 'partial setup must be caveated');
+  assert.ok(!output.includes('Setup completo!'), 'failure must not be reported as full success');
+  assert.ok(output.includes('Pulando patch de pi-subagents'), 'dependent patch must be skipped visibly');
+  assert.equal(fs.existsSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents')), false,
+    'pi-subagents package must remain absent after simulated install failure');
   assertInstalled(home, expected);
 } finally {
   fs.rmSync(home.parent, { recursive: true, force: true });

@@ -257,10 +257,13 @@ try {
   assert.equal(settings.packages.filter((pkg) => pkg === 'npm:@gotgenes/pi-anthropic-auth@2.0.6').length, 1);
   assert.equal((shell.match(/npm:@gotgenes\/pi-anthropic-auth@2\.0\.6/g) ?? []).length, 1);
   assert.equal((powershell.match(/npm:@gotgenes\/pi-anthropic-auth@2\.0\.6/g) ?? []).length, 1);
-  const shellAuth = shell.indexOf('pi install npm:@gotgenes/pi-anthropic-auth@2.0.6');
+  const shellAuth = shell.indexOf('if install_pi_package "npm:@gotgenes/pi-anthropic-auth@2.0.6"');
   const shellPatch = shell.indexOf('node "$SCRIPT_DIR/scripts/patch-anthropic-client-version.mjs"');
-  const shellSettings = shell.indexOf('settings.json');
-  assert.ok(shellAuth >= 0 && shellPatch > shellAuth && shellSettings > shellPatch, 'shell auth/patch/settings order changed');
+  const shellAuthElse = shell.indexOf('else', shellAuth);
+  const shellSettings = shell.lastIndexOf('settings.json');
+  assert.ok(shellAuth >= 0 && shellPatch > shellAuth && shellPatch < shellAuthElse && shellSettings > shellPatch,
+    'shell auth install must guard its dependent patch before final settings activation');
+  assert.match(shell.slice(shellAuthElse), /Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado/u);
   assert.doesNotMatch(shell.slice(shellAuth, shellPatch), /\|\| true/);
   const powershellAuth = powershell.indexOf('& pi install npm:@gotgenes/pi-anthropic-auth@2.0.6');
   const powershellPatch = powershell.indexOf('& node (Join-Path $SCRIPT_DIR "scripts\\patch-anthropic-client-version.mjs")');
