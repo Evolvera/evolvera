@@ -31,3 +31,7 @@ trust.json
 # Backups locais
 *.bak-*
 .pi/backup-settings-*.json
+
+# Artefatos locais de execução de agentes
+.pi/recovery/
+.pi/build/

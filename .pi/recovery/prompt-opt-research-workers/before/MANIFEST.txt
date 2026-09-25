@@ -1,7 +1,0 @@
-Recovery snapshots captured before prompt-body edits.
-
-agents/deep-research-creative.md | 84 lines | sha256 8dd13917a5716f650f03c6d63bcb02b55ef09e6b66cbd929a90bea5104e4457e
-agents/deep-research-critical.md | 84 lines | sha256 42ea6fd738a7be3b9437aeb44294916be5ed8ebc0459ed772a879a45ea3c1c60
-agents/deep-research-explorer.md | 83 lines | sha256 4c26799f999b72ed2599a1f3079956cb273dacd6116be032fc470c4ca27bb70d
-agents/deep-research-methodical.md | 84 lines | sha256 a53c43970b8ae1a06ca72d2661153ef511c3651a28b94ffa3fdc20c647f959ae
-agents/deep-research-skeptical.md | 84 lines | sha256 ef29e183b5b23b4c18128429851d747dbc49b058c22e0955f4ea020a32c61485

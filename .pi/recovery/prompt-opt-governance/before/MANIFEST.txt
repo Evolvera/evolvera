@@ -1,9 +1,0 @@
-     551 agents/agent-expert.md
-62a3edefde49e76b9f4388b4b5565cc83e999806b49c551ead899b09ddaa79c2  agents/agent-expert.md
-790943aa526dbb00671a44bc5b0dc7661fcec9a96fe12ba375f1daec15c7add4  agents/agent-expert.md frontmatter
-     180 agents/pi-steward.md
-c5b8e60e746ec382a94a4367ec7b7e5cff3a38f929dc773ffdd91b7772d83bb4  agents/pi-steward.md
-95936bb18a4c4088e37b9979ae2a81fef22d89c2d079fdb6964e6684d4c046a2  agents/pi-steward.md frontmatter
-     173 agents/seo-content-writer.md
-1fb14a3ced7a0eed15ca1dc8977f77de786fea7ed8be49fe581625d63c1bf16b  agents/seo-content-writer.md
-6f6e9aa828ceb1b3ba6ffcfd26dd05e81e65a47412ed9aa93e1c771b8496b697  agents/seo-content-writer.md frontmatter

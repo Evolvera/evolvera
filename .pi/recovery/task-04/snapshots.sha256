@@ -1,3 +1,0 @@
-extensions/test/plastic-memory-emergency-pipeline.smoke.mjs | lines=149 | sha256=7d269d1dd423fa76dc8b11032385b812a188642da853f7539098aa139ee75987
-extensions/test/plastic-memory-emergency-selection.smoke.mjs | lines=118 | sha256=80862c186bc27fdced8a14e0ff7ff8967dfd3db54672c91f9183bbd1d1f6a3e6
-extensions/test/plastic-memory-worker-contract.smoke.mjs | lines=249 | sha256=001a824055cc176df4dea59eaab3f352dfd6364f4fb053331d687f09a9b607d1
