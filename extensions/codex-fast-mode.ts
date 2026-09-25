@@ -19,7 +19,7 @@ function getSharedFastState(): SharedFastState {
   const existing = globalState[FAST_STATE_KEY];
   if (existing) return existing as SharedFastState;
 
-  const state: SharedFastState = { enabled: false, mode: "off" };
+  const state: SharedFastState = { enabled: true, mode: "subagents" };
   globalState[FAST_STATE_KEY] = state;
   return state;
 }
@@ -39,6 +39,12 @@ function resetFastStateForOwner(sessionId: string): void {
   const state = getSharedFastState();
   if (state.ownerSessionId !== sessionId) return;
   setFastMode(state, "off");
+}
+
+function continueFastStateForNewOwner(sessionId: string): void {
+  const state = getSharedFastState();
+  const mode = getFastMode(state);
+  if (mode !== "off") setFastMode(state, mode, sessionId);
 }
 
 interface ModelIdentity {
@@ -165,9 +171,17 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
-    resetFastStateForOwner(sessionId);
+    const sharedState = getSharedFastState();
+    // ECO is the default for each TUI root; only eligible subagents use Fast.
+    if (event.reason === "new" && ctx.mode === "tui") {
+      continueFastStateForNewOwner(sessionId);
+    } else if (ctx.mode === "tui") {
+      setFastMode(sharedState, "subagents", sessionId);
+    } else {
+      resetFastStateForOwner(sessionId);
+    }
     eligibleModelSelected = isFastEligibleModel(ctx.model);
     fastRequestInFlight = false;
     fastRequestAccepted = false;
@@ -207,8 +221,9 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     updateStatus(ctx);
   });
 
-  pi.on("session_shutdown", (_event, ctx) => {
-    resetFastStateForOwner(ctx.sessionManager.getSessionId());
+  pi.on("session_shutdown", (event, ctx) => {
+    // `/new` replaces the maestro session; keep its explicit Fast mode for the new root.
+    if (event.reason !== "new") resetFastStateForOwner(ctx.sessionManager.getSessionId());
     eligibleModelSelected = false;
     fastRequestInFlight = false;
     fastRequestAccepted = false;
