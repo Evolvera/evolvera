@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
@@ -13,6 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DEFAULT_HOST = process.env.PI_WEB_HOST || "127.0.0.1";
 const DEFAULT_PORT = Number.parseInt(process.env.PI_WEB_PORT || "4123", 10);
+let listeningPort = DEFAULT_PORT;
+const apiToken = randomBytes(32).toString("hex");
 const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
@@ -539,6 +541,89 @@ async function listProjectHistory(project) {
   return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50);
 }
 
+function normalizedAuthority(value) {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const parsed = new URL(`http://${value}`);
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    return `${hostname}:${parsed.port || "80"}`;
+  } catch {
+    return null;
+  }
+}
+
+function hasSingleRawHeader(req, name) {
+  let count = 0;
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index].toLowerCase() === name) count++;
+  }
+  return count === 1;
+}
+
+function requestTokenMatches(req, allowCookie = false) {
+  let candidate;
+  if (allowCookie) {
+    const cookies = req.headers.cookie || "";
+    const matches = cookies.split(";").map((item) => item.trim()).filter((item) => item.startsWith("pi-studio-token="));
+    if (matches.length !== 1) return false;
+    candidate = matches[0].slice("pi-studio-token=".length);
+  } else {
+    if (!hasSingleRawHeader(req, "x-pi-studio-token")) return false;
+    candidate = req.headers["x-pi-studio-token"];
+  }
+  if (typeof candidate !== "string") return false;
+  const provided = Buffer.from(candidate);
+  const expected = Buffer.from(apiToken);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function authorizeApiRequest(req, pathname) {
+  if (!pathname.startsWith("/api/")) return null;
+  if (!hasSingleRawHeader(req, "host")) return 403;
+  const authority = normalizedAuthority(req.headers.host);
+  const configuredHost = DEFAULT_HOST.toLowerCase().replace(/\.$/, "");
+  const allowedHosts = new Set([
+    `127.0.0.1:${listeningPort}`,
+    `localhost:${listeningPort}`,
+    `[::1]:${listeningPort}`,
+    `${configuredHost.includes(":") && !configuredHost.startsWith("[") ? `[${configuredHost}]` : configuredHost}:${listeningPort}`,
+  ].map(normalizedAuthority));
+  if (!authority || !allowedHosts.has(authority)) return 403;
+
+  const origins = [];
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index].toLowerCase() === "origin") origins.push(req.rawHeaders[index + 1]);
+  }
+  if (origins.length > 1) return 403;
+  if (origins.length === 1) {
+    if (origins[0] === "null") return 403;
+    try {
+      const origin = new URL(origins[0]);
+      if (origin.protocol !== "http:" || origin.username || origin.password || origin.origin === "null" ||
+          normalizedAuthority(origin.host) !== authority) return 403;
+    } catch {
+      return 403;
+    }
+  }
+  const isSse = req.method === "GET" && /^\/api\/(?:projects\/[^/]+|sessions\/[^/]+)\/events$/.test(pathname);
+  if (!requestTokenMatches(req, isSse)) return 401;
+  return null;
+}
+
+async function serveFrontend(req, res) {
+  const html = (await readFile(path.join(PUBLIC_DIR, "index.html"), "utf8"))
+    .replace("</head>", `<meta name="pi-studio-token" content="${apiToken}"></head>`);
+  const body = Buffer.from(html);
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": body.length,
+    "cache-control": "no-store",
+    "set-cookie": `pi-studio-token=${apiToken}; Path=/; HttpOnly; SameSite=Strict`,
+  });
+  res.end(body);
+}
+
 async function serveStatic(req, res, pathname) {
   const rel = pathname === "/" ? "/index.html" : pathname;
   const decoded = decodeURIComponent(rel);
@@ -570,10 +655,12 @@ function parseProjectRoute(pathname) {
 }
 
 async function route(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || `${DEFAULT_HOST}:${DEFAULT_PORT}`}`);
+  const url = new URL(req.url, `http://${req.headers.host || `${DEFAULT_HOST}:${listeningPort}`}`);
   const { pathname } = url;
 
   try {
+    const authorizationStatus = authorizeApiRequest(req, pathname);
+    if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -697,6 +784,7 @@ async function route(req, res) {
       return json(res, 201, { project, session: session.summary() });
     }
 
+    if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) return await serveFrontend(req, res);
     if (req.method === "GET") return serveStatic(req, res, pathname);
     return json(res, 405, { error: "Method not allowed" });
   } catch (error) {
@@ -713,9 +801,13 @@ const server = createServer((req, res) => {
 server.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : DEFAULT_PORT;
+  listeningPort = port;
   const line = `PI Studio listening on http://${DEFAULT_HOST}:${port}`;
   recordLog("info", line);
   console.log(line);
+  if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(DEFAULT_HOST.toLowerCase())) {
+    console.warn("PI Studio is exposed beyond loopback; protect this server and its network access.");
+  }
 });
 
 function shutdown() {
