@@ -1,7 +1,8 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,48 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const fakePi = path.join(__dirname, "fake-pi-rpc.mjs");
+
+// A resposta compartilhada deve tornar Esc e cliques rápidos idempotentes.
+const appSource = await readFile(path.join(root, "public/app.js"), "utf8");
+const responderSource = appSource.match(/function createUiResponder\([\s\S]*?\n}/)?.[0];
+assert.ok(responderSource, "app.js deve expor a lógica testável de resposta única");
+const createUiResponder = new Function(`${responderSource}; return createUiResponder;`)();
+const uiResponses = [];
+const responder = createUiResponder("ui-esc", async (id, payload) => {
+  uiResponses.push({ id, ...payload });
+});
+let prevented = false;
+const cancelEvent = { preventDefault: () => { prevented = true; } };
+await Promise.all([responder.cancel(cancelEvent), responder.cancel(cancelEvent)]);
+assert.equal(prevented, true, "Escape deve impedir o fechamento sem resposta");
+assert.deepEqual(uiResponses, [{ id: "ui-esc", cancelled: true }]);
+const normalResponses = [];
+const normalResponder = createUiResponder("ui-ok", async (id, payload) => {
+  normalResponses.push({ id, ...payload });
+});
+await normalResponder.respond({ value: "seleção" });
+await normalResponder.respond({ cancelled: true });
+assert.deepEqual(normalResponses, [{ id: "ui-ok", value: "seleção" }]);
+let attempts = 0;
+const retryResponses = [];
+const retryResponder = createUiResponder("ui-retry", async (id, payload) => {
+  attempts += 1;
+  if (attempts === 1) throw new Error("falha temporária");
+  retryResponses.push({ id, ...payload });
+});
+await assert.rejects(retryResponder.respond({ value: "tentar novamente" }), /falha temporária/);
+await retryResponder.respond({ value: "tentar novamente" });
+assert.equal(attempts, 2, "falha de envio deve liberar uma nova tentativa");
+assert.deepEqual(retryResponses, [{ id: "ui-retry", value: "tentar novamente" }]);
+// Esc durante o envio do OK: a 2ª chamada aguarda o MESMO envio e falha junto,
+// para o handler dela não fechar o diálogo antes de saber se houve resposta.
+let rejectInFlight;
+const inFlightResponder = createUiResponder("ui-inflight", () => new Promise((_, reject) => { rejectInFlight = reject; }));
+const first = inFlightResponder.respond({ value: "ok" });
+const second = inFlightResponder.cancel(cancelEvent);
+rejectInFlight(new Error("rede caiu"));
+await assert.rejects(first, /rede caiu/);
+await assert.rejects(second, /rede caiu/, "chamada concorrente deve falhar junto com o envio em voo");
 
 function waitForServer(child) {
   return new Promise((resolve, reject) => {
