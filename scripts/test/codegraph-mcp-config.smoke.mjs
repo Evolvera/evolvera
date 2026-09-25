@@ -56,6 +56,15 @@ verificar("somente o servidor codegraph deve ser registrado nesta configuração
   assert.deepEqual(Object.keys(config.mcpServers), ["codegraph"]);
 });
 
+// #20: o scout é somente leitura. Sem seletor `ext:`, o pi-subagents entrega
+// TODAS as ferramentas de extensão (inclusive `mcp`, com install/auth). O seletor
+// deixa só as embutidas de leitura + o proxy do codegraph (provado em execução).
+verificar("agents/scout.md deve expor só leitura + mcp__codegraph", () => {
+  const frontmatter = readText("agents/scout.md").split(/^---\s*$/m)[1];
+  const tools = frontmatter.match(/^tools:\s*(.+)$/m)?.[1].split(",").map((t) => t.trim());
+  assert.deepEqual(tools, ["read", "grep", "find", "ls", "ext:pi-mcp-adapter/mcp__codegraph"]);
+});
+
 const scout = readText("agents/scout.md").split(/^---\s*$/m).slice(2).join("---");
 for (const [descricao, ancora] of [
   ["a seção opcional do grafo", /Grafo de código \(opcional\)/i],
