@@ -247,7 +247,7 @@ async function runStride(closedTurns, options = {}) {
   assert.equal(level({ phase: "compactor", status: "skipped", reason: "no six-cycle stride yet" }).level, "info");
   assert.equal(level({ phase: "compaction", status: "prepared" }).level, "info");
   assert.equal(level({ phase: "compaction", status: "applied" }).level, "info");
-  assert.match(level({ phase: "compactor", status: "skipped", reason: "no six-cycle stride yet" }).message, /^Plastic memory: compactor skipped — no six-cycle stride yet$/u);
+  assert.match(level({ phase: "compactor", status: "skipped", reason: "no six-cycle stride yet" }).message, /^Plastic memory: compactor skipped — compactor-skipped: no six-cycle stride yet$/u);
   coordinator.shutdown("stride-test");
 }
 
