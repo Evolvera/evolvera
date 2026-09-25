@@ -33,6 +33,8 @@ const tmpdirProprioPadrao = new Set([
 ]);
 const semEstadoPadrao = new Set([
   "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
+  // só lê config/mcp.json e agents/scout.md do repo; sem escrita, rede ou processo
+  "codegraph-mcp-config.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",
@@ -73,7 +75,7 @@ if (root !== repoRoot) {
 // Escrita isolada é provada nos smoke tests; estes exceções acessam dado externo.
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
-  ["npm test (interface)", "servidor lê ~/.pi/agent; smoke usa rede loopback e repo real"],
+  ["npm test (interface)", "servidor lê ~/.pi/agent; smoke usa rede loopback e repo real (isolamento: issue #26)"],
 ]);
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
