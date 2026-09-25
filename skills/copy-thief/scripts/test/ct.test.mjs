@@ -106,6 +106,71 @@ test("board aponta divergências", () => {
   assert.equal(r.json.contagem.Pronto, 2);
 });
 
+test("new cria, põe no board, preenche campos e confere", () => {
+  const { run, dir, S } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "## Resumo\nx\n");
+  const r = run(["new", ...P, "--title", "Validar e-mail", "--body-file", f, "--label", "tipo:defeito", "Status=Backlog", "Prioridade=P1"]);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.created, true);
+  assert.equal(r.json.issue, 5);
+  assert.equal(r.json.status, "Backlog");
+  assert.equal(r.json.values.Prioridade, "P1");
+  assert.ok(r.json.labels.includes("copy-thief") && r.json.labels.includes("tipo:defeito"));
+  assert.ok(S().items.some((i) => i.issue === 5));
+});
+
+test("new é idempotente por título (não duplica; completa o que faltar)", () => {
+  const { run, dir, S } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "corpo");
+  run(["new", ...P, "--title", "Somar negativos", "--body-file", f, "Status=Backlog"]);
+  const r = run(["new", ...P, "--title", "somar negativos ", "--body-file", f, "Status=Pronto"]);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.created, false);
+  assert.equal(r.json.status, "Pronto");
+  assert.equal(S().issues.filter((i) => norm(i.title) === "somar negativos").length, 1);
+});
+
+test("new: campo inválido não cria issue", () => {
+  const { run, dir, S } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "corpo");
+  const r = run(["new", ...P, "--title", "X", "--body-file", f, "Prioridade=Urgente"]);
+  assert.equal(r.code, 1);
+  assert.equal(S().issues.length, 4);
+});
+
+test("new: erro de rede após criar não duplica", () => {
+  const { run, dir, S } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "corpo");
+  const r = run(["new", ...P, "--title", "Rota health", "--body-file", f, "Status=Backlog"], { CT_FAKE_CREATE_ERR: "1" });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(S().issues.filter((i) => i.title === "Rota health").length, 1);
+});
+
+test("new: busca do GitHub atrasada não causa duplicata", () => {
+  const { run, dir, S } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "corpo");
+  const env = { CT_FAKE_SEARCH_LAG: "1" };
+  assert.equal(run(["new", ...P, "--title", "Lag", "--body-file", f], env).code, 0);
+  const r = run(["new", ...P, "--title", "Lag", "--body-file", f], env);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.created, false);
+  assert.equal(S().issues.filter((i) => i.title === "Lag").length, 1);
+});
+
+test("new: corpo vazio é recusado", () => {
+  const { run, dir } = fresh();
+  const f = join(dir, "b.md");
+  writeFileSync(f, "  \n");
+  assert.equal(run(["new", ...P, "--title", "Y", "--body-file", f]).code, 1);
+});
+
+const norm = (s) => s.trim().toLowerCase();
+
 test("board limpo => ok", () => {
   const { run } = fresh();
   run(["set", ...P, "--issue", "2", "--add", "Status=Backlog"]);

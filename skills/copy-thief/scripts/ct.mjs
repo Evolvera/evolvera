@@ -9,6 +9,10 @@
 //                       [Campo=Valor ...]          ex.: Status="Em andamento" Prioridade=P1
 //   node ct.mjs comment --repo O/R --issue N --marker inicio|pesquisa|avaliacao|retro|bloqueio
 //                       --body-file arquivo.md
+//   node ct.mjs new     --owner O --project N --repo O/R --title "T" --body-file corpo.md
+//                       [--label L]... [Campo=Valor ...]   ex.: Status=Backlog Tipo=Defeito Prioridade=P1
+//                       Cria a issue (label copy-thief sempre), coloca no board, preenche os campos e
+//                       confere. Idempotente por título exato: se já existe, só completa board/campos.
 //
 // Exit: 0 ok · 1 uso/entrada inválida · 2 falha do gh após novas tentativas ·
 //       3 releitura não confere (board divergente) / divergências em `board --strict`.
@@ -51,7 +55,7 @@ const gql = (query, vars = {}) => {
 
 // ---------- args ----------
 function parseArgs(argv) {
-  const o = { _: [], "add-label": [], "remove-label": [], fields: {} };
+  const o = { _: [], "add-label": [], "remove-label": [], label: [], fields: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
@@ -107,14 +111,10 @@ function readIssue(repo, number, project) {
 }
 
 // ---------- comandos ----------
-function cmdSet(o) {
-  need(o, "owner", "project", "repo", "issue");
-  const project = loadProject(o.owner, o.project);
-  let iss = readIssue(o.repo, o.issue, project);
-
-  // 1) valida tudo ANTES de escrever (nenhuma escrita parcial por erro de digitação)
+// valida campos/opções contra o Project; nada é escrito se algo estiver errado
+function planFields(project, fields) {
   const plan = [];
-  for (const [k, v] of Object.entries(o.fields)) {
+  for (const [k, v] of Object.entries(fields)) {
     const f = project.fields[norm(k)] || fail(`campo inexistente no Project: "${k}". Existentes: ${Object.values(project.fields).map((x) => x.name).join(", ")}`);
     if (f.options) {
       const opt = f.options.find((x) => norm(x.name) === norm(v)) || fail(`opção inválida para ${f.name}: "${v}". Válidas: ${f.options.map((x) => x.name).join(", ")}`);
@@ -122,6 +122,15 @@ function cmdSet(o) {
     } else if (/TEXT/i.test(f.type)) plan.push({ f, value: v, args: ["--text", v] });
     else fail(`tipo de campo não suportado pelo script: ${f.name} (${f.type})`);
   }
+  return plan;
+}
+
+function cmdSet(o, project = loadProject(o.owner, o.project), extra = {}) {
+  need(o, "owner", "project", "repo", "issue");
+  let iss = readIssue(o.repo, o.issue, project);
+
+  // 1) valida tudo ANTES de escrever (nenhuma escrita parcial por erro de digitação)
+  const plan = planFields(project, o.fields);
 
   // 2) item no board
   if (!iss.itemId) {
@@ -153,7 +162,7 @@ function cmdSet(o) {
     if (!after.assignees.includes(me)) bad.push(`assignee ${me} ausente`);
   }
   if (bad.length) fail(`RELEITURA NÃO CONFERE em #${after.number}: ${bad.join(" · ")} — pare o loop e corrija o board`, 3);
-  out({ ok: true, issue: after.number, status: after.values.Status ?? null, values: after.values, labels: after.labels, assignees: after.assignees });
+  out({ ok: true, ...extra, issue: after.number, status: after.values.Status ?? null, values: after.values, labels: after.labels, assignees: after.assignees });
 }
 
 function cmdComment(o) {
@@ -172,6 +181,44 @@ function cmdComment(o) {
   }
   const c = list().filter(same).pop() || fail(`RELEITURA NÃO CONFERE: comentário ct:${o.marker} não encontrado em #${o.issue}`, 3);
   out({ ok: true, marker: o.marker, url: c.html_url });
+}
+
+function cmdNew(o) {
+  need(o, "owner", "project", "repo", "title", "body-file");
+  const title = o.title.trim();
+  if (!title) fail("--title vazio");
+  const body = readFileSync(o["body-file"], "utf8");
+  if (!body.trim()) fail("--body-file vazio: a issue precisa de corpo (resumo, critérios de aceite, escopo)");
+  const project = loadProject(o.owner, o.project);
+  planFields(project, o.fields); // falha antes de criar qualquer coisa
+  const labels = [...new Set(["copy-thief", ...(o.label || [])])];
+
+  // busca por título exato: as 100 mais recentes pela listagem (sem atraso de índice) + busca (antigas)
+  const find = () => {
+    const base = ["issue", "list", "--repo", o.repo, "--state", "all", "--limit", "100", "--json", "number,title,state"];
+    const all = [...ghJson(base), ...ghJson([...base, "--search", `"${title.replace(/"/g, "")}" in:title`])];
+    const byN = new Map(all.filter((i) => norm(i.title) === norm(title)).map((i) => [i.number, i]));
+    return [...byN.values()];
+  };
+  let found = find(), created = false, n;
+  if (found.length > 1) fail(`título ambíguo: ${found.length} issues com "${title}" (${found.map((i) => "#" + i.number).join(", ")})`);
+  if (found.length) n = found[0].number;
+  else {
+    const args = ["issue", "create", "--repo", o.repo, "--title", title, "--body-file", "-", "--label", labels.join(",")];
+    let url = "";
+    try { url = gh(args, { input: body, retries: 1 }); }
+    catch (e) { // pode ter sido criada mesmo com erro de rede: confere (com espera) antes de repetir
+      for (let i = 0; i < 3 && !(found = find()).length; i++) sleep(3000);
+      if (found.length) n = found[0].number;
+      else url = gh(args, { input: body, retries: 2 });
+    }
+    n ??= Number((url.match(/\/issues\/(\d+)/) || [])[1]) || fail(`gh issue create não devolveu URL: ${url}`, 2);
+    const back = readIssue(o.repo, n);
+    if (norm(back.title) !== norm(title)) fail(`RELEITURA NÃO CONFERE: #${n} tem título "${back.title}"`, 3);
+    created = true;
+  }
+  const missing = labels.filter((l) => !readIssue(o.repo, n).labels.includes(l));
+  cmdSet({ ...o, issue: String(n), add: true, "add-label": missing, "remove-label": [] }, project, { created, url: `https://github.com/${o.repo}/issues/${n}` });
 }
 
 function cmdBoard(o) {
@@ -222,8 +269,8 @@ const out = (x) => process.stdout.write(JSON.stringify(x, null, 1) + "\n");
 
 try {
   const o = parseArgs(process.argv.slice(2));
-  const cmd = { board: cmdBoard, set: cmdSet, comment: cmdComment }[o._[0]];
-  if (!cmd) fail("uso: ct.mjs board|set|comment ... (veja o cabeçalho do arquivo)");
+  const cmd = { board: cmdBoard, set: cmdSet, comment: cmdComment, new: cmdNew }[o._[0]];
+  if (!cmd) fail("uso: ct.mjs board|set|comment|new ... (veja o cabeçalho do arquivo)");
   cmd(o);
 } catch (e) {
   process.stderr.write(`ct: ${e.message}\n`);
