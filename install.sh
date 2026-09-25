@@ -28,6 +28,31 @@ same_root=false
 info() { echo -e "${GREEN}[✓]${NC} $1"; }
 step() { echo -e "\n${CYAN}── $1 ──${NC}"; }
 
+failed_pi_packages=()
+install_pi_package() {
+    local package="$1"
+    local label="$2"
+    local output
+    local status
+    local reason
+
+    if output="$(pi install "$package" 2>&1)"; then
+        [ -z "$output" ] || printf '%s\n' "$output"
+        info "$label"
+        return 0
+    else
+        status=$?
+    fi
+
+    reason="${output##*$'\n'}"
+    reason="${reason%$'\r'}"
+    reason="${reason:0:240}"
+    [ -n "$reason" ] || reason="sem detalhe informado"
+    echo "[!] Falha ao instalar $package: $reason (código $status)." >&2
+    failed_pi_packages+=("$package")
+    return 1
+}
+
 # ── PI ────────────────────────────────────────
 step "Verificando PI"
 
@@ -141,13 +166,16 @@ fi
 # ── PI Packages ─────────────────────────────
 step "PI Packages"
 if command -v pi &>/dev/null; then
-    pi install npm:pi-mcp-adapter 2>/dev/null && info "pi-mcp-adapter" || true
-    pi install npm:@tintinweb/pi-subagents@0.18.2 2>/dev/null && info "pi-subagents" || true
-    node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
-    info "Suporte a thinking ultra dos subagentes verificado"
-    pi install npm:pi-alibaba-models@1.0.14 2>/dev/null && info "pi-alibaba-models" || true
-    pi install npm:@narumitw/pi-goal@0.43.0 2>/dev/null && info "pi-goal" || true
-    pi install npm:@juicesharp/rpiv-todo@2.11.0 2>/dev/null && info "rpiv-todo" || true
+    if install_pi_package "npm:pi-mcp-adapter" "pi-mcp-adapter"; then :; fi
+    if install_pi_package "npm:@tintinweb/pi-subagents@0.18.2" "pi-subagents"; then
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
+        info "Suporte a thinking ultra dos subagentes verificado"
+    else
+        echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2
+    fi
+    if install_pi_package "npm:pi-alibaba-models@1.0.14" "pi-alibaba-models"; then :; fi
+    if install_pi_package "npm:@narumitw/pi-goal@0.43.0" "pi-goal"; then :; fi
+    if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then :; fi
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     case "${XDG_CONFIG_HOME:-}" in /*) todo_cfg_root="$XDG_CONFIG_HOME" ;; *) todo_cfg_root="$HOME/.config" ;; esac
     todo_cfg="$todo_cfg_root/rpiv-todo/config.json"
@@ -158,9 +186,12 @@ if command -v pi &>/dev/null; then
     else
         echo "[!] rpiv-todo: $todo_cfg existente preservado; compare com config/rpiv-todo/config.json"
     fi
-    pi install npm:@gotgenes/pi-anthropic-auth@2.0.6
-    node "$SCRIPT_DIR/scripts/patch-anthropic-client-version.mjs"
-    info "Compatibilidade OAuth Anthropic verificada"
+    if install_pi_package "npm:@gotgenes/pi-anthropic-auth@2.0.6" "pi-anthropic-auth"; then
+        node "$SCRIPT_DIR/scripts/patch-anthropic-client-version.mjs"
+        info "Compatibilidade OAuth Anthropic verificada"
+    else
+        echo "[!] Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado." >&2
+    fi
     node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
     info "Normalização dos corpos de erro dos provedores verificada"
 fi
@@ -176,7 +207,12 @@ fi
 # ── Done ──────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "  ${GREEN}Setup completo!${NC}"
+if ((${#failed_pi_packages[@]})); then
+    echo -e "  ${GREEN}Setup completo com ressalvas${NC}"
+    echo "  Pacotes com falha: ${failed_pi_packages[*]}"
+else
+    echo -e "  ${GREEN}Setup completo!${NC}"
+fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "  1. Digite:  pi"
