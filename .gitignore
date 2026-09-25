@@ -35,3 +35,6 @@ trust.json
 # Artefatos locais de execução de agentes
 .pi/recovery/
 .pi/build/
+
+# Índice local do codegraph (grafo de código usado pelo scout, #19/#27)
+.codegraph/
