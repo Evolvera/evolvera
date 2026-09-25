@@ -58,9 +58,10 @@ try {
   mkdirSync(mockPackageDir, { recursive: true });
   writeFileSync(path.join(mockPackageDir, "package.json"), JSON.stringify({ type: "module", exports: "./index.js" }));
   writeFileSync(path.join(mockPackageDir, "index.js"), `
-    export const state = { calls: [], result: undefined, error: undefined };
+    export const state = { calls: [], result: undefined, error: undefined, failNext: 0 };
     export async function compact(...args) {
       state.calls.push(args);
+      if (state.failNext > 0) { state.failNext -= 1; throw new Error("provider outage"); }
       if (state.error) throw state.error;
       return state.result;
     }
@@ -150,9 +151,28 @@ try {
   }
   assert.deepEqual(mod.lastUsageSource(opusBranch), { provider: "anthropic", model: "claude-opus-5-5" }, "error/zero-usage messages are skipped like PI does");
 
+  // Fallback: Luna unavailable or failing -> the conversation model summarizes.
+  const opusMain = { provider: "anthropic", id: "claude-opus-5-5" };
+  const plainEvent = () => ({ preparation: preparation(), signal: new AbortController().signal });
   state.findResult = undefined;
-  let context = makeContext(state, conversationModel);
-  assertSafeCancel(await handler({ preparation: preparation(), signal: new AbortController().signal }, context), context);
+  let context = makeContext(state, opusMain);
+  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "missing Luna -> main model");
+  assert.equal(mockSdk.state.calls.at(-1)[1], opusMain);
+  assert.match(context.notices.at(-1).message, /Luna indisponível; compactação feita com claude-opus-5-5/);
+  state.findResult = lunaModel;
+  mockSdk.state.failNext = 1;
+  context = makeContext(state, opusMain);
+  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "Luna outage -> main model");
+  assert.deepEqual(mockSdk.state.calls.slice(-2).map((c) => c[1]), [lunaModel, opusMain], "Luna first, then main");
+  mockSdk.state.failNext = 1;
+  context = makeContext(state, lunaModel);
+  assertSafeCancel(await handler(plainEvent(), context), context);
+  assert.equal(mockSdk.state.failNext, 0);
+  mockSdk.state.failNext = 0;
+  state.findResult = undefined;
+  context = makeContext(state, undefined);
+  assertSafeCancel(await handler(plainEvent(), context), context);
+  state.findResult = lunaModel;
 
   state.findResult = lunaModel;
   state.authResult = { ok: false, error: "provider secret response must not leak" };
