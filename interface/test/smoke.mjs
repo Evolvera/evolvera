@@ -64,7 +64,7 @@ function rawRequest(base, headers) {
   });
 }
 
-function rawGetStatus(base, pathname) {
+function rawGetResponse(base, pathname) {
   const target = new URL(base);
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(target.port), target.hostname, () => {
@@ -73,9 +73,19 @@ function rawGetStatus(base, pathname) {
     let response = "";
     socket.setEncoding("utf8");
     socket.on("data", (chunk) => { response += chunk; });
-    socket.on("end", () => resolve(Number(response.match(/^HTTP\/1\.1 (\d+)/)?.[1])));
+    socket.on("end", () => {
+      const separator = response.indexOf("\r\n\r\n");
+      resolve({
+        status: Number(response.match(/^HTTP\/1\.1 (\d+)/)?.[1]),
+        body: response.slice(separator + 4),
+      });
+    });
     socket.on("error", reject);
   });
+}
+
+async function rawGetStatus(base, pathname) {
+  return (await rawGetResponse(base, pathname)).status;
 }
 
 function collectSse(base, eventsPath, onEvent, cookie) {
@@ -138,6 +148,15 @@ try {
   const token = html.match(/<meta name="pi-studio-token" content="([a-f0-9]+)">/)?.[1];
   const cookie = page.headers.get("set-cookie")?.match(/pi-studio-token=([^;]+)/)?.[1];
   if (!token || !cookie || token !== cookie) throw new Error("frontend did not receive auth token and SSE cookie");
+
+  // Percent-encoding inválido deve virar 400 sem expor detalhes do erro.
+  const malformedEncoding = await rawGetResponse(base, "/%E0%A4%A");
+  if (malformedEncoding.status !== 400) {
+    throw new Error(`malformed encoding returned ${malformedEncoding.status}, expected 400`);
+  }
+  if (malformedEncoding.body.includes("URIError")) {
+    throw new Error("malformed encoding response exposed URIError");
+  }
 
   // Arquivos públicos legítimos mantêm status e content-type; ausentes dão 404.
   const css = await fetch(`${base}/styles.css`);
