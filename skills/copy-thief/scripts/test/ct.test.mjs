@@ -71,6 +71,27 @@ test("set encontra item visível só pelo Project e relê os campos", () => {
   assert.equal(r.json.values.Prioridade, "P1");
 });
 
+// Reproduz a falha real de 2026-09-25 (issue #23): o GitHub demora a mostrar o item
+// logo após `project item-add`. Esperado: `new` espera e relê, em vez de sair com exit 3.
+test("new espera o item aparecer quando item-add demora a refletir", () => {
+  const { run, dir } = fresh();
+  const f = join(dir, "lag.md");
+  writeFileSync(f, "corpo");
+  const r = run(["new", ...P, "--title", "Issue com atraso", "--body-file", f, "Status=Pronto"], { CT_FAKE_ADD_LAG: "2" });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.json.status, "Pronto");
+});
+
+// Atraso maior que as novas tentativas: continua falhando com exit 3 (board divergente → parar).
+test("new ainda falha com exit 3 se o item nunca aparece", () => {
+  const { run, dir } = fresh();
+  const f = join(dir, "lag2.md");
+  writeFileSync(f, "corpo");
+  const r = run(["new", ...P, "--title", "Issue que nunca aparece", "--body-file", f, "Status=Pronto"], { CT_FAKE_ADD_LAG: "99" });
+  assert.equal(r.code, 3);
+  assert.match(r.err, /item-add não refletiu/);
+});
+
 test("new inclui item e relê campos pelo Project quando issue.projectItems está vazio", () => {
   const { run, dir } = fresh();
   const f = join(dir, "b.md");

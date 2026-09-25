@@ -2,6 +2,8 @@
 // gh simulado para testar ct.mjs sem tocar no GitHub. Estado em $CT_FAKE_STATE (JSON).
 // CT_FAKE_DROP_EDIT=1 faz item-edit "funcionar" (exit 0) sem gravar — simula board divergente.
 // CT_FAKE_CREATE_ERR=1 faz issue create gravar e MESMO ASSIM sair com erro — simula queda de rede.
+// CT_FAKE_ADD_LAG=N: o item incluído por item-add fica invisível nas N leituras seguintes —
+// simula o atraso real do GitHub entre `project item-add` e o item aparecer nas consultas.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const file = process.env.CT_FAKE_STATE;
@@ -24,6 +26,8 @@ const issueNode = (i) => ({
   labels: { nodes: i.labels.map((name) => ({ name })) },
 });
 
+// Consome uma leitura atrasada: true enquanto o item ainda deve parecer ausente.
+const lagging = (it) => { if (!it?.lag) return false; it.lag--; save(); return true; };
 const [c1, c2] = a;
 if (c1 === "project" && c2 === "view") print({ id: S.projectId, number: 1 });
 else if (c1 === "api" && c2 === "graphql") {
@@ -35,17 +39,18 @@ else if (c1 === "api" && c2 === "graphql") {
     const i = S.issues.find((x) => x.number === n);
     if (!i) print({ data: { repository: { issue: null } } });
     else {
-      const it = S.items.find((x) => x.issue === n);
+      let it = S.items.find((x) => x.issue === n);
+      if (lagging(it)) it = undefined;
       print({ data: { repository: { issue: { ...issueNode(i), projectItems: { nodes: it ? [{ id: it.id, project: { id: S.projectId }, fieldValues: fv(it) }] : [] } } } } });
     }
   } else if (q.includes("items(first:100")) {
-    print({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: S.items.map((it) => ({
+    print({ data: { node: { items: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: S.items.filter((it) => !lagging(it)).map((it) => ({
       id: it.id, fieldValues: fv(it), content: { __typename: "Issue", ...issueNode(issue(it.issue)) } })) } } } });
   } else die("query desconhecida");
 } else if (c1 === "project" && c2 === "item-add") {
   const n = Number(flag("--url").split("/").pop());
   let it = S.items.find((x) => x.issue === n);
-  if (!it) { it = { id: `PVTI_${n}`, issue: n, values: {} }; S.items.push(it); save(); }
+  if (!it) { it = { id: `PVTI_${n}`, issue: n, values: {}, lag: Number(process.env.CT_FAKE_ADD_LAG || 0) }; S.items.push(it); save(); }
   print({ id: it.id });
 } else if (c1 === "project" && c2 === "item-edit") {
   if (process.env.CT_FAKE_DROP_EDIT) process.exit(0);
