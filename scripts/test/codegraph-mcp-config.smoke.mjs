@@ -59,11 +59,14 @@ verificar("somente o servidor codegraph deve ser registrado nesta configuração
 const scout = readText("agents/scout.md").split(/^---\s*$/m).slice(2).join("---");
 for (const [descricao, ancora] of [
   ["a seção opcional do grafo", /Grafo de código \(opcional\)/i],
-  ["as ferramentas estruturais", /mcp__codegraph[\s\S]*codegraph_callers[\s\S]*codegraph_callees[\s\S]*codegraph_node[\s\S]*codegraph_impact[\s\S]*codegraph_search/],
-  ["a preferência por grep para literais, rotas, configuração e Markdown", /grep[\s\S]*(?:literais|literal)[\s\S]*rotas[\s\S]*(?:config|configuração)[\s\S]*Markdown/i],
-  ["fallback sem corrigir servidor ou índice ausentes", /servidor[\s\S]*(?:não existir|indisponível)[\s\S]*índice[\s\S]*(?:não existir|ausente)[\s\S]*grep/i],
-  ["a proibição de inicializar ou indexar", /nunca[\s\S]*(?:init|index|sync)[\s\S]*\.codegraph\//i],
-  ["a confirmação do trecho antes de citar linha", /(?:confirm|confira|confirme)[\s\S]*(?:leitura|ler)[\s\S]*(?:arquivo|trecho)[\s\S]*(?:arquivo:linha|linha)/i],
+  // Cada âncora usa [^\n]* (e não [\s\S]*): a regra inteira precisa estar
+  // numa mesma linha, para que uma palavra solta em outro trecho do prompt
+  // não baste para o teste passar.
+  ["as ferramentas estruturais", /mcp__codegraph[^\n]*codegraph_callers[^\n]*codegraph_callees[^\n]*codegraph_node[^\n]*codegraph_impact[^\n]*codegraph_search/],
+  ["a preferência por grep para literais, rotas, configuração e Markdown", /literais[^\n]*rotas[^\n]*configuração[^\n]*Markdown[^\n]*grep/i],
+  ["fallback sem corrigir servidor ou índice ausentes", /servidor[^\n]*não existir[^\n]*índice[^\n]*ausente[^\n]*grep[^\n]*não tente corrigir/i],
+  ["a proibição de inicializar ou indexar", /nunca[^\n]*init[^\n]*index[^\n]*sync[^\n]*\.codegraph\//i],
+  ["a confirmação do trecho antes de citar linha", /confirme o trecho por leitura antes de citar arquivo:linha/i],
 ]) {
   verificar(`agents/scout.md deve conter ${descricao}`, () => assert.match(scout, ancora));
 }
