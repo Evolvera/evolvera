@@ -400,11 +400,19 @@ function handleExtensionUi(req) {
 }
 
 function createUiResponder(requestId, sendResponse) {
+  let inFlight = false;
   let responded = false;
   const respond = async (payload) => {
-    if (responded) return;
-    responded = true;
-    await sendResponse(requestId, payload);
+    if (inFlight || responded) return;
+    inFlight = true;
+    try {
+      await sendResponse(requestId, payload);
+      responded = true;
+    } catch (error) {
+      inFlight = false;
+      throw error;
+    }
+    inFlight = false;
   };
   return {
     respond,
@@ -468,13 +476,21 @@ function openUiDialog(req) {
   };
   els.dialogOk.onclick = async (event) => {
     event.preventDefault();
-    await uiResponder.respond(getValue());
-    els.dialog.close();
+    try {
+      await uiResponder.respond(getValue());
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialogCancel.onclick = async (event) => {
     event.preventDefault();
-    await uiResponder.respond({ cancelled: true });
-    els.dialog.close();
+    try {
+      await uiResponder.respond({ cancelled: true });
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialog.showModal();
 }

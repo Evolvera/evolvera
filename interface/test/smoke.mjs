@@ -32,6 +32,17 @@ const normalResponder = createUiResponder("ui-ok", async (id, payload) => {
 await normalResponder.respond({ value: "seleção" });
 await normalResponder.respond({ cancelled: true });
 assert.deepEqual(normalResponses, [{ id: "ui-ok", value: "seleção" }]);
+let attempts = 0;
+const retryResponses = [];
+const retryResponder = createUiResponder("ui-retry", async (id, payload) => {
+  attempts += 1;
+  if (attempts === 1) throw new Error("falha temporária");
+  retryResponses.push({ id, ...payload });
+});
+await assert.rejects(retryResponder.respond({ value: "tentar novamente" }), /falha temporária/);
+await retryResponder.respond({ value: "tentar novamente" });
+assert.equal(attempts, 2, "falha de envio deve liberar uma nova tentativa");
+assert.deepEqual(retryResponses, [{ id: "ui-retry", value: "tentar novamente" }]);
 
 function waitForServer(child) {
   return new Promise((resolve, reject) => {
