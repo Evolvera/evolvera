@@ -63,6 +63,9 @@ for (const [descricao, ancora] of [
   // numa mesma linha, para que uma palavra solta em outro trecho do prompt
   // não baste para o teste passar.
   ["as ferramentas estruturais e o limite de projetos pequenos", /mcp__codegraph[^\n]*codegraph_node[^\n]*codegraph_search[^\n]*codegraph_callers[^\n]*codegraph_callees[^\n]*codegraph_impact[^\n]*500/],
+  // codegraph_node só devolve o corpo do símbolo com includeCode: true (padrão
+  // false, visto no QA). Sem essa regra o scout confundiria assinatura com código lido.
+  ["o uso de includeCode para obter o corpo", /codegraph_node[^\n]*includeCode: true[^\n]*corpo/],
   ["a preferência por grep para literais, rotas, configuração e Markdown", /literais[^\n]*rotas[^\n]*configuração[^\n]*Markdown[^\n]*grep/i],
   ["fallback sem corrigir servidor ou índice ausentes", /servidor[^\n]*não existir[^\n]*índice[^\n]*ausente[^\n]*grep[^\n]*não tente corrigir/i],
   ["a proibição de inicializar ou indexar", /nunca[^\n]*init[^\n]*index[^\n]*sync[^\n]*\.codegraph\//i],
