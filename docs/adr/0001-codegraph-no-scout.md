@@ -24,8 +24,11 @@ descartável do repositório.
 | Graphify | build code-only: 39 s; `update`: 70 s | Atualização não incremental; busca em linguagem natural errou Q2/Q3 |
 
 O índice não é criado pelo servidor: sem inicialização prévia, ele responde
-“not initialized”. O projeto controla exclusões por `codegraph.json` e o
-próprio `.codegraph/` se auto-ignora no Git. Instalações existentes não recebem
+“No CodeGraph project is loaded” e não cria `.codegraph/`. O projeto controla
+exclusões por `codegraph.json`. O banco dentro de `.codegraph/` fica ignorado
+pelo `.gitignore` que o codegraph cria, mas esse próprio arquivo aparece como
+não rastreado; para status limpo, o projeto adiciona `.codegraph/` ao seu
+`.gitignore`. Instalações existentes não recebem
 a configuração atualizada automaticamente.
 
 ## Decisão
@@ -42,7 +45,8 @@ só `search`, `node` e `explore` em projetos com menos de 500 arquivos
 indexados, qualquer que seja a lista configurada (`lib/dist/mcp/tools.js`,
 `TINY_REPO_FILE_THRESHOLD`). Com `explore` fora, sobram `node` e `search` em
 repositórios pequenos como este (243 arquivos). Isso basta: a saída de `node`
-já inclui a trilha "Called by"/"Calls". `callers`, `callees` e `impact`
+já inclui a trilha "Called by"/"Calls" (912 bytes para `publishBackfill`); o
+corpo do símbolo só vem com `includeCode: true` (2.136 bytes). `callers`, `callees` e `impact`
 ficam na lista para projetos maiores.
 
 ## Alternativas rejeitadas
