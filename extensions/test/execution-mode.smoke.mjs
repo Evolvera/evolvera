@@ -1,4 +1,5 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+import { createTestSymlink } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -44,7 +45,7 @@ try {
   const packageRoot = resolvePiSdkRoot(import.meta.url);
   const sdkScope = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(sdkScope, { recursive: true });
-  symlinkSync(packageRoot, path.join(sdkScope, "pi-coding-agent"), "dir");
+  createTestSymlink(packageRoot, path.join(sdkScope, "pi-coding-agent"), "dir");
   cpSync(path.join(root, "extensions", "execution-mode.ts"), path.join(sandbox, "execution-mode.ts"));
 
   const sdk = await import(pathToFileURL(path.join(packageRoot, "dist/core/session-manager.js")));
