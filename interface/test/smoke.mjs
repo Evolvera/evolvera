@@ -11,6 +11,35 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const fakePi = path.join(__dirname, "fake-pi-rpc.mjs");
 
+// A saída deve ficar visível, bloquear prompts e oferecer reinício.
+const exitAppSource = await readFile(path.join(root, "public/app.js"), "utf8");
+const exitUiSource = exitAppSource.match(/function updateProcessExitUi\([\s\S]*?\n}/)?.[0];
+assert.ok(exitUiSource, "app.js deve expor a atualização testável da UI de saída");
+const updateProcessExitUi = new Function(`${exitUiSource}; return updateProcessExitUi;`)();
+function makeExitUi() {
+  return {
+    status: { textContent: "", classList: { classes: new Set(["hidden"]), remove(name) { this.classes.delete(name); } } },
+    prompt: { disabled: false },
+    action: { disabled: false },
+    restart: { textContent: "Nova conversa" },
+  };
+}
+const cleanExitUi = makeExitUi();
+updateProcessExitUi({ code: 0, signal: null }, cleanExitUi);
+assert.equal(cleanExitUi.status.textContent, "PI encerrado (código 0)");
+assert.equal(cleanExitUi.status.classList.classes.has("hidden"), false);
+assert.equal(cleanExitUi.prompt.disabled, true);
+assert.equal(cleanExitUi.action.disabled, true);
+assert.equal(cleanExitUi.restart.textContent, "Reiniciar PI");
+const failedExitUi = makeExitUi();
+updateProcessExitUi({ code: 7, signal: null, message: "Error: segredo interno" }, failedExitUi);
+assert.equal(failedExitUi.status.textContent, "PI encerrado (código 7, erro)");
+assert.equal(failedExitUi.status.textContent.includes("Error:"), false, "não exibe stack trace");
+assert.equal(failedExitUi.status.textContent.includes("segredo interno"), false);
+const signalExitUi = makeExitUi();
+updateProcessExitUi({ code: null, signal: "SIGTERM" }, signalExitUi);
+assert.equal(signalExitUi.status.textContent, "PI encerrado (sinal SIGTERM)");
+
 // A resposta compartilhada deve tornar Esc e cliques rápidos idempotentes.
 const appSource = await readFile(path.join(root, "public/app.js"), "utf8");
 const responderSource = appSource.match(/function createUiResponder\([\s\S]*?\n}/)?.[0];
@@ -299,6 +328,18 @@ try {
   await waitFor(() => seen.some((item) => item.payload?.type === "response" && item.payload.command === "get_state"));
   const uiResponse = await post(base, `/api/projects/${projectId}/ui-response`, { id: "ui-smoke", value: "ok" }, token);
   if (uiResponse.res.status !== 202) throw new Error(`dialog response returned ${uiResponse.res.status}`);
+
+  // A fake PI exit must reach SSE, and a new-session command must start it again.
+  const cleanExit = await post(base, `/api/projects/${projectId}/command`, { id: "exit-clean", type: "test_exit", code: 0 }, token);
+  if (cleanExit.res.status !== 202) throw new Error(`clean exit command returned ${cleanExit.res.status}`);
+  await waitFor(() => seen.some((item) => item.event === "process_exit" && item.payload.code === 0));
+  const restarted = await post(base, `/api/projects/${projectId}/command`, { id: "restart-after-exit", type: "new_session" }, token);
+  if (restarted.res.status !== 202) throw new Error(`restart command returned ${restarted.res.status}`);
+  sse.destroy();
+  sse = collectSse(base, `/api/projects/${projectId}/events`, (event, payload) => seen.push({ event, payload }), cookie);
+  const failedExit = await post(base, `/api/projects/${projectId}/command`, { id: "exit-failure", type: "test_exit", code: 7 }, token);
+  if (failedExit.res.status !== 202) throw new Error(`failed exit command returned ${failedExit.res.status}`);
+  await waitFor(() => seen.some((item) => item.event === "process_exit" && item.payload.code === 7));
 
   await post(base, `/api/projects/${projectId}/stop`, {}, token);
   console.log("smoke ok (security cases + fake PI workflow)");

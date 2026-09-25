@@ -11,6 +11,10 @@ function respond(command, success = true, data = undefined) {
 }
 
 function handle(command) {
+  if (command.type === "test_exit") {
+    process.exit(Number.isInteger(command.code) ? command.code : 0);
+  }
+
   if (command.type === "prompt") {
     respond(command);
     emit({ type: "agent_start" });
