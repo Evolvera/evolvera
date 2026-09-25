@@ -277,7 +277,7 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `config/settings.json` | Provider/modelo padrão, thinking, tema e packages; não ativa `plastic-memory` nem o package OM. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
-| `config/mcp.json` | Configuração inicial de MCP; atualmente não declara nenhum servidor (`mcpServers` vazio). |
+| `config/mcp.json` | Configuração inicial de MCP; declara o codegraph opcional, carregado sob demanda para consultas estruturais. |
 | `.pi/` dentro de um projeto | Planos, memória, previews, recovery e outros artefatos locais daquele projeto. |
 
 Não existe `config/AGENTS.md` neste harness. O roteamento ativo está distribuído entre `SYSTEM.md`, skills e definições de agentes.
@@ -289,6 +289,23 @@ Não existe `config/AGENTS.md` neste harness. O roteamento ativo está distribu�
 - **Extension:** código TypeScript carregado pelo PI para adicionar tools, comandos ou hooks de runtime.
 - **MCP:** integração externa que expõe ferramentas por um servidor separado.
 - **System prompt:** contrato global usado pelo PI principal para decidir escopo, segurança, delegação e validação.
+
+### Codegraph opcional para o scout
+
+O servidor MCP codegraph oferece consultas estruturais locais, sem LLM. Instale o binário `codegraph` no `PATH` se quiser usá-lo; sem o binário, o servidor lazy não conecta e o scout continua com grep. A inicialização do índice é decisão do usuário: dentro de cada projeto, execute `codegraph init` somente se desejar. O agente nunca inicializa nem sincroniza índices.
+
+Em instalações existentes, mescle manualmente esta entrada em `~/.pi/agent/mcp.json` dentro de `mcpServers` (preserve os demais servidores) e execute `/mcp reconnect codegraph` ou reinicie o PI:
+
+```json
+"codegraph": {
+  "command": "codegraph",
+  "args": ["serve", "--mcp"],
+  "lifecycle": "lazy",
+  "env": { "CODEGRAPH_MCP_TOOLS": "callers,callees,node,impact,search" }
+}
+```
+
+Para excluir caminhos do índice, configure `codegraph.json`, por exemplo `{"exclude": [".pi/recovery/**"]}`. Dentro de `.codegraph/`, o banco e os arquivos de runtime ficam ignorados pelo `.gitignore` que o próprio codegraph cria, mas esse `.codegraph/.gitignore` aparece como não rastreado no `git status`; para um status limpo, adicione `.codegraph/` ao `.gitignore` do projeto. Para parar um daemon em segundo plano, rode `codegraph daemon` (alias `daemons`): ele lista os daemons ativos e para o que você escolher com Enter (menu interativo, sem opção não interativa na 1.2.0). O grafo não indexa Markdown nem responde perguntas por literais; `explore` fica desativada por seu custo observado. Em projetos com menos de 500 arquivos indexados, o codegraph 1.2.0 anuncia só `codegraph_node` e `codegraph_search` (os demais aparecem em projetos maiores); `node` já mostra quem chama e quem é chamado, e traz o corpo do símbolo com `includeCode: true`. Nesses casos, o scout usa grep e leitura.
 
 ### Roteamento
 

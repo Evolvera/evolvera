@@ -34,6 +34,8 @@ For each candidate, record:
 - **admission** — `ADMIT` (independent and ready now), `DEFER` (depends on another result), `MERGE` (must remain with a causal neighbor), or `SYNTHESIS` (cross-shard reconciliation after evidence exists);
 - **stop condition** — when it returns `COMPLETE` or `PARTIAL` instead of expanding.
 
+Quando o projeto já tiver `.codegraph/`, peça ao scout para usar o grafo em perguntas sobre chamadores e fluxo estrutural.
+
 ### Capacity and Shard-Breadth Gate
 
 Take a capacity snapshot before launch: effective background `maxConcurrent` after any project override, currently active background agents, and free slots. Launch every ready `ADMIT` candidate up to free slots in one message with `run_in_background: true`; do not impose an arbitrary 2–4 cap or leave a slot idle while an independent `ADMIT` candidate is ready. If more candidates are admissible than slots, choose a full source-scoped wave that maximizes decision coverage, record the deferred candidates, and recompute after the wave. The configured cap limits normal background agents; it is a ceiling, not a reason to manufacture shards.
