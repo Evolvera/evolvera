@@ -224,10 +224,10 @@ Key responsibilities:
 - Never reads PLAN_FULL_{session}.md unless task explicitly references it
 
 ### Planner Agent
-See `examples/extensions/subagent/agents/planner.md` for full specification.
+See `agents/planner.md` for full specification.
 
 Key responsibilities:
-- Reads scout report + user requirements
+- Reads the reconciled contract + user requirements, and scout evidence when it was gathered
 - Writes PLAN_FULL_{session}.md (complete reference)
 - Writes TASKS_{session}/task_*.md (isolated execution units with ULTRA DETAIL)
 - Writes SCHEDULE_{session}.md (DAG + execution contract)
@@ -237,7 +237,7 @@ Key responsibilities:
 
 **Planner MUST ensure generated code is CONSISTENT with what already exists.**
 
-Before generating TASKS, planner MUST verify via scout:
+Before generating TASKS, planner MUST verify against the existing code — by reading it directly, or through scout evidence when broader discovery is needed:
 
 1. **Existing patterns** — naming conventions, folder structure, import styles
 2. **Existing configs** — CSS classes, theme tokens, component APIs
@@ -250,10 +250,10 @@ Before generating TASKS, planner MUST verify via scout:
 - If project has `lib/utils.ts` → put utils there, not in `utils/`
 - If project uses specific component patterns → follow them
 
-**Rule:** Scout report is the source of truth. Generate code that matches, not contradicts.
+**Rule:** Repository evidence (direct reads or scout reports) is the source of truth. Generate code that matches, not contradicts.
 
 ### Scout Agent
-See `examples/extensions/subagent/agents/scout.md` for full specification.
+See `agents/scout.md` for full specification.
 
 Key responsibilities:
 - Explores codebase for relevant files
