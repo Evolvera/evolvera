@@ -2,8 +2,8 @@
 
 ## Referência
 
-- Commit-base: `eeae1de` (`NatiamG`), data `2026-09-24` (`git show -s --format=%cs eeae1de`).
-- Checkout consultado: `git rev-parse --short=7 HEAD` → `eeae1de`.
+- Commit-base: `dcd0151` (`NatiamG`), data `2026-09-25` (`git show -s --format=%cs dcd0151`).
+  Varredura original em `eeae1de` (2026-09-24); atualizado após os merges de #13, #15, #19 e #27.
 - Stack principal: harness do PI Coding Agent, extensões TypeScript e PI Studio
   standalone em Node.js (`README.md:1-3`, `interface/package.json:1-12`).
 
@@ -34,9 +34,9 @@
   (`find . -maxdepth 1 -mindepth 1 -printf '%f\n' | sort`); papel específico
   dos itens sem documentação citada aqui: não verificado.
 - `.pi/` e `.scout/`: diretórios locais presentes no checkout (mesmo comando de
-  listagem); `.pi/recovery/` e `.pi/build/` contêm material em remoção pela
-  issue #13 (inventário: `find .pi/recovery .pi/build -mindepth 1 -maxdepth 1
-  -type d`). Não confundir artefatos de projeto com os arquivos instalados.
+  listagem); `.pi/recovery/` e `.pi/build/` são artefatos locais de agentes,
+  ignorados pelo git desde a #13 (`.gitignore:36-37`). Não confundir artefatos
+  de projeto com os arquivos instalados.
 
 ## Instalação → `~/.pi/agent`
 
@@ -68,7 +68,7 @@ cada arquivo (evidência apontada por arquivo:linha):
 - `communication-style.ts`: comando e injeção do modo de comunicação
   (`extensions/communication-style.ts:98-108,146-159`).
 - `execution-mode.ts`: comando e injeção/persistência do modo de execução
-  (`extensions/execution-mode.ts:193-207,259-279`).
+  (`extensions/execution-mode.ts:193-207,259-268`).
 - `jina-reader.ts`: ferramenta `jina_read` para ler páginas/PDFs
   (`extensions/jina-reader.ts:1-13,59-66`).
 - `maestro.ts`: classifica prompt e seleciona rota/modelo
@@ -127,8 +127,10 @@ cada arquivo (evidência apontada por arquivo:linha):
 
 ## Integrações
 
-- MCP: `config/mcp.json` tem `mcpServers` vazio (`config/mcp.json:1-3`);
-  instaladores preservam MCP já existente (`install.sh:123-139`,
+- MCP: `config/mcp.json` registra o servidor `codegraph` (grafo de código usado
+  pelo scout; `config/mcp.json:2-4`, regras em `agents/scout.md:17`, decisão em
+  `docs/adr/0001-codegraph-no-scout.md`); índice local `.codegraph/` ignorado
+  (`.gitignore:40`). Instaladores preservam MCP já existente (`install.sh:123-139`,
   `install.ps1:180-197`).
 - GitHub/`gh`: pré-requisito/opção de clone documentado em
   `README.md:17-24,50-52`; fluxo de issues usa GitHub e Flow Orca
@@ -158,11 +160,10 @@ antes de agir:
   (`install.sh:144-150`).
 - aberto: #14 — backfill para após 8 janelas; execução processa uma janela por
   chamada (`extensions/plastic-memory/session/backfill.ts:187-199`).
-- aberto: #20 — relato do board diz que scout recebe ferramenta `mcp` completa;
-  frontmatter atual lista apenas read, grep, find e ls
-  (`agents/scout.md:1-8`), portanto o detalhe não está confirmado neste checkout.
-- Em remoção pela #13: backups/artefatos sob `.pi/recovery/` e `.pi/build/`
-  (inventário: `find .pi/recovery .pi/build -mindepth 1 -maxdepth 1 -type d`).
+- aberto: #20 — o frontmatter do scout lista só ferramentas embutidas
+  (`agents/scout.md:1-8`), mas o pi-subagents expõe todas as ferramentas de
+  extensão quando não há seletor `ext:`; em execução (2026-09-25) o scout
+  listou `mcp`, `mcpScript` e `mcp__playwright`.
 
 ## Como atualizar este mapa
 
