@@ -1,6 +1,7 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+import { createTestSymlink } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,7 +16,7 @@ const packageLink = path.join(packageLinkDir, "pi-coding-agent");
 await (async () => {
   const { mkdirSync } = await import("node:fs");
   mkdirSync(packageLinkDir, { recursive: true });
-  symlinkSync(packageRoot, packageLink, "dir");
+  createTestSymlink(packageRoot, packageLink, "dir");
 })();
 const {
   DefaultResourceLoader,
