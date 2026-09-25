@@ -407,10 +407,14 @@ function createUiResponder(requestId, sendResponse) {
   const respond = (payload) => {
     if (responded) return Promise.resolve();
     if (inFlight) return inFlight;
-    inFlight = Promise.resolve()
-      .then(() => sendResponse(requestId, payload))
-      .then(() => { responded = true; })
-      .finally(() => { inFlight = null; });
+    inFlight = (async () => {
+      try {
+        await sendResponse(requestId, payload);
+        responded = true;
+      } finally {
+        inFlight = null;
+      }
+    })();
     return inFlight;
   };
   return {
