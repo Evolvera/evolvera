@@ -5,6 +5,10 @@ if [ "$#" -eq 1 ] && [ "$1" = --version ]; then
     exit 0
 fi
 printf '%s\n' "$*" >> "$FAKE_INSTALL_LOG"
+if [ "${FAKE_PI_FAIL:-}" != "" ] && [ "$*" = "install $FAKE_PI_FAIL" ]; then
+    printf '%s\n' "${FAKE_PI_FAIL_REASON:-simulated installation failure}" >&2
+    exit 1
+fi
 case "$*" in
   "install npm:@tintinweb/pi-subagents@0.18.2")
     mkdir -p "$HOME/.pi/agent/npm/node_modules/@tintinweb"
@@ -15,7 +19,4 @@ case "$*" in
     cp -R "$FAKE_AUTH_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@gotgenes/pi-anthropic-auth"
     ;;
 esac
-if [ "${FAKE_PI_FAIL:-}" != "" ] && [ "$*" = "install $FAKE_PI_FAIL" ]; then
-    exit 1
-fi
 exit 0
