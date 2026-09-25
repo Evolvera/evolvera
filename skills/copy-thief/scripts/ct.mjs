@@ -154,7 +154,10 @@ function cmdSet(o, project = loadProject(o.owner, o.project), extra = {}) {
   if (!iss.itemId) {
     if (!o.add) fail(`issue #${iss.number} não está no Project ${o.project}; use --add para incluir`, 3);
     gh(["project", "item-add", String(o.project), "--owner", o.owner, "--url", iss.url, "--format", "json"]);
+    // O GitHub leva alguns segundos para mostrar o item recém-incluído nas consultas:
+    // relê com espera (mesmo padrão do `new`) antes de declarar o board divergente.
     iss = readIssue(o.repo, o.issue, project);
+    for (let i = 0; i < 3 && !iss.itemId; i++) { sleep(3000); iss = readIssue(o.repo, o.issue, project); }
     if (!iss.itemId) fail(`item-add não refletiu no Project para #${iss.number}`, 3);
   }
 
