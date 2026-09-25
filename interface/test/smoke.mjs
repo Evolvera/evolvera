@@ -1,7 +1,8 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,28 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const fakePi = path.join(__dirname, "fake-pi-rpc.mjs");
+
+// A resposta compartilhada deve tornar Esc e cliques rápidos idempotentes.
+const appSource = await readFile(path.join(root, "public/app.js"), "utf8");
+const responderSource = appSource.match(/function createUiResponder\([\s\S]*?\n}/)?.[0];
+assert.ok(responderSource, "app.js deve expor a lógica testável de resposta única");
+const createUiResponder = new Function(`${responderSource}; return createUiResponder;`)();
+const uiResponses = [];
+const responder = createUiResponder("ui-esc", async (id, payload) => {
+  uiResponses.push({ id, ...payload });
+});
+let prevented = false;
+const cancelEvent = { preventDefault: () => { prevented = true; } };
+await Promise.all([responder.cancel(cancelEvent), responder.cancel(cancelEvent)]);
+assert.equal(prevented, true, "Escape deve impedir o fechamento sem resposta");
+assert.deepEqual(uiResponses, [{ id: "ui-esc", cancelled: true }]);
+const normalResponses = [];
+const normalResponder = createUiResponder("ui-ok", async (id, payload) => {
+  normalResponses.push({ id, ...payload });
+});
+await normalResponder.respond({ value: "seleção" });
+await normalResponder.respond({ cancelled: true });
+assert.deepEqual(normalResponses, [{ id: "ui-ok", value: "seleção" }]);
 
 function waitForServer(child) {
   return new Promise((resolve, reject) => {

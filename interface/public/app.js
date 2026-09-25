@@ -399,6 +399,22 @@ function handleExtensionUi(req) {
   }
 }
 
+function createUiResponder(requestId, sendResponse) {
+  let responded = false;
+  const respond = async (payload) => {
+    if (responded) return;
+    responded = true;
+    await sendResponse(requestId, payload);
+  };
+  return {
+    respond,
+    cancel(event) {
+      event.preventDefault();
+      return respond({ cancelled: true });
+    },
+  };
+}
+
 function openUiDialog(req) {
   els.dialogTitle.textContent = req.title || "PI precisa de resposta";
   els.dialogBody.replaceChildren();
@@ -444,14 +460,20 @@ function openUiDialog(req) {
     getValue = () => ({ value: input.value });
   }
 
+  const uiResponder = createUiResponder(req.id, sendUiResponse);
+  els.dialog.oncancel = (event) => {
+    uiResponder.cancel(event)
+      .then(() => els.dialog.close())
+      .catch((error) => toast(error.message, "error"));
+  };
   els.dialogOk.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, getValue());
+    await uiResponder.respond(getValue());
     els.dialog.close();
   };
   els.dialogCancel.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, { cancelled: true });
+    await uiResponder.respond({ cancelled: true });
     els.dialog.close();
   };
   els.dialog.showModal();
