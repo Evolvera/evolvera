@@ -21,6 +21,7 @@ const tmpdirProprioPadrao = new Set([
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
   "plastic-memory-host.smoke.mjs", "plastic-memory-install.smoke.mjs",
+  "plastic-memory-context-injection.smoke.mjs", // writes only to its owned mkdtemp sandbox and removes it in finally
   "plastic-memory-learning-queue-ui.smoke.mjs",
   "plastic-memory-migration.smoke.mjs", "plastic-memory-project.smoke.mjs",
   "plastic-memory-proposal-commands.smoke.mjs",
@@ -33,6 +34,8 @@ const tmpdirProprioPadrao = new Set([
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-ultra-thinking.smoke.mjs", "run-tests.smoke.mjs",
   "pi-sdk-resolution.smoke.mjs",
+  // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
+  "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
   "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
@@ -43,7 +46,6 @@ const semEstadoPadrao = new Set([
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",
-  "plastic-memory-context-injection.smoke.mjs",
   "plastic-memory-emergency-hook.smoke.mjs",
   "plastic-memory-emergency-pipeline.smoke.mjs",
   "plastic-memory-emergency-queue.smoke.mjs",
@@ -56,6 +58,8 @@ const semEstadoPadrao = new Set([
   "plastic-memory-promotion-lifecycle.smoke.mjs",
   "plastic-memory-proposal-queue.smoke.mjs", "plastic-memory-queue.smoke.mjs",
   "plastic-memory-session.smoke.mjs", "plastic-memory-stride.smoke.mjs",
+  // Backfill uses only in-memory history and an array-backed fake append sink.
+  "plastic-memory-backfill.smoke.mjs",
   "plastic-memory-token-calibration.smoke.mjs",
   "plastic-memory-transport-integrity.smoke.mjs",
   "plastic-memory-worker-contract.smoke.mjs", "plastic-memory-workers.smoke.mjs",
@@ -80,13 +84,12 @@ if (root !== repoRoot) {
 // Escrita isolada é provada nos smoke tests; estes exceções acessam dado externo.
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
-  ["npm test (interface)", "servidor lê ~/.pi/agent; smoke usa rede loopback e repo real (isolamento: issue #26)"],
 ]);
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
-function executar(nome, comando, args, cwd) {
+function executar(nome, comando, args, cwd, shell = false) {
   const child = spawnSync(comando, args, {
-    cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 1024 * 1024,
+    cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 1024 * 1024, shell,
   });
   if (child.error?.code !== "ENOBUFS") {
     if (child.stdout) process.stdout.write(child.stdout);
@@ -135,8 +138,8 @@ if (root === repoRoot) {
   const ct = "skills/copy-thief/scripts/test/ct.test.mjs";
   executar(ct, process.execPath, ["--test", path.join(root, ct)], root);
   const interfaceTest = "npm test (interface)";
-  const reason = exclusoes.get(interfaceTest);
-  resultados.excluidos.push(`${interfaceTest} — ${reason}`);
+  console.log("\n[tmpdir próprio] npm test (interface)");
+  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
 }
 
 console.log("\nResumo final");

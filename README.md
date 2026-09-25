@@ -129,7 +129,7 @@ Os instaladores:
 5. copiam agentes, skills, extensões normais e temas; `extensions/plastic-memory/` não é instalado enquanto seu caminho de compactação estiver desativado;
 6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); o template de configuração não ativa `plastic-memory` nem `pi-observational-memory`;
 7. criam `mcp.json` somente quando ele ainda não existe;
-8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados.
+8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados. A configuração instala `compaction.reserveTokens: 65536`: essa reserva antecipa a compactação para evitar respostas cortadas por `maximum output token limit`.
 
 ### Patch de continuidade do PI 0.83.0
 
@@ -434,7 +434,11 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 |---|---|
 | `/login` | Autenticar ou selecionar provider/modelo. |
 | `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
-| `/fast on` / `/fast eco` / `/fast off` | Alternar o fast mode fornecido pela extensão local: `on` usa `service_tier: "priority"` na sessão principal e nos subagentes Agent elegíveis; `eco` mantém a sessão principal no tier padrão e usa Fast apenas nos subagentes OpenAI Codex compatíveis; `off` usa o tier padrão em todos. Subagentes isolados permanecem no tier padrão. |
+| `/fast` | Toggle OpenAI Codex Fast mode: /fast on \| /fast eco \| /fast off |
+| `/communication-mode` | Set communication style: default, default+caveman, or caveman ([mode] [global\|project]) |
+| `/execution-mode` | Set execution mode: supervised, autonomous, or yolo ([mode] [global\|project\|session]) |
+| `/maestro` | Auto-escolhe Luna high / Sol xhigh / Opus por prompt via Jev: /maestro on\|off\|status |
+| `/attention` | Control main-orchestrator idle notifications: status, on, off, test |
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
 | `/goal clear` | Encerrar o Goal Mode. |
@@ -452,6 +456,41 @@ As operações canônicas usam `memory_recall` (ID exato `pm:p:`/`pm:c:`) e `mem
 A segurança semântica é conservadora: cada ciclo é um turno concluído contíguo de até aproximadamente 100k tokens, sem multipart e com no máximo uma retry automática; 10k/20k são gatilhos de inspeção. Seis ciclos fechados usam stride por identidade, compactando os dois mais antigos e preservando os quatro mais recentes. Resultado detached só aplica após `settled`/idle, sem mensagens pendentes e com guardas do host; tentativa interna inválida ou não correspondente cancela. No-match manual, threshold ou overflow preserva o fallback nativo. Isso não é alegação de qualidade live.
 
 Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas ferramentas acima. `pi-observational-memory` permanece somente como compatibilidade legacy; se houver package OM efetivo, ou configuração plastic inválida/ausente/desabilitada, o plastic-memory fica bridge context-only sem hooks full. O modo flat-only permanece legado com marcador; o histórico pré-plastic fica `historical-unindexed` até backfill explícito report-first, cursor-bounded, de uma janela de turno concluído por vez, com pausa/retoma/retry e recovery-safe. O root atual não expõe seus comandos de autoridade.
+
+## Testes
+
+Na raiz do repositório, execute a suíte:
+
+```bash
+node scripts/run-tests.mjs
+```
+
+O runner informa aprovados, falhos, excluídos e não classificados. Ele também
+executa `npm test` em `interface/`; consulte o próprio runner para ver quais
+smokes são isolados, excluídos ou classificados como sem estado persistente.
+
+## Desinstalar
+
+`install.sh` não fornece um desinstalador. Ele cria os diretórios
+`agents`, `skills`, `extensions`, `sessions`, `research`, `helpers`, `bin` e
+`themes` em `~/.pi/agent`; copia configurações, agents, skills, temas e arquivos
+flat de extensão; e grava `settings.json` por último. `mcp.json` e, quando
+aplicável no WSL, `keybindings.json` só são copiados se ainda não existirem.
+
+Para remover o harness, feche o PI, faça uma cópia privada de
+`~/.pi/agent` e compare o conteúdo instalado com os arquivos deste checkout.
+Remova apenas os arquivos do harness que confirmar nessa comparação; o
+instalador não mantém um manifesto de propriedade e pode coexistir com recursos
+pessoais. Revise `settings.json` antes de removê-lo, pois o instalador o grava
+por último e ele pode ter sido alterado depois.
+
+Não apague `~/.pi/agent` inteiro nem remova sessões, histórico, `auth.json`,
+credenciais, `mcp.json` ou `keybindings.json` sem confirmar que são descartáveis
+e não pertencem ao usuário. O instalador também pode instalar o PI globalmente
+e criar `~/.config/jev/api_key` quando a chave existe no checkout e o destino
+não existe; esses recursos ficam fora de `~/.pi/agent`. Só desinstale o PI
+global se também quiser removê-lo do sistema, e confira a chave Jev antes de
+qualquer remoção: ela é uma credencial.
 
 ## Atualizar
 
