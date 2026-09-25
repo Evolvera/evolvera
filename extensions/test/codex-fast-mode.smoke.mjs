@@ -1,6 +1,7 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+import { createTestSymlink } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,7 +14,7 @@ try {
   const packageRoot = resolvePiSdkRoot(import.meta.url);
   const scopeDir = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(scopeDir, { recursive: true });
-  symlinkSync(packageRoot, path.join(scopeDir, "pi-coding-agent"), "dir");
+  createTestSymlink(packageRoot, path.join(scopeDir, "pi-coding-agent"), "dir");
   cpSync(path.join(root, "extensions", "codex-fast-mode.ts"), path.join(sandbox, "codex-fast-mode.ts"));
   const mod = await import(pathToFileURL(path.join(sandbox, "codex-fast-mode.ts")));
 

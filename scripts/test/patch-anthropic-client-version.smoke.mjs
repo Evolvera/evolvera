@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createTestSymlink } from '../../extensions/test/lib/test-symlink.mjs';
 
 // STATEFUL RESOURCE PROOF: DISPOSABLE_VERIFIED. This test uses one unique synthetic
 // fixture under os.tmpdir(), never resolves live npm roots, and removes only that fixture.
@@ -55,13 +56,13 @@ function createFixture({
     fs.rmSync(piTarget, { force: true });
     const sidecar = path.join(piRoot, 'pi-target-sidecar.js');
     fs.writeFileSync(sidecar, piSource);
-    fs.symlinkSync(sidecar, piTarget);
+    createTestSymlink(sidecar, piTarget);
   }
   if (symlink === 'auth') {
     fs.rmSync(authTarget, { force: true });
     const sidecar = path.join(authRoot, 'auth-target-sidecar.ts');
     fs.writeFileSync(sidecar, authSource);
-    fs.symlinkSync(sidecar, authTarget);
+    createTestSymlink(sidecar, authTarget);
   }
 }
 
