@@ -632,10 +632,22 @@ async function serveFrontend(req, res) {
 }
 
 async function serveStatic(req, res, pathname) {
-  const rel = pathname === "/" ? "/index.html" : pathname;
-  const decoded = decodeURIComponent(rel);
-  const filePath = path.normalize(path.join(PUBLIC_DIR, decoded));
-  if (!filePath.startsWith(PUBLIC_DIR)) return text(res, 403, "Forbidden");
+  // URL parsing normalizes literal dot segments; retain the origin-form path
+  // so this guard also rejects plain ../ before resolving it.
+  const requestPath = req.url?.startsWith("/") ? req.url.split(/[?#]/, 1)[0] : pathname;
+  const rel = requestPath === "/" ? "/index.html" : requestPath;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(rel);
+  } catch (error) {
+    if (error instanceof URIError) return text(res, 400, "Bad Request");
+    throw error;
+  }
+  const filePath = path.resolve(PUBLIC_DIR, `.${decoded}`);
+  const relativePath = path.relative(PUBLIC_DIR, filePath);
+  if (relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+    return text(res, 403, "Forbidden");
+  }
   let fileStat;
   try {
     fileStat = await stat(filePath);

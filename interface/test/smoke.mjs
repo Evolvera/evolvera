@@ -64,6 +64,30 @@ function rawRequest(base, headers) {
   });
 }
 
+function rawGetResponse(base, pathname) {
+  const target = new URL(base);
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(Number(target.port), target.hostname, () => {
+      socket.write(`GET ${pathname} HTTP/1.1\r\nHost: ${target.host}\r\nConnection: close\r\n\r\n`);
+    });
+    let response = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => { response += chunk; });
+    socket.on("end", () => {
+      const separator = response.indexOf("\r\n\r\n");
+      resolve({
+        status: Number(response.match(/^HTTP\/1\.1 (\d+)/)?.[1]),
+        body: response.slice(separator + 4),
+      });
+    });
+    socket.on("error", reject);
+  });
+}
+
+async function rawGetStatus(base, pathname) {
+  return (await rawGetResponse(base, pathname)).status;
+}
+
 function collectSse(base, eventsPath, onEvent, cookie) {
   const req = http.get(`${base}${eventsPath}`, { headers: { cookie: `pi-studio-token=${cookie}` } }, (res) => {
     res.setEncoding("utf8");
@@ -112,14 +136,53 @@ const child = spawn(process.execPath, [path.join(root, "server.mjs")], {
 });
 
 let sse;
+let siblingDir;
 try {
   const port = await waitForServer(child);
   const base = `http://127.0.0.1:${port}`;
+  siblingDir = await mkdtemp(path.join(root, "public-sibling-"));
+  await writeFile(path.join(siblingDir, "probe.txt"), "outside public");
+  const siblingName = path.basename(siblingDir);
   const page = await fetch(base);
   const html = await page.text();
   const token = html.match(/<meta name="pi-studio-token" content="([a-f0-9]+)">/)?.[1];
   const cookie = page.headers.get("set-cookie")?.match(/pi-studio-token=([^;]+)/)?.[1];
   if (!token || !cookie || token !== cookie) throw new Error("frontend did not receive auth token and SSE cookie");
+
+  // Percent-encoding inválido deve virar 400 sem expor detalhes do erro.
+  const malformedEncoding = await rawGetResponse(base, "/%E0%A4%A");
+  if (malformedEncoding.status !== 400) {
+    throw new Error(`malformed encoding returned ${malformedEncoding.status}, expected 400`);
+  }
+  if (malformedEncoding.body.includes("URIError")) {
+    throw new Error("malformed encoding response exposed URIError");
+  }
+
+  // Arquivos públicos legítimos mantêm status e content-type; ausentes dão 404.
+  const css = await fetch(`${base}/styles.css`);
+  if (css.status !== 200 || css.headers.get("content-type") !== "text/css; charset=utf-8") {
+    throw new Error(`public CSS returned ${css.status} with ${css.headers.get("content-type")}`);
+  }
+  const missingAsset = await fetch(`${base}/missing-static-asset`);
+  if (missingAsset.status !== 404) throw new Error(`missing static asset returned ${missingAsset.status}, expected 404`);
+
+  // Rejeita caminhos que escapam de public/, inclusive irmã com prefixo comum.
+  const plainTraversal = await rawGetStatus(base, `/../${siblingName}/probe.txt`);
+  if (plainTraversal !== 403) throw new Error(`plain traversal returned ${plainTraversal}, expected 403`);
+  const siblingTraversal = await rawGetStatus(base, `/%2e%2e%2f${siblingName}/probe.txt`);
+  if (siblingTraversal !== 403) throw new Error(`prefix sibling traversal returned ${siblingTraversal}, expected 403`);
+  const encodedTraversal = await rawGetStatus(base, `/%2e%2e%2f${siblingName}%2fprobe.txt`);
+  if (encodedTraversal !== 403) throw new Error(`encoded traversal returned ${encodedTraversal}, expected 403`);
+  const backslashTraversal = await rawGetStatus(base, `/%2e%2e%5c${siblingName}%5cprobe.txt`);
+  if (process.platform === "win32" && backslashTraversal !== 403) {
+    throw new Error(`Windows backslash traversal returned ${backslashTraversal}, expected 403`);
+  }
+  const doubleEncodedTraversal = await rawGetStatus(base, `/%252e%252e%252f${siblingName}%252fprobe.txt`);
+  if (doubleEncodedTraversal !== 404) throw new Error(`double-encoded traversal returned ${doubleEncodedTraversal}, expected 404`);
+  const nullBytePath = await rawGetStatus(base, "/%00");
+  if (nullBytePath !== 404) throw new Error(`null-byte path returned ${nullBytePath}, expected 404`);
+  const longPath = await rawGetStatus(base, `/${"a".repeat(2048)}`);
+  if (longPath !== 404) throw new Error(`long missing path returned ${longPath}, expected 404`);
 
   // Sem token, uma rota de leitura e uma de comando devem ser bloqueadas antes de qualquer efeito.
   const denied = await fetch(`${base}/api/health`);
@@ -202,4 +265,5 @@ try {
   await new Promise((resolve) => child.once("exit", resolve));
   await rm(agentDir, { recursive: true, force: true });
   await rm(projectDir, { recursive: true, force: true });
+  if (siblingDir) await rm(siblingDir, { recursive: true, force: true });
 }
