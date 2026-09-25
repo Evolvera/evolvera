@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$FAKE_INSTALL_LOG"
+if [ "$#" -eq 2 ] && [ "$1" = root ] && [ "$2" = -g ]; then
+    printf '%s\n' "$FAKE_NPM_ROOT"
+fi
+exit 0
