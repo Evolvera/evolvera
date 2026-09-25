@@ -578,9 +578,10 @@ function requestTokenMatches(req, allowCookie = false) {
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-function authorizeApiRequest(req, pathname) {
-  if (!pathname.startsWith("/api/")) return null;
-  if (!hasSingleRawHeader(req, "host")) return 403;
+// Host aceito = loopback ou PI_WEB_HOST, na porta em que o servidor ouve. Barra DNS
+// rebinding: um domínio externo apontado para 127.0.0.1 chega com o Host dele.
+function requestHostAllowed(req) {
+  if (!hasSingleRawHeader(req, "host")) return null;
   const authority = normalizedAuthority(req.headers.host);
   const configuredHost = DEFAULT_HOST.toLowerCase().replace(/\.$/, "");
   const allowedHosts = new Set([
@@ -589,7 +590,13 @@ function authorizeApiRequest(req, pathname) {
     `[::1]:${listeningPort}`,
     `${configuredHost.includes(":") && !configuredHost.startsWith("[") ? `[${configuredHost}]` : configuredHost}:${listeningPort}`,
   ].map(normalizedAuthority));
-  if (!authority || !allowedHosts.has(authority)) return 403;
+  return authority && allowedHosts.has(authority) ? authority : null;
+}
+
+function authorizeApiRequest(req, pathname) {
+  if (!pathname.startsWith("/api/")) return null;
+  const authority = requestHostAllowed(req);
+  if (!authority) return 403;
 
   const origins = [];
   for (let index = 0; index < req.rawHeaders.length; index += 2) {
@@ -784,7 +791,11 @@ async function route(req, res) {
       return json(res, 201, { project, session: session.summary() });
     }
 
-    if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) return await serveFrontend(req, res);
+    if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
+      // A página carrega o token: só é servida para um Host aceito.
+      if (!requestHostAllowed(req)) return json(res, 403, { error: "Forbidden" });
+      return await serveFrontend(req, res);
+    }
     if (req.method === "GET") return serveStatic(req, res, pathname);
     return json(res, 405, { error: "Method not allowed" });
   } catch (error) {

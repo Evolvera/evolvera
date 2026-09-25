@@ -135,6 +135,14 @@ try {
   const burst = await Promise.all(Array.from({ length: 64 }, () => fetch(`${base}/api/health`)));
   if (burst.some((res) => res.status !== 401)) throw new Error("bulk requests without token were not uniformly rejected");
 
+  // Defesa em profundidade (achado do QA da #7): num DNS rebinding, evil.example
+  // aponta para 127.0.0.1. A página que carrega o token não pode ser servida
+  // para esse Host, senão o token vaza para a página do atacante.
+  const badHostPage = await getWithHeaders(base, "/", { host: `evil.example:${port}` });
+  if (badHostPage.status !== 403 || badHostPage.body.includes(token)) {
+    throw new Error(`HTML with token served to foreign Host (status ${badHostPage.status})`);
+  }
+
   // Host externo e Origin externo são rejeitados antes do despacho para o PI.
   const badHost = await getWithHeaders(base, "/api/health", { "x-pi-studio-token": token, host: `evil.example:${port}` });
   if (badHost.status !== 403) throw new Error(`foreign Host returned ${badHost.status}, expected 403`);
