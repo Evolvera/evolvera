@@ -14,6 +14,27 @@ $MIN_NODE_VERSION = [version]"22.19.0"
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
 function Step($name) { Write-Host "`n--- $name ---" -ForegroundColor $CYAN }
 
+# True when $target matches (ignoring line endings) a version of config/rpiv-todo/config.json in this checkout's history.
+function Test-TodoCfgPreviouslyShipped($target) {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
+    $previousEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8
+        $current = (Get-Content -LiteralPath $target -Encoding UTF8) -join "`n"
+        $revs = @(& git -C $SCRIPT_DIR log --format=%H -- config/rpiv-todo/config.json 2>$null)
+        if ($LASTEXITCODE -ne 0) { return $false }
+        foreach ($rev in $revs) {
+            $shipped = @(& git -C $SCRIPT_DIR show "${rev}:config/rpiv-todo/config.json" 2>$null)
+            if ($LASTEXITCODE -eq 0 -and (($shipped -join "`n") -ceq $current)) { return $true }
+        }
+        return $false
+    } catch {
+        return $false
+    } finally {
+        [Console]::OutputEncoding = $previousEncoding
+    }
+}
+
 # Paths
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $SCRIPT_DIR) { $SCRIPT_DIR = $PWD.Path }
@@ -229,6 +250,10 @@ if ($piCmd) {
         Info "rpiv-todo guidance instalada"
     } elseif ((Get-FileHash $todoSrc).Hash -eq (Get-FileHash $todoCfg).Hash) {
         Info "rpiv-todo guidance atual"
+    } elseif (Test-TodoCfgPreviouslyShipped $todoCfg) {
+        # Unmodified older shipped guidance is ours to upgrade; user edits stay preserved below.
+        Copy-Item $todoSrc $todoCfg -Force
+        Info "rpiv-todo guidance atualizada"
     } else {
         Write-Host "[!] rpiv-todo: $todoCfg existente preservado; compare com config\rpiv-todo\config.json" -ForegroundColor Yellow
     }
