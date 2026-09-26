@@ -56,6 +56,8 @@ info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
 npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
 node "$SCRIPT_DIR/scripts/patch-pi-083-threshold-cancel.mjs"
 info "Patch de continuidade do PI 0.83.0 verificado"
+node "$SCRIPT_DIR/scripts/patch-pi-083-context-wall-retry.mjs"
+info "Retomada após compactação na parede de contexto verificada"
 node "$SCRIPT_DIR/scripts/patch-pi-083-ultra-thinking.mjs"
 info "Suporte a thinking ultra do PI 0.83.0 verificado"
 command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
