@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Use for any planning request or when deciding whether planning is needed. Chooses pre-plan/direct execution, normal planner by default, or rare plan-heavy escalation.
+description: Use when the user asks for a plan, or when new code still to be written spans several dependent commits. Not for operations on finished artifacts (merge/integrate PRs, push, install, deploy, reload, rollback) or single bounded changes; do those directly. Chooses pre-plan/direct execution, normal planner, or rare plan-heavy escalation.
 ---
 
 # Planner Skill — Choose, Plan, Execute
@@ -25,7 +25,7 @@ Before selecting a route, mentally forecast the smallest coherent selective comm
 - **2–5 clear commits:** load the builder skill; use focused delegation and parallelize only disjoint SoC slices when the coordination overhead is lower than serial execution.
 - **More than ~5 commits:** normal planner is preferred, because it can create the dependency graph once and reduce wall-clock time through safe parallel groups.
 
-Override the count when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; stay direct when several edits are mechanically one coherent commit. Importance alone does not require planning. High-impact but bounded deploy, staging, SSH, security, nginx/Plesk, ACME, CI, provider, reload, or rollback work normally uses a concise pre-plan or normal planner, then `builder-heavy` plus selective validation.
+Override the count when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; stay direct when several edits are mechanically one coherent commit. Importance alone does not require planning. The forecast counts code still to be written, not operations on finished artifacts: merging or integrating existing PRs/branches, pushing, rerunning an installer, deploying an approved build, reload, or rollback is direct orchestrator work however many artifacts it touches—never planner, plan-heavy, a scout wave, or a builder. When the user directly orders such an operation, perform it now; resolve mechanical conflicts yourself and stop only for a semantic conflict or a named safety gate.
 
 ### Bundled-request decision
 

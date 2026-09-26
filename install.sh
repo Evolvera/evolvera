@@ -26,6 +26,16 @@ MIN_NODE_VERSION="22.19.0"
 same_root=false
 
 info() { echo -e "${GREEN}[✓]${NC} $1"; }
+
+# True when $1 is byte-identical to a version of config/rpiv-todo/config.json in this checkout's history.
+todo_cfg_previously_shipped() {
+    local rev
+    git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1 || return 1
+    for rev in $(git -C "$SCRIPT_DIR" log --format=%H -- config/rpiv-todo/config.json 2>/dev/null); do
+        git -C "$SCRIPT_DIR" show "$rev:config/rpiv-todo/config.json" 2>/dev/null | cmp -s - "$1" && return 0
+    done
+    return 1
+}
 step() { echo -e "\n${CYAN}── $1 ──${NC}"; }
 
 # ── PI ────────────────────────────────────────
@@ -155,6 +165,9 @@ if command -v pi &>/dev/null; then
         mkdir -p "$(dirname "$todo_cfg")" && cp "$SCRIPT_DIR/config/rpiv-todo/config.json" "$todo_cfg" && info "rpiv-todo guidance instalada"
     elif cmp -s "$SCRIPT_DIR/config/rpiv-todo/config.json" "$todo_cfg"; then
         info "rpiv-todo guidance atual"
+    elif todo_cfg_previously_shipped "$todo_cfg"; then
+        # Unmodified older shipped guidance is ours to upgrade; user edits stay preserved below.
+        cp "$SCRIPT_DIR/config/rpiv-todo/config.json" "$todo_cfg" && info "rpiv-todo guidance atualizada"
     else
         echo "[!] rpiv-todo: $todo_cfg existente preservado; compare com config/rpiv-todo/config.json"
     fi
