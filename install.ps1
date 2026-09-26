@@ -94,6 +94,9 @@ if ($installedVersion -eq $PI_CODING_AGENT_VERSION) {
 & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-threshold-cancel.mjs")
 if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 0.83.0." }
 Info "Patch de continuidade do PI 0.83.0 verificado"
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-context-wall-retry.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de retomada na parede de contexto." }
+Info "Retomada apos compactacao na parede de contexto verificada"
 & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-ultra-thinking.mjs")
 if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de thinking ultra 0.83.0." }
 Info "Suporte a thinking ultra do PI 0.83.0 verificado"

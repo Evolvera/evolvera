@@ -143,6 +143,12 @@ node scripts/test/patch-pi-083-threshold-cancel.smoke.mjs
 
 Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução futura de um instalador pode aplicá-lo ao pacote global correspondente e exige confirmação nova para essa consequência; a smoke não é prova de uma campanha live.
 
+Em seguida, `scripts/patch-pi-083-context-wall-retry.mjs` corrige a parada após compactação: quando uma execução longa chega à parede de contexto, o PI reduz `max_tokens` a 1, o provedor devolve `stopReason: "length"` e o PI 0.83.0 compactava por threshold sem retomar, exigindo uma mensagem do usuário. O patch trata esse `length` acima do limiar de compactação como overflow e reutiliza o compact-and-retry de tentativa única já existente. Um segundo corte na parede encerra com erro em vez de repetir, e respostas completas continuam com a compactação por threshold comum. A smoke roda uma `AgentSession` real sobre cópias descartáveis do pacote instalado com o provedor faux, sem rede:
+
+```bash
+node scripts/test/patch-pi-083-context-wall-retry.smoke.mjs
+```
+
 ### Thinking `ultra` no PI 0.83.0
 
 Os instaladores executam `scripts/patch-pi-083-ultra-thinking.mjs` logo após o patch de continuidade e `scripts/patch-pi-subagents-ultra-thinking.mjs` depois de instalar `@tintinweb/pi-subagents@0.18.2`. Os patchers adicionam `ultra` às superfícies de tipo, CLI, catálogo de níveis, schema de modelos, TUI e subagentes. O valor só aparece para modelos cujo `thinkingLevelMap` declara suporte; `models.json` habilita `ultra: "ultra"` para `openai-codex/gpt-6-astra`.
