@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -205,12 +206,7 @@ try {
 
   // Exercise the installed SDK helper separately with a synthetic stream. This
   // proves native preparation/result semantics without any provider or session I/O.
-  const packageCandidates = [
-    path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-    path.resolve(root, "../../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-  ];
-  const packageRoot = packageCandidates.find((candidate) => existsSync(candidate));
-  assert.ok(packageRoot, "a local installed SDK is required for the real helper check");
+  const packageRoot = resolvePiSdkRoot(import.meta.url);
   const realSdk = await import(`${pathToFileURL(path.join(packageRoot, "dist", "index.js")).href}?run=${Date.now()}-real`);
   const realSignal = new AbortController().signal;
   let streamRequest;

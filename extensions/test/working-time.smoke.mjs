@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -7,10 +8,7 @@ import { fileURLToPath } from "node:url";
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
 const require = createRequire(import.meta.url);
-const jitiPath = path.resolve(
-  root,
-  "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.cjs",
-);
+const jitiPath = path.join(resolvePiSdkRoot(import.meta.url), "node_modules/jiti/lib/jiti.cjs");
 const { createJiti } = require(jitiPath);
 const jiti = createJiti(import.meta.url);
 const mod = await jiti.import(path.join(root, "extensions/working-time.ts"));

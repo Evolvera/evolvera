@@ -1,5 +1,7 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+import { createTestSymlink, trySymlinkFile } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,15 +42,10 @@ try {
   // The installed SDK is imported only through a sandbox symlink, and the
   // agent directory is owned by this run before any command callback exists.
   process.env.PI_CODING_AGENT_DIR = agentDir;
-  const packageCandidates = [
-    path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-    path.resolve(root, "../../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent"),
-  ];
-  const packageRoot = packageCandidates.find((candidate) => existsSync(candidate));
-  assert.ok(packageRoot, "a local installed SDK is required for this smoke");
+  const packageRoot = resolvePiSdkRoot(import.meta.url);
   const sdkScope = path.join(sandbox, "node_modules", "@earendil-works");
   mkdirSync(sdkScope, { recursive: true });
-  symlinkSync(packageRoot, path.join(sdkScope, "pi-coding-agent"), "dir");
+  createTestSymlink(packageRoot, path.join(sdkScope, "pi-coding-agent"), "dir");
   cpSync(path.join(root, "extensions", "execution-mode.ts"), path.join(sandbox, "execution-mode.ts"));
 
   const sdk = await import(pathToFileURL(path.join(packageRoot, "dist/core/session-manager.js")));
@@ -94,18 +91,23 @@ try {
   assert.equal(globalContext.statuses.get("execution-mode"), "MODE  AUTÔNOMO · GLOBAL");
   assert.equal(mod.formatExecutionModeStatus({ mode: "yolo", source: "session" }), "MODE  YOLO · SESSION");
   assert.notEqual(readFileSync(globalSettings, "utf8"), globalBefore);
-  chmodSync(globalSettings, 0o600);
-  await command("autonomous global", globalContext);
-  assert.equal(statSync(globalSettings).mode & 0o777, 0o600);
+  if (process.platform === "win32") {
+    console.log("SKIP (Windows NTFS não oferece chmod 0600): asserção do modo 0o600");
+  } else {
+    chmodSync(globalSettings, 0o600);
+    await command("autonomous global", globalContext);
+    assert.equal(statSync(globalSettings).mode & 0o777, 0o600);
+  }
   const protectedTarget = path.join(sandbox, "linked-settings.json");
   const originalSettings = readFileSync(globalSettings, "utf8");
   writeFileSync(protectedTarget, originalSettings);
   rmSync(globalSettings);
-  symlinkSync(protectedTarget, globalSettings);
-  await command("yolo global", globalContext);
-  assert.ok(lstatSync(globalSettings).isSymbolicLink(), "mode command must not replace a settings symlink");
-  assert.equal(readFileSync(protectedTarget, "utf8"), originalSettings);
-  rmSync(globalSettings);
+  if (trySymlinkFile(protectedTarget, globalSettings, "protected settings symlink")) {
+    await command("yolo global", globalContext);
+    assert.ok(lstatSync(globalSettings).isSymbolicLink(), "mode command must not replace a settings symlink");
+    assert.equal(readFileSync(protectedTarget, "utf8"), originalSettings);
+    rmSync(globalSettings);
+  }
   writeFileSync(globalSettings, originalSettings);
 
   writeJson(path.join(project, ".pi", "settings.json"), { executionMode: "yolo", projectKey: 7 });

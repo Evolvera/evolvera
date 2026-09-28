@@ -129,7 +129,7 @@ Os instaladores:
 5. copiam agentes, skills, extensões normais e temas; `extensions/plastic-memory/` não é instalado enquanto seu caminho de compactação estiver desativado;
 6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); o template de configuração não ativa `plastic-memory` nem `pi-observational-memory`;
 7. criam `mcp.json` somente quando ele ainda não existe;
-8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados.
+8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados. O template define `compaction.reserveTokens: 65536` para iniciar a compactação com mais margem antes do limite de saída.
 
 ### Patch de continuidade do PI 0.83.0
 
@@ -423,6 +423,10 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 |---|---|
 | `/login` | Autenticar ou selecionar provider/modelo. |
 | `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
+| `/communication-mode` | Selecionar o estilo de comunicação (default, default+caveman ou caveman). |
+| `/execution-mode` | Selecionar o modo de execução (supervised, autonomous ou yolo). |
+| `/maestro` | Ativar, desativar ou consultar a seleção automática de modelo. |
+| `/attention` | Gerenciar as notificações de ociosidade do agente principal. |
 | `/fast on` / `/fast eco` / `/fast off` | ECO é o padrão: a sessão principal usa o tier padrão e apenas subagentes OpenAI Codex elegíveis usam Fast (`service_tier: "priority"`). `on` ativa Fast na principal e nos subagentes elegíveis; `off` desativa Fast em todos. O modo explícito continua no novo chat raiz criado por `/new`; subagentes isolados permanecem no tier padrão. |
 | `/goal <critério>` | Manter um critério de conclusão entre turnos. |
 | `/goal status` | Ver o estado do Goal Mode. |
@@ -441,6 +445,14 @@ As operações canônicas usam `memory_recall` (ID exato `pm:p:`/`pm:c:`) e `mem
 A segurança semântica é conservadora: cada ciclo é um turno concluído contíguo de até aproximadamente 100k tokens, sem multipart e com no máximo uma retry automática; 10k/20k são gatilhos de inspeção. Seis ciclos fechados usam stride por identidade, compactando os dois mais antigos e preservando os quatro mais recentes. Resultado detached só aplica após `settled`/idle, sem mensagens pendentes e com guardas do host; tentativa interna inválida ou não correspondente cancela. No-match manual, threshold ou overflow preserva o fallback nativo. Isso não é alegação de qualidade live.
 
 Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas ferramentas acima. `pi-observational-memory` permanece somente como compatibilidade legacy; se houver package OM efetivo, ou configuração plastic inválida/ausente/desabilitada, o plastic-memory fica bridge context-only sem hooks full. O modo flat-only permanece legado com marcador; o histórico pré-plastic fica `historical-unindexed` até backfill explícito report-first, cursor-bounded, de uma janela de turno concluído por vez, com pausa/retoma/retry e recovery-safe. O root atual não expõe seus comandos de autoridade.
+
+## Testes
+
+`node scripts/run-tests.mjs` executa as suítes classificadas e informa aprovados, falhos, excluídos e não classificados; também executa `npm test` em `interface/`. Consulte o runner antes de executar: suites sem isolamento de estado comprovado não devem rodar em recursos existentes.
+
+## Desinstalar
+
+Não existe desinstalador automático. Feche o PI e compare os arquivos instalados com este checkout antes de remover somente os recursos do harness confirmados. Preserve sessões, histórico, dados de projeto, credenciais, `mcp.json` e `keybindings.json`; o instalador não mantém um manifesto completo de propriedade. A instalação global do PI e a chave Jev, se presentes, ficam fora da árvore do harness e precisam de avaliação própria antes de qualquer remoção.
 
 ## Atualizar
 
