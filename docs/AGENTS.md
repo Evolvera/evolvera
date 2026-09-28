@@ -6,34 +6,46 @@ This document defines the roles, responsibilities, and orchestration rules for t
 
 ## Orchestrator Agent (Global Parent)
 
-You are the top-level orchestrator. Your job is **NOT** to implement code directly, but to coordinate specialized subagents to achieve the user's goal.
+The orchestrator owns scope reconciliation, integration, and final
+verification. Follow `config/SYSTEM.md` as the source of truth for workflow
+selection:
+
+- **Direct:** for a known target and bounded change or lookup, act directly;
+  do not add Scout or Planner by default.
+- **Focused delegation:** for bounded investigation or implementation, use a
+  suitable focused agent when it materially improves the outcome. Use `scout`
+  for codebase exploration and `builder` for implementation.
+- **Planned delivery:** for cross-cutting, multi-stage, architecture-sensitive,
+  or long-horizon work, use `planner` followed by builders. Scout first when
+  evidence gathering is needed to give the planner a reconciled contract.
+
+The orchestrator may implement directly when the selected workflow and scope
+call for it. Delegation does not transfer ownership of reconciliation,
+integration, diff review, or final verification.
 
 ### Orchestration Rules
 
-1. **ALWAYS start with Scout + Planner**: For any non-trivial request, spawn a `scout` to gather context, then a `planner` to generate the plan ecosystem.
-2. **NEVER implement code yourself**: Delegate all implementation to `builder` agents.
-3. **Follow SCHEDULE_{session}.md strictly**: The planner generates `.pi/plans/SCHEDULE_{session}.md`. Read it. Respect its dependency graph and parallel groups.
-4. **Parallel execution**: Only spawn builders in parallel when SCHEDULE_{session}.md explicitly places them in the same `parallel_group`.
-5. **Serial execution**: If task B depends on task A, wait for task A's handover to show `status: COMPLETE` before spawning task B.
-6. **Context budget**: You may hold at most the current `SCHEDULE.md` state + the task file path of the next builder to spawn. Do NOT read `PLAN_FULL_{session}.md` into your context.
-7. **Handoff parsing**: After each builder finishes, read `.pi/build/HANDOVER_{task_id}.md`. Update `SCHEDULE_{session}.md` status column. Do NOT rely on builder's freeform output.
-8. **Failure handling**: If a builder returns `status: BLOCKED` or `status: ERROR`, do NOT auto-retry blindly. Read the handover, understand the blocker, and either: (a) spawn a scout to investigate, (b) replan with the planner, or (c) ask the user.
-9. **Completion**: When all SCHEDULE_{session}.md tasks show `status: COMPLETE`, summarize results to the user.
+1. Choose the lightest workflow above that meets the request; consult
+   `config/SYSTEM.md` when deciding.
+2. For planned delivery, follow `.pi/plans/SCHEDULE_{session}.md` and its
+   dependencies. Apply its task ordering to that planned delivery only.
+3. Run independent delegated work in parallel when ownership is disjoint;
+   serialize work with real dependencies.
+4. For planned delivery, read builder handovers and update the schedule from
+   their evidence. Do not rely on freeform status alone.
+5. If an agent returns `BLOCKED` or `ERROR`, understand the blocker before
+   choosing whether to investigate, replan, or ask the user.
+6. Summarize the verified outcome and any remaining risk.
 
 ### Orchestration Workflow
 
-```
-1. Receive user request
-2. Spawn scout → gather evidence
-3. Spawn planner → generate plan ecosystem
-4. Read SCHEDULE_{session}.md
-5. WHILE tasks pending:
-   a. Identify ready tasks (all dependencies COMPLETE)
-   b. Group ready tasks by parallel_group
-   c. Spawn builders (parallel for same group, serial across groups)
-   d. Read handover files
-   e. Update SCHEDULE_{session}.md
-6. Summarize completion
+```text
+1. Reconcile the request, scope, existing behavior, and acceptance.
+2. Select Direct, Focused delegation, or Planned delivery.
+3. Gather evidence or delegate only where the selected path requires it.
+4. For Planned delivery, execute the schedule and dependency graph.
+5. Integrate changes and perform final verification.
+6. Report the outcome and remaining risk.
 ```
 
 ---
@@ -42,11 +54,11 @@ You are the top-level orchestrator. Your job is **NOT** to implement code direct
 
 | Agent | When to Use | Input | Output |
 |-------|-------------|-------|--------|
-| `scout` | Need to explore codebase, find relevant files | Task description | Scout Report + checkpoint |
-| `planner` | Need implementation plan | Scout report + requirements | PLAN_FULL_{session}.md + TASKS_{session}/ + SCHEDULE_{session}.md |
-| `builder` | Need to implement a task | TASKS_{session}/task_*.md | HANDOVER_{task_id}.md + modified files |
-| `worker` | DEPRECATED — use `builder` | — | — |
-| `reviewer` | Need code quality check | File paths + changes | Review report |
+| `scout` | Need bounded codebase exploration | Task description | Evidence report |
+| `planner` | Need a plan for cross-cutting or multi-stage work | Reconciled contract + evidence | Plan, tasks, and schedule |
+| `builder` | Need bounded implementation | Task description or task file | Changes and handover |
+| `qa` | Independent behavioral or integration proof is warranted | Acceptance and checkpoint | Validation report |
+| `validator` | Named escape risk or final PR gate | Focused diff and acceptance | Review report |
 
 ---
 
@@ -212,10 +224,10 @@ Key responsibilities:
 - Never reads PLAN_FULL_{session}.md unless task explicitly references it
 
 ### Planner Agent
-See `examples/extensions/subagent/agents/planner.md` for full specification.
+See `agents/planner.md` for full specification.
 
 Key responsibilities:
-- Reads scout report + user requirements
+- Reads the reconciled contract + user requirements, and scout evidence when it was gathered
 - Writes PLAN_FULL_{session}.md (complete reference)
 - Writes TASKS_{session}/task_*.md (isolated execution units with ULTRA DETAIL)
 - Writes SCHEDULE_{session}.md (DAG + execution contract)
@@ -225,7 +237,7 @@ Key responsibilities:
 
 **Planner MUST ensure generated code is CONSISTENT with what already exists.**
 
-Before generating TASKS, planner MUST verify via scout:
+Before generating TASKS, planner MUST verify against the existing code — by reading it directly, or through scout evidence when broader discovery is needed:
 
 1. **Existing patterns** — naming conventions, folder structure, import styles
 2. **Existing configs** — CSS classes, theme tokens, component APIs
@@ -238,10 +250,10 @@ Before generating TASKS, planner MUST verify via scout:
 - If project has `lib/utils.ts` → put utils there, not in `utils/`
 - If project uses specific component patterns → follow them
 
-**Rule:** Scout report is the source of truth. Generate code that matches, not contradicts.
+**Rule:** Repository evidence (direct reads or scout reports) is the source of truth. Generate code that matches, not contradicts.
 
 ### Scout Agent
-See `examples/extensions/subagent/agents/scout.md` for full specification.
+See `agents/scout.md` for full specification.
 
 Key responsibilities:
 - Explores codebase for relevant files

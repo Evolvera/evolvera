@@ -1,11 +1,11 @@
+import { loadJiti } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
-const { createJiti } = await import(pathToFileURL(path.join(packageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
+const { createJiti } = await loadJiti(import.meta.url);
 const jiti = createJiti(import.meta.url, { moduleCache: false });
 const projection = await jiti.import(path.join(root, "plastic-memory/compaction/projection.ts"));
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
@@ -136,7 +136,7 @@ assert.equal(ownerEntries.some((item) => item.customType === "plastic.observatio
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.reflections.recorded"), true);
 assert.equal(ownerEntries.some((item) => item.customType === "plastic.cycle.closed"), true);
 assert.equal(ownerCompactCalls.length, 0, "one 20k closed cycle cannot pass the six-cycle automatic-application gate");
-assert.equal(ownerNotices.some(({ message, level }) => level === "info" && /^Plastic memory: observer running on ~[0-9,]+-token snapshot$/u.test(message)), true);
+assert.equal(ownerNotices.some(({ message, level }) => level === "info" && message === `Plastic memory: observer running on ~${(20_000).toLocaleString()}-token snapshot`), true);
 assert.equal(ownerNotices.every(({ message }) => !message.includes("cycle fact") && !message.includes("OC")), true);
 async function lifecycleProbe(mode) {
   const entries = [{ ...entry(`${mode}-1`, undefined), tokenCount: 10_000 }, { ...entry(`${mode}-2`, `${mode}-1`, "assistant"), tokenCount: 10_000 }];

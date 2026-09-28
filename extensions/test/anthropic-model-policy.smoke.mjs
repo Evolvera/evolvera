@@ -1,3 +1,4 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -9,10 +10,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 const require = createRequire(import.meta.url);
-const jitiPath = path.resolve(
-  root,
-  "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.cjs",
-);
+const jitiPath = path.join(resolvePiSdkRoot(import.meta.url), "node_modules/jiti/lib/jiti.cjs");
 const { createJiti } = require(jitiPath);
 const jiti = createJiti(import.meta.url);
 const mod = await jiti.import(path.join(root, "extensions/anthropic-context-limit.ts"));
@@ -46,10 +44,7 @@ for (const unchanged of [
   assert.deepEqual(unchanged, before);
 }
 
-const anthropicCatalogPath = path.resolve(
-  root,
-  "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/data/anthropic.json",
-);
+const anthropicCatalogPath = path.join(resolvePiSdkRoot(import.meta.url), "node_modules/@earendil-works/pi-ai/dist/providers/data/anthropic.json");
 const anthropicCatalog = JSON.parse(readFileSync(anthropicCatalogPath, "utf8"))["anthropic-messages"];
 const catalogNativeModels = Object.values(anthropicCatalog).filter(
   (model) => model.contextWindow === mod.ANTHROPIC_NATIVE_CONTEXT_WINDOW,

@@ -33,6 +33,7 @@ const state = {
   activeHistoryPath: "",
   source: null,
   isStreaming: false,
+  processExited: false,
   currentAssistantBubble: null,
   attachments: [],
 };
@@ -54,10 +55,12 @@ function mutedDate(value) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const apiToken = document.querySelector('meta[name="pi-studio-token"]')?.content || "";
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { "content-type": "application/json", ...(options.headers || {}) },
+    headers: { "content-type": "application/json", "x-pi-studio-token": apiToken, ...(options.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -260,6 +263,13 @@ async function refreshProjects() {
 
 async function openProject(projectId) {
   const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}" });
+  if (state.processExited) {
+    state.processExited = false;
+    els.prompt.disabled = false;
+    els.action.disabled = false;
+    els.newSession.textContent = "Nova conversa";
+    els.widgetArea.classList.add("hidden");
+  }
   state.currentProject = project;
   state.currentSession = session;
   state.history = history || [];
@@ -273,12 +283,42 @@ async function openProject(projectId) {
   setTimeout(() => sendRpc({ type: "get_entries" }, { silent: true }), 250);
 }
 
+function updateProcessExitUi(exit, elements) {
+  const message = Number.isInteger(exit.code)
+    ? exit.code === 0
+      ? "PI encerrado (código 0)"
+      : `PI encerrado (código ${exit.code}, erro)`
+    : exit.signal
+      ? `PI encerrado (sinal ${exit.signal})`
+      : "PI encerrado";
+  elements.status.textContent = message;
+  elements.status.classList.remove("hidden");
+  elements.prompt.disabled = true;
+  elements.action.disabled = true;
+  elements.restart.textContent = "Reiniciar PI";
+}
+
 function connectProjectEvents(projectId) {
   if (state.source) state.source.close();
-  state.source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`);
-  state.source.addEventListener("rpc", (event) => handleRpc(JSON.parse(event.data)));
-  state.source.addEventListener("stderr", (event) => console.debug("PI stderr", JSON.parse(event.data).text));
-  state.source.addEventListener("process_error", (event) => toast(JSON.parse(event.data).message, "error"));
+  const source = new EventSource(`/api/projects/${encodeURIComponent(projectId)}/events`);
+  state.source = source;
+  source.addEventListener("rpc", (event) => handleRpc(JSON.parse(event.data)));
+  source.addEventListener("stderr", (event) => console.debug("PI stderr", JSON.parse(event.data).text));
+  source.addEventListener("process_error", (event) => toast(JSON.parse(event.data).message, "error"));
+  source.addEventListener("process_exit", (event) => {
+    if (state.source !== source) return;
+    const exit = JSON.parse(event.data);
+    state.processExited = true;
+    setRunning(false);
+    updateProcessExitUi(exit, {
+      status: els.widgetArea,
+      prompt: els.prompt,
+      action: els.action,
+      restart: els.newSession,
+    });
+    source.close();
+    state.source = null;
+  });
 }
 
 async function sendRpc(command, opts = {}) {
@@ -294,6 +334,7 @@ async function sendRpc(command, opts = {}) {
 async function submitPrompt(event) {
   event.preventDefault();
 
+  if (state.processExited) return;
   if (state.isStreaming) {
     await sendRpc({ type: "abort" }, { silent: true });
     return;
@@ -397,6 +438,33 @@ function handleExtensionUi(req) {
   }
 }
 
+function createUiResponder(requestId, sendResponse) {
+  // Um envio por vez: chamadas concorrentes aguardam o mesmo envio e falham
+  // junto, para nenhum handler fechar o diálogo antes de o PI receber resposta.
+  let inFlight = null;
+  let responded = false;
+  const respond = (payload) => {
+    if (responded) return Promise.resolve();
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      try {
+        await sendResponse(requestId, payload);
+        responded = true;
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+  return {
+    respond,
+    cancel(event) {
+      event.preventDefault();
+      return respond({ cancelled: true });
+    },
+  };
+}
+
 function openUiDialog(req) {
   els.dialogTitle.textContent = req.title || "PI precisa de resposta";
   els.dialogBody.replaceChildren();
@@ -442,15 +510,29 @@ function openUiDialog(req) {
     getValue = () => ({ value: input.value });
   }
 
+  const uiResponder = createUiResponder(req.id, sendUiResponse);
+  els.dialog.oncancel = (event) => {
+    uiResponder.cancel(event)
+      .then(() => els.dialog.close())
+      .catch((error) => toast(error.message, "error"));
+  };
   els.dialogOk.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, getValue());
-    els.dialog.close();
+    try {
+      await uiResponder.respond(getValue());
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialogCancel.onclick = async (event) => {
     event.preventDefault();
-    await sendUiResponse(req.id, { cancelled: true });
-    els.dialog.close();
+    try {
+      await uiResponder.respond({ cancelled: true });
+      els.dialog.close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
   };
   els.dialog.showModal();
 }
@@ -465,7 +547,16 @@ async function sendUiResponse(requestId, payload) {
 
 async function newSession() {
   state.activeHistoryPath = "";
+  const restarting = state.processExited;
   await sendRpc({ type: "new_session" });
+  if (restarting) {
+    state.processExited = false;
+    els.prompt.disabled = false;
+    els.action.disabled = false;
+    els.newSession.textContent = "Nova conversa";
+    els.widgetArea.classList.add("hidden");
+    connectProjectEvents(state.currentProject.id);
+  }
   clearMessages();
   setTimeout(() => sendRpc({ type: "get_state" }, { silent: true }), 300);
   refreshHistory().catch(() => {});

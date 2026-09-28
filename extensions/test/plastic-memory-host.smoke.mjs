@@ -1,13 +1,12 @@
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+import { createTestSymlink } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const packageRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent",
-);
+const packageRoot = resolvePiSdkRoot(import.meta.url);
 const packageJson = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
 assert.equal(packageJson.version, "0.83.0", "host version must be Pi 0.83.0");
 
@@ -17,7 +16,7 @@ const packageLink = path.join(packageLinkDir, "pi-coding-agent");
 await (async () => {
   const { mkdirSync } = await import("node:fs");
   mkdirSync(packageLinkDir, { recursive: true });
-  symlinkSync(packageRoot, packageLink, "dir");
+  createTestSymlink(packageRoot, packageLink, "dir");
 })();
 const {
   DefaultResourceLoader,

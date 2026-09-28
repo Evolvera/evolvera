@@ -1,3 +1,4 @@
+import { loadJiti } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,7 +7,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const sourceRoot = path.join(repositoryRoot, "extensions", "plastic-memory");
-const hostPackageRoot = "/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent";
 const sandbox = mkdtempSync(path.join(tmpdir(), "plastic-memory-bootstrap-"));
 const sandboxRoot = path.join(sandbox, "plastic-memory");
 cpSync(sourceRoot, sandboxRoot, { recursive: true });
@@ -146,7 +146,7 @@ try {
 
   // The installed Pi jiti loader must load the same sandbox without a manifest or
   // dependency resolution through the user's active extension directory.
-  const { createJiti } = await import(pathToFileURL(path.join(hostPackageRoot, "node_modules/jiti/lib/jiti.mjs")).href);
+  const { createJiti } = await loadJiti(import.meta.url);
   const jiti = createJiti(import.meta.url, { moduleCache: false });
   const jitiConfig = await jiti.import(path.join(sandboxRoot, "config.ts"));
   const jitiIds = await jiti.import(path.join(sandboxRoot, "common/ids.ts"));

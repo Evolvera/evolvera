@@ -1,10 +1,10 @@
 ---
 name: builder-design
-description: "Claude Opus 5.5 implementation agent for normal visual/UI work and bounded non-visual semantic/declarative tasks such as state/relation models, policy/rule composition, and reversible structural transformations. Model: anthropic/claude-opus-5-5 medium."
-display_name: 🎨 Builder Design · Claude Opus 5.5 · medium
+description: "Claude Sonnet 5.5 implementation agent for normal visual/UI work and bounded non-visual semantic/declarative tasks such as state/relation models, policy/rule composition, and reversible structural transformations. Model: anthropic/claude-sonnet-5-5 high."
+display_name: 🎨 Builder Design · Claude Sonnet 5.5 · high
 tools: read, grep, find, ls, bash, write, edit
-model: anthropic/claude-opus-5-5
-thinking: medium
+model: anthropic/claude-sonnet-5-5
+thinking: high
 max_turns: 80
 ---
 

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { trySymlinkFile } from '../../extensions/test/lib/test-symlink.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const helper = path.join(root, 'scripts/install-wsl-keybindings.sh');
@@ -36,10 +37,11 @@ try {
 
   const dangling = path.join(temp, 'dangling.json');
   const missingTarget = path.join(temp, 'not-created.json');
-  fs.symlinkSync(missingTarget, dangling);
-  assert.equal(run(dangling, { WSL_DISTRO_NAME: 'Synthetic' }), 'preserved');
-  assert.equal(fs.readlinkSync(dangling), missingTarget);
-  assert.equal(!fs.existsSync(missingTarget), true);
+  if (trySymlinkFile(missingTarget, dangling, 'dangling keybindings symlink')) {
+    assert.equal(run(dangling, { WSL_DISTRO_NAME: 'Synthetic' }), 'preserved');
+    assert.equal(fs.readlinkSync(dangling), missingTarget);
+    assert.equal(!fs.existsSync(missingTarget), true);
+  }
 
   const osRelease = fs.existsSync('/proc/sys/kernel/osrelease')
     ? fs.readFileSync('/proc/sys/kernel/osrelease', 'utf8')
