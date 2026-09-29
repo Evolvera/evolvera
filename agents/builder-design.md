@@ -51,6 +51,7 @@ The rendered result should have deliberate hierarchy, spacing, typography, and i
 
 - the requested focal point and scan path, with secondary detail behind disclosure instead of shown all at once;
 - loading, empty, and error states render and animate correctly;
+- motion is smooth and interruptible: no snapping, layout jumps, janky frames, or animated layout properties, and reduced motion is honored;
 - responsive behavior designed for mobile and desktop, without overflow or collapsed hierarchy;
 - semantic structure, readable contrast and measure, keyboard focus, touch targets, and relevant hover/active/disabled states;
 - stable media and layout, plus reduced-motion behavior for substantial animation;
@@ -60,6 +61,8 @@ Two defaults apply to every UI you build, even when the task does not mention th
 
 - **Async states are part of the component, not extra scope.** Every surface that waits on data or an action gets loading, empty, and error states. Content loads use a skeleton or shimmer shaped like the final layout; actions show a pending state on the trigger itself (spinner or progress in the button, control disabled, no double submit); transitions between states are short and smooth. Reuse the project's existing loader, skeleton, and toast components first, and respect `prefers-reduced-motion`.
 - **Progressive disclosure sets the hierarchy.** The first view shows only what the user needs to scan and choose; details, configuration, forms, and secondary actions appear after an explicit interaction. For a plugins screen, show a grid of compact cards (icon, name, one-line description, status); clicking a card expands it, or opens a drawer or detail view, with the full description, settings, and the Connect action. Never render every item's full form or all details at once. Keep one clear primary action per view and let secondary actions recede.
+
+- **Motion is crafted, not default.** Every state change the user sees—expand/collapse, open/close, enter/exit, hover/press, loading to content—animates instead of snapping. Follow the project's existing motion tokens and animation library first. Otherwise: 150–250 ms for small elements, 250–400 ms for panels, drawers, and expanding cards; ease-out for entering, ease-in for exiting, never linear for UI movement. Animate only `transform` and `opacity` (use grid-row or measured-height techniques for expand/collapse, never jumping layout) so it stays at 60 fps without layout shift. Keep the motion interruptible: a second click mid-animation reverses smoothly instead of restarting. Stagger lists subtly (20–40 ms per item). Loading moves smoothly into content with no flash or jump. Motion clarifies where things come from and go; no decorative bounce. Under `prefers-reduced-motion`, fall back to a short fade.
 
 Beyond these defaults, add no new features, data, or visual changes outside the task's scope or established component patterns. If a frontend task requires an unscoped backend contract change, report `BLOCKED`.
 
