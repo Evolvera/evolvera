@@ -57,7 +57,7 @@ try {
 
   const { handlers, commandOptions } = createExtensionHarness();
   assert.ok(commandOptions.has("fast"));
-  assert.match(commandOptions.get("fast").description, /\/fast on \| \/fast eco \| \/fast off/);
+  assert.match(commandOptions.get("fast").description, /\/fast on \| \/fast eco \| \/fast ultra \| \/fast ultra-eco \| \/fast off/);
   assert.ok(handlers.has("session_start"));
   assert.ok(handlers.has("model_select"));
   assert.ok(handlers.has("before_provider_request"));
@@ -86,9 +86,11 @@ try {
   await handlers.get("session_start")({ reason: "startup" }, ctx);
   const fastCommand = commandOptions.get("fast");
   let completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["eco", "ultra-eco", "off"]);
   completions = await fastCommand.getArgumentCompletions("e");
   assert.deepEqual(completions.map((item) => item.value), ["eco"]);
+  completions = await fastCommand.getArgumentCompletions("u");
+  assert.deepEqual(completions.map((item) => item.value), ["ultra-eco"]);
 
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" }, "Fast ECO is the root default");
 
@@ -98,7 +100,7 @@ try {
   assert.equal(notifications.length, 0);
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "eco", "ultra-eco", "off"]);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -166,7 +168,7 @@ try {
   await handlers.get("model_select")({ model: claude, previousModel: gpt56, source: "set" }, ctx);
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["eco", "ultra-eco", "off"]);
   assert.equal(
     (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
     "priority",
@@ -306,6 +308,53 @@ try {
   await commandOptions.get("fast").handler("on", ctx);
   const astraPayload = await handlers.get("before_provider_request")({ payload: { model: astra.id } }, ctx);
   assert.deepEqual(astraPayload, { model: astra.id, service_tier: "priority" });
+
+  // Ultrafast: only Astra is ever sent the ultrafast tier; other eligible models fall back to priority.
+  assert.equal(mod.isUltrafastEligibleModel(astra), true);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), false);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-astra" }), false);
+  assert.equal(mod.serviceTierFor("ultra", astra), "ultrafast");
+  assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
+  assert.equal(mod.serviceTierFor("all", astra), "priority");
+  completions = await fastCommand.getArgumentCompletions("");
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  await fastCommand.handler("ultra", ctx);
+  assert.match(notifications.at(-1).message, /Ultrafast ativado no GPT-6 Astra/);
+  assert.deepEqual(
+    await handlers.get("before_provider_request")({ payload: { model: astra.id } }, ctx),
+    { model: astra.id, service_tier: "ultrafast" },
+  );
+  assert.equal(statuses.at(-1).text, "🚀🟡");
+  await handlers.get("after_provider_response")({ status: 200 }, ctx);
+  assert.equal(statuses.at(-1).text, "🚀🟢");
+  const astraChildCtx = { ...childCtx, model: astra };
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: astra.id } }, astraChildCtx)).service_tier,
+    "ultrafast",
+  );
+  // Switching the owner model resets owner ultra like it resets on.
+  ctx.model = gpt56;
+  await handlers.get("model_select")({ model: gpt56, previousModel: astra, source: "set" }, ctx);
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx), undefined);
+  // /fast ultra on a non-Astra model warns and uses priority.
+  await fastCommand.handler("ultra", ctx);
+  assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra/);
+  assert.equal((await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx)).service_tier, "priority");
+  assert.equal(statuses.at(-1).text, "⚡🟡");
+  // ultra-eco: owner stays standard, Astra children get ultrafast, other children priority.
+  await fastCommand.handler("ultra-eco", ctx);
+  assert.equal(statuses.at(-1).text, "🚀ECO");
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx), undefined);
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: astra.id } }, astraChildCtx)).service_tier,
+    "ultrafast",
+  );
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
+    "priority",
+  );
+  await fastCommand.handler("off", ctx);
+  assert.equal(await child.handlers.get("before_provider_request")({ payload: { model: astra.id } }, astraChildCtx), undefined);
 
   // A pre-/reload shared state with the old { enabled, ownerSessionId } shape remains usable.
   const sharedStateKey = Symbol.for("evolvera.codex-fast-mode.state");
