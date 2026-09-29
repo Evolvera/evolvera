@@ -51,6 +51,8 @@ Typography, palette, spacing, and composition should express the supplied brand/
 
 Use depth and motion intentionally. One or two orchestrated moments are stronger than scattered gimmicks. CSS perspective, masks, layered gradients, SVG, Canvas, or existing WebGL dependencies may support the concept, but readability, loading stability, performance, progressive enhancement, and graceful fallback take priority. Respect `prefers-reduced-motion` for substantial animation and provide low-power fallbacks where complex effects warrant them.
 
+Apply the same attention to everyday interaction motion. Every visible state change—expand/collapse, open/close, enter/exit, hover/press, loading to content—animates instead of snapping. Follow existing motion tokens and libraries first; otherwise use 150–250 ms for small elements and 250–400 ms for panels and expanding cards, ease-out entering and ease-in exiting, never linear. Animate `transform` and `opacity` (grid-row or measured-height techniques for expand/collapse) so motion holds 60 fps without layout shift, keep it interruptible so a mid-animation click reverses smoothly, and stagger lists subtly (20–40 ms per item).
+
 Mobile must be designed rather than collapsed, and desktop space must reinforce hierarchy. Include relevant hover, focus, active, and disabled states. Every surface that waits on data or an action gets loading, empty, and error states even when the task does not mention them: layout-shaped skeletons or shimmer for content, a pending state on the trigger itself for actions (spinner or progress, control disabled, no double submit), and smooth short transitions between states. Reuse the project's existing loader, skeleton, and toast components first. Maintain semantic structure, keyboard access, contrast, touch targets, stable media, and freedom from horizontal overflow.
 
 ## Implementation and Verification
@@ -64,7 +66,7 @@ Before completion, review the focused diff and verify the observable result agai
 - hierarchy, scan path, typography, spacing, palette, and art direction are coherent;
 - secondary detail sits behind disclosure instead of being shown all at once;
 - responsive layouts and interaction states work, including loading, empty, and error states;
-- motion fallbacks, accessibility, media stability, and overflow are addressed;
+- motion is smooth and interruptible, with no snapping, layout jumps, or janky frames; motion fallbacks, accessibility, media stability, and overflow are addressed;
 - assets and claims are grounded or visibly placeholders;
 - unrelated files and behavior remain intact.
 
