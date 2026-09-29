@@ -156,10 +156,16 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     getArgumentCompletions: async (prefix) => {
       const options = [
         ...(eligibleModelSelected
-          ? [{ value: "on", label: "on", description: "1,5× faster; 2,5× GPT-5.6/5.5 credits" }]
-          : []),
-        ...(isUltrafastEligibleModel(currentModel)
-          ? [{ value: "ultra", label: "ultra", description: "Astra Ultrafast (~8×+ faster); 8× credits" }]
+          ? [
+              { value: "on", label: "on", description: "~1,5–2× faster; 2,5× credits" },
+              {
+                value: "ultra",
+                label: "ultra",
+                description: isUltrafastEligibleModel(currentModel)
+                  ? "Astra Ultrafast (~13× faster); 8× credits"
+                  : "Ultrafast only on gpt-6-astra; this model gets Fast",
+              },
+            ]
           : []),
         { value: "eco", label: "eco", description: "Fast for eligible subagents only" },
         { value: "ultra-eco", label: "ultra-eco", description: "Ultrafast for Astra subagents, Fast for others" },
