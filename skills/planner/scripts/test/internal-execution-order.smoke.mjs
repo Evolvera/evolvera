@@ -48,7 +48,7 @@ requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light mu
 requireMatch("agents/builder.md", /^model: openai-codex\/gpt-6-luna$/m, "builder must use Luna");
 requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
 requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6.1-sol$/m, "builder-heavy must use Sol");
-requireMatch("agents/builder-heavy.md", /^thinking: xhigh$/m, "builder-heavy must use xhigh effort");
+requireMatch("agents/builder-heavy.md", /^thinking: high$/m, "builder-heavy must use high effort");
 
 for (const path of plannerFiles) {
   requireMatch(path, /Internal Execution Order/i, "missing ordered-task contract");

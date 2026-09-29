@@ -174,7 +174,7 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
 assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6.1-sol$/m);
-assert.match(read("agents/builder-heavy.md"), /^thinking: xhigh$/m);
+assert.match(read("agents/builder-heavy.md"), /^thinking: high$/m);
 for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
 }
