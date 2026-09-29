@@ -114,8 +114,9 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       ? "⚡ECO"
       : isOwner && mode === "ultra-subagents"
         ? "🚀ECO"
-        : isOwner && (mode === "all" || mode === "ultra") && eligibleModelSelected
-          ? `${icon}${fastRequestAccepted ? "🟢" : "🟡"}`
+        : isOwner && (mode === "all" || mode === "ultra")
+          // An ineligible main model (e.g. Claude) keeps the mode active for eligible subagents.
+          ? eligibleModelSelected ? `${icon}${fastRequestAccepted ? "🟢" : "🟡"}` : `${mode === "ultra" ? "🚀" : "⚡"}SUB`
           : undefined;
     ctx.ui.setStatus(STATUS_KEY, status);
   };
@@ -155,18 +156,20 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     description: "Toggle OpenAI Codex Fast mode: /fast on | /fast eco | /fast ultra | /fast ultra-eco | /fast off",
     getArgumentCompletions: async (prefix) => {
       const options = [
-        ...(eligibleModelSelected
-          ? [
-              { value: "on", label: "on", description: "~1,5–2× faster; 2,5× credits" },
-              {
-                value: "ultra",
-                label: "ultra",
-                description: isUltrafastEligibleModel(currentModel)
-                  ? "Astra Ultrafast (~13× faster); 8× credits"
-                  : "Ultrafast only on gpt-6-astra; this model gets Fast",
-              },
-            ]
-          : []),
+        {
+          value: "on",
+          label: "on",
+          description: eligibleModelSelected
+            ? "Fast here + eligible subagents; ~1,5–2× faster, 2,5× credits"
+            : "Fast for eligible subagents (this model has no Fast)",
+        },
+        {
+          value: "ultra",
+          label: "ultra",
+          description: isUltrafastEligibleModel(currentModel)
+            ? "Astra Ultrafast here + subagents (~13× faster); 8× credits"
+            : "Ultrafast on Astra, Fast on other eligible models, here + subagents",
+        },
         { value: "eco", label: "eco", description: "Fast for eligible subagents only" },
         { value: "ultra-eco", label: "ultra-eco", description: "Ultrafast for Astra subagents, Fast for others" },
         { value: "off", label: "off", description: "Use standard service tier" },
@@ -215,19 +218,19 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
         return;
       }
 
-      if (!isFastEligibleModel(model)) {
-        ctx.ui.notify("Fast Mode is available only for supported OpenAI Codex models (GPT-5.6, GPT-5.5, GPT-5.4, GPT-6 Astra/Sol/Luna, or GPT-6.1 Sol).", "warning");
-        return;
-      }
-
       const sharedState = getSharedFastState();
       setFastMode(sharedState, action === "ultra" ? "ultra" : "all", sessionId);
-      eligibleModelSelected = true;
+      eligibleModelSelected = isFastEligibleModel(model);
       currentModel = model;
       fastRequestInFlight = false;
       fastRequestAccepted = false;
       updateStatus(ctx);
-      if (action === "ultra") notifyUltraEnabled(ctx, model);
+      if (!eligibleModelSelected) {
+        ctx.ui.notify(
+          `Fast Mode ${action === "ultra" ? "ULTRA " : ""}ativado: este modelo não tem Fast e segue no tier padrão; subagentes OpenAI Codex compatíveis usam ${action === "ultra" ? "Ultrafast (Astra) ou Fast" : "Fast"}.`,
+          "warning",
+        );
+      } else if (action === "ultra") notifyUltraEnabled(ctx, model);
       else notifyEnabled(ctx, model);
     },
   });
@@ -255,12 +258,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       || event.previousModel?.id !== event.model.id;
     eligibleModelSelected = isFastEligibleModel(event.model);
     currentModel = event.model;
-    const state = getSharedFastState();
-    const isOwner = state.ownerSessionId === ctx.sessionManager.getSessionId();
-    const ownerMode = getFastMode(state);
-    if (modelChanged && isOwner && (ownerMode === "all" || ownerMode === "ultra")) {
-      resetFastStateForOwner(ctx.sessionManager.getSessionId());
-    }
+    // The chosen mode survives model changes: requests are gated per model, so an ineligible main
+    // model (e.g. Claude) simply stays standard while eligible subagents keep Fast/Ultrafast.
     if (modelChanged) {
       fastRequestInFlight = false;
       fastRequestAccepted = false;
