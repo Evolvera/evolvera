@@ -37,7 +37,7 @@ assert.match(planner, /^model: openai-codex\/gpt-6-astra$/m);
 assert.match(planner, /^thinking: medium$/m);
 assert.match(planner, /^display_name: .*GPT-6 Astra · medium$/m);
 assert.match(planner, /Model: openai-codex\/gpt-6-astra medium\./);
-assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-sol|thinking:\s*(?:low|high|xhigh|max)\b/i, "planner frontmatter must carry no stale Sol/low/high/xhigh/max routing");
+assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6(?:\.1)?-sol|thinking:\s*(?:low|high|xhigh|max)\b/i, "planner frontmatter must carry no stale Sol/low/high/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);

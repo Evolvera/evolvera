@@ -1,9 +1,9 @@
 ---
-description: "Independent read-only reviewer for focused diffs, PRs, branches, named files, and supplied evidence. Uses bounded, risk-proportionate checks and returns PASS or BLOCKED without editing. Model: openai-codex/gpt-6-sol low."
-display_name: 🛡️ Validator · GPT-6 Sol · low
+description: "Independent read-only reviewer for focused diffs, PRs, branches, named files, and supplied evidence. Uses bounded, risk-proportionate checks and returns PASS or BLOCKED without editing. Model: openai-codex/gpt-6.1-sol low."
+display_name: 🛡️ Validator · GPT-6.1 Sol · low
 name: validator
 tools: read, grep, bash, vscode_get_diagnostics
-model: openai-codex/gpt-6-sol
+model: openai-codex/gpt-6.1-sol
 thinking: low
 max_turns: 24
 lifecycle: lazy

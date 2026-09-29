@@ -142,7 +142,7 @@ m.default({
 const ctx = {
   ui: { notify: () => {}, setStatus: () => {} },
   sessionManager: { getBranch: () => [] },
-  model: { provider: "openai-codex", id: "gpt-6-sol" },
+  model: { provider: "openai-codex", id: "gpt-6.1-sol" },
   modelRegistry: { find: (p, id) => ({ provider: p, id }) },
 };
 const realFetch = globalThis.fetch;

@@ -232,8 +232,8 @@ has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effe
 has(SKILL, /worker-start --task <id> --terminal <handle exato> --run <id> --json/, "dispatch must adopt the exact prepared terminal");
 has(SKILL, /`worker-start` aceita `--base-branch`, mas \*\*não\*\* aceita `--issue`/, "worker-start must not be given --issue");
 has(SKILL, /Prepare e verifique o modelo-base no terminal PI recém-criado/, "new PI workers must verify the base model before dispatch");
-has(SKILL, /pi --continue --provider openai-codex --model gpt-6-sol --thinking medium/, "issue workers must restart to Sol/medium before dispatch");
-has(SKILL, /openai-codex\/gpt-6-sol` com `medium`/, "fresh PI output must verify Sol/medium");
+has(SKILL, /pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium/, "issue workers must restart to Sol/medium before dispatch");
+has(SKILL, /openai-codex\/gpt-6.1-sol` com `medium`/, "fresh PI output must verify Sol/medium");
 has(SKILL, /nunca envie `--model`\/`--effort` ao Orca/, "model flags remain forbidden on Orca");
 has(SKILL, /não altera as rotas de planner\/plan-heavy internos/, "worker base model must not alter planner routing");
 has(SKILL, /gh api user -q \.login/, "admission must resolve the authenticated GitHub user");
@@ -249,7 +249,7 @@ has(SKILL, /terminal send --terminal <handle exato> --text [^\n]*execution-mode 
 has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispatch requires the exact session receipt");
 has(SKILL, /saída stale, prosa do agente ou exit 0 não são prova/, "stale output and exit status must not prove the pin");
 has(SKILL, /nunca faça fallback para dispatch nem altere settings global\/project/, "pin failure must block without fallback or global mutation");
-has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-6-sol --thinking medium[^\n]*--enter --json/, "reference must start issue workers with Sol/medium");
+has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium[^\n]*--enter --json/, "reference must start issue workers with Sol/medium");
 has(REFERENCE, /do not alter planner\/plan-heavy internal routing/, "reference must preserve planner routing");
 has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter --json/, "reference must use the native mode pin command");
 has(REFERENCE, /Repeat both checks before subsequent dispatch on a settled owned PI/, "reuse/resume must reverify model and session pin");
