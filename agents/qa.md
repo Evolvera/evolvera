@@ -1,9 +1,9 @@
 ---
 name: qa
-description: "Dedicated read-only-by-default QA executor for SHA-bound CORE or FULL evidence. An explicitly authorized FULL harness phase may write only to an exact test-only write set and cannot certify itself. Model: openai-codex/gpt-6-sol high."
-display_name: 🧪 QA · GPT-6 Sol · high
+description: "Dedicated read-only-by-default QA executor for SHA-bound CORE or FULL evidence. An explicitly authorized FULL harness phase may write only to an exact test-only write set and cannot certify itself. Model: openai-codex/gpt-6.1-sol high."
+display_name: 🧪 QA · GPT-6.1 Sol · high
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-6-sol
+model: openai-codex/gpt-6.1-sol
 thinking: high
 max_turns: 80
 lifecycle: lazy

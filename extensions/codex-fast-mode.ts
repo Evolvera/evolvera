@@ -59,13 +59,15 @@ interface ProviderPayload {
 export function isFastEligibleModel(model: ModelIdentity | undefined): boolean {
   if (model?.provider !== "openai-codex" || typeof model.id !== "string") return false;
 
-  // The configured GPT-5.6 Sol/Terra/Luna IDs and the GPT-6 Astra/Sol/Luna routes support Fast mode.
+  // The configured GPT-5.6 Sol/Terra/Luna IDs, GPT-6 Astra/Sol/Luna, and GPT-6.1 Sol support Fast mode.
+  // Ultrafast is a separate Astra-only tier (Pro $500 / eligible Enterprise/Edu) and is not requested here.
   return model.id.startsWith("gpt-5.6-")
     || model.id === "gpt-5.6"
     || model.id === "gpt-5.5"
     || model.id === "gpt-5.4"
     || model.id === "gpt-6-astra"
     || model.id === "gpt-6-sol"
+    || model.id === "gpt-6.1-sol"
     || model.id === "gpt-6-luna";
 }
 

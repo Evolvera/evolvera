@@ -39,7 +39,7 @@ export function readApiKey(file = KEY_FILE): string | undefined {
 
 export const MODEL_TARGETS = {
   luna: { provider: "openai-codex", id: "gpt-6-luna", label: "Luna 6" },
-  sol: { provider: "openai-codex", id: "gpt-6-sol", label: "Sol 6" },
+  sol: { provider: "openai-codex", id: "gpt-6.1-sol", label: "Sol 6.1" },
   opus: { provider: "anthropic", id: "claude-opus-5-5", label: "Opus 5.5" },
 } as const;
 export type ModelChoice = keyof typeof MODEL_TARGETS;

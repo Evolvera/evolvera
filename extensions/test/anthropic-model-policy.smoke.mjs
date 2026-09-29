@@ -143,17 +143,17 @@ for (const model of gpt56CodexModels) {
 }
 
 const expectedRoutes = {
-  "agents/builder-design.md": { thinking: "medium" },
-  "agents/builder-heavy-design.md": { thinking: "high" },
-  "agents/website-designer.md": { thinking: "xhigh" },
-  "agents/plan-briefer-fable.md": { thinking: "high" },
+  "agents/builder-design.md": { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", thinking: "high" },
+  "agents/builder-heavy-design.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
+  "agents/website-designer.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "xhigh" },
+  "agents/plan-briefer-fable.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
 };
 for (const [relativePath, route] of Object.entries(expectedRoutes)) {
   const frontmatter = read(relativePath).split("---", 3)[1];
-  assert.match(frontmatter, /^model: anthropic\/claude-opus-5-5$/m);
+  assert.match(frontmatter, new RegExp(`^model: anthropic/${route.id}$`, "m"));
   assert.match(frontmatter, new RegExp(`^thinking: ${route.thinking}$`, "m"));
-  assert.match(frontmatter, new RegExp(`Model: anthropic/claude-opus-5-5 ${route.thinking}\\.`));
-  assert.match(frontmatter, new RegExp(`Claude Opus 5.5 · ${route.thinking}`));
+  assert.match(frontmatter, new RegExp(`Model: anthropic/${route.id} ${route.thinking}\\.`));
+  assert.match(frontmatter, new RegExp(`${route.label} · ${route.thinking}`));
 }
 const fable = read("agents/plan-briefer-fable.md");
 assert.match(fable, /^name: plan-briefer-fable$/m);
@@ -173,7 +173,7 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.match(frontmatter, new RegExp(`^model: ${model.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, "m"));
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
-assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6-sol$/m);
+assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6.1-sol$/m);
 assert.match(read("agents/builder-heavy.md"), /^thinking: xhigh$/m);
 for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
@@ -190,7 +190,7 @@ assert.match(read("README.md"), /fnm 22\.22\.3/);
 assert.match(read("README.md"), /450K/);
 
 const agentGuide = read("skills/agent-guide/SKILL.md");
-assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Opus 5\.5 medium\) \|/);
+assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Sonnet 5\.5 high\) \|/);
 assert.match(agentGuide, /\| Heavy Design \| `builder-heavy-design` \| Exceptional design tier \(Claude Opus 5\.5 high\) \|/);
 
 console.log("anthropic-model-policy smoke: PASS");

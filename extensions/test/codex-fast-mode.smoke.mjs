@@ -25,6 +25,7 @@ try {
   const gpt6Luna = { provider: "openai-codex", id: "gpt-6-luna" };
   assert.equal(mod.isFastEligibleModel(gpt6Sol), true);
   assert.equal(mod.isFastEligibleModel(gpt6Luna), true);
+  assert.equal(mod.isFastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), true);
   const spark = { provider: "openai-codex", id: "gpt-5.3-codex-spark" };
   const claude = { provider: "anthropic", id: "claude-fable-5" };
 
