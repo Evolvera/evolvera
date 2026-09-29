@@ -86,11 +86,12 @@ try {
   await handlers.get("session_start")({ reason: "startup" }, ctx);
   const fastCommand = commandOptions.get("fast");
   let completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.match(completions[0].description, /this model has no Fast/);
   completions = await fastCommand.getArgumentCompletions("e");
   assert.deepEqual(completions.map((item) => item.value), ["eco"]);
   completions = await fastCommand.getArgumentCompletions("u");
-  assert.deepEqual(completions.map((item) => item.value), ["ultra-eco"]);
+  assert.deepEqual(completions.map((item) => item.value), ["ultra", "ultra-eco"]);
 
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" }, "Fast ECO is the root default");
 
@@ -101,7 +102,7 @@ try {
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
-  assert.match(completions[1].description, /only on gpt-6-astra/);
+  assert.match(completions[1].description, /Ultrafast on Astra, Fast on other eligible models/);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -169,7 +170,8 @@ try {
   await handlers.get("model_select")({ model: claude, previousModel: gpt56, source: "set" }, ctx);
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.match(completions[0].description, /this model has no Fast/);
   assert.equal(
     (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
     "priority",
@@ -228,25 +230,32 @@ try {
     undefined,
   );
 
-  // /fast on remains guarded for an ineligible owner, while eco was accepted there.
+  // /fast on from an ineligible owner (Claude) activates Fast for eligible subagents; the owner stays standard.
   await fastCommand.handler("on", ctx);
-  assert.match(notifications.at(-1).message, /only for supported OpenAI Codex models/);
+  assert.match(notifications.at(-1).message, /este modelo não tem Fast/);
+  assert.equal(statuses.at(-1).text, "⚡SUB");
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: claude.id } }, ctx), undefined);
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
+    "priority",
+  );
+  // Switching the owner to an eligible model keeps the mode and Fast applies to the owner too.
   ctx.model = gpt56;
   const notificationCount = notifications.length;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   assert.equal(notifications.length, notificationCount);
-  assert.equal(statuses.at(-1).text, undefined);
-  const switchedBackPayload = await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx);
-  assert.equal(switchedBackPayload, undefined);
+  assert.equal(statuses.at(-1).text, "⚡🟡");
+  assert.equal((await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx)).service_tier, "priority");
 
-  // In all mode, an owner model change disables Fast for every extension instance.
-  await fastCommand.handler("on", ctx);
+  // An owner model change to Claude keeps Fast for eligible subagents.
   await handlers.get("model_select")({ model: claude, previousModel: gpt56, source: "set" }, ctx);
+  assert.equal(statuses.at(-1).text, "⚡SUB");
   const afterOwnerModelChange = await child.handlers.get("before_provider_request")(
     { payload: { model: gpt56.id } },
     childCtx,
   );
-  assert.equal(afterOwnerModelChange, undefined);
+  assert.equal(afterOwnerModelChange.service_tier, "priority");
+  await fastCommand.handler("off", ctx);
 
   // `/new` keeps the explicit Fast mode and transfers ownership to the new maestro.
   ctx.model = gpt56;
@@ -348,10 +357,21 @@ try {
     await child.handlers.get("before_provider_request")({ payload: { model: claude.id } }, { ...childCtx, model: claude }),
     undefined,
   );
-  // Switching the owner model resets owner ultra like it resets on.
+  // Switching the owner model keeps ultra: a non-Astra eligible owner falls back to Fast (priority).
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: astra, source: "set" }, ctx);
-  assert.equal(await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx), undefined);
+  assert.equal((await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx)).service_tier, "priority");
+  // Switching the owner to Claude keeps ultra for subagents only.
+  ctx.model = claude;
+  await handlers.get("model_select")({ model: claude, previousModel: gpt56, source: "set" }, ctx);
+  assert.equal(statuses.at(-1).text, "🚀SUB");
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: claude.id } }, ctx), undefined);
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: astra.id } }, astraChildCtx)).service_tier,
+    "ultrafast",
+  );
+  ctx.model = gpt56;
+  await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   // /fast ultra on a non-Astra model warns and uses priority.
   await fastCommand.handler("ultra", ctx);
   assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra/);
