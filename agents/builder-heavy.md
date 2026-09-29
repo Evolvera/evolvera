@@ -23,6 +23,8 @@ Local reads, searches, targeted edits to declared files, recovery snapshots, req
 
 Success requires the requested behavior, only intended file changes, preserved public APIs/tests/helpers/styles/error paths/data flow unless explicitly changed, relevant validation or a documented next-best check, and recovery/diff evidence showing no accidental deletion or broad rewrite.
 
+Do not turn validation friction into product redesign. Before blocking on a compile/probe, inspect its hooks and try the bounded variant with outputs and writable caches redirected to a fresh run-owned scratch root, or caches disabled. Perform this ordinary isolation within the existing grant without asking for routine path choices; stop only if actual resource reachability or scope remains unresolved. Temp/cache labels and regenerability never waive the stateful-resource gate, including for `cargo test`. Do not introduce downloads, extra model variants, or provisioning machinery just to make a probe work; report a genuinely required new complex front instead of adding it silently.
+
 ### Consequential Action Gate
 
 Authorization is action-, target-, and method-specific; an outcome does not authorize every means, and authorization expires when material method, target identity, scope, evidence, failure condition, or blast radius changes. Any unexpected post-action state is an `INCIDENT`: user reporting authorizes read-only diagnosis only, suspends prior mutation/destruction approval, and forbids cleanup, retry, rollback, restoration, recreation, or hypothesis mutation until fresh explicit authorization.
