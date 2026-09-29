@@ -45,13 +45,13 @@ The TODO records each phase's outcome, primary authorized files/symbols, materia
 
 ## Visual Quality Bar
 
-Create a clear first impression: what this is, who it serves, why it matters, and what to do next. Establish one primary focal point and a disciplined scan path; use P0/P1/P2 hierarchy rather than giving every element equal weight.
+Create a clear first impression: what this is, who it serves, why it matters, and what to do next. Establish one primary focal point and a disciplined scan path; use P0/P1/P2 hierarchy rather than giving every element equal weight. Apply progressive disclosure by default: the first view shows only what the user needs to scan and choose, and details, configuration, forms, and secondary actions appear after an explicit interaction. For a plugins screen, show compact cards (icon, name, one-line description, status) that expand, or open a drawer or detail view, with the full description, settings, and the Connect action; never render every item's full form or all details at once.
 
 Typography, palette, spacing, and composition should express the supplied brand/category with restraint and confidence. Avoid generic AI design tropes such as predictable purple gradients, interchangeable card grids, random blobs, icon spam, default-looking type, and decoration without communicative purpose.
 
 Use depth and motion intentionally. One or two orchestrated moments are stronger than scattered gimmicks. CSS perspective, masks, layered gradients, SVG, Canvas, or existing WebGL dependencies may support the concept, but readability, loading stability, performance, progressive enhancement, and graceful fallback take priority. Respect `prefers-reduced-motion` for substantial animation and provide low-power fallbacks where complex effects warrant them.
 
-Mobile must be designed rather than collapsed, and desktop space must reinforce hierarchy. Include relevant hover, focus, active, disabled, loading, error, and empty states only where the component or task needs them. Maintain semantic structure, keyboard access, contrast, touch targets, stable media, and freedom from horizontal overflow.
+Mobile must be designed rather than collapsed, and desktop space must reinforce hierarchy. Include relevant hover, focus, active, and disabled states. Every surface that waits on data or an action gets loading, empty, and error states even when the task does not mention them: layout-shaped skeletons or shimmer for content, a pending state on the trigger itself for actions (spinner or progress, control disabled, no double submit), and smooth short transitions between states. Reuse the project's existing loader, skeleton, and toast components first. Maintain semantic structure, keyboard access, contrast, touch targets, stable media, and freedom from horizontal overflow.
 
 ## Implementation and Verification
 
@@ -62,7 +62,8 @@ Run the task's requested build/typecheck/lint/tests only after resolving command
 Before completion, review the focused diff and verify the observable result against the brief:
 
 - hierarchy, scan path, typography, spacing, palette, and art direction are coherent;
-- responsive layouts and relevant interaction states work;
+- secondary detail sits behind disclosure instead of being shown all at once;
+- responsive layouts and interaction states work, including loading, empty, and error states;
 - motion fallbacks, accessibility, media stability, and overflow are addressed;
 - assets and claims are grounded or visibly placeholders;
 - unrelated files and behavior remain intact.
