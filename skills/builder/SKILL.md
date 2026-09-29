@@ -13,9 +13,9 @@ Delegate implementation without overloading yourself, while preserving quality t
 
 ## Keep the Task Small
 
-Reconcile the smallest sufficient end-state before handing off: name the required behavior and preserved path, not an ambitious implementation menu. A validation obstacle is not a reason to add product mechanisms. For example, verifying a native backend does not itself require a background downloader, another model variant, or a resumable provisioning subsystem; each needs its own acceptance requirement or unavoidable verified constraint. If necessary integration and provisioning are independent complex fronts, admit them under the existing workload limit rather than hiding the second front in a resume clarification.
+Hand off the smallest sufficient outcome, preserved capabilities, and observable acceptance—not an ambitious implementation menu. Every added mechanism needs a direct requirement or unavoidable verified constraint. Validation friction does not authorize product redesign, and resuming a task never waives the existing scope or workload limit.
 
-Resolve routine validation friction locally before escalating: inspect the exact compile/probe command and hooks, redirect outputs and writable caches to a fresh run-owned temporary/scratch root (or disable those caches), and run the proven isolated command within the existing grant. Do not ask for routine path choices or build a sandbox/service when this suffices. A compiler, probe, or `cargo test` is neither automatically unsafe nor automatically exempt: OS temp, SwiftPM/Xcode/Cargo caches, and regenerability alone are not isolation proof. If no safe in-scope variant exists, report the exact reachable resource and missing proof; never waive the stateful-resource gate.
+Keep validation proportional: inspect actual effects and choose the simplest safe, in-scope method. Resolve routine reversible details without permission questions; use run-owned resources when isolation is required. Labels and regenerability never waive the stateful-resource gate. Escalate only a concrete scope, safety, or evidence gap that cannot be resolved inside the approved boundary.
 
 ## Commit Scope
 
