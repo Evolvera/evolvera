@@ -334,6 +334,20 @@ try {
     (await child.handlers.get("before_provider_request")({ payload: { model: astra.id } }, astraChildCtx)).service_tier,
     "ultrafast",
   );
+  // /fast ultra covers orchestrator + subagents: non-Astra eligible children fall back to Fast (priority),
+  // ineligible children stay on the standard tier.
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
+    "priority",
+  );
+  assert.equal(
+    (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.1-sol" } }, { ...childCtx, model: { provider: "openai-codex", id: "gpt-6.1-sol" } })).service_tier,
+    "priority",
+  );
+  assert.equal(
+    await child.handlers.get("before_provider_request")({ payload: { model: claude.id } }, { ...childCtx, model: claude }),
+    undefined,
+  );
   // Switching the owner model resets owner ultra like it resets on.
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: astra, source: "set" }, ctx);
