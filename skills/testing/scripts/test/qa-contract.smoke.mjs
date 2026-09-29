@@ -59,8 +59,8 @@ try {
   const qaFm = frontmatter(qa, "agents/qa.md");
   assert(qaFm.name === "qa", "qa agent name mismatch");
   assert(qaFm.model === "openai-codex/gpt-6.1-sol", "qa model mismatch");
-  assert(qaFm.thinking === "high", "qa thinking mismatch");
-  assert(qaFm.display_name === "🧪 QA · GPT-6.1 Sol · high", "qa display_name mismatch");
+  assert(qaFm.thinking === "medium", "qa thinking mismatch");
+  assert(qaFm.display_name === "🧪 QA · GPT-6.1 Sol · medium", "qa display_name mismatch");
   assert(qaFm.prompt_mode === "replace" && qaFm.inherit_context === "false" && qaFm.extensions === "false" && qaFm.skills === "false", "qa isolation frontmatter mismatch");
   assert(qaFm.tools.split(/,\s*/).join(",") === "read,grep,find,ls,bash,write,edit", "qa tool contract mismatch");
 
