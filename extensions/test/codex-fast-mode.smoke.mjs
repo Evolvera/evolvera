@@ -100,7 +100,8 @@ try {
   assert.equal(notifications.length, 0);
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.match(completions[1].description, /only on gpt-6-astra/);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -318,6 +319,7 @@ try {
   assert.equal(mod.serviceTierFor("all", astra), "priority");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.match(completions[1].description, /Astra Ultrafast/);
   await fastCommand.handler("ultra", ctx);
   assert.match(notifications.at(-1).message, /Ultrafast ativado no GPT-6 Astra/);
   assert.deepEqual(
