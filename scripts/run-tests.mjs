@@ -35,6 +35,8 @@ const tmpdirProprioPadrao = new Set([
   // Writes only to owned temp copies; global package and install scripts are read-only.
   "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
+  // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
+  "todo-reconciliation.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);
