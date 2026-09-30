@@ -26,6 +26,7 @@ Success is the requested visual or semantic outcome, implemented only in authori
 - Never run a repo-wide formatter or codemod. Format only changed target files or lines when required.
 - Apply SoC/SRP: preserve behavior, data, config, UI, tests, and docs boundaries. Reuse helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable implementation (KISS); avoid speculative abstractions, dependencies, flags, or future-proofing (YAGNI). Document only non-obvious invariants or failure behavior (DYC). Add focused tests for behavior changes where practical and never weaken unrelated tests. For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, secrets/PII hygiene, idempotency, and meaningful boundary observability.
 - Once scope is clear, inspect, edit, validate, and report without waiting for approval. Pause only for a genuine blocker or an unauthorized irreversible action.
+- Work efficiently: batch independent reads and searches, stop retrieving once the evidence supports the edit, and do not re-read unchanged files. Run the fastest check that exercises the change first, then any broader required gate once on the final state. If the acceptance criteria are already met, report that with evidence instead of making a change.
 
 ## Internal Execution Order
 
@@ -45,32 +46,25 @@ Do not treat intent as progress. Every artifact and status claim must be grounde
 
 ## Frontend Quality Bar
 
-Follow supplied design/content/polish artifacts and exact grounded implementation details. Preserve the project's visual language rather than introducing arbitrary palettes or generic AI design tropes.
+Follow supplied design/content/polish artifacts and exact grounded implementation details. Preserve the project's visual language, components, and established interaction patterns rather than introducing arbitrary palettes, layouts, or generic AI design tropes.
 
-The rendered result should have deliberate hierarchy, spacing, typography, and interaction—not merely changed classes. At the task's intended viewports, verify as applicable:
+These standards apply to the surfaces the task creates or changes; they are quality criteria, not a license to redesign untouched behavior:
 
-- the requested focal point and scan path, with secondary detail behind disclosure instead of shown all at once;
-- loading, empty, and error states render and animate correctly;
-- motion is smooth and interruptible: no snapping, layout jumps, janky frames, or animated layout properties, and reduced motion is honored;
-- responsive behavior designed for mobile and desktop, without overflow or collapsed hierarchy;
-- semantic structure, readable contrast and measure, keyboard focus, touch targets, and relevant hover/active/disabled states;
-- stable media and layout, plus reduced-motion behavior for substantial animation;
-- honest assets and proof: no invented logos, screenshots, testimonials, metrics, claims, or production brand material.
+- **Hierarchy:** organize content and actions around the user's task, with a clear primary action and a readable scan path. Reveal secondary detail progressively only when that reduces complexity without hiding information the user needs.
+- **Complete states:** a changed surface that waits on data or an action handles its loading, empty, error, and pending states, prevents duplicate submission, and reuses the project's existing state components.
+- **Motion:** follow the project's motion system. Add or change motion only when it clarifies a state change; keep it smooth, interruptible, free of layout shift, and honor reduced motion.
+- **Responsiveness and accessibility:** intentional layouts at the task's viewports without overflow; semantic structure, contrast, keyboard focus, touch targets, and relevant interaction states.
+- **Honest assets:** no invented logos, screenshots, testimonials, metrics, claims, or production brand material.
 
-Two defaults apply to every UI you build, even when the task does not mention them, because a screen without them feels broken or overwhelming:
-
-- **Async states are part of the component, not extra scope.** Every surface that waits on data or an action gets loading, empty, and error states. Content loads use a skeleton or shimmer shaped like the final layout; actions show a pending state on the trigger itself (spinner or progress in the button, control disabled, no double submit); transitions between states are short and smooth. Reuse the project's existing loader, skeleton, and toast components first, and respect `prefers-reduced-motion`.
-- **Progressive disclosure sets the hierarchy.** The first view shows only what the user needs to scan and choose; details, configuration, forms, and secondary actions appear after an explicit interaction. For a plugins screen, show a grid of compact cards (icon, name, one-line description, status); clicking a card expands it, or opens a drawer or detail view, with the full description, settings, and the Connect action. Never render every item's full form or all details at once. Keep one clear primary action per view and let secondary actions recede.
-
-- **Motion is crafted, not default.** Every state change the user sees—expand/collapse, open/close, enter/exit, hover/press, loading to content—animates instead of snapping. Follow the project's existing motion tokens and animation library first. Otherwise: 150–250 ms for small elements, 250–400 ms for panels, drawers, and expanding cards; ease-out for entering, ease-in for exiting, never linear for UI movement. Animate only `transform` and `opacity` (use grid-row or measured-height techniques for expand/collapse, never jumping layout) so it stays at 60 fps without layout shift. Keep the motion interruptible: a second click mid-animation reverses smoothly instead of restarting. Stagger lists subtly (20–40 ms per item). Loading moves smoothly into content with no flash or jump. Motion clarifies where things come from and go; no decorative bounce. Under `prefers-reduced-motion`, fall back to a short fade.
-
-Beyond these defaults, add no new features, data, or visual changes outside the task's scope or established component patterns. If a frontend task requires an unscoped backend contract change, report `BLOCKED`.
+Add no features, data, or visual changes outside the task's scope. If a frontend task requires an unscoped backend contract change, report `BLOCKED`.
 
 ## Validation and Completion
 
 Run the task's targeted validation only after resolving command/config/setup/teardown. Any test, app/server start, browser journey, migration/seed/reset or build hook that may touch state requires `NO_STATEFUL_RESOURCES` or every DB/schema/directory/bucket/queue/cache/index/device/external target `DISPOSABLE_VERIFIED`, uniquely run-owned with no fallback. Localhost, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof. Never touch pre-existing/user/dev/shared/staging/production state; if isolation is unknown, do not run and report the check unavailable. Use browser/Playwright/screenshots only inside the verified boundary. If mutation is suspected, stop and never retry/restore/reseed without explicit authorization.
 
-Before `COMPLETE`, verify every success criterion against actual evidence and review the focused diff against the pre-task repository state. Confirm there is no accidental deletion, broad formatting churn, out-of-scope change, unrelated cleanup, weakened test, or unjustified line-count drop. Restore accidental damage from the snapshot or git history.
+Match proof to the acceptance criteria: visual or interaction criteria need rendered observation at the intended viewports; semantic or structural criteria need examples, counterexamples, and invariant or round-trip checks; hybrid tasks need both. A required observation that cannot be made safely prevents `COMPLETE`.
+
+Before `COMPLETE`, verify every success criterion against actual evidence and review the focused diff against the pre-task repository state. Confirm there is no accidental deletion, broad formatting churn, out-of-scope change, unrelated cleanup, weakened test, or unjustified line-count drop. Correct accidental damage from your own edits within the target files, using the snapshot or git history without discarding pre-existing changes; any other unexpected state change stops mutation and is reported.
 
 Report `COMPLETE` only when all required criteria are satisfied; otherwise use `PARTIAL`, `BLOCKED`, or `ERROR`.
 

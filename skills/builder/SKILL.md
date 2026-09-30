@@ -116,7 +116,7 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
 8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
 9. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
-10. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+10. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit. Revert only that task's own edits to its target files from the recovery snapshot or git, preserving pre-existing changes; if the damage reaches other files or state, or its origin is unclear, stop and treat it as an incident for read-only diagnosis.
 
 Example:
 
@@ -167,11 +167,7 @@ CONSTRAINTS
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
-- Keep concerns separated; do not mix unrelated cleanup/refactors/docs/config with this task
-- Reuse existing helpers before adding new ones; do not create a new abstraction before the third proven repetition unless existing architecture clearly requires it
-- Keep the solution simple/readable; avoid speculative flags, dependencies, APIs, or extension points
-- Add/update comments or docs only for non-obvious invariants, tricky logic, failure behavior, or operational usage
-- For behavior changes, prefer a failing/targeted test first or identify the existing test that covers the behavior
+- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI/DYC/test-first defaults, so do not restate them]
 - Do not touch files outside TARGET FILES unless blocked and reported
 - Treat every `NOT TO DO` item as a hard boundary; if success requires violating one, stop `BLOCKED` and report the exact conflict rather than expanding scope
 
@@ -185,7 +181,7 @@ CHECKPOINT
 After successful validation, orchestrator will commit only TARGET FILES plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts for this task. Transient TILL-DO/TODO files remain uncommitted unless this task explicitly requires them tracked.
 
 STOP RULES
-- Stop and report BLOCKED if required files are missing, tests cannot be run for environment reasons, or the requested change conflicts with existing behavior.
+- Stop and report BLOCKED if required files are missing or evidence required by the acceptance criteria cannot be obtained safely. First resolve routine environment obstacles within scope; when a non-required check cannot run, use the next best check and report the gap.
 - If task/gate semantics would remove or degrade an observed existing capability not explicitly classified CHANGE/REMOVE, report `BLOCKED: CONTRACT_CONFLICT`; do not edit production code or redefine tests.
 - Do not expand scope to adjacent improvements.
 ```
@@ -247,7 +243,7 @@ Before spawning builder, verify:
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Preservation constraints are explicit: affected existing capabilities are classified PRESERVE/CHANGE/REMOVE, and no test oracle may be rewritten to conceal an unapproved regression.
-- [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
+- [ ] Task-specific engineering constraints are explicit; general defaults the builder agent already carries are not restated.
 - [ ] Pre-edit recovery snapshots are required where the task marks them (shared/large/preservation-critical, dirty overlap, destructive transforms).
 - [ ] Validation command/check is included.
 - [ ] Every potentially stateful validation has `STATEFUL RESOURCE PROOF`; `UNKNOWN` or pre-existing data means the command will not run.
@@ -257,10 +253,10 @@ Before spawning builder, verify:
 - [ ] Task is small enough for a delegated model; if it declares more than 20 changed paths or spans three or more semantic regions, its grounded Wide-Task Receipt proves the split or exact atomicity, otherwise stop `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`.
 - [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified narrowly, no broad discovery/contract judgment is required, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).
-- [ ] If using `builder-heavy`, task is bounded and dominated by an explicit external/host operation, exceptional live multi-runtime coordination, or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
+- [ ] If using `builder-heavy`, task is bounded and dominated by exceptional local multi-runtime coordination or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle; an external/host operation qualifies only when the user explicitly asked a subagent to perform it. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
 - [ ] If using `builder-heavy-design`, task is bounded and either exceptionally design-sensitive with grounded visual criteria or complex semantic/declarative work with a clear state/relation/rule/grammar/structure oracle.
 
-If more than two boxes are missing, do more prep or implement directly.
+Every applicable box must be satisfied before launch; mark a conditional box not applicable only with a reason. A missing box means more prep or direct implementation, never a launch that skips it.
 
 ## Result Handling
 
@@ -272,7 +268,7 @@ After a producer builder finishes:
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
 - decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add QA or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; when independent edge/error, integration, browser, or runtime proof materially improves confidence, load `testing`, select `CORE` or `FULL`, and launch one fresh dedicated `qa` session against the exact checkpoint; a validator runs only for an already-linked named escape risk or final PR gate;
-- if builder returns empty/no-op, retry once with a smaller prompt or switch model;
+- if builder returns empty or reports no change, first check the current state against acceptance: if it is already satisfied, close with that evidence; otherwise identify the cause and retry once only with a concrete correction (missing context, smaller scope, or a better-suited tier);
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 
 ## Examples
@@ -298,6 +294,9 @@ READ FIRST
 TARGET FILES
 - src/utils/parser.ts — MODIFY null handling only
 - src/utils/parser.test.ts — MODIFY/ADD focused test if missing
+
+NOT TO DO
+- No change to other parser behavior, exports, or files; stop BLOCKED if the fix needs one.
 
 VALIDATION
 Run: npm test -- src/utils/parser.test.ts

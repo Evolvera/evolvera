@@ -204,7 +204,7 @@ Agent({
 - Avoid `builder-light` for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
-- Parallelize when files are disjoint.
+- Parallelize only when write sets, contracts, dependencies, and validation resources are independent.
 
 ---
 
@@ -248,7 +248,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Running planner for trivial fixes | Wastes tokens and time | Use `edit` or direct builder |
 | Treating a scout verdict as coverage proof | `COMPLETE` can answer a bounded mission while leaving semantic relationships unresolved | Require a coverage receipt with anchors, searched relationship paths/scope, candidate dispositions, and explicit gaps |
 | Not doing evidence-grounded pre-plan before planner | Planner guesses architecture/write sets, misses affected artifacts/validation wiring, and produces bad tasks | Use proportional scouts/direct reads, reconcile evidence, then run planner |
-| Stuffing 5 files into one builder | Context overload, poor quality | Split into 2-3 parallel builders |
+| Stuffing independent concerns into one builder | Context overload, poor quality | Split at independent contract, write-set, and validation boundaries; keep one coherent change together even across many files |
 | Letting Spark light infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require exact grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
 | Skipping scout when planner evidence is incomplete | You miss dependencies, schemas, consumers, runners, and side effects even in a familiar repository | Scout proportionally before planner; familiarity alone is not evidence |

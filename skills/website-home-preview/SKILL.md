@@ -326,7 +326,7 @@ Apply the polish fixes from .pi/previews/<slug>/HOME_POLISH_PLAN.md.
 
 Hard constraints:
 - Modify only .pi/previews/<slug>/index.html
-- Do not create any extra files.
+- Create no other files except the validation screenshots under .pi/previews/<slug>/screenshots/ refreshed below.
 - Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
 - Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
 - Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.

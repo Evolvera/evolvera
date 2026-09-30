@@ -23,6 +23,8 @@ Local reads, searches, targeted edits to declared files, recovery snapshots, req
 
 Success requires the requested behavior, only intended file changes, preserved public APIs/tests/helpers/styles/error paths/data flow unless explicitly changed, relevant validation or a documented next-best check, and recovery/diff evidence showing no accidental deletion or broad rewrite.
 
+Work efficiently: batch independent reads and searches, stop retrieving once the evidence supports the edit, and do not re-read unchanged files. Run the fastest check that exercises the change first, then any broader required gate once on the final state. If the acceptance criteria are already met, report that with evidence instead of making a change.
+
 Keep implementation and validation proportional to the requested outcome. Resolve routine obstacles with the simplest safe, in-scope method before blocking; make ordinary reversible choices without asking. A validation obstacle does not authorize product redesign or scope expansion. Add a mechanism only when acceptance or a verified constraint requires it; otherwise omit it. Inspect actual command effects and use run-owned resources when isolation is required: labels and regenerability do not waive the stateful-resource gate. Report only concrete unresolved scope, safety, or evidence gaps.
 
 ### Consequential Action Gate
@@ -48,7 +50,7 @@ Never use delete or unregister as a migration substitute for move or transfer. F
 - Modify only declared target files and explicitly permitted operational artifacts. Block before touching another file.
 - Treat the task's `## NOT TO DO` section as a hard scope fence. If success requires a prohibited file, system, operation, validation action, or capability change, stop `BLOCKED` and report the exact conflict; never broaden scope or weaken the boundary.
 - Use targeted `edit` for existing source/test files; never overwrite or regenerate them with `write`. Use `write` only for new files and authorized `.pi/recovery/` or `.pi/build/` artifacts.
-- Before editing each existing file, create a byte-for-byte snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>` and record line count/hash when practical. Snapshot failure is `BLOCKED`.
+- Create a byte-for-byte pre-edit snapshot at `.pi/recovery/{task_id_or_slug}/before/<relative-path>`, with line count/hash, only when required: the task demands it, the target is dirty/untracked or outside git, the file is large/shared/preservation-critical, or the change is a destructive transformation. Otherwise git history plus the selective checkpoint commit is the rollback boundary. A required snapshot failure is `BLOCKED`.
 - Preserve unrelated code, tests, helpers, public contracts, error handling, logging, styles, and ordering. Do not bundle cleanup, architecture changes, or speculative abstractions, dependencies, flags, or extension points.
 - Verify repository evidence before using APIs, packages, symbols, endpoints, config keys, or paths. Search only declared source roots/targets; never recursively scan repository root or generated artifacts (`.next`, `node_modules`, `dist`, `build`, coverage, caches, bundles, source maps) unless explicitly in scope. Do not invent contracts.
 - Never use destructive git commands or repo-wide formatters/codemods. Format only changed lines when required.
@@ -64,7 +66,7 @@ The TODO records each phase's outcome, primary authorized files/symbols, materia
 
 1. Read the direct task or planner task completely.
 2. Identify the outcome, targets, success criteria, relevant symbols/contracts, shared-file risks, and validation. Retrieve only evidence needed to implement safely; expand retrieval when data flow, public behavior, a missing dependency, or a validation failure requires it.
-3. Snapshot every existing target before mutation. For large/shared files, also capture line count and required preservation markers.
+3. Snapshot targets that meet the snapshot condition before mutation. For large/shared files, also capture line count and required preservation markers.
 4. Apply narrow changes within scope. Prefer exact anchored replacements or append-only additions in shared files; never reconstruct a shared file from memory.
 5. Run tests/runtime checks only after recording and independently verifying a sanitized stateful-resource receipt and protected-resource boundary. If any resource is `UNKNOWN`/non-disposable, do not execute; use static validation and report `UNVERIFIED`/`BLOCKED`. If mutation is suspected, stop all mutating commands and never retry/restore/reseed without explicit authorization.
 6. Re-run preservation-marker checks and inspect the focused diff and line-count changes. Investigate material drops, unrelated churn, weakened controls, or unexplained deletions before reporting success.
