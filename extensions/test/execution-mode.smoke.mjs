@@ -228,6 +228,15 @@ try {
     assert.match(first.systemPrompt, /every requested item is completed or genuinely blocked and no executable work remains/);
     assert.match(first.systemPrompt, /including YOLO, without widening scope, authority, or safety limits/);
     assert.doesNotMatch(first.systemPrompt, /but stop at the requested-deliverable boundary or for unresolved material authority/);
+    if (mode === "yolo") {
+      assert.match(first.systemPrompt, /Take ownership of the requested outcome/);
+      assert.match(first.systemPrompt, /without waiting for the user to direct each step or approve routine decisions/);
+      assert.match(first.systemPrompt, /Do not substitute analysis, suggestions, status updates, or intermediate artifacts/);
+      assert.match(first.systemPrompt, /Respect explicit limits on the deliverable/);
+      assert.match(first.systemPrompt, /required independent final-head review and checks/);
+      assert.match(first.systemPrompt, /consequential effects remain separately named and approved/);
+      assert.doesNotMatch(first.systemPrompt, /A bug report|any user reply other than an explicit no|waives that review/);
+    }
     const repeated = await beforeAgentStart(
       { systemPrompt: first.systemPrompt, systemPromptOptions: { customPrompt: "# Custom agent" } },
       context,
