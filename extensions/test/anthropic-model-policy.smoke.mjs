@@ -174,7 +174,9 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
 assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6.1-sol$/m);
-assert.match(read("agents/builder-heavy.md"), /^thinking: high$/m);
+assert.match(read("agents/builder-heavy.md"), /^thinking: medium$/m);
+assert.match(read("agents/builder-heavy.md"), /Model: openai-codex\/gpt-6\.1-sol medium\./);
+assert.match(read("agents/builder-heavy.md"), /GPT-6\.1 Sol · medium/);
 for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
 }
@@ -192,5 +194,6 @@ assert.match(read("README.md"), /450K/);
 const agentGuide = read("skills/agent-guide/SKILL.md");
 assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Sonnet 5\.5 high\) \|/);
 assert.match(agentGuide, /\| Heavy Design \| `builder-heavy-design` \| Exceptional design tier \(Claude Opus 5\.5 high\) \|/);
+assert.match(agentGuide, /\| Heavy \| `builder-heavy` \| Exceptional local-integration\/correctness tier \(GPT-6\.1 Sol medium\) \|/);
 
 console.log("anthropic-model-policy smoke: PASS");
