@@ -83,6 +83,7 @@ Before finalizing, verify the page has:
 
 ## Implementation Guidance
 
+- Work efficiently: read the required artifacts once, apply all planned edits in one pass, run the validation commands once on the final file, and rerun only the checks affected by a fix.
 - Prefer CSS variables in `:root` for tokens.
 - Prefer CSS Grid/Flexbox over complex JS.
 - Use CSS/semantic HTML shapes for visuals instead of required external images. Use inline SVG only for an exact ledger-authorized canonical asset and preserve its required `data-asset-source`.

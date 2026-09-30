@@ -39,6 +39,8 @@ In these cases stop with `BLOCKED: use builder`; host/SSH/deploy/external operat
 
 ## Quality Guardrails
 
+Work efficiently: batch independent reads and searches, stop retrieving once the evidence supports the edit, and do not re-read unchanged files. Run the fastest check that exercises the change first, then any broader required gate once on the final state. If the acceptance criteria are already met, report that with evidence instead of making a change.
+
 Apply SoC/SRP: keep the task's behavior, data, config, UI, tests, and docs boundaries intact. Reuse existing helpers; under DRY's Rule of Three, do not add an abstraction before three proven repetitions or an architectural requirement. Prefer the simplest readable solution (KISS) and add no speculative dependency, option, flag, API, or extension point (YAGNI). Document only non-obvious invariants or failure behavior (DYC). For behavior changes, add or update the focused test first/early when practical, or record the closest validation. For trust/data or runtime-boundary work, validate inputs with explicit errors; preserve auth/tenant checks, data integrity, parameterized queries/exact money, secrets/PII hygiene, idempotency, and meaningful boundary observability.
 
 ## Internal Execution Order
