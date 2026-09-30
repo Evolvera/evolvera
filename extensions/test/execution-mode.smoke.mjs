@@ -223,6 +223,11 @@ try {
       assert.doesNotMatch(first.systemPrompt, new RegExp(`EXECUTION MODE: ${mod.executionModeLabel(other)}`));
     }
     assert.match(first.systemPrompt, /not runtime, sandbox, credential, or tool-permission access/);
+    assert.match(first.systemPrompt, /A blocker pauses only the affected item and its actual dependents/);
+    assert.match(first.systemPrompt, /continue all other safe, authorized, in-scope work/);
+    assert.match(first.systemPrompt, /every requested item is completed or genuinely blocked and no executable work remains/);
+    assert.match(first.systemPrompt, /including YOLO, without widening scope, authority, or safety limits/);
+    assert.doesNotMatch(first.systemPrompt, /but stop at the requested-deliverable boundary or for unresolved material authority/);
     const repeated = await beforeAgentStart(
       { systemPrompt: first.systemPrompt, systemPromptOptions: { customPrompt: "# Custom agent" } },
       context,
