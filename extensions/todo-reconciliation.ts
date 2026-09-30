@@ -2,162 +2,156 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const REMINDER_TYPE = "todo-reconciliation-reminder";
-const REPAIR_TYPE = "todo-reconciliation-repair";
-const REPAIR_PROMPT = "Review the entire current todo list with `todo` and reconcile it against this request's work. Update delivered items only when supported by evidence; merge only true duplicates. Keep blocked and pending items honest. Do not infer or fabricate completion. Do not do implementation, start agents, or deploy.";
+const LEGACY_TYPES = new Set([REMINDER_TYPE, "todo-reconciliation-repair"]);
 
-type Task = { id: number; status: string };
-type TodoDetails = { action?: string; tasks?: unknown[]; nextId?: number; error?: unknown };
-type SessionEntry = { type?: string; id?: string; message?: { role?: string; toolName?: string; details?: unknown } };
+type TodoDetails = { action?: string; params?: Record<string, unknown>; tasks?: unknown[]; nextId?: number; error?: unknown };
+type SessionEntry = { type?: string; id?: string; message?: { role?: string; toolName?: string; isError?: boolean; details?: unknown } };
+type Context = { mode?: string; sessionManager: { getSessionId(): string; getBranch(): Iterable<unknown> } };
 
 function details(value: unknown): value is TodoDetails {
   return !!value && typeof value === "object" && Array.isArray((value as TodoDetails).tasks)
     && typeof (value as TodoDetails).nextId === "number";
 }
 
-function branchSnapshot(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }) {
+function branchSnapshot(ctx: Context) {
   let latest: TodoDetails | undefined;
-  let entries: SessionEntry[] = [];
   for (const value of ctx.sessionManager.getBranch()) {
     const entry = value as SessionEntry;
-    entries.push(entry);
     const message = entry.message;
-    if (entry.type === "message" && message?.role === "toolResult" && message.toolName === "todo" && details(message.details)) {
-      latest = message.details;
-    }
+    if (entry.type === "message" && message?.role === "toolResult" && message.toolName === "todo"
+      && successfulTodo({ toolName: message.toolName, isError: message.isError, details: message.details })) latest = message.details as TodoDetails;
   }
-  return { latest, entries };
+  return { latest };
 }
 
-function successfulTodo(event: { toolName?: string; isError?: boolean; details?: unknown; input?: Record<string, unknown> }) {
+function successfulTodo(event: { toolName?: string; isError?: boolean; details?: unknown }): event is { toolName: string; isError?: boolean; details: TodoDetails } {
   if (event.toolName !== "todo" || event.isError || !details(event.details) || event.details.error !== undefined) return false;
-  const action = event.details.action ?? event.input?.action;
-  return action === "list" || action === "create" || action === "update" || action === "delete" || action === "clear";
+  return ["get", "list", "create", "update", "delete", "clear"].includes(String(event.details.action));
 }
 
-function openTasks(snapshot: ReturnType<typeof branchSnapshot>): Task[] {
-  return (snapshot.latest?.tasks ?? []).filter((value): value is Task => {
-    if (!value || typeof value !== "object") return false;
-    const task = value as Partial<Task>;
-    return Number.isSafeInteger(task.id) && (task.status === "pending" || task.status === "in_progress");
-  });
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stable(object[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function snapshotKey(snapshot: TodoDetails): string { return stable({ tasks: snapshot.tasks, nextId: snapshot.nextId }); }
+function openTaskCount(snapshot: TodoDetails | undefined): number {
+  return (snapshot?.tasks ?? []).filter((task) => !!task && typeof task === "object"
+    && Number.isSafeInteger((task as { id?: unknown }).id)
+    && ["pending", "in_progress"].includes(String((task as { status?: unknown }).status))).length;
+}
+
+function queryKey(action: string, input: Record<string, unknown>): string {
+  const params: Record<string, unknown> = {};
+  if (action === "get" && input.id !== undefined) params.id = input.id;
+  if (action === "list") {
+    if (input.status !== undefined) params.status = input.status;
+    if (input.includeDeleted === true) params.includeDeleted = true;
+  }
+  return stable({ action, params });
 }
 
 export function registerTodoReconciliation(pi: ExtensionAPI) {
   let primary = false;
-  let workSinceReview = false;
-  let requestNeedsReview = false;
-  let correctiveRoundUsed = false;
   let sessionId: string | undefined;
-  const ownedSubagents = new Map<string, string>();
-  const seenSubagentIds = new Set<string>();
-  const ambiguousSubagentIds = new Set<string>();
+  let reminderAvailable = false;
+  let reminderUsed = false;
+  let todoSnapshotSeen = false;
+  let readSnapshot: string | undefined;
+  let readKeys = new Set<string>();
+  let requestInitialized = false;
 
-  const reset = () => {
-    workSinceReview = false;
-    requestNeedsReview = false;
-    correctiveRoundUsed = false;
-    primary = false;
-    sessionId = undefined;
-    ownedSubagents.clear();
-    seenSubagentIds.clear();
-    ambiguousSubagentIds.clear();
+  const resetRequest = (hasPrompt: boolean) => {
+    reminderAvailable = hasPrompt;
+    reminderUsed = false;
+    todoSnapshotSeen = false;
+    readSnapshot = undefined;
+    readKeys = new Set();
+  };
+  const syncSnapshot = (snapshot: TodoDetails) => {
+    const signature = snapshotKey(snapshot);
+    if (signature !== readSnapshot) {
+      readSnapshot = signature;
+      readKeys.clear();
+    }
   };
 
   pi.on("before_agent_start", async (event, ctx) => {
-    if (ctx.sessionManager.getSessionId() !== sessionId) {
-      reset();
-      sessionId = ctx.sessionManager.getSessionId();
-      requestNeedsReview = Boolean(event.prompt);
-    }
+    const id = ctx.sessionManager.getSessionId();
+    const newSession = id !== sessionId;
+    if (newSession) sessionId = id;
     primary = typeof event.systemPromptOptions.customPrompt === "string"
       && event.systemPromptOptions.customPrompt.trimStart().startsWith(PRIMARY_PROMPT);
+    if (newSession || !requestInitialized) {
+      resetRequest(Boolean(event.prompt));
+      requestInitialized = true;
+    }
   });
 
   pi.on("input", async (event) => {
     if (event.source !== "extension" && event.text) {
-      workSinceReview = false;
-      requestNeedsReview = true;
-      correctiveRoundUsed = false;
+      resetRequest(true);
+      requestInitialized = true;
     }
   });
 
-  pi.on("tool_result", async (event) => {
-    if (event.toolName === "todo") {
-      if (successfulTodo(event)) {
-        workSinceReview = false;
-        requestNeedsReview = false;
-      }
-    } else {
-      workSinceReview = true;
+  pi.on("tool_call", async (event, ctx) => {
+    if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo") || event.toolName !== "todo") return;
+    const action = event.input.action;
+    if (action !== "list" && action !== "get") return;
+    const branch = branchSnapshot(ctx as Context);
+    if (!branch.latest) return;
+    syncSnapshot(branch.latest);
+    const key = queryKey(action, event.input);
+    if (readKeys.has(key)) {
+      return { block: true, reason: "This exact todo read is already known for the current task snapshot. Use the existing result and continue the user's original work; do not retry the unchanged read or report bookkeeping as the outcome." };
     }
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo")) return;
+    if (successfulTodo(event)) {
+      todoSnapshotSeen = true;
+      syncSnapshot(event.details);
+      const action = event.details.action;
+      if (action === "list" || action === "get") readKeys.add(queryKey(action, event.details.params ?? {}));
+    }
+    // Unrelated work never rearms a reminder or read.
   });
 
   pi.on("context", async (event, ctx) => {
-    const withoutOldReminder = event.messages.filter((message) => !(message.role === "custom" && message.customType === REMINDER_TYPE));
+    const messages = event.messages.filter((message) => !(message.role === "custom" && LEGACY_TYPES.has(String(message.customType))));
     if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo")) {
-      return withoutOldReminder.length === event.messages.length ? undefined : { messages: withoutOldReminder };
+      return messages.length === event.messages.length ? undefined : { messages };
     }
-    const snapshot = branchSnapshot(ctx);
-    const open = openTasks(snapshot);
-    if (!open.length || (!requestNeedsReview && !workSinceReview)) {
-      return withoutOldReminder.length === event.messages.length ? undefined : { messages: withoutOldReminder };
+    const branch = branchSnapshot(ctx as Context);
+    if (!reminderAvailable || reminderUsed || todoSnapshotSeen || !openTaskCount(branch.latest)) {
+      return messages.length === event.messages.length ? undefined : { messages };
     }
-    const pendingIds = open.map((task) => task.id).filter(Number.isSafeInteger).slice(0, 12);
-    const boundedIds = pendingIds.length ? ` Open task IDs: ${pendingIds.join(", ")}.` : "";
-    const reminder = `Todo reconciliation: ${open.length} open task(s) remain.${boundedIds} Reconcile the entire list before your final answer; use todo list to inspect it. The reminder omits task text. Update delivered items only with evidence, merge true duplicates only, and leave blocked/pending items honest. A read-only list is sufficient when no change is warranted. Do not infer completion.`;
-    return { messages: [...withoutOldReminder, { role: "custom", customType: REMINDER_TYPE, content: [{ type: "text", text: reminder }], display: false, timestamp: Date.now() }] };
+    reminderUsed = true;
+    const reminder = "Todo reconciliation is optional. Use the current task snapshot only if relevant to the user's request; do not interrupt or replace the requested work to reconcile bookkeeping. Do not infer task completion.";
+    return { messages: [...messages, { role: "custom", customType: REMINDER_TYPE, content: [{ type: "text", text: reminder }], display: false, timestamp: Date.now() }] };
   });
-
-  pi.on("agent_settled", async (_event, ctx) => {
-    if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo") || !ctx.isIdle() || ctx.hasPendingMessages()) return;
-    const snapshot = branchSnapshot(ctx);
-    const open = openTasks(snapshot);
-    if (!open.length || !workSinceReview || correctiveRoundUsed) return;
-    const lastAssistant = [...snapshot.entries].reverse().find((entry) => entry.type === "message" && entry.message?.role === "assistant")?.message as { stopReason?: string } | undefined;
-    if (!lastAssistant || lastAssistant.stopReason !== "stop") return;
-    correctiveRoundUsed = true;
-    await pi.sendMessage({
-      customType: REPAIR_TYPE,
-      content: [{ type: "text", text: REPAIR_PROMPT }],
-      display: false,
-    }, { triggerTurn: true });
-  });
-
-  let stopSubagentEvents: Array<() => void> = [];
-  const onStarted = pi.events.on("subagents:started", (raw: unknown) => {
-    const event = raw as { id?: unknown };
-    if (!primary || typeof sessionId !== "string" || typeof event.id !== "string") return;
-    if (seenSubagentIds.has(event.id)) {
-      ownedSubagents.delete(event.id);
-      ambiguousSubagentIds.add(event.id);
-      return;
-    }
-    seenSubagentIds.add(event.id);
-    ownedSubagents.set(event.id, sessionId);
-  });
-  const onTerminal = (raw: unknown) => {
-    const event = raw as { id?: unknown };
-    if (typeof event.id !== "string") return;
-    const ownerSessionId = ownedSubagents.get(event.id);
-    ownedSubagents.delete(event.id);
-    if (ambiguousSubagentIds.has(event.id) || !primary || !sessionId || ownerSessionId !== sessionId) return;
-    workSinceReview = true;
-    requestNeedsReview = true;
-  };
-  stopSubagentEvents = [onStarted, pi.events.on("subagents:completed", onTerminal), pi.events.on("subagents:failed", onTerminal)];
 
   pi.on("session_start", async (_event, ctx) => {
-    reset();
     sessionId = ctx.sessionManager.getSessionId();
+    primary = false;
+    resetRequest(false);
+    requestInitialized = false;
   });
-  pi.on("session_tree", async (_event, ctx) => {
-    reset();
-    sessionId = ctx.sessionManager.getSessionId();
+  pi.on("session_tree", async () => {
+    resetRequest(false);
+    requestInitialized = true;
   });
   pi.on("session_shutdown", async () => {
-    reset();
-    for (const stop of stopSubagentEvents) stop();
-    stopSubagentEvents = [];
+    primary = false;
+    sessionId = undefined;
+    resetRequest(false);
+    requestInitialized = false;
   });
 }
 
