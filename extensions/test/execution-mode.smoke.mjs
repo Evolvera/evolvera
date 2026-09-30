@@ -244,6 +244,19 @@ try {
     assert.equal((repeated.systemPrompt.match(/PI EXECUTION MODE START/g) ?? []).length, 1, "repeated hooks must not duplicate the block");
   }
 
+  // The real primary prompt and runtime mode must preserve coordinator ownership,
+  // rather than turning a worker's terminal result into a global stopping point.
+  const primaryPrompt = readFileSync(path.join(root, "SYSTEM.md"), "utf8");
+  assert.equal(primaryPrompt, readFileSync(path.join(root, "config", "SYSTEM.md"), "utf8"));
+  await command("yolo global", makeContext());
+  const primary = await beforeAgentStart({ systemPrompt: primaryPrompt }, makeContext());
+  assert.match(primary.systemPrompt, /a delegated result completes only that assignment, not the user's outcome/);
+  assert.match(primary.systemPrompt, /The orchestrator owns the remaining work/);
+  assert.match(primary.systemPrompt, /Missing evidence is unfinished work, not by itself a reason to pause/);
+  assert.match(primary.systemPrompt, /These conditions do not end the whole request while other safe, authorized work remains/);
+  assert.match(primary.systemPrompt, /Respect any safety gate that explicitly requires a broader freeze/);
+  assert.match(primary.systemPrompt, /Take ownership of the requested outcome/);
+
   const selectorContext = makeContext();
   selectorContext.hasUI = true;
   selectorContext.ui.select = async () => "SUPERVISIONADO";
