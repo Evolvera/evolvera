@@ -223,6 +223,12 @@ try {
       assert.doesNotMatch(first.systemPrompt, new RegExp(`EXECUTION MODE: ${mod.executionModeLabel(other)}`));
     }
     assert.match(first.systemPrompt, /not runtime, sandbox, credential, or tool-permission access/);
+    // Contract presence/injection checks, not a claim of real-model adherence.
+    assert.match(first.systemPrompt, /answer interim questions briefly and continue executable work in the same turn/);
+    assert.match(first.systemPrompt, /unfinished work you can perform is not a blocker/);
+    assert.match(first.systemPrompt, /A later approval boundary does not suspend already-authorized prerequisites/);
+    assert.match(first.systemPrompt, /Respect explicit pauses, scope changes, subject switches, and standalone explanation\/review\/plan requests/);
+    assert.match(first.systemPrompt, /never use continuation to revive unrelated backlog or grant new authority/);
     assert.match(first.systemPrompt, /A blocker pauses only the affected item and its actual dependents/);
     assert.match(first.systemPrompt, /continue all other safe, authorized, in-scope work/);
     assert.match(first.systemPrompt, /every requested item is completed or genuinely blocked and no executable work remains/);
@@ -252,6 +258,12 @@ try {
   const primary = await beforeAgentStart({ systemPrompt: primaryPrompt }, makeContext());
   assert.match(primary.systemPrompt, /a delegated result completes only that assignment, not the user's outcome/);
   assert.match(primary.systemPrompt, /The orchestrator owns the remaining work/);
+  assert.match(primaryPrompt, /interpret the latest message within the active user-authorized outcome/);
+  assert.match(primaryPrompt, /a question about purpose, progress, remaining work, or available parallel work does not itself pause or narrow that delivery/);
+  assert.match(primaryPrompt, /Work you still owe is not a blocker/);
+  assert.match(primaryPrompt, /An approval required for a later action does not block its already-authorized prerequisites/);
+  assert.match(primaryPrompt, /A standalone request for explanation, review, plan, or draft ends at that deliverable and grants no implementation/);
+  assert.doesNotMatch(primaryPrompt, /\*\*Requested deliverable is the stop boundary:\*\* a request for explanation/);
   assert.match(primary.systemPrompt, /Missing evidence is unfinished work, not by itself a reason to pause/);
   assert.match(primary.systemPrompt, /These conditions do not end the whole request while other safe, authorized work remains/);
   assert.match(primary.systemPrompt, /Respect any safety gate that explicitly requires a broader freeze/);
