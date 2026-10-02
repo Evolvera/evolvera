@@ -110,5 +110,17 @@ for (const answer of [
   const f = fixture(); await f.start(); await f.input();
   await f.handlers.get("session_tree")({}, f.ctx); await f.settle(); assert.equal(f.judgments.length, 0, "session tree resets budget unavailable");
 }
+{
+  // Incident shape: latest request delivered, earlier authorized work pending only in the compacted state.
+  const summary = "## Goal\n- ship\n## Progress\n### Done\n- [x] OLD-DONE\n### In Progress\n- [ ] EMAIL-CARD repair and re-review\n### Blocked\n- PROD-MIGRATION awaits approval\n## Key Decisions\n- KEY-DECISION\n## Next Steps\n1. RE-REVIEW email card\n## Critical Context\n- CRITICAL-PATH";
+  const f = fixture({ assistantTail: [{ type: "compaction", summary }] }); await f.start();
+  await f.input("interactive", "add the email card"); await f.input("interactive", "Please implement the feature."); await f.settle();
+  const data = f.judgments[0].request.messages[0].content[0].text;
+  assert.match(data, /EARLIER USER REQUESTS[^]*add the email card[^]*COMPACTED SESSION STATE/, "earlier request is context");
+  assert.equal(data.split("Please implement the feature.").length - 1, 1, "current request is not duplicated");
+  for (const kept of ["EMAIL-CARD", "PROD-MIGRATION", "RE-REVIEW"]) assert.match(data, new RegExp(kept));
+  for (const dropped of ["OLD-DONE", "KEY-DECISION", "CRITICAL-PATH"]) assert.doesNotMatch(data, new RegExp(dropped));
+  assert.equal(extension.compactedPendingState([]), "");
+}
 assert.equal(extension.parseDeliveryDecision('{"verdict":"wat","work":"x"}'), undefined);
 console.log("delivery-closure smoke: PASS");
