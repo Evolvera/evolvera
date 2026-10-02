@@ -259,9 +259,16 @@ async function main() {
     const repoGit = path.join(kws.repo, ".git");
     const wtMeta = (name, commondir, base = "worktrees") => sandbox.write(path.join(repoGit, base, name, "commondir"), commondir);
     const gitFile = (ws, gitdir) => sandbox.write(path.join(ws, ".git"), `gitdir: ${gitdir}\n`);
+    // Metadata Git fiel: .git -> gitdir, <gitdir>/commondir e backlink absoluto <gitdir>/gitdir -> .git do worktree
+    // (o Git grava o backlink com barras normais). Cada worktree tem seu gitdir e seu backlink único.
+    const backlinkText = (wt) => `${path.join(wt, ".git").replaceAll("\\", "/")}\n`;
+    const wtBacklink = (name, wt, base = "worktrees") => sandbox.write(path.join(repoGit, base, name, "gitdir"), backlinkText(wt));
     wtMeta("wt1", "../..\n");
+    wtBacklink("wt1", kws.wt);
     sandbox.write(path.join(kws.wt, ".git"), `gitdir: ${path.join(kws.repo, ".git", "worktrees", "wt1")}\n`);
-    sandbox.write(path.join(kws["wt-rel"], ".git"), "gitdir: ../kevin-repo/.git/worktrees/wt1\n");
+    wtMeta("wt-rel", "../..\n");
+    wtBacklink("wt-rel", kws["wt-rel"]);
+    sandbox.write(path.join(kws["wt-rel"], ".git"), "gitdir: ../kevin-repo/.git/worktrees/wt-rel\n");
     sandbox.write(path.join(kws["wt-alien"], ".git"), `gitdir: ${path.join(evoWs, ".git", "worktrees", "w1")}\n`);
     sandbox.write(path.join(kws["wt-bad"], ".git"), "lixo\n");
     assert.equal(assertOwnedWorkspace(kevin, kws.repo, L).worktreeOrigin, kws.repo);
@@ -280,9 +287,101 @@ async function main() {
     rejects(() => assertOwnedWorkspace(kevin, kws["wt-nocd"], L), "WORKTREE_ORIGIN_UNDECIDABLE", "gitdir sem commondir");
     // commondir consistente, mas o gitdir não é <comum>/worktrees/<nome>
     wtMeta("wt5", "../..\n", "other");
+    wtBacklink("wt5", kws["wt-badlayout"], "other");
     gitFile(kws["wt-badlayout"], path.join(repoGit, "other", "wt5"));
     rejects(() => assertOwnedWorkspace(kevin, kws["wt-badlayout"], L), "WORKTREE_ORIGIN_UNDECIDABLE", "gitdir fora de worktrees/");
     assert.equal(guard.count, 0, "metadado Git alheio não pode ser lido");
+
+    // ---- linked worktree externo (pi-subagents: detached em os.tmpdir(), fora de todo ctx.workspaces) ----
+    // A posse deriva SOMENTE da linhagem recíproca; nada é cadastrado e nome/prefixo tmp nunca autoriza.
+    const ext = (name, ...more) => sandbox.mkdir("external", name, ...more);
+    const extWt = (id, wt, o = {}) => { // worktree fiel; `o` quebra um elo por vez
+      if (o.commondir !== false) wtMeta(id, o.commondir ?? "../..\n");
+      if (o.backlink !== false) sandbox.write(path.join(repoGit, "worktrees", id, "gitdir"), typeof o.backlink === "function" ? o.backlink(wt) : o.backlink ?? backlinkText(wt));
+      gitFile(wt, o.gitdir ?? path.join(repoGit, "worktrees", id));
+      return wt;
+    };
+    const regBytes = sandbox.sha(registryPath);
+    const extOk = extWt("pi-agent-a1-1f2e3d4c", ext("pi-agent-a1-1f2e3d4c"));
+    sandbox.write(path.join(extOk, "AGENTS.md"), "checkout do worktree");
+    const extSub = ext("pi-agent-a1-1f2e3d4c", "packages", "app");
+    for (const cwd of [extOk, extSub]) {
+      const got = assertOwnedWorkspace(kevin, cwd, L);
+      assert.deepEqual({ ...got }, { userId: "kevin", cwd, workspaceRoot: extOk, worktreeOrigin: kws.repo }, "worktree externo aceito pela linhagem");
+      assert.ok(Object.isFrozen(got));
+    }
+    assert.ok(!kevin.workspaces.some((x) => extOk === x || extOk.startsWith(x + path.sep)), "worktree externo não está cadastrado");
+    const kExt = sandbox.write(path.join(ks, "ext-worktree.jsonl"), header(extSub));
+    assert.equal(assertOwnedSession(kevin, { sessionPath: kExt }, L).workspace.workspaceRoot, extOk, "header com cwd derivado");
+    assert.equal(assertOwnedSession(kevin, { sessionPath: path.join(ks, "ext-new.jsonl"), cwd: extSub }, L).workspace.worktreeOrigin, kws.repo);
+    rejects(() => assertOwnedWorkspace(evo, extOk, L), "WORKTREE_ORIGIN_ALIEN", "worktree externo de origem do Kevin não pertence à Evolvera");
+    // sem lineage: nome tmp, .git diretório novo e ausência de .git não concedem posse
+    rejects(() => assertOwnedWorkspace(kevin, ext("pi-agent-a2-deadbeef"), L), "WORKSPACE_NOT_OWNED", "nome tmp sem .git");
+    ext("pi-agent-a3-0badc0de", ".git");
+    rejects(() => assertOwnedWorkspace(kevin, ext("pi-agent-a3-0badc0de"), L), "WORKSPACE_NOT_OWNED", ".git diretório fora de root registrado");
+    // cópia da .git (mesmo gitdir): só a que coincide com o backlink passa
+    fs.copyFileSync(path.join(extOk, ".git"), path.join(ext("pi-agent-a4-c0pyc0py"), ".git"));
+    rejects(() => assertOwnedWorkspace(kevin, ext("pi-agent-a4-c0pyc0py"), L), "WORKTREE_ORIGIN_UNDECIDABLE", ".git copiada para outro diretório");
+    assertOwnedWorkspace(kevin, extOk, L);
+    // metadata forjada fora dos roots: qualquer leitura de conteúdo seria contada pelo guard
+    const forgedMeta = ext("forged-meta");
+    sandbox.write(path.join(forgedMeta, "commondir"), "../..\n");
+    sandbox.write(path.join(forgedMeta, "gitdir"), backlinkText(ext("b-fm")));
+    guard.protect(forgedMeta);
+    const adversarial = {
+      "backlink ausente": [{ backlink: false }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "backlink divergente": [{ backlink: backlinkText(extSub) }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "backlink relativo": [{ backlink: "../../external/b1/.git\n" }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "backlink com NUL": [{ backlink: (wt) => `${backlinkText(wt)}\0x` }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "backlink ambíguo (2 linhas)": [{ backlink: (wt) => `${backlinkText(wt)}${backlinkText(extOk)}` }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "backlink grande": [{ backlink: `${"a".repeat(5000)}\n` }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "commondir ausente": [{ commondir: false }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "commondir vazio": [{ commondir: "\n" }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "commondir com NUL": [{ commondir: "../..\0\n" }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "commondir ambíguo": [{ commondir: "../..\n../..\n" }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "commondir alheio": [{ commondir: `${path.join(evoWs, ".git")}\n` }, "WORKTREE_ORIGIN_ALIEN"],
+      "commondir fora de .git": [{ commondir: "../../..\n" }, "WORKTREE_ORIGIN_UNDECIDABLE"],
+      "gitdir alheio": [{ gitdir: path.join(evoWs, ".git", "worktrees", "w1") }, "WORKTREE_ORIGIN_ALIEN"],
+      "gitdir de root não registrado": [{ gitdir: forgedMeta }, "WORKTREE_ORIGIN_ALIEN"],
+    };
+    Object.entries(adversarial).forEach(([label, [o, code]], i) => {
+      const wt = ext(`b-adv-${i}`);
+      extWt(`adv-${i}`, wt, o);
+      rejects(() => assertOwnedWorkspace(kevin, wt, L), code, `worktree externo: ${label}`);
+      rejects(() => assertOwnedWorkspace(kevin, ext(`b-adv-${i}`, "sub"), L), code, `subdiretório de worktree externo: ${label}`);
+    });
+    // .git grande/malformada/ambígua/forjada
+    sandbox.write(path.join(ext("b-big"), ".git"), `gitdir: ${"a".repeat(5000)}\n`);
+    rejects(() => assertOwnedWorkspace(kevin, ext("b-big"), L), "WORKTREE_ORIGIN_UNDECIDABLE", ".git grande");
+    sandbox.write(path.join(ext("b-junk"), ".git"), "lixo\n");
+    rejects(() => assertOwnedWorkspace(kevin, ext("b-junk"), L), "WORKTREE_ORIGIN_UNDECIDABLE", ".git malformada");
+    sandbox.write(path.join(ext("b-amb"), ".git"), `gitdir: ${path.join(repoGit, "worktrees", "wt1")}\ngitdir: ${path.join(repoGit, "worktrees", "wt-rel")}\n`);
+    rejects(() => assertOwnedWorkspace(kevin, ext("b-amb"), L), "WORKTREE_ORIGIN_UNDECIDABLE", ".git com dois ponteiros");
+    // .git forjada apontando para o gitdir de OUTRO worktree legítimo (wt1 reconhece kws.wt, não este)
+    gitFile(ext("b-forged"), path.join(repoGit, "worktrees", "wt1"));
+    rejects(() => assertOwnedWorkspace(kevin, ext("b-forged"), L), "WORKTREE_ORIGIN_UNDECIDABLE", ".git forjada para gitdir de outro worktree");
+    assert.equal(assertOwnedWorkspace(kevin, kws.wt, L).worktreeOrigin, kws.repo, "o dono legítimo continua aceito");
+    // marcadores: ancestral não admitido recusado
+    const zoneExt = ext("zona-ext");
+    sandbox.write(path.join(zoneExt, "AGENTS.md"), "ctx");
+    const zoneWt = extWt("zona", ext("zona-ext", "pi-agent-z-0000"));
+    rejects(() => assertOwnedWorkspace(kevin, zoneWt, L), "ANCESTOR_CONTEXT_UNADMITTED", "ancestral não admitido de worktree externo");
+    assert.equal(guard.count, 0, "nenhum metadado alheio/forjado lido e nenhum sentinela aberto");
+    assert.equal(sandbox.sha(registryPath), regBytes, "worktrees externos não alteram o registro");
+
+    if (report.junctions === "VERIFIED") {
+      const jwt = extWt("pi-agent-j1", ext("pi-agent-j1"));
+      assert.ok(sandbox.makeLink(path.join(evoWs, ".pi"), path.join(jwt, ".pi")).ok, "link fixture");
+      rejects(() => assertOwnedWorkspace(kevin, jwt, L), "RESOURCE_ESCAPES_OWNER", ".pi do worktree externo aponta para memória alheia");
+      assert.ok(sandbox.makeLink(repoGit, path.join(ext("pi-agent-j2"), ".git")).ok, "link fixture");
+      rejects(() => assertOwnedWorkspace(kevin, ext("pi-agent-j2"), L), "WORKTREE_ALIAS", ".git de worktree externo é junction");
+      const jlink = ext("pi-agent-j3");
+      assert.ok(sandbox.makeLink(kws.repo, path.join(jlink, "jrepo")).ok, "link fixture");
+      extWt("pi-agent-j3", jlink, { gitdir: path.join(jlink, "jrepo", ".git", "worktrees", "pi-agent-j3") });
+      rejects(() => assertOwnedWorkspace(kevin, jlink, L), "WORKTREE_ALIAS", "gitdir de worktree externo via junction");
+      assert.ok(sandbox.makeLink(extOk, path.join(ext("pi-agent-j4"), "ok-link")).ok, "link fixture");
+      rejects(() => assertOwnedWorkspace(kevin, path.join(ext("pi-agent-j4"), "ok-link"), L), "WORKSPACE_ALIAS", "junction para worktree externo");
+    }
     if (report.junctions === "VERIFIED") {
       assert.ok(sandbox.makeLink(repoGit, path.join(kws["wt-jgit"], ".git")).ok, "link fixture");
       rejects(() => assertOwnedWorkspace(kevin, kws["wt-jgit"], L), "WORKTREE_ALIAS", ".git é junction");
@@ -341,6 +440,13 @@ async function main() {
       hl(path.join(repoGit, "worktrees", "wt1b", "commondir"), path.join(repoGit, "worktrees", "wt6", "commondir"));
       gitFile(kws["wt-hardcd"], path.join(repoGit, "worktrees", "wt6"));
       rejects(() => assertOwnedWorkspace(kevin, kws["wt-hardcd"], L), "WORKTREE_ALIAS", "commondir com hardlink");
+      // worktree externo: .git e backlink com segundo nome também são alias (decidido antes do conteúdo)
+      const hlExt = extWt("pi-agent-h1", ext("pi-agent-h1"));
+      hl(path.join(hlExt, ".git"), path.join(ext("pi-agent-h1-other"), "dotgit"));
+      rejects(() => assertOwnedWorkspace(kevin, hlExt, L), "WORKTREE_ALIAS", ".git de worktree externo com hardlink");
+      const hlBack = extWt("pi-agent-h2", ext("pi-agent-h2"));
+      hl(path.join(repoGit, "worktrees", "pi-agent-h2", "gitdir"), path.join(ext("pi-agent-h2-other"), "backlink"));
+      rejects(() => assertOwnedWorkspace(kevin, hlBack, L), "WORKTREE_ALIAS", "backlink com hardlink");
       assert.equal(guard.count, 0, "nenhuma abertura de conteúdo por caminho-alias");
     }
 
