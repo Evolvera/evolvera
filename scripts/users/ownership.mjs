@@ -10,14 +10,21 @@
 //   RESOURCE_ESCAPES_OWNER / ANCESTOR_CONTEXT_UNADMITTED); e a origem de worktree
 //   (`.git` arquivo com `gitdir:`) precisa pertencer ao usuário (WORKTREE_ORIGIN_ALIEN).
 //   Origem de worktree vinculado, por leituras explícitas e limitadas de metadados (sem processo
-//   git): `.git` arquivo -> `gitdir:` (precisa estar em workspace do usuário ANTES de qualquer
-//   leitura ali, e ser canônico sem alias) -> `<gitdir>/commondir` (arquivo regular, nlink 1, ≤4 KiB;
-//   o diretório comum resolvido precisa ser `.git` canônico em workspace do usuário e
-//   `<gitdir>` precisa ser `<comum>/worktrees/<nome>`). Metadado ausente/desconhecido (inclusive
-//   submódulo, `--separate-git-dir`, repositório bare) = WORKTREE_ORIGIN_UNDECIDABLE; nunca se
-//   adivinha a origem pelo texto do caminho. Alias (symlink/junction, hardlink) de `.git`,
-//   `commondir`, gitdir ou diretório comum = WORKTREE_ALIAS. `.git` diretório normal mantém o
-//   comportamento anterior (a origem é o próprio diretório).
+//   git), em ponteiros recíprocos: `.git` arquivo -> `gitdir:` (precisa estar em workspace do
+//   usuário ANTES de qualquer leitura ali, e ser canônico sem alias) -> `<gitdir>/commondir` (o
+//   diretório comum resolvido precisa ser `.git` canônico em workspace do usuário e `<gitdir>`
+//   precisa ser `<comum>/worktrees/<nome>`) -> `<gitdir>/gitdir` (backlink ABSOLUTO que precisa
+//   coincidir exatamente com a `.git` do worktree; cópia/forja de `.git` não coincide). Cada
+//   arquivo: regular, nlink 1, ≤4 KiB, uma linha sem NUL, identidade conferida no descritor aberto.
+//   Metadado ausente/desconhecido/divergente (inclusive submódulo, `--separate-git-dir`, bare) =
+//   WORKTREE_ORIGIN_UNDECIDABLE; nunca se adivinha a origem pelo texto ou prefixo do caminho
+//   (tmp inclusive). Alias (symlink/junction, hardlink) de `.git`, `commondir`, backlink, gitdir ou
+//   diretório comum = WORKTREE_ALIAS. `.git` diretório normal mantém o comportamento anterior.
+//   Um cwd FORA de todo `ctx.workspaces` só é aceito se a subida achar um `.git` arquivo cuja
+//   linhagem recíproca acima fecha em origem registrada (worktree temporário do pi-subagents,
+//   cwd na raiz ou em subdiretório): `workspaceRoot` é então a raiz desse worktree, nada é
+//   cadastrado e os marcadores usam essa raiz + as admissões estáticas do usuário. Um `.git`
+//   diretório ou a ausência de `.git` fora dos roots = WORKSPACE_NOT_OWNED.
 //   `opts.ancestorLimit` (absoluto) limita a subida dos marcadores — só para fixtures/jaulas;
 //   produção omite e a subida vai até a raiz do volume.
 // - `assertOwnedSession(ctx, {sessionPath, cwd?}, opts?)` -> {userId, sessionPath,
@@ -51,19 +58,21 @@ function realOrFail(p) {
 }
 const ownedRoots = (ctx) => [...ctx.workspaces, ...ctx.sharedAssets];
 
-function checkMarkers(ctx, cwd, ancestorLimit) {
+function checkMarkers(ctx, cwd, ancestorLimit, derivedRoot = null) {
   let limit = null;
   if (ancestorLimit !== undefined) {
     limit = canonicalize(ancestorLimit);
     if (!isWithin(limit, cwd)) throw fail("OPTION_INVALID", "ancestorLimit must contain cwd");
   }
+  const workspaceRoots = derivedRoot ? [...ctx.workspaces, derivedRoot] : ctx.workspaces;
+  const admitted = derivedRoot ? [...ownedRoots(ctx), derivedRoot] : ownedRoots(ctx);
   for (let dir = cwd; ; dir = path.dirname(dir)) {
-    const insideWorkspace = ctx.workspaces.some((w) => isWithin(w, dir));
+    const insideWorkspace = workspaceRoots.some((w) => isWithin(w, dir));
     for (const marker of MARKERS) {
       const entry = path.join(dir, ...marker);
       if (!lstatOrNull(entry)) continue;
       const target = realOrFail(entry);
-      const allowed = ownedRoots(ctx).some((r) => isWithin(r, target)) || ctx.contexts.some((c) => samePath(c, target));
+      const allowed = admitted.some((r) => isWithin(r, target)) || ctx.contexts.some((c) => samePath(c, target));
       if (!allowed) throw fail(insideWorkspace ? "RESOURCE_ESCAPES_OWNER" : "ANCESTOR_CONTEXT_UNADMITTED", "project resource is outside the user's admitted roots");
     }
     if ((limit && samePath(limit, dir)) || path.dirname(dir) === dir) return;
@@ -82,6 +91,9 @@ function readMetaFile(file, what) {
   try {
     const fd = fs.openSync(file, "r");
     try {
+      const opened = fs.fstatSync(fd);
+      // Identidade no descritor aberto: o que foi aberto é o mesmo arquivo regular que o lstat aprovou.
+      if (!opened.isFile() || opened.nlink > 1 || opened.ino !== st.ino || opened.dev !== st.dev) throw new Error("identity");
       const buf = Buffer.alloc(MAX_META_BYTES);
       n = fs.readSync(fd, buf, 0, MAX_META_BYTES, 0);
       text = buf.toString("utf8", 0, n);
@@ -89,6 +101,16 @@ function readMetaFile(file, what) {
   } catch { throw fail(GIT_UNDECIDABLE, `${what} cannot be read`); }
   if (n >= MAX_META_BYTES) throw fail(GIT_UNDECIDABLE, `${what} is too large`);
   return text;
+}
+
+/** Uma única linha não vazia, sem NUL; linhas extras não vazias = ponteiro ambíguo. */
+function singleLine(text, what) {
+  if (text.includes("\0")) throw fail(GIT_UNDECIDABLE, `${what} is malformed`);
+  const [first, ...extra] = text.split(/\r?\n/);
+  if (extra.some((l) => l.trim() !== "")) throw fail(GIT_UNDECIDABLE, `${what} is ambiguous`);
+  const line = first.trim();
+  if (!line) throw fail(GIT_UNDECIDABLE, `${what} is empty`);
+  return line;
 }
 
 const inWorkspace = (ctx, p) => ctx.workspaces.some((w) => isWithin(w, p));
@@ -108,27 +130,39 @@ function metaDir(ctx, lexical, what) {
   return canon;
 }
 
-function worktreeOrigin(ctx, cwd, workspaceRoot) {
+/** Fecha a linhagem recíproca do `.git` arquivo `git` (na raiz `dir` do worktree) e devolve a origem registrada. */
+function linkedOrigin(ctx, dir, git) {
+  const match = /^gitdir:\s*(\S.*)$/.exec(singleLine(readMetaFile(git, ".git file"), ".git file"));
+  if (!match) throw fail(GIT_UNDECIDABLE, ".git file has no gitdir pointer");
+  const gitdir = metaDir(ctx, path.resolve(dir, match[1]), "gitdir");
+  const pointer = singleLine(readMetaFile(path.join(gitdir, "commondir"), "commondir file"), "commondir file");
+  const common = metaDir(ctx, path.resolve(gitdir, pointer), "common git dir");
+  if (path.basename(common).toLowerCase() !== ".git") throw fail(GIT_UNDECIDABLE, "common git dir is not a .git directory");
+  if (!samePath(path.dirname(gitdir), path.join(common, "worktrees"))) throw fail(GIT_UNDECIDABLE, "gitdir is not a linked worktree of its common dir");
+  const origin = path.dirname(common);
+  if (!inWorkspace(ctx, origin)) throw fail("WORKTREE_ORIGIN_ALIEN", "worktree origin belongs to another owner");
+  // Backlink: só a .git que o gitdir reconhece como sua fecha a linhagem (cópias do mesmo .git falham).
+  const backlink = singleLine(readMetaFile(path.join(gitdir, "gitdir"), "gitdir backlink"), "gitdir backlink");
+  if (!path.isAbsolute(backlink)) throw fail(GIT_UNDECIDABLE, "gitdir backlink is not absolute");
+  if (!samePath(path.resolve(backlink), git)) throw fail(GIT_UNDECIDABLE, "gitdir backlink does not return to this worktree");
+  return origin;
+}
+
+/**
+ * Sobe de `cwd` até o primeiro `.git` (limitado por `stopAt` quando o cwd está num workspace).
+ * -> {root, origin, linked} | null. `linked` = worktree vinculado com linhagem recíproca fechada.
+ */
+function worktreeOrigin(ctx, cwd, stopAt) {
   for (let dir = cwd; ; dir = path.dirname(dir)) {
     const git = path.join(dir, ".git");
     const st = lstatOrNull(git);
     if (st) {
       if (st.isSymbolicLink()) throw fail("WORKTREE_ALIAS", ".git entry is a link/junction");
-      if (st.isDirectory()) return dir;
+      if (st.isDirectory()) return { root: dir, origin: dir, linked: false };
       if (!st.isFile()) throw fail(GIT_UNDECIDABLE, ".git entry is not a file or directory");
-      const match = /^gitdir:\s*(.+?)\s*$/m.exec(readMetaFile(git, ".git file"));
-      if (!match) throw fail(GIT_UNDECIDABLE, ".git file has no gitdir pointer");
-      const gitdir = metaDir(ctx, path.resolve(dir, match[1]), "gitdir");
-      const pointer = readMetaFile(path.join(gitdir, "commondir"), "commondir file").split(/\r?\n/, 1)[0].trim();
-      if (!pointer || pointer.includes("\0")) throw fail(GIT_UNDECIDABLE, "commondir file is empty");
-      const common = metaDir(ctx, path.resolve(gitdir, pointer), "common git dir");
-      if (path.basename(common).toLowerCase() !== ".git") throw fail(GIT_UNDECIDABLE, "common git dir is not a .git directory");
-      if (!samePath(path.dirname(gitdir), path.join(common, "worktrees"))) throw fail(GIT_UNDECIDABLE, "gitdir is not a linked worktree of its common dir");
-      const origin = path.dirname(common);
-      if (!inWorkspace(ctx, origin)) throw fail("WORKTREE_ORIGIN_ALIEN", "worktree origin belongs to another owner");
-      return origin;
+      return { root: dir, origin: linkedOrigin(ctx, dir, git), linked: true };
     }
-    if (samePath(dir, workspaceRoot) || path.dirname(dir) === dir) return null;
+    if ((stopAt && samePath(dir, stopAt)) || path.dirname(dir) === dir) return null;
   }
 }
 
@@ -140,10 +174,17 @@ export function assertOwnedWorkspace(ctx, cwd, opts = {}) {
   let stat;
   try { stat = fs.statSync(real); } catch { throw fail("WORKSPACE_INVALID", "cwd does not exist"); }
   if (!stat.isDirectory()) throw fail("WORKSPACE_INVALID", "cwd is not a directory");
-  const workspaceRoot = ctx.workspaces.find((w) => isWithin(w, real));
-  if (!workspaceRoot) throw fail("WORKSPACE_NOT_OWNED", "cwd is not inside a workspace owned by this user");
-  checkMarkers(ctx, real, opts.ancestorLimit);
-  return frozen({ userId: ctx.id, cwd: real, workspaceRoot, worktreeOrigin: worktreeOrigin(ctx, real, workspaceRoot) });
+  const registered = ctx.workspaces.find((w) => isWithin(w, real));
+  if (registered) {
+    checkMarkers(ctx, real, opts.ancestorLimit);
+    const found = worktreeOrigin(ctx, real, registered);
+    return frozen({ userId: ctx.id, cwd: real, workspaceRoot: registered, worktreeOrigin: found ? found.origin : null });
+  }
+  // Fora dos roots: só um worktree vinculado de origem registrada (linhagem recíproca) concede posse.
+  const found = worktreeOrigin(ctx, real, null);
+  if (!found?.linked) throw fail("WORKSPACE_NOT_OWNED", "cwd is not inside a workspace owned by this user");
+  checkMarkers(ctx, real, opts.ancestorLimit, found.root);
+  return frozen({ userId: ctx.id, cwd: real, workspaceRoot: found.root, worktreeOrigin: found.origin });
 }
 
 function readHeaderCwd(file) {
