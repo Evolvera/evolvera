@@ -122,5 +122,45 @@ for (const answer of [
   for (const dropped of ["OLD-DONE", "KEY-DECISION", "CRITICAL-PATH"]) assert.doesNotMatch(data, new RegExp(dropped));
   assert.equal(extension.compactedPendingState([]), "");
 }
+{
+  // Stale judgments: new real input, tree navigation, or a subagent started while judging must suppress the send.
+  const deferredFixture = (mutate) => {
+    const handlers = new Map(); const sends = []; let release; let running = false;
+    const branch = [
+      { type: "message", message: { role: "user", content: [{ type: "text", text: "do it" }] } },
+      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "next I will do it" }], stopReason: "stop" } },
+    ];
+    const pi = { on: (n, h) => handlers.set(n, h), sendMessage: async (m) => sends.push(m) };
+    const ctx = { mode: "tui", isIdle: () => true, hasPendingMessages: () => false, sessionManager: { getBranch: () => branch },
+      modelRegistry: { find: () => ({}), getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "fake" }) } };
+    extension.registerDeliveryClosure(pi, { env: {}, getManager: () => ({ hasRunning: () => running }),
+      completeSimple: () => new Promise((resolve) => { release = () => resolve({ content: [{ type: "text", text: '{"verdict":"continue","work":"do it"}' }] }); }) });
+    return { run: async () => {
+      await handlers.get("before_agent_start")({ systemPromptOptions: { customPrompt: "# PI Coding Agent" } }, ctx);
+      await handlers.get("input")({ source: "interactive", text: "do it" }, ctx);
+      const settling = handlers.get("agent_settled")({}, ctx);
+      await new Promise((r) => setImmediate(r));
+      await mutate({ handlers, ctx, setRunning: (v) => { running = v; } });
+      release(); await settling; return sends.length;
+    } };
+  };
+  assert.equal(await deferredFixture(async () => {}).run(), 1, "control: unchanged state still sends");
+  assert.equal(await deferredFixture(async ({ handlers, ctx }) => handlers.get("input")({ source: "interactive", text: "cancel that" }, ctx)).run(), 0, "new input invalidates");
+  assert.equal(await deferredFixture(async ({ handlers, ctx }) => handlers.get("session_tree")({}, ctx)).run(), 0, "tree navigation invalidates");
+  assert.equal(await deferredFixture(async ({ setRunning }) => setRunning(true)).run(), 0, "subagent started while judging");
+}
+{
+  // Tool-call steps between the request and the final reply keep the request current and untruncated.
+  const request = "x".repeat(600) + " WAIT_FOR_MY_APPROVAL";
+  const found = extension.findSettledAssistant([
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "previous final" }], stopReason: "stop" } },
+    { type: "message", message: { role: "user", content: [{ type: "text", text: request }] } },
+    { type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "bash" }], stopReason: "toolUse" } },
+    { type: "message", message: { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "ok" }] } },
+    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } },
+  ]);
+  assert.deepEqual(found.users, [request], "request survives tool steps, bounded by the previous final");
+  assert.match(extension.buildDeliveryJudgeInput(found.users, found.reply, []), /CURRENT USER MESSAGE[^]*WAIT_FOR_MY_APPROVAL/);
+}
 assert.equal(extension.parseDeliveryDecision('{"verdict":"wat","work":"x"}'), undefined);
 console.log("delivery-closure smoke: PASS");

@@ -72,7 +72,8 @@ export function findSettledAssistant(branch: Iterable<unknown>): { message: Bran
   const users: string[] = [];
   for (let i = assistantIndex - 1; i >= 0; i--) {
     const candidate = entries[i].message;
-    if (candidate?.role === "assistant") break;
+    // Tool-call steps belong to the same run; only a previous final reply bounds the current request.
+    if (candidate?.role === "assistant" && !(Array.isArray(candidate.content) && candidate.content.some(isToolCall))) break;
     if (candidate?.role === "user") {
       const text = textOf(candidate.content);
       if (text) users.unshift(text);
@@ -146,7 +147,9 @@ export function registerDeliveryClosure(pi: ExtensionAPI, deps: DeliveryClosureD
   const env = deps.env ?? process.env;
   const manager = () => deps.getManager ? deps.getManager() : deps.manager !== undefined ? deps.manager :
     (globalThis as Record<PropertyKey, unknown>)[Symbol.for("pi-subagents:manager")] as Manager | undefined;
-  const reset = () => { budgetAvailable = false; userTexts = []; };
+  // Bumped by every real input or session change; a judgment started under an older generation is stale.
+  let generation = 0;
+  const reset = () => { budgetAvailable = false; userTexts = []; generation++; };
 
   pi.on("before_agent_start", async (event) => {
     primary = typeof event.systemPromptOptions.customPrompt === "string"
@@ -155,6 +158,7 @@ export function registerDeliveryClosure(pi: ExtensionAPI, deps: DeliveryClosureD
   pi.on("input", async (event) => {
     if (event.source !== "extension" && typeof event.text === "string" && event.text.trim()) {
       budgetAvailable = true;
+      generation++;
       userTexts.push(event.text);
       userTexts = userTexts.slice(-8);
     }
@@ -167,20 +171,21 @@ export function registerDeliveryClosure(pi: ExtensionAPI, deps: DeliveryClosureD
     const ctx = rawCtx as Context;
     if (!primary || ctx.mode !== "tui" || !budgetAvailable || env.PI_DELIVERY_CHECK === "off"
       || !ctx.isIdle() || ctx.hasPendingMessages()) return;
-    const activeManager = manager();
-    if (activeManager?.hasRunning?.()) return;
+    if (manager()?.hasRunning?.()) return;
     let branch: unknown[];
     try { branch = Array.from(ctx.sessionManager.getBranch()); } catch { return; }
     const final = findSettledAssistant(branch);
     if (!final) return;
     budgetAvailable = false; // Consume before the asynchronous judge: one attempt per real user input.
+    const startedGeneration = generation;
     const todos = latestOpenTodos(branch);
     const current = new Set(final.users.map((text) => text.trim()));
     const earlier = userTexts.filter((text) => !current.has(text.trim())).slice(-6);
     const input = buildDeliveryJudgeInput(final.users, final.reply, todos, earlier, compactedPendingState(branch));
     const decision = await judge(input, ctx, deps.completeSimple);
     if (decision?.verdict !== "continue") return;
-    if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
+    // Re-check everything that can change while the judge runs.
+    if (generation !== startedGeneration || !ctx.isIdle() || ctx.hasPendingMessages() || manager()?.hasRunning?.()) return;
     await pi.sendMessage({
       customType: MESSAGE_TYPE,
       content: `Delivery check: your last reply stopped while in-scope work you can do now remained: ${decision.work}. Continue that work now. If it is actually blocked or needs the user's decision, state the exact blocker in one line and stop. Do not start unrelated items, do not re-ask approvals you already have, and keep every approval gate (deploy, publish, delete, send, purchase, production migration).`,
