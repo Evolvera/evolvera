@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 export const PACKAGE_NAME = "@tintinweb/pi-subagents";
 export const PACKAGE_VERSION = "0.18.2";
 export const ENTRY_RELATIVE = path.join("src", "index.ts");
-const MODULES = ["src/agent-runner.ts", "src/agent-manager.ts", "src/index.ts", "src/memory.ts", "src/output-file.ts", "src/schedule-store.ts"];
+const MODULES = ["src/agent-runner.ts", "src/agent-manager.ts", "src/index.ts", "src/memory.ts", "src/output-file.ts", "src/schedule-store.ts", "src/custom-agents.ts"];
 const KEY = 'Symbol.for("pi.users.context")';
 const FINAL_DIR = "pi-subagents-0.18.2-users";
 const fail = (message) => { throw new Error(`Subagents compatibility staging refused: ${message}`); };
@@ -65,9 +65,54 @@ function adaptRunner(s) {
   if (usersManaged && effectiveOwnership.userId !== configOwnership.userId) throw new Error("Managed pi-subagents cwd/config ownership mismatch");
   if (options.resumeSessionFile) usersSession(options.resumeSessionFile, effectiveCwd);
   if (usersManaged) usersContext.admitUserResources({ resource: "pi-subagents-agent-root", root: usersContext.profile.agentDir, userId: usersContext.profile.id });
+  const childResourceBinding = usersManaged ? usersContext.admitUserResources({
+    resource: "pi-subagents-loader",
+    userId: usersContext.profile.id,
+    cwd: effectiveCwd,
+    configCwd,
+    frontmatter: { extensions: agentConfig?.extensions, skills: agentConfig?.skills },
+    cliPaths: {
+      extensions: Array.isArray(agentConfig?.extensions) ? agentConfig.extensions.filter((entry) => typeof entry === "string" && (entry.includes("/") || entry.includes("\\\\") || entry.startsWith("~"))).map((entry) => entry === "~" || entry.startsWith("~/") || entry.startsWith("~\\\\") ? resolve(homedir() + entry.slice(1)) : isAbsolute(entry) ? entry : resolve(configCwd, entry)) : [],
+      skills: [], prompts: [], themes: [],
+    },
+    contextPaths: [],
+    homeDir: homedir(),
+  }) : undefined;
+  if (usersManaged && (!childResourceBinding?.settingsManager ||
+      typeof childResourceBinding.settingsManager.getGlobalSettings !== "function" ||
+      typeof childResourceBinding.settingsManager.getProjectSettings !== "function" ||
+      typeof childResourceBinding.settingsManager.reload !== "function" ||
+      !childResourceBinding.resourceLoaderOptions || typeof childResourceBinding.resourceLoaderOptions !== "object")) {
+    throw new Error("Managed pi-subagents requires a profile-bound admitted child settings manager and resource loader");
+  }
 
-  const env = await detectEnv(options.pi, effectiveCwd);`, "pre-ingestion runner guard");
+  const env = await detectEnv(options.pi, effectiveCwd);`, "pre-ingestion runner guard and child admission");
   s = one(s, 'const agentDir = getAgentDir();', 'const agentDir = usersManaged ? usersContext.profile.agentDir : getAgentDir();', "managed agent root");
+  s = one(s, `  const loader = new DefaultResourceLoader({
+    cwd: configCwd,
+    agentDir,
+    noExtensions,
+    additionalExtensionPaths,
+    extensionsOverride,
+    noSkills,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    systemPromptOverride: () => systemPrompt,
+    appendSystemPromptOverride: () => [],
+  });`, `  const loader = new DefaultResourceLoader({
+    ...(usersManaged ? { ...childResourceBinding.resourceLoaderOptions, settingsManager: childResourceBinding.settingsManager } : { cwd: configCwd, agentDir }),
+    noExtensions,
+    additionalExtensionPaths: usersManaged ? childResourceBinding.resourceLoaderOptions.additionalExtensionPaths : additionalExtensionPaths,
+    extensionsOverride,
+    noSkills,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    systemPromptOverride: () => systemPrompt,
+    appendSystemPromptOverride: () => [],
+  });`, "admitted native child resource loader");
+  s = one(s, 'const settingsManager = SettingsManager.create(configCwd, agentDir);', 'const settingsManager = usersManaged ? childResourceBinding.settingsManager : SettingsManager.create(configCwd, agentDir);', "reuse admitted manager in child session");
   s = one(s, 'const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();',
     'const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();\n  if (usersManaged) usersContext.admitUserResources({ resource: "pi-subagents-session-directory", userId: usersContext.profile.id, cwd: effectiveCwd, workspaceRoot: effectiveOwnership.workspaceRoot, sessionDir: configuredSessionDir ?? defaultSessionDir });', "session directory pre-admission");
   s = one(s, 'const parentModelRuntime = (ctx.modelRegistry as unknown as { runtime?: unknown }).runtime;',
@@ -132,6 +177,25 @@ function adaptOutput(s) {
   if (usersManaged) usersContext.admitUserResources({ resource: "pi-subagents-transcript", userId: usersContext.profile.id, cwd: owned.cwd, root, sessionId });`, "managed transcript root");
   return s;
 }
+function adaptCustomAgents(s) {
+  if (!s.includes('import { existsSync, readdirSync, readFileSync } from "node:fs";')) fail("custom-agent fs import anchor mismatch");
+  s = one(s, '  const agents = new Map<string, AgentConfig>();\n  loadFromDir(globalDir, agents, "global", strict);',
+    `  const agents = new Map<string, AgentConfig>();
+  if (usersManaged) {
+    const sharedAssets = usersContext.profile.sharedAssets;
+    if (!Array.isArray(sharedAssets) || sharedAssets.length !== 1) throw new Error("Managed pi-subagents requires exactly one canonical shared code root for common agents");
+    const commonDir = join(sharedAssets[0], "agents");
+    usersContext.admitUserResources({ resource: "pi-subagents-agents", userId: usersContext.profile.id, root: commonDir });
+    let commonStat;
+    try { commonStat = statSync(commonDir); } catch { throw new Error("Managed pi-subagents common agents source is unavailable"); }
+    if (!commonStat.isDirectory() || realpathSync.native(commonDir) !== commonDir) throw new Error("Managed pi-subagents common agents source is not canonical");
+    try { readdirSync(commonDir); } catch { throw new Error("Managed pi-subagents common agents source is unreadable"); }
+    loadFromDir(commonDir, agents, "global", strict);
+  }
+  loadFromDir(globalDir, agents, "global", strict);`, "admitted common custom-agent discovery");
+  s = one(s, 'import { existsSync, readdirSync, readFileSync } from "node:fs";', 'import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";', "common-agent canonical metadata imports");
+  return s;
+}
 function adaptScheduleStore(s) {
   s = one(s, '  return join(cwd, ".pi", "subagent-schedules", `${sessionId}.json`);',
     `  if (usersManaged) {
@@ -152,6 +216,7 @@ function transform(name, source) {
     case "src/memory.ts": output = adaptMemory(source); break;
     case "src/output-file.ts": output = adaptOutput(source); break;
     case "src/schedule-store.ts": output = adaptScheduleStore(source); break;
+    case "src/custom-agents.ts": output = adaptCustomAgents(source); break;
     default: fail(`undeclared module ${name}`);
   }
   return `${RECEIPT}\n${output}`;
@@ -175,12 +240,16 @@ export function stageSubagentsProfileCompatibility(sourceRoot, stagingRoot, prof
   if (fs.existsSync(finalRoot)) fail("staging destination already exists");
   const temporary = path.join(destination, `.${FINAL_DIR}-${process.pid}-${randomBytes(8).toString("hex")}.tmp`);
   try {
+    const transformed = new Map();
+    for (const relative of MODULES) {
+      const sourceText = fs.readFileSync(path.join(source, relative), "utf8");
+      transformed.set(relative, transform(relative, sourceText));
+    }
     fs.mkdirSync(temporary);
     fs.cpSync(source, temporary, { recursive: true, dereference: false, filter: (p) => !path.relative(source, p).split(path.sep).some((part) => ["node_modules", ".git", "dist"].includes(part)) });
-    for (const relative of MODULES) {
+    for (const [relative, output] of transformed) {
       const file = path.join(temporary, relative);
-      const sourceText = fs.readFileSync(path.join(source, relative), "utf8");
-      fs.writeFileSync(file, transform(relative, sourceText), { flag: "w" });
+      fs.writeFileSync(file, output, { flag: "w" });
     }
     fs.renameSync(temporary, finalRoot);
   } catch (error) {
