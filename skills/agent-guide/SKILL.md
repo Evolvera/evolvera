@@ -1,6 +1,6 @@
 ---
 name: agent-guide
-description: Mandatory pre-flight skill. Load BEFORE using scout, planner, builder, or qa. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
+description: Mandatory pre-flight skill. Load BEFORE using scout, bug-hunt, planner, builder, or qa. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
 ---
 
 # Agent Guide — How to Use Subagents
@@ -103,6 +103,38 @@ Agent({
 - Ask for **exact file paths and line numbers**.
 - **Use a mapped capacity-filling wave, not an arbitrary swarm.** When orientation finds independent questions, inventory roots, classify candidates `ADMIT | DEFER | MERGE | SYNTHESIS`, and launch every ready `ADMIT` scout up to free configured background capacity. Audit a candidate spanning 3+ independent regions; a named causal coupling may keep it coherent, otherwise split at an evidenced seam. If one question depends on another's result, mark it `DEFER` or `SYNTHESIS` rather than occupying a first-wave slot.
 - **Do useful parent work while scouts run**: read high-signal files, grep exact symbols, inspect tests/config/logs, and build hypotheses to validate against scout reports.
+
+---
+
+## bug-hunt — Bug Discovery
+
+Read-only defect finder on GPT-6.1 Sol medium. Where `scout` explains how a system works, `bug-hunt` looks for where it is wrong. Every finding comes back with `path:line` causal-chain evidence, a refutation attempt, `CONFIRMED | LIKELY | SUSPECT` confidence, severity, reproduction steps, and a fix direction. It never edits code or runs project code; it returns the exact reproduction for you to run under the stateful-resource gate.
+
+**When to use:**
+- **Hinted:** a symptom, error, log, failing or flaky test, user report, or suspect commit range whose root cause is unknown. Pass the raw evidence verbatim; the hunter confirms or refutes the hint.
+- **Unhinted:** pre-merge or pre-release sweeps, auditing an unfamiliar or risky module, after an incident, or after a fix to look for sibling bugs with the same pattern.
+
+**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (`validator`); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
+
+**Default to a parallel wave.** After bounded orientation, split the hunt into independent shards and launch them together in one message with `run_in_background: true`, up to free background capacity:
+- **By region:** one shard per independent subsystem or layer, such as client, API, domain/data, jobs/async, auth, or config/infra.
+- **By lens:** across one coherent but large region, one shard per lens group: logic and data, state and concurrency, contracts and error handling, security, performance.
+- **Hinted:** one coherent shard traces the symptom end to end. Run parallel shards only for alternative-cause layers that do not depend on its result; never fragment one causal chain.
+
+Declare each shard in its prompt:
+
+```
+Agent({
+  subagent_type: "bug-hunt",
+  description: "Bug hunt: API layer",
+  run_in_background: true,
+  prompt: "BUG HUNT SHARD api — Mode: UNHINTED. Outcome: find real defects before release. Scope: /abs/repo/apps/api/src (routes, services). Overlap: shared types in packages/shared/src/types.ts are read-only context; other shards cover the client and jobs. Context: <known contracts, recent commits, constraints>. Stop at COMPLETE coverage of the scope or PARTIAL with the next retrieval."
+})
+```
+
+For a hinted hunt, include the verbatim error/log/stack, the reproduction steps and environment when known, what was already ruled out, and the suspect commit range.
+
+**After the wave:** deduplicate findings across shards and follow up on cross-boundary leads, using a synthesis hunt only when the leads conflict. Verify each `CONFIRMED`/`LIKELY` finding you intend to fix by reproducing it, either directly or through `qa`, before fixing. Never fix a `SUSPECT` finding without new evidence. Fixes then follow the normal builder route, with a failing test first when practical.
 
 ---
 
