@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { assertOwnedWorkspace } from "./ownership.mjs";
@@ -198,6 +199,158 @@ function hasUnadmittedContext(cwd, roots) {
   for (let dir = cwd; ; dir = path.dirname(dir)) {
     if (!roots.some((root) => within(root, dir))) return true;
     if (path.dirname(dir) === dir) return false;
+  }
+}
+
+function candidateMetadata(candidate, ownerRoots, { allowMissing = true } = {}) {
+  if (typeof candidate !== "string" || !path.isAbsolute(candidate) || !ownerRoots.some((root) => within(root, candidate))) {
+    fail("RESOURCE_INVENTORY_REJECTED", "resource candidate is outside selected owner roots");
+  }
+  let stat;
+  try { stat = fs.lstatSync(candidate); } catch (error) {
+    if (allowMissing && (error.code === "ENOENT" || error.code === "ENOTDIR")) return null;
+    fail("RESOURCE_INVENTORY_UNAVAILABLE", "resource candidate metadata cannot be inspected");
+  }
+  const canonical = canonicalize(candidate);
+  if (canonical !== candidate || stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile()) || (stat.isFile() && stat.nlink > 1)) {
+    fail("RESOURCE_INVENTORY_REJECTED", "resource candidate identity is not canonical and unique");
+  }
+  return stat;
+}
+
+function inventoryCandidate(candidate, ownerRoots, seen) {
+  const stat = candidateMetadata(candidate, ownerRoots);
+  if (!stat || seen.has(candidate)) return;
+  seen.add(candidate);
+  if (stat.isDirectory()) {
+    let entries;
+    try { entries = fs.readdirSync(candidate, { withFileTypes: true }); } catch {
+      fail("RESOURCE_INVENTORY_UNAVAILABLE", "resource candidate directory cannot be inventoried");
+    }
+    for (const entry of entries) inventoryCandidate(path.join(candidate, entry.name), ownerRoots, seen);
+  }
+}
+
+function validateDeclaredPath(value, resourceRoot) {
+  if (typeof value !== "string" || !value) fail("RESOURCE_INVENTORY_REJECTED", "package resource declaration is invalid");
+  const hasPrefix = /^[+!-]/.test(value);
+  const relative = hasPrefix ? value.slice(1) : value;
+  if (path.isAbsolute(relative) || /^[a-zA-Z]:/.test(relative) || relative.split(/[\\/]+/).some((part) => part === "..")) {
+    fail("RESOURCE_INVENTORY_REJECTED", "package resource declaration escapes its owner root");
+  }
+  if (value.startsWith("!") || value.startsWith("-")) return null;
+  const segments = relative.split(/[\\/]+/);
+  const prefix = [];
+  for (const segment of segments) {
+    if ([...segment].some((character) => "*?[]{}()".includes(character))) break;
+    prefix.push(segment);
+  }
+  return path.resolve(resourceRoot, ...(prefix.length ? prefix : []));
+}
+
+function inventoryPackage(directory, entry, ownerRoots, seen, isKevin) {
+  const directoryStat = candidateMetadata(directory, ownerRoots);
+  if (!directoryStat) return;
+  if (!directoryStat.isDirectory()) {
+    inventoryCandidate(directory, ownerRoots, seen);
+    return;
+  }
+  const manifestPath = path.join(directory, "package.json");
+  const manifestStat = candidateMetadata(manifestPath, ownerRoots);
+  if (manifestStat) inventoryCandidate(manifestPath, ownerRoots, seen);
+  let metadata = null;
+  if (manifestStat) {
+    metadata = validatePackageManifest(directory);
+    if (!metadata || (isKevin && manifestContainsMcp(metadata))) return;
+  }
+  const ignorePaths = [".gitignore", ".ignore", ".fdignore"].map((name) => path.join(directory, name));
+  for (const ignorePath of ignorePaths) inventoryCandidate(ignorePath, ownerRoots, seen);
+  for (const field of PACKAGE_RESOURCE_FIELDS) {
+    const roots = [path.join(directory, field)];
+    const entryValues = entry?.[field];
+    if (entryValues !== undefined && !Array.isArray(entryValues)) fail("RESOURCE_INVENTORY_REJECTED", "package resource filters must be arrays");
+    for (const value of entryValues ?? []) {
+      const declared = validateDeclaredPath(value, directory);
+      if (declared) roots.push(declared);
+    }
+    for (const value of metadata?.pi?.[field] ?? []) {
+      const declared = validateDeclaredPath(value, directory);
+      if (declared) roots.push(declared);
+    }
+    for (const root of roots) inventoryCandidate(root, ownerRoots, seen);
+  }
+}
+
+/** Fail before native resource resolution when any native or request-bound candidate has unsafe identity. */
+export function validateAdmittedResourceInventory(profileContext, request = {}) {
+  requireContext(profileContext);
+  const workspace = assertOwnedWorkspace(profileContext, request.cwd);
+  const roots = rootsFor(workspace, profileContext);
+  const seen = new Set();
+  const candidates = [];
+  const packageRoots = {
+    global: profileContext.sharedAssets.map((root) => path.join(root, "npm", "node_modules")),
+    project: [path.join(workspace.cwd, ".pi", "npm", "node_modules"), ...profileContext.sharedAssets.map((root) => path.join(root, "npm", "node_modules"))],
+  };
+  const isKevin = profileContext.id === "kevin";
+  const addPackage = (entry, base, searchRoots) => {
+    const source = sourceOf(entry);
+    if (!source || /^builtin:/i.test(source) || (isKevin && isMcp(source))) return;
+    if (isRemote(source)) {
+      const spec = packageNameAndVersion(source);
+      if (!spec) return;
+      for (const root of searchRoots) {
+        const directory = path.join(root, ...spec.name.split("/"));
+        const stat = candidateMetadata(directory, roots);
+        if (stat) {
+          inventoryPackage(directory, entry, roots, seen, isKevin);
+          return;
+        }
+      }
+      return;
+    }
+    inventoryPackage(path.resolve(base, source), entry, roots, seen, isKevin);
+  };
+  const addSettings = (settings, base, searchRoots) => {
+    for (const field of FIELDS) for (const value of Array.isArray(settings?.[field]) ? settings[field] : []) {
+      const target = typeof value === "string" ? value.replace(/^[+!-]/, "") : "";
+      if (target && !/^builtin:/i.test(target)) candidates.push(path.resolve(base, target));
+    }
+    for (const entry of Array.isArray(settings?.packages) ? settings.packages : []) addPackage(entry, base, searchRoots);
+  };
+  for (const base of [profileContext.agentDir, path.join(workspace.cwd, ".pi")]) {
+    for (const field of FIELDS) candidates.push(path.join(base, field));
+  }
+  addSettings(request.settings, profileContext.agentDir, packageRoots.global);
+  addSettings(request.projectSettings, path.join(workspace.cwd, ".pi"), packageRoots.project);
+  const bound = request.requestInputs ?? {};
+  for (const field of FIELDS) for (const value of bound.cliPaths?.[field] ?? []) {
+    if (typeof value !== "string") fail("RESOURCE_INVENTORY_REJECTED", "request-bound resource path is invalid");
+    const target = value.replace(/^[+!-]/, "");
+    if (!/^builtin:/i.test(target)) candidates.push(path.resolve(workspace.cwd, target));
+  }
+  for (const value of bound.contextPaths ?? []) {
+    if (typeof value !== "string") fail("RESOURCE_INVENTORY_REJECTED", "request-bound context path is invalid");
+    candidates.push(path.resolve(workspace.cwd, value));
+  }
+  for (const candidate of candidates) inventoryCandidate(path.resolve(candidate), roots, seen);
+
+  const trustedSkillRoots = [path.join(request.homeDir ?? bound.homeDir ?? os.homedir(), ".agents", "skills")];
+  for (let dir = workspace.cwd; ; dir = path.dirname(dir)) {
+    trustedSkillRoots.push(path.join(dir, ".agents", "skills"));
+    if (dir === workspace.workspaceRoot || path.dirname(dir) === dir) break;
+  }
+  for (const root of new Set(trustedSkillRoots.map((item) => path.resolve(item)))) {
+    if (!roots.some((ownerRoot) => within(ownerRoot, root))) {
+      let stat;
+      try { stat = fs.lstatSync(root); } catch (error) {
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") continue;
+        fail("RESOURCE_INVENTORY_UNAVAILABLE", "trusted skill root metadata cannot be inspected");
+      }
+      if (stat) fail("RESOURCE_INVENTORY_REJECTED", "trusted skill root is outside selected owner roots");
+    } else {
+      inventoryCandidate(root, roots, seen);
+    }
   }
 }
 
