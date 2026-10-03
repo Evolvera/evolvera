@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import childProcess from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import tls from "node:tls";
+import dns from "node:dns";
+import dgram from "node:dgram";
+import http from "node:http";
+import https from "node:https";
+import Module from "node:module";
 import { constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +25,11 @@ let onLockWait;
 let traceLocks = false;
 const trace = (message) => { if (traceLocks) process.stderr.write(`LOCK_TRACE ${message}\n`); };
 const latch = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
-const bounded = (promise) => Promise.race([promise, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error("LATCH_TIMEOUT")), 10_000); timer.unref(); })]);
+async function bounded(promise, ms = 10_000, message = "LATCH_TIMEOUT") {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]); }
+  finally { clearTimeout(timer); }
+}
 const hostProtected = ["C:/Users/kevin/.pi/agent", "C:/Users/kevin/Documents/Pi/.pi"];
 const inside = (root, value) => {
   const rel = path.relative(root, path.resolve(value));
@@ -31,7 +40,7 @@ function installResourceGuards(root) {
   const restores = [];
   const canonical = fs.realpathSync.native;
   const lstat = fs.lstatSync;
-  const counters = { protected: 0, network: 0, child: 0, outside: 0 };
+  const counters = { protected: 0, network: 0, child: 0, outside: 0, keyring: 0 };
   const descriptors = new Map();
   let operations = 0;
   let lastOperation = "none";
@@ -139,11 +148,22 @@ function installResourceGuards(root) {
     childProcess[name] = () => { counters.child++; throw new Error("CHILD_PROCESS_DENIED"); };
     restores.push(() => { childProcess[name] = original; });
   }
-  for (const [object, name] of [[tls, "connect"], [tls.TLSSocket.prototype, "connect"], [net, "connect"], [net, "createConnection"], [net.Socket.prototype, "connect"], [net.Server.prototype, "listen"], [globalThis, "fetch"]]) {
+  for (const [object, name] of [[tls, "connect"], [tls.TLSSocket.prototype, "connect"], [net, "connect"], [net, "createConnection"], [net.Socket.prototype, "connect"], [net.Server.prototype, "listen"], [dgram.Socket.prototype, "connect"], [dgram.Socket.prototype, "send"], [dgram.Socket.prototype, "bind"], [http, "request"], [http, "get"], [https, "request"], [https, "get"], [globalThis, "fetch"]]) {
     const original = object[name];
     object[name] = () => { counters.network++; throw new Error("NETWORK_DENIED"); };
     restores.push(() => { object[name] = original; });
   }
+  for (const [object, name] of [[dns, "lookup"], [dns, "lookupService"], ...["resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse"].map((name) => [dns, name]), ...["lookup", "lookupService", "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse"].map((name) => [dns.promises, name]), ...["lookup", "lookupService", "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse"].map((name) => [dns.Resolver.prototype, name])]) {
+    const original = object?.[name]; if (typeof original !== "function") continue;
+    object[name] = () => { counters.network++; throw new Error("NETWORK_DENIED"); };
+    restores.push(() => { object[name] = original; });
+  }
+  const originalLoad = Module._load;
+  Module._load = function (request, ...args) {
+    if (typeof request === "string" && /(?:keytar|keyring|keychain|credential-storage|wincred)/i.test(request)) { counters.keyring++; throw new Error("OS_KEYRING_DENIED"); }
+    return originalLoad.call(this, request, ...args);
+  };
+  restores.push(() => { Module._load = originalLoad; });
   syncBuiltinESMExports();
   const restore = () => { for (const restore of restores.reverse()) restore(); syncBuiltinESMExports(); };
   restore.counters = counters;
@@ -376,11 +396,24 @@ async function worker(mode, root, registryPath, agentDir, fixture) {
   access.install();
   syncBuiltinESMExports();
   try {
+    const allowedEnv = new Set(["APPDATA", "HOME", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR", "USERPROFILE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "SystemRoot", "windir", "PI_TEST_LOCK_TRACE"].map((key) => key.toLowerCase()));
+    // Windows can add ambient OS variables to a child despite an explicit env.
+    // Drop them before application imports; do not admit host identity or PATH.
+    for (const key of Object.keys(process.env)) if (!allowedEnv.has(key.toLowerCase())) delete process.env[key];
+    assert.ok(Object.keys(process.env).every((key) => allowedEnv.has(key.toLowerCase())));
+    for (const [key, relative] of [["HOME", "home"], ["USERPROFILE", "home"], ["APPDATA", path.join("appdata", "Roaming")], ["LOCALAPPDATA", path.join("appdata", "Local")], ["XDG_CONFIG_HOME", "config"], ["XDG_CACHE_HOME", "cache"], ["TMPDIR", "tmp"], ["TEMP", "tmp"], ["TMP", "tmp"]]) assert.equal(path.resolve(process.env[key]), path.resolve(root, relative), `${key} must remain in the fresh sandbox`);
+    if (process.env.PI_TEST_LOCK_TRACE !== undefined) assert.equal(process.env.PI_TEST_LOCK_TRACE, "1");
+    assert.equal(process.env.NODE_OPTIONS, undefined);
+    assert.equal(process.env.NODE_PATH, undefined);
+    assert.equal(process.env.OPENAI_API_KEY, undefined);
+    assert.equal(path.resolve(os.homedir()), path.resolve(root, "home"), "worker SDK home must be the fresh synthetic root");
     if (mode === "setup" || mode === "setup-blank") {
       const { registerUser } = await import("../users/registry.mjs");
       const context = registerUser({ registryPath, id: "kevin", label: "Kevin synthetic", agentDir, sessionRoots: [fixture.sessionDir] });
       assert.equal(context.agentDir, agentDir);
-      assert.deepEqual(restoreResources.counters, { protected: 0, network: 0, child: 0, outside: 0 });
+      assert.equal(access.count, 0);
+      assert.equal(network.attempts, 0);
+      assert.deepEqual(restoreResources.counters, { protected: 0, network: 0, child: 0, outside: 0, keyring: 0 });
       return;
     }
     const [{ resolveUser }, { createUserCredentialStore }] = await Promise.all([
@@ -452,7 +485,7 @@ async function worker(mode, root, registryPath, agentDir, fixture) {
     }
     assert.equal(access.count, 0);
     assert.equal(network.attempts, 0);
-    assert.deepEqual(restoreResources.counters, { protected: 0, network: 0, child: 0, outside: 0 });
+    assert.deepEqual(restoreResources.counters, { protected: 0, network: 0, child: 0, outside: 0, keyring: 0 });
   } finally {
     restoreResources();
     access.restore();
@@ -461,24 +494,90 @@ async function worker(mode, root, registryPath, agentDir, fixture) {
   }
 }
 
-function spawnWorker(sandbox, args) {
-  return spawnSync(process.execPath, [SCRIPT, "--worker", ...args], {
-    cwd: sandbox.root, env: sandbox.env, encoding: "utf8", timeout: 20_000, windowsHide: true,
-  });
+class WorkerSupervisor {
+  constructor(sandbox) { this.sandbox = sandbox; this.children = new Set(); }
+  start(args) {
+    assert.equal(args[0], SCRIPT);
+    assert.equal(args[1], "--worker");
+    assert.equal(args[3], this.sandbox.root);
+    assert.ok(inside(this.sandbox.root, args[4]) && inside(this.sandbox.root, args[5]));
+    const child = spawn(process.execPath, args, {
+      cwd: this.sandbox.root, env: this.sandbox.env, windowsHide: true,
+      stdio: args[2] === "hold" ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
+    });
+    const record = { child, stdout: "", stderr: "", error: null, closed: false, stdoutClosed: false, stderrClosed: false, waiters: new Set() };
+    this.children.add(record);
+    const append = (key, chunk) => { record[key] += chunk.toString(); for (const wake of [...record.waiters]) wake(); };
+    child.stdout.on("data", (chunk) => append("stdout", chunk));
+    child.stderr.on("data", (chunk) => append("stderr", chunk));
+    child.stdout.on("error", (error) => { record.error ??= error; });
+    child.stderr.on("error", (error) => { record.error ??= error; });
+    child.stdout.on("close", () => { record.stdoutClosed = true; });
+    child.stderr.on("close", () => { record.stderrClosed = true; });
+    child.on("error", (error) => { record.error ??= error; });
+    if (child.stdin) child.stdin.on("error", (error) => { record.error ??= error; });
+    record.closedPromise = new Promise((resolve) => child.on("close", (code, signal) => {
+      record.closed = true; record.code = code; record.signal = signal; resolve(record);
+    }));
+    return record;
+  }
+  diagnostic(record, phase) {
+    return new Error(`${phase}: ${record.error ? `${record.error.code ?? record.error.name}: ${record.error.message}` : `exit=${record.code} signal=${record.signal ?? "none"}`}\nstdout:\n${record.stdout}\nstderr:\n${record.stderr}`);
+  }
+  async waitOutput(record, text, phase, ms = 10_000) {
+    const found = () => record.stdout.includes(text);
+    if (found()) return;
+    let wake;
+    let cancelled = false;
+    const done = record.closedPromise.then(() => { throw this.diagnostic(record, `${phase}: closed before ${text}`); });
+    const output = (async () => {
+      while (!found() && !cancelled) {
+        await new Promise((resolve) => { wake = resolve; record.waiters.add(wake); });
+        record.waiters.delete(wake);
+      }
+    })();
+    try { await bounded(Promise.race([output, done]), ms, `${phase}: timed out waiting for ${text}; ${this.diagnostic(record, phase).message}`); }
+    finally { cancelled = true; if (wake) { record.waiters.delete(wake); wake(); } }
+  }
+  async waitClosed(record, phase, ms = 20_000) {
+    await bounded(record.closedPromise, ms, `${phase}: child did not close; ${this.diagnostic(record, phase).message}`);
+    if (!record.stdoutClosed || !record.stderrClosed) throw this.diagnostic(record, `${phase}: output pipes did not finalize`);
+    if (record.error || record.code !== 0 || record.signal) throw this.diagnostic(record, phase);
+    return record;
+  }
+  async run(args, phase) { return this.waitClosed(this.start(args), phase); }
+  allClosed() { return [...this.children].every(({ closed, stdoutClosed, stderrClosed }) => closed && stdoutClosed && stderrClosed); }
+  async stopOwned() {
+    const failures = [];
+    for (const record of this.children) {
+      if (record.closed) continue;
+      try {
+        record.child.kill("SIGTERM");
+        try { await bounded(record.closedPromise, 2_000, "terminate grace expired"); }
+        catch { if (!record.closed) record.child.kill("SIGKILL"); }
+        if (!record.closed) await bounded(record.closedPromise, 5_000, "owned child remained open after kill");
+        if (!record.stdoutClosed || !record.stderrClosed) throw new Error("owned child closed without finalizing output pipes");
+      } catch (error) { failures.push(error.message); }
+    }
+    return failures;
+  }
 }
 
 async function main() {
   const debugInspect = process.argv.includes("--debug-inspect");
   const sandbox = createSandbox("users-credentials");
   if (debugInspect) sandbox.env.PI_TEST_LOCK_TRACE = "1";
-  let cleaned = false;
+  const supervisor = new WorkerSupervisor(sandbox);
+  let phase = "sandbox setup";
+  let cleanupStarted = false;
   try {
+    assert.equal(fs.realpathSync.native(sandbox.root), sandbox.root, "sandbox root is canonical and newly allocated");
     const agentDir = sandbox.mkdir("profile", "agent");
     const sessionDir = sandbox.mkdir("profile", "sessions");
     sandbox.mkdir("home", ".pi", "users");
     const registryPath = path.join(sandbox.root, "home", ".pi", "users", "registry.json");
-    const setup = spawnWorker(sandbox, ["setup", sandbox.root, registryPath, agentDir, JSON.stringify({ sessionDir })]);
-    assert.equal(setup.status, 0, setup.stderr || setup.stdout);
+    phase = "setup worker";
+    await supervisor.run([SCRIPT, "--worker", "setup", sandbox.root, registryPath, agentDir, JSON.stringify({ sessionDir })], phase);
     const authPath = path.join(agentDir, "auth.json");
     const fixture = {
       openai: { type: "oauth", access: "SYNTHETIC_A_OR_B_TOKEN", refresh: "SYNTHETIC_REFRESH", expires: 4_000_000_000_000, extra: { keep: true } },
@@ -487,58 +586,56 @@ async function main() {
     };
     fs.writeFileSync(authPath, JSON.stringify(fixture, null, 2));
     const before = fs.readFileSync(authPath, "utf8");
-    const inspect = spawnWorker(sandbox, ["inspect", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
-    if (debugInspect) process.stderr.write(`INSPECT_TRACE error=${inspect.error?.code ?? "none"} signal=${inspect.signal ?? "none"}\n${inspect.stderr}`);
-    assert.equal(inspect.status, 0, inspect.stderr || inspect.stdout);
+    phase = "inspect/public SDK";
+    const inspect = supervisor.start([SCRIPT, "--worker", "inspect", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
+    await supervisor.waitClosed(inspect, phase);
     assert.equal(fs.readFileSync(authPath, "utf8"), before, "read/list/public getAuth must preserve original auth bytes");
-    if (debugInspect) return;
-    for (const mode of ["undefined", "throw", "legacy"]) {
-      const result = spawnWorker(sandbox, [mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
-      assert.equal(result.status, 0, result.stderr || result.stdout);
-    }
-    const holdArgs = [SCRIPT, "--worker", "hold", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)];
-    const holder = spawn(process.execPath, holdArgs, { cwd: sandbox.root, env: sandbox.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    await new Promise((resolve, reject) => {
-      let output = "";
-      const timeout = setTimeout(() => reject(new Error("lock holder did not become active")), 10_000);
-      holder.stdout.on("data", (chunk) => {
-        output += chunk;
-        if (output.includes("LOCK_HELD")) { clearTimeout(timeout); resolve(); }
-      });
-      holder.once("error", (error) => { clearTimeout(timeout); reject(error); });
-    });
-    const holderDone = new Promise((resolve, reject) => holder.once("close", (code) => code === 0 ? resolve() : reject(new Error(`holder exited ${code}`))));
-    const contender = spawn(process.execPath, [SCRIPT, "--worker", "contend", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)], { cwd: sandbox.root, env: sandbox.env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    let contenderError = ""; contender.stderr.on("data", (chunk) => { contenderError += chunk; });
-    const contenderDone = new Promise((resolve, reject) => contender.once("close", (code) => code === 0 ? resolve() : reject(new Error(contenderError || `contender exited ${code}`))));
-    await bounded(new Promise((resolve) => contender.stdout.on("data", (chunk) => { if (String(chunk).includes("LOCK_WAIT")) resolve(); })));
-    assert.equal(JSON.parse(fs.readFileSync(authPath)).other.key, fixture.other.key);
-    holder.stdin.end("release\n");
-    await Promise.all([holderDone, contenderDone]);
-    const final = JSON.parse(fs.readFileSync(authPath, "utf8"));
-    assert.equal(final.openai.access, "SERIALIZED");
-    assert.equal(final.other.key, "CROSS_PROCESS_OTHER");
-    assert.deepEqual(final.openai.extra, { keep: true });
-    assert.deepEqual(final.unrelated, fixture.unrelated);
-    for (const mode of ["boundaries", "integration"]) {
+    if (!debugInspect) {
+      for (const mode of ["undefined", "throw", "legacy"]) { phase = `${mode} worker`; await supervisor.run([SCRIPT, "--worker", mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)], phase); }
+      // Legacy cases intentionally replace the synthetic file with independent records.
+      // Start the lock scenario from its own fixture, as boundary/integration cases do.
       fs.writeFileSync(authPath, JSON.stringify(fixture));
-      const result = spawnWorker(sandbox, [mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
-      assert.equal(result.status, 0, result.stderr || result.stdout);
-      console.log(result.stdout.trim());
+      phase = "native/app lock contention";
+      const holder = supervisor.start([SCRIPT, "--worker", "hold", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
+      await supervisor.waitOutput(holder, "LOCK_HELD", "lock holder ready");
+      const contender = supervisor.start([SCRIPT, "--worker", "contend", sandbox.root, registryPath, agentDir, JSON.stringify(fixture)]);
+      await supervisor.waitOutput(contender, "LOCK_WAIT", "cross-process lock contention");
+      assert.equal(JSON.parse(fs.readFileSync(authPath)).other.key, fixture.other.key);
+      holder.child.stdin.end("release\n");
+      await Promise.all([supervisor.waitClosed(holder, "lock holder"), supervisor.waitClosed(contender, "lock contender")]);
+      const final = JSON.parse(fs.readFileSync(authPath, "utf8"));
+      assert.equal(final.openai.access, "SERIALIZED");
+      assert.equal(final.other.key, "CROSS_PROCESS_OTHER");
+      assert.deepEqual(final.openai.extra, { keep: true });
+      assert.deepEqual(final.unrelated, fixture.unrelated);
+      for (const mode of ["boundaries", "integration"]) {
+        phase = `${mode} worker`;
+        fs.writeFileSync(authPath, JSON.stringify(fixture));
+        const result = await supervisor.run([SCRIPT, "--worker", mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)], mode);
+        console.log(result.stdout.trim());
+      }
+      const blankDir = sandbox.mkdir("profile", "blank-agent");
+      const blankSession = sandbox.mkdir("profile", "blank-sessions");
+      const blankRegistry = path.join(sandbox.root, "home", ".pi", "users", "blank-registry.json");
+      phase = "blank profile setup";
+      await supervisor.run([SCRIPT, "--worker", "setup-blank", sandbox.root, blankRegistry, blankDir, JSON.stringify({ sessionDir: blankSession })], phase);
+      phase = "missing auth file";
+      await supervisor.run([SCRIPT, "--worker", "missing", sandbox.root, blankRegistry, blankDir, "{}"], phase);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(blankDir, "auth.json"), "utf8")).openai.key, "SYNTHETIC_MISSING_FILE");
     }
-    const blankDir = sandbox.mkdir("profile", "blank-agent");
-    const blankSession = sandbox.mkdir("profile", "blank-sessions");
-    const blankRegistry = path.join(sandbox.root, "home", ".pi", "users", "blank-registry.json");
-    const blankSetup = spawnWorker(sandbox, ["setup-blank", sandbox.root, blankRegistry, blankDir, JSON.stringify({ sessionDir: blankSession })]);
-    assert.equal(blankSetup.status, 0, blankSetup.stderr || blankSetup.stdout);
-    const missing = spawnWorker(sandbox, ["missing", sandbox.root, blankRegistry, blankDir, "{}"]);
-    assert.equal(missing.status, 0, missing.stderr || missing.stdout);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(blankDir, "auth.json"), "utf8")).openai.key, "SYNTHETIC_MISSING_FILE");
-  } finally {
-    cleaned = sandbox.cleanup();
+    phase = "worker close verification";
+    assert.equal(supervisor.allClosed(), true, "every run-owned worker and output pipe closes before cleanup");
+    phase = "run-owned sandbox cleanup";
+    cleanupStarted = true;
+    assert.equal(sandbox.cleanup(), true, "cleanup removes only the fresh canonical run root");
+    console.log("Selected-file credential store smoke passed; synthetic fixture cleaned.");
+  } catch (primary) {
+    const termination = await supervisor.stopOwned();
+    process.stderr.write(`PRIMARY_FAILURE phase=${phase}\n${primary.stack ?? primary.message}\n`);
+    if (termination.length) process.stderr.write(`OWNED_CHILD_FINALIZATION_FAILURE\n${termination.join("\n")}\n`);
+    process.stderr.write(cleanupStarted ? `SANDBOX_CLEANUP_OUTCOME_UNCERTAIN ${sandbox.root}\n` : `SANDBOX_PRESERVED ${sandbox.root}\n`);
+    throw primary;
   }
-  assert.equal(cleaned, true);
-  console.log("Selected-file credential store smoke passed; synthetic fixture cleaned.");
 }
 
 if (process.argv[2] === "--worker") {
