@@ -26,7 +26,7 @@ function one(source, anchor, replacement, label) {
   if (first < 0 || source.indexOf(anchor, first + anchor.length) !== -1) fail(`anchor mismatch: ${label}`);
   return source.slice(0, first) + replacement + source.slice(first + anchor.length);
 }
-const CODEC_SOURCE = `export function normalizeAlibabaAuthRecords(records, now = Date.now()) {
+export function normalizeAlibabaAuthRecords(records, now = Date.now()) {
   const auth = records && typeof records === "object" && !Array.isArray(records) ? { ...records } : {};
   const isPlanKey = (key) => typeof key === "string" && (key.startsWith("sk-sp-") || key.startsWith("sk-tok-"));
   const extractKey = (entry) => entry && typeof entry === "object" ? (entry.key || entry.access || undefined) : undefined;
@@ -58,7 +58,8 @@ const CODEC_SOURCE = `export function normalizeAlibabaAuthRecords(records, now =
     delete auth["alibaba-cloud"];
   }
   return auth;
-}`;
+}
+const CODEC_SOURCE = `export ${normalizeAlibabaAuthRecords.toString()}`;
 
 function adapt(source) {
   let output = source;
