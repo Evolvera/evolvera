@@ -1,9 +1,10 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { assertOwnedWorkspace } from "./ownership.mjs";
 import { canonicalize, UsersError } from "./registry.mjs";
-import { admitUserResources } from "./resources.mjs";
+import { admitUserResources, validateAdmittedResourceInventory } from "./resources.mjs";
 
 const fail = (code, message) => { throw new UsersError(code, message); };
 const FIELDS = ["extensions", "skills", "prompts", "themes"];
@@ -132,11 +133,29 @@ const PUBLIC_MUTATORS = [
   "setShowHardwareCursor", "setEditorPaddingX", "setOutputPad", "setAutocompleteMaxVisible", "setMermaidRenderingMode", "setWarnings",
 ];
 
-function project(scope, method, profile, cwd) {
+function snapshotResourceRequest(request = {}) {
+  if (!request || typeof request !== "object" || Array.isArray(request)) fail("RESOURCE_REQUEST_INVALID", "resource request must be an object");
+  const cliPaths = {};
+  for (const field of FIELDS) {
+    const values = request.cliPaths?.[field];
+    if (values !== undefined && !Array.isArray(values)) fail("RESOURCE_REQUEST_INVALID", "request-bound resource paths must be arrays");
+    cliPaths[field] = Object.freeze(values ? [...values] : []);
+  }
+  if (request.contextPaths !== undefined && !Array.isArray(request.contextPaths)) fail("RESOURCE_REQUEST_INVALID", "request-bound context paths must be an array");
+  if (request.homeDir !== undefined && (typeof request.homeDir !== "string" || !path.isAbsolute(request.homeDir))) fail("RESOURCE_REQUEST_INVALID", "request home directory must be absolute");
+  return Object.freeze({
+    cliPaths: Object.freeze(cliPaths),
+    contextPaths: Object.freeze(request.contextPaths ? [...request.contextPaths] : []),
+    homeDir: request.homeDir ?? os.homedir(),
+  });
+}
+
+function project(scope, method, profile, cwd, requestInputs) {
   assertSelectedPaths(profile, cwd);
   const raw = method();
   if (raw === undefined) return raw;
-  const request = scope === "project" ? { cwd, projectSettings: raw } : { cwd, settings: raw };
+  const request = scope === "project" ? { cwd, projectSettings: raw, requestInputs } : { cwd, settings: raw, requestInputs };
+  validateAdmittedResourceInventory(profile, { ...request, settings: scope === "project" ? undefined : raw, projectSettings: scope === "project" ? raw : undefined });
   const admitted = admitUserResources(profile, request);
   return scope === "project" ? admitted.projectSettings : admitted.settings;
 }
@@ -152,6 +171,7 @@ export function createAdmittedSettingsManager(sdkExports, profileContext, option
   }
   const cwd = options.cwd;
   assertSelectedPaths(profileContext, cwd);
+  const requestInputs = snapshotResourceRequest(options.resourceRequest);
   const manager = SettingsManager.fromStorage(createSelectedStorage(profileContext, cwd), options.settingsOptions ?? {});
   if (!manager || typeof manager.getSettings !== "function" || typeof manager.getGlobalSettings !== "function" || typeof manager.getProjectSettings !== "function" || typeof manager.reload !== "function" || typeof manager.drainErrors !== "function") {
     fail("SETTINGS_API_INCOMPATIBLE", "public SettingsManager methods are incomplete");
@@ -161,14 +181,22 @@ export function createAdmittedSettingsManager(sdkExports, profileContext, option
   const originalGlobal = manager.getGlobalSettings.bind(manager);
   const originalProject = manager.getProjectSettings.bind(manager);
   const originalEffective = manager.getSettings.bind(manager);
-  manager.getGlobalSettings = () => project("global", originalGlobal, profileContext, cwd);
-  manager.getProjectSettings = () => project("project", originalProject, profileContext, cwd);
+  const validateCurrentInventory = () => {
+    assertSelectedPaths(profileContext, cwd);
+    validateAdmittedResourceInventory(profileContext, {
+      cwd, settings: originalGlobal(), projectSettings: originalProject(), requestInputs,
+    });
+  };
+  validateCurrentInventory();
+  manager.getGlobalSettings = () => project("global", originalGlobal, profileContext, cwd, requestInputs);
+  manager.getProjectSettings = () => project("project", originalProject, profileContext, cwd, requestInputs);
   manager.getSettings = () => {
     assertSelectedPaths(profileContext, cwd);
     const globalRaw = originalGlobal();
     const projectRaw = originalProject();
     const effective = originalEffective();
-    const admitted = admitUserResources(profileContext, { cwd, settings: globalRaw, projectSettings: projectRaw });
+    validateAdmittedResourceInventory(profileContext, { cwd, settings: globalRaw, projectSettings: projectRaw, requestInputs });
+    const admitted = admitUserResources(profileContext, { cwd, settings: globalRaw, projectSettings: projectRaw, requestInputs });
     for (const field of [...FIELDS, "packages"]) {
       effective[field] = Object.hasOwn(projectRaw, field) ? admitted.projectSettings[field] : admitted.settings[field];
     }
@@ -180,6 +208,7 @@ export function createAdmittedSettingsManager(sdkExports, profileContext, option
     assertSelectedPaths(profileContext, cwd);
     const result = await originalReload(...args);
     checkNativeErrors(manager);
+    validateCurrentInventory();
     return result;
   };
 
