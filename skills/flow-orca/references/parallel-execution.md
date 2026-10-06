@@ -26,11 +26,10 @@ This is serialization with visible intent and recheck, **not** atomic mutual exc
 
 ## 2. Executor identity and capacity
 
-Every concurrent worker gets a unique, stable identifier for the life of its issue. Merely inspecting or recommending work does not create one. The coordinator creates it automatically when admitting a **new** issue unless an approved ID already exists:
+Every concurrent worker gets a unique, stable identifier for the life of its issue. Merely inspecting or recommending work does not create one. The coordinator derives a fresh one **per new issue** at admission; it never carries the coordinator shell's previous `FLOW_EXECUTOR_ID` into the next row. Reuse an ID only for that exact owned, already-existing issue, taken from its own claim marker:
 
 ```bash
-FLOW_EXECUTOR_ID=${FLOW_EXECUTOR_ID:-"pi-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)"}
-export FLOW_EXECUTOR_ID
+export FLOW_EXECUTOR_ID="pi-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)"
 ```
 
 If `openssl` is unavailable, generate an equivalently random 6-hex suffix with an available local primitive; never pause merely to ask the user to name the executor.
@@ -50,7 +49,7 @@ Bounded aliases such as `pi-01`, `pi-02` are valid when one coordinator controls
 
 ## 3. Full workspace inventory
 
-Run during every full re-entry, before admitting new work, before a new claim, after a worker failure/handoff, and before any settlement decision. After compaction or lost chat context, use the main skill's **Phase 6.0.1** to discover the existing Run and its full Task specs before inspecting Dispatches; never create replacements because IDs were forgotten. Preserve the ownership gate before binding, then reconcile pending questions/results and exact Delivery acknowledgement before new admission. Use only read-only Orca commands from the guide loaded in the preflight:
+Run during every full re-entry, before admitting new work, before a new claim, after a worker failure/handoff, and before any settlement decision. Inside one uninterrupted coordinator session, a **same-session campaign delta refresh** may replace the full baseline for the next admission, only under the preconditions below. After compaction or lost chat context, use the main skill's **Phase 6.0.1** to discover the existing Run and its full Task specs before inspecting Dispatches; never create replacements because IDs were forgotten. Preserve the ownership gate before binding, then reconcile pending questions/results and exact Delivery acknowledgement before new admission. Use only read-only Orca commands from the guide loaded in the preflight:
 
 ```text
 ORCA worktree ps --json
@@ -62,6 +61,8 @@ ORCA orchestration worker-show --dispatch <id> --json
 `worktree` and `terminal` are top-level; every orchestration subcommand runs under the `orchestration` namespace.
 
 For the coordinator's canonical checkout, also collect `git status --short`, `git branch --show-current`, and `git rev-parse HEAD`. The canonical checkout coordinates, integrates, and publishes; it is never a worker workspace.
+
+**Same-session delta refresh (preconditions, all required):** a full baseline reconciliation already completed in this session; no compaction, lost context, new chat, handoff, or anomaly since; same grant, repositories, bases, and coordinator. Each admission still needs current campaign-wide occupancy evidence — Project statuses (truncation-checked), every active claim and PR, remote branch inventory with SHAs, and reachable Orca workers — and must re-read changed rows, the candidate's current body and claims, its transitive dependency gates, and every active WIP contract for collision. A known contract may be reused only after comparing the identity and body from the current remote read (a batched query is allowed) with the baseline; `updated_at` alone never proves unchanged content. Unknown or new rows reconcile. Closed-issue histories and unrelated modules need not be re-read per candidate. A new unexplained branch/claim/conflict or an incomplete inventory falls back to full re-entry; compaction, new chat, handoff, or anomaly always requires the full one.
 
 Build an in-memory table:
 
@@ -111,6 +112,7 @@ A candidate may be admitted only when **all** conditions pass:
 - every dependency declared in the issue body is satisfied remotely, read as a fully qualified issue URL plus its gate — for the default gate, upstream work is merged into **the chosen base** with its issue closed. A missing URL, a missing gate, an unreachable dependency, or a contradiction between grant, body, and Project Status blocks that candidate for bounded reconciliation instead of admitting it;
 - no assignee, claim marker, branch, PR, or workspace already claims the issue;
 - `FLOW_EXECUTOR_ID` is unique and has no active WIP;
+- occupancy evidence is current for this admission (a full re-entry or a valid same-session delta from section 3, never carried over from an earlier admission);
 - the candidate's write scope, exclusive resources, and validation scope are grounded **in its issue body**, not inferred;
 - the candidate does not collide with any active/admitted node;
 - the Orca preflight succeeded and the workspace's repository, base, and setup policy are known and authorized;
@@ -142,12 +144,15 @@ Only rows marked `ADMIT` may proceed. Blocking one row never authorizes changing
 
 ## 6. Serial admission, workspace creation, and dispatch
 
-The coordinator admits **serially**, even when implementation runs in parallel. For each admitted issue, in this order:
+This is the **single detailed dispatch protocol**; the main skill's 7.2 keeps only compact stages and the GitHub claim example and requires loading this section even for one issue. The coordinator admits **serially**, even when implementation runs in parallel. Prepare the candidates together from the current section 5 matrix, then finish one row's dispatch before creating the next independent ready row; do not wait for the first worker to complete. A blocked row may let unaffected ready rows proceed only under the existing safety/isolation gates. Creation, preparation, and dispatch are one uninterrupted bounded unit: once a PI is open, the coordinator's next actions are that row's steps below, or an explicit block that preserves the row — no unrelated scouting, board reanalysis, opening another PI, or a user-facing "progress" reply as the end of the turn while the row is unassigned and actionable. A previously opened, still-unassigned PI of this campaign is finished first; reuse it only after exact ownership proof (issue, repository, actual branch, base, claim, no dispatch) and never duplicate it or interrupt an active or unrelated PI.
 
-1. re-read its Project item, issue, claims, PRs, remote branches, and workspaces;
-2. resolve the authenticated GitHub user with `gh api user -q .login`, assign the issue to that exact user, and re-read that it is the sole assignee; only then post the claim marker and set Project `In progress`. A different or multiple assignee blocks admission; never remove another assignee automatically;
-3. inspect and authorize the setup policy and default terminals **before** creating anything — they can mutate state even with `--setup skip`, and the wait-for-setup policy is preserved;
-4. create the workspace with the documented form, using the base approved for that repository:
+For each admitted issue, in this order:
+
+1. **Finish the bounded handoff in memory** before creating anything: issue acceptance criteria, scope, resources, validation, NOT TO DO, and grant. After the create only the runtime-derived identity fields (workspace ID, actual branch, terminal handle, SHA) are added. No Task is created before this point;
+2. re-read its Project item, issue, claims, PRs, remote branches, and workspaces;
+3. derive a fresh `FLOW_EXECUTOR_ID` for this new issue (section 2), resolve the authenticated GitHub user with `gh api user -q .login`, assign the issue to that exact user, and re-read that it is the sole assignee; only then post the claim marker and set Project `In progress`. A different or multiple assignee blocks admission; never remove another assignee automatically;
+4. inspect and authorize the setup policy and default terminals **before** creating anything — they can mutate state even with `--setup skip`, and the wait-for-setup policy is preserved;
+5. create the workspace with the documented form, using the base approved for that repository (no work prompt until the claim, model, and mode gates pass):
 
 ```text
 ORCA worktree create --repo <selector> --name <name> --issue <N> \
@@ -155,19 +160,24 @@ ORCA worktree create --repo <selector> --name <name> --issue <N> \
   --setup <policy> --json
 ```
 
-5. read the **actual** workspace ID, branch, and PI terminal handle from the response — never compute the branch from `--name`, and never invent a branch-name or attach flag, which the interface does not document;
-6. complete the claim with the actual branch and, when useful, `worktree set --worktree <id> --issue <N> --workspace-status in-progress --json`;
-7. verify postconditions: single assignee, coherent marker, unique actual branch at the base SHA, no conflicting PR/claim, Project `In progress` re-read, workspace linked to the issue, exactly one PI terminal;
-8. prepare and verify the mandatory issue-worker base model in that newly created PI terminal before creating a Task or dispatch: wait for `tui-idle`, read `ORCA terminal read --terminal <exact handle> --limit <n> --json` and save its actual `nextCursor`; with no work prompt yet, send `ORCA terminal send --terminal <exact handle> --text "/quit" --enter --json`, wait for the actual shell prompt, then send `ORCA terminal send --terminal <exact handle> --text "pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium" --enter --json`. Wait for `tui-idle` and read only output newer than that cursor. Accept only fresh PI UI/output showing `openai-codex/gpt-6.1-sol` with `medium`; command echo, stale output, global settings inference, or exit 0 are not proof. Failure, timeout, missing indication, or mismatch blocks dispatch, preserves workspace/terminal, never falls back, never sends `--model`/`--effort` to Orca, and never reconfigures an active unrelated worker. This is only the issue-worker base model: do not alter planner/plan-heavy internal routing.
-9. pin and verify the grant mode in that same prepared PI terminal before creating a Task or dispatch: save the `nextCursor` from the prior read, send `ORCA terminal send --terminal <exact handle> --text "/execution-mode <canonical grant mode> session" --enter --json`, wait for `tui-idle` again, then read only new output with that cursor. Accept only the fresh exact `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` receipt; command echo, stale output, agent prose, and exit 0 are not proof. Missing receipt, error, timeout, or unsupported extension blocks that dispatch, preserves workspace/terminal, never falls back to dispatch, and never changes global/project settings. Record both model and mode receipts in existing issue progress/Task handoff, not a local control artifact. Repeat both checks before subsequent dispatch on a settled owned PI during reuse/resume; never interrupt or reconfigure an active unrelated worker.
-10. only then create the attempt record for **this** issue and dispatch into that exact terminal:
+6. read the **actual** workspace ID, branch, and PI terminal handle from the response — never compute the branch from `--name`, and never invent a branch-name or attach flag, which the interface does not document. For the handle prefer `agentTerminalHandle`, with `startupTerminal.handle` as compatibility; if it is missing or stale, resolve it with `ORCA terminal list --worktree <exact workspace> --json`, confirming agent and ownership, and use only the confirmed handle — never send to both, and never open another terminal to recover a lost handle;
+7. complete the claim with the actual branch and, when useful, `worktree set --worktree <id> --issue <N> --workspace-status in-progress --json`, then verify postconditions: single assignee, coherent marker, unique actual branch at the base SHA, no conflicting PR/claim, Project `In progress` re-read, workspace linked to the issue, exactly one PI terminal;
+8. **Prepare and verify the issue-worker base model** in that PI terminal before creating a Task or dispatch. Wait for `tui-idle` with `ORCA terminal wait --terminal <exact handle> --for tui-idle --timeout-ms <n> --json`, read the fresh initial UI with `ORCA terminal read --terminal <exact handle> --limit <n> --json`, and save its actual `nextCursor`.
+   - If that fresh UI already shows `openai-codex/gpt-6.1-sol` with `medium`, skip `/quit` and the restart.
+   - If the indication is missing from the first read, one bounded fresh verification read is allowed; never infer the model from command echo, stale output, global settings, or exit 0.
+   - On mismatch, or if the model cannot be established, and only when this is a newly created or settled owned PI with **no task injected**: send `ORCA terminal send --terminal <exact handle> --text "/quit" --enter --json`, prove the actual shell prompt, send `ORCA terminal send --terminal <exact handle> --text "pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium" --enter --json`, wait for `tui-idle`, and read only output newer than the saved cursor. Accept only fresh PI UI/output showing `openai-codex/gpt-6.1-sol` with `medium`.
+   - Failure, timeout, missing indication, or mismatch blocks dispatch and preserves workspace/terminal; never fall back, never send `--model`/`--effort` to Orca, and never reconfigure an active or unrelated PI. This is only the issue-worker base model: do not alter planner/plan-heavy internal routing;
+9. **Always pin and verify the grant mode** in that same PI terminal before creating a Task or dispatch, whether or not the model restart was skipped: save the `nextCursor` from the prior read, send `ORCA terminal send --terminal <exact handle> --text "/execution-mode <canonical grant mode> session" --enter --json`, wait for `tui-idle` again, then read only new output with that cursor. Accept only the fresh exact `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` receipt; command echo, stale output, agent prose, and exit 0 are not proof. Missing receipt, error, timeout, or unsupported extension blocks that dispatch, preserves workspace/terminal, never falls back to dispatch, and never changes global/project settings. Record both model and mode receipts in existing issue progress/Task handoff, not a local control artifact. Repeat both checks before subsequent dispatch on a settled owned PI during reuse/resume; never interrupt or reconfigure an active unrelated worker;
+10. re-read the issue immediately before dispatch, then create the attempt record for **this** issue and dispatch into that exact existing terminal:
 
 ```text
 ORCA orchestration task-create --spec "<derived self-contained handoff snapshot>" --run <id> --json
 ORCA orchestration worker-start --task <id> --terminal <exact handle> --run <id> --json
 ```
 
-Run/Task/Dispatch are Orca's required runtime supervision records, not a second backlog. Create one Task **only at admission**, for the issue being admitted; reference its exact issue URL and the timestamp of the remote read that authorized admission, and carry a handoff snapshot derived at that moment. The snapshot is a derived copy with no authority over acceptance criteria, scope, dependencies, or status; re-read the issue immediately before dispatch, and treat a material change as invalidating the stale snapshot. Never precreate Tasks for the whole board, never mirror the backlog into Tasks, and never use Orca `--deps` to model GitHub issue dependencies: the coordinator checks those scheduling gates against remote evidence, and a successful worker Task never means `Done` or a satisfied dependency. PI engineering plans and transient readiness artifacts inside a single issue workspace remain allowed and are not delivery-control state.
+11. **Verify the dispatch** with `orchestration dispatch-show`, `orchestration worker-show`, and `orchestration worker-read`: the real Task/Dispatch identity and the ready/injection/live proof must be read before reporting `worker active`. A `worker-start` error or unknown result freezes lifecycle mutation: read the receipt's `stage`, `effects`, and `residualResources`, then reconcile the existing workspace, terminal, and dispatch (`worktree ps`, `terminal list`, `dispatch-show`) **before** any further lifecycle call. No blind retry, no new workspace, no direct-prompt or alternative-dispatch fallback, no lowered gates; this protocol does not assert a cause for any past start failure.
+
+Run/Task/Dispatch are Orca's required runtime supervision records, not a second backlog. Create one Task **only at admission**, for the issue being admitted; reference its exact issue URL and the timestamp of the remote read that authorized admission, and carry a handoff snapshot derived at that moment. The snapshot is a derived copy with no authority over acceptance criteria, scope, dependencies, or status; treat a material change at the pre-dispatch re-read as invalidating the stale snapshot. Never precreate Tasks for the whole board, never mirror the backlog into Tasks, and never use Orca `--deps` to model GitHub issue dependencies: the coordinator checks those scheduling gates against remote evidence, and a successful worker Task never means `Done` or a satisfied dependency. PI engineering plans and transient readiness artifacts inside a single issue workspace remain allowed and are not delivery-control state.
 
 `worker-start`'s new-agent path accepts `--base-branch` but not `--issue`; when issue linkage must exist before dispatch, adopt the prepared terminal instead. `--model`/`--effort` apply to Claude/Codex/Cursor and not to PI: keep PI's defaults and never change agent or model configuration to fit a flag. Never open a second agent terminal for the same issue.
 

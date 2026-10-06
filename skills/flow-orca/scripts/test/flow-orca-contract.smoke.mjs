@@ -231,24 +231,25 @@ has(SKILL, /Inspecione e autorize política de setup e terminais default \*\*ant
 has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effect free");
 has(SKILL, /worker-start --task <id> --terminal <handle exato> --run <id> --json/, "dispatch must adopt the exact prepared terminal");
 has(SKILL, /`worker-start` aceita `--base-branch`, mas \*\*não\*\* aceita `--issue`/, "worker-start must not be given --issue");
-has(SKILL, /Prepare e verifique o modelo-base no terminal PI recém-criado/, "new PI workers must verify the base model before dispatch");
-has(SKILL, /pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium/, "issue workers must restart to Sol/medium before dispatch");
-has(SKILL, /openai-codex\/gpt-6.1-sol` com `medium`/, "fresh PI output must verify Sol/medium");
-has(SKILL, /nunca envie `--model`\/`--effort` ao Orca/, "model flags remain forbidden on Orca");
-has(SKILL, /não altera as rotas de planner\/plan-heavy internos/, "worker base model must not alter planner routing");
+has(REFERENCE, /Prepare and verify the issue-worker base model\*\* in that PI terminal before creating a Task or dispatch/, "reference must verify the base model before dispatch");
+has(REFERENCE, /pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium/, "issue workers must restart to Sol/medium only through the reference protocol");
+lacks(SKILL, /pi --continue --provider openai-codex/, "the main skill must not carry a second restart command protocol");
+has(SKILL, /openai-codex\/gpt-6.1-sol` com `medium`/, "main skill must still require Sol/medium before the Task");
+has(REFERENCE, /never send `--model`\/`--effort` to Orca/, "model flags remain forbidden on Orca");
+has(SKILL, /sem `--model`\/`--effort` ao Orca/, "main skill must keep model flags off Orca");
 has(SKILL, /gh api user -q \.login/, "admission must resolve the authenticated GitHub user");
 has(SKILL, /gh issue edit <N> --add-assignee "\$EXECUTOR"/, "admission must assign the logged-in user");
 has(SKILL, /FLOW_ASSIGNEE_MISMATCH/, "admission must prove the assignee before progressing");
 has(SKILL, /nunca remova outro assignee automaticamente/, "admission must not remove an existing owner");
 has(REFERENCE, /assign the issue to that exact user, and re-read that it is the sole assignee/, "reference must require verified logged-user assignment");
-has(SKILL, /Fixe e verifique o modo no mesmo terminal PI preparado/, "new PI workers must pin the grant mode before dispatch");
-has(SKILL, /terminal wait --terminal <handle exato> --for tui-idle --timeout-ms/, "mode pin must wait for tui-idle");
-has(SKILL, /terminal read --terminal <handle exato> --limit <n> --json/, "initial mode read must not invent a cursor");
-has(SKILL, /salve o `nextCursor` real/, "mode pin must retain the returned cursor");
-has(SKILL, /terminal send --terminal <handle exato> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter/, "mode pin must use the native terminal send");
-has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispatch requires the exact session receipt");
-has(SKILL, /saída stale, prosa do agente ou exit 0 não são prova/, "stale output and exit status must not prove the pin");
-has(SKILL, /nunca faça fallback para dispatch nem altere settings global\/project/, "pin failure must block without fallback or global mutation");
+has(REFERENCE, /\*\*Always pin and verify the grant mode\*\* in that same PI terminal/, "new PI workers must always pin the grant mode before dispatch");
+has(REFERENCE, /terminal wait --terminal <exact handle> --for tui-idle --timeout-ms/, "mode pin must wait for tui-idle");
+has(REFERENCE, /terminal read --terminal <exact handle> --limit <n> --json/, "initial read must not invent a cursor");
+has(REFERENCE, /save its actual `nextCursor`/, "model/mode proof must retain the returned cursor");
+has(REFERENCE, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispatch requires the exact session receipt");
+has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "main skill must require the exact session receipt before the Task");
+has(REFERENCE, /command echo, stale output, agent prose, and exit 0 are not proof/, "stale output and exit status must not prove the pin");
+has(REFERENCE, /never falls back to dispatch, and never changes global\/project settings/, "pin failure must block without fallback or global mutation");
 has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium[^\n]*--enter --json/, "reference must start issue workers with Sol/medium");
 has(REFERENCE, /do not alter planner\/plan-heavy internal routing/, "reference must preserve planner routing");
 has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*execution-mode <canonical grant mode> session[^\n]*--enter --json/, "reference must use the native mode pin command");
@@ -268,11 +269,12 @@ has(SKILL, /`completed` é desfecho de tentativa, nunca prova de merge/, "task c
 // Native Orca operational context; no extra delivery state or live commands.
 has(SKILL, /ORCA skills get --help/, "guide detail lookup must follow installed CLI support");
 has(SKILL, /ORCA skills get orchestration --full/, "full native guide remains available for detail");
-has(SKILL, /`agentTerminalHandle`.*`startupTerminal.handle`/, "handle lookup must use the native response fields");
-has(SKILL, /nunca envie aos dois/, "stale handle recovery must not dual-send");
+has(REFERENCE, /`agentTerminalHandle`, with `startupTerminal.handle` as compatibility/, "handle lookup must use the native response fields");
+has(REFERENCE, /never send to both/, "stale handle recovery must not dual-send");
 has(SKILL, /`source_changed`.*sem o cursor antigo/, "changed output source must reset the read cursor");
 has(SKILL, /orchestration ask --resume <message_id> --timeout-ms <n> --json/, "pending asks must resume by existing identity");
 has(SKILL, /`stage`, `effects` e `residualResources`/, "partial starts must inspect native effect receipts");
+has(REFERENCE, /`stage`, `effects`, and `residualResources`/, "reference must inspect native effect receipts");
 has(REFERENCE, /Resume a pending ask by its existing message ID/, "concurrent monitoring must avoid duplicate questions");
 
 // ── 6. Single-coordinator admission and scheduling ──────────────────────────
@@ -291,6 +293,74 @@ has(SKILL, /Writer bloqueado ou de estado desconhecido, mas ainda vivo, \*\*mant
 has(SKILL, /Um único writer por issue e por workspace|Um writer por issue\/workspace|1 writer por issue\/workspace/, "one writer per issue workspace");
 has(SKILL, /Sem aninhar campanhas dentro de workers/, "no campaign nesting inside workers");
 has(REFERENCE, /never to bypass Orca nesting guards or to substitute for an issue dispatch/, "internal PI roles must not replace issue dispatch");
+
+// ── 6b. Admission-to-dispatch efficiency ────────────────────────────────────
+// Intake is separate from approved execution.
+has(SKILL, /\*\*Escopo desta fase:\*\* é \*intake\*[^\n]*não pré-requisito de cada issue já contratada/, "Phase 1 module scouting must be intake, not per contracted issue");
+has(SKILL, /DoR\/escopo ausente continua bloqueando o dispatch — nunca terceirize descoberta vaga ao agente/, "missing DoR must still block dispatch");
+has(SKILL, /descoberta de implementação dentro de um escopo de issue já estabelecido pertence ao PI atribuído/, "implementation discovery inside an established scope belongs to the assigned PI");
+has(SKILL, /continue aprovado usa Phase 6\/7, não novo ciclo de scout\/proposta\/intake/i, "approved continue must not restart intake");
+// Same-session delta: positive preconditions and mandatory fallbacks.
+has(SKILL, /\*\*Delta de campanha \(mesma sessão ininterrupta, candidata diferente\):\*\* só quando \*\*todas\*\* as precondições valem: o re-entry completo \(baseline\) já foi concluído nesta sessão; não houve compactação, perda de contexto, chat novo, handoff nem anomalia desde então; grant, repositório\(s\), base\(s\) e coordenador são os mesmos/, "delta refresh must require every precondition");
+has(SKILL, /Status dos itens do Project[^\n]*claims ativos e PRs[^\n]*branches remotas com SHAs[^\n]*workers Orca alcançáveis/, "each delta admission needs current campaign-wide occupancy evidence");
+has(SKILL, /contrato de \*\*todo\*\* WIP ativo para colisão/, "delta must recheck every active WIP contract");
+has(SKILL, /comparar a identidade e o body obtidos na leitura remota atual[^\n]*baseline; `updated_at` sozinho não prova conteúdo igual\. Linha nova ou desconhecida é reconciliada/, "contract reuse requires a current body comparison, never a timestamp alone");
+has(REFERENCE, /identity and body from the current remote read[^\n]*baseline; `updated_at` alone never proves unchanged content/, "reference must require current body comparison before reuse");
+has(SKILL, /Não é exigido reler o histórico de issues fechadas nem todos os módulos/, "delta must not reread closed histories or all modules");
+has(SKILL, /Branch\/claim\/conflito novo e inexplicado, ou inventário incompleto[^\n]*volta ao re-entry completo/, "new conflicts or incomplete inventory must fall back to full re-entry");
+has(SKILL, /Compactação, chat novo, handoff e anomalia exigem o completo — nunca o delta/, "compaction/new chat/handoff/anomaly must always be full");
+lacks(SKILL, /Re-entry de campanha nunca usa fast path/, "the unconditional full-reentry-per-candidate wording must be gone");
+lacks(SKILL, /Rodar \*\*re-entry completo\*\* \(Phase 6\): fetch\/prune/, "Phase 9 must not prescribe unconditional full re-entry");
+lacks(SKILL, /^1\. Confirmar repo\/Project, executar re-entry completo e preflight Orca$/m, "Quick start B must not prescribe unconditional full re-entry");
+has(SKILL, /Quick start|## Quick start/, "quick start must remain");
+has(SKILL, /Campanha já aprovada: vá direto às Phases 6\/7, sem repetir scout\/proposta\/intake/, "opening route must distinguish approved execution from intake");
+has(SKILL, /chat novo nunca usa delta nem o fast path de issue única/, "cold-start quick start must not offer the same-session shortcut");
+has(SKILL, /delta de campanha de 6\.0 na mesma sessão ininterrupta com baseline/, "Quick start B must use the 6.0 selector");
+has(REFERENCE, /\*\*Same-session delta refresh \(preconditions, all required\):\*\* a full baseline reconciliation already completed in this session; no compaction, lost context, new chat, handoff, or anomaly since; same grant, repositories, bases, and coordinator/, "reference section 3 must carry the delta preconditions");
+has(REFERENCE, /compaction, new chat, handoff, or anomaly always requires the full one/, "reference must keep full re-entry mandatory after interruption");
+has(REFERENCE, /A new unexplained branch\/claim\/conflict or an incomplete inventory falls back to full re-entry/, "reference must fall back on new conflict/incomplete inventory");
+has(REFERENCE, /occupancy evidence is current for this admission/, "admission gate must require current occupancy evidence");
+// One detailed dispatch protocol, owned by reference section 6.
+has(SKILL, /\*\*Protocolo detalhado único: `references\/parallel-execution\.md`, seção 6\.\*\* Carregue-a antes de qualquer admissão\/dispatch, mesmo de uma só issue/, "main 7.2 must link the single detailed protocol even for one issue");
+has(SKILL, /seção 6 de `references\/parallel-execution\.md` é obrigatória/, "Phase 7 intro must require reference section 6 for any dispatch");
+has(REFERENCE, /single detailed dispatch protocol/, "reference section 6 must own the detailed protocol");
+lacks(SKILL, /terminal wait --terminal|terminal read --terminal|terminal send --terminal/, "the main skill must not duplicate terminal commands");
+lacks(SKILL, /^\d+\. \*\*(?:Prepare e verifique|Fixe e verifique)/m, "the main skill must not keep the long numbered model/mode steps");
+// Unique executor per new issue; claim proof must be able to read EXECUTOR.
+has(SKILL, /export EXECUTOR=\$\(gh api user -q \.login\)/, "EXECUTOR must be exported so jq env.EXECUTOR works");
+has(SKILL, /export FLOW_EXECUTOR_ID="pi-\$\(date -u/, "claim example must derive a fresh executor ID");
+lacks(SKILL, /FLOW_EXECUTOR_ID:-/, "the main skill must not carry a prior executor ID into the next issue");
+lacks(REFERENCE, /FLOW_EXECUTOR_ID:-/, "the reference must not carry a prior executor ID into the next issue");
+has(REFERENCE, /derives a fresh one \*\*per new issue\*\*[^\n]*never carries the coordinator shell's previous `FLOW_EXECUTOR_ID`/, "executor derivation must be per new issue");
+has(REFERENCE, /Reuse an ID only for that exact owned, already-existing issue/, "executor reuse must be limited to the exact owned issue");
+// Handoff in memory, no early Task, uninterrupted unit, no idle-before-next-create.
+has(REFERENCE, /\*\*Finish the bounded handoff in memory\*\* before creating anything[^\n]*NOT TO DO[^\n]*grant[^\n]*No Task is created before this point/, "handoff must be finished in memory before workspace creation");
+has(SKILL, /\*\*Handoff em memória primeiro\.\*\*[^\n]*NOT TO DO[^\n]*Sem Task pré-criada/, "main skill must keep the compact handoff-first stage");
+has(REFERENCE, /one uninterrupted bounded unit: once a PI is open[^\n]*no unrelated scouting, board reanalysis, opening another PI, or a user-facing "progress" reply as the end of the turn while the row is unassigned and actionable/, "an opened PI must be dispatched or explicitly blocked before anything else");
+has(SKILL, /nenhum scouting alheio, nenhuma reanálise do board, nenhum outro PI aberto e nenhuma resposta de “progresso” como fim de turno/, "main skill must forbid idling an unassigned PI");
+has(REFERENCE, /finish one row's dispatch before creating the next independent ready row; do not wait for the first worker to complete/, "serial admission with parallel implementation must not wait for completion");
+has(REFERENCE, /A blocked row may let unaffected ready rows proceed only under the existing safety\/isolation gates/, "a blocked row must not freeze safe independent rows");
+has(REFERENCE, /reuse it only after exact ownership proof[^\n]*never duplicate it or interrupt an active or unrelated PI/, "reuse of an unassigned PI requires exact ownership proof");
+has(SKILL, /\*\*Prioridade de ações do coordenador:\*\* \(1\) tratar pergunta\/resultado pendente[^\n]*\(2\) terminar primeiro um PI aberto ainda sem atribuição[^\n]*\(3\) despachar candidatas independentes seguras[^\n]*\(4\) só então observação limitada/, "action priorities must be explicit and ordered");
+has(SKILL, /Sem timer fixo de polling/, "priorities must not add a polling timer");
+// Model: skip restart when the fresh UI already proves it; restart only for an uninjected owned PI.
+has(REFERENCE, /If that fresh UI already shows `openai-codex\/gpt-6\.1-sol` with `medium`, skip `\/quit` and the restart/, "an already-correct fresh model must skip the restart");
+has(REFERENCE, /one bounded fresh verification read is allowed; never infer the model from command echo, stale output, global settings, or exit 0/, "missing indication allows only a fresh verification read");
+has(REFERENCE, /only when this is a newly created or settled owned PI with \*\*no task injected\*\*/, "restart must be limited to an uninjected owned PI");
+// Mode pin is mandatory even when the model restart was skipped.
+has(REFERENCE, /whether or not the model restart was skipped/, "mode pin must remain mandatory when the restart is skipped");
+// worker-start proof and unknown-start freeze.
+has(REFERENCE, /the real Task\/Dispatch identity and the ready\/injection\/live proof must be read before reporting `worker active`/, "worker active needs real dispatch proof");
+has(REFERENCE, /error or unknown result freezes lifecycle mutation[^\n]*reconcile the existing workspace, terminal, and dispatch[^\n]*\*\*before\*\* any further lifecycle call/, "unknown start must freeze lifecycle mutation until reconciled");
+has(REFERENCE, /No blind retry, no new workspace, no direct-prompt or alternative-dispatch fallback, no lowered gates/, "unknown start must not retry, duplicate, fall back, or lower gates");
+has(REFERENCE, /does not assert a cause for any past start failure/, "the protocol must not claim a cause for the earlier failure");
+has(SKILL, /\*\*`worker-start` com falha ou resultado desconhecido\*\* congela o ciclo de vida[^\n]*antes\*\* de qualquer nova mutação — sem retry cego, sem nova workspace, sem prompt direto como fallback e sem baixar gates/, "main skill must keep the unknown-start freeze");
+lacks(SKILL, /orchestration dispatch\b[^\n]*--inject|worker-start[^\n]*--inject/, "no second active dispatch mechanism");
+lacks(REFERENCE, /orchestration dispatch\b[^\n]*--inject|worker-start[^\n]*--inject/, "no second active dispatch mechanism");
+// Anti-patterns are captured explicitly.
+has(SKILL, /Deixar um PI aberto sem atribuição enquanto faz scout repetido/, "anti-pattern: unassigned PI left idle");
+has(SKILL, /Herdar o `FLOW_EXECUTOR_ID` do shell para a próxima issue/, "anti-pattern: inherited executor ID");
+has(SKILL, /Reiniciar o PI quando a UI fresca já prova/, "anti-pattern: needless model restart");
 
 // ── 7. Project status contract ──────────────────────────────────────────────
 has(SKILL, /`Backlog`, `Ready`, `In progress`, `In review`, `Blocked`, `Done`/, "the six Project statuses must be exact");
