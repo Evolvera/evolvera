@@ -7,14 +7,14 @@ description: "Transform a backlog into an approved GitHub Project that owns issu
 
 Skill operacional única de entrega por issue. Transforma uma lista grande de implementação em issues de um GitHub Project, prioriza/estima, e entrega como **campanha aprovada** na qual o **Orca** cria um workspace, uma branch real e uma sessão PI por issue.
 
-**Regra de ouro:** esta skill quase sempre roda em **projeto existente** (não greenfield). Antes de perguntar ou criar issues, **entenda o repo com scouts por módulo**. Depois proponha, tire dúvidas, e só avance com aprovação explícita — no intake da campanha ou a cada passo, conforme o modo escolhido.
+**Regra de ouro:** esta skill quase sempre roda em **projeto existente** (não greenfield). Backlog novo: **entenda o repo com scouts por módulo**, proponha e obtenha aprovação no intake. Campanha já aprovada: vá direto às Phases 6/7, sem repetir scout/proposta/intake; prepare o handoff antes de abrir o PI e termine seu dispatch antes de abrir outro. Preserve os gates do modo e de segurança.
 
 ```txt
 Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá para rodar junto?” / só `/skill:flow-orca`)
   → Educar se faltar contexto (não inventar backlog)
   → Permission gate GitHub + preflight Orca (executável resolvido, os dois guias live, `status --json`)
   → Ler o kanban atual (Project + issues + PRs) e inventariar workspaces/terminais Orca já existentes
-  → Scout do projeto por módulos (evidence-first)
+  → Backlog novo: scout por módulos + proposta/intake; campanha aprovada: direto às Phases 6/7
   → Draft de backlog + candidatos a epic/área + dúvidas abertas
   → REVIEW GATE: usuário aprova (Project + issues + hierarquia)
   → INTAKE DA CAMPANHA: base branch POR REPOSITÓRIO + o modo resolvido (SUPERVISIONADO | AUTÔNOMO | YOLO; default AUTÔNOMO) + limites
@@ -210,7 +210,7 @@ Apresente o checklist de acesso no chat; quando já existir uma issue afetada ac
 
 ## Phase 1 — Entender o projeto (scouts por módulo) **ANTES** de perguntar
 
-> Projetos reais não são greenfield. **Proibido** montar backlog sério ou questionário gordo sem mapear o código.
+> Projetos reais não são greenfield. **Proibido** montar backlog sério ou questionário gordo sem mapear o código. **Escopo desta fase:** é *intake* (backlog novo ou uma fronteira específica ainda não resolvida), não pré-requisito de cada issue já contratada: continue/execução aprovada segue Phase 6/7 e não abre novo ciclo de scout de módulo/proposta/intake.
 
 ### 1.1 Shape rápido (orquestrador, sem agent se for barato)
 
@@ -223,7 +223,7 @@ Identifique stack, entrypoints, pastas top-level.
 
 ### 1.2 Scouts por módulo (obrigatório se >3 arquivos de entendimento)
 
-Carregue `agent-guide` + `scout`. Prefira **vários scouts paralelos e estreitos** por módulo/ângulo:
+Carregue `agent-guide` + `scout`. O coordenador aprende apenas fatos que mudam decisão (escopo, dependência, hazard, autoridade); descoberta de implementação dentro de um escopo de issue já estabelecido pertence ao PI atribuído, mas DoR/escopo ausente continua bloqueando o dispatch — nunca terceirize descoberta vaga ao agente. Prefira **vários scouts paralelos e estreitos** por módulo/ângulo:
 
 | Scout | Pergunta típica |
 |-------|-----------------|
@@ -620,13 +620,15 @@ As fontes 5 e 6 são dicas somente-leitura sem autoridade nenhuma. O re-entry pr
 
 Conflito é reconciliado entre as fontes, nunca apagado pela primeira que parece conveniente. Uma leitura nova invalida fatos antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente. Workspace Orca ausente neste host não libera claim remoto: o trabalho pode estar em outro host.
 
-### 6.0 Re-entry remoto: fast path vs completo
+### 6.0 Re-entry remoto: completo, fast path e delta de campanha
 
 Após compactação ou perda de contexto, use re-entry completo: o resumo do chat é uma pista, nunca inventário atual nem prova de autoridade. Persistência não é sincronização automática.
 
-**Fast path (mesma sessão, uma issue):** se o coordenador já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a workspace/terminal Orca atribuídos**. Se tudo confere, prossiga. Qualquer pedido de concorrência, cálculo de nova candidata, divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo. Re-entry de campanha nunca usa fast path.
+**Fast path (mesma sessão, mesma issue WIP):** se o coordenador já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a workspace/terminal Orca atribuídos**. Se tudo confere, prossiga. Divergência, troca de issue, chat novo, handoff ou anomalia saem do fast path.
 
-**Re-entry completo** — execute nesta ordem no início de um chat novo, antes de puxar issue diferente, e após anomalia/handoff:
+**Delta de campanha (mesma sessão ininterrupta, candidata diferente):** só quando **todas** as precondições valem: o re-entry completo (baseline) já foi concluído nesta sessão; não houve compactação, perda de contexto, chat novo, handoff nem anomalia desde então; grant, repositório(s), base(s) e coordenador são os mesmos. Cada admissão ainda exige evidência **atual** de ocupação de toda a campanha: Status dos itens do Project (com a checagem de truncamento), todos os claims ativos e PRs, inventário de branches remotas com SHAs (`git fetch --prune origin` + `git ls-remote --heads origin`) e workers Orca alcançáveis (`worktree ps`, `terminal list` e dispatches dos ativos). Releia as linhas que mudaram desde o baseline, o body/claims da candidata atual, os gates das dependências transitivas e o contrato de **todo** WIP ativo para colisão. Um contrato conhecido só é reutilizado após comparar a identidade e o body obtidos na leitura remota atual (podem vir de uma consulta em lote) com o baseline; `updated_at` sozinho não prova conteúdo igual. Linha nova ou desconhecida é reconciliada. Não é exigido reler o histórico de issues fechadas nem todos os módulos a cada candidata. Branch/claim/conflito novo e inexplicado, ou inventário incompleto (truncado, inalcançável, ambíguo), volta ao re-entry completo. Compactação, chat novo, handoff e anomalia exigem o completo — nunca o delta.
+
+**Re-entry completo** — execute nesta ordem no início de um chat novo, após compactação/perda de contexto, handoff ou anomalia, sempre que não houver baseline válido na sessão, e quando o delta cair para ele:
 
 ```bash
 REPO_NWO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
@@ -882,7 +884,7 @@ Trate estas intenções como operação de primeira classe:
 
 Não peça resumo do chat anterior. Faça sozinho:
 
-1. resolver o repo pelo cwd/remote e rodar **re-entry completo**, nunca fast path;
+1. resolver o repo pelo cwd/remote e rodar **re-entry completo** em chat novo ou sem baseline (nunca o fast path de issue única); em sessão ininterrupta com baseline completo, aplique o delta de campanha de 6.0 antes de cada admissão;
 2. carregar `references/parallel-execution.md`;
 3. reconstruir a tabela de todos os Project items, claims, assignees, PRs, branches remotas e workspaces/terminais Orca;
 4. ler o grant de campanha no README do Project e as dependências/escopos nos bodies das issues, e **derivar o DAG em memória** — sem depender de arquivo local, sem recriar backlog e sem inventar dependência que o remoto não declara;
@@ -951,7 +953,7 @@ Workspace plan: Orca cria a branch; branch real vem da resposta
 
 ## Phase 7 — Uma issue = uma workspace Orca = uma branch real (hard rule)
 
-Toda execução de issue acontece dentro de uma workspace criada pelo Orca. O checkout canônico é do coordenador: ele coordena, integra e publica, e **nunca** é workspace de worker. Para mais de uma issue simultânea, o protocolo completo de `references/parallel-execution.md` é obrigatório.
+Toda execução de issue acontece dentro de uma workspace criada pelo Orca. O checkout canônico é do coordenador: ele coordena, integra e publica, e **nunca** é workspace de worker. Para qualquer admissão/dispatch — inclusive uma única issue — a seção 6 de `references/parallel-execution.md` é obrigatória; para mais de uma issue simultânea, o protocolo completo dessa referência.
 
 ### 7.0 Contrato de interface Orca
 
@@ -966,7 +968,7 @@ Todos os comandos de orquestração (`run-create`, `run-use`, `task-create`, `wo
 | Workspace + branch + terminal PI | `worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --no-parent --agent pi --setup <policy> --json` | Cria a branch e o primeiro terminal PI. **Não existe** flag documentada de nome de branch nem de attach em branch existente: não invente. `--no-parent` controla linhagem de sidebar, não a base Git. Leia da resposta o ID do workspace, a **branch real** e o handle do terminal; nunca derive branch do `--name` |
 | Preparar antes de injetar | `worktree create` com `--agent pi` e **sem** prompt de trabalho | Permite preparar o PI e conferir claim/setup/status antes de qualquer edição. Inspecione e autorize política de setup e terminais default **antes** do create: eles podem mutar estado mesmo com `--setup skip`. Preserve a política de wait-for-setup |
 | Metadados do workspace | `worktree set --worktree <id exato> --issue <N> --workspace-status <id> --comment ... --json` | Status conhecidos: `todo`, `in-progress`, `in-review`, `completed`. `Blocked` **não** é status Orca conhecido: sem mapeamento descoberto, mantenha o status atual e adicione comentário de bloqueio; o `Blocked` vive no GitHub Project |
-| Dispatch para o PI preparado | `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json` | Adote o terminal PI exato retornado pelo create. O caminho de agente novo do `worker-start` aceita `--base-branch`, mas **não** aceita `--issue`: quando a ligação com a issue precisa existir antes do dispatch, use `worktree create` + adoção do terminal exato. `--model`/`--effort` valem para Claude/Codex/Cursor e **não** para PI: nunca os passe ao Orca. Antes do primeiro dispatch, reinicie apenas esse PI preparado no modelo-base obrigatório `openai-codex/gpt-6.1-sol` com `medium`, pela sequência verificada de 7.2; planner/plan-heavy internos mantêm suas próprias rotas. Nunca crie um segundo terminal de agente para a mesma issue |
+| Dispatch para o PI preparado | `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json` | Adote o terminal PI exato retornado pelo create. O caminho de agente novo do `worker-start` aceita `--base-branch`, mas **não** aceita `--issue`: quando a ligação com a issue precisa existir antes do dispatch, use `worktree create` + adoção do terminal exato. `--model`/`--effort` valem para Claude/Codex/Cursor e **não** para PI: nunca os passe ao Orca. Antes do primeiro dispatch, prove no PI preparado o modelo-base obrigatório `openai-codex/gpt-6.1-sol` com `medium` (reiniciando apenas quando a UI fresca não o prova), pela sequência da seção 6 da referência; planner/plan-heavy internos mantêm suas próprias rotas. Nunca crie um segundo terminal de agente para a mesma issue |
 | Verificação | `orchestration dispatch-show --task <id>`, `orchestration worker-show --dispatch <id>`, `orchestration worker-read --dispatch <id>` | Fonte de verdade do que foi injetado e do que voltou |
 | Espera limitada | `orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json` | Devolve um lote FIFO limitado: processe **todos** os itens e faça ack do Delivery exato. Timeout/idle não é falha, conclusão nem vaga livre |
 | Comunicação | `orchestration send --to dispatch:<id>` para orientação; `orchestration ask`/`orchestration reply` para perguntas | Sem `--from` impersonado, sem broadcast de ciclo de vida, sem gravar capability em GitHub/cache |
@@ -1008,14 +1010,17 @@ Handoff exige evidência explícita no GitHub (assignee/marker atualizado e come
 
 ### 7.2 Admissão, workspace e dispatch como transições verificadas
 
-O coordenador admite **em série**, mesmo quando a implementação vai correr em paralelo. GitHub e Orca não oferecem transação única nem claim atômico entre máquinas: o que existe é intenção visível + releitura antes do dispatch. Para cada issue admitida:
+O coordenador admite **em série**, mesmo quando a implementação vai correr em paralelo. GitHub e Orca não oferecem transação única nem claim atômico entre máquinas: o que existe é intenção visível + releitura antes do dispatch.
 
-1. **Recheque** imediatamente antes: Project item, issue, claim markers, PRs, branch remota e workspaces/terminais.
-2. **Publique a intenção no GitHub**: resolva o usuário autenticado por `gh api user -q .login`, atribua a issue a ele e prove que ele é o único assignee antes de marker de claim e `In progress`. Assignee existente diferente ou múltiplos assignees bloqueiam a admissão; nunca remova outro assignee automaticamente. Em seguida, releia:
+**Protocolo detalhado único: `references/parallel-execution.md`, seção 6.** Carregue-a antes de qualquer admissão/dispatch, mesmo de uma só issue; ela é o único dono dos comandos de create, terminal, modelo, modo, Task, `worker-start` e recuperação. Esta seção traz apenas os estágios e o claim — não mantenha um segundo protocolo aqui.
+
+1. **Handoff em memória primeiro.** Antes de criar a workspace, feche o handoff limitado (ACs, escopo, recursos, validação, NOT TO DO, grant); depois do create só entram os campos derivados do runtime (ID do workspace, branch real, handle do terminal, SHA). Sem Task pré-criada.
+2. **Recheque e publique a intenção no GitHub** (esta seção é a dona do exemplo): resolva o usuário autenticado por `gh api user -q .login`, atribua a issue a ele e prove que ele é o único assignee antes de marker de claim e `In progress`. Assignee existente diferente ou múltiplos assignees bloqueiam a admissão; nunca remova outro assignee automaticamente. O `FLOW_EXECUTOR_ID` é derivado **por issue nova** (nunca herdado do shell do coordenador para a próxima linha); reuse um ID só para aquela exata issue própria já existente, vindo do marker dela. Em seguida, releia:
 
 ```bash
-EXECUTOR=$(gh api user -q .login)
-FLOW_EXECUTOR_ID=${FLOW_EXECUTOR_ID:-primary}
+export EXECUTOR=$(gh api user -q .login)
+# Issue nova: ID único e fresco. Issue própria existente: use o ID do marker dela.
+export FLOW_EXECUTOR_ID="pi-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)"
 BASE="<base aprovada para este repositório>"
 BASE_SHA=$(git rev-parse "origin/$BASE")
 
@@ -1034,15 +1039,12 @@ gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
 flow_project_items   # releia: o item precisa mostrar In progress
 ```
 
-3. **Autorize setup e terminais default**, depois crie a workspace com `worktree create ... --issue <N> --base-branch "$BASE" --no-parent --agent pi --setup <policy> --json`.
-4. **Leia a resposta real**: ID do workspace, branch criada, handle do terminal PI. Para o handle, prefira `agentTerminalHandle`, com `startupTerminal.handle` como compatibilidade. Se faltar ou ficar stale, resolva por `ORCA terminal list --worktree <workspace exata> --json`, conferindo agente e ownership; use somente o handle confirmado, nunca envie aos dois. Não crie outro terminal para resolver um handle perdido. Complete o claim com a branch real (novo comentário/marker) e, quando útil, `worktree set --worktree <id> --issue <N> --workspace-status in-progress`.
-5. **Verifique as pós-condições** antes de injetar trabalho: assignee único, marker coerente, branch real única no SHA da base, nenhum PR/claim conflitante, Project `In progress` relido, workspace ligada à issue e um único terminal PI.
-6. **Prepare e verifique o modelo-base no terminal PI recém-criado, antes de criar a Task ou fazer `worker-start`**. Espere `tui-idle` com `ORCA terminal wait --terminal <handle exato> --for tui-idle --timeout-ms <n> --json`; sem prompt de trabalho injetado, leia `ORCA terminal read --terminal <handle exato> --limit <n> --json` e salve o `nextCursor` real. Envie `ORCA terminal send --terminal <handle exato> --text "/quit" --enter --json`; espere o prompt de shell real, então envie `ORCA terminal send --terminal <handle exato> --text "pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium" --enter --json`. Espere `tui-idle` e leia apenas a saída nova desde o cursor salvo. Aceite somente a indicação nova e exata de `openai-codex/gpt-6.1-sol` com `medium` na UI/saída do PI; echo do comando, saída stale, inferência pela configuração global ou exit 0 não são prova. Falha, timeout, saída ausente ou modelo/esforço divergente bloqueiam aquele dispatch e preservam workspace/terminal: nunca faça fallback, nunca envie `--model`/`--effort` ao Orca, e nunca reconfigure worker ativo não relacionado. Esta preparação é exclusiva do PI de issue; não altera as rotas de planner/plan-heavy internos.
-7. **Fixe e verifique o modo no mesmo terminal PI preparado, antes de criar a Task ou fazer `worker-start`**. Salve o `nextCursor` da leitura anterior e envie o pin nativo `ORCA terminal send --terminal <handle exato> --text "/execution-mode <canonical grant mode> session" --enter --json`; espere `tui-idle` novamente e leia apenas a saída nova com `--cursor <cursor anterior>`. Aceite somente o receipt exato e novo `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}`. Echo do comando, saída stale, prosa do agente ou exit 0 não são prova. Sem receipt esperado, erro, timeout ou extensão indisponível, bloqueie o dispatch afetado e preserve workspace/terminal: nunca faça fallback para dispatch nem altere settings global/project. Registre os receipts de modelo e modo no progresso existente da issue/Task handoff, não em artefato local de controle. Em reuso/resume, repita essas provas antes de cada dispatch subsequente no PI próprio assentado; não interrompa nem reconfigure worker ativo não relacionado.
-8. **Só então** crie a Task de tentativa daquela issue (`orchestration task-create`, referenciando a URL da issue e o timestamp da leitura) e injete: `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json`, confirmando com `orchestration dispatch-show`/`orchestration worker-show`.
-9. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. A tabela de reconciliação continua em memória.
+3. **Autorize setup e terminais default, crie a workspace e leia a resposta real** (comando e campos exatos na referência, seção 6).
+4. **Unidade ininterrupta.** Criação, preparação e dispatch são uma só unidade limitada. Aberto o PI, as próximas ações do coordenador são exclusivamente desta linha: pós-condições → modelo-base `openai-codex/gpt-6.1-sol` com `medium` provado na UI fresca → receipt de sessão `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` → releitura da issue → Task → `worker-start` → verificação do dispatch vivo; ou bloqueio explícito que preserve a linha. Enquanto a linha estiver sem atribuição e acionável: nenhum scouting alheio, nenhuma reanálise do board, nenhum outro PI aberto e nenhuma resposta de “progresso” como fim de turno. Ambos os receipts são obrigatórios antes da Task; sem eles, bloqueie o dispatch afetado, preserve workspace/terminal, sem fallback e sem `--model`/`--effort` ao Orca.
+5. **`worker-start` com falha ou resultado desconhecido** congela o ciclo de vida: leia `stage`, `effects` e `residualResources` e reconcilie workspace/terminal/dispatch existentes **antes** de qualquer nova mutação — sem retry cego, sem nova workspace, sem prompt direto como fallback e sem baixar gates.
+6. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. Diga `worker active` somente após ler o dispatch vivo. A tabela de reconciliação continua em memória.
 
-O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se qualquer passo falhar: **pare aquela linha**, releia tudo e complete apenas a parte ausente quando a propriedade continuar inequívoca; caso contrário registre `partial-claim` com branch, assignees, status, SHA e erro exatos. Não faça “rollback” apagando branch, workspace ou terminal, e não sobrescreva trabalho do usuário.
+O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se qualquer passo falhar: **pare aquela linha**, releia tudo e complete apenas a parte ausente quando a propriedade continuar inequívoca; caso contrário registre `partial-claim` com branch, assignees, status, SHA e erro exatos. Não faça “rollback” apagando branch, workspace ou terminal, e não sobrescreva trabalho do usuário. Uma linha bloqueada só libera linhas independentes sob os gates de segurança/isolamento já existentes.
 
 ### 7.3 Scheduler contínuo
 
@@ -1051,6 +1053,7 @@ O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se 
 - Uma vaga só volta quando aquele writer **assentou com segurança**: resultado lido, PR/estado registrado, transição de Project relida e terminal liberado (`worker-release` em terminal settled) ou explicitamente retido com justificativa. Timeout, idle, silêncio, `check` vazio ou terminal quieto **não** liberam vaga.
 - Writer bloqueado ou de estado desconhecido, mas ainda vivo, **mantém** sua vaga até assentamento seguro.
 - Issues com bloqueio externo não ocupam vaga: vão para `Blocked` com a ação do usuário registrada, junto com seus dependentes, e a fila segue com trabalho independente.
+- **Prioridade de ações do coordenador:** (1) tratar pergunta/resultado pendente (6.0.1, `check`); (2) terminar primeiro um PI aberto ainda sem atribuição; (3) despachar candidatas independentes seguras — prepare-as em conjunto a partir da matriz atual, mas termine o dispatch de uma antes de criar a próxima, sem esperar a conclusão do primeiro worker; (4) só então observação limitada ou trabalho independente útil. Sem timer fixo de polling nem mecanismo novo; idle nunca prova atividade nem permissão.
 - Sem aninhar campanhas dentro de workers e sem contornar as guardas de nesting do Orca. Papéis internos do PI (planner/builder/QA) podem ser usados **dentro** da issue, com escopo delimitado, mas nunca para substituir um dispatch de issue nem para criar workers extras fora do teto.
 
 ### 7.4 Durante o trabalho: worker PI, monitoramento e incidentes
@@ -1188,7 +1191,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 
 1. `cd` / confirmar repo X (path ou `owner/name`)
 2. Permission gate leve (`gh issue list` ok?) + preflight Orca quando houver execução
-3. Rodar **re-entry completo** (Phase 6): fetch/prune, Project, issues, claim markers, PRs all-state, branches remotas e workspaces/terminais Orca
+3. Rodar **re-entry completo** (Phase 6) em chat novo, após compactação/handoff/anomalia ou sem baseline: fetch/prune, Project, issues, claim markers, PRs all-state, branches remotas e workspaces/terminais Orca; na mesma sessão ininterrupta com baseline, o delta de campanha de 6.0 substitui o refazer total para a próxima candidata. Continue aprovado usa Phase 6/7, não novo ciclo de scout/proposta/intake
 4. Classificar/reparar ou reportar anomalias; preservar todo WIP existente e calcular somente candidatas independentes para as vagas livres
 5. Derivar o DAG e a tabela de reconciliação em memória a partir do grant no README, dos bodies e do board; histórico local opcional entra por último e só como dica, e sua ausência nunca recria backlog nem bloqueia o resume
 6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA/workspace e próximas admissões
@@ -1202,6 +1205,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 - Ler cache/chat antes do remoto e tratá-lo como verdade
 - Recriar backlog porque `.pi/flow`/`.pi/memory` sumiu
 - Perguntar de novo base/modo já aprovados quando os fatos não mudaram
+- Abrir novo ciclo de scout de módulo/proposta/intake para issue já contratada; ou terceirizar ao PI uma descoberta que o DoR deveria ter fechado
 - Admitir issue do backlog sem DoR, com bloqueio externo aberto ou já reclamada por outro executor
 - Trabalhar em branch aleatória ou no checkout canônico do coordenador
 - Avançar cards sem verificar pós-condições, reler o Project e registrar a evidência no GitHub
@@ -1296,6 +1300,9 @@ Pare / eduque / pergunte quando:
 - Criar uma segunda branch/serviço de reserva para simular o esquema antigo de exclusão mútua
 - Esquecer de atualizar **e reler** Project/label quando cria workspace/PR ou registra bloqueio
 - Injetar trabalho antes de claim + workspace + status terem pós-condições verificadas
+- Deixar um PI aberto sem atribuição enquanto faz scout repetido, reanálise do board, abre outro PI ou encerra o turno com resposta de “progresso”
+- Herdar o `FLOW_EXECUTOR_ID` do shell para a próxima issue; ou tentar de novo `worker-start` com erro/desconhecido sem reconciliar `stage`/`effects`/`residualResources`
+- Reiniciar o PI quando a UI fresca já prova `openai-codex/gpt-6.1-sol` com `medium`, ou dar o modelo/modo por provado por echo de comando/settings
 - Dar ao worker o checkout canônico, outra workspace ou autoridade GitHub/cleanup não declarada
 - Assumir que workspace presente significa processo vivo, que timeout significa falha, ou que ausência local significa claim livre
 - Rodar concorrência só porque paths parecem diferentes, ignorando contratos, generators, lockfiles, migrations e recursos de validação
@@ -1322,7 +1329,7 @@ Pare / eduque / pergunte quando:
 8. Registrar bloqueios externos e começar a agendar conforme o modo
 
 ### B) Continuar projeto / board
-1. Confirmar repo/Project, executar re-entry completo e preflight Orca
+1. Confirmar repo/Project e preflight Orca; re-entry completo em chat novo/sem baseline (delta de campanha de 6.0 na mesma sessão ininterrupta com baseline); continue aprovado vai direto a Phase 6/7
 2. Reconciliar Project + issues/claims/PRs + branches remotas + workspaces/terminais, e derivar o DAG em memória do grant e dos bodies
 3. Retomar WIP existente e preencher vagas livres com nós executáveis da camada mais antiga
 4. Aprovação conforme o modo registrado (sem repetir grant inalterado)
@@ -1331,7 +1338,7 @@ Pare / eduque / pergunte quando:
 7. Assentar com segurança (terminal liberado ou retido, workspace preservada), registrar o desfecho no GitHub e liberar a vaga
 
 ### C) Chat novo → descobrir trabalho concorrente sem contexto repetido
-1. Resolver repo pelo cwd e rodar re-entry completo
+1. Resolver repo pelo cwd e rodar re-entry completo: chat novo nunca usa delta nem o fast path de issue única
 2. Ler `references/parallel-execution.md` e inventariar board, claims, PRs, branches e workspaces/terminais
 3. Reconciliar DAG/dependências e construir matriz de colisão com todo WIP
 4. Recomendar as melhores candidatas `ADMIT` dentro das vagas, ou dizer que nada é seguro em concorrência
