@@ -83,6 +83,7 @@ what the interaction makes the user believe without changing the design system.
 - Dominant: [pattern or "none — restrained baseline"] + mapped existing zone
 - Accent 1 / Accent 2 (optional): pattern + mapped existing zone + confined role
 Never more than one dominant and two accents.
+State each chosen mechanic with its `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` term name (Scroll Behavior, Motion & Transitions, Typography) alongside its creative-catalog slug, e.g. Parallax → `parallax-depth`; creative-catalog/toolkit process is unchanged.
 
 ## 5. Mapped Intervention Table
 | Existing page/section/component | Design anchor | Pattern | Purpose class (orientation | continuity | state feedback | emphasis | narrative) | User/brand purpose | Additive behavior | Protected behavior preserved |

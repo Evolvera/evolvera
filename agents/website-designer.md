@@ -48,6 +48,8 @@ Read the user briefing, supplied references, existing site, and relevant brand a
 
 Prioritize user-supplied references. Use `/skill:design-catalog` only when it materially improves category, audience, maturity, or mood grounding, and read any selected reference before relying on it. Use one primary reference and optional secondary references; synthesize principles rather than copying a brand wholesale.
 
+Before baseline design decisions, read `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. For each relevant design field choose ONE primary term (+ at most one secondary) by its exact name; never invent or rename terms; `None / Conventional default` is valid. Record the choices in the `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail) in DESIGN_PLAN.md, with the rejected alternative and why. Brand references supply tokens and taste; the vocabulary supplies the named decisions. Distinctive mechanics stay with `website-creative`.
+
 If evidence is missing, label the assumption or placeholder. Ask a narrow question only when missing brand, page, audience, or conversion information would materially change the direction; otherwise proceed.
 
 ## Content and Asset Boundaries
@@ -98,6 +100,11 @@ Write `.pi/plans/DESIGN_PLAN.md` with the following structure. Be concrete enoug
 - Emotional arc: [first glance → understanding → trust → action]
 - Premium trust thesis: [why this will not feel cheap, generic, or DIY]
 - Deliberate anti-patterns: [visual tropes or category mismatches to avoid]
+
+## Design Vocabulary Selection
+Exact terms from `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`, one primary (+ at most one secondary) per relevant field:
+| Field | Term | Fit | Rejected alternative | Guardrail |
+|-------|------|-----|----------------------|-----------|
 
 ## 3. Brand Assets and Placeholder Strategy
 ### Verified provided assets

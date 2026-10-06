@@ -54,7 +54,7 @@ Modify only:
 1. **Single website output file**: create/modify only `.pi/previews/<slug>/index.html` for the website itself. Screenshot artifacts under `.pi/previews/<slug>/screenshots/` are allowed only for validation.
 2. **No project setup**: no Next.js, React, Tailwind build, shadcn, package.json, node_modules, config files, or build step.
 3. **Self-contained HTML**: include `<!doctype html>`, `<html lang>`, full `<head>`, metadata, semantic `<body>`, one inline `<style>`, and inline JS only if useful.
-4. **Use the artifacts**: design comes from `HOME_DESIGN_OPTIONS.md`/`HOME_PLAN.md`; copy comes from `HOME_CONTENT_PLAN.md`.
+4. **Use the artifacts**: design comes from `HOME_DESIGN_OPTIONS.md`/`HOME_PLAN.md`; copy comes from `HOME_CONTENT_PLAN.md`. When the task or plan names Design Vocabulary terms (e.g. a `## Design Vocabulary Selection` table), implement each term's defined behavior and guardrail exactly; if a term is unclear, read its row in `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. Never substitute a different pattern silently — report any deviation.
 5. **No fake claims**: never present unsupported metrics, awards, testimonials, certifications, prices, guarantees, or legal claims as facts. Keep preview placeholders clearly labeled.
 6. **Premium quality**: the page must look like a polished modern Home Page, not a wireframe.
 7. **Accessibility**: semantic landmarks, sane heading order, keyboard focus, contrast, touch targets, alt/aria text, and reduced-motion support.

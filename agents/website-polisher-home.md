@@ -31,6 +31,7 @@ Audit one preview directory only:
 - `.pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md`
 - `.pi/previews/<slug>/screenshots/portrait.png`
 - `.pi/previews/<slug>/screenshots/landscape.png`
+- `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` and HOME_PLAN.md's `## Design Vocabulary Selection`: audit against the selected terms, report mismatches as "term X specified, Y implemented", and propose fixes using vocabulary term names.
 
 Write only:
 

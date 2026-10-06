@@ -36,6 +36,7 @@ The artifact must give the planner enough design direction to choose and impleme
 - If details are missing, make tasteful, labeled assumptions.
 - Block only if there is no usable business/project context at all.
 - Use the design catalog when useful; prefer concrete real-world references over generic adjectives.
+- Before design decisions, read `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. Choose ONE primary term (+ at most one secondary) per relevant field by exact name; never invent or rename terms. Each option carries its own `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail).
 - Design only one Home Page, not a full site.
 - Do not write code.
 - Do not write final implementation tasks; `website-home-planner` owns the builder handoff.
@@ -121,6 +122,7 @@ If no assets qualify, state `No inline SVG assets authorized.` CSS/HTML-only vis
 - Mobile-first strategy: [portrait 390px — hierarchy, stacking, nav, CTA placement, touch targets]
 - Desktop/landscape strategy: [1440px — composition, grid, visual density, hero balance, CTA placement]
 - Risks/tradeoffs:
+- Design Vocabulary Selection: add a `### Design Vocabulary Selection` table under this option (Field | Term | Fit | Rejected alternative | Guardrail), exact names from `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`.
 
 ## 4. Option B — [Name]
 [Same fields]

@@ -1,6 +1,6 @@
 ---
 name: design-catalog
-description: Catalog of real-world brand design systems (Stripe, Linear, Apple, etc.) for website design reference. Use when designing or polishing websites to match premium brand aesthetics. Includes design tokens, color palettes, typography, shadows, and component patterns.
+description: Catalog of real-world brand design systems (Stripe, Linear, Apple, etc.) for website design reference. Use when designing or polishing websites to match premium brand aesthetics. Includes design tokens, color palettes, typography, shadows, and component patterns. Also owns DESIGN_VOCABULARY.md, the canonical named-term vocabulary every design field must choose from.
 ---
 
 # Design Catalog
@@ -101,6 +101,18 @@ Primary reference: Stripe (fintech, SaaS, developer tools, premium aesthetic)
 Secondary reference: Notion (warm minimalism, approachable, B2C-friendly)
 Why: Client is a B2B fintech SaaS but wants to feel approachable to small businesses — Stripe's financial confidence + Notion's warmth.
 ```
+
+## Design Vocabulary
+
+`DESIGN_VOCABULARY.md` is the canonical cross-field vocabulary of named design terms (layout, hero, sections, navigation, scroll behavior, motion, states, typography, color, surface, imagery, components, forms, data visualization, responsive, accessibility, hierarchy). Each term carries a definition, use-when, avoid-when, and guardrail.
+
+**When to read it:** always, before baseline design decisions (designers, planners) and whenever a task or plan names a term you must implement or audit (builders, polishers, validators):
+
+```
+read ~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md
+```
+
+**Division of roles:** brand references (`designs/<slug>/DESIGN.md`) supply tokens and taste; the vocabulary supplies named decisions. Choose terms by exact name, record them in a `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail), and never invent or rename a term. Mechanic-level terms map to `creative-catalog` slugs and route through `website-creative` when dominant.
 
 ## Stack Template
 
