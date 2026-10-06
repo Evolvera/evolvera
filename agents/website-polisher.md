@@ -29,6 +29,7 @@ Inspect the available evidence before making findings:
 - `.pi/plans/DESIGN_PLAN.md`, `.pi/plans/WEBSITE_BRIEF.md`, and `.pi/plans/CONTENT_PLAN.md` when present;
 - `.pi/plans/CREATIVE_DIRECTION.md` when present as the optional post-design additive addendum; read it directly and audit only its mapped mechanics against the design artifact.
 - existing screenshots, browser captures, or other render artifacts when present.
+- `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` and the `## Design Vocabulary Selection` table in DESIGN_PLAN.md when present: audit the implementation against the selected terms and report mismatches as "term X specified, Y implemented"; propose fixes using vocabulary term names.
 
 Plans are references, not prerequisites. Record missing plans as `NOT FOUND` and audit the implementation against sound defaults. Prefer the design/content plans when they clearly express approved intent, but flag conflicts and never invent missing proof, claims, copy, or assets. The optional creative addendum is subordinate to DESIGN_PLAN.md: verify each mapped intervention, purpose class, fallback, provenance, and performance guardrail without overriding design/content authority; report `DESIGN_CONFLICT` when an intervention requires a protected change.
 
