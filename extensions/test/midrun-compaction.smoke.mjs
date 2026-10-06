@@ -50,6 +50,37 @@ function fixture({ primary = true, mode = "tui", usage = { tokens: 901, contextW
 }
 
 // Real SDK integration: all provider responses are in-process faux messages and all filesystem state is a fresh mkdtemp root.
+{
+  // Post-compaction stall: resume only when the task was mid-flight and nothing ran after compaction.
+  const { isCompactionStall } = extension;
+  const u = (text = "do it") => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
+  const a = (stopReason, tool = false) => ({ type: "message", message: { role: "assistant", stopReason, content: tool ? [{ type: "toolCall" }] : [{ type: "text", text: "x" }] } });
+  const c = { type: "compaction", summary: "s" };
+  const n = { type: "custom_message", customType: "subagent-notification" };
+  assert.equal(isCompactionStall([u(), a("toolUse", true), a("length"), a("length"), c]), true, "length stall");
+  assert.equal(isCompactionStall([u(), a("toolUse", true), c, n]), true, "notification after compaction is not work");
+  assert.equal(isCompactionStall([u(), a("stop"), c]), false, "delivered final, then compaction");
+  assert.equal(isCompactionStall([u(), a("aborted"), c]), false, "user abort");
+  assert.equal(isCompactionStall([u(), a("length"), c, a("toolUse", true)]), false, "work ran after compaction");
+  assert.equal(isCompactionStall([u(), a("length"), c, u("?")]), false, "user already spoke");
+  assert.equal(isCompactionStall([a("stop"), u(), c]), false, "compaction before any work");
+  assert.equal(isCompactionStall([u(), a("length")]), false, "no compaction");
+
+  const handlers = new Map(); const sent = [];
+  let branch = [u(), a("toolUse", true), a("length"), c]; let running = false;
+  extension.registerMidrunCompaction({ on: (k, h) => handlers.set(k, h), sendMessage: async (m, o) => sent.push({ m, o }) }, { env: {}, readCompactionSettings: () => settings, getManager: () => ({ hasRunning: () => running }) });
+  const ctx = { mode: "tui", cwd: "/", model, isIdle: () => true, hasPendingMessages: () => false, getContextUsage: () => undefined, compact() {}, ui: { notify() {} }, sessionManager: { getBranch: () => branch } };
+  await handlers.get("before_agent_start")({ systemPromptOptions: { customPrompt: "# PI Coding Agent" } }, ctx);
+  await handlers.get("agent_settled")({}, ctx); assert.equal(sent.length, 0, "no real user input yet");
+  await handlers.get("input")({ source: "interactive", text: "do it" }, ctx);
+  running = true; await handlers.get("agent_settled")({}, ctx); assert.equal(sent.length, 0, "subagents running");
+  running = false; await handlers.get("agent_settled")({}, ctx);
+  assert.equal(sent.length, 1); assert.equal(sent[0].m.customType, "compaction-resume"); assert.equal(sent[0].o.triggerTurn, true);
+  await handlers.get("agent_settled")({}, ctx); assert.equal(sent.length, 1, "once per user message");
+  await handlers.get("input")({ source: "extension", text: "x" }, ctx); await handlers.get("agent_settled")({}, ctx); assert.equal(sent.length, 1, "extension input does not rearm");
+  branch = [u(), a("stop"), c]; await handlers.get("input")({ source: "interactive", text: "next" }, ctx); await handlers.get("agent_settled")({}, ctx); assert.equal(sent.length, 1, "delivered reply never resumes");
+}
+
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "midrun-compaction-agent-"));
 const previousJitiFsCache = process.env.JITI_FS_CACHE;
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
