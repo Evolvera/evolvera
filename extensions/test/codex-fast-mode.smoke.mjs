@@ -1,7 +1,8 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import { createTestSymlink } from "./lib/test-symlink.mjs";
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +10,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
 const sandbox = mkdtempSync(path.join(tmpdir(), "codex-fast-mode-smoke-"));
+const isolatedAgentDir = path.join(sandbox, "agent-config");
+const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = isolatedAgentDir;
 
 try {
   const packageRoot = resolvePiSdkRoot(import.meta.url);
@@ -86,22 +90,101 @@ try {
   await handlers.get("session_start")({ reason: "startup" }, ctx);
   const fastCommand = commandOptions.get("fast");
   let completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
   assert.match(completions[0].description, /this model has no Fast/);
   completions = await fastCommand.getArgumentCompletions("e");
-  assert.deepEqual(completions.map((item) => item.value), ["eco"]);
+  assert.deepEqual(completions.map((item) => item.value), ["eco", "eco default on", "eco default off"]);
+  completions = await fastCommand.getArgumentCompletions("eco default ");
+  assert.deepEqual(completions.map((item) => item.value), ["eco default on", "eco default off"]);
   completions = await fastCommand.getArgumentCompletions("u");
   assert.deepEqual(completions.map((item) => item.value), ["ultra", "ultra-eco"]);
 
-  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" }, "Fast ECO is the root default");
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: undefined }, "missing preference leaves the root standard");
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx), undefined);
+
+  // Saving the preference affects only future TUI initializations, not the current runtime mode.
+  mkdirSync(isolatedAgentDir, { recursive: true });
+  writeFileSync(path.join(isolatedAgentDir, "settings.json"), JSON.stringify({ unrelatedSetting: { preserved: true } }));
+  const settingsBeforeInvalidCommand = readFileSync(path.join(isolatedAgentDir, "settings.json"), "utf8");
+  await fastCommand.handler("eco default maybe", ctx);
+  assert.equal(readFileSync(path.join(isolatedAgentDir, "settings.json"), "utf8"), settingsBeforeInvalidCommand);
+  await fastCommand.handler("eco default on", ctx);
+  assert.match(notifications.at(-1).message, /Padrão Eco ativado.*futuras inicializações/);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(isolatedAgentDir, "settings.json"), "utf8")), {
+    unrelatedSetting: { preserved: true },
+    codexFastEcoDefault: true,
+  });
+  const freshProcessCheck = `
+    const mod = await import(process.argv[1]);
+    const handlers = new Map(); let status;
+    mod.default({ registerCommand() {}, on(name, handler) { handlers.set(name, handler); } });
+    await handlers.get("session_start")({ reason: "startup" }, {
+      mode: "tui", model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+      sessionManager: { getSessionId: () => "fresh-process" },
+      ui: { notify() {}, setStatus(_key, value) { status = value; } },
+    });
+    if (status !== "⚡ECO") process.exit(1);
+  `;
+  execFileSync(process.execPath, ["--input-type=module", "-e", freshProcessCheck, pathToFileURL(path.join(sandbox, "codex-fast-mode.ts")).href], {
+    env: process.env,
+    stdio: "pipe",
+  });
+  assert.equal(await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx), undefined);
+  const persistedRoot = createExtensionHarness();
+  const persistedStatuses = [];
+  const persistedCtx = { ...ctx, sessionManager: { getSessionId: () => "persisted-root" }, ui: { ...ctx.ui, setStatus(key, text) { persistedStatuses.push({ key, text }); } } };
+  await persistedRoot.handlers.get("session_start")({ reason: "startup" }, persistedCtx);
+  assert.deepEqual(persistedStatuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
+  assert.equal(await persistedRoot.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, persistedCtx), undefined);
+  await fastCommand.handler("eco default off", ctx);
+  assert.equal(JSON.parse(readFileSync(path.join(isolatedAgentDir, "settings.json"), "utf8")).codexFastEcoDefault, false);
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: undefined }, "changing preference does not mutate current mode");
+  const persistedOffRoot = createExtensionHarness();
+  const persistedOffStatuses = [];
+  const persistedOffCtx = { ...ctx, sessionManager: { getSessionId: () => "persisted-off-root" }, ui: { ...ctx.ui, setStatus(key, text) { persistedOffStatuses.push({ key, text }); } } };
+  await persistedOffRoot.handlers.get("session_start")({ reason: "startup" }, persistedOffCtx);
+  assert.deepEqual(persistedOffStatuses.at(-1), { key: "codex-fast-mode", text: undefined });
+  await fastCommand.handler("eco default on", ctx);
+
+  // Invalid preference data fails off; a failed write does not alter current mode or claim success.
+  for (const invalidSettings of ["{not-json", JSON.stringify({ codexFastEcoDefault: "yes" })]) {
+    writeFileSync(path.join(isolatedAgentDir, "settings.json"), invalidSettings);
+    const invalidRoot = createExtensionHarness();
+    const invalidNotifications = [];
+    const invalidCtx = { ...ctx, mode: "tui", sessionManager: { getSessionId: () => "invalid-root" }, ui: {
+      notify(message, type) { invalidNotifications.push({ message, type }); }, setStatus() {},
+    } };
+    await invalidRoot.handlers.get("session_start")({ reason: "startup" }, invalidCtx);
+    assert.equal(await invalidRoot.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, invalidCtx), undefined);
+    assert.ok(invalidNotifications.some(({ message }) => /invalid; using standard mode/.test(message)));
+  }
+  await fastCommand.handler("eco", ctx);
+  const settingsPath = path.join(isolatedAgentDir, "settings.json");
+  const symlinkTarget = path.join(isolatedAgentDir, "settings-target.json");
+  writeFileSync(symlinkTarget, JSON.stringify({ unrelatedSetting: { preserved: true }, codexFastEcoDefault: true }));
+  rmSync(settingsPath);
+  symlinkSync(symlinkTarget, settingsPath);
+  const targetBeforeFailedSave = readFileSync(symlinkTarget, "utf8");
+  const notificationCountBeforeFailedSave = notifications.length;
+  await fastCommand.handler("eco default off", ctx);
+  assert.equal(notifications.length, notificationCountBeforeFailedSave + 1);
+  assert.match(notifications.at(-1).message, /não foi possível salvar/i);
+  assert.equal(statuses.at(-1).text, "⚡ECO");
+  assert.equal(lstatSync(settingsPath).isSymbolicLink(), true);
+  assert.equal(readFileSync(symlinkTarget, "utf8"), targetBeforeFailedSave);
+  rmSync(settingsPath);
+  rmSync(symlinkTarget);
+  writeFileSync(settingsPath, JSON.stringify({ unrelatedSetting: { preserved: true }, codexFastEcoDefault: true }));
+  await fastCommand.handler("eco", ctx);
 
   // Selecting a compatible GPT exposes on while ECO still keeps the main session standard.
   ctx.model = gpt56;
+  const notificationsBeforeModelChange = notifications.length;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
-  assert.equal(notifications.length, 0);
+  assert.equal(notifications.length, notificationsBeforeModelChange);
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
   assert.match(completions[1].description, /Ultrafast on Astra, Fast on other eligible models/);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
@@ -109,7 +192,8 @@ try {
   );
   assert.equal(defaultPayload, undefined);
 
-  // A child receives Fast by default through the owner's ECO state.
+  // A standalone headless child never self-enables from the global preference.
+  await fastCommand.handler("off", ctx);
   const child = createExtensionHarness();
   const childCtx = {
     mode: "headless",
@@ -129,7 +213,7 @@ try {
     { payload: { model: gpt56.id } },
     childCtx,
   );
-  assert.equal(defaultChildPayload.service_tier, "priority");
+  assert.equal(defaultChildPayload, undefined);
 
   // Manual on injects the priority tier for both owner and child and reports request acceptance.
   await fastCommand.handler("on", ctx);
@@ -170,7 +254,7 @@ try {
   await handlers.get("model_select")({ model: claude, previousModel: gpt56, source: "set" }, ctx);
   assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
   assert.match(completions[0].description, /this model has no Fast/);
   assert.equal(
     (await child.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, childCtx)).service_tier,
@@ -261,6 +345,7 @@ try {
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   await fastCommand.handler("on", ctx);
+  await fastCommand.handler("eco default off", ctx);
   const newOwner = createExtensionHarness();
   const newStatuses = [];
   const newCtx = {
@@ -286,8 +371,20 @@ try {
     newCtx,
   );
   assert.equal(continuedSessionPayload.service_tier, "priority");
+  assert.equal(JSON.parse(readFileSync(path.join(isolatedAgentDir, "settings.json"), "utf8")).codexFastEcoDefault, false);
 
-  // A real owner shutdown clears the session state; a fresh root starts in ECO by default.
+  // Explicit off also carries across /new even while the saved default is on.
+  await fastCommand.handler("eco default on", newCtx);
+  await fastCommand.handler("off", newCtx);
+  const offNewOwner = createExtensionHarness();
+  const offNewStatuses = [];
+  const offNewCtx = { ...newCtx, sessionManager: { getSessionId: () => "off-new-owner" }, ui: { ...newCtx.ui, setStatus(key, text) { offNewStatuses.push({ key, text }); } } };
+  await newOwner.handlers.get("session_shutdown")({ reason: "new", targetSessionFile: "off-new-session" }, newCtx);
+  await offNewOwner.handlers.get("session_start")({ reason: "new", previousSessionFile: "new-session" }, offNewCtx);
+  assert.deepEqual(offNewStatuses.at(-1), { key: "codex-fast-mode", text: undefined });
+  assert.equal(await offNewOwner.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, offNewCtx), undefined);
+
+  // A real owner shutdown clears runtime state; a fresh root resolves the persisted ECO preference.
   const freshOwner = createExtensionHarness();
   const freshStatuses = [];
   const freshCtx = {
@@ -327,7 +424,7 @@ try {
   assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
   assert.equal(mod.serviceTierFor("all", astra), "priority");
   completions = await fastCommand.getArgumentCompletions("");
-  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
+  assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
   assert.match(completions[1].description, /Astra Ultrafast/);
   await fastCommand.handler("ultra", ctx);
   assert.match(notifications.at(-1).message, /Ultrafast ativado no GPT-6 Astra/);
@@ -428,7 +525,8 @@ try {
     "validator",
   ]) {
     const frontmatter = readFileSync(path.join(root, "agents", `${agentName}.md`), "utf8");
-    assert.match(frontmatter, /^extensions: \[codex-fast-mode\]$/m, agentName);
+    const extensions = frontmatter.match(/^extensions: \[([^\]]*)\]$/m)?.[1].split(", ") ?? [];
+    assert.ok(extensions.includes("codex-fast-mode"), agentName);
   }
   assert.match(readFileSync(path.join(root, "agents", "deep-research-auditor.md"), "utf8"), /^isolated: true$/m);
   assert.match(readFileSync(path.join(root, "agents", "plan-briefer-fable.md"), "utf8"), /^extensions: false$/m);
@@ -436,4 +534,6 @@ try {
   console.log("codex-fast-mode smoke: PASS");
 } finally {
   rmSync(sandbox, { recursive: true, force: true });
+  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 }
