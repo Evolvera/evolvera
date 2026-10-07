@@ -171,7 +171,7 @@ lacks(REFERENCE, /ORCA orchestration worktree|ORCA orchestration terminal/, "wor
 // ── 2. Active routes and mirrors ────────────────────────────────────────────
 equal(text.get(SYSTEM), text.get(SYSTEM_MIRROR), "SYSTEM.md and config/SYSTEM.md must remain byte-identical");
 has(SYSTEM, /Issue\/board delivery use `flow-orca`|delivery use `flow-orca`/, "SYSTEM must route issue/board delivery to flow-orca");
-has(SYSTEM, /branch-per-issue delivery:\*\* `flow-orca`/, "SYSTEM skill routing table must name flow-orca");
+has(SYSTEM, /branch-per-issue delivery, coordinated PI issue workers in Orca worktrees:\*\* load `flow-orca` automatically/, "SYSTEM skill routing table must automatically route campaign coordination to flow-orca");
 has(SYSTEM, /campaign grant/i, "SYSTEM must define the campaign-grant interpretation");
 has(SYSTEM, /YOLO/, "SYSTEM must state that the widest campaign mode is not a safety bypass");
 // Global non-campaign safety must survive the edit.
@@ -410,11 +410,83 @@ has(SKILL, /Nunca force push, nunca rebase automático/, "no force push or autom
 // ── 9. Incident, repair, and preservation ───────────────────────────────────
 has(SKILL, /no máximo duas tentativas, cada uma com hipótese nova; no máximo um retry quando a falha for comprovadamente transitória/, "repairs are two attempts plus one proven transient retry");
 has(SKILL, /congela os recursos afetados[\s\S]{0,200}nada de restore, reseed, cleanup, retry ou recriação sem autorização nova/, "incidents must freeze mutation, including cleanup and restore");
-has(SKILL, /não existe deleção, arquivamento ou cleanup automático/, "completed workspaces must be preserved");
+has(SKILL, /Cleanup condicional da worktree da issue/, "post-merge cleanup must be conditional, not blanket-preserved");
+lacks(SKILL, /não existe deleção, arquivamento ou cleanup automático|Não há limpeza automática/, "blanket no-cleanup rules must be removed");
+lacks(REFERENCE, /There is no automatic cleanup|preserve\*\* the workspace and the branch/, "reference must drop the blanket preserve rule");
 has(SKILL, /não relacionados à campanha\*\* ficam intocados/, "unrelated workspaces/terminals must be preserved");
 has(SKILL, /Só com prova exata de issue, repositório, branch real, base, PR e dono/, "reuse requires exact ownership proof");
 has(REFERENCE, /never restore or reseed data after an unexpected mutation without fresh explicit authorization/, "no unauthorized restore/reseed");
 has(REFERENCE, /no test, migration, seed, or deployment against non-disposable state/, "workers must not touch non-disposable state");
+
+// ── 9b. Event-driven completion and conditional cleanup (fixed policy gates) ─
+// Automatic routing and exclusions across skill, SYSTEM, mirror, and README.
+has(SKILL, /Acione automaticamente, sem exigir `\/skill:flow-orca`/, "skill must self-route automatically");
+has(SKILL, /Não acione para\*\* criação simples de worktree\/terminal, handoff completo sem supervisão/, "skill must exclude simple worktree and unsupervised handoff");
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /load `flow-orca` automatically before campaign coordination, even when the user never names the skill/, "automatic flow-orca routing");
+  has(path, /Simple worktree creation, unsupervised full handoff, standalone explanation, and ordered operations on finished artifacts stay outside this campaign route/, "flow-orca routing exclusions");
+}
+has(README, /carregá-la automaticamente para campanhas por issues\/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome/, "README must document automatic routing");
+has(README, /Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo/, "README must document routing exclusions");
+// Notification: Orca-owned pointer wake, one non-waiting check, ack after settlement, manual wait only as fallback.
+has(SKILL, /Conclusão por evento, sem polling/, "event-driven completion must be the default");
+has(SKILL, /ponteiro é \*\*só despertar\*\*, nunca `worker_done`, nem GitHub `Done`/, "pointer is wakeup only");
+has(SKILL, /ORCA orchestration check --run <run-id verificado> --json`\s+sem `--wait`|ORCA orchestration check --run <run-id verificado> --json` sem `--wait`/, "wake must run one check without --wait");
+has(SKILL, /ORCA orchestration check --run <run-id verificado> --ack <delivery-id> --json/, "exact Delivery ack must name the verified Run");
+has(SKILL, /resolva ciclo de vida\/Goal[^\n]*\*\*antes\*\* do ack/, "settlement must precede ack");
+has(SKILL, /validando Run, Task, Dispatch, issue e veredito explícito/, "result attribution must be validated");
+has(SKILL, /`worker_done` nunca prova Goal; é permitida \*\*uma\*\* verificação pontual de assentamento[^\n]*não é monitoramento contínuo/, "wake before goal_complete allows only one bounded settlement verification");
+has(SKILL, /Assentamento não provado: não libere, mantenha vaga e terminal, registre a retenção explícita/, "unproven settlement must retain slot and terminal");
+has(SKILL, /retenção registrada conta como resolvida[^\n]*não congele a inbox inteira[^\n]*ack nunca libera vaga nem prova Goal/, "ack must not freeze the inbox nor free a slot");
+has(REFERENCE, /wake arrives immediately on `worker_done` and can precede the worker's final `goal_complete`, so `worker_done` never proves Goal/, "reference wake may precede goal_complete");
+has(REFERENCE, /ORCA terminal wait --terminal <exact handle> --for tui-idle --timeout-ms <n> --json`, then an exact-cursor `ORCA orchestration worker-read --dispatch <id> --json`[^\n]*not a monitoring loop/, "reference bounded settlement verification");
+has(REFERENCE, /If settlement is still unproven: do not release; keep the slot and terminal; record an explicit retention/, "reference unproven settlement retains");
+has(REFERENCE, /a recorded retention counts as resolved, so an unproven Goal never freezes the entire inbox indefinitely/, "reference retention allows ack");
+has(SKILL, /duplicada ou sem correspondência não é aceita nem liberada/, "duplicate or unmatched messages must not release anything");
+has(SKILL, /drene lotes limitados adicionais só enquanto houver mensagens realmente pendentes — nunca por timer/, "extra batches only while pending");
+has(SKILL, /Sem sleep, loops de espera, `check --wait` repetido ou leituras repetidas de terminal/, "no sleep/poll loops");
+has(SKILL, /Fallback manual explícito[\s\S]{0,200}pedido explícito do usuário ou quando o push do runtime está genuinamente indisponível/, "manual wait is an explicit fallback only");
+has(SKILL, /wake automático não verificado, não falha de worker/, "unverified wake must not be worker failure");
+has(SKILL, /sem `--to`, sem `--from`, sem terminal direto duplicado/, "worker_done must be sent once to the Run");
+has(SKILL, /PI coordenador exato/, "Run must bind to the exact coordinator PI");
+has(REFERENCE, /Completion is \*\*event-driven\*\*; Orca already owns delivery — no new extension, service, file, or monitor/, "reference must keep event delivery with Orca");
+has(REFERENCE, /^ORCA orchestration check --run <verified run-id> --json$/m, "reference non-waiting check");
+has(REFERENCE, /^ORCA orchestration check --run <verified run-id> --ack <delivery-id> --json$/m, "reference exact ack");
+has(REFERENCE, /Resolve lifecycle and Goal settlement \*\*before\*\* acknowledging/, "reference settlement before ack");
+has(REFERENCE, /pointer is a wakeup \*\*only\*\*; it is neither `worker_done` nor GitHub `Done`/, "reference pointer is wakeup only");
+has(REFERENCE, /fallback only on explicit user request or when runtime push is genuinely unavailable/, "reference manual wait is fallback only");
+has(REFERENCE, /Do not sleep, loop, repeat waits, or repeatedly read terminals merely to observe/, "reference forbids observation polling");
+// Cleanup: authority, proof, content classification, recovery, exact command, incident freeze.
+has(SKILL, /ORCA worktree rm --worktree <seletor exato> --json`, sem `--force`\/`--run-hooks`/, "cleanup must use the exact supported command without force/hooks");
+has(REFERENCE, /^ORCA worktree rm --worktree <exact selector> --json$/m, "reference cleanup command");
+lacks(SKILL, /^\s*(?:ORCA\s+)?worktree rm\b[^\n]*--(?:force|run-hooks)/m, "no executable cleanup form may use force or hooks");
+has(SKILL, /nem YOLO, nem “entregar”, nem um grant mutável genérico o autorizam/, "generic grants must not authorize cleanup");
+has(SKILL, /grants antigos nunca são ampliados em silêncio/, "old grants must not be silently expanded");
+has(SKILL, /Pedido explícito do usuário para aquele cleanup exato|pedido explícito do usuário para aquele cleanup exato/, "explicit exact user request suffices");
+has(SKILL, /Classifique \*\*todo\*\* o conteúdo — incluindo ignorados, histórico\/refs\/reflogs ou trabalho salvo não publicado/, "cleanup must classify ignored data, history, refs and unpublished work");
+has(SKILL, /Sem `git clean`\/`rm` de pré-limpeza/, "no pre-clean");
+has(SKILL, /`worker-release` isoladamente não preserva evidência após `worktree rm`/, "worker-release alone must not be treated as recovery");
+has(SKILL, /não segura, por si só, a vaga/, "retained worktree must not hold a settled slot");
+has(SKILL, /Falha ou pós-estado ambíguo é incidente/, "failed removal is an incident");
+for (const pattern of [
+  /Generic deliver\/YOLO\/mutable grants do not authorize destructive cleanup/,
+  /Git registration, branch, PR with the exact pushed SHA, approved base, `mergedAt`, closed issue, and Project `Done`/,
+  /no historical refs\/reflogs or unreferenced saved work that is not fully published/,
+  /clean is never proof/,
+  /Do not pre-clean with `git clean` or raw `rm`/,
+  /Aliases, symlinks\/hardlinks, shared linked paths, children, nested worktrees, running processes, setup terminals, default tabs, and controller namespaces/i,
+  /deletes the directory, Git registration, workspace metadata \*\*and terminal history\*\*/,
+  /never deletes the remote branch, PR, or issue/,
+  /`preservedBranch`/,
+  /Its retained output is \*\*not\*\* a recovery copy once the worktree is removed/,
+  /merged base alone is not enough for a squashed branch head/,
+  /A backup in the same worktree\/controller is not rollback/,
+  /exact ID, path, and Git registration are absent/,
+  /read-only freeze; no retry, raw `git worktree`\/`rm`\/prune, terminal close, or force-delete-branch workaround/,
+  /Stale, orphan, reused, preexisting, folder-root, unproven, or non-disposable worktrees are never auto-removed/,
+  /does not hold an otherwise settled worker's slot/,
+]) has(REFERENCE, pattern, `cleanup contract missing: ${pattern.source.slice(0, 60)}`);
+has(README, /remove a worktree descartável da issue quando a autoridade específica e os gates de identidade, conteúdo e recuperação estiverem provados; caso contrário, retém com motivo/, "README must state conditional cleanup");
 
 // ── 10. Preserved delivery capabilities ─────────────────────────────────────
 for (const [pattern, message] of [
