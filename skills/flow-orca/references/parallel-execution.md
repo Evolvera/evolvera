@@ -212,13 +212,28 @@ The coordinator owns claims, GitHub transitions, Orca lifecycle, publication, in
 
 ## 8. Monitoring active work
 
-Watch with bounded waits and process the whole batch:
+Completion is **event-driven**; Orca already owns delivery — no new extension, service, file, or monitor. For the installed version verified from source, a message that arrives with no matching waiter makes Orca inject `You have <N> orchestration messages. Run \`orca orchestration check --run <id>\`.` into the exact coordinator PI that owns the Run's mailbox, only when its live PTY is idle, then submit Enter after rechecking the same leaf/PTY/mailbox/idle. Events during a busy turn stay unread and are redelivered on the next idle transition. An outstanding Delivery suppresses another pointer, and an active `check --wait` reserves its types and suppresses the push. The proof is bounded to that version, not every Orca/PI deployment.
+
+Preflight and re-entry therefore bind or reconcile the campaign Run to the exact coordinator PI and verify fresh live idle/status capability. Each worker sends the existing `worker_done` exactly once to its Dispatch's Run — no `--to`, no `--from`, no duplicate direct-terminal message. The automatic pointer is a wakeup **only**; it is neither `worker_done` nor GitHub `Done`. On wake:
+
+```text
+ORCA orchestration check --run <verified run-id> --json
+ORCA orchestration check --run <verified run-id> --ack <delivery-id> --json
+```
+
+1. Run the first command once, **without** `--wait`, and process the whole FIFO Delivery. Validate Run, Task, Dispatch, and issue IDs plus the explicit succeeded/failed verdict; unexpected, duplicate, or unmatched messages are reconciled, never accepted or used to release anything.
+2. Answer questions through their existing message ID; resume a pending ask by that ID, never a duplicate question.
+3. Resolve lifecycle and Goal settlement **before** acknowledging. The wake arrives immediately on `worker_done` and can precede the worker's final `goal_complete`, so `worker_done` never proves Goal. One completion-driven, bounded settlement verification per such event is allowed — `ORCA terminal wait --terminal <exact handle> --for tui-idle --timeout-ms <n> --json`, then an exact-cursor `ORCA orchestration worker-read --dispatch <id> --json` / Goal status read — and is not a monitoring loop. Release a successful Goal worker only after you observe its matching `Goal complete` result and settled terminal with no pending continuation. If settlement is still unproven: do not release; keep the slot and terminal; record an explicit retention (`settlement pending` plus Run/Task/Dispatch/Delivery IDs) so re-entry or the next wake can replay and re-verify it once; and report the pending settlement truthfully. No timer, repeated wait, or observation loop.
+4. Acknowledge the exact Delivery with the second command once the **whole** FIFO batch is processed and every release/retention decision is resolved; a recorded retention counts as resolved, so an unproven Goal never freezes the entire inbox indefinitely. The ack never frees a slot and never implies Goal completion.
+5. Drain further returned bounded batches only while messages are actually pending — never on a timer. Then the coordinator may go idle or end its turn while workers keep running; Orca wakes it.
+
+A timeout, empty `check`, or idle terminal is neither failure, nor completion, nor a free slot. Do not sleep, loop, repeat waits, or repeatedly read terminals merely to observe. The manual form is a fallback only on explicit user request or when runtime push is genuinely unavailable (report the capability gap; never silently substitute active monitoring):
 
 ```text
 ORCA orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json
 ```
 
-Acknowledge the exact Delivery for every item received. Before releasing a successful Goal worker, also observe its matching `Goal complete` result and settled terminal with no pending continuation; `worker_done` alone must not race Goal's final tool. A timeout or empty batch is neither failure, nor completion, nor a free slot. For bounded output reads, follow the main skill’s 7.4 cursor/source rules; `source_changed` requires a new read without the previous cursor. Resume a pending ask by its existing message ID, not by sending a duplicate question. Inspect start receipts (`stage`, `effects`, `residualResources`) before recovery; setup still running is not a failed worker. Use `orchestration send --to dispatch:<id>` for guidance and `orchestration ask`/`orchestration reply` for questions, never an impersonated `--from` and never a broadcast lifecycle message.
+Process the whole batch and acknowledge the exact Delivery. Missing support, status, or Run binding means automatic wake is **unverified**, not worker failure; use the existing inbox (`check --peek`, main skill 6.0.1) for safe re-entry diagnostics. For bounded output reads, follow the main skill’s 7.4 cursor/source rules; `source_changed` requires a new read without the previous cursor. Resume a pending ask by its existing message ID, not by sending a duplicate question. Inspect start receipts (`stage`, `effects`, `residualResources`) before recovery; setup still running is not a failed worker. Use `orchestration send --to dispatch:<id>` for guidance and `orchestration ask`/`orchestration reply` for questions, never an impersonated `--from` and never a broadcast lifecycle message.
 
 Before accepting each worker result and before every push, re-read the issue claim/status, the PR, the workspace, and the remote branch SHA. Stop the affected row when:
 
@@ -259,12 +274,28 @@ A PR prepared against an older base is not automatically safe because its own CI
 
 ## 10. Settlement, preservation, and recovery
 
-There is no automatic cleanup. After verified merge/Done:
+After verified merge/`Done`, first settle the lifecycle:
 
-- **preserve** the workspace and the branch; do not delete, archive, prune, or reset them;
-- release the terminal with `orchestration worker-release --dispatch <id> --json` only when it is owned and settled; output is preserved. `release_pending` or an unknown state is not clean, and there is no terminal-close fallback;
+- release the terminal with `orchestration worker-release --dispatch <id> --json` only when it is owned and settled. `release_pending` or an unknown state is not clean, and there is no terminal-close fallback. Its retained output is **not** a recovery copy once the worktree is removed;
 - **retain** reused, preexisting, or unproven terminals and say so explicitly in the report;
-- only after this settlement does the slot return to the scheduler.
+- the Goal is finalized, with no continuation, pending ask, Delivery, or reuse;
+- only after this settlement does the slot return to the scheduler. A worktree kept because cleanup is unauthorized or unproven does not hold an otherwise settled worker's slot.
+
+**Conditional cleanup of the issue worktree.** Only the exact campaign-created, disposable **issue** worktree may be removed, with one target per call and no `--force` or `--run-hooks`:
+
+```text
+ORCA worktree rm --worktree <exact selector> --json
+```
+
+1. **Authority.** Generic deliver/YOLO/mutable grants do not authorize destructive cleanup. Needed: a narrowly scoped cleanup operation with approval provenance in the existing Campaign grant that the **user** approved (an old grant is never silently expanded), or an explicit user request for that exact cleanup whose only effects are the inherent expected ones — sufficient under the existing Consequential Action Gate, without re-asking for unchanged approval. Present the exact effect manifest, independent recovery, method semantics, and approval provenance after the evidence is known. Non-disposable or ambiguous effects stay blocked pending explicit confirmation; use an independent read-only manifest review when alias/cascade risk merits it. This is policy, not a review or deletion by itself.
+2. **Fresh identity proof.** Owner, repository, host, canonical path, worktree ID, Git registration, branch, PR with the exact pushed SHA, approved base, `mergedAt`, closed issue, and Project `Done`. Stale, orphan, reused, preexisting, folder-root, unproven, or non-disposable worktrees are never auto-removed.
+3. **Classify all contents.** No tracked-dirty, untracked, or ignored user data, no unique unpushed work, and no historical refs/reflogs or unreferenced saved work that is not fully published or independently recoverable. Git status does not include ignored data by default — clean is never proof. Run-owned disposable generated caches/transient artifacts may be discarded only with provenance and exact whole-removal authority covering them. Do not pre-clean with `git clean` or raw `rm`.
+4. **Prove nothing else is affected.** Aliases, symlinks/hardlinks, shared linked paths, children, nested worktrees, running processes, setup terminals, default tabs, and controller namespaces. Anything unknown blocks only this cleanup.
+5. **Recovery outside the removed namespace first.** The removal stops all PTYs in the target, deletes the directory, Git registration, workspace metadata **and terminal history**, unlinks configured shared paths, may clean push-target Git remote config, and attempts **local** branch deletion (a preexisting or not-proven-merged branch can come back as `preservedBranch`). It never deletes the remote branch, PR, or issue. Preserve needed result/validation/review/commit evidence beforehand — e.g. a sanitized existing issue/PR result plus a published commit recoverable on the verified remote; the merged base alone is not enough for a squashed branch head. External user data is never sacrificed because its bytes were copied. A backup in the same worktree/controller is not rollback.
+6. **Post-check.** The exact ID, path, and Git registration are absent; the returned local-branch state matches the receipt; protected other resources, the remote, base, and recovery evidence are unchanged. Record the removal — or the retention and its reason — in the existing issue comment.
+7. **Without authority or proof**, retain the worktree with a named reason.
+
+A failed or ambiguous removal/post-state is an **incident**: read-only freeze; no retry, raw `git worktree`/`rm`/prune, terminal close, or force-delete-branch workaround. Cleanup is never a recovery method, and the preserve/delete boundary above governs it.
 
 A locked, orphan, stale-candidate, or incident-frozen resource is reported with its identifiers, issue, branch, and claim evidence; takeover or any destructive action requires explicit ownership evidence plus the authorization gates in the main skill. Never use deletion or recreation as a recovery shortcut, and never restore or reseed data after an unexpected mutation without fresh explicit authorization.
 
