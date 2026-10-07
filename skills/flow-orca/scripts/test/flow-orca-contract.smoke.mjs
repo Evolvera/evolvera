@@ -362,6 +362,34 @@ has(SKILL, /Deixar um PI aberto sem atribuição enquanto faz scout repetido/, "
 has(SKILL, /Herdar o `FLOW_EXECUTOR_ID` do shell para a próxima issue/, "anti-pattern: inherited executor ID");
 has(SKILL, /Reiniciar o PI quando a UI fresca já prova/, "anti-pattern: needless model restart");
 
+// ── 6c. Goal activation and file-free prompt delivery ──────────────────────
+has(SKILL, /texto inline preparado em memória, nunca apenas um caminho de arquivo/, "Task handoff must be inline text, not a prompt-file pointer");
+has(SKILL, /Não crie `\.md` só para transportar prompts\/handoffs/, "main skill must forbid transport-only Markdown files");
+has(REFERENCE, /Do not create `\.md` files solely to transport prompts\/handoffs or mirror issue bodies/, "reference must forbid prompt/issue-body file mirrors");
+has(REFERENCE, /Pass its text inline to `task-create --spec`, never just a file path/, "dispatch must receive its self-contained spec inline");
+lacks(SKILL, /\.pi\/flow\/<project-slug>\/BACKLOG\.md|Scouts por módulo → `PROJECT_MAP\.md`/, "intake must not prescribe local backlog/map files");
+has(SKILL, /mapa fundamentado apresentado no chat, sem arquivo local/, "intake map must stay in chat");
+has(REFERENCE, /PI engineering plans and transient readiness artifacts inside a single issue workspace remain allowed/, "real in-issue engineering artifacts must remain supported");
+has(REFERENCE, /before Goal is active for this Task, acknowledge and wait only — no engineering, no `worker_done`, and no blocking `ask` for activation/, "initial dispatch must wait safely for its Goal activation");
+has(REFERENCE, /Do not put `\/goal` inside `--spec`: Orca adds its lifecycle preamble/, "a slash command embedded in a Task must not count as goal activation");
+has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text "\/goal Complete the existing Task <task-id>, Dispatch <dispatch-id>/, "Goal activation must be an actual command in the exact owned terminal");
+has(REFERENCE, /before creating another PI or waiting for the worker to finish/, "Goal activation must be immediate rather than delayed to completion");
+has(REFERENCE, /not a second work dispatch or a failure fallback/, "Goal continuation must not create another Task/Dispatch route");
+has(REFERENCE, /do not wait for `tui-idle` before sending the activation command/, "Goal activation must not wait for injected work to finish");
+has(REFERENCE, /4,000 characters in `@narumitw\/pi-goal` 0\.43\.0/, "goal objective must respect its real runtime limit without a prompt file");
+has(REFERENCE, /Bare `\/goal` opens the manager and does not activate a goal/, "bare goal must not be used for unattended activation");
+has(REFERENCE, /inspect `\/goal status` and reconcile an unfinished goal before any new dispatch — never clear or replace another goal automatically/, "goal reuse must preserve unrelated unfinished state");
+has(REFERENCE, /Require fresh `Goal started:` output for the exact objective and its current `goal_id`/, "activation needs a fresh receipt and matching goal identity");
+has(REFERENCE, /dispatch prepared; Goal unverified/, "an unverified Goal must not be reported as a fully active worker");
+has(REFERENCE, /keep the slot occupied, and block engineering — no ordinary-prompt fallback/, "goal failure must preserve occupancy and prevent ungated execution");
+has(SKILL, /envia `worker_done` uma só vez e chama `goal_complete` com o `goal_id` atual como última ferramenta/, "lifecycle result must precede the terminating Goal tool");
+has(REFERENCE, /report `worker_done` exactly once, then call `goal_complete` with the current `goal_id` as the final tool/, "Goal completion must not prevent the single lifecycle report");
+has(REFERENCE, /Task must explicitly allow this sole post-`worker_done` action as native Goal finalization — no engineering, second lifecycle report, polling, or other Orca call after settlement/, "Task must narrowly authorize only final Goal bookkeeping after worker_done");
+has(REFERENCE, /Before Task creation, require the Goal extension[^\n]*No goal is currently set\./, "Goal availability and fresh-session state must be proven before Task injection");
+has(REFERENCE, /observe its matching `Goal complete` result and settled terminal with no pending continuation/, "terminal release must not race Goal completion");
+has(REFERENCE, /Neither Goal completion nor `worker_done` proves GitHub `Done`/, "Goal success must not bypass GitHub completion gates");
+has(SKILL, /`\/goal` cobre somente a entrega autorizada daquele worker, sem incluir PR\/merge\/deploy do coordenador/, "Goal must stop at the worker's authorized deliverable");
+
 // ── 7. Project status contract ──────────────────────────────────────────────
 has(SKILL, /`Backlog`, `Ready`, `In progress`, `In review`, `Blocked`, `Done`/, "the six Project statuses must be exact");
 has(SKILL, /`Blocked` é \*\*aditivo\*\*/, "Blocked must be additive on an existing board");

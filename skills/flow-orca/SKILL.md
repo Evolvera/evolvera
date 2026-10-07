@@ -26,7 +26,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
   → Scheduler contínuo e work-conserving, teto de SEIS PIs de issue simultâneos no total:
        admissão serial do coordenador único (intenção visível no GitHub + releitura antes do dispatch)
        → `worktree create … --issue <N> --base-branch <base do repo> --no-parent --agent pi`
-       → adotar o terminal PI exato da resposta em `orchestration worker-start --terminal`
+       → adotar o terminal PI exato em `orchestration worker-start --terminal` e ativar `/goal <objetivo da Task>` imediatamente
        → Project: `In progress` (atualizar **e reler**)
        → PI implementa dentro do workspace da issue → commit/push → PR contra a base escolhida
        → Project: `In review` + review independente no head SHA final
@@ -304,7 +304,7 @@ Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o
 - Marcar `blocked` se depender de decisão externa
 - Não criar issue para “pesquisar depois” sem outcome
 
-Rascunho local **opcional** da proposta (a issue criada no GitHub é que passa a valer): `.pi/flow/<project-slug>/BACKLOG.md`
+Apresente o rascunho da proposta no chat, sem criar arquivo local; a issue criada no GitHub é que passa a valer:
 
 ```md
 # Flow Backlog — OWNER/REPO — YYYY-MM-DD
@@ -327,7 +327,7 @@ Rascunho local **opcional** da proposta (a issue criada no GitHub é que passa a
 
 ## Phase 3 — Estimar priority + effort (baseado no sistema)
 
-Não chute no vácuo. Use PROJECT_MAP + evidência:
+Não chute no vácuo. Use o mapa do projeto apresentado no chat + evidência:
 
 1. Módulos tocados e shared surfaces
 2. Complexidade (arquivos, tests, migrations)
@@ -981,7 +981,7 @@ Resultado desconhecido de `worktree create`/`worker-start` é **reconciliação*
 O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é exigência da interface, não um segundo backlog:
 
 - a Task é **registro de tentativa** de uma issue **já admitida**; ela referencia a **URL exata da issue** e o **timestamp da leitura remota** que autorizou a admissão;
-- o `--spec` carrega um **snapshot de handoff autossuficiente derivado** naquele momento (ACs, base, branch real, escopos, comandos de validação). O snapshot é cópia derivada, **nunca autoridade**;
+- o `--spec` carrega um **snapshot de handoff autossuficiente derivado** naquele momento (ACs, base, branch real, escopos, comandos de validação), como texto inline preparado em memória, nunca apenas um caminho de arquivo. Não crie `.md` só para transportar prompts/handoffs nem copie bodies de issues para arquivos locais. O snapshot é cópia derivada, **nunca autoridade**;
 - a Task **não** tem autoridade independente sobre backlog, ACs ou status: se divergir do GitHub, o GitHub vence;
 - **releia a issue imediatamente antes do dispatch**; mudança material (ACs, escopo, dependências, base, Status) invalida o snapshot stale e exige derivar outro;
 - **não** pré-crie Tasks para o board inteiro nem espelhe o backlog em Tasks;
@@ -1040,7 +1040,7 @@ flow_project_items   # releia: o item precisa mostrar In progress
 ```
 
 3. **Autorize setup e terminais default, crie a workspace e leia a resposta real** (comando e campos exatos na referência, seção 6).
-4. **Unidade ininterrupta.** Criação, preparação e dispatch são uma só unidade limitada. Aberto o PI, as próximas ações do coordenador são exclusivamente desta linha: pós-condições → modelo-base `openai-codex/gpt-6.1-sol` com `medium` provado na UI fresca → receipt de sessão `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` → releitura da issue → Task → `worker-start` → verificação do dispatch vivo; ou bloqueio explícito que preserve a linha. Enquanto a linha estiver sem atribuição e acionável: nenhum scouting alheio, nenhuma reanálise do board, nenhum outro PI aberto e nenhuma resposta de “progresso” como fim de turno. Ambos os receipts são obrigatórios antes da Task; sem eles, bloqueie o dispatch afetado, preserve workspace/terminal, sem fallback e sem `--model`/`--effort` ao Orca.
+4. **Unidade ininterrupta.** Criação, preparação e dispatch são uma só unidade limitada. Aberto o PI, as próximas ações do coordenador são exclusivamente desta linha: pós-condições → modelo-base `openai-codex/gpt-6.1-sol` com `medium` provado na UI fresca → receipt de sessão `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` → releitura da issue → Task → `worker-start` → ativação imediata de `/goal <objetivo da Task>` no mesmo terminal → verificação do dispatch vivo e do Goal; ou bloqueio explícito que preserve a linha. Enquanto a linha estiver sem atribuição e acionável: nenhum scouting alheio, nenhuma reanálise do board, nenhum outro PI aberto e nenhuma resposta de “progresso” como fim de turno. Ambos os receipts são obrigatórios antes da Task; sem eles, bloqueie o dispatch afetado, preserve workspace/terminal, sem fallback e sem `--model`/`--effort` ao Orca.
 5. **`worker-start` com falha ou resultado desconhecido** congela o ciclo de vida: leia `stage`, `effects` e `residualResources` e reconcilie workspace/terminal/dispatch existentes **antes** de qualquer nova mutação — sem retry cego, sem nova workspace, sem prompt direto como fallback e sem baixar gates.
 6. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. Diga `worker active` somente após ler o dispatch vivo. A tabela de reconciliação continua em memória.
 
@@ -1059,8 +1059,9 @@ O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se 
 ### 7.4 Durante o trabalho: worker PI, monitoramento e incidentes
 
 - O worker PI é dono da engenharia da issue **dentro da sua workspace**. O coordenador é dono do GitHub, do ciclo de vida Orca, da publicação e da integração, salvo delegação suportada e explícita.
-- O prompt injetado é autossuficiente: issue e ACs, base e branch real, escopo de escrita e paths proibidos, recursos exclusivos, comandos de validação e se há autoridade de commit/push. Ausência de autorização significa não commitar nem pushar. Não é tutorial sobre o PI.
+- O prompt injetado é autossuficiente e inline: issue e ACs, base e branch real, escopo de escrita e paths proibidos, recursos exclusivos, comandos de validação e se há autoridade de commit/push. Não crie `.md` só para prompts/handoffs. A Task exige aguardar a ativação do Goal antes de implementar; o coordenador ativa `/goal` como comando nativo, não como texto dentro do `--spec`, seguindo a seção 6 da referência. Ausência de autorização significa não commitar nem pushar. Não é tutorial sobre o PI.
 - Commits e validação final acontecem **só** na branch e workspace daquela issue.
+- O `/goal` cobre somente a entrega autorizada daquele worker, sem incluir PR/merge/deploy do coordenador. Após sucesso verificado, o worker envia `worker_done` uma só vez e chama `goal_complete` com o `goal_id` atual como última ferramenta (ela encerra o turno). Antes de liberar o terminal, confira também `Goal complete` e assentamento sem continuação pendente. Nenhum desses sinais substitui as pós-condições de `Done` no GitHub.
 - Antes de retomar em chat novo e antes de cada push, refaça fetch e compare o SHA remoto com o último SHA verificado e registrado no comentário de claim da issue. Remoto avançou inesperadamente: pare, reconcilie, sem rebase/merge automático e sem sobrescrever.
 - Push sempre normal, nunca force; rejeição non-fast-forward é barreira de concorrência e exige nova reconciliação.
 - Use `orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json` para acompanhar; processe **todo** o lote e faça ack do Delivery exato. Escalation/question são respondidas por `send`/`reply`, com o worker reportando task/dispatch/capability exatos e um veredito explícito de sucesso/falha.
@@ -1301,6 +1302,7 @@ Pare / eduque / pergunte quando:
 - Esquecer de atualizar **e reler** Project/label quando cria workspace/PR ou registra bloqueio
 - Injetar trabalho antes de claim + workspace + status terem pós-condições verificadas
 - Deixar um PI aberto sem atribuição enquanto faz scout repetido, reanálise do board, abre outro PI ou encerra o turno com resposta de “progresso”
+- Despachar sem ativar o `/goal` da Task; achar que `/goal` escrito no `--spec` ativa o comando; ou criar `.md` apenas para transportar prompts
 - Herdar o `FLOW_EXECUTOR_ID` do shell para a próxima issue; ou tentar de novo `worker-start` com erro/desconhecido sem reconciliar `stage`/`effects`/`residualResources`
 - Reiniciar o PI quando a UI fresca já prova `openai-codex/gpt-6.1-sol` com `medium`, ou dar o modelo/modo por provado por echo de comando/settings
 - Dar ao worker o checkout canônico, outra workspace ou autoridade GitHub/cleanup não declarada
@@ -1321,7 +1323,7 @@ Pare / eduque / pergunte quando:
 ### A) Lista nova → Project + issues + DAG + campanha
 1. Educar se incompleto
 2. Permission gate + preflight Orca
-3. Scouts por módulo → `PROJECT_MAP.md`
+3. Scouts por módulo → mapa fundamentado apresentado no chat, sem arquivo local
 4. Draft + **REVIEW GATE** → OK
 5. Intake da campanha: base por repositório + modo + teto + operações nomeadas
 6. Project/labels + create issues/cards (`Blocked` aditivo no board)
@@ -1333,7 +1335,7 @@ Pare / eduque / pergunte quando:
 2. Reconciliar Project + issues/claims/PRs + branches remotas + workspaces/terminais, e derivar o DAG em memória do grant e dos bodies
 3. Retomar WIP existente e preencher vagas livres com nós executáveis da camada mais antiga
 4. Aprovação conforme o modo registrado (sem repetir grant inalterado)
-5. Admissão verificada: marker + assignee + `In progress` relido → `worktree create` com a base do repo → branch/terminal reais → `worker-start` no terminal exato
+5. Admissão verificada: marker + assignee + `In progress` relido → `worktree create` com a base do repo → branch/terminal reais → `worker-start` no terminal exato → `/goal` da mesma Task ativado e comprovado, sem arquivo de prompt
 6. Implement → validar → PR na base escolhida → `In review` → merge serial autorizado → `mergedAt` + issue fechada → `Done` relido
 7. Assentar com segurança (terminal liberado ou retido, workspace preservada), registrar o desfecho no GitHub e liberar a vaga
 
