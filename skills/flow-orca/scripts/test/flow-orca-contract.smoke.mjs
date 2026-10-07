@@ -433,6 +433,13 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /`accepted: true`\) proves only that keystrokes were written/, "terminal send receipt is not delivery proof");
   has(path, /`Goal objective is too long` or an idle prompt means nothing was delivered/, "rejected goal must be detected and resent");
 }
+// Handoff silence: coordinator does not shadow a worker's in-progress work.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");
+  has(path, /do not review, bug-hunt, test, prepare validation resources for, or send messages to the worker/, "no shadow work on a handed-off worker");
+  has(path, /a full ownership handoff to another agent session transfers the outcome/, "post-build closure exempts full handoff");
+}
+has(SKILL, /O WIP de um worker ativo é dele até `worker_done`, pergunta ou escalation/, "coordinator must not shadow an active worker");
 has(README, /carregá-la automaticamente para campanhas por issues\/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome/, "README must document automatic routing");
 has(README, /Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo/, "README must document routing exclusions");
 // Notification: Orca-owned pointer wake, one non-waiting check, ack after settlement, manual wait only as fallback.
