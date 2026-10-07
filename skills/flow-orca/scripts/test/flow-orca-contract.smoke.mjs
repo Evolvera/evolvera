@@ -433,6 +433,12 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /`accepted: true`\) proves only that keystrokes were written/, "terminal send receipt is not delivery proof");
   has(path, /`Goal objective is too long` or an idle prompt means nothing was delivered/, "rejected goal must be detected and resent");
 }
+// Handoff start: no ack-and-stop phase; goal sent immediately; one bounded concurrent delivery check.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /the handoff prompt tells the agent to start now, and in the same command, without waiting for `tui-idle`, send a concise `\/goal`/, "goal follows handoff immediately");
+  has(path, /Never ask the agent to acknowledge and stop/, "no ack-and-stop handoff");
+  has(path, /never `sleep` or wait on terminals one after another/, "bounded concurrent delivery check");
+}
 // Handoff silence: coordinator does not shadow a worker's in-progress work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");
