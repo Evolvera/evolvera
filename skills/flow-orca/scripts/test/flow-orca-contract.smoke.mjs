@@ -426,6 +426,13 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /load `flow-orca` automatically before campaign coordination, even when the user never names the skill/, "automatic flow-orca routing");
   has(path, /Simple worktree creation, unsupervised full handoff, standalone explanation, and ordered operations on finished artifacts stay outside this campaign route/, "flow-orca routing exclusions");
 }
+// Unsupervised worktree handoff: full prompt is ordinary text, /goal stays short, delivery is proven by fresh output.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /Send the full instructions as one ordinary prompt; never put them in `\/goal`/, "handoff body must not go into /goal");
+  has(path, /`\/goal <objective>` accepts at most 4,000 characters/, "goal objective limit must be explicit");
+  has(path, /`accepted: true`\) proves only that keystrokes were written/, "terminal send receipt is not delivery proof");
+  has(path, /`Goal objective is too long` or an idle prompt means nothing was delivered/, "rejected goal must be detected and resent");
+}
 has(README, /carregá-la automaticamente para campanhas por issues\/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome/, "README must document automatic routing");
 has(README, /Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo/, "README must document routing exclusions");
 // Notification: Orca-owned pointer wake, one non-waiting check, ack after settlement, manual wait only as fallback.
