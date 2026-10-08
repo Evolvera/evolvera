@@ -334,6 +334,13 @@ export function registerUser(opts = {}) {
   });
 }
 
+/** List registered users through the same validated, read-only registry authority. */
+export function listUsers(opts = {}) {
+  const file = canonRegistryPath(opts.registryPath);
+  const data = readRegistry(file, { required: false });
+  return Object.freeze(data.users.map(({ id, label }) => Object.freeze({ id, label })));
+}
+
 export function resolveUser(opts = {}) {
   const { id } = opts;
   if (typeof id !== "string" || !ID_RE.test(id)) throw fail("USER_ID_INVALID", "id must match [a-z][a-z0-9-]{1,31}");
