@@ -451,6 +451,11 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Never inspect live or production systems to avoid asking/, "no production probing instead of asking");
   has(path, /a stale or rejected Orca record gets at most one note/, "Orca bookkeeping is not delivery work");
 }
+// Commit discipline in the standard prompt.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /\*\*Commit constantly, in a standard format:\*\*/, "standard mode commits constantly");
+  has(path, /Conventional Commits form, `type\(scope\): imperative summary`/, "standard commit message format");
+}
 // Handoff silence: coordinator does not shadow a worker's in-progress work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");
