@@ -26,6 +26,10 @@ assert.match(conductor, /\*\*Consequential Action Gate:\*\*/);
 for (const dropped of ["## Engineering and Architecture", "## Workflow Selection", "## Retrieval and Evidence"]) assert.ok(!conductor.includes(dropped), `${dropped} dropped`);
 assert.match(conductor, /Never `sleep`, poll, or tail a worker's terminal/);
 assert.match(conductor, /never product code/);
+assert.match(conductor, /## Operating Contract/); assert.match(conductor, /Do the next step; don't narrate it/);
+assert.match(conductor, /## Validation and Completion/);
+assert.match(conductor, /Only the hands change/);
+assert.match(conductor, /Never end a turn with a list of "pending items" you could act on/);
 
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
 const replaced = m.applyConductor(assembled, systemMd);
