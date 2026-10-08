@@ -13,9 +13,11 @@ import { fileURLToPath } from 'node:url';
 const PACKAGE_NAME = '@tintinweb/pi-subagents';
 const PACKAGE_VERSION = '0.18.2';
 const POLL_MS = 250;
+const IDLE_STABLE_MS = 1000;
+const COMPACTION_MAX_MS = 600000;
 
-// Body shared by both files; only type annotations differ.
-const deferBlock = (ts) => `  // ---- Deferred completion notifications (Evolvera patch) ----
+// v1 block (installed by the first version of this patch); kept only to upgrade it in place.
+const deferBlockV1 = (ts) => `  // ---- Deferred completion notifications (Evolvera patch) ----
   // A completion that lands while the parent is busy waits until it is idle and is
   // re-checked then, so a result consumed meanwhile through get_subagent_result never
   // wakes the model again, and held completions arrive together as one turn.
@@ -53,6 +55,57 @@ const deferBlock = (ts) => `  // ---- Deferred completion notifications (Evolver
 
 `;
 
+// Body shared by both files; only type annotations differ.
+const deferBlock = (ts) => `  // ---- Deferred completion notifications (Evolvera patch v2) ----
+  // A completion that lands while the parent is busy waits until it is idle and is
+  // re-checked then, so a result consumed meanwhile through get_subagent_result never
+  // wakes the model again, and held completions arrive together as one turn.
+  // Compaction counts as busy: the session is idle while it summarizes, and a turn
+  // started then runs on the context the compaction is about to replace (it stalled
+  // a real session). Idle must also hold for a full second before anything is sent.
+  const deferredNudges = new Map${ts ? '<string, AgentRecord>' : ''}();
+  let deferredNudgeTimer${ts ? ': ReturnType<typeof setTimeout> | undefined' : ''};
+  let compactingSince = 0;
+  let idleSince = 0;
+  pi.on("session_before_compact", () => { compactingSince = Date.now(); });
+  pi.on("session_compact", () => { compactingSince = 0; });
+  pi.on("agent_start", () => { compactingSince = 0; });
+  function parentBusy()${ts ? ': boolean' : ''} {
+    if (compactingSince && Date.now() - compactingSince < ${COMPACTION_MAX_MS}) return true;
+    try { return currentCtx !== undefined && (!currentCtx.isIdle() || currentCtx.hasPendingMessages()); }
+    catch { return false; }
+  }
+  function deferNudge(records${ts ? ': AgentRecord[]' : ''})${ts ? ': boolean' : ''} {
+    if (!parentBusy()) return false;
+    for (const r of records) deferredNudges.set(r.id, r);
+    if (!deferredNudgeTimer) deferredNudgeTimer = setTimeout(flushDeferredNudges, ${POLL_MS});
+    return true;
+  }
+  function flushDeferredNudges() {
+    deferredNudgeTimer = undefined;
+    if (deferredNudges.size === 0) return;
+    if (!currentCtx) { deferredNudges.clear(); return; }
+    if (parentBusy()) { idleSince = 0; deferredNudgeTimer = setTimeout(flushDeferredNudges, ${POLL_MS}); return; }
+    if (!idleSince) idleSince = Date.now();
+    if (Date.now() - idleSince < ${IDLE_STABLE_MS}) { deferredNudgeTimer = setTimeout(flushDeferredNudges, ${POLL_MS}); return; }
+    idleSince = 0;
+    const pending = [...deferredNudges.values()].filter(r => !r.resultConsumed);
+    deferredNudges.clear();
+    if (pending.length === 1) { emitIndividualNudge(pending[0]); return; }
+    if (pending.length === 0) return;
+    const [first, ...rest] = pending;
+    const details = buildNotificationDetails(first, 300, agentActivity.get(first.id));
+    details.others = rest.map(r => buildNotificationDetails(r, 300, agentActivity.get(r.id)));
+    pi.sendMessage${ts ? '<NotificationDetails>' : ''}({
+      customType: "subagent-notification",
+      content: \`Background agent group completed: \${pending.length} agent(s) finished\\n\\n\${pending.map(r => formatTaskNotification(r, 300, showCost)).join('\\n\\n')}\\n\\nUse get_subagent_result for full output.\`,
+      display: true,
+      details,
+    }, { deliverAs: "followUp", triggerTurn: true });
+  }
+
+`;
+
 const PATCHES = [
   ['src/index.ts',
     '    if (record.resultConsumed) return;  // re-check at send time\n',
@@ -73,7 +126,8 @@ const PATCHES = [
     '    // ---- Group join manager ----\n',
     `${deferBlock(false).replace(/^ {2}/gm, '    ')}    // ---- Group join manager ----\n`],
 ];
-const MARKER = 'Deferred completion notifications (Evolvera patch)';
+const MARKER = 'Deferred completion notifications (Evolvera patch v2)';
+const MARKER_V1 = 'Deferred completion notifications (Evolvera patch) ----';
 
 function resolveRoot(argv, env = process.env) {
   if (!argv.length) return path.join(env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent'), 'npm', 'node_modules', '@tintinweb', 'pi-subagents');
@@ -96,6 +150,15 @@ async function patch(root, { renameFile = rename } = {}) {
     const target = path.join(root, rel); const stat = await lstat(target); const original = await readFile(target);
     let source = original.toString('utf8');
     const own = PATCHES.filter(([r]) => r === rel);
+    if (count(source, MARKER_V1) === 1) {
+      const ts = rel.endsWith('.ts');
+      const oldBlock = ts ? deferBlockV1(true) : deferBlockV1(false).replace(/^ {2}/gm, '    ');
+      const newBlock = ts ? deferBlock(true) : deferBlock(false).replace(/^ {2}/gm, '    ');
+      if (count(source, oldBlock) !== 1) throw new Error(`anchor cardinality mismatch: ${rel}`);
+      source = source.replace(oldBlock, () => newBlock);
+      targets.push({ target, original, output: Buffer.from(source), mode: stat.mode & 0o7777, changed: true });
+      continue;
+    }
     if (count(source, MARKER) === 1 && own.every(([, , after]) => count(source, after) === 1)) {
       targets.push({ target, original, output: original, mode: stat.mode & 0o7777, changed: false });
       continue;
@@ -122,4 +185,4 @@ async function main() {
   catch (error) { console.error(`pi-subagents deferred-nudges patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { PACKAGE_NAME, PACKAGE_VERSION, PATCHES, MARKER, POLL_MS, deferBlock, patch, resolveRoot };
+export { PACKAGE_NAME, PACKAGE_VERSION, PATCHES, MARKER, POLL_MS, IDLE_STABLE_MS, deferBlock, deferBlockV1, patch, resolveRoot };
