@@ -283,9 +283,9 @@ has(SKILL, /não oferecem transação única nem claim atômico entre máquinas/
 has(REFERENCE, /This is serialization with visible intent and recheck, \*\*not\*\* atomic mutual exclusion/, "reference must reject false atomicity");
 has(REFERENCE, /never invent a second reservation branch, lock file, claim service, or parallel branch scheme/, "no second reservation mechanism");
 has(REFERENCE, /Legacy reservations remain occupied/, "legacy reservations must remain occupied and reconciled");
-has(SKILL, /teto de \*\*seis\*\* workers PI de issue|no máximo \*\*6 workers PI de issue\*\*|\*\*Teto global: seis workers PI de issue simultâneos\*\*/, "the ceiling of six issue PI workers must be stated");
-has(REFERENCE, /\*\*at most six active issue PI workers in total\*\*/, "reference must state the global six-worker ceiling");
-has(REFERENCE, /six is a limit, not a target/, "the ceiling must not be treated as demand");
+has(SKILL, /teto de \*\*doze\*\* workers PI de issue|no máximo \*\*12 workers PI de issue\*\*|\*\*Teto global: doze workers PI de issue simultâneos\*\*/, "the ceiling of six issue PI workers must be stated");
+has(REFERENCE, /\*\*at most twelve active issue PI workers in total\*\*/, "reference must state the global twelve-worker ceiling");
+has(REFERENCE, /twelve is a limit, not a target/, "the ceiling must not be treated as demand");
 has(SKILL, /work-conserving/, "the scheduler must be work-conserving");
 has(SKILL, /Não existe wave imutável/, "no immutable wave barrier");
 has(SKILL, /Timeout, idle, silêncio, `check` vazio ou terminal quieto \*\*não\*\* liberam vaga/, "idle/timeout must never free a slot");
@@ -548,7 +548,7 @@ has(README, /### Modos de autorização/, "README must document the general auth
 has(README, /`SYSTEM\.md`/, "README must point at the canonical global contract");
 has(README, /`AUTÔNOMO` \(\*\*default\*\*\)/, "README must state the global default mode");
 has(README, /por repositório/, "README must state the per-repository base choice");
-has(README, /seis/, "README must state the six-worker ceiling");
+has(README, /teto de \*\*doze\*\* workers PI/, "README must state the twelve-worker ceiling");
 has(README, /`Blocked`/, "README must mention the Blocked Project status");
 has(README, /`mergedAt`/, "README must state the merged-evidence Done rule");
 has(README, /verificação estática|estaticamente|não é certificação de campanha live|nenhuma campanha live/i, "README must keep the static-only caveat");

@@ -58,7 +58,7 @@ Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with 
 
 ## Status board
 
-When the user asks for progress, or when an event changes the picture, answer with one line per active sub-PI: issue, state, PR, and what is waiting on whom. Keep the maximum of six concurrent sub-PIs.`;
+When the user asks for progress, or when an event changes the picture, answer with one line per active sub-PI: issue, state, PR, and what is waiting on whom. Keep the maximum of twelve concurrent sub-PIs.`;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

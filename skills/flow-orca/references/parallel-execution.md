@@ -40,7 +40,7 @@ Rules:
 - assign explicitly in the claim record; do not derive identity only from GitHub login, PID, chat title, workspace name, or terminal handle;
 - one `FLOW_EXECUTOR_ID` owns at most one active issue;
 - one issue has exactly one executor, one Orca workspace, and one actual branch;
-- **at most six active issue PI workers in total**, across every repository and host in the campaign, and never above the ceiling approved at intake; six is a limit, not a target;
+- **at most twelve active issue PI workers in total**, across every repository and host in the campaign, and never above the ceiling approved at intake; twelve is a limit, not a target;
 - the scheduler is continuous and work-conserving: a freed slot is refilled as soon as an `ADMIT` candidate exists and no hazard blocks it — there is no immutable wave and no all-workers barrier;
 - a slot is freed only when its writer has **settled safely** (result read, GitHub/Project transition re-read, terminal released or explicitly retained with reason). Timeout, idle, an empty `check` batch, or a quiet terminal never frees a slot; a blocked or unknown-state writer that is still live keeps its slot;
 - a new chat never adopts an existing executor ID merely because it can see the claim; changing/resuming ownership requires a GitHub-visible handoff or other explicit ownership evidence plus full reconciliation before edits resume.
@@ -106,7 +106,7 @@ The active owner is the unique executor whose marker agrees with the unique actu
 A candidate may be admitted only when **all** conditions pass:
 
 - the campaign grant covers this action, target, and method, or the mode requires and obtained an explicit OK — the global default mode alone never authorizes a campaign, and a missing, ambiguous, or invalid grant blocks the candidate;
-- a slot is free within the approved ceiling (never more than six active issue PI workers);
+- a slot is free within the approved ceiling (never more than twelve active issue PI workers);
 - Project Status is `Ready` and the issue passes Definition of Ready;
 - no open external dependency; otherwise the issue and its dependents go to `Blocked` with the required user action recorded;
 - every dependency declared in the issue body is satisfied remotely, read as a fully qualified issue URL plus its gate — for the default gate, upstream work is merged into **the chosen base** with its issue closed. A missing URL, a missing gate, an unreachable dependency, or a contradiction between grant, body, and Project Status blocks that candidate for bounded reconciliation instead of admitting it;

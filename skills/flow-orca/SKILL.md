@@ -1,6 +1,6 @@
 ---
 name: flow-orca
-description: "Use automatically for GitHub issue/board delivery, branch-per-issue campaigns, or coordinated PI issue workers in Orca worktrees; the user need not name this skill. GitHub owns the campaign grant, acceptance, dependencies and Status; Orca owns one workspace, real branch and PI session per issue. Supports autonomous campaign re-entry, event-driven worker completion without polling, and safely authorized cleanup after verified merge/Done. Scouts new backlogs first; approved campaigns dispatch directly under the per-repository bases, campaign mode and six-worker ceiling. Not for simple worktree creation, unsupervised ownership handoffs, or standalone explanations."
+description: "Use automatically for GitHub issue/board delivery, branch-per-issue campaigns, or coordinated PI issue workers in Orca worktrees; the user need not name this skill. GitHub owns the campaign grant, acceptance, dependencies and Status; Orca owns one workspace, real branch and PI session per issue. Supports autonomous campaign re-entry, event-driven worker completion without polling, and safely authorized cleanup after verified merge/Done. Scouts new backlogs first; approved campaigns dispatch directly under the per-repository bases, campaign mode and twelve-worker ceiling. Not for simple worktree creation, unsupervised ownership handoffs, or standalone explanations."
 ---
 
 # Flow Orca — Backlog → Issues → Campanha → Ship
@@ -23,7 +23,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
   → Registrar o grant de campanha no **README do GitHub Project** e as ACs/dependências/escopos nos **bodies das issues**
   → Derivar ordem topológica, gates e candidatos **em memória**, sempre a partir de uma releitura do GitHub
   → Analisar dependências externas primeiro: bloqueio vira comentário na issue + Project `Blocked`; pula a issue e seus dependentes
-  → Scheduler contínuo e work-conserving, teto de SEIS PIs de issue simultâneos no total:
+  → Scheduler contínuo e work-conserving, teto de DOZE PIs de issue simultâneos no total:
        admissão serial do coordenador único (intenção visível no GitHub + releitura antes do dispatch)
        → `worktree create … --issue <N> --base-branch <base do repo> --no-parent --agent pi`
        → adotar o terminal PI exato em `orchestration worker-start --terminal` e ativar `/goal <objetivo da Task>` imediatamente
@@ -62,7 +62,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
 6. **One concern per gate** — não misture “aprova as 20 issues” com “escolhe stack” na mesma pergunta confusa; separe decisões.
 7. **Read the board first** — em continue/próxima, leia issues+labels+PRs+branches antes de codar.
 8. **1 issue = 1 workspace Orca = 1 branch real** — a branch nasce do `worktree create` do Orca a partir da **base escolhida para aquele repositório**; leia ID e branch **reais** da resposta e nunca calcule a branch pelo nome do workspace. Nunca reutilize workspace/branch de outra issue. Atualize **e releia** o Project na hora de cada transição (Ready → In progress → In review/Blocked → Done).
-9. **Teto de seis PIs de issue simultâneos** — o scheduler é contínuo e work-conserving em todos os repos/hosts da campanha; seis é teto, não demanda. Um único writer por workspace de issue. A vaga só volta quando aquele writer estiver **settled com segurança**; timeout, silêncio ou terminal ocioso nunca liberam vaga.
+9. **Teto de doze PIs de issue simultâneos** — o scheduler é contínuo e work-conserving em todos os repos/hosts da campanha; doze é teto, não demanda. Um único writer por workspace de issue. A vaga só volta quando aquele writer estiver **settled com segurança**; timeout, silêncio ou terminal ocioso nunca liberam vaga.
 10. **GitHub é autoridade; Orca é evidência viva de execução; cache continua cache** — precedência: **GitHub Project Status → issue/assignee + claim marker + PR → branch remota/SHA → workspaces/terminais/dispatches do Orca → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura nova substitui estado antigo. Workspace prova checkout e ligação de issue, não resultado entregue; cache, chat e idade nunca são claim, lock ou autorização de takeover. `.pi/flow/` é **histórico/cache opcional e somente-leitura, sem autoridade nenhuma**: sua ausência nunca bloqueia re-entry, e grants ou planos antigos ali guardados nunca são migrados nem publicados automaticamente.
 11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
 12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na base escolhida daquele repositório. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
@@ -767,7 +767,7 @@ O produto do re-entry é uma tabela **em memória**, derivada do que acabou de s
 - Authority: Project Status → issue/claim/PR → remote branch → Orca workspace/terminal
 - Campaign grant (Project README): mode, base per repo, ceiling, named operations, approval provenance
 - Campaign base for this repo: release/2.1@<40-char SHA>
-- Approved concurrency: N (ceiling 6); active issue PI workers: N
+- Approved concurrency: N (ceiling 12); active issue PI workers: N
 - Remote read at: 2026-07-09T12:00:00Z
 
 ## Reconciled active claims
@@ -856,7 +856,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 
 #### `in progress` — WIP real
 
-- Um único writer por issue e por workspace; no máximo seis workers PI de issue ativos na campanha
+- Um único writer por issue e por workspace; no máximo doze workers PI de issue ativos na campanha
 - **Obrigatório:** workspace Orca criada para a issue, com branch **real** lida da resposta, a partir da base escolhida daquele repositório
 - Status no GitHub atualizado **e relido** no momento em que a workspace nasce / o trabalho é injetado — não no fim do dia
 - Comentário curto na issue com branch real + intenção ajuda o board humano
@@ -923,7 +923,7 @@ Em todo “continua / próxima / segue o projeto / o que dá para rodar junto?�
    - workers ativos acima do teto aprovado, ou vaga “liberada” por timeout/idle em vez de assentamento provado
    - issue P0 parada enquanto P3 está in progress
 4. **Calcular nós executáveis agora**: status remoto `ready`, dependências satisfeitas, nenhum claim prévio, nenhum bloqueio externo aberto e nenhum hazard de path/contrato/recurso incompatível com **qualquer** WIP reconciliado
-5. **Preencher as vagas livres** com as melhores candidatas (não só o menor número), respeitando o teto de seis
+5. **Preencher as vagas livres** com as melhores candidatas (não só o menor número), respeitando o teto de doze
 6. **Pedir OK** apenas quando o modo ou a natureza da ação exigir
 7. Só então admitir
 
@@ -1008,7 +1008,7 @@ O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é ex
 | Nome | O nome do workspace é rótulo humano; identidade real = ID do workspace + branch retornada. Branches legadas continuam reconhecidas e nunca duplicadas |
 | Executor | `FLOW_EXECUTOR_ID` único e estável por issue; login GitHub sozinho não separa chats/agentes |
 | Claim | Project/assignee + marker + branch real + workspace/terminal; nenhum sinal isolado é lock suficiente |
-| WIP | 1 writer por issue/workspace; no máximo **6 workers PI de issue** ativos no total, dentro do teto aprovado |
+| WIP | 1 writer por issue/workspace; no máximo **12 workers PI de issue** ativos no total, dentro do teto aprovado |
 | Sujo | Estado sujo pertence à workspace onde foi observado; outro executor nunca stasha/commita/descarta |
 | Preservação | Workspace, branch, terminal e reserva **não relacionados à campanha** ficam intocados (incluindo WIP, órfãs, stale, reusadas, preexistentes ou não provadas); nada de deletar, arquivar, renomear ou reatribuir |
 | Reuso | Só com prova exata de issue, repositório, branch real, base, PR e dono; nome parecido, idade ou terminal ocioso não são prova |
@@ -1059,7 +1059,7 @@ O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se 
 ### 7.3 Scheduler contínuo
 
 - O scheduler é **work-conserving**: sempre que houver vaga livre, candidata `ADMIT` e nenhum hazard, admita. Não existe wave imutável nem espera por todos terminarem.
-- **Teto global: seis workers PI de issue simultâneos**, somando todos os repositórios e hosts da campanha. Seis é limite, não meta; o teto aprovado no intake pode ser menor.
+- **Teto global: doze workers PI de issue simultâneos**, somando todos os repositórios e hosts da campanha. Doze é limite, não meta; o teto aprovado no intake pode ser menor.
 - Uma vaga só volta quando aquele writer **assentou com segurança**: resultado lido, PR/estado registrado, transição de Project relida e terminal liberado (`worker-release` em terminal settled) ou explicitamente retido com justificativa. Retenção da worktree por cleanup sem autoridade/prova não segura, por si só, a vaga de um worker já assentado. Timeout, idle, silêncio, `check` vazio ou terminal quieto **não** liberam vaga.
 - Writer bloqueado ou de estado desconhecido, mas ainda vivo, **mantém** sua vaga até assentamento seguro.
 - Issues com bloqueio externo não ocupam vaga: vão para `Blocked` com a ação do usuário registrada, junto com seus dependentes, e a fila segue com trabalho independente.
@@ -1236,7 +1236,7 @@ Resume report compacto obrigatório:
 ## Flow Orca resume — OWNER/REPO
 - Remote verified at: 2026-07-09T12:00:00Z
 - Authority read: Project <number|not configured>; issues/claims/PRs; remote branches; Orca workspaces/terminals
-- Campaign: mode=…; base per repo=…; ceiling=6; approved concurrency=…; active issue PI workers=…
+- Campaign: mode=…; base per repo=…; ceiling=12; approved concurrency=…; active issue PI workers=…
 - Board: backlog=… ready=… in-progress=… in-review=… blocked=… done=…
 - Grant (Project README): mode/bases/ceiling/named ops=…; approval provenance=…; derived DAG: current layer=…; executable issues=…
 - Executor / WIP: `<FLOW_EXECUTOR_ID>` / login — #N | none
