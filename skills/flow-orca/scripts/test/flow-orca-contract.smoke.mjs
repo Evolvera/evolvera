@@ -223,9 +223,22 @@ has(SKILL, /ORCA_CLI_COMMAND[\s\S]{0,200}ORCA_DEV_REPO_ROOT[\s\S]{0,120}orca-ide
 has(SKILL, /skills get orca-cli[\s\S]{0,80}skills get orchestration/, "both live guides must be loaded each session");
 has(SKILL, /sem fallback/, "guide loading must be fail-closed with no fallback");
 has(SKILL, /orca status --json|`ORCA status --json`/i, "readiness must be confirmed with status --json");
-has(SKILL, /worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --no-parent --agent pi --setup <policy> --json/, "the documented worktree create form must be exact");
+has(SKILL, /worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --parent-worktree <pai verificado da campanha> --agent pi --setup <policy> --json/, "campaign worktree creation must bind its verified parent explicitly");
 has(SKILL, /\*\*Não existe\*\* flag documentada de nome de branch nem de attach em branch existente: não invente/, "invented branch/attach flags must be forbidden");
-has(SKILL, /`--no-parent` controla linhagem de sidebar, não a base Git/, "--no-parent must not be confused with the Git base");
+has(SKILL, /`--parent-worktree` controla linhagem de sidebar, não a base Git/, "parent lineage must not be confused with the Git base");
+has(REFERENCE, /--base-branch <approved base for this repository> --parent-worktree <verified campaign parent> --agent pi/, "the single dispatch protocol creates campaign children");
+has(REFERENCE, /parentWorktreeId[\s\S]{0,350}childWorktreeIds/, "both child and parent lineage must be verified before dispatch");
+has(REFERENCE, /never use `--no-parent` for a campaign worker/, "independent-handoff defaults must not detach campaign workers");
+has(REFERENCE, /never use `active`\/`current`/i, "UI selection must not choose the campaign parent");
+has(REFERENCE, /parent mismatch[\s\S]{0,200}blocks dispatch/, "a lineage mismatch must prevent work injection");
+for (const file of [SKILL, REFERENCE]) {
+  lacks(file, /(?:→ `worktree create|ORCA worktree create|\| `worktree create)[^\n]*--no-parent/, "campaign create examples cannot detach workers");
+  lacks(file, /^\s*--base-branch[^\n]*--no-parent/m, "multiline campaign create examples cannot detach workers");
+}
+for (const file of [SYSTEM, SYSTEM_MIRROR]) {
+  has(file, /Related work must be a child of its verified coordinator\/campaign context/, "related Orca handoffs stay children");
+  has(file, /`--no-parent` is only for explicitly independent work/, "independent handoff policy must not leak into related work");
+}
 has(SKILL, /Leia da resposta o ID do workspace, a \*\*branch real\*\* e o handle do terminal; nunca derive branch do `--name`/, "identity must come from the actual create response");
 has(SKILL, /Inspecione e autorize política de setup e terminais default \*\*antes\*\* do create/, "setup/default terminals must be authorized before create");
 has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effect free");
