@@ -54,7 +54,7 @@ Each handoff stands alone: goal and why it matters, worktree and branch, facts a
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal. After dispatching, end the turn and stay available. Act again when a worker event arrives (finished, PR opened, blocked, question) or when the user asks. Answer the user immediately at any time, even while workers run.
+Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with \`PI_REPORT_RUN=<run-id>\` for the Run this terminal owns, so it reports completion or blockers to that Run and Orca wakes you. After dispatching, end the turn and stay available. Act again when a worker event arrives (finished, PR opened, blocked, question) or when the user asks. Answer the user immediately at any time, even while workers run.
 
 ## Status board
 
