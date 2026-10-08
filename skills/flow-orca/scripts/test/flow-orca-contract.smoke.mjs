@@ -444,6 +444,13 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --model …`/, "worker launched with PI_REPORT_RUN");
   has(path, /orca orchestration check --run <run-id> --json/, "coordinator reads the Run on wake");
 }
+// Proportion: reuse proven head evidence, ask gates up front, don't repair Orca bookkeeping.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /never a re-run of its suites or a new QA or review of the same head/, "integration reuses proven head evidence");
+  has(path, /Ask it in the first reply that identifies the gate/, "gate question asked up front");
+  has(path, /Never inspect live or production systems to avoid asking/, "no production probing instead of asking");
+  has(path, /a stale or rejected Orca record gets at most one note/, "Orca bookkeeping is not delivery work");
+}
 // Handoff silence: coordinator does not shadow a worker's in-progress work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");
