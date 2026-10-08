@@ -185,7 +185,7 @@ try {
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
-  assert.match(completions[1].description, /Ultrafast on Astra, Fast on other eligible models/);
+  assert.match(completions[1].description, /Ultrafast on Astra\/6\.1 Sol, Fast on other eligible models/);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -418,14 +418,17 @@ try {
 
   // Ultrafast: only Astra is ever sent the ultrafast tier; other eligible models fall back to priority.
   assert.equal(mod.isUltrafastEligibleModel(astra), true);
-  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), false);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), true);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6-sol" }), false);
+  assert.equal(mod.serviceTierFor("ultra", { provider: "openai-codex", id: "gpt-6.1-sol" }), "ultrafast");
+  assert.equal(mod.serviceTierFor("all", { provider: "openai-codex", id: "gpt-6.1-sol" }), "priority");
   assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-astra" }), false);
   assert.equal(mod.serviceTierFor("ultra", astra), "ultrafast");
   assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
   assert.equal(mod.serviceTierFor("all", astra), "priority");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
-  assert.match(completions[1].description, /Astra Ultrafast/);
+  assert.match(completions[1].description, /Ultrafast here \+ subagents \(Astra\/6\.1 Sol\)/);
   await fastCommand.handler("ultra", ctx);
   assert.match(notifications.at(-1).message, /Ultrafast ativado no GPT-6 Astra/);
   assert.deepEqual(
@@ -448,7 +451,7 @@ try {
   );
   assert.equal(
     (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.1-sol" } }, { ...childCtx, model: { provider: "openai-codex", id: "gpt-6.1-sol" } })).service_tier,
-    "priority",
+    "ultrafast",
   );
   assert.equal(
     await child.handlers.get("before_provider_request")({ payload: { model: claude.id } }, { ...childCtx, model: claude }),
@@ -471,7 +474,7 @@ try {
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   // /fast ultra on a non-Astra model warns and uses priority.
   await fastCommand.handler("ultra", ctx);
-  assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra/);
+  assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra e no GPT-6\.1 Sol/);
   assert.equal((await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx)).service_tier, "priority");
   assert.equal(statuses.at(-1).text, "⚡🟡");
   // ultra-eco: owner stays standard, Astra children get ultrafast, other children priority.
