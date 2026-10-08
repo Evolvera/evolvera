@@ -28,7 +28,7 @@ const SDK = path.resolve("C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules
 const AI = path.join(SDK, "node_modules/@earendil-works/pi-ai/dist/index.js");
 const COMPAT = path.join(SDK, "node_modules/@earendil-works/pi-ai/dist/compat.js");
 const SDK_ABSENT_PATHS = Object.freeze([path.join(SDK, "dist/package.json"), path.join(SDK, "src")]);
-const FILES = ["extensions/usuario.ts", ...["registry", "ownership", "credentials", "settings", "resources", "environment", "runtime", "launcher", "switch-readiness"].map((name) => `scripts/users/${name}.mjs`), "scripts/compat/alibaba-users.mjs", "scripts/test/users-switch.smoke.mjs", "scripts/test/lib/users-sandbox.mjs"];
+const FILES = ["extensions/usuario.ts", ...["registry", "ownership", "credentials", "settings", "resources", "environment", "runtime", "launcher", "switch-readiness"].map((name) => `scripts/users/${name}.mjs`), "scripts/compat/alibaba-users.mjs", "scripts/compat/subagents-users.mjs", "scripts/test/users-switch.smoke.mjs", "scripts/test/lib/users-sandbox.mjs"];
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const token = () => randomBytes(24).toString("hex");
 const within = (root, file) => { const rel = path.relative(root, file); return rel === "" || rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel); };
@@ -211,8 +211,9 @@ function installCodeHooks(grant, refuse) {
   trustedRegisterHooks({
     resolve(specifier, context, nextResolve) {
       // Canonicalize the verified SDK identity BEFORE native resolution; discovery/context remain native.
-      // The sole implementation redirect is still the public native createJiti adapter.
-      const result = specifier === "jiti" ? { url: pathToFileURL(grant.jitiAdapter).href, shortCircuit: true } : nextResolve(canonicalSdkAlias(grant, specifier), context);
+      // Exact staged dependency/SDK peer aliases, never a node_modules/HOME fallback.
+      const redirect = specifier === "jiti" ? grant.jitiAdapter : Object.hasOwn(grant.codeAliases, specifier) ? grant.codeAliases[specifier] : undefined;
+      const result = redirect ? { url: pathToFileURL(redirect).href, shortCircuit: true } : nextResolve(canonicalSdkAlias(grant, specifier), context);
       validate(result.url);
       return result;
     },
@@ -243,6 +244,12 @@ function installGuards(grant) {
   let broker;
   let expectedDenial = false;
   const negativeControls = { worker: 0, module: 0, code: 0 };
+  const expectedDenied = { gitProbe: 0 };
+  const deniedGitProbes = [];
+  const gitProbeArguments = Object.freeze([
+    Object.freeze(["rev-parse", "--is-inside-work-tree"]),
+    Object.freeze(["branch", "--show-current"]),
+  ]);
   let lastAccess; // Diagnostic only: op + sandbox-relative path of the fs call being checked.
   const deny = (kind) => {
     if (expectedDenial) negativeControls[kind]++; else counters[kind]++;
@@ -427,6 +434,18 @@ function installGuards(grant) {
   process.kill = () => deny("child");
   Module._extensions[".node"] = () => deny("keyring");
   for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]) cp[name] = () => deny("child");
+  // The upstream env.ts fallback is expected, but remains a DENIAL, never a broker.
+  // Only public spawn("git", exact argv, owned workspace cwd) is classified here.
+  cp.spawn = (command, argv, options) => {
+    if (grant.role === "child" && command === "git" && Array.isArray(argv) &&
+        gitProbeArguments.some((expected) => expected.length === argv.length && expected.every((value, index) => value === argv[index])) &&
+        typeof options?.cwd === "string" && path.isAbsolute(options.cwd) && within(grant.cwd, path.resolve(options.cwd))) {
+      expectedDenied.gitProbe++;
+      deniedGitProbes.push(Object.freeze({ argv: Object.freeze([...argv]), cwd: path.relative(grant.cwd, path.resolve(options.cwd)) }));
+      throw Object.assign(new Error("SWITCH_RESOURCE_BOUNDARY_child"), { code: "SWITCH_RESOURCE_BOUNDARY_child" });
+    }
+    return deny("child");
+  };
   cp.ChildProcess.prototype.spawn = function (options) {
     if (!broker) deny("child");
     const permit = broker; broker = undefined; // consumed before the one synchronous native entry
@@ -481,6 +500,7 @@ function installGuards(grant) {
       const childGrant = readGrant(childRecord, nativeOptions.env.SWITCH_FIXTURE_HASH);
       assert.equal(childGrant.role, "child"); assert.deepEqual(childGrant.argv, argv);
       assert.deepEqual(childGrant.codeFiles, grant.codeFiles); assert.deepEqual(childGrant.sdk, grant.sdk);
+      assert.deepEqual(childGrant.rootCode, grant.rootCode); assert.deepEqual(childGrant.codeAliases, grant.codeAliases);
       assert.deepEqual(childGrant.profilesIdentity, grant.profilesIdentity);
       assert.equal(childGrant.home, home); assert.equal(childGrant.cwd, options.cwd);
       const trustedOptions = { cwd: nativeOptions.cwd, env: { ...nativeOptions.env },
@@ -489,7 +509,7 @@ function installGuards(grant) {
         envPairs: Object.entries(trustedOptions.env).map(([key, value]) => `${key}=${value}`).sort() };
       try { return originalSpawn(executable, [..._bootstrap], trustedOptions); } finally { broker = undefined; }
     },
-    async drain() { await Promise.all([...pending].filter((item) => item?.then)); await new Promise((resolve) => setImmediate(resolve)); assert.equal(pending.size, 0); assert.equal(descriptors.size, 0); assert.deepEqual(counters, { outside: 0, protected: 0, network: 0, child: 0, keyring: 0, worker: 0, module: 0 }); return { pending: 0, descriptors: 0, counters, negativeControls }; },
+    async drain() { await Promise.all([...pending].filter((item) => item?.then)); await new Promise((resolve) => setImmediate(resolve)); assert.equal(pending.size, 0); assert.equal(descriptors.size, 0); assert.deepEqual(counters, { outside: 0, protected: 0, network: 0, child: 0, keyring: 0, worker: 0, module: 0 }); return { pending: 0, descriptors: 0, counters, negativeControls, expectedDenied, deniedGitProbes }; },
   });
 }
 
@@ -511,7 +531,20 @@ function readGrant(file, hash) {
   assert.equal(grant.jitiAdapter, path.join(grant.stage, "jiti-no-cache.mjs"));
   assert.equal(grant.childBootstrap, path.join(grant.stage, "switch-child-bootstrap.mjs"));
   const expectedCode = [...FILES, "package.json", "jiti-no-cache.mjs", "switch-child-bootstrap.mjs", "common/synthetic-transport.mjs"].map((relative) => path.join(grant.stage, relative));
+  assert.ok(Array.isArray(grant.rootCode) && grant.rootCode.length > 40);
+  assert.equal(new Set(grant.rootCode).size, grant.rootCode.length);
+  for (const relative of grant.rootCode) {
+    assert.ok(typeof relative === "string" && /^(?:subagents-staging\/pi-subagents-0\.18\.2-users\/|plastic-memory\/|root-deps\/)/.test(relative));
+    assert.equal(path.relative(grant.stage, owned(grant.stage, path.join(grant.stage, relative))).split(path.sep).join("/"), relative);
+    expectedCode.push(path.join(grant.stage, relative));
+  }
   assert.deepEqual(Object.keys(grant.codeFiles).sort(), expectedCode.sort());
+  assert.deepEqual(Object.keys(grant.codeAliases).sort(), ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai", "@earendil-works/pi-ai/compat", "@earendil-works/pi-tui", "@sinclair/typebox", "croner", "nanoid"].sort());
+  for (const file of Object.values(grant.codeAliases)) assert.ok(Object.hasOwn(grant.codeFiles, file) || Object.hasOwn(grant.sdk.files, file), "ROOT_ALIAS_FINITE_CODE");
+  assert.equal(grant.codeAliases["@sinclair/typebox"], path.join(grant.stage, "root-deps/typebox/build/esm/index.mjs"));
+  assert.equal(grant.codeAliases.croner, path.join(grant.stage, "root-deps/croner/dist/croner.js"));
+  assert.equal(grant.codeAliases.nanoid, path.join(grant.stage, "root-deps/nanoid/index.js"));
+  Object.freeze(grant.rootCode); Object.freeze(grant.codeAliases);
   for (const [codeFile, hash] of Object.entries(grant.codeFiles)) {
     assert.match(hash, /^[a-f0-9]{64}$/);
     const entry = fs.lstatSync(codeFile);
@@ -566,7 +599,10 @@ export async function initializeSwitchChild(file, hash) {
     await new Promise((resolve, reject) => process.send({ fixture: grant.nonce, type: "disposed", pid: process.pid, id: receipt.profile.id, drained }, (error) => error ? reject(error) : resolve()));
     return result;
   };
-  globalThis.__switchFixture = Object.freeze({ nonce: grant.nonce });
+  globalThis.__switchFixture = Object.freeze({ nonce: grant.nonce, lifecycle(phase) {
+    assert.ok(["sub-scheduler-stopped", "sub-manager-disposed", "plastic-shutdown", "plastic-unregistered"].includes(phase));
+    process.send({ fixture: grant.nonce, type: "root-lifecycle", phase, pid: process.pid });
+  } });
 }
 
 async function supervisor(file, hash) {
@@ -584,8 +620,14 @@ async function supervisor(file, hash) {
   });
   const { launchUser } = await import(pathToFileURL(path.join(grant.stage, "scripts/users/launcher.mjs")).href);
   diagnostic("supervisor:launcher-import-complete");
+  const jointPhases = ["sub-scheduler-stopped", "sub-manager-disposed", "plastic-shutdown", "plastic-unregistered"];
+  const jointShutdown = (entry) => {
+    for (const phase of jointPhases) assert.equal(entry.lifecycle.filter((item) => item === phase).length, 1, `JOINT_SHUTDOWN_${phase}`);
+    assert.ok(entry.lifecycle.indexOf("sub-scheduler-stopped") < entry.lifecycle.indexOf("sub-manager-disposed"));
+  };
   const options = { spawnProcess(executable, argv, options) {
     diagnostic("supervisor:managed-child-spawn-requested");
+    for (const prior of children) { assert.equal(prior.closed, true); assert.equal(prior.disposed, true); jointShutdown(prior); }
     if (grant.failDestination === argv[2]) throw new Error("INTENTIONAL_NEW_SPAWN_FAILURE");
     const childGrant = { ...grant, role: "child", argv, cwd: options.cwd, home: options.env.HOME };
     const record = path.join(grant.root, "control", `${token()}.json`); const bytes = JSON.stringify(childGrant);
@@ -615,9 +657,13 @@ async function supervisor(file, hash) {
       try { process.stderr.write(`SWITCH_BROKER_ERROR ${JSON.stringify({ pid: process.pid, phase: "supervisor:broker-spawn", name, ...(code ? { code } : {}), ...(tag ? { tag } : {}), frames })}\n`); } catch {}
       throw error;
     }
-    const entry = { handle, closed: false, disposed: false }; children.push(entry); current = handle;
-    handle.on("message", (message) => { if (message?.fixture === grant.nonce) { if (message.type === "disposed") entry.disposed = true; emit(message); } });
-    entry.done = new Promise((resolve) => handle.once("close", (code, signal) => { entry.closed = true; emit({ type: "close", pid: handle.pid, code, signal, disposed: entry.disposed }); resolve(); }));
+    const entry = { handle, closed: false, disposed: false, lifecycle: [] }; children.push(entry); current = handle;
+    handle.on("message", (message) => { if (message?.fixture === grant.nonce) {
+      if (message.type === "disposed") entry.disposed = true;
+      if (message.type === "root-lifecycle") { assert.equal(message.pid, handle.pid); assert.ok(jointPhases.includes(message.phase)); entry.lifecycle.push(message.phase); }
+      emit(message);
+    } });
+    entry.done = new Promise((resolve) => handle.once("close", (code, signal) => { entry.closed = true; jointShutdown(entry); emit({ type: "close", pid: handle.pid, code, signal, disposed: entry.disposed }); resolve(); }));
     entry.pipes = Promise.all([handle.stdin, handle.stdout, handle.stderr].map((stream) => new Promise((resolve) => stream.once("close", resolve))));
     for (const object of [handle, handle.stdin, handle.stdout, handle.stderr]) object.on("error", () => emit({ type: "io-error", pid: handle.pid }));
     emit({ type: "spawn", pid: handle.pid, id: argv[2] });
@@ -652,13 +698,25 @@ export default (pi) => {
  const receipt=globalThis[Symbol.for('pi.users.context')], runtime=receipt.modelRuntime;
  const original=runtime.getProvider('openai'); if(!original) throw new Error('FIXTURE_PROVIDER_MISSING');
  const fixture=globalThis.__switchFixture; let held; const emit=(value)=>process.send({fixture:fixture.nonce,...value});
+ const realNames=['principal','subagents','plastic-memory']; let subReady=false, subId;
+ pi.events.on('subagents:ready',()=>{subReady=true;emit({type:'sub-ready',pid:process.pid});});
+ pi.events.on('subagents:failed',event=>{if(event.id===subId)emit({type:'sub-failed',pid:process.pid,id:event.id,status:event.status});});
+ pi.events.on('subagents:completed',event=>{if(event.id!==subId)return;emit({type:'sub-completed',pid:process.pid,id:event.id,status:event.status,result:event.result});
+  pi.events.emit('subagents:rpc:consume',{requestId:'switch-consume',agentId:event.id});});
+ pi.events.on('subagents:rpc:consume:reply:switch-consume',reply=>{if(reply.success!==true)throw new Error('FIXTURE_SUB_CONSUME');emit({type:'sub-consumed',pid:process.pid});});
+ pi.registerCommand('fixture:real-roots',{handler:async()=>{const lookup=lookupUserSwitchParticipants({names:realNames});if(!lookup.ok||!subReady)throw new Error('FIXTURE_REAL_COHORT');emit({type:'real-cohort',pid:process.pid,names:lookup.expected.map(e=>e.name)});}});
+ pi.registerCommand('fixture:real-sub',{handler:async()=>{
+  if(!subReady||subId)throw new Error('FIXTURE_SUB_NOT_READY');
+  const off=pi.events.on('subagents:rpc:spawn:reply:switch-spawn',reply=>{off();if(reply.success!==true||typeof reply.data?.id!=='string')throw new Error('FIXTURE_SUB_SPAWN');subId=reply.data.id;emit({type:'sub-spawned',pid:process.pid,id:subId});});
+  pi.events.emit('subagents:rpc:spawn',{requestId:'switch-spawn',type:'general-purpose',prompt:'fixture-hold real-sub accepted work',options:{isolated:true,isBackground:true,inheritContext:false,isolation:'off'}});
+ }});
  process.on('message',m=>{if(m?.fixture===fixture.nonce&&m.type==='release'&&held){const end=held;held=undefined;end();}});
  const stream=(model,context,options)=>{
   if(JSON.stringify(context.messages).includes('accepted-next-turn'))emit({type:'next-turn-observed',pid:process.pid});
   const result=createAssistantMessageEventStream(); emit({type:'token',pid:process.pid,id:receipt.profile.id,token:options.apiKey});
   const end=()=>result.end({role:'assistant',content:[{type:'text',text:'owned synthetic response'}],api:model.api,provider:model.provider,model:model.id,usage:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},stopReason:'stop',timestamp:0});
   const last=context.messages.filter(m=>m.role==='user').at(-1); const text=typeof last?.content==='string'?last.content:JSON.stringify(last?.content);
-  if(text?.includes('fixture-hold')) held=end; else queueMicrotask(end); return result;
+  if(text?.includes('fixture-hold')) {if(held)throw new Error('FIXTURE_STREAM_ALREADY_HELD');held=end;if(text.includes('real-sub'))emit({type:'sub-stream-held',pid:process.pid});} else queueMicrotask(end); return result;
  };
  registerApiProvider({api:runtime.getModels('openai')[0].api,stream,streamSimple:stream},'switch-fixture');
  const api=getApiProvider(runtime.getModels('openai')[0].api); const hook=(...args)=>api.streamSimple(...args);
@@ -691,12 +749,12 @@ export default (pi) => {
     let active=true;return()=>{if(!active)return true;active=false;fenced=false;if(deferred){deferred=false;queueMicrotask(()=>dispatch++);}return true;};
    }});ensure(registration.ok);
    if(kind==='stale')current=false;
-   const lookup=lookupUserSwitchParticipants({names:['principal','fixture-root']});ensure(lookup.ok);
+   const lookup=lookupUserSwitchParticipants({names:[...realNames,'fixture-root']});ensure(lookup.ok);
    const lease=acquireUserSwitchReadiness({expected:lookup.expected});
    if(busy||kind==='stale'){ensure(!lease.acquired);current=true;}
    else {ensure(lease.acquired);await Promise.resolve();ensure(dispatch===0);ensure(lease.release().ok);ensure(lease.release().ok);await Promise.resolve();if(kind==='race')ensure(dispatch===1);}
    ensure(registration.unregister().ok);
-   const principal=lookupUserSwitchParticipants({names:['principal']});ensure(principal.ok);
+   const principal=lookupUserSwitchParticipants({names:realNames});ensure(principal.ok);
    const recovered=acquireUserSwitchReadiness({expected:principal.expected});ensure(recovered.acquired);ensure(recovered.release().ok);
   }
   emit({type:'probe',kind,pid:process.pid});
@@ -706,6 +764,102 @@ export default (pi) => {
 };\n`;
 }
 
+// Inert mirrors are read only by the parent of a freshly admitted native run.
+const PUBLIC_CODE = path.join(SOURCE, ".pi/recovery/public-code");
+const ROOT_MIRRORS = Object.freeze({
+  subagents: ["20261007T214943102322Z-pi-subagents-0.18.2", "235e92c74ec1503c102a2bb1247da6fe6e6926b2ccb655b43e945fa31b3b0bd7"],
+  croner: ["20261008T145907631635Z-croner-10.0.1", "d87a476c7891ac122f05fcda18205e7bb0650743f809a8027489f32aafc369e8"],
+  nanoid: ["20261008T145907631635Z-nanoid-5.1.16", "99debf7d449d058d4e2d199d77193288ee7cc39921d294d882e806818e4e43c7"],
+  typebox: ["20261008T145907631635Z-sinclair-typebox-0.34.49", "f43de969486ba999cd93904e6952eccd2d9ed4b692afb04ffaa083abc08286e5"],
+});
+const PLASTIC_CODE = Object.freeze([
+  "index.ts", "config.ts", "common/ids.ts", "common/safety.ts",
+  "compaction/emergency.ts", "compaction/engine.ts", "compaction/extract.ts", "compaction/pending.ts", "compaction/projection.ts", "compaction/render.ts",
+  "project/context.ts", "project/io.ts", "project/migrate.ts", "project/projection.ts", "project/schema.ts", "project/search.ts", "project/store.ts",
+  "runtime/commands.ts", "runtime/coordinator.ts", "runtime/runner-runtime.ts", "runtime/tools.ts",
+  "session/backfill.ts", "session/bootstrap.ts", "session/cycles.ts", "session/ledger.ts", "session/recall.ts", "session/render-summary.ts", "session/retention.ts", "session/types.ts",
+  "workers/compactor.ts", "workers/observer.ts", "workers/promoter.ts", "workers/reflector.ts", "workers/runner.ts", "workers/scheduler.ts",
+]);
+function stageRealRoots(root, stage, make, sdkCode) {
+  const inventory = [], rootCode = [];
+  const mirror = (name) => {
+    const [directory, hash] = ROOT_MIRRORS[name], base = path.join(PUBLIC_CODE, directory);
+    assert.equal(fs.realpathSync.native(base), base);
+    const bytes = fs.readFileSync(path.join(base, "SOURCE_MANIFEST.json")); assert.equal(digest(bytes), hash);
+    const manifest = JSON.parse(bytes);
+    return { base, files: manifest.files };
+  };
+  const sourceBytes = (base, relative, expected) => {
+    const file = owned(base, path.join(base, relative)), stat = fs.lstatSync(file);
+    assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1);
+    assert.equal(fs.realpathSync.native(file), file);
+    const bytes = fs.readFileSync(file); if (expected) assert.equal(digest(bytes), typeof expected === "string" ? expected : expected.sha256);
+    return bytes;
+  };
+  const record = (relative, bytes, sourceHash = digest(bytes)) => {
+    make(path.join(stage, relative), bytes); rootCode.push(relative); inventory.push({ file: relative, sourceHash });
+  };
+  const sub = mirror("subagents"), sourceCopy = path.join(root, "subagents-source");
+  assert.equal(Object.keys(sub.files).length, 40);
+  for (const [relative, hash] of Object.entries(sub.files)) make(path.join(sourceCopy, relative), sourceBytes(sub.base, relative, hash));
+  const staging = path.join(stage, "subagents-staging"); fs.mkdirSync(staging);
+  // Existing supported transform, executed only inside the future run-owned envelope.
+  return import(pathToFileURL(path.join(stage, "scripts/compat/subagents-users.mjs")).href).then(({ stageSubagentsProfileCompatibility }) => {
+    const staged = stageSubagentsProfileCompatibility(sourceCopy, staging, { id: "switch-code-staging", agentDir: path.join(root, "staging-profile-agent") });
+    for (const [relative, hash] of Object.entries(sub.files)) {
+      const target = path.relative(stage, path.join(staged.packageRoot, relative)).split(path.sep).join("/");
+      rootCode.push(target); inventory.push({ file: target, sourceHash: hash });
+    }
+    const observe = (relative, before, after) => {
+      const file = owned(stage, path.join(stage, relative)), text = fs.readFileSync(file, "utf8");
+      assert.equal(text.split(before).length, 2, `ROOT_OBSERVER_ANCHOR ${relative}`);
+      fs.writeFileSync(file, text.replace(before, after));
+    };
+    const subEntry = path.relative(stage, staged.entry).split(path.sep).join("/");
+    // Observe actual calls at their original locations; never substitute shutdown.
+    observe(subEntry, "    scheduler.stop();\n    manager.abortAll();", "    scheduler.stop();\n    if (ownsManagerRegistry) globalThis.__switchFixture.lifecycle('sub-scheduler-stopped');\n    manager.abortAll();");
+    observe(subEntry, "    await manager.dispose();", "    await manager.dispose();\n    if (ownsManagerRegistry) globalThis.__switchFixture.lifecycle('sub-manager-disposed');");
+    for (const relative of PLASTIC_CODE) record(`plastic-memory/${relative}`, sourceBytes(path.join(SOURCE, "extensions/plastic-memory"), relative));
+    record("plastic-memory/package.json", Buffer.from(JSON.stringify({ private: true, type: "module" })));
+    observe("plastic-memory/runtime/coordinator.ts", "    this.shutdownListeners.clear();", "    this.shutdownListeners.clear();\n    globalThis.__switchFixture.lifecycle('plastic-shutdown');");
+    observe("plastic-memory/index.ts", "        const result = registration.unregister();", "        const result = registration.unregister();\n        if (result?.ok === true) globalThis.__switchFixture.lifecycle('plastic-unregistered');");
+    observe("plastic-memory/index.ts", "queueMicrotask(() => { registration.unregister(); });", "queueMicrotask(() => { const result = registration.unregister(); if (result?.ok === true) globalThis.__switchFixture.lifecycle('plastic-unregistered'); });");
+    const entries = { croner: "dist/croner.js", nanoid: "index.js", typebox: "build/esm/index.mjs" };
+    const aliases = {};
+    for (const [name, entry] of Object.entries(entries)) {
+      const dependency = mirror(name), seen = new Set();
+      // Finite literal ESM closure only. Metadata is needed for native/Jiti package scope.
+      const visit = (relative) => {
+        if (seen.has(relative)) return; seen.add(relative);
+        assert.ok(Object.hasOwn(dependency.files, relative), "DEPENDENCY_MANIFEST_CLOSURE");
+        const bytes = sourceBytes(dependency.base, relative, dependency.files[relative]);
+        record(`root-deps/${name}/${relative}`, bytes);
+        if (relative.endsWith(".json")) return;
+        const text = bytes.toString("utf8");
+        assert.ok(!/\b(?:require\s*\(|import\s*\()/.test(text), "DEPENDENCY_DYNAMIC_IMPORT_UNADMITTED");
+        for (const match of text.matchAll(/\b(?:from\s*|import\s*)["']([^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier.startsWith("node:")) continue;
+          assert.ok(specifier.startsWith("."), "DEPENDENCY_BARE_IMPORT_UNADMITTED");
+          const next = path.posix.normalize(path.posix.join(path.posix.dirname(relative), specifier));
+          assert.ok(!next.startsWith("../") && !path.posix.isAbsolute(next)); visit(next);
+        }
+      };
+      visit("package.json"); visit(entry);
+      aliases[name === "typebox" ? "@sinclair/typebox" : name] = path.join(stage, "root-deps", name, entry);
+    }
+    const sdkRequire = originalCreateRequire(path.join(SDK, "package.json"));
+    for (const name of ["@earendil-works/pi-coding-agent", "@earendil-works/pi-ai", "@earendil-works/pi-ai/compat", "@earendil-works/pi-tui"]) {
+      const packageName = name.endsWith("/compat") ? name.slice(0, -7) : name;
+      const metadata = packageName === "@earendil-works/pi-coding-agent" ? path.join(SDK, "package.json") : path.join(SDK, "node_modules", packageName, "package.json");
+      assert.ok(Object.hasOwn(sdkCode.files, metadata), "ROOT_PEER_METADATA_PRESENT");
+      const file = sdkRequire.resolve(name); assert.ok(Object.hasOwn(sdkCode.files, file), "ROOT_PEER_SDK_INVENTORY"); aliases[name] = file;
+    }
+    process.stdout.write(`REAL_ROOT_CODE_INVENTORY ${JSON.stringify(inventory)}\n`);
+    return { rootCode, codeAliases: aliases, entries: [staged.entry, path.join(stage, "plastic-memory/index.ts")] };
+  });
+}
+
 async function parent() {
   const sandbox = createSandbox("users-switch");
   const root = sandbox.root, identity = fs.lstatSync(root), stage = sandbox.mkdir("stage"), control = sandbox.mkdir("control");
@@ -713,15 +867,17 @@ async function parent() {
   const make = (file, bytes) => { owned(root, file); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bytes, { flag: "wx" }); };
   for (const relative of FILES) make(path.join(stage, relative), fs.readFileSync(path.join(SOURCE, relative)));
   const code = sdkInventory(), nonce = token();
+  fs.mkdirSync(path.join(stage, "agents")); // Exactly one canonical sharedAssets root.
+  const realRoots = await stageRealRoots(root, stage, make, code);
   const jitiAdapter = path.join(stage, "jiti-no-cache.mjs");
-  make(jitiAdapter, `import {createJiti as native} from ${JSON.stringify(pathToFileURL(path.join(SDK, "node_modules/jiti/lib/jiti.mjs")).href)}; export const createJiti=(id,options)=>native(id,{...options,fsCache:false});\n`);
+  make(jitiAdapter, `import {createJiti as native} from ${JSON.stringify(pathToFileURL(path.join(SDK, "node_modules/jiti/lib/jiti.mjs")).href)}; const aliases=${JSON.stringify(realRoots.codeAliases)}; export const createJiti=(id,options)=>native(id,{...options,alias:{...options?.alias,...aliases},fsCache:false});\n`);
   const extension = path.join(stage, "common/synthetic-transport.mjs"); make(extension, transportSource());
   // This package scope prevents staged native resolution metadata walks into ancestors.
   make(path.join(stage, "package.json"), JSON.stringify({ private: true, type: "module" }));
   const childBootstrap = path.join(stage, "switch-child-bootstrap.mjs");
   make(childBootstrap, `import {initializeSwitchChild} from './scripts/test/users-switch.smoke.mjs'; await initializeSwitchChild(process.env.SWITCH_FIXTURE_GRANT,process.env.SWITCH_FIXTURE_HASH);\n`);
   const codeFiles = {};
-  for (const file of [...FILES.map((relative) => path.join(stage, relative)), jitiAdapter, extension, childBootstrap, path.join(stage, "package.json")]) {
+  for (const file of [...FILES.map((relative) => path.join(stage, relative)), ...realRoots.rootCode.map((relative) => path.join(stage, relative)), jitiAdapter, extension, childBootstrap, path.join(stage, "package.json")]) {
     codeFiles[file] = digest(fs.readFileSync(file)); fs.chmodSync(file, 0o444);
   }
   verifyTree(stage); Object.freeze(codeFiles);
@@ -734,7 +890,7 @@ async function parent() {
     registerUser({ registryPath, id, label: id, agentDir, sessionRoots: [sessionRoot], workspaces: [workspace], contexts: [path.dirname(agentDir)], sharedAssets: [stage] });
     for (const relative of ["AppData/Roaming", "AppData/Local/Temp", "AppData/Local/Cache", ".config", ".cache", "Temp"]) fs.mkdirSync(path.join(home, relative), { recursive: true });
     make(path.join(agentDir, "auth.json"), JSON.stringify({ openai: { type: "api_key", key: `synthetic-${id}` } }));
-    make(path.join(agentDir, "settings.json"), JSON.stringify({ extensions: [extension], defaultProvider: "openai", enableInstallTelemetry: false, enableAnalytics: false }));
+    make(path.join(agentDir, "settings.json"), JSON.stringify({ extensions: [...realRoots.entries, extension], "plastic-memory": { enabled: true }, defaultProvider: "openai", enableInstallTelemetry: false, enableAnalytics: false }));
     return { id, home, agentDir, workspace };
   });
   const auth = profiles.map((profile) => digest(fs.readFileSync(path.join(profile.agentDir, "auth.json"))));
@@ -742,7 +898,7 @@ async function parent() {
   const profilesIdentity = Object.fromEntries(["dev", "ino", "birthtimeMs"].map((key) => [key, profilesStat[key]]));
   const records = [];
   const launch = (profile, extra = {}) => {
-    const grant = { root, stage, sdk: code, codeFiles, profilesIdentity, nonce, role: "supervisor", id: profile.id, cwd: profile.workspace, registryPath, jitiAdapter, childBootstrap,
+    const grant = { root, stage, sdk: code, codeFiles, rootCode: realRoots.rootCode, codeAliases: realRoots.codeAliases, profilesIdentity, nonce, role: "supervisor", id: profile.id, cwd: profile.workspace, registryPath, jitiAdapter, childBootstrap,
       freshCreationRoot: path.join(root, "profiles", "fourth-user"), ...extra };
     const file = path.join(control, `${token()}.json`), bytes = JSON.stringify(grant); make(file, bytes); fs.chmodSync(file, 0o444);
     const handle = originalSpawn(process.execPath, [...permissionArgs(grant, true), path.join(stage, "scripts/test/users-switch.smoke.mjs"), "--supervisor", file, digest(bytes)], { cwd: profile.workspace, env: cleanEnvironment(profile.home, root), stdio: ["pipe", "pipe", "pipe", "ipc"], windowsHide: true });
@@ -754,9 +910,20 @@ async function parent() {
     handle.on("message", (message) => {
       assert.equal(message.fixture, nonce);
       if (["disposed", "finalized"].includes(message.type)) {
+        const { expectedDenied, deniedGitProbes } = message.drained;
+        assert.deepEqual(Object.keys(expectedDenied), ["gitProbe"]);
+        assert.ok(Number.isSafeInteger(expectedDenied.gitProbe) && expectedDenied.gitProbe >= 0);
+        assert.equal(deniedGitProbes.length, expectedDenied.gitProbe);
+        for (const probe of deniedGitProbes) {
+          assert.deepEqual(Object.keys(probe).sort(), ["argv", "cwd"]);
+          assert.ok([JSON.stringify(["rev-parse", "--is-inside-work-tree"]), JSON.stringify(["branch", "--show-current"])].includes(JSON.stringify(probe.argv)));
+          // This case uses only the exact root cwd, not descendant or foreign workspaces.
+          assert.equal(probe.cwd, "");
+        }
+        if (message.type === "finalized") { assert.equal(expectedDenied.gitProbe, 0); assert.deepEqual(deniedGitProbes, []); }
         assert.deepEqual(message.drained, { pending: 0, descriptors: 0,
           counters: { outside: 0, protected: 0, network: 0, child: 0, keyring: 0, worker: 0, module: 0 },
-          negativeControls: { worker: 3, module: 3, code: 5 } });
+          negativeControls: { worker: 3, module: 3, code: 5 }, expectedDenied, deniedGitProbes });
       }
       record.events.push(message);
     });
@@ -809,6 +976,8 @@ async function parent() {
   assert.equal(origin.frozen && origin.runtimeSame, true);
   await slash(active, "/usuario list"); assert.ok(active.stdout.includes("orchid-test"));
   await slash(active, "/usuario status"); assert.ok(active.stdout.includes("amber-test"));
+  await slash(active, "/fixture:real-roots");
+  assert.deepEqual(active.events.find((event) => event.type === "real-cohort" && event.pid === origin.pid)?.names, ["principal", "subagents", "plastic-memory"]);
   await slash(active, "/usuario create fourth-user Fourth fixture");
   await slash(active, "/usuario create fourth-user Fourth fixture");
   await slash(active, "/usuario list"); assert.ok(active.stdout.includes("fourth-user"), `FOURTH_USER_MISSING stdoutTail=${JSON.stringify(active.stdout.slice(-3000))}`);
@@ -876,6 +1045,25 @@ async function parent() {
   active.handle.send({ fixture: nonce, type: "release" });
   await until(active, () => active.lines.find((line) => line.id === "held-command"), "concurrent command survives refusal");
   await slash(active, "/usuario use missing-user"); assert.equal(active.events.filter((event) => event.type === "spawn").length, beforeBusy);
+  // Public RPC dispatch into the REAL root manager; only the provider stream is synthetic.
+  await slash(active, "/fixture:real-sub");
+  const realSub = await until(active, () => active.events.find((event) => event.type === "sub-spawned" && event.pid === origin.pid), "real SUB RPC spawn");
+  await until(active, () => active.events.find((event) => event.type === "sub-stream-held" && event.pid === origin.pid), "real SUB held synthetic stream");
+  const rootBusyState = (await send(active, { type: "get_state" })).data;
+  assert.equal(rootBusyState.isStreaming, false); assert.equal(rootBusyState.pendingMessageCount, 0);
+  const beforeRealBusy = active.events.filter((event) => event.type === "spawn").length;
+  const refusalStart = active.lines.length;
+  await slash(active, "/usuario use cobalt-test");
+  assert.equal(active.events.filter((event) => event.type === "spawn").length, beforeRealBusy);
+  assert.ok(active.lines.slice(refusalStart).some((line) => line.type === "extension_ui_request" && line.method === "notify" && line.message === "USER_SWITCH_FENCE_REFUSED"));
+  assert.equal(active.events.some((event) => ["sub-completed", "sub-failed"].includes(event.type) && event.id === realSub.id), false);
+  active.handle.send({ fixture: nonce, type: "release" });
+  const completedSub = await until(active, () => active.events.find((event) => event.type === "sub-completed" && event.id === realSub.id), "real SUB accepted work completes after release");
+  assert.equal(completedSub.status, "completed"); assert.equal(completedSub.result, "owned synthetic response");
+  await until(active, () => active.events.find((event) => event.type === "sub-consumed" && event.pid === origin.pid), "public SUB completed result acknowledged");
+  assert.equal(active.events.some((event) => event.type === "sub-failed" && event.id === realSub.id), false);
+  const afterRealBusy = (await send(active, { type: "get_state" })).data;
+  assert.equal(afterRealBusy.isStreaming, false); assert.equal(afterRealBusy.pendingMessageCount, 0);
   const originBytes = fs.readFileSync(owned(root, state.sessionFile));
   // A successful slash may close before its prompt ACK. Observe the fresh native receipt instead.
   active.handle.stdin.write(`${JSON.stringify({ id: "switch-cobalt", type: "prompt", message: "/usuario use cobalt-test" })}\n`);
@@ -884,6 +1072,16 @@ async function parent() {
   const oldClose = active.events.findIndex((event) => event.type === "close" && event.pid === origin.pid);
   const newSpawn = active.events.findIndex((event) => event.type === "spawn" && event.pid === destination.pid);
   assert.ok(oldClose !== -1 && newSpawn > oldClose); assert.equal(active.events[oldClose].disposed, true);
+  const phases = ["sub-scheduler-stopped", "sub-manager-disposed", "plastic-shutdown", "plastic-unregistered"];
+  for (const phase of phases) {
+    const index = active.events.findIndex((event) => event.type === "root-lifecycle" && event.pid === origin.pid && event.phase === phase);
+    assert.ok(index !== -1 && index < oldClose && index < newSpawn, `OLD_CHILD_JOINT_SHUTDOWN_${phase}`);
+  }
+  const originDrain = active.events.find((event) => event.type === "disposed" && event.pid === origin.pid).drained;
+  assert.ok(originDrain.expectedDenied.gitProbe >= 1, "REAL_SUB_GIT_ENV_PROBE_DENIED");
+  assert.ok(originDrain.deniedGitProbes.some((probe) => JSON.stringify(probe.argv) === JSON.stringify(["rev-parse", "--is-inside-work-tree"])));
+  await slash(active, "/fixture:real-roots");
+  assert.deepEqual(active.events.find((event) => event.type === "real-cohort" && event.pid === destination.pid)?.names, ["principal", "subagents", "plastic-memory"]);
   assert.deepEqual(fs.readFileSync(state.sessionFile), originBytes);
   const freshState = (await send(active, { type: "get_state" })).data;
   assert.equal(freshState.messageCount, 0); assert.equal(freshState.pendingMessageCount, 0);
@@ -932,8 +1130,7 @@ async function parent() {
   assert.equal(fs.realpathSync.native(root), root); const current = fs.lstatSync(root);
   for (const key of ["dev", "ino", "birthtimeMs"]) assert.equal(current[key], identity[key]);
   verifyTree(root);
-  // Remaining real-root matrix is intentionally NOT certified by these native-principal cases.
-  process.stdout.write("NATIVE_RPC_MATRIX principal/pending/concurrent/refusal/success/three-users/selected-auth/fresh-session/relaunch-failure/explicit-recovery/two-terminal; SYNTHETIC_READINESS_MATRIX missing/stale/unknown/forged/child/queue/scheduler/Plastic/promotion/race/release; REAL_ROOT_COMPOSITION_AND_WINDOWS_TTY_UNVERIFIED\n");
+  process.stdout.write("NATIVE_RPC_MATRIX REAL principal/pending/concurrent/refusal/success/three-users/selected-auth/fresh-session/relaunch-failure/explicit-recovery/two-terminal; REAL_ROOT_MATRIX SUB-0.18.2/full-Plastic/cohort/public-SUB-busy/no-successor/no-lost-work/release-completion/switch/joint-shutdown-before-spawn; SYNTHETIC provider-stream + READINESS missing/stale/unknown/forged/child/queue/scheduler/Plastic/promotion/race/release; UNVERIFIED Plastic-busy(public-held-workload-not-established)/real-scheduler-race/real-promotion/Windows-TTY; git env probe denied (non-git fallback exercised)\n");
   sandbox.cleanup(); // Success only, after all public disposals/drains/own children AND pipes close.
 }
 
