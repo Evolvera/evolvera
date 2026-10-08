@@ -44,6 +44,7 @@ const subagentsFiles = [
   'package.json', 'src/index.ts', 'dist/index.js',
   'src/abortable.ts', 'dist/abortable.js',
   'src/agent-runner.ts', 'dist/agent-runner.js',
+  'src/agent-manager.ts', 'dist/agent-manager.js',
   'src/nested-tools.ts', 'dist/nested-tools.js',
 ];
 const authFiles = ['package.json', 'src/constants.ts'];

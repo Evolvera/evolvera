@@ -24,15 +24,21 @@ function normalizePatch(packageRoot) {
   let patched = true;
   for (const rel of new Set(patcher.PATCHES.map(([file]) => file))) {
     let source = fs.readFileSync(path.join(packageRoot, rel), 'utf8');
+    if (rel.endsWith('agent-manager.ts') || rel.endsWith('agent-manager.js')) {
+      const hasDeadlinePatch = source.includes('Agent execution timed out after its maximum total execution duration.');
+      if (!hasDeadlinePatch) { patched = false; continue; }
+    }
     const edits = patcher.PATCHES.filter(([file]) => file === rel).reverse();
-    for (const [, before, after, insertion] of edits) {
+    for (const [, before, after, insertion, legacyBefore] of edits) {
       const afterCount = source.split(after).length - 1;
       const beforeCount = source.split(before).length - 1;
+      const legacyCount = legacyBefore ? source.split(legacyBefore).length - 1 : 0;
       if (insertion) {
         if (afterCount === 1) source = `${source.replace(after, '').trimEnd()}\n`;
         else if (afterCount === 0) patched = false;
         else throw new Error(`cannot normalize ${rel}: patch anchor is mixed or drifted`);
       } else if (afterCount === 1) source = source.replace(after, () => before);
+      else if (legacyCount === 1) source = source.replace(legacyBefore, () => before);
       else if (afterCount === 0 && beforeCount === 1) patched = false;
       else throw new Error(`cannot normalize ${rel}: patch anchor is mixed or drifted`);
     }
@@ -82,6 +88,10 @@ try {
   for (const [rel, bytes] of patchedBytes) assert.deepEqual(fs.readFileSync(path.join(patchedInput, rel)), bytes);
   assert.equal(await patcher.patch(fixture), true, 'patch applies to normalized unpatched package');
   assert.equal(await patcher.patch(fixture), false, 'patch is idempotent');
+  const postApplied = path.join(temp, 'post-applied-normalize'); copyPackage(fixture, postApplied);
+  assert.equal(normalizePatch(postApplied), true, 'fixture normalization recognizes the post-patch manager');
+  assert.equal(await patcher.patch(postApplied), true, 'normalization restores manager baseline for patch application');
+  assert.equal(await patcher.patch(postApplied), false, 'reapplied normalized manager patch is idempotent');
   const fixtureMetaPath = path.join(fixture, 'package.json');
   const fixtureMeta = JSON.parse(fs.readFileSync(fixtureMetaPath, 'utf8'));
   fixtureMeta.type = 'module'; fs.writeFileSync(fixtureMetaPath, JSON.stringify(fixtureMeta));
