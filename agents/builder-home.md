@@ -73,6 +73,7 @@ Before finalizing, verify the page has:
 - no horizontal/lateral scroll at 390px; every section, grid, card row, logo strip, and floating CTA must fit inside the viewport;
 - mobile card/logo/gallery grids are readable, not squeezed; use one-column stacking under 640px unless cards remain comfortably readable;
 - buttons/links with hover, active, and focus-visible states;
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 - visual richness using CSS gradients, borders, shadows, cards, masks, and CSS/HTML shapes; use inline SVG only when the HOME_PLAN.md asset provenance ledger authorizes it;
 - no layout shift from missing dimensions where images/placeholders appear;
 - no visual/image/mockup/card stack escaping its intended container or causing overflow;

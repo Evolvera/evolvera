@@ -58,6 +58,8 @@ Use depth and motion intentionally. One or two orchestrated moments are stronger
 
 Everyday interaction motion follows the project's motion system; where none exists, keep it short, eased, interruptible, and free of layout shift, animating compositor-friendly properties.
 
+**Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
+
 Mobile must be designed rather than collapsed, and desktop space must reinforce hierarchy. Include relevant hover, focus, active, and disabled states. A changed surface that waits on data or an action handles its loading, empty, error, and pending states, prevents duplicate submission, and reuses the project's existing state components. Maintain semantic structure, keyboard access, contrast, touch targets, stable media, and freedom from horizontal overflow.
 
 ## Implementation and Verification

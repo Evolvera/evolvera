@@ -100,6 +100,7 @@ If no assets qualify, state `No inline SVG assets authorized.` CSS/HTML-only vis
 - Existing expressive zones: [specific Home sections/components where a later additive mechanic could reinforce orientation, continuity, state feedback, emphasis, or narrative]
 - protected zones: [Home hierarchy, content, tokens, layout, accessibility, navigation, CTAs, forms, and proof that a later addendum must not rewrite]
 - base motion language: [static-preview-safe baseline motion and composed reduced-motion behavior]
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 - Opportunity constraints: [single self-contained index.html, native CSS/HTML/JS only, responsive, keyboard/touch, normal scroll, and performance conditions]
 
 ## 2. Design Reference Scan

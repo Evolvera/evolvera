@@ -78,6 +78,7 @@ Check applicable elements for:
 - WCAG AA contrast when measurable (4.5:1 normal text, 3:1 large text/UI graphics as applicable);
 - reduced-motion support and non-motion fallbacks;
 - hover, focus, active, disabled, loading, error, empty, and success states required by the implemented interaction;
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only. Flag second-order elements that are static where a Hover reveal would clarify hierarchy, and any hover-only content.
 - styled failure/fallback behavior for forms and data-driven surfaces.
 
 Do not demand loading, error, empty, dark mode, skeleton, modal, or other states from a static surface that does not have them. Mark absent but required states as findings; mark irrelevant states `NOT APPLICABLE`.

@@ -103,6 +103,7 @@ Baseline uses are restrained and never gate content. As a dominant mechanic, a t
 | **Staggered reveal** | Sequential offsets across siblings | Grids and lists of 3–8 items | Larger sets; repeated every scroll | Total stagger ≤600ms; reduced-motion removes offsets |
 | **Shared-element transition** | An element morphs between two states/views | List-to-detail continuity | Unrelated pages | Preserve focus and context; reduced-motion crossfades |
 | **View transition** | Browser-level animated page/state change (View Transition API) → creative-catalog `view-transitions` | Same-document or same-origin navigation continuity | Unsupported-browser-critical flows | Progressive enhancement; skippable; no blocking |
+| **Hover reveal** | Second-order detail (secondary action, metadata, caption, preview, arrow affordance) animates in on hover/focus of its parent: opacity + small translate/scale/clip | Cards, list rows, gallery tiles, nav items, media with supporting detail; the default emphasis for second-order elements | Primary content, primary CTAs, prices, required info | Base tier ≤300ms ease-out; also on `:focus-visible`/`:focus-within`; visible by default under `@media (hover: none)`; no layout shift; reduced-motion shows it instantly or opacity-only |
 | **Micro-interaction** | Small, single-purpose feedback animation → creative-catalog `state-microinteractions` | Confirming an action or state change | Decoration without purpose | ≤300ms; carries meaning; not the only feedback |
 | **Ease-out easing** | Fast start, gentle stop | UI entering the screen; default | Playful physics-led brands | Never linear for UI motion; entry uses ease-out, exit ease-in |
 | **Spring easing** | Physics-based overshoot/settle | Direct manipulation, playful brands, drag | Formal/utility interfaces | Limited overshoot; reduced-motion falls back to ease-out |
@@ -278,7 +279,8 @@ Baseline uses are restrained and never gate content. As a dominant mechanic, a t
 
 ## Combination Rules
 
-- One dominant motion mechanic per page; everything else stays baseline (Fade-in reveal, Micro-interaction).
+- One dominant motion mechanic per page; everything else stays baseline (Fade-in reveal, Hover reveal, Micro-interaction).
+- Hover reveal is baseline polish, not the dominant mechanic: apply it generously to second-order elements across the page.
 - Sticky + Scroll Snap only with a clear escape (proximity snapping, release at container end).
 - Horizontal Scroll needs a vertical fallback on mobile and keyboard operation.
 - Parallax, Scroll-linked, Scrollytelling, Media scrub, and Kinetic type are off or static under reduced motion.

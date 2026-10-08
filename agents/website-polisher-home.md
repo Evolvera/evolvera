@@ -93,6 +93,7 @@ Audit:
 Check:
 
 - hover, focus-visible, active, and disabled states where applicable;
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only. Flag second-order elements that are static where a Hover reveal would clarify hierarchy, and any hover-only content.
 - touch targets at least 44×44px;
 - semantic headings/landmarks;
 - meaningful alt text and accessible names;
