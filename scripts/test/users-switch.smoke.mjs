@@ -664,7 +664,12 @@ export default (pi) => {
  const api=getApiProvider(runtime.getModels('openai')[0].api); const hook=(...args)=>api.streamSimple(...args);
  pi.registerProvider({...original,stream:hook,streamSimple:hook});
  pi.on('session_start',async(_event,ctx)=>{const model=runtime.getModels('openai')[0]; if(!model)throw new Error('FIXTURE_MODEL_MISSING'); /* Recovered sessions already carry this model: no extra model_change entry. */ if(!(ctx.model&&ctx.model.provider===model.provider&&ctx.model.id===model.id)&&!await pi.setModel(model))throw new Error('FIXTURE_MODEL_MISSING'); emit({type:'ready',pid:process.pid,id:receipt.profile.id,sessionId:ctx.sessionManager.getSessionId(),sessionPath:ctx.sessionManager.getSessionFile(),entries:ctx.sessionManager.getBranch().length,frozen:Object.isFrozen(receipt)&&Object.isFrozen(receipt.profile),runtimeSame:runtime===receipt.modelRuntime});});
+ let injectPrefixAside=false;
+ pi.on('message_end',event=>{if(event.message?.role==='custom'&&event.message.customType==='fixture-next-turn')emit({type:'next-turn-prefix-end',pid:process.pid});});
  pi.registerCommand('fixture:next-turn',{handler:async()=>{pi.sendMessage({customType:'fixture-next-turn',content:'accepted-next-turn',display:false},{deliverAs:'nextTurn',triggerTurn:false});}});
+ pi.registerCommand('fixture:next-turn-pair',{handler:async()=>{for(let i=0;i<2;i++)pi.sendMessage({customType:'fixture-next-turn',content:'accepted-next-turn',display:false},{deliverAs:'nextTurn',triggerTurn:false});}});
+ pi.registerCommand('fixture:inject-prefix-aside',{handler:async()=>{injectPrefixAside=true;}});
+ pi.on('agent_start',async()=>{if(injectPrefixAside){injectPrefixAside=false;pi.sendMessage({customType:'fixture-next-turn',content:'accepted-next-turn',display:false},{deliverAs:'nextTurn',triggerTurn:false});}});
  // Synthetic participant counterexamples use the real closure-backed API, not SDK facades.
  let extra;
  pi.registerCommand('fixture:probe',{handler:async(kind,ctx)=>{
@@ -829,6 +834,40 @@ async function parent() {
   await slash(active, "/usuario use cobalt-test"); assert.equal(active.events.filter((event) => event.type === "spawn").length, beforeBusy);
   active.handle.send({ fixture: nonce, type: "release" });
   await until(active, () => active.lines.filter((line) => line.type === "agent_settled").length >= 1 && active.events.filter((event) => event.type === "token").length >= 2, "accepted queue survives refusal");
+  // Public native command/prompt seams cover handled slash + no-turn and the native batch; immediate append, Agent.continue, and rejected-prompt counterexamples remain pending because this fixture has no non-facade public seam for them.
+  const consumeAsides = async (message, expectedPrefixCount) => {
+    const settled = active.lines.filter((line) => line.type === "agent_settled").length;
+    const prefixEnds = active.events.filter((event) => event.type === "next-turn-prefix-end").length;
+    await send(active, { type: "prompt", message });
+    await until(active, () => active.lines.filter((line) => line.type === "agent_settled").length > settled, "actual normal prompt settlement");
+    const settledState = (await send(active, { type: "get_state" })).data;
+    assert.equal(settledState.isStreaming, false);
+    assert.equal(active.events.filter((event) => event.type === "next-turn-prefix-end").length - prefixEnds, expectedPrefixCount);
+  };
+  const assertNextTurnPending = async (expected) => {
+    const before = active.lines.length;
+    await slash(active, "/usuario status");
+    const notification = active.lines.slice(before).find((line) => line.type === "extension_ui_request" && line.method === "notify" && typeof line.message === "string" && line.message.includes("pendingNextTurnUnproved"));
+    assert.ok(notification, "native /usuario status notification");
+    // Status is non-secret: ids/flags/role names/counts only. Surface the proof enum on mismatch.
+    assert.equal(JSON.parse(notification.message).pendingNextTurnUnproved, expected, `NEXT_TURN_PROOF ${JSON.stringify(JSON.parse(notification.message).nextTurnProof)}`);
+  };
+  await slash(active, "/fixture:next-turn");
+  await assertNextTurnPending(true);
+  await consumeAsides("consume earlier accepted aside", 1);
+  await assertNextTurnPending(false);
+  await slash(active, "/fixture:next-turn-pair");
+  await slash(active, "/fixture:inject-prefix-aside");
+  await assertNextTurnPending(true); // Handled slash/status must not consume the pair.
+  await consumeAsides("consume identical prequeued asides", 2);
+  await assertNextTurnPending(true); // A payload-identical later send is NOT in the original batch.
+  const beforePrefixAsideRefusal = active.events.filter((event) => event.type === "spawn").length;
+  const beforeRefusalLines = active.lines.length;
+  await slash(active, "/usuario use cobalt-test");
+  assert.equal(active.events.filter((event) => event.type === "spawn").length, beforePrefixAsideRefusal);
+  assert.ok(active.lines.slice(beforeRefusalLines).some((line) => line.message === "USER_SWITCH_NEXT_TURN_UNPROVED"));
+  await consumeAsides("consume prefix-enqueued third aside", 1);
+  await assertNextTurnPending(false);
   const state = (await send(active, { type: "get_state" })).data;
   assert.equal(state.pendingMessageCount, 0); assert.equal(state.isStreaming, false);
   active.handle.stdin.write(`${JSON.stringify({ id: "held-command", type: "prompt", message: "/fixture:hold" })}\n`);

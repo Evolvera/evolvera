@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { types as utilTypes } from "node:util";
 import { assertOwnedSession, assertOwnedWorkspace } from "./ownership.mjs";
 import { createUserCredentialStore } from "./credentials.mjs";
 import { getUserHome } from "./environment.mjs";
@@ -305,11 +306,12 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
   const factoryPath = fileURLToPath(new URL("../../extensions/usuario.ts", import.meta.url));
   let host, mode, fenced = false, commands = 0, callbacks = 0, lifecycle = 0, switching = false, active = true;
   const owner = Object.freeze({});
-  const nextTurnQueued = new WeakSet();
+  const nextTurnLedgers = new WeakMap();
   const refreshes = new Set();
-  let disposing = false;
+  let disposing = false, shutdownLease;
   const current = (ctx) => !!host && ctx.sessionManager === host.session.sessionManager;
-  const assertOpen = () => { if (fenced) throw fail("USER_SWITCH_READINESS_ACTIVE"); };
+  const nextTurnPending = (session) => (nextTurnLedgers.get(session)?.entries.length ?? 0) > 0;
+  const assertOpen = () => { if (fenced || !active) throw fail("USER_SWITCH_READINESS_ACTIVE"); };
   const withLifecycle = (fn) => async (...args) => {
     assertOpen(); lifecycle++;
     try { return await fn(...args); } finally { lifecycle--; }
@@ -355,7 +357,7 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
   const control = Object.freeze({
     async execute(request, ctx) {
       if (!current(ctx)) return "USER_SWITCH_NOT_ROOT";
-      if (request.operation === "display" || request.operation === "status") return JSON.stringify({ id: profile.id, label: profile.label, pid: process.pid, managed: !!channel, mode, switching, pendingNextTurnUnproved: nextTurnQueued.has(host.session), interactiveSwitch: "UNVERIFIED" });
+      if (request.operation === "display" || request.operation === "status") return JSON.stringify({ id: profile.id, label: profile.label, pid: process.pid, managed: !!channel, mode, switching, pendingNextTurnUnproved: nextTurnPending(host.session), nextTurnProof: nextTurnLedgers.get(host.session)?.lastProof ?? null, interactiveSwitch: "UNVERIFIED" });
       if (request.operation === "list") return JSON.stringify(listUsers({ registryPath: profile.registryPath }));
       if (request.operation === "create") {
         assertOpen();
@@ -382,7 +384,7 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
         if (!lease.acquired) throw fail(`USER_SWITCH_${String(lease.reason).replaceAll("-", "_").toUpperCase()}`);
         // ALL fences are acquired synchronously before principal readiness is examined.
         assertSelectedOrigin();
-        if (nextTurnQueued.has(host.session)) throw fail("USER_SWITCH_NEXT_TURN_UNPROVED");
+        if (nextTurnPending(host.session)) throw fail("USER_SWITCH_NEXT_TURN_UNPROVED");
         if (commands !== 1 || callbacks || lifecycle || !ctx.isIdle() || ctx.hasPendingMessages() || host.session.isBashRunning || host.session.hasPendingBashMessages) throw fail("USER_SWITCH_PRINCIPAL_BUSY");
         if (preflightUserSwitch(resolveUser({ registryPath: profile.registryPath, id: request.id }), destination.cwd).token !== destination.token) throw fail("USER_SWITCH_TARGET_DRIFT");
         await channel.commit(intent);
@@ -390,6 +392,7 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
         if (commands !== 1 || callbacks || lifecycle || !ctx.isIdle() || ctx.hasPendingMessages()) throw fail("USER_SWITCH_PRINCIPAL_CHANGED");
         ctx.shutdown(); // Public RPC flag; the supervisor sends supported readonly get_state as its wake.
         committed = true;
+        shutdownLease = lease;
         channel.shutdownRequested(intent);
         return undefined; // Never append/notify after commitment.
       } catch (error) {
@@ -432,20 +435,147 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
         disposing = true;
         try {
           const result = await dispose(...args);
+          // Native root shutdown handlers (including SUB's awaited disposal/stop) ran
+          // under the lease. Close principal admission before release completes
+          // Plastic's deferred shutdown; never replay work into a live old host.
+          active = false;
+          if (shutdownLease) {
+            const released = shutdownLease.release();
+            if (!released.ok) throw fail("USER_SWITCH_SHUTDOWN_RELEASE_UNPROVED");
+            shutdownLease = undefined;
+          }
           await host.services.settingsManager.flush();
           while (refreshes.size) await Promise.all([...refreshes]);
-          active = false;
           if (!fenced && !registered.unregister().ok) throw fail("USER_SWITCH_PRINCIPAL_CLEANUP_UNPROVED");
           return result;
         } finally { disposing = false; }
       };
     },
     guardSession(session) {
+      const ledger = { entries: [], revision: 0, frames: new Set(), eventState: undefined };
+      nextTurnLedgers.set(session, ledger);
       const send = session.sendCustomMessage.bind(session);
+      // Inspect only stable data descriptors, NEVER invoke a sender's getter a
+      // second time. Opaque/proxy/accessor inputs may queue work: keep an
+      // unproved entry while forwarding the ORIGINAL objects unchanged.
+      const dataProperties = (value, names, optional = false) => {
+        try {
+          if (value == null) return optional ? Object.fromEntries(names.map((name) => [name, undefined])) : undefined;
+          if (typeof value !== "object" || utilTypes.isProxy(value)) return undefined;
+          const prototype = Object.getPrototypeOf(value);
+          if (prototype !== null && prototype !== Object.prototype) return undefined;
+          const result = {};
+          for (const name of names) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, name) ?? (prototype && Object.getOwnPropertyDescriptor(prototype, name));
+            if (descriptor && !("value" in descriptor)) return undefined;
+            result[name] = descriptor?.value;
+          }
+          return result;
+        } catch { return undefined; }
+      };
       session.sendCustomMessage = withLifecycle((message, options) => {
-        // SDK pendingMessageCount omits nextTurn asides. Do not consume, reset or guess that queue.
-        if (options?.deliverAs === "nextTurn") nextTurnQueued.add(session);
-        return send(message, options);
+        const payload = dataProperties(message, ["customType", "content", "display", "details"]);
+        const delivery = dataProperties(options, ["deliverAs"], true);
+        const uncertain = !payload || !delivery;
+        const mayQueue = uncertain || delivery.deliverAs === "nextTurn";
+        const result = send(message, options);
+        if (mayQueue) {
+          ledger.entries.push(uncertain ? { unproved: true } : { ...payload, contentMissing: payload.content == null });
+          ledger.revision++;
+          for (const frame of ledger.frames) if (frame.nativeBatch === undefined) frame.tainted = true;
+        }
+        return result;
+      });
+      const agent = session.agent;
+      const prompt = agent.prompt.bind(agent);
+      const subscribe = agent.subscribe.bind(agent);
+      const frames = ledger.frames;
+      const matches = (entry, message) => !entry.unproved && message?.role === "custom" && Object.is(entry.customType, message.customType) &&
+        (entry.contentMissing ? Array.isArray(message.content) && message.content.length === 0 : Object.is(entry.content, message.content)) &&
+        Object.is(entry.display, message.display) && Object.is(entry.details, message.details);
+      const finishFrame = (frame, succeeded) => {
+        frames.delete(frame);
+        // Non-secret enum diagnostics only: roles/counts/flags, never message content.
+        ledger.lastProof = Object.freeze({ succeeded, tainted: frame.tainted, taint: frame.taint ?? null, ambiguous: frame.ambiguous,
+          prefixComplete: frame.prefixComplete, batchBound: !!frame.nativeBatch, batchRoles: frame.batchRoles ?? null,
+          queueStart: frame.queueStart ?? null, snapshot: frame.snapshot.length, cohort: frame.cohort.length,
+          prefixIndex: frame.prefixIndex ?? 0, revisionStable: frame.revision === frame.startRevision });
+        if (!succeeded || frame.tainted || frame.ambiguous || !frame.prefixComplete || !frame.nativeBatch || frame.revision !== frame.startRevision) return;
+        const consumed = new Set(frame.cohort);
+        ledger.entries = ledger.entries.filter((entry) => !consumed.has(entry));
+      };
+      session.prompt = ((original) => function (...args) {
+        const entryTainted = session !== host?.session || session.isIdle !== true || session.isStreaming !== false;
+        const frame = { session, startRevision: ledger.revision, snapshot: ledger.entries.slice(), cohort: [], nativeBatch: undefined,
+          prefixComplete: false, tainted: entryTainted, taint: entryTainted ? "entry-not-idle-root" : undefined,
+          ambiguous: false };
+        for (const active of frames) { active.ambiguous = true; frame.ambiguous = true; }
+        frames.add(frame);
+        let result;
+        try { result = original.apply(this, args); } catch (error) { finishFrame(frame, false); throw error; }
+        Promise.resolve(result).then(() => finishFrame(frame, true), () => finishFrame(frame, false));
+        return result;
+      })(session.prompt);
+      agent.prompt = (...args) => {
+        const frame = frames.size === 1 ? frames.values().next().value : undefined;
+        if (frames.size > 1) for (const active of frames) active.ambiguous = true;
+        const batch = args[0];
+        // SDK normal batches are [user, ...asides] or [system-head, user, ...asides];
+        // the system head may carry sections OR forced content. Shape is not
+        // provenance: the native normal phase below is the provenance guard.
+        const queueStart = Array.isArray(batch) && batch[0]?.role === "user" ? 1 :
+          Array.isArray(batch) && batch[0]?.role === "system" && batch[1]?.role === "user" ? 2 : 0;
+        if (frame && frame.batchRoles === undefined) {
+          try { frame.batchRoles = Array.isArray(batch) ? batch.slice(0, 12).map((message) => ["system", "user", "assistant", "custom", "toolResult"].includes(message?.role) ? message.role : "other") : [typeof batch]; } catch { frame.batchRoles = ["unreadable"]; }
+          frame.queueStart = queueStart;
+        }
+        // SDK1.0.1 sets the PUBLIC session.isStreaming flag synchronously just
+        // before its normal Agent.prompt call. A handled slash/input frame does
+        // not: another caller's copied batch is NOT an accepted-queue receipt.
+        const nativeNormalPhase = session === host?.session && session.isStreaming === true && commands === 0 && callbacks === 0;
+        if (frame && !nativeNormalPhase) { frame.tainted = true; frame.taint ??= "agent-prompt-not-native-normal-phase"; }
+        if (frame && nativeNormalPhase && queueStart === 0) frame.taint ??= "batch-shape-unrecognized";
+        if (frame && nativeNormalPhase && !frame.tainted && !frame.ambiguous && frame.nativeBatch === undefined && queueStart > 0) {
+          frame.nativeBatch = batch.slice();
+          frame.revision = ledger.revision;
+          if (frame.startRevision !== ledger.revision) { frame.tainted = true; frame.taint ??= "revision-changed-before-batch"; }
+          for (let index = 0; index < frame.snapshot.length; index++) {
+            const message = frame.nativeBatch[index + queueStart];
+            if (!matches(frame.snapshot[index], message)) { frame.tainted = true; frame.taint ??= `cohort-mismatch-${index}`; break; }
+            frame.cohort.push(frame.snapshot[index]);
+          }
+        }
+        return prompt(...args);
+      };
+      ledger.eventState = { batch: undefined, index: 0, awaitingEnd: false, frame: undefined };
+      subscribe((event) => {
+        // A run's end always closes its prefix window, even when its frame was
+        // tainted/finished earlier; otherwise a stale window marks the NEXT
+        // frame ambiguous (observed natively: ambiguous=true, prefixIndex=0).
+        if (event.type === "agent_end") { ledger.eventState.frame = undefined; return; }
+        const active = frames.size === 1 ? frames.values().next().value : undefined;
+        if (!active || active.tainted || active.ambiguous || !active.nativeBatch) return;
+        if (event.type === "agent_start") {
+          if (ledger.eventState.frame === active && active.prefixComplete) return; // native continue within the same frame
+          if (ledger.eventState.frame && frames.has(ledger.eventState.frame)) { active.ambiguous = true; active.taint ??= "overlapping-run-window"; return; }
+          ledger.eventState = { batch: active.nativeBatch, index: 0, awaitingEnd: false, frame: active };
+          return;
+        }
+        const state = ledger.eventState;
+        if (state.frame !== active || state.batch !== active.nativeBatch || active.prefixComplete) return;
+        const expected = state.batch[state.index];
+        if (event.type === "message_start") {
+          if (state.awaitingEnd || event.message !== expected) { active.tainted = true; active.taint ??= `prefix-start-mismatch-${state.index}`; }
+          else state.awaitingEnd = true;
+        } else if (event.type === "message_end") {
+          if (!state.awaitingEnd || event.message !== expected) { active.tainted = true; active.taint ??= `prefix-end-mismatch-${state.index}`; }
+          else {
+            state.awaitingEnd = false;
+            state.index++;
+            active.prefixIndex = state.index;
+            if (state.index === state.batch.length) active.prefixComplete = true;
+          }
+        }
       });
     },
     guardLoader(loader) { loader.reload = withLifecycle(loader.reload.bind(loader)); },
