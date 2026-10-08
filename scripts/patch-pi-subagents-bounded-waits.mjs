@@ -108,6 +108,55 @@ export async function waitForRecord(record, signal, waitMs = 60_000, pollMs = 25
 }
 `;
 
+const ARM_DEADLINE_TS = `  private activeAttempts = new Set<string>();
+
+  private armDeadline(record: AgentRecord): () => void {
+    const controller = record.abortController!;
+    this.activeAttempts.add(record.id);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const clearTimer = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
+    if (!controller.signal.aborted) {
+      controller.signal.addEventListener("abort", clearTimer, { once: true });
+      const timeoutMs = record.type === "planner" ? PLANNER_TIMEOUT_MS : DEFAULT_AGENT_TIMEOUT_MS;
+      timer = setTimeout(() => {
+        record.error = ATTEMPT_TIMEOUT_REASON;
+        record.status = "stopped";
+        record.completedAt = Date.now();
+        controller.abort(new Error(ATTEMPT_TIMEOUT_REASON));
+      }, timeoutMs);
+      timer.unref?.();
+    }
+    return () => {
+      clearTimer();
+      controller.signal.removeEventListener("abort", clearTimer);
+      this.activeAttempts.delete(record.id);
+    };
+  }
+`;
+const ARM_DEADLINE_JS = `    activeAttempts = new Set();
+    armDeadline(record) {
+        const controller = record.abortController;
+        this.activeAttempts.add(record.id);
+        let timer;
+        const clearTimer = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
+        if (!controller.signal.aborted) {
+            controller.signal.addEventListener("abort", clearTimer, { once: true });
+            const timeoutMs = record.type === "planner" ? PLANNER_TIMEOUT_MS : DEFAULT_AGENT_TIMEOUT_MS;
+            timer = setTimeout(() => {
+                record.error = ATTEMPT_TIMEOUT_REASON;
+                record.status = "stopped";
+                record.completedAt = Date.now();
+                controller.abort(new Error(ATTEMPT_TIMEOUT_REASON));
+            }, timeoutMs);
+            timer.unref?.();
+        }
+        return () => {
+            clearTimer();
+            controller.signal.removeEventListener("abort", clearTimer);
+            this.activeAttempts.delete(record.id);
+        };
+    }
+`;
 const PATCHES = [
   ['src/abortable.ts', 'export async function waitForRecord', WAIT_HELPER_TS, true],
   ['dist/abortable.js', 'export async function waitForRecord', WAIT_HELPER_JS, true],
@@ -125,7 +174,7 @@ const PATCHES = [
       if (params.wait && (record.status === "running" || record.status === "queued")) {
         waitTimedOut = !(await waitForRecord(record, signal, ${WAIT_MS}));
       }`, false],
-  ['src/index.ts', '      if (record.status === "running") {\n        output += "Agent is still running. Use wait: true or check back later.";', '      if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n        output += waitTimedOut\n          ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n          : "Agent is still running. It will notify you when complete.";', false],
+  ['src/index.ts', '      if (record.status === "running") {\n        output += "Agent is still running. Use wait: true or check back later.";', '      if (stillSettling) {\n        output += "Agent cancellation is still settling. Its partial result and completion notification remain available.";\n      } else if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n        output += waitTimedOut\n          ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n          : "Agent is still running. It will notify you when complete.";', false, '      if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n        output += waitTimedOut\n          ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n          : "Agent is still running. It will notify you when complete.";'],
   ['src/nested-tools.ts', 'import { abortable } from "./abortable.js";', 'import { waitForRecord } from "./abortable.js";', false],
   ['src/nested-tools.ts', '      wait: Type.Optional(Type.Boolean()),', '      wait: Type.Optional(Type.Boolean({ description: "Wait up to 60 seconds; if still queued or running, return the current status. The child continues and can be fetched later with get_subagent_result." })),', false],
   ['src/nested-tools.ts', `      if (params.wait && (record.status === "queued" || record.status === "running")) {
@@ -163,7 +212,7 @@ const PATCHES = [
             if (params.wait && (record.status === "running" || record.status === "queued")) {
                 waitTimedOut = !(await waitForRecord(record, signal, ${WAIT_MS}));
             }`, false],
-  ['dist/index.js', '            if (record.status === "running") {\n                output += "Agent is still running. Use wait: true or check back later.";', '            if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n                output += waitTimedOut\n                    ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n                    : "Agent is still running. It will notify you when complete.";', false],
+  ['dist/index.js', '            if (record.status === "running") {\n                output += "Agent is still running. Use wait: true or check back later.";', '            if (stillSettling) {\n                output += "Agent cancellation is still settling. Its partial result and completion notification remain available.";\n            }\n            else if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n                output += waitTimedOut\n                    ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n                    : "Agent is still running. It will notify you when complete.";', false, '            if (record.status === "running" || (waitTimedOut && record.status === "queued")) {\n                output += waitTimedOut\n                    ? `Wait limit reached; agent is still ${record.status}. The result remains unconsumed; the worker continues and will notify you when complete.`\n                    : "Agent is still running. It will notify you when complete.";'],
   ['dist/nested-tools.js', 'import { abortable } from "./abortable.js";', 'import { waitForRecord } from "./abortable.js";', false],
   ['dist/nested-tools.js', '            wait: Type.Optional(Type.Boolean()),', '            wait: Type.Optional(Type.Boolean({ description: "Wait up to 60 seconds; if still queued or running, return the current status. The child continues and can be fetched later with get_subagent_result." })),', false],
   ['dist/nested-tools.js', `            if (params.wait && (record.status === "queued" || record.status === "running")) {
@@ -190,6 +239,46 @@ const PATCHES = [
         : undefined;
     const childCustomTools = [...nestedTools, ...(boundedBashTool ? [boundedBashTool] : [])];`, false],
   ['dist/agent-runner.js', '        customTools: nestedTools,', '        customTools: childCustomTools,', false],
+  ['src/agent-manager.ts', 'const DEFAULT_MAX_CONCURRENT = 10;', `const DEFAULT_MAX_CONCURRENT = 10;\nconst DEFAULT_AGENT_TIMEOUT_MS = 30 * 60_000;\nconst PLANNER_TIMEOUT_MS = 60 * 60_000;\nconst ATTEMPT_TIMEOUT_REASON = "Agent execution timed out after its maximum total execution duration.";`, false],
+  ['dist/agent-manager.js', 'const DEFAULT_MAX_CONCURRENT = 10;', `const DEFAULT_MAX_CONCURRENT = 10;\nconst DEFAULT_AGENT_TIMEOUT_MS = 30 * 60_000;\nconst PLANNER_TIMEOUT_MS = 60 * 60_000;\nconst ATTEMPT_TIMEOUT_REASON = "Agent execution timed out after its maximum total execution duration.";`, false],
+  ['src/agent-manager.ts', '  private agents = new Map<string, AgentRecord>();', `  private agents = new Map<string, AgentRecord>();\n${ARM_DEADLINE_TS}`, false],
+  ['dist/agent-manager.js', '    agents = new Map();', `    agents = new Map();\n${ARM_DEADLINE_JS}`, false],
+  ['src/agent-manager.ts', '    const promise = runAgent(ctx, type, prompt, {', '    const clearDeadline = this.armDeadline(record);\n    const promise = runAgent(ctx, type, prompt, {', false],
+  ['dist/agent-manager.js', '        const promise = runAgent(ctx, type, prompt, {', '        const clearDeadline = this.armDeadline(record);\n        const promise = runAgent(ctx, type, prompt, {', false],
+  ['src/agent-manager.ts', '      .then(({ responseText, session, aborted, steered, failure }) => {', '      .then(({ responseText, session, aborted, steered, failure }) => {\n        clearDeadline();', false],
+  ['dist/agent-manager.js', '            .then(({ responseText, session, aborted, steered, failure }) => {', '            .then(({ responseText, session, aborted, steered, failure }) => {\n            clearDeadline();', false],
+  ['src/agent-manager.ts', '      .catch((err) => {\n        // Don\'t overwrite status if externally stopped via abort()\n        if (record.status !== "stopped") {\n          record.status = "error";\n        }\n        record.error = err instanceof Error ? err.message : String(err);', '      .catch((err) => {\n        clearDeadline();\n        // Don\'t overwrite status if externally stopped via abort()\n        if (record.status !== "stopped") {\n          record.status = "error";\n          record.error = err instanceof Error ? err.message : String(err);\n        } else if (record.error !== ATTEMPT_TIMEOUT_REASON) {\n          record.error = err instanceof Error ? err.message : String(err);\n        }', false],
+  ['dist/agent-manager.js', '            .catch((err) => {\n            // Don\'t overwrite status if externally stopped via abort()\n            if (record.status !== "stopped") {\n                record.status = "error";\n            }\n            record.error = err instanceof Error ? err.message : String(err);', '            .catch((err) => {\n            clearDeadline();\n            // Don\'t overwrite status if externally stopped via abort()\n            if (record.status !== "stopped") {\n                record.status = "error";\n                record.error = err instanceof Error ? err.message : String(err);\n            }\n            else if (record.error !== ATTEMPT_TIMEOUT_REASON) {\n                record.error = err instanceof Error ? err.message : String(err);\n            }', false],
+  ['src/agent-manager.ts', '        if (record.worktree) {\n          const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', '        if (record.worktree && record.error !== ATTEMPT_TIMEOUT_REASON) {\n          const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', false],
+  ['dist/agent-manager.js', '            if (record.worktree) {\n                const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', '            if (record.worktree && record.error !== ATTEMPT_TIMEOUT_REASON) {\n                const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', false],
+  ['src/agent-manager.ts', '        if (record.worktree) {\n          try {\n            const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', '        if (record.worktree && record.error !== ATTEMPT_TIMEOUT_REASON) {\n          try {\n            const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', false],
+  ['dist/agent-manager.js', '            if (record.worktree) {\n                try {\n                    const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', '            if (record.worktree && record.error !== ATTEMPT_TIMEOUT_REASON) {\n                try {\n                    const wtResult = cleanupWorktree(baseCwd, record.worktree, options.description);', false],
+  ['src/agent-manager.ts', '    if (!record?.session) return undefined;\n\n    // Background resume:', '    if (!record?.session || this.activeAttempts.has(id) || record.status === "running" || record.status === "queued") return undefined;\n\n    // Background resume:', false],
+  ['dist/agent-manager.js', '        if (!record?.session)\n            return undefined;\n        // Background resume:', '        if (!record?.session || this.activeAttempts.has(id) || record.status === "running" || record.status === "queued")\n            return undefined;\n        // Background resume:', false],
+  ['src/agent-manager.ts', '    record.error = undefined;\n\n    try {\n      const { text, failure } = await resumeAgent(record.session, prompt, {', '    record.error = undefined;\n\n    const controller = new AbortController();\n    record.abortController = controller;\n    let detachParentSignal: (() => void) | undefined;\n    if (signal) {\n      const onParentAbort = () => this.abort(id);\n      if (signal.aborted) onParentAbort();\n      else { signal.addEventListener("abort", onParentAbort, { once: true }); detachParentSignal = () => signal.removeEventListener("abort", onParentAbort); }\n    }\n    const clearDeadline = this.armDeadline(record);\n    try {\n      const { text, failure } = await resumeAgent(record.session, prompt, {', false],
+  ['dist/agent-manager.js', '        record.error = undefined;\n        try {\n            const { text, failure } = await resumeAgent(record.session, prompt, {', '        record.error = undefined;\n        const controller = new AbortController();\n        record.abortController = controller;\n        let detachParentSignal;\n        if (signal) {\n            const onParentAbort = () => this.abort(id);\n            if (signal.aborted) onParentAbort();\n            else {\n                signal.addEventListener("abort", onParentAbort, { once: true });\n                detachParentSignal = () => signal.removeEventListener("abort", onParentAbort);\n            }\n        }\n        const clearDeadline = this.armDeadline(record);\n        try {\n            const { text, failure } = await resumeAgent(record.session, prompt, {', false],
+  ['src/agent-manager.ts', '        signal,\n      });\n      // Same contract as the spawn path (#144):', '        signal: controller.signal,\n      });\n      // Same contract as the spawn path (#144):', false],
+  ['dist/agent-manager.js', '                signal,\n            });\n            // Same contract as the spawn path (#144):', '                signal: controller.signal,\n            });\n            // Same contract as the spawn path (#144):', false],
+  ['src/agent-manager.ts', '      // error, not a completion — but the resumed text stays available.\n      record.status = failure ? "error" : "completed";\n      if (failure) record.error = failure;', '      // error, not a completion — but the resumed text stays available.\n      if (record.status !== "stopped") {\n        record.status = failure ? "error" : "completed";\n        if (failure) record.error = failure;\n      }', false],
+  ['dist/agent-manager.js', '            // error, not a completion — but the resumed text stays available.\n            record.status = failure ? "error" : "completed";\n            if (failure)\n                record.error = failure;', '            // error, not a completion — but the resumed text stays available.\n            if (record.status !== "stopped") {\n                record.status = failure ? "error" : "completed";\n                if (failure)\n                    record.error = failure;\n            }', false],
+  ['src/agent-manager.ts', '    } catch (err) {\n      record.status = "error";\n      record.error = err instanceof Error ? err.message : String(err);\n      record.completedAt = Date.now();\n    }\n\n    // Same contract as the spawn settle paths:', '    } catch (err) {\n      if (record.status !== "stopped") {\n        record.status = "error";\n        record.error = err instanceof Error ? err.message : String(err);\n        record.completedAt = Date.now();\n      } else if (record.error !== ATTEMPT_TIMEOUT_REASON) {\n        record.error = err instanceof Error ? err.message : String(err);\n      }\n    } finally {\n      clearDeadline();\n      detachParentSignal?.();\n      this.activeAttempts.delete(id);\n    }\n\n    // Same contract as the spawn settle paths:', false],
+  ['dist/agent-manager.js', '        catch (err) {\n            record.status = "error";\n            record.error = err instanceof Error ? err.message : String(err);\n            record.completedAt = Date.now();\n        }\n        // Same contract as the spawn settle paths:', '        catch (err) {\n            if (record.status !== "stopped") {\n                record.status = "error";\n                record.error = err instanceof Error ? err.message : String(err);\n                record.completedAt = Date.now();\n            }\n            else if (record.error !== ATTEMPT_TIMEOUT_REASON) {\n                record.error = err instanceof Error ? err.message : String(err);\n            }\n        }\n        finally {\n            clearDeadline();\n            detachParentSignal?.();\n            this.activeAttempts.delete(id);\n        }\n        // Same contract as the spawn settle paths:', false],
+  ['src/agent-manager.ts', '    if (parentSignal) {\n      const onParentAbort = () => this.abort(id);\n      parentSignal.addEventListener("abort", onParentAbort, { once: true });\n      detachParentSignal = () => parentSignal.removeEventListener("abort", onParentAbort);\n    }', '    if (parentSignal) {\n      const onParentAbort = () => this.abort(id);\n      if (parentSignal.aborted) onParentAbort();\n      else {\n        parentSignal.addEventListener("abort", onParentAbort, { once: true });\n        detachParentSignal = () => parentSignal.removeEventListener("abort", onParentAbort);\n      }\n    }', false],
+  ['dist/agent-manager.js', '        if (parentSignal) {\n            const onParentAbort = () => this.abort(id);\n            parentSignal.addEventListener("abort", onParentAbort, { once: true });\n            detachParentSignal = () => parentSignal.removeEventListener("abort", onParentAbort);\n        }', '        if (parentSignal) {\n            const onParentAbort = () => this.abort(id);\n            if (parentSignal.aborted)\n                onParentAbort();\n            else {\n                parentSignal.addEventListener("abort", onParentAbort, { once: true });\n                detachParentSignal = () => parentSignal.removeEventListener("abort", onParentAbort);\n            }\n        }', false],
+  ['src/agent-manager.ts', '    record.abortController = abortController;\n    // Optional, and NOT what the Agent tool passes', '    record.abortController = abortController;\n    const clearDeadline = this.armDeadline(record);\n    // Optional, and NOT what the Agent tool passes', false],
+  ['dist/agent-manager.js', '        record.abortController = abortController;\n        // Optional, and NOT what the Agent tool passes', '        record.abortController = abortController;\n        const clearDeadline = this.armDeadline(record);\n        // Optional, and NOT what the Agent tool passes', false],
+  ['src/agent-manager.ts', '    const settle = () => {\n      detachParentSignal?.();', '    const settle = () => {\n      clearDeadline();\n      detachParentSignal?.();', false],
+  ['dist/agent-manager.js', '        const settle = () => {\n            detachParentSignal?.();', '        const settle = () => {\n            clearDeadline();\n            detachParentSignal?.();', false],
+  ['src/agent-manager.ts', '      record.result = text;\n      record.completedAt = Date.now();\n    } catch (err) {', '      record.result = text;\n      if (record.status !== "stopped") record.completedAt = Date.now();\n    } catch (err) {', false],
+  ['dist/agent-manager.js', '            record.result = text;\n            record.completedAt = Date.now();\n        }\n        catch (err) {', '            record.result = text;\n            if (record.status !== "stopped")\n                record.completedAt = Date.now();\n        }\n        catch (err) {', false],
+  ['src/agent-manager.ts', '  private removeRecord(id: string, record: AgentRecord): void {\n    this.tombstone(record);', '  private removeRecord(id: string, record: AgentRecord): void {\n    if (this.activeAttempts.has(id)) return;\n    this.tombstone(record);', false],
+  ['dist/agent-manager.js', '    removeRecord(id, record) {\n        this.tombstone(record);', '    removeRecord(id, record) {\n        if (this.activeAttempts.has(id))\n            return;\n        this.tombstone(record);', false],
+  ['src/agent-manager.ts', '  getRecord(id: string): AgentRecord | undefined {\n    return this.agents.get(id);\n  }', '  getRecord(id: string): AgentRecord | undefined {\n    return this.agents.get(id);\n  }\n\n  isAttemptActive(id: string): boolean {\n    return this.activeAttempts.has(id);\n  }', false],
+  ['dist/agent-manager.js', '    getRecord(id) {\n        return this.agents.get(id);\n    }', '    getRecord(id) {\n        return this.agents.get(id);\n    }\n    isAttemptActive(id) {\n        return this.activeAttempts.has(id);\n    }', false],
+  ['src/index.ts', '      const displayName = getDisplayName(record.type);', '      const stillSettling = manager.isAttemptActive(record.id);\n      const displayName = getDisplayName(record.type);', false],
+  ['dist/index.js', '            const displayName = getDisplayName(record.type);', '            const stillSettling = manager.isAttemptActive(record.id);\n            const displayName = getDisplayName(record.type);', false],
+  ['src/index.ts', '      if (record.status !== "running" && record.status !== "queued") {\n        record.resultConsumed = true;', '      if (record.status !== "running" && record.status !== "queued" && !stillSettling) {\n        record.resultConsumed = true;', false],
+  ['dist/index.js', '            if (record.status !== "running" && record.status !== "queued") {\n                record.resultConsumed = true;', '            if (record.status !== "running" && record.status !== "queued" && !stillSettling) {\n                record.resultConsumed = true;', false],
 ];
 
 function resolveRoot(argv, env = process.env) {
@@ -212,23 +301,24 @@ async function patch(root, { renameFile = rename } = {}) {
   for (const rel of [...new Set(PATCHES.map(([file]) => file))]) {
     const target = path.join(root, rel); const stat = await lstat(target); const original = await readFile(target); let source = original.toString('utf8');
     const edits = PATCHES.filter(([file]) => file === rel);
-    const marker = rel.endsWith('abortable.ts') || rel.endsWith('abortable.js') ? 'export async function waitForRecord'
-      : rel.endsWith('agent-runner.ts') || rel.endsWith('agent-runner.js') ? 'const boundedBashTool ='
-      : 'waitTimedOut';
-    const markerComplete = count(source, marker) === 1 && edits.every(([, before, after]) =>
-      count(source, after) === 1 && (count(source, before) === 0 || after.includes(before)));
-    const fullyPatched = markerComplete || edits.every(([, before, after, insertion]) =>
-      count(source, after) === 1 && (insertion || before === after || count(source, before) === 0));
-    if (fullyPatched) {
-      targets.push({ target, original, output: original, mode: stat.mode & 0o7777, changed: false });
-      continue;
-    }
-    for (const [, before, after, insertion] of edits) {
-      const found = count(source, before);
-      if ((insertion && found !== 0) || (!insertion && found !== 1)) throw new Error(`anchor cardinality mismatch: ${rel}: ${JSON.stringify(before.slice(0, 80))} (${found})`);
+    let changed = false;
+    for (const [, before, after, insertion, legacyBefore] of edits) {
+      const beforeCount = count(source, before);
+      const afterCount = count(source, after);
+      const legacyCount = legacyBefore ? count(source, legacyBefore) : 0;
+      if (afterCount === 1 && (beforeCount === 0 || after.includes(before))) continue;
+      if (legacyCount === 1 && afterCount === 0 && !insertion) {
+        source = source.replace(legacyBefore, () => after);
+        changed = true;
+        continue;
+      }
+      if (insertion ? afterCount !== 0 || beforeCount !== 0 : beforeCount !== 1 || afterCount !== 0) {
+        throw new Error(`anchor cardinality mismatch: ${rel}: ${JSON.stringify(before.slice(0, 80))} (before=${beforeCount}, after=${afterCount}, legacy=${legacyCount})`);
+      }
       source = insertion ? `${source.trimEnd()}\n\n${after}` : source.replace(before, () => after);
+      changed = true;
     }
-    targets.push({ target, original, output: Buffer.from(source), mode: stat.mode & 0o7777, changed: true });
+    targets.push({ target, original, output: changed ? Buffer.from(source) : original, mode: stat.mode & 0o7777, changed });
   }
   const changed = targets.filter(t => t.changed); if (!changed.length) return false;
   const staged = [];
