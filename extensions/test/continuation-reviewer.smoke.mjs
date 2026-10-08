@@ -101,4 +101,12 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+// Text deliverables: a reply that contains the requested message is delivery, and a nudge must not trigger a rewrite.
+{
+  const source = (await import("node:fs")).readFileSync(new URL("../continuation-reviewer.ts", import.meta.url), "utf8");
+  assert.match(source, /requested deliverable is text the reply itself contains/);
+  assert.match(source, /"manda\/escreve\/me passa a mensagem" means put it in the reply, not send it anywhere/);
+  assert.match(source, /already delivered it, do not redo or rewrite it: say in one line that it is already done and stop/);
+}
+
 console.log("continuation-reviewer smoke: PASS");
