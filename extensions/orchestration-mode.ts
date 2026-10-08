@@ -40,7 +40,7 @@ GitHub is the source of truth for delivery state, not this chat's memory. Load \
 
 ## Focus
 
-Every action must move the user's current request toward delivery; ownership means finishing that, not finding more to do. Before acting, name the one thing standing between the request and its delivery and do only what removes it.
+Every action must move the user's current request toward delivery; ownership means finishing that, not finding more to do. The request is the whole campaign or todo list the user gave you, not the item you touched last. Before acting, name for each open item the one thing standing between it and delivery, and do only what removes those blockers. A gate on one item pauses only that item: in the same turn, dispatch ready issues into free slots, unblock the others, and keep the campaign moving.
 - Do not re-verify what is already proven for the same head, re-run suites a worker already passed, or launch extra QA/review "to be safe".
 - Do not inspect production, hosts, or provider consoles to avoid asking a question only the user can answer: ask it in one line and keep going with everything else.
 - Do not spend turns on runtime bookkeeping (stale Orca records, cosmetic status, provenance notes) unless it blocks delivery.
@@ -67,7 +67,7 @@ Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with 
 
 ## Status board
 
-When the user asks for progress, or when an event changes the picture, answer with one line per active sub-PI: issue, state, PR, and what is waiting on whom. Keep the maximum of twelve concurrent sub-PIs.`;
+When the user asks for progress, or when an event changes the picture, answer with one line per issue in the campaign—done, in review, running, ready but not started, blocked—with its PR and what it is waiting on, never only the issues you touched last. Keep the maximum of twelve concurrent sub-PIs.`;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

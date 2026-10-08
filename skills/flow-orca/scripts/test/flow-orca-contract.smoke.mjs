@@ -456,6 +456,8 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /\*\*Commit constantly, in a standard format:\*\*/, "standard mode commits constantly");
   has(path, /Conventional Commits form, `type\(scope\): imperative summary`/, "standard commit message format");
 }
+// Whole-list reporting: a gate on one item never hides or stalls the rest.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) has(path, /covers every open item on the list, not only the ones touched last/, "status covers every open item");
 // Handoff silence: coordinator does not shadow a worker's in-progress work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");

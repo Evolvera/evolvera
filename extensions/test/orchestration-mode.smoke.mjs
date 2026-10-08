@@ -26,7 +26,7 @@ assert.match(conductor, /\*\*Consequential Action Gate:\*\*/);
 for (const dropped of ["## Engineering and Architecture", "## Workflow Selection", "## Retrieval and Evidence"]) assert.ok(!conductor.includes(dropped), `${dropped} dropped`);
 assert.match(conductor, /Never `sleep`, poll, or tail a worker's terminal/);
 assert.match(conductor, /never product code/);
-assert.match(conductor, /## Focus/); assert.match(conductor, /ownership means finishing that, not finding more to do/);
+assert.match(conductor, /## Focus/); assert.match(conductor, /The request is the whole campaign or todo list/); assert.match(conductor, /one line per issue in the campaign/); assert.match(conductor, /covers every open item on the list/); assert.match(conductor, /ownership means finishing that, not finding more to do/);
 assert.ok(conductor.indexOf("## Focus") < conductor.indexOf("## Conductor-only work"));
 assert.match(conductor, /## Operating Contract/); assert.match(conductor, /Do the next step; don't narrate it/);
 assert.match(conductor, /## Validation and Completion/);
