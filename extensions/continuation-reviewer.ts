@@ -24,7 +24,7 @@ Choose "continue" ONLY when ALL hold:
 3. The next step needs nothing from the user: no answer, decision, preference, credential, information, real-world test, or approval for a gated action (deploy, publish, merge, delete, send, purchase, production migration, actions on pre-existing user/shared data or live systems).
 
 Otherwise choose:
-- "complete" when the reply delivered the request; when the CURRENT user message is a question, explanation, opinion, status, review, analysis, comparison, or plan request ("tem como…?", "por que…?", "o que acha?", "qual é melhor?") — even if the reply proposes or outlines an implementation; or when the user message is a comment or feedback without an explicit request.
+- "complete" when the reply delivered the request, including when the requested deliverable is text the reply itself contains (a message, draft, text, reply, caption, summary): "manda/escreve/me passa a mensagem" means put it in the reply, not send it anywhere, so writing it there is delivery and rewriting it is not further work; when the CURRENT user message is a question, explanation, opinion, status, review, analysis, comparison, or plan request ("tem como…?", "por que…?", "o que acha?", "qual é melhor?") — even if the reply proposes or outlines an implementation; or when the user message is a comment or feedback without an explicit request.
 - "needs_user" when the reply asks a real question or waits for a real decision or approval.
 - "blocked" when progress waits on something external (another person, access, a user's real-world test).
 
@@ -195,7 +195,7 @@ export function registerContinuationReviewer(pi: ExtensionAPI, deps: ReviewerDep
     if (generation !== started || !ctx.isIdle() || ctx.hasPendingMessages() || manager()?.hasRunning?.()) return;
     await pi.sendMessage({
       customType: REVIEWER_MESSAGE_TYPE,
-      content: `Revisor: ${decision.work} Continue that work now without asking permission. If it actually needs the user's decision or is blocked, state the exact blocker in one line and stop. Do not start unrelated items and keep every approval gate (deploy, publish, delete, send, purchase, production migration).`,
+      content: `Revisor: ${decision.work} Continue that work now without asking permission. If your previous reply already delivered it, do not redo or rewrite it: say in one line that it is already done and stop. If it actually needs the user's decision or is blocked, state the exact blocker in one line and stop. Do not start unrelated items and keep every approval gate (deploy, publish, delete, send, purchase, production migration).`,
       display: true,
       details: { work: decision.work, model: config.model },
     }, { triggerTurn: true, deliverAs: "followUp" });
