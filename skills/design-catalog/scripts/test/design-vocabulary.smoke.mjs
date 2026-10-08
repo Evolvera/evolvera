@@ -58,4 +58,12 @@ for (const rel of consumers) {
   assert.ok(/^---\n[\s\S]*?\n---\n/.test(text), `${rel} frontmatter intact`);
 }
 
+// Hover reveal: canonical term and emphasis in every visual consumer.
+const motion = vocab.slice(vocab.indexOf('## 6. Motion & Transitions'), vocab.indexOf('## 7. '));
+assert.ok(motion.includes('**Hover reveal**') && motion.includes('@media (hover: none)'), 'Motion defines Hover reveal with touch fallback');
+for (const n of ['website-designer', 'website-home-designer', 'website-home-planner', 'builder-design', 'builder-heavy-design', 'builder-home', 'website-polisher', 'website-polisher-home']) {
+  const text = read(`agents/${n}.md`);
+  assert.ok(text.includes('**Hover reveal (emphasis):**') && text.includes('second-order elements'), `${n} emphasizes Hover reveal on second-order elements`);
+}
+
 console.log('design-vocabulary smoke: PASS');

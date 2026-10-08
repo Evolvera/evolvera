@@ -148,6 +148,7 @@ Exact terms from `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`, one p
 
 ### Motion
 - Baseline motion language (designer-owned): restrained, purposeful orientation/state feedback that preserves normal flow and never gates content, navigation, forms, CTAs, or proof.
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 | Pattern | Duration | Easing | Purpose | Reduced-motion fallback |
 
 ## 5.1 Creative Opportunity Map (designer-owned)

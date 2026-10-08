@@ -192,6 +192,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Accessible landmarks: header, main, section, footer.
 - Keyboard-visible focus states.
 - Hover/active states for interactive elements.
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 - Respect `prefers-reduced-motion`.
 - No package manager, no framework, no build step.
 - No external assets required to render well.
