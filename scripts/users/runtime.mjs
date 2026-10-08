@@ -152,6 +152,39 @@ function assertManagedRequest(profile, request = {}, assertSelectedSession) {
       resourceLoaderOptions: admitted.loaderOptions,
     });
   }
+  if (request.resource === "pi-subagents-global-config") {
+    if (typeof request.root !== "string" || request.root.includes("\0") || path.resolve(request.root) !== profile.agentDir || canonicalize(profile.agentDir) !== profile.agentDir) throw fail("USER_RESOURCE_ROOT_MISMATCH");
+    return profile;
+  }
+  if (request.resource === "pi-subagents-agents") {
+    if (!Array.isArray(profile.sharedAssets) || profile.sharedAssets.length !== 1) throw fail("USER_RESOURCE_PROFILE_MISMATCH");
+    const expected = path.join(profile.sharedAssets[0], "agents");
+    if (typeof request.root !== "string" || request.root.includes("\0") || path.resolve(request.root) !== expected || canonicalize(expected) !== expected) throw fail("USER_RESOURCE_ROOT_MISMATCH");
+    return profile;
+  }
+  if (request.resource === "pi-subagents-memory") {
+    const workspace = assertOwnedWorkspace(profile, request.cwd);
+    if (typeof request.root !== "string" || request.root.includes("\0")) throw fail("USER_RESOURCE_ROOT_MISMATCH");
+    const name = path.basename(request.root);
+    // pi-subagents 0.18.2 memory.ts:isUnsafeName; project/local use the passed cwd.
+    if (!name || name.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) throw fail("USER_RESOURCE_NAME_INVALID");
+    const roots = [
+      path.join(profile.agentDir, "agent-memory", name),
+      path.join(workspace.cwd, ".pi", "agent-memory", name),
+      path.join(workspace.cwd, ".pi", "agent-memory-local", name),
+    ];
+    if (profile.id === "evolvera") roots.push(path.join(path.dirname(profile.agentDir), "agent-memory", name));
+    const resolved = path.resolve(request.root);
+    if (!roots.includes(resolved) || canonicalize(resolved) !== resolved) throw fail("USER_RESOURCE_ROOT_MISMATCH");
+    return workspace;
+  }
+  if (request.resource === "pi-subagents-transcript") {
+    const workspace = assertOwnedWorkspace(profile, request.cwd);
+    const expected = path.join(workspace.workspaceRoot, ".pi", "subagent-output");
+    if (typeof request.root !== "string" || request.root.includes("\0") || path.resolve(request.root) !== expected || canonicalize(expected) !== expected) throw fail("USER_RESOURCE_ROOT_MISMATCH");
+    if (typeof request.sessionId !== "string" || !SCHEDULE_SESSION_ID.test(request.sessionId)) throw fail("USER_RESOURCE_SESSION_ID_INVALID");
+    return workspace;
+  }
   if (request.resource === "pi-env-inspect" || request.resource === "pi-subagents-agent-root" || request.resource === "memory-settings") {
     if (request.root !== profile.agentDir) throw fail("USER_RESOURCE_ROOT_MISMATCH");
     if (request.cwd) return assertOwnedWorkspace(profile, request.cwd);
