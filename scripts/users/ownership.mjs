@@ -187,7 +187,7 @@ export function assertOwnedWorkspace(ctx, cwd, opts = {}) {
   return frozen({ userId: ctx.id, cwd: real, workspaceRoot: found.root, worktreeOrigin: found.origin });
 }
 
-function readHeaderCwd(file) {
+function readHeaderMetadata(file) {
   const fd = fs.openSync(file, "r");
   try {
     const buf = Buffer.alloc(MAX_HEADER_BYTES);
@@ -196,7 +196,9 @@ function readHeaderCwd(file) {
     if (end === -1 && n === MAX_HEADER_BYTES) throw new Error("header too long");
     const header = JSON.parse(buf.toString("utf8", 0, end === -1 ? n : end).replace(/\r$/, ""));
     if (!header || header.type !== "session" || typeof header.cwd !== "string") throw new Error("not a session header");
-    return header.cwd;
+    const parentSession = header.parentSession;
+    if (parentSession !== undefined && parentSession !== null && parentSession !== "" && typeof parentSession !== "string") throw new Error("invalid parent session");
+    return { cwd: header.cwd, parentSession: parentSession || undefined };
   } finally { fs.closeSync(fd); }
 }
 
@@ -217,9 +219,9 @@ export function assertOwnedSession(ctx, request = {}, opts = {}) {
     if (!workspace) throw fail("SESSION_CWD_REQUIRED", "a new session requires an owned cwd");
     return frozen({ userId: ctx.id, sessionPath: real, sessionRoot, exists: false, workspace });
   }
-  let headerCwd;
-  try { headerCwd = readHeaderCwd(real); } catch { throw fail("SESSION_HEADER_INVALID", "session header is missing or malformed"); }
+  let header;
+  try { header = readHeaderMetadata(real); } catch { throw fail("SESSION_HEADER_INVALID", "session header is missing or malformed"); }
   let headerWorkspace;
-  try { headerWorkspace = assertOwnedWorkspace(ctx, headerCwd, opts); } catch { throw fail("SESSION_HEADER_CWD_UNOWNED", "session header cwd is not owned by this user"); }
-  return frozen({ userId: ctx.id, sessionPath: real, sessionRoot, exists: true, workspace: workspace ?? headerWorkspace });
+  try { headerWorkspace = assertOwnedWorkspace(ctx, header.cwd, opts); } catch { throw fail("SESSION_HEADER_CWD_UNOWNED", "session header cwd is not owned by this user"); }
+  return frozen({ userId: ctx.id, sessionPath: real, sessionRoot, exists: true, workspace: workspace ?? headerWorkspace, parentSession: header.parentSession });
 }
