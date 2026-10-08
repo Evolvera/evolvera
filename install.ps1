@@ -178,6 +178,8 @@ if (-not $sameRoot) {
 if (-not $sameRoot) {
     # -- Extensions -------------------------------------------
     Remove-Item (Join-Path $PI_DIR "extensions\goal-mode.ts") -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $PI_DIR "extensions\continuation-reviewer.ts") -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $PI_DIR "continuation-reviewer.json") -Force -ErrorAction SilentlyContinue
     $extensions = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "extensions") -Filter "*.ts" -ErrorAction SilentlyContinue
     if ($extensions) {
         $dest = Join-Path $PI_DIR "extensions"

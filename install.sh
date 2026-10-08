@@ -136,8 +136,8 @@ done
 # Remove retired harnesses so updates do not leave stale global commands/tools.
 rm -f "$PI_DIR/extensions/plan-heavy.ts"
 rm -f "$PI_DIR/extensions/goal-mode.ts"
-# delivery-closure was split into midrun-compaction (post-compaction resume) and continuation-reviewer.
-rm -f "$PI_DIR/extensions/delivery-closure.ts"
+# delivery-closure became midrun-compaction; the continuation reviewer was retired.
+rm -f "$PI_DIR/extensions/delivery-closure.ts" "$PI_DIR/extensions/continuation-reviewer.ts" "$PI_DIR/continuation-reviewer.json"
 
 # Remove retired agents so updates do not leave stale routes.
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md
