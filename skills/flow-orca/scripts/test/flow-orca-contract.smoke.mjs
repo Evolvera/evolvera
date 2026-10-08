@@ -439,6 +439,11 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Never ask the agent to acknowledge and stop/, "no ack-and-stop handoff");
   has(path, /never `sleep` or wait on terminals one after another/, "bounded concurrent delivery check");
 }
+// Report-back: full handoffs launch PI workers bound to the coordinator's Run.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --model …`/, "worker launched with PI_REPORT_RUN");
+  has(path, /orca orchestration check --run <run-id> --json/, "coordinator reads the Run on wake");
+}
 // Handoff silence: coordinator does not shadow a worker's in-progress work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /the handoff itself is the deliverable, so close that item and end the turn/, "full handoff closes the coordinator item");
