@@ -40,7 +40,12 @@ const sdkFiles = [
   'node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.d.ts',
   'node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
 ];
-const subagentsFiles = ['package.json', 'src/index.ts', 'dist/index.js'];
+const subagentsFiles = [
+  'package.json', 'src/index.ts', 'dist/index.js',
+  'src/abortable.ts', 'dist/abortable.js',
+  'src/agent-runner.ts', 'dist/agent-runner.js',
+  'src/nested-tools.ts', 'dist/nested-tools.js',
+];
 const authFiles = ['package.json', 'src/constants.ts'];
 const sourceInputs = [
   ...sdkFiles.map((relative) => path.join(sdkSource, relative)),
@@ -206,6 +211,12 @@ function runPreflight(testCase) {
     }).trim();
     assert.equal(hostPathFromBash(npmCmdRoot), path.resolve(testCase.fakeGlobalModules), 'npm.cmd did not resolve to tmp root');
   }
+}
+
+for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.2'], ['install.ps1', 'npm:@tintinweb/pi-subagents@0.18.2']]) {
+  const text = fs.readFileSync(path.join(root, file), 'utf8');
+  assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf('patch-pi-subagents-deferred-nudges.mjs'), `${file}: bounded-waits patch must follow deferred-nudges`);
+  assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf(install), `${file}: bounded-waits patch must follow package install`);
 }
 
 // STATEFUL RESOURCE PROOF: this unique mkdtemp owns HOME, USERPROFILE, XDG_CONFIG_HOME,

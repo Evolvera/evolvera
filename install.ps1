@@ -237,6 +237,8 @@ if ($piCmd) {
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de thinking ultra." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-deferred-nudges.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de avisos adiados." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-bounded-waits.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de timeouts limitados." }
     Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."

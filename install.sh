@@ -184,6 +184,7 @@ if command -v pi &>/dev/null; then
     if install_pi_package "npm:@tintinweb/pi-subagents@0.18.2" "pi-subagents"; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2
