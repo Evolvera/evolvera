@@ -39,6 +39,8 @@ const tmpdirProprioPadrao = new Set([
   "todo-reconciliation.smoke.mjs",
   // Repo git descartável + worktrees no mkdtemp próprio, removido no finally; agente/modelo são fakes.
   "loop.smoke.mjs",
+  // Histórico/config só no mkdtemp próprio (agentDir injetado), removido no finally; modelo é fake.
+  "work-status.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);

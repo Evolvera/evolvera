@@ -247,6 +247,8 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	let disposed = false;
 	// Depois de session_shutdown o ctx/pi desta instância ficam inválidos: tudo vira no-op.
 	const safe = (fn: () => void) => { if (disposed) return; try { fn(); } catch { /* ctx inválido */ } };
+	// Contador lido pelo work-status.ts: execuções paralelas em worktree contam como tarefa em andamento.
+	(globalThis as any)[Symbol.for("pi-loop:running-jobs")] = () => jobs.size;
 	const notify = (msg: string, type: "info" | "warning" | "error" = "info") => safe(() => ctxRef?.ui.notify(msg, type));
 
 	async function askModel(system: string, user: string): Promise<unknown> {
