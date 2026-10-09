@@ -486,6 +486,23 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /a full ownership handoff to another agent session transfers the outcome/, "post-build closure exempts full handoff");
 }
 has(SKILL, /O WIP de um worker ativo é dele até `worker_done`, pergunta ou escalation/, "coordinator must not shadow an active worker");
+// Child settlement: a report or user notice triggers triage of every child; merge asks once unless already authorized.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /Act on that work again only when the user asks or the worker reports, through that Run, that it finished, is blocked, or stopped; then settle it as the next bullet says/, "direct handoff must point to child settlement");
+  has(path, /\*\*Settling child PIs you launched \(direct handoff or `flow-orca`\):\*\* a worker report through its Run, or the user saying children finished, stopped, or are idle, is the order to settle every child of this coordinator now—never a question about what to do/, "report or user notice triggers settlement of every child");
+  has(path, /`COMPLETE`[^\n]*`INCOMPLETE`[^\n]*`BLOCKED`/, "children are classified complete, incomplete, or blocked");
+  has(path, /merge without asking only when the user already authorized these merges in this conversation or the approved campaign grant covers merge—a saved execution mode, YOLO included, is not that authorization/, "merge needs an existing explicit authorization");
+  has(path, /otherwise ask one consolidated yes\/no for every ready PR/, "merge approval is one batched question");
+  has(path, /reconcile it now without asking, sending the exact remaining work back to that same worker terminal/, "incomplete children are reconciled through the same worker");
+  has(path, /tell the user the exact blocker and what unblocks it/, "blocked children are reported to the user");
+  has(path, /A blocker or pending question on one child never stops settling, reconciling, or merging the others; report every child in one message/, "one blocker never stalls the other children");
+}
+has(SKILL, /\*\*Fechamento de cada worker \(triagem obrigatória\)\.\*\* O wake do Orca, o report do worker ou o usuário dizendo que os workers finalizaram, pararam ou estão ociosos é a ordem para fechar \*\*todos\*\* os workers da campanha agora, nunca uma pergunta sobre o que fazer/, "campaign settlement trigger");
+has(SKILL, /\*\*completo\*\*[^\n]*\*\*incompleto sem bloqueio\*\*[^\n]*\*\*bloqueado\*\*/, "campaign workers are triaged into three outcomes");
+has(SKILL, /faça \*\*uma\*\* pergunta consolidada com todos os PRs prontos/, "campaign merge approval is one batched question");
+has(SKILL, /devolva o restante exato ao \*\*mesmo\*\* PI e workspace/, "incomplete campaign work goes back to the same worker");
+has(SKILL, /Bloqueio, pergunta ou aprovação pendente de um worker nunca para o fechamento, a reconciliação, o merge ou a admissão dos outros/, "one campaign blocker never stalls the others");
+has(SKILL, /Quando falta aprovação de merge, prepare todos os PRs prontos e peça-a numa única pergunta consolidada \(7\.4\); autorização explícita já dada nesta conversa para esses merges vale e não é perguntada de novo/, "7.6 merge approval reuses earlier explicit authorization");
 has(README, /carregá-la automaticamente para campanhas por issues\/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome/, "README must document automatic routing");
 has(README, /Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo/, "README must document routing exclusions");
 // Notification: Orca-owned pointer wake, one non-waiting check, ack after settlement, manual wait only as fallback.
