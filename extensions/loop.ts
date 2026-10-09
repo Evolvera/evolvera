@@ -235,7 +235,7 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	const now = deps.now ?? (() => Date.now());
 	const runAgent = deps.runAgent ?? defaultRunAgent;
 	const loops = new Map<string, Loop>();
-	const jobs = new Map<string, { loopId: string; abort: AbortController }>();
+	const jobs = new Map<string, { loopId: string; runNumber: number; abort: AbortController; startedAt: number }>();
 	const firing = new Set<string>();
 	const depCache = new Map<string, boolean>();
 	let mainRun: string | null = null; // id do loop rodando na sessão principal
@@ -247,8 +247,13 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	let disposed = false;
 	// Depois de session_shutdown o ctx/pi desta instância ficam inválidos: tudo vira no-op.
 	const safe = (fn: () => void) => { if (disposed) return; try { fn(); } catch { /* ctx inválido */ } };
-	// Contador lido pelo work-status.ts: execuções paralelas em worktree contam como tarefa em andamento.
+	// Metadados mínimos para o painel global; nunca expõe o prompt da tarefa.
+	const workStatusJobs = () => [...jobs.entries()].map(([id, job]) => ({
+		id, label: `${job.loopId} · execução ${job.runNumber}`, startedAt: job.startedAt,
+		status: job.abort.signal.aborted ? "canceling" : "running",
+	}));
 	(globalThis as any)[Symbol.for("pi-loop:running-jobs")] = () => jobs.size;
+	(globalThis as any)[Symbol.for("pi-loop:work-status-jobs")] = workStatusJobs;
 	const notify = (msg: string, type: "info" | "warning" | "error" = "info") => safe(() => ctxRef?.ui.notify(msg, type));
 
 	async function askModel(system: string, user: string): Promise<unknown> {
@@ -334,7 +339,7 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 		const cwd = ctxRef!.cwd;
 		const abort = new AbortController();
 		const jobId = `${loop.id}-${runNumber}`;
-		jobs.set(jobId, { loopId: loop.id, abort });
+		jobs.set(jobId, { loopId: loop.id, runNumber, abort, startedAt: now() });
 		const branch = `loop/${loop.id}-${runNumber}-${now().toString(36)}`;
 		let dir = "";
 		let repo = "";
@@ -557,11 +562,12 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	pi.on("session_shutdown", async () => {
 		save(true);
 		stopAll();
+		if ((globalThis as any)[Symbol.for("pi-loop:work-status-jobs")] === workStatusJobs) (globalThis as any)[Symbol.for("pi-loop:work-status-jobs")] = undefined;
 		disposed = true;
 		ctxRef = null;
 	});
 
-	return { tick, loops, jobs, isMainRunning: () => mainRun };
+	return { tick, loops, jobs, isMainRunning: () => mainRun, parallelDescriptors: workStatusJobs };
 }
 
 export default function (pi: ExtensionAPI) {
