@@ -478,9 +478,17 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	let theme: Theme | undefined;
 	let footerPatched = false;
 	let sessionId = "";
+	let todoSessionId = "";
 	let peerCacheAt = Number.NEGATIVE_INFINITY;
 	let peerCache: Snapshot[] = [];
 	const trackedAgents = new Map<string, { type: string; startedAt: number }>();
+	const todoElapsedMs = new Map<number, number>();
+	let todoStatuses = new Map<number, "in_progress" | "pending" | "completed">();
+	let todoRootTask: Task | null = null;
+	let todoRootElapsed = 0;
+	let lastTodoEta = "";
+	let lastTodoEtaAt = Number.NEGATIVE_INFINITY;
+	let unsubscribeTodoSnapshot: (() => void) | undefined;
 	const toolAgentTypes = new Map<string, string>();
 	const toolAgentTaskOwners = new Map<string, Task>();
 	const agentTaskOwners = new Map<string, { toolCallId: string; task: Task; type: string }>();
@@ -699,6 +707,64 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		return null;
 	}
 
+	function publishTodoEta(force = false, emit = true) {
+		if (!active) return;
+		const at = now();
+		let activeElapsed = 0;
+		if (task) {
+			activeElapsed = activeElapsedSeconds(task, at);
+			if (todoRootTask === task) {
+				const deltaMs = Math.max(0, (activeElapsed - todoRootElapsed) * 1000);
+				for (const [id, status] of todoStatuses) {
+					if (status === "in_progress") todoElapsedMs.set(id, (todoElapsedMs.get(id) ?? 0) + deltaMs);
+				}
+			}
+			todoRootTask = task;
+			todoRootElapsed = activeElapsed;
+		} else {
+			todoRootTask = null;
+			todoRootElapsed = 0;
+		}
+		const eligible = [...todoStatuses].filter(([, status]) => status === "in_progress" || status === "pending");
+		const remaining = task ? remainingNow(task) : null;
+		const share = remaining !== null && eligible.length ? Math.floor(remaining / eligible.length) : null;
+		const items: Record<string, { elapsedSec: number | null; remainingSec: number | null }> = {};
+		for (const [id, status] of eligible.slice(0, 100)) {
+			items[String(id)] = {
+				elapsedSec: status === "in_progress" ? Math.floor((todoElapsedMs.get(id) ?? 0) / 1000) : 0,
+				remainingSec: share,
+			};
+		}
+		if (!emit) return;
+		const serialized = JSON.stringify({ sessionId: todoSessionId, items });
+		if (serialized === lastTodoEta || (!force && at - lastTodoEtaAt < 1000)) return;
+		lastTodoEta = serialized;
+		lastTodoEtaAt = at;
+		pi.events?.emit("pi-work-status:todo-eta", { sessionId: todoSessionId, items });
+	}
+
+	function receiveTodoSnapshot(raw: unknown) {
+		if (!active || !raw || typeof raw !== "object") return;
+		const snapshot = raw as { sessionId?: unknown; tasks?: unknown };
+		if (snapshot.sessionId !== todoSessionId || !Array.isArray(snapshot.tasks) || snapshot.tasks.length > 100) return;
+		const next = new Map<number, "in_progress" | "pending" | "completed">();
+		for (const row of snapshot.tasks) {
+			if (!row || typeof row !== "object") return;
+			const value = row as { id?: unknown; subject?: unknown; status?: unknown };
+			if (!Number.isSafeInteger(value.id) || (value.id as number) < 0 || typeof value.subject !== "string"
+				|| !["in_progress", "pending", "completed"].includes(String(value.status))) return;
+			next.set(value.id as number, value.status as "in_progress" | "pending" | "completed");
+		}
+		publishTodoEta(true, false);
+		for (const [id, status] of next) {
+			if (status === "completed") todoElapsedMs.delete(id);
+			else if (!todoElapsedMs.has(id)) todoElapsedMs.set(id, 0);
+		}
+		for (const id of todoElapsedMs.keys()) if (!next.has(id)) todoElapsedMs.delete(id);
+		todoStatuses = next;
+		publishTodoEta(true);
+	}
+
 	function makeSnapshot(): Snapshot {
 		const at = now();
 		const parallel = liveParallel();
@@ -794,6 +860,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	function finish() {
 		if (!task) return;
 		const t = task;
+		publishTodoEta(true, false);
 		task = null;
 		for (const [toolCallId, owner] of toolAgentTaskOwners) {
 			if (owner === t) {
@@ -897,6 +964,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 				&& (checkDue || (scopeChanged && !t.retryAfterFailure) || (estimateExpired && !t.retryAfterFailure))) void doReplan(t);
 		}
 		publishSnapshot();
+		publishTodoEta();
 		try { tui?.requestRender(); } catch { /* ui trocada */ }
 	}
 
@@ -1023,12 +1091,15 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		},
 	});
 
+	if (pi.events?.on) unsubscribeTodoSnapshot = pi.events.on("rpiv-todo:snapshot", receiveTodoSnapshot);
+
 	pi.on("session_start", async (_event, ctx) => {
 		ctxRef = ctx;
 		// Só a sessão principal interativa (TUI ou cliente RPC); subagentes e `pi -p` não têm UI.
 		active = Boolean((ctx as any).hasUI) && ((ctx as any).mode === "tui" || (ctx as any).mode === "rpc");
 		if (!active) return;
 		try { sessionId = String(ctx.sessionManager?.getSessionId?.() ?? nonce.slice(0, 8)); } catch { sessionId = nonce.slice(0, 8); }
+		try { todoSessionId = String(ctx.sessionManager?.getSessionId?.() ?? ""); } catch { todoSessionId = ""; }
 		installUI(ctx);
 		if (!ticker && deps.autoTick !== false) ticker = setInterval(tick, 1000);
 		publishSnapshot();
@@ -1129,6 +1200,12 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		if (ticker) clearInterval(ticker);
 		ticker = null;
 		if ((globalThis as any)[LINES_KEY] === lines) (globalThis as any)[LINES_KEY] = undefined;
+		unsubscribeTodoSnapshot?.();
+		unsubscribeTodoSnapshot = undefined;
+		todoStatuses.clear();
+		todoElapsedMs.clear();
+		todoSessionId = "";
+		lastTodoEta = "";
 		removeOwnSnapshot();
 		active = false;
 		ctxRef = null;
