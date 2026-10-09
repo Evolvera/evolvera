@@ -9,13 +9,17 @@ export const MIDRUN_RESUME_MESSAGE = "Context was compacted in the middle of you
 export type CompactionSettings = { enabled: boolean; reserveTokens: number };
 type Context = {
   mode?: string;
+  isIdle(): boolean;
+  abort(): void;
   cwd: string;
   model: { provider: string; id: string };
   getContextUsage(): { tokens: number | null; contextWindow: number } | undefined;
   compact(options: { customInstructions: string; onComplete: () => void; onError: (error: Error) => void }): void;
   hasPendingMessages(): boolean;
+  sessionManager: { getBranch(): Iterable<unknown> };
   ui: { notify(message: string, type: "warning"): void };
 };
+type BranchEntry = { type?: string; id?: string };
 type TurnMessage = { provider?: string; model?: string; content?: Array<{ type?: string }> };
 type Deps = { readCompactionSettings?: (ctx: Context) => CompactionSettings; env?: Record<string, string | undefined>; getManager?: () => { hasRunning?: () => boolean } | null | undefined };
 
@@ -64,24 +68,68 @@ export function isCompactionStall(branch: Iterable<unknown>): boolean {
 export function registerMidrunCompaction(pi: ExtensionAPI, deps: Deps = {}): void {
   let primary = false;
   let inFlight = false;
+  let waitingForNativeCompaction = false;
   let stallBudget = false;
+  let resumedCompactionId: string | undefined;
   const env = deps.env ?? process.env;
-  const reset = () => { inFlight = false; stallBudget = false; };
+  const reset = () => { inFlight = false; waitingForNativeCompaction = false; stallBudget = false; };
+  const resumeMidrun = (ctx: Context, failed = false) => {
+    inFlight = false;
+    waitingForNativeCompaction = false;
+    if (failed) {
+      try { ctx.ui.notify("Mid-run compaction failed; resuming the task and leaving PI's overflow recovery as fallback.", "warning"); } catch { /* UI may have closed. */ }
+    }
+    try { if (ctx.hasPendingMessages()) return; } catch { return; }
+    stallBudget = false;
+    void pi.sendMessage({
+      customType: MIDRUN_RESUME_TYPE,
+      content: `${MIDRUN_RESUME_MESSAGE}${failed ? " Compaction failed; continue the task from the available context." : ""}`,
+      display: true,
+    }, { triggerTurn: true, deliverAs: "followUp" });
+  };
+  const resumeAfterNativeCompaction = (ctx: Context) => {
+    waitingForNativeCompaction = false;
+    stallBudget = false;
+    try { if (ctx.hasPendingMessages()) return; } catch { return; }
+    void pi.sendMessage({ customType: COMPACTION_STALL_TYPE, content: COMPACTION_STALL_MESSAGE, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+  };
+  const compactAfterNativeSkip = (ctx: Context) => {
+    inFlight = true;
+    try {
+      ctx.compact({ customInstructions: MIDRUN_COMPACTION_INSTRUCTIONS, onComplete: () => resumeMidrun(ctx), onError: (error) => resumeMidrun(ctx, error?.message !== "Already compacted") });
+    } catch {
+      resumeMidrun(ctx, true);
+    }
+  };
   const manager = () => deps.getManager ? deps.getManager()
     : (globalThis as Record<PropertyKey, unknown>)[Symbol.for("pi-subagents:manager")] as { hasRunning?: () => boolean } | undefined;
   pi.on("input", async (event) => {
     if (event.source !== "extension" && typeof event.text === "string" && event.text.trim()) stallBudget = true;
   });
+  pi.on("session_compact", async (_event, rawCtx) => {
+    const ctx = rawCtx as Context;
+    if (waitingForNativeCompaction) resumeAfterNativeCompaction(ctx);
+  });
   // A compaction that left the task stopped (PI's own threshold/overflow path) resumes once per user message.
   pi.on("agent_settled", async (_event, rawCtx) => {
-    const ctx = rawCtx as Context & { isIdle(): boolean; sessionManager: { getBranch(): Iterable<unknown> } };
-    if (!primary || ctx.mode !== "tui" || env.PI_MIDRUN_COMPACTION === "off" || inFlight || !stallBudget) return;
+    const ctx = rawCtx as Context;
+    if (!primary || ctx.mode !== "tui" || env.PI_MIDRUN_COMPACTION === "off" || inFlight || (!stallBudget && !waitingForNativeCompaction)) return;
+    let branch: unknown[];
     try {
       if (!ctx.isIdle() || ctx.hasPendingMessages() || manager()?.hasRunning?.()) return;
-      if (!isCompactionStall(ctx.sessionManager.getBranch())) return;
+      branch = Array.from(ctx.sessionManager.getBranch());
     } catch { return; }
-    stallBudget = false;
-    await pi.sendMessage({ customType: COMPACTION_STALL_TYPE, content: COMPACTION_STALL_MESSAGE, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+    if (waitingForNativeCompaction) {
+      waitingForNativeCompaction = false;
+      let latest: BranchEntry | undefined;
+      try { for (const entry of branch) latest = entry as BranchEntry; } catch { return; }
+      if (latest?.type !== "compaction") {
+        compactAfterNativeSkip(ctx);
+        return;
+      }
+    }
+    if (!stallBudget || !isCompactionStall(branch)) return;
+    resumeAfterNativeCompaction(ctx);
   });
   pi.on("before_agent_start", async (event) => {
     primary = typeof event.systemPromptOptions.customPrompt === "string"
@@ -89,37 +137,31 @@ export function registerMidrunCompaction(pi: ExtensionAPI, deps: Deps = {}): voi
   });
   pi.on("turn_end", async (event, rawCtx) => {
     const ctx = rawCtx as Context;
-    if (!primary || ctx.mode !== "tui" || env.PI_MIDRUN_COMPACTION === "off" || inFlight) return;
+    if (!primary || ctx.mode !== "tui" || env.PI_MIDRUN_COMPACTION === "off" || inFlight || waitingForNativeCompaction) return;
     let settings: CompactionSettings;
     try { settings = (deps.readCompactionSettings ?? effectiveSettings)(ctx); }
     catch { settings = { enabled: true, reserveTokens: 16_384 }; }
     let usage: ReturnType<Context["getContextUsage"]>;
     try { usage = ctx.getContextUsage(); } catch { return; }
     if (!shouldCompactMidrun(event.message, ctx.model, usage, settings)) return;
-    inFlight = true;
-    const resume = (failed = false) => {
-      inFlight = false;
-      if (failed) {
-        try { ctx.ui.notify("Mid-run compaction failed; resuming the task and leaving PI's overflow recovery as fallback.", "warning"); } catch { /* UI may have closed. */ }
-      }
-      try { if (ctx.hasPendingMessages()) return; } catch { return; }
-      void pi.sendMessage({
-        customType: MIDRUN_RESUME_TYPE,
-        content: `${MIDRUN_RESUME_MESSAGE}${failed ? " Compaction failed; continue the task from the available context." : ""}`,
-        display: true,
-      }, { triggerTurn: true, deliverAs: "followUp" });
-    };
-    try {
-      // compact() aborts the run first; PI's own post-run threshold check may compact in that window,
-      // in which case ours reports "Already compacted" — the context was still reduced, so resume normally.
-      ctx.compact({ customInstructions: MIDRUN_COMPACTION_INSTRUCTIONS, onComplete: () => resume(), onError: (error) => resume(!/already compacted/i.test(String(error?.message ?? error))) });
-    } catch (error) {
-      resume(true);
+    let latest: BranchEntry | undefined;
+    try { for (const entry of ctx.sessionManager.getBranch()) latest = entry as BranchEntry; }
+    catch { return; } // Keep the native compaction path if branch inspection is unavailable.
+    if (latest?.type === "compaction") {
+      if (latest.id && latest.id === resumedCompactionId) return;
+      if (latest.id) resumedCompactionId = latest.id;
+      // PI already compacted this branch; resume without asking the core to compact it again.
+      resumeMidrun(ctx);
+      return;
     }
+    // Stop before the next tool turn. The aborted message skips native threshold compaction;
+    // agent_settled then runs the manual fallback at idle, without racing the active run.
+    waitingForNativeCompaction = true;
+    ctx.abort();
   });
-  pi.on("session_start", async () => reset());
-  pi.on("session_shutdown", async () => { primary = false; reset(); });
-  pi.on("session_tree", async () => reset());
+  pi.on("session_start", async () => { resumedCompactionId = undefined; reset(); });
+  pi.on("session_shutdown", async () => { primary = false; resumedCompactionId = undefined; reset(); });
+  pi.on("session_tree", async () => { resumedCompactionId = undefined; reset(); });
 }
 
 export default function midrunCompaction(pi: ExtensionAPI): void { registerMidrunCompaction(pi); }

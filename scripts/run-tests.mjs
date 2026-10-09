@@ -28,6 +28,8 @@ const tmpdirProprioPadrao = new Set([
   "plastic-memory-publication.smoke.mjs", "plastic-memory-retrieval.smoke.mjs",
   "plastic-memory-surfaces.smoke.mjs",
   "install-wsl-keybindings.smoke.mjs",
+  // Mid-run compaction uses a faux provider and removes its owned mkdtemp agentDir in finally.
+  "midrun-compaction.smoke.mjs",
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
