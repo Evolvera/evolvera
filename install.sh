@@ -191,6 +191,8 @@ if command -v pi &>/dev/null; then
     if install_pi_package "npm:pi-alibaba-models@1.0.14" "pi-alibaba-models"; then :; fi
     if install_pi_package "npm:@narumitw/pi-goal@0.43.0" "pi-goal"; then :; fi
     if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then :; fi
+    node "$SCRIPT_DIR/scripts/patch-rpiv-todo-eta.mjs" --package-root "$PI_DIR/npm/node_modules/@juicesharp/rpiv-todo" || { echo "[!] rpiv-todo recusou o patch de ETA." >&2; exit 1; }
+    info "Patch de ETA por TODO do rpiv-todo verificado"
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     case "${XDG_CONFIG_HOME:-}" in /*) todo_cfg_root="$XDG_CONFIG_HOME" ;; *) todo_cfg_root="$HOME/.config" ;; esac
     todo_cfg="$todo_cfg_root/rpiv-todo/config.json"

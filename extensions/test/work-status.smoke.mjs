@@ -238,6 +238,66 @@ try {
   assert.ok(!scopeCtl.getTask().prompt.includes("late result belongs to previous task"), "a late Agent result cannot leak into the next root task");
   await scopeHandlers.session_shutdown({}, scopeCtx);
 
+  // rpiv-todo snapshots accrue only in-progress TODOs on the existing main-active clock.
+  const todoHandlers = {}; const todoListeners = new Map(); const todoEmitted = []; let todoClock = 1_500_000; let todoBusy = true; let todoChildWait = false;
+  const todoEvents = {
+    on(name, handler) { const set = todoListeners.get(name) ?? new Set(); set.add(handler); todoListeners.set(name, set); return () => set.delete(handler); },
+    emit(name, payload) { todoEmitted.push({ name, payload }); for (const handler of todoListeners.get(name) ?? []) handler(payload); },
+  };
+  const todoCtl = m.registerWorkStatus({ on: (name, handler) => { todoHandlers[name] = handler; }, events: todoEvents, registerCommand: () => {} }, {
+    now: () => todoClock, agentDir: path.join(dir, "todo-eta"), complete: async () => ({ content: [{ type: "text", text: '{"label":"Root","summary":"root estimate","kind":"feature","seconds":60,"steps":[{"label":"work","seconds":60}]}' }] }),
+    autoTick: false, mainBusy: () => todoBusy, parallelDescriptors: () => todoChildWait ? [{ kind: "subagent", label: "child", startedAt: todoClock, status: "running" }] : [],
+    subagentsRunning: () => false, parallelJobs: () => 0,
+  });
+  const todoCtx = {
+    hasUI: true, mode: "tui", model: { provider: "stub", id: "todo" }, isIdle: () => !todoBusy, hasPendingMessages: () => false,
+    sessionManager: { getSessionId: () => "todo-foreground" }, modelRegistry: { find: () => ({ id: "todo" }), getApiKeyAndHeaders: async () => ({ ok: true }) },
+    ui: { setWidget() {}, notify() {} },
+  };
+  await todoHandlers.session_start({}, todoCtx);
+  await todoHandlers.input({ text: "root task", source: "interactive" }, todoCtx); await new Promise((resolve) => setTimeout(resolve, 10));
+  const snapshot = (sid, tasks) => todoEvents.emit("rpiv-todo:snapshot", { sessionId: sid, tasks, at: todoClock });
+  snapshot("todo-foreground", [{ id: 1, subject: "active", status: "in_progress" }, { id: 2, subject: "queued", status: "pending" }]);
+  const emittedEta = () => todoEmitted.filter(({ name }) => name === "pi-work-status:todo-eta");
+  assert.deepEqual(Object.keys(emittedEta().at(-1).payload.items), ["1", "2"]);
+  assert.equal(emittedEta().at(-1).payload.items["1"].elapsedSec, 0);
+  assert.equal(emittedEta().at(-1).payload.items["2"].elapsedSec, 0, "pending TODO does not accrue elapsed time");
+  assert.equal(emittedEta().at(-1).payload.items["1"].remainingSec, 30, "root estimate is divided across active and pending TODOs");
+  const firstEtaCount = emittedEta().length;
+  todoCtl.tick();
+  assert.equal(emittedEta().length, firstEtaCount, "unchanged values do not emit again");
+  todoClock += 500; todoCtl.tick();
+  assert.equal(emittedEta().length, firstEtaCount, "tick emissions are throttled to once per second");
+  todoClock += 500; todoCtl.tick();
+  assert.ok(emittedEta().length > firstEtaCount, "changed values emit at the next one-second tick");
+  snapshot("another-session", [{ id: 1, subject: "foreign", status: "completed" }, { id: 3, subject: "foreign", status: "in_progress" }]);
+  todoBusy = false; todoChildWait = true; todoCtl.tick();
+  todoClock += 4000; todoCtl.tick();
+  todoChildWait = false; todoCtl.tick();
+  todoClock += 4000; todoCtl.tick();
+  assert.equal(emittedEta().at(-1).payload.items["1"].elapsedSec, 5, "other-session snapshots are ignored and child-only wait is excluded");
+  snapshot("todo-foreground", [{ id: 1, subject: "active", status: "completed" }, { id: 2, subject: "queued", status: "pending" }]);
+  assert.equal(Object.hasOwn(emittedEta().at(-1).payload.items, "1"), false, "completed TODOs have no ETA entry");
+  todoClock += 5000; todoCtl.tick();
+  assert.equal(Object.hasOwn(emittedEta().at(-1).payload.items, "1"), false, "completed TODO timing stays stopped");
+  await todoHandlers.session_shutdown({}, todoCtx);
+  assert.equal(todoListeners.get("rpiv-todo:snapshot").size, 0, "shutdown unsubscribes from snapshots");
+
+  const unknownHandlers = {}; const unknownEmitted = []; const unknownListeners = new Map();
+  const unknownEvents = {
+    on(name, handler) { const set = unknownListeners.get(name) ?? new Set(); set.add(handler); unknownListeners.set(name, set); return () => set.delete(handler); },
+    emit(name, payload) { unknownEmitted.push({ name, payload }); for (const handler of unknownListeners.get(name) ?? []) handler(payload); },
+  };
+  const unknownCtl = m.registerWorkStatus({ on: (name, handler) => { unknownHandlers[name] = handler; }, events: unknownEvents, registerCommand: () => {} }, {
+    now: () => todoClock, agentDir: path.join(dir, "todo-eta-unknown"), complete: async () => ({ content: [{ type: "text", text: "no estimate" }] }), autoTick: false,
+  });
+  const unknownCtx = { ...todoCtx, sessionManager: { getSessionId: () => "unknown-foreground" } };
+  await unknownHandlers.session_start({}, unknownCtx);
+  await unknownHandlers.input({ text: "unknown root estimate", source: "interactive" }, unknownCtx); await new Promise((resolve) => setTimeout(resolve, 10));
+  unknownEvents.emit("rpiv-todo:snapshot", { sessionId: "unknown-foreground", tasks: [{ id: 9, subject: "unknown", status: "in_progress" }], at: todoClock });
+  assert.equal(unknownEmitted.find((entry) => entry.name === "pi-work-status:todo-eta").payload.items["9"].remainingSec, null, "unknown root estimate stays unknown");
+  await unknownHandlers.session_shutdown({}, unknownCtx);
+
   const handlers = {}; const commands = {}; const notices = []; let clock = 1_000_000;
   let idle = true; let subs = false; let jobs = 0;
   let widgetFactory; let renders = 0;

@@ -244,6 +244,9 @@ if ($piCmd) {
 
     Info "rpiv-todo..."
     & pi install npm:@juicesharp/rpiv-todo@2.11.0 2>$null
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-rpiv-todo-eta.mjs") --package-root (Join-Path $PI_DIR "npm\node_modules\@juicesharp\rpiv-todo")
+    if ($LASTEXITCODE -ne 0) { throw "rpiv-todo recusou o patch de ETA." }
+    Info "Patch de ETA por TODO do rpiv-todo verificado"
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     $todoRoot = if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME ".config" }
     $todoCfg = Join-Path (Join-Path $todoRoot "rpiv-todo") "config.json"
