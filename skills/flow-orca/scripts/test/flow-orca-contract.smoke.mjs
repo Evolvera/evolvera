@@ -474,12 +474,14 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Never inspect live or production systems to avoid asking/, "no production probing instead of asking");
   has(path, /a stale or rejected Orca record gets at most one note/, "Orca bookkeeping is not delivery work");
 }
-// Measurement tasks deliver real numbers, not harness work.
+// Outcome anchoring: intermediate work never replaces the requested outcome.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /\*\*Measurements deliver numbers:\*\*[^\n]*the real run and its numbers are the deliverable, not the harness/, "measurement deliverable is the real run");
-  has(path, /run the smallest valid real slice as soon as it can execute, then extend it/, "pilot-first real run");
-  has(path, /A conservative cost estimate above the approved cap is a reason to shrink the sample until it fits, not to stop/, "worst-case estimate shrinks scope instead of stopping");
-  has(path, /Asked for the result, answer with the numbers you have, or say in one line that none exist yet and run it now/, "result questions get numbers or an immediate run");
+  has(path, /\*\*Stay anchored to the final outcome:\*\* the deliverable is the outcome the user asked for, not the work that leads to it/, "outcome, not means, is the deliverable");
+  has(path, /work that only perfects a means is drift/, "drift is named");
+  has(path, /A constraint that blocks one path is a reason to find a path that fits, not to stop/, "a blocked path is not a stop");
+  has(path, /never present preparation as progress/, "result questions get the result");
+  has(path, /Re-anchor on the final outcome after every compaction, handoff, or added instruction/, "re-anchor after compaction and handoff");
+  lacks(path, /Measurements deliver numbers/, "no task-specific measurement rule");
 }
 // Commit discipline in the standard prompt.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
