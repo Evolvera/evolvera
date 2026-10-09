@@ -14,6 +14,16 @@ const { createJiti } = createRequire(import.meta.url)(path.join(sdkRoot, "node_m
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
 const m = await jiti.import(path.join(root, "extensions/work-status.ts"));
 
+// Collect only the two new regression failures so both fronts are exercised in one run.
+const regressionFailures = [];
+const regression = (name, check) => {
+  try { check(); } catch (error) {
+    if (!(error instanceof assert.AssertionError)) throw error;
+    console.error(`${name}: ${error.message}`);
+    regressionFailures.push(name);
+  }
+};
+
 // ── funções puras ──
 assert.equal(m.formatClock(65), "1m 05s");
 assert.equal(m.formatClock(3725), "1h 02m");
@@ -33,6 +43,13 @@ assert.deepEqual(m.scaleSteps([], 50), [{ label: "executar tarefa", status: "doi
 const plan = m.parsePlan('{"steps":[{"label":"ler","status":"done","remainingSeconds":9},{"label":"editar","status":"doing","remainingSeconds":40},{"label":"testar","status":"x","remainingSeconds":20}]}');
 assert.deepEqual(plan.map((x) => [x.status, x.remaining]), [["done", 0], ["doing", 40], ["todo", 20]]);
 assert.equal(m.planRemaining(plan), 60);
+const longSteps = [...Array.from({ length: 12 }, (_, i) => ({ label: `completed step ${i + 1}`, status: "done", remainingSeconds: 0 })), { label: "unfinished final step", status: "doing", remainingSeconds: 75 }];
+const longPlan = m.parsePlan(JSON.stringify({ steps: longSteps }));
+regression("parser preserves thirteenth unfinished step", () => {
+  assert.deepEqual({ count: longPlan.length, remaining: m.planRemaining(longPlan) }, { count: 13, remaining: 75 });
+  assert.deepEqual(longPlan.map((step) => step.label), longSteps.map((step) => step.label), "completed-step order and final step preserved");
+  assert.equal(longPlan[12].status, "doing");
+});
 assert.equal(m.parsePlan('{"steps":[{"label":"x","status":"done"}]}'), undefined, "etapa sem segundos invalida o plano");
 assert.equal(m.nextCheckDelay(400), 200, "reestima na metade do que falta");
 assert.equal(m.nextCheckDelay(10), 20, "cadência mínima de 20 s fora do vencimento do plano");
@@ -44,6 +61,10 @@ assert.equal(m.project(100, 30), 70);
 assert.equal(m.project(100, 200), 3, "plano estourado: piso de 3 s até a próxima reestimativa");
 
 const rec = (summary, seconds, kind = "feature") => ({ v: 1, kind, summary, seconds });
+const unrelated = [rec("database migration schema", 720), rec("responsive home page design", 900), rec("documentation website publishing", 300)];
+const noMatch = m.historyEstimate(unrelated, "feature", "orbital mechanics trajectory simulation");
+assert.equal(noMatch, undefined, "three unrelated same-category records must not qualify as similar history");
+assert.deepEqual(m.combineEstimate(45, noMatch), { seconds: 45, source: "model" }, "no matching history retains the model estimate");
 const hist = [rec("criar extensão comando barra status", 600), rec("criar extensão comando loop agenda", 900), rec("criar extensão comando limpar chat", 300), rec("pergunta rápida", 10, "question")];
 const h = m.historyEstimate(hist, "feature", "criar extensão comando barra progresso");
 assert.equal(h.n, 3);
@@ -190,7 +211,82 @@ try {
   await h2.session_start({}, { ...ctx, hasUI: false, mode: "print" });
   await h2.input({ text: "x", source: "interactive" }, ctx);
   assert.equal(calls.length, 7);
+
+  // Independent active task: a successful zero-remaining plan must honor nextCheck.
+  const zeroHandlers = {}; let zeroClock = 2_000_000; let zeroCalls = 0;
+  const zeroComplete = async (_model, req) => {
+    zeroCalls++;
+    const text = req.systemPrompt === m.REPLAN_PROMPT
+      ? '{"steps":[{"label":"still active","status":"doing","remainingSeconds":0}]}'
+      : '{"label":"Check cooldown","summary":"check cooldown","kind":"question","seconds":40,"steps":[{"label":"still active","seconds":40}]}';
+    return { content: [{ type: "text", text }] };
+  };
+  const zeroCtl = m.registerWorkStatus({ on: (event, handler) => { zeroHandlers[event] = handler; }, registerCommand: () => {} }, {
+    now: () => zeroClock, agentDir: dir, complete: zeroComplete, autoTick: false, subagentsRunning: () => false, parallelJobs: () => 0,
+  });
+  const zeroCtx = { ...ctx, isIdle: () => false };
+  await zeroHandlers.session_start({}, zeroCtx);
+  await zeroHandlers.input({ text: "check cooldown", source: "interactive" }, zeroCtx); await flush();
+  await zeroHandlers.agent_start({}, zeroCtx);
+  assert.equal(zeroCalls, 1);
+  zeroClock += 20_000; zeroCtl.tick(); await flush();
+  assert.equal(zeroCalls, 2, "first replan at scheduled halfway point");
+  assert.equal(m.planRemaining(zeroCtl.getTask().steps), 0, "successful zero-remaining response applied while active");
+  zeroClock += 1_000; zeroCtl.tick(); await flush();
+  const callsAtOneSecond = zeroCalls;
+  zeroClock += 18_000; zeroCtl.tick(); await flush();
+  const callsAtNineteenSeconds = zeroCalls;
+  zeroClock += 1_000; zeroCtl.tick(); await flush();
+  regression("zero-remaining replan honors cooldown", () => {
+    assert.deepEqual({ atOneSecond: callsAtOneSecond, atNineteenSeconds: callsAtNineteenSeconds, atTwentySeconds: zeroCalls },
+      { atOneSecond: 2, atNineteenSeconds: 2, atTwentySeconds: 3 });
+  });
+  // Remaining time and nextCheck share the request snapshot, not response receipt.
+  const latencyHandlers = {}; let latencyClock = 3_000_000; const latencyCalls = [];
+  let resolveLatency; let resolveFailure;
+  const delayedPlan = new Promise((resolve) => { resolveLatency = resolve; });
+  const delayedFailure = new Promise((resolve) => { resolveFailure = resolve; });
+  const shortPlan = { content: [{ type: "text", text: '{"steps":[{"label":"finish check","status":"doing","remainingSeconds":30}]}' }] };
+  const latencyComplete = async (_model, req) => {
+    latencyCalls.push(req);
+    if (req.systemPrompt === m.REPLAN_PROMPT) {
+      if (latencyCalls.length === 2) return delayedPlan;
+      if (latencyCalls.length === 3) return delayedFailure;
+      return shortPlan;
+    }
+    return { content: [{ type: "text", text: '{"label":"Check latency","summary":"check latency","kind":"question","seconds":400,"steps":[{"label":"finish check","seconds":400}]}' }] };
+  };
+  const latencyCtl = m.registerWorkStatus({ on: (event, handler) => { latencyHandlers[event] = handler; }, registerCommand: () => {} }, {
+    now: () => latencyClock, agentDir: dir, complete: latencyComplete, autoTick: false, subagentsRunning: () => false, parallelJobs: () => 0,
+  });
+  const latencyCtx = { ...ctx, isIdle: () => false };
+  await latencyHandlers.session_start({}, latencyCtx);
+  await latencyHandlers.input({ text: "check latency", source: "interactive" }, latencyCtx); await flush();
+  await latencyHandlers.agent_start({}, latencyCtx);
+  assert.equal(latencyCtl.currentView().remaining, 400);
+  latencyClock += 200_000; latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 2);
+  assert.match(latencyCalls[1].messages[0].content[0].text, /Elapsed so far: 200s/);
+  const snapshotAt = latencyClock;
+  latencyClock += 10_000; resolveLatency(shortPlan); await flush();
+  assert.equal(latencyCtl.currentView().remaining, 20, "30s replan minus 10s request latency leaves 20s");
+  assert.equal(latencyCtl.getTask().planAt, snapshotAt);
+  assert.equal(latencyCtl.getTask().nextCheck, snapshotAt + 20_000, "nextCheck uses the same request snapshot");
+  latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 2, "response receipt does not trigger an immediate replan");
+  latencyClock += 9_000; latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 2, "no replan before request-based nextCheck");
+  latencyClock += 1_000; latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 3, "replan at request-based nextCheck");
+  latencyClock += 7_000;
+  resolveFailure({ content: [{ type: "text", text: "invalid response" }] }); await flush();
+  assert.equal(latencyCtl.getTask().nextCheck, latencyClock + 20_000, "failed replan retry anchored to failure receipt");
+  latencyClock += 19_000; latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 3, "failure cooldown lasts 20s after receipt even when plan expired");
+  latencyClock += 1_000; latencyCtl.tick(); await flush();
+  assert.equal(latencyCalls.length, 4, "failure retry occurs 20s after receipt");
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+assert.deepEqual(regressionFailures, [], "both runtime regressions must pass");
 console.log("work-status smoke OK");

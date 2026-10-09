@@ -122,7 +122,7 @@ export function historyEstimate(records: HistoryRecord[], kind: Kind, summary: s
 		.map((r) => ({ r, s: similarity(mine, tokens(r.summary)) }))
 		.sort((a, b) => b.s - a.s)
 		.slice(0, 7)
-		.filter((x, i) => x.s >= 0.12 || i < 3);
+		.filter((x) => x.s >= 0.12);
 	if (!scored.length) return undefined;
 	const pts = scored.map((x) => ({ v: Math.log(x.r.seconds), w: 0.25 + x.s })).sort((a, b) => a.v - b.v);
 	const total = pts.reduce((acc, p) => acc + p.w, 0);
@@ -179,7 +179,7 @@ export function nextCheckDelay(remaining: number): number {
 function parseSteps(raw: unknown, withStatus: boolean): Step[] | undefined {
 	if (!Array.isArray(raw) || raw.length === 0) return undefined;
 	const out: Step[] = [];
-	for (const item of raw.slice(0, 12)) {
+	for (const item of raw) {
 		if (!item || typeof item !== "object") return undefined;
 		const v = item as Record<string, unknown>;
 		const label = typeof v.label === "string" ? limitWords(scrub(v.label), 6) : "";
@@ -500,25 +500,27 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		try { appendFileSync(historyFile(), `${JSON.stringify(record)}\n`, "utf8"); } catch { /* disco: ignora */ }
 	}
 
-	function applyPlan(t: Task, steps: Step[]) {
+	function applyPlan(t: Task, steps: Step[], snapshotAt: number) {
 		t.steps = steps;
 		t.planRemaining = planRemaining(steps);
-		t.planAt = now();
-		t.nextCheck = now() + nextCheckDelay(t.planRemaining) * 1000;
+		// Remaining seconds refer to the request snapshot, so model latency must count down.
+		t.planAt = snapshotAt;
+		t.nextCheck = snapshotAt + nextCheckDelay(t.planRemaining) * 1000;
 		t.retryAfterFailure = false;
 	}
 
 	async function doReplan(t: Task) {
 		const opts = callOpts();
 		t.replanning = true;
+		const snapshotAt = now();
 		try {
 			const steps = opts ? await replan({
-				prompt: t.prompt, steps: t.steps, elapsed: (now() - t.start) / 1000,
+				prompt: t.prompt, steps: t.steps, elapsed: (snapshotAt - t.start) / 1000,
 				activity: t.activity, subagentsRunning: subRunning(), parallelJobs: parallelJobs(),
 			}, opts) : undefined;
 			if (task !== t) return;
 			t.replans++;
-			if (steps) applyPlan(t, steps);
+			if (steps) applyPlan(t, steps, snapshotAt);
 			else {
 				t.nextCheck = now() + 20_000; // falhou: mantém o plano e tenta de novo em 20 s
 				t.retryAfterFailure = true;
@@ -536,7 +538,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 			if (running()) t.quietSince = null;
 			else if (t.quietSince === null) t.quietSince = now();
 			else if (now() - t.quietSince >= 2000) finish();
-			const estimateExpired = t.planRemaining !== null && now() >= t.planAt + t.planRemaining * 1000;
+			const estimateExpired = t.planRemaining !== null && t.planRemaining > 0 && now() >= t.planAt + t.planRemaining * 1000;
 			if (task === t && !t.replanning && t.nextCheck !== null && (now() >= t.nextCheck || (estimateExpired && !t.retryAfterFailure))) void doReplan(t);
 		}
 		try { tui?.requestRender(); } catch { /* ui trocada */ }
