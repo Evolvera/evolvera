@@ -95,7 +95,19 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
   assert.equal(f.entries.at(-1).customType, "loop-state");
 }
 
+// Descriptor is metadata-only: label/status/timing, never the loop prompt.
+{
+  const f = fixture({ modelReply: undefined });
+  const abort = new AbortController();
+  f.ctl.jobs.set("L2-3", { loopId: "L2", runNumber: 3, abort, startedAt: 1234 });
+  assert.deepEqual(f.ctl.parallelDescriptors(), [{ id: "L2-3", label: "L2 · execução 3", startedAt: 1234, status: "running" }]);
+  abort.abort();
+  assert.equal(f.ctl.parallelDescriptors()[0].status, "canceling");
+  f.ctl.jobs.clear();
+}
+
 // 3) loop independente enquanto outro roda → worktree paralela; commits mesclados; nunca em main.
+if (process.env.PI_WORK_STATUS_OFFLINE_ONLY !== "1") {
 {
   const base = mkdtempSync(path.join(tmpdir(), "pi-loop-smoke-"));
   try {
@@ -136,6 +148,7 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
+}
 }
 
 console.log("loop smoke OK");
