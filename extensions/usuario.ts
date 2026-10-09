@@ -5,9 +5,8 @@ export type UsuarioRequest =
   | Readonly<{ operation: "create"; id: string; label?: string }>
   | Readonly<{ operation: "use"; id: string }>;
 
-/** Process-local authority supplied by the managed runtime, never by command arguments. */
+/** Native-session account context supplied by the managed runtime, never by command arguments. */
 export type UsuarioControl = Readonly<{
-  // A committed use returns no message: publishing afterward would mutate the fenced origin.
   execute(request: UsuarioRequest, ctx: ExtensionCommandContext): Promise<string | undefined>;
 }>;
 
@@ -24,7 +23,7 @@ function parseRequest(args: string): UsuarioRequest | undefined {
   return undefined;
 }
 
-/** One authoritative factory; the supervisor/runtime owns validation, readiness and shutdown. */
+/** One authoritative facade; the native runtime owns account binding and command behavior. */
 export function createUsuarioFactory(control?: UsuarioControl): ExtensionFactory {
   return (pi) => {
     const display = (text: string, ctx: ExtensionCommandContext) => {
@@ -32,10 +31,10 @@ export function createUsuarioFactory(control?: UsuarioControl): ExtensionFactory
       else pi.sendMessage({ customType: "usuario", content: text, display: true });
     };
     pi.registerCommand("usuario", {
-      description: "Usuário do processo: status, list, create <id> [label], use <id>",
+      description: "Conta de autenticação: status, list, create <id> [label], use <id>",
       handler: async (args, ctx) => {
         if (!control) {
-          display("Processo não gerenciado: /usuario não oferece garantia de isolamento ou troca ordenada.", ctx);
+          display("Processo não gerenciado: /usuario não oferece seleção ou isolamento de contas.", ctx);
           return;
         }
         const request = parseRequest(args);
@@ -44,7 +43,6 @@ export function createUsuarioFactory(control?: UsuarioControl): ExtensionFactory
           return;
         }
         // No registry, provider, environment or UI-derived authorization lives here.
-        // The control releases refusal fences before returning a displayable response.
         const response = await control.execute(request, ctx);
         if (response !== undefined) display(response, ctx);
       },
