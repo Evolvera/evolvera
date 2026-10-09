@@ -55,14 +55,14 @@ const migrationsPrepared = transformMigrationsSource(migrationOriginal);
 test("source-pinned CLI transform preserves native path while threading account factory", async () => {
   assert.notEqual(mainPrepared, mainOriginal);
   assert.match(mainPrepared, /async function runAuthCommand\(args, accountRuntimeFactory\)/);
-  assert.match(mainPrepared, /purpose: parsed\.help \? "metadata" : "application"/);
+  assert.match(mainPrepared, /purpose: parsed\.help \|\| parsed\.listModels !== undefined \? "metadata" : "application"/);
   assert.match(mainPrepared, /predecessorSessionManager: sessionStartEvent === undefined \? undefined : predecessorSessionManager/);
   assert.match(mainPrepared, /parsed, modelRuntimeTimeoutMs: 15_000, readonly:/);
   assert.doesNotMatch(mainPrepared, /sessionStartEvent, cwd, agentDir, parsed, signal: AbortSignal\.timeout/);
   assert.ok(mainPrepared.indexOf("const account = accountRuntimeFactory") < mainPrepared.indexOf("const services = await createAgentSessionServices"));
   assert.match(mainPrepared, /runMigrations\(cwd, accountRuntimeFactory \? \{ skipAuthMigration: true \} : undefined\)/);
   assert.ok(mainPrepared.indexOf("handlePackageCommand(args") < mainPrepared.indexOf("const parsed = parseArgs(args)"));
-  assert.ok(mainPrepared.indexOf("if (parsed.version)") < mainPrepared.indexOf("purpose: parsed.help ?"));
+  assert.ok(mainPrepared.indexOf("if (parsed.version)") < mainPrepared.indexOf("purpose: parsed.help || parsed.listModels !== undefined ?"));
   assert.match(mainPrepared, /extensionFactories: \[\.\.\.extensionFactories, \.\.\.\(suppliedResources\.extensionFactories \?\? \[\]\)\]/);
   assert.match(migrationsPrepared, /options\?\.skipAuthMigration === true \? \[\] : migrateAuthToAuthJson\(\)/);
   const vmDeps = { calls: [], migrateAuthToAuthJson() { throw new Error("default auth migration forbidden"); }, migrateSessionsFromAgentRoot() { vmDeps.calls.push("sessions"); }, migrateToolsToBin() { vmDeps.calls.push("tools"); }, migrateKeybindingsConfigFile() { vmDeps.calls.push("keys"); }, migrateExtensionSystem(cwd) { vmDeps.calls.push(`extensions:${cwd}`); return ["warning"]; } };
@@ -73,6 +73,48 @@ test("source-pinned CLI transform preserves native path while threading account 
   const unmanaged = evaluateFunction(migrationsPrepared, "function runMigrations(cwd, options) {", "\n//# sourceMappingURL", defaults);
   assert.deepEqual(unmanaged("/native", undefined).migratedAuthProviders, ["legacy"]);
   await recordManifest({ sourceTransform: "PASS", migrationCalls: vmDeps.calls });
+});
+
+test("help and model-list createRuntime requests use inert metadata with native extension options", async () => {
+  const start = mainPrepared.indexOf("const createRuntime = async");
+  const end = mainPrepared.indexOf('\n    time("createRuntime");', start);
+  assert.ok(start >= 0 && end > start, "prepared createRuntime source boundaries found");
+  const expressionStart = mainPrepared.indexOf("= ", start) + 2;
+  const expression = mainPrepared.slice(expressionStart, end).trim().replace(/;$/, "");
+  const preparedExtensionFactory = { name: "native-prepared-extension" };
+  const injectedExtensionFactory = { name: "auth-only-usuario" };
+  assert.match(mainPrepared, /\.\.\.\(account \? \{ modelRuntime: account\.modelRuntime \} : \{\}\)/);
+  for (const parsed of [{ help: true }, { listModels: "fake" }]) {
+    const runtime = { id: "metadata-runtime" };
+    let captured;
+    const defaultStoreCalls = [];
+    const context = {
+      parsed: { unknownFlags: new Map([["--extension-flag", "kept"]]), ...parsed },
+      projectTrustByCwd: new Map(), hasTrustRequiringProjectResources: () => false,
+      trustStore: { get: () => false }, SettingsManager: { create: () => ({}) },
+      resolvedExtensionPaths: ["/synthetic/extensions"], resolvedSkillPaths: [],
+      resolvedPromptTemplatePaths: [], resolvedThemePaths: [],
+      extensionFactories: [preparedExtensionFactory], AbortSignal,
+      ModelRuntime: { create: () => { defaultStoreCalls.push("ModelRuntime.create"); throw new Error("default runtime forbidden"); } },
+      AuthStorage: { create: () => { defaultStoreCalls.push("AuthStorage.create"); throw new Error("default store forbidden"); } },
+      accountRuntimeFactory: async (request) => {
+        assert.equal(request.purpose, "metadata");
+        assert.equal(request.readonly, true);
+        assert.equal(request.parsed, context.parsed);
+        assert.equal(request.parsed.listModels, parsed.listModels);
+        return { modelRuntime: runtime, resourceLoaderOptions: { extensionFactories: [injectedExtensionFactory] } };
+      },
+      createAgentSessionServices: async (request) => { captured = request; throw new Error("captured services request"); },
+    };
+    const createRuntime = vm.runInNewContext(`(${expression})`, context, { timeout: 1000 });
+    await assert.rejects(createRuntime({ cwd: "/synthetic/project", agentDir: "/synthetic/agent", sessionManager: {} }), /captured services request/);
+    assert.equal(captured.modelRuntime, runtime);
+    assert.deepEqual(defaultStoreCalls, [], "metadata request bypasses SDK default runtime/store construction");
+    assert.equal(captured.extensionFlagValues.get("--extension-flag"), "kept");
+    assert.deepEqual(Array.from(captured.resourceLoaderOptions.extensionFactories, (entry) => entry.name), ["native-prepared-extension", "auth-only-usuario"]);
+    assert.deepEqual(Array.from(captured.resourceLoaderOptions.additionalExtensionPaths), ["/synthetic/extensions"]);
+  }
+  await recordManifest({ metadataCreateRuntime: "PASS", cases: ["help", "listModels"], defaultStores: "not invoked; SDK services fake stopped at captured request" });
 });
 
 test("auth print and readonly check use selected factory and forbid default SDK storage", async () => {

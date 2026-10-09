@@ -6,6 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { types as utilTypes } from "node:util";
 import { assertOwnedSession, assertOwnedWorkspace } from "./ownership.mjs";
 import { createUserCredentialStore } from "./credentials.mjs";
+import { createAccount, selectSessionAccount } from "./account-session.mjs";
+import { createAccountConfigPolicy, createSealedAccountAuthContext } from "./sdk-auth-source.mjs";
 import { getUserHome } from "./environment.mjs";
 import { UsersError, canonicalize, isWithin, requireContext, listUsers, registerUser, resolveUser } from "./registry.mjs";
 import { registerUserSwitchParticipant, lookupUserSwitchParticipants, acquireUserSwitchReadiness } from "./switch-readiness.mjs";
@@ -646,96 +648,110 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
   });
 }
 
-// Native base class is public; subclassing is deferred until the installed SDK is loaded.
-export async function createUserRuntime(profileContext, { cwd, sessionDir, initialSessionPath, switchChannel } = {}) {
-  const profile = requireContext(profileContext);
-  if (process.env.PI_USER_ID !== profile.id || process.env.PI_CODING_AGENT_DIR !== profile.agentDir || path.resolve(os.homedir()) !== path.resolve(getUserHome(profile))) {
-    throw fail("USER_ENVIRONMENT_MISMATCH");
-  }
-  const workspace = assertOwnedWorkspace(profile, cwd);
-  const selectedSessionDir = sessionDir ?? profile.sessionRoots[0];
-  assertSessionDirectory(profile, selectedSessionDir);
-  const assertSelectedSession = createSelectedSessionAssertion(profile);
-  if (initialSessionPath) assertSelectedSession({ sessionPath: initialSessionPath, cwd: workspace.cwd });
-  else assertManagedRequest(profile, { cwd: workspace.cwd, sessionDir: selectedSessionDir, resource: "pi-session-create" }, assertSelectedSession);
-  const sdk = await publicSdk();
-  for (const name of ["ModelRuntime", "SessionManager", "AgentSessionRuntime", "SettingsManager", "createAgentSessionServices", "createAgentSessionFromServices", "InteractiveMode", "runRpcMode", "runPrintMode", "initTheme"]) {
-    if (!sdk[name]) throw fail("USER_SDK_API_UNAVAILABLE");
-  }
-  const credentials = createUserCredentialStore(profile);
-  const modelRuntime = await sdk.ModelRuntime.create({
-    credentials,
-    modelsPath: path.join(profile.agentDir, "models.json"),
-    modelsStorePath: path.join(profile.agentDir, "cache", "models.json"),
-    refreshOnCreate: false,
-    allowModelNetwork: false,
-  });
-  const receipt = createReceipt(profile, modelRuntime, sdk, assertSelectedSession);
-  const usuario = await createUsuarioRuntimeControl(profile, receipt, switchChannel);
-  const settingsManager = createAdmittedSettingsManager(sdk, profile, { cwd: workspace.cwd });
-  const globalSettings = settingsManager.getGlobalSettings();
-  const projectSettings = settingsManager.getProjectSettings();
-  validateAdmittedResourceInventory(profile, { cwd: workspace.cwd, settings: globalSettings, projectSettings });
-  const admitted = buildAdmittedLoaderOptions(profile, { cwd: workspace.cwd, settings: globalSettings, projectSettings });
-  const services = await sdk.createAgentSessionServices({
-    cwd: workspace.cwd,
-    agentDir: profile.agentDir,
-    settingsManager,
-    modelRuntime,
-    resourceLoaderOptions: usuario.loaderOptions(admitted.loaderOptions),
-  });
-  usuario.guardLoader(services.resourceLoader);
-  const sessionManager = initialSessionPath
-    ? sdk.SessionManager.open(initialSessionPath, selectedSessionDir, workspace.cwd)
-    : sdk.SessionManager.create(workspace.cwd, selectedSessionDir);
-  const sessionPath = sessionManager.getSessionFile?.() ?? sessionManager.sessionFile;
-  if (sessionPath) assertSelectedSession({ sessionPath, cwd: workspace.cwd });
-  const created = await sdk.createAgentSessionFromServices({ services, sessionManager });
-  usuario.guardSession(created.session);
-  const GuardedSessionRuntime = createGuardedSessionRuntimeClass(sdk.AgentSessionRuntime);
-  const host = new GuardedSessionRuntime(profile, created.session, services, async ({ cwd: targetCwd, sessionManager: targetManager, sessionStartEvent }) => {
-    const target = assertOwnedWorkspace(profile, targetCwd);
-    const managerWorkspace = assertOwnedWorkspace(profile, targetManager.getCwd());
-    assertSelectedSession({ sessionPath: targetManager.getSessionFile(), cwd: managerWorkspace.cwd });
-    assertSessionDirectory(profile, targetManager.getSessionDir());
-    const targetSettings = createAdmittedSettingsManager(sdk, profile, { cwd: target.cwd });
-    const targetResources = buildAdmittedLoaderOptions(profile, {
-      cwd: target.cwd,
-      settings: targetSettings.getGlobalSettings(),
-      projectSettings: targetSettings.getProjectSettings(),
-    });
-    const targetServices = await sdk.createAgentSessionServices({
-      cwd: target.cwd, agentDir: profile.agentDir, settingsManager: targetSettings,
-      modelRuntime, resourceLoaderOptions: usuario.loaderOptions(targetResources.loaderOptions),
-    });
-    usuario.guardLoader(targetServices.resourceLoader);
-    const targetCreated = await sdk.createAgentSessionFromServices({ services: targetServices, sessionManager: targetManager, sessionStartEvent });
-    usuario.guardSession(targetCreated.session);
-    return { ...targetCreated, services: targetServices, diagnostics: targetServices.diagnostics };
-  }, services.diagnostics, created.modelFallbackMessage);
-  usuario.bindHost(host);
-  const runtime = {
-    sdk, profile, receipt, modelRuntime, host,
-    setUserMode: usuario.setMode,
-    get settingsManager() { return host.services.settingsManager; },
-    get services() { return host.services; },
-    get sessionManager() { return host.session.sessionManager; },
-    get session() { return host.session; },
+// The SDK owns CLI parsing, session selection, settings, trust and every execution mode.
+export function createUserRuntime(registryPath, { pickAccount, createStore = createUserCredentialStore, createModelRuntime, sdkRoot } = {}) {
+  if (typeof registryPath !== "string" || !path.isAbsolute(registryPath)) throw fail("REGISTRY_PATH_INVALID");
+  const invocation = { accountId: undefined };
+  const makePicker = async (users) => {
+    if (typeof pickAccount !== "function") throw fail("ACCOUNT_SELECTION_REQUIRED");
+    return pickAccount(users);
   };
-  return Object.freeze(runtime);
+  const metadataCredentials = Object.freeze({
+    read: async () => undefined,
+    list: async () => [],
+    modify: async () => { throw fail("METADATA_CREDENTIALS_READ_ONLY"); },
+    delete: async () => { throw fail("METADATA_CREDENTIALS_READ_ONLY"); },
+  });
+  const readOnlyStore = (store) => Object.freeze({
+    read: (...args) => store.read(...args),
+    list: (...args) => store.list(...args),
+    modify: async () => { throw fail("AUTH_COMMAND_READ_ONLY"); },
+    delete: async () => { throw fail("AUTH_COMMAND_READ_ONLY"); },
+  });
+  const stripAuth = (providers) => Object.fromEntries(Object.entries(providers).map(([id, value]) => {
+    const safe = { ...value };
+    delete safe.apiKey; delete safe.headers;
+    if (Array.isArray(safe.models)) safe.models = safe.models.map((model) => { const copy = { ...model }; delete copy.headers; return copy; });
+    if (safe.modelOverrides && typeof safe.modelOverrides === "object") safe.modelOverrides = Object.fromEntries(Object.entries(safe.modelOverrides).map(([key, model]) => {
+      const copy = { ...model }; delete copy.headers; return [key, copy];
+    }));
+    return [id, safe];
+  }));
+  return async function accountRuntimeFactory(request) {
+    if (!request || typeof request !== "object" || typeof request.purpose !== "string") throw fail("ACCOUNT_RUNTIME_REQUEST_INVALID");
+    const metadata = request.purpose === "metadata";
+    let selected;
+    if (request.purpose === "application") {
+      if (!request.sessionManager) throw fail("ACCOUNT_SESSION_INVALID");
+      const pickForInvocation = async (users) => {
+        const id = await makePicker(users);
+        if (invocation.accountId !== undefined && id !== invocation.accountId) throw fail("ACCOUNT_PROCESS_RESTART_REQUIRED");
+        return id;
+      };
+      selected = await selectSessionAccount({
+        registryPath,
+        sessionManager: request.sessionManager,
+        sessionStartEvent: request.sessionStartEvent,
+        predecessorSessionManager: request.predecessorSessionManager,
+        pickAccount: pickForInvocation,
+      });
+      if (invocation.accountId !== undefined && selected.id !== invocation.accountId) throw fail("ACCOUNT_PROCESS_RESTART_REQUIRED");
+      invocation.accountId ??= selected.id;
+    } else if (request.purpose === "auth-command") {
+      const users = listUsers({ registryPath });
+      const id = await makePicker(users);
+      selected = resolveUser({ registryPath, id });
+    } else if (!metadata) throw fail("ACCOUNT_RUNTIME_PURPOSE_UNSUPPORTED");
+
+    const accountEnv = Object.freeze({});
+    const explicitSdkRoot = request.sdkRoot ?? sdkRoot;
+    if (!metadata && (typeof explicitSdkRoot !== "string" || !path.isAbsolute(explicitSdkRoot))) throw fail("ACCOUNT_SDK_ROOT_REQUIRED");
+    const selectedStore = metadata ? metadataCredentials : createStore(selected, { sdkRoot: explicitSdkRoot, accountEnv });
+    const credentials = request.purpose === "auth-command" && request.readonly ? readOnlyStore(selectedStore) : selectedStore;
+    const authContext = createSealedAccountAuthContext({ env: accountEnv, files: [] });
+    const accountConfigPolicy = metadata
+      ? Object.freeze({ env: accountEnv, filterConfig: stripAuth, filterRegistration: (config) => stripAuth({ value: config }).value })
+      : createAccountConfigPolicy({ profile: selected, env: accountEnv });
+    if (typeof createModelRuntime !== "function") throw fail("ACCOUNT_RUNTIME_ADAPTER_UNAVAILABLE");
+    const timeout = metadata || request.purpose === "application" ? AbortSignal.timeout(request.modelRuntimeTimeoutMs ?? 15_000) : request.signal;
+    const modelRuntime = await createModelRuntime({
+      purpose: request.purpose, credentials, authContext, accountConfigPolicy, signal: timeout,
+      modelsPath: path.join(request.agentDir, "models.json"),
+      refreshOnCreate: false,
+    });
+    const result = { modelRuntime, credentials };
+    if (request.purpose === "application") {
+      const { createUsuarioFactory } = await import(new URL("../../extensions/usuario.ts", import.meta.url).href);
+      const factoryPath = fileURLToPath(new URL("../../extensions/usuario.ts", import.meta.url));
+      const account = selected;
+      result.resourceLoaderOptions = {
+        extensionFactories: [{ name: "usuario", builtin: true, factory: createUsuarioFactory(Object.freeze({
+          async execute(command, ctx) {
+            if (ctx.sessionManager !== request.sessionManager) return "ACCOUNT_CONTROL_NOT_ROOT";
+            if (command.operation === "display" || command.operation === "status") return JSON.stringify({ id: account.id, label: account.label, managed: true, binding: "fixed-for-process" });
+            if (command.operation === "list") return JSON.stringify(listUsers({ registryPath }));
+            if (command.operation === "create") {
+              try { return `${createAccount({ registryPath, id: command.id, label: command.label }).id}: criado (sem credenciais ou histórico)`; }
+              catch (error) { return error.code ?? "USER_CREATE_FAILED"; }
+            }
+            if (command.operation === "use") {
+              resolveUser({ registryPath, id: command.id });
+              return `Conta validada. Para usar ${command.id}, encerre este processo e inicie um novo com a conta desejada; sessões vinculadas a outra conta exigem um novo processo.`;
+            }
+            return "USUARIO_OPERATION_UNSUPPORTED";
+          },
+        })) }],
+        extensionsOverride(loaded) {
+          const original = loaded;
+          return { ...original, extensions: original.extensions.filter((extension) => extension.resolvedPath !== factoryPath) };
+        },
+      };
+    }
+    return Object.freeze(result);
+  };
 }
 
-export async function runUserMode(runtime, mode, options = {}) {
-  const { sdk, host, services } = runtime;
-  runtime.setUserMode(mode);
-  if (mode === "text" || mode === "json") return sdk.runPrintMode(host, { mode, ...options });
-  if (mode === "rpc") return sdk.runRpcMode(host);
-  if (mode === "interactive") {
-    sdk.initTheme(services.settingsManager.getTheme());
-    const app = new sdk.InteractiveMode(host, options.interactiveOptions);
-    await app.init();
-    await app.run();
-    return 0;
-  }
-  throw fail("USER_MODE_INVALID");
+export async function runUserMode(main, argv, options) {
+  if (typeof main !== "function") throw fail("NATIVE_MAIN_UNAVAILABLE");
+  return main(argv, options);
 }

@@ -1,10 +1,16 @@
 import os from "node:os";
+import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import readline from "node:readline";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createUserRuntime, runUserMode } from "./runtime.mjs";
+import { prepareSdkStage } from "./sdk-stage.mjs";
+import { transformMainSource, transformMigrationsSource } from "./sdk-cli-source.mjs";
+import { transformModelRuntimeSource, transformModelConfigSource } from "./sdk-auth-source.mjs";
 import { defaultRegistryPath, resolveUser } from "./registry.mjs";
+import { createAccount } from "./account-session.mjs";
 import { createUserEnvironment, installUserEnvironment } from "./environment.mjs";
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -272,38 +278,77 @@ async function runChild([, , id, cwd, mode, message, registryPath, bindingText, 
   }
 }
 
+function publishedSdkRoot() {
+  const candidate = path.join(path.dirname(process.execPath), "node_modules", "@earendil-works", "pi-coding-agent");
+  return fs.realpathSync.native(candidate);
+}
+
+async function askAccount(users, registryPath) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) throw fail("ACCOUNT_SELECTION_REQUIRED");
+  const lines = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    if (users.length) process.stdout.write(`Accounts: ${users.map(({ id, label }) => `${id} (${label})`).join(", ")}\n`);
+    else process.stdout.write("No accounts registered yet.\n");
+    const answer = await new Promise((resolve) => {
+      let settled = false;
+      lines.once("close", () => { if (!settled) { settled = true; resolve(""); } });
+      lines.question('Account ID, or "create <id> [label]": ', (value) => { settled = true; resolve(value); });
+    });
+    const match = /^create\s+([a-z][a-z0-9-]{1,31})(?:\s+(.+))?$/u.exec(answer.trim());
+    if (!match) return answer.trim();
+    return createAccount({ registryPath, id: match[1], label: match[2] ?? match[1] }).id;
+  } finally { lines.close(); }
+}
+
+function isNativeEarlyCommand(argv) {
+  return argv.some((argument) => ["--version", "-v"].includes(argument)) || argv[0] === "package" || argv[0] === "config";
+}
+
+async function createNativeAdapter(options, registryPath, argv) {
+  if (options.nativeMain) return { main: options.nativeMain, factory: options.accountRuntimeFactory };
+  const packageRoot = options.packageRoot ?? publishedSdkRoot();
+  if (isNativeEarlyCommand(argv)) {
+    const native = await import(pathToFileURL(path.join(packageRoot, "dist/main.js")).href);
+    if (typeof native.main !== "function") throw fail("NATIVE_MAIN_UNAVAILABLE");
+    return { main: native.main };
+  }
+  const stageParent = options.stageParent ?? fs.mkdtempSync(path.join(os.tmpdir(), "pi-account-sdk-"));
+  const stageRoot = path.join(stageParent, "prepared-sdk");
+  const manifest = await prepareSdkStage({ packageRoot, stageRoot, transforms: {
+    "dist/main.js": transformMainSource,
+    "dist/migrations.js": transformMigrationsSource,
+    "dist/core/model-runtime.js": transformModelRuntimeSource,
+    "dist/core/model-config.js": transformModelConfigSource,
+  } });
+  const mainUrl = pathToFileURL(path.join(stageRoot, "dist/main.js")).href;
+  const runtimeUrl = pathToFileURL(path.join(stageRoot, "dist/core/model-runtime.js")).href;
+  const mainModule = await import(mainUrl);
+  const runtimeModule = await import(runtimeUrl);
+  if (typeof mainModule.main !== "function" || !runtimeModule.ModelRuntime) throw fail("NATIVE_SDK_API_UNAVAILABLE");
+  const factory = createUserRuntime(registryPath, {
+    sdkRoot: packageRoot,
+    pickAccount: options.pickAccount ?? ((users) => askAccount(users, registryPath)),
+    createModelRuntime: (request) => runtimeModule.ModelRuntime.create({
+      ...request,
+      allowModelNetwork: request.purpose === "application" && process.env.PI_OFFLINE === undefined,
+    }),
+  });
+  return { main: mainModule.main, factory, manifest };
+}
+
 export async function launchUser(argv = process.argv.slice(2), options = {}) {
-  if (argv[0] === "--managed-child") return runChild(["node", ...argv]);
-  const args = parse(argv);
-  const registryPath = args.registryPath ?? defaultRegistryPath(os.homedir());
-  const profile = resolveUser({ registryPath, id: args.id });
-  const { assertOwnedWorkspace } = await import("./ownership.mjs");
-  assertOwnedWorkspace(profile, args.cwd);
-  if (options.initialSessionPath) {
-    if (options.originProfileToken) {
-      const { getUserProfileToken } = await import("./runtime.mjs");
-      if (options.originProfileToken !== getUserProfileToken(profile)) throw fail("USER_ORIGIN_RECOVERY_PROFILE_DRIFT");
-    }
-    const { assertOwnedSession } = await import("./ownership.mjs");
-    if (!assertOwnedSession(profile, { sessionPath: options.initialSessionPath, cwd: args.cwd }).exists) throw fail("USER_ORIGIN_RECOVERY_UNAVAILABLE");
-    if (args.mode !== "rpc" || options.spawn === false) throw fail("USER_ORIGIN_RECOVERY_REQUIRES_SUPERVISED_RPC");
-  }
-  if (options.spawn === false) {
-    const env = createUserEnvironment(profile);
-    for (const key of Object.keys(process.env)) delete process.env[key];
-    for (const [key, value] of Object.entries(env)) process.env[key] = value;
-    return runChild(["node", "--managed-child", args.id, args.cwd, args.mode, args.message ?? "", registryPath]);
-  }
-  // Trusted programmatic callers may instrument process creation; CLI defaults stay unchanged.
-  const spawnProcess = options.spawnProcess ?? spawn;
-  if (typeof spawnProcess !== "function") throw fail("LAUNCH_SPAWNER_INVALID");
-  if (args.mode === "rpc") return superviseRpc({ ...args, registryPath, initialSessionPath: options.initialSessionPath }, profile, spawnProcess);
-  return spawnSelected({ ...args, registryPath }, profile, spawnProcess);
+  const registryPath = options.registryPath ?? defaultRegistryPath(os.homedir());
+  const adapter = await createNativeAdapter(options, registryPath, argv);
+  return runUserMode(adapter.main, argv, {
+    ...(options.nativeOptions ?? {}),
+    ...(adapter.factory ? { accountRuntimeFactory: adapter.factory } : {}),
+  });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  launchUser().then((code) => { process.exitCode = typeof code === "number" ? code : 0; }).catch((error) => {
-    process.stderr.write(`${error.code ?? "USER_LAUNCH_FAILED"}\n`);
+  launchUser().then(() => { process.exitCode = 0; }).catch((error) => {
     process.exitCode = 1;
+    const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{1,80}$/.test(error.code) ? error.code : "USER_LAUNCH_FAILED";
+    process.stderr.write(`${code}\n`);
   });
 }
