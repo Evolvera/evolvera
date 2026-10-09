@@ -261,16 +261,35 @@ export function buildClassifierInput(prompt: string, records: HistoryRecord[] = 
 		return `${kind}: median ${median}s (n=${xs.length})`;
 	});
 	const priors = lines.length ? `\n\nDATA — COMPATIBLE ANONYMIZED CATEGORY PRIORS (main-active seconds; weak reference only):\n${lines.join("\n")}` : "";
-	return `DATA — TASK (untrusted):\n${clip(prompt, 4000)}${priors}`;
+	return `DATA — TASK (untrusted):\n${clip(scrub(prompt), 4000)}${priors}`;
 }
 
 function clip(text: string, max: number): string {
 	return text.length > max ? `${text.slice(0, Math.round(max * 0.75))}\n…\n${text.slice(-Math.round(max * 0.2))}` : text;
 }
 
-export function buildReplanInput(input: { prompt: string; steps: Step[]; elapsed: number; activity: string[] }): string {
+function buildScopePrompt(initialPrompt: string, evidence: string[], maxChars: number): string {
+	const selected: string[] = [];
+	let evidenceChars = 0;
+	const evidenceBudget = Math.min(MAX_SCOPE_EVIDENCE_CHARS * 2 + 128, Math.floor(maxChars * 0.65));
+	for (let i = evidence.length - 1; i >= 0; i--) {
+		const entry = scrub(evidence[i]);
+		const cost = entry.length + (selected.length ? 2 : 0);
+		if (evidenceChars + cost > evidenceBudget) break;
+		selected.unshift(entry);
+		evidenceChars += cost;
+	}
+	const recent = selected.join("\n\n");
+	const initialBudget = Math.max(0, maxChars - evidenceChars - (recent ? 2 : 0));
+	const initial = clip(scrub(initialPrompt), initialBudget);
+	return recent ? `${initial}\n\n${recent}` : initial;
+}
+
+export function buildReplanInput(input: { prompt: string; initialPrompt?: string; evidence?: string[]; steps: Step[]; elapsed: number; activity: string[] }): string {
 	const plan = input.steps.map((s, i) => `${i + 1}. [${s.status}] ${s.label} — ${s.status === "done" ? 0 : s.remaining}s remaining`).join("\n");
-	return `DATA — TASK (untrusted):\n${clip(input.prompt, 2000)}\n\nDATA — CHECKLIST (previous estimate; remaining main-work seconds):\n${plan}\n\nElapsed main-work time: ${Math.round(input.elapsed)}s.\n\nParallel work is tracked and displayed separately; its counts and runtime are not inputs to this estimate.\n\nDATA — RECENT MAIN-AGENT ACTIVITY (oldest first; untrusted):\n${input.activity.join("\n") || "(none)"}`;
+	const activity = input.activity.map((entry) => clip(scrub(entry), 160)).join("\n");
+	const scope = input.initialPrompt !== undefined && input.evidence ? buildScopePrompt(input.initialPrompt, input.evidence, 2000) : clip(scrub(input.prompt), 2000);
+	return `DATA — TASK (untrusted):\n${scope}\n\nDATA — CHECKLIST (previous estimate; remaining main-work seconds):\n${plan}\n\nElapsed main-work time: ${Math.round(input.elapsed)}s.\n\nParallel work is tracked and displayed separately; its counts and runtime are not inputs to this estimate.\n\nDATA — RECENT MAIN-AGENT ACTIVITY (oldest first; untrusted):\n${activity || "(none)"}`;
 }
 
 type Completer = (model: unknown, context: unknown, options: Record<string, unknown>) => Promise<{ content?: Array<{ type?: string; text?: string }>; usage?: any }>;
@@ -381,6 +400,8 @@ type Snapshot = {
 type Task = {
 	start: number;
 	prompt: string;
+	initialPrompt: string;
+	scopeEvidence: string[];
 	label: string;
 	firstEstimate: number | null;
 	source: HistoryRecord["source"];
@@ -404,6 +425,10 @@ type Task = {
 	parallelWaitSince: number | null;
 	parallelWaitMs: number;
 	endSeconds?: number;
+	scopeVersion: number;
+	plannedScopeVersion: number;
+	scopeReplanPending: boolean;
+	completedAgentCalls: Set<string>;
 };
 
 const LINES_KEY = Symbol.for("pi-work-status:lines");
@@ -413,6 +438,8 @@ const SNAPSHOT_TTL_MS = 10_000;
 const SNAPSHOT_MAX_BYTES = 16 * 1024;
 const OWNER_KEY = Symbol.for("pi-work-status:owners");
 const MAX_ACTIVITY = 40;
+const MAX_TASK_PROMPT_CHARS = 12_000;
+const MAX_SCOPE_EVIDENCE_CHARS = 1_000;
 
 export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) {
 	const now = deps.now ?? (() => Date.now());
@@ -455,6 +482,8 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	let peerCache: Snapshot[] = [];
 	const trackedAgents = new Map<string, { type: string; startedAt: number }>();
 	const toolAgentTypes = new Map<string, string>();
+	const toolAgentTaskOwners = new Map<string, Task>();
+	const agentTaskOwners = new Map<string, { toolCallId: string; task: Task; type: string }>();
 
 	function safeLabel(value: unknown, fallback = "atividade"): string {
 		if (typeof value !== "string") return fallback;
@@ -568,6 +597,21 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	function note(t: Task, text: string) {
 		t.activity.push(`[+${Math.round(activeElapsedSeconds(t))}s] ${scrub(text).slice(0, 160)}`);
 		if (t.activity.length > MAX_ACTIVITY) t.activity.splice(0, t.activity.length - MAX_ACTIVITY);
+	}
+
+	function appendScopeEvidence(t: Task, source: string, text: string): boolean {
+		const clean = clip(scrub(text.replace(/[\u0000-\u001f\u007f-\u009f\u001b]/g, " ")), MAX_SCOPE_EVIDENCE_CHARS);
+		if (!clean) return false;
+		t.scopeEvidence.push(`${source}: ${clean}`);
+		let evidenceSize = t.scopeEvidence.reduce((sum, entry) => sum + entry.length + 2, 0);
+		while (t.scopeEvidence.length > 1 && evidenceSize > MAX_TASK_PROMPT_CHARS / 2) {
+			evidenceSize -= t.scopeEvidence.shift()!.length + 2;
+		}
+		t.prompt = buildScopePrompt(t.initialPrompt, t.scopeEvidence, MAX_TASK_PROMPT_CHARS);
+		t.scopeVersion++;
+		t.scopeReplanPending = true;
+		note(t, `${source}: ${clean}`);
+		return true;
 	}
 
 	function pausedTotal(t: Task, at = now()): number {
@@ -751,6 +795,13 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		if (!task) return;
 		const t = task;
 		task = null;
+		for (const [toolCallId, owner] of toolAgentTaskOwners) {
+			if (owner === t) {
+				toolAgentTaskOwners.delete(toolCallId);
+				toolAgentTypes.delete(toolCallId);
+			}
+		}
+		for (const [agentId, owner] of agentTaskOwners) if (owner.task === t) agentTaskOwners.delete(agentId);
 		// Fim real = quando tudo ficou quieto, não o fim da janela de confirmação de 2 s.
 		const seconds = Math.max(1, Math.round(activeElapsedSeconds(t, t.quietSince ?? now())));
 		t.endSeconds = seconds;
@@ -786,19 +837,37 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		t.retryAfterFailure = false;
 	}
 
+	function scopeReplanReady(t: Task): boolean {
+		if (task !== t || !t.classification || !t.scopeReplanPending || t.replanning || t.retryAfterFailure
+			|| maintenancePending || !mainBusyNow()) return false;
+		return !syncParallelWait(t, liveParallel());
+	}
+
+	function requestScopeReplan(t: Task) {
+		if (scopeReplanReady(t)) void doReplan(t);
+	}
+
 	async function doReplan(t: Task) {
+		if (t.replanning || task !== t) return;
 		const opts = callOpts();
 		t.replanning = true;
 		const snapshotAt = now();
+		const scopeVersion = t.scopeVersion;
 		try {
 			const steps = opts ? await replan({
-				prompt: t.prompt, steps: t.steps, elapsed: activeElapsedSeconds(t, snapshotAt),
+				prompt: t.prompt, initialPrompt: t.initialPrompt, evidence: t.scopeEvidence, steps: t.steps, elapsed: activeElapsedSeconds(t, snapshotAt),
 				activity: t.activity,
 			}, opts) : undefined;
 			if (task !== t) return;
 			t.replans++;
-			if (steps) applyPlan(t, steps, snapshotAt);
-			else {
+			if (steps && t.scopeVersion === scopeVersion) {
+				applyPlan(t, steps, snapshotAt);
+				t.plannedScopeVersion = scopeVersion;
+				t.scopeReplanPending = false;
+			} else if (steps) {
+				// The response describes an older scope; discard it and coalesce one fresh pass.
+				t.scopeReplanPending = t.scopeVersion > t.plannedScopeVersion;
+			} else {
 				t.nextCheck = now() + 20_000; // falhou: mantém o plano e tenta de novo em 20 s
 				t.nextCheckWaitMs = pausedTotal(t);
 				t.retryAfterFailure = true;
@@ -806,6 +875,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		} finally {
 			t.replanning = false;
 			publishSnapshot();
+			if (scopeReplanReady(t)) queueMicrotask(() => requestScopeReplan(t));
 		}
 	}
 
@@ -822,7 +892,9 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 			else if (at - t.quietSince >= 2000) finish();
 			const estimateExpired = t.planRemaining !== null && t.planRemaining > 0 && elapsedSincePlan(t, at) >= t.planRemaining;
 			const checkDue = deadlinePassed(t, t.nextCheck, t.nextCheckWaitMs, at);
-			if (task === t && mainBusyNow() && !maintenancePending && !waiting && !t.replanning && (checkDue || (estimateExpired && !t.retryAfterFailure))) void doReplan(t);
+			const scopeChanged = t.scopeVersion > t.plannedScopeVersion;
+			if (task === t && mainBusyNow() && !maintenancePending && !waiting && !t.replanning
+				&& (checkDue || (scopeChanged && !t.retryAfterFailure) || (estimateExpired && !t.retryAfterFailure))) void doReplan(t);
 		}
 		publishSnapshot();
 		try { tui?.requestRender(); } catch { /* ui trocada */ }
@@ -832,45 +904,54 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		const mainModel = ctxRef?.model ? `${ctxRef.model.provider}/${ctxRef.model.id}` : "";
 		const startedAt = now();
 		const t: Task = {
-			start: startedAt, prompt, label: "estimando…", firstEstimate: null, source: "none",
+			start: startedAt, prompt: clip(scrub(prompt), MAX_TASK_PROMPT_CHARS), initialPrompt: clip(scrub(prompt), MAX_TASK_PROMPT_CHARS), scopeEvidence: [], label: "estimando…", firstEstimate: null, source: "none",
 			steps: [], planAt: startedAt, planWaitMs: 0, planRemaining: null, nextCheck: null, nextCheckWaitMs: 0, replanning: false, retryAfterFailure: false, replans: 0, activity: [],
 			models: new Set(mainModel ? [mainModel] : []), subagentTypes: [], tools: 0, prompts: 1, parallelSeen: 0, quietSince: null, parallelWaitSince: null, parallelWaitMs: 0,
+			scopeVersion: 0, plannedScopeVersion: 0, scopeReplanPending: false, completedAgentCalls: new Set(),
 		};
 		task = t;
 		finished = null;
 		publishSnapshot();
 		const records = loadHistory(historyFile());
 		const opts = callOpts();
-		const { result } = opts ? await classify(prompt, { ...opts, records }) : { result: undefined };
-		if (task !== t) {
-			// Tarefa terminou antes da classificação: grava com a duração real já medida.
-			if (result && !t.classification && t.endSeconds) { t.classification = result; writeRecord(t); }
+		while (task === t) {
+			const scopeVersion = t.scopeVersion;
+			const { result } = opts ? await classify(buildScopePrompt(t.initialPrompt, t.scopeEvidence, 4000), { ...opts, records }) : { result: undefined };
+			if (task !== t) {
+				// Tarefa terminou antes da classificação: grava com a duração real já medida.
+				if (result && !t.classification && t.endSeconds) { t.classification = result; writeRecord(t); }
+				return;
+			}
+			if (scopeVersion !== t.scopeVersion) continue; // discard stale classification; classify the latest scope
+			t.plannedScopeVersion = scopeVersion;
+			t.scopeReplanPending = false;
+			if (!result) { t.label = limitWords(scrub(t.prompt), 5) || "tarefa"; publishSnapshot(); return; }
+			t.classification = result;
+			t.label = result.label;
+			const combined = combineEstimate(result.seconds, historyEstimate(records, result.kind, result.summary));
+			t.source = combined.source;
+			if (combined.seconds === null) { publishSnapshot(); return; }
+			t.firstEstimate = combined.seconds;
+			// O plano parte do instante em que a tarefa começou; a primeira revisão vem na metade do total.
+			const steps = scaleSteps(result.steps, combined.seconds);
+			t.steps = steps;
+			t.planAt = t.start;
+			t.planWaitMs = pausedTotal(t, t.start);
+			t.planRemaining = planRemaining(steps);
+			t.nextCheck = t.start + nextCheckDelay(combined.seconds) * 1000;
+			t.nextCheckWaitMs = t.planWaitMs;
+			publishSnapshot();
 			return;
 		}
-		if (!result) { t.label = limitWords(scrub(prompt), 5) || "tarefa"; publishSnapshot(); return; }
-		t.classification = result;
-		t.label = result.label;
-		const combined = combineEstimate(result.seconds, historyEstimate(records, result.kind, result.summary));
-		t.source = combined.source;
-		if (combined.seconds === null) { publishSnapshot(); return; }
-		t.firstEstimate = combined.seconds;
-		// O plano parte do instante em que a tarefa começou; a primeira revisão vem na metade do total.
-		const steps = scaleSteps(result.steps, combined.seconds);
-		t.steps = steps;
-		t.planAt = t.start;
-		t.planWaitMs = pausedTotal(t, t.start);
-		t.planRemaining = planRemaining(steps);
-		t.nextCheck = t.start + nextCheckDelay(combined.seconds) * 1000;
-		t.nextCheckWaitMs = t.planWaitMs;
-		publishSnapshot();
 	}
 
 	function observeAgentResult(event: any, result: any) {
 		if (event?.toolName !== "Agent") return;
+		const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : undefined;
+		const fallback = toolCallId ? toolAgentTypes.get(toolCallId) : undefined;
 		const id = result?.details?.agentId;
 		if (typeof id === "string" && id) {
 			const manager = (globalThis as any)[Symbol.for("pi-subagents:manager")];
-			const fallback = typeof event.toolCallId === "string" ? toolAgentTypes.get(event.toolCallId) : undefined;
 			try {
 				const record = manager?.getRecord?.(id);
 				if (record?.status === "queued" || record?.status === "running") {
@@ -878,7 +959,35 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 				} else trackedAgents.delete(id);
 			} catch { /* generic subagent row is used while manager reports running */ }
 		}
-		if (event.type === "tool_execution_end" && typeof event.toolCallId === "string") toolAgentTypes.delete(event.toolCallId);
+		if (event.type === "tool_execution_end" && toolCallId) {
+			const owner = toolAgentTaskOwners.get(toolCallId);
+			const manager = (globalThis as any)[Symbol.for("pi-subagents:manager")];
+			let recordStatus: string | undefined;
+			try { recordStatus = typeof id === "string" ? manager?.getRecord?.(id)?.status : undefined; } catch { /* details status remains authoritative when available */ }
+			const resultStatus = result?.details?.status;
+			const pending = resultStatus === "background" || resultStatus === "queued" || resultStatus === "running"
+				|| recordStatus === "queued" || recordStatus === "running";
+			const terminal = (resultStatus === "completed" || resultStatus === "steered")
+				&& (recordStatus === undefined || recordStatus === "completed" || recordStatus === "steered");
+			if (pending && typeof id === "string" && task && owner === task) {
+				agentTaskOwners.set(id, { toolCallId, task, type: fallback ?? "subagente" });
+			}
+			if (terminal && !event.isError && task && owner === task && !task.completedAgentCalls.has(toolCallId)) {
+				task.completedAgentCalls.add(toolCallId);
+				let text = "";
+				if (Array.isArray(result?.content)) {
+					for (const part of result.content) {
+						if (part?.type !== "text" || typeof part.text !== "string") continue;
+						const room = MAX_SCOPE_EVIDENCE_CHARS * 4 - text.length;
+						if (room <= 0) break;
+						text += `${part.text.slice(0, room)} `;
+					}
+				}
+				if (text.trim() && appendScopeEvidence(task, `resultado do agente ${fallback ?? "subagente"}`, text)) requestScopeReplan(task);
+			}
+			toolAgentTypes.delete(toolCallId);
+			toolAgentTaskOwners.delete(toolCallId);
+		}
 		publishSnapshot();
 	}
 
@@ -928,7 +1037,13 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	pi.on("input", async (event, ctx) => {
 		ctxRef = ctx;
 		if (!active || typeof event.text !== "string" || !event.text.trim()) return;
-		if (task) { task.prompts++; task.quietSince = null; note(task, `user added: ${event.text}`); publishSnapshot(); return; }
+		if (task) {
+			task.prompts++;
+			task.quietSince = null;
+			if (appendScopeEvidence(task, "escopo adicional do usuário", event.text)) requestScopeReplan(task);
+			publishSnapshot();
+			return;
+		}
 		void startTask(event.text);
 	});
 
@@ -952,7 +1067,11 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		const args = event?.args ?? event?.input ?? {};
 		if (event?.toolName === "Agent") {
 			const type = safeLabel(args.subagent_type, "subagente");
-			if (typeof event.toolCallId === "string") toolAgentTypes.set(event.toolCallId, type);
+			if (typeof event.toolCallId === "string") {
+				toolAgentTypes.set(event.toolCallId, type);
+				if (task) toolAgentTaskOwners.set(event.toolCallId, task);
+				else toolAgentTaskOwners.delete(event.toolCallId);
+			}
 			if (task) {
 				task.subagentTypes.push(type);
 				if (typeof args.model === "string") task.models.add(args.model);
@@ -985,6 +1104,22 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 	});
 	pi.on("message_end", async (event: any) => {
 		const msg = event?.message;
+		if (msg?.role === "custom" && msg.customType === "subagent-notification") {
+			const details = msg.details ?? {};
+			const notifications = [details, ...(Array.isArray(details.others) ? details.others : [])];
+			for (const notification of notifications) {
+				const terminal = ["completed", "steered", "aborted", "stopped", "error"].includes(notification.status);
+				if (!terminal || typeof notification.id !== "string") continue;
+				const owner = agentTaskOwners.get(notification.id);
+				agentTaskOwners.delete(notification.id);
+				if ((notification.status !== "completed" && notification.status !== "steered")
+					|| !task || !owner || owner.task !== task || task.completedAgentCalls.has(owner.toolCallId)) continue;
+				const text = typeof notification.resultPreview === "string" ? notification.resultPreview : "";
+				if (!text.trim()) continue;
+				task.completedAgentCalls.add(owner.toolCallId);
+				if (appendScopeEvidence(task, `resultado do agente ${safeLabel(notification.description ?? owner.type, "subagente")}`, text)) requestScopeReplan(task);
+			}
+		}
 		if (!task || msg?.role !== "assistant") return;
 		const text = (msg.content ?? []).filter((c: any) => c?.type === "text").map((c: any) => c.text ?? "").join(" ").trim();
 		if (text) note(task, `agent said: ${text.slice(-200)}`);
