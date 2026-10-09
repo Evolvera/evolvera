@@ -118,9 +118,20 @@ const classifierInput = m.buildClassifierInput("current task", [...historyPrompt
 assert.match(classifierInput, /feature: median 300s \(n=5\)/);
 assert.ok(!classifierInput.includes("private history summary") && !classifierInput.includes("legacy prompt canary"), "only compatible numeric category aggregates reach the classifier");
 assert.ok(!m.buildClassifierInput("current task", historyPromptRows.slice(0, 4)).includes("category priors"), "small category samples are withheld");
+const scrubbedClassifierInput = m.buildClassifierInput("scope C:\\private\\secret\\file.ts bearer sk-scope-secret-123456789");
+assert.ok(!scrubbedClassifierInput.includes("C:\\private") && !scrubbedClassifierInput.includes("sk-scope-secret"), "classifier input scrubs paths and credentials");
 assert.equal(m.historyEstimate([legacyPrior], "feature", "legacy prompt canary"), undefined, "unknown legacy clocks do not train the main-work estimator");
 assert.match(m.CLASSIFIER_PROMPT, /main-agent active work/);
 assert.match(m.REPLAN_PROMPT, /Mark a step done only when/);
+const boundedScopeInput = m.buildReplanInput({
+  prompt: "x".repeat(4000),
+  initialPrompt: `INITIAL REQUEST MUST SURVIVE ${"original details ".repeat(300)}`,
+  evidence: [...Array.from({ length: 24 }, (_, i) => `intermediate scope ${i} ${"detail ".repeat(100)}`), "FINAL SCOPE REQUIREMENT MUST SURVIVE"],
+  steps: [], elapsed: 0, activity: [],
+});
+assert.match(boundedScopeInput, /INITIAL REQUEST MUST SURVIVE/);
+assert.match(boundedScopeInput, /FINAL SCOPE REQUIREMENT MUST SURVIVE/);
+assert.ok(boundedScopeInput.length < 2500, "scope sent to replanner stays within a bounded budget");
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 const line = strip(m.renderLine({ elapsed: 65, remaining: 195, pct: 0.25, label: "Barra de status tarefas", stepsDone: 1, stepsTotal: 4 }, 100));
@@ -133,6 +144,100 @@ assert.ok(strip(m.renderLine({ elapsed: 5, remaining: 55, pct: 0.1, label: "a".r
 // ── controlador ──
 const dir = mkdtempSync(path.join(tmpdir(), "work-status-"));
 try {
+  // Scope updates during classification/replanning are coalesced, sanitized, and stale replies are discarded.
+  const scopeHandlers = {}; let scopeClock = 900_000; let resolveInitial; let resolveStaleReplan;
+  const initialPending = new Promise((resolve) => { resolveInitial = resolve; });
+  const staleReplanPending = new Promise((resolve) => { resolveStaleReplan = resolve; });
+  const scopeCalls = [];
+  const scopeComplete = async (_model, req) => {
+    scopeCalls.push(req);
+    if (req.systemPrompt === m.REPLAN_PROMPT) {
+      const replans = scopeCalls.filter((call) => call.systemPrompt === m.REPLAN_PROMPT).length;
+      if (replans === 1) return staleReplanPending;
+      return { content: [{ type: "text", text: '{"steps":[{"label":"fresh scope","status":"doing","remainingSeconds":30}]}' }] };
+    }
+    if (scopeCalls.filter((call) => call.systemPrompt === m.CLASSIFIER_PROMPT).length === 1) return initialPending;
+    return { content: [{ type: "text", text: '{"label":"Scope task","summary":"bounded scope update","kind":"feature","seconds":100,"steps":[{"label":"initial scope","seconds":100}]}' }] };
+  };
+  const scopeCtx = { hasUI: true, mode: "tui", model: { provider: "stub", id: "scope" }, isIdle: () => !scopeBusy, hasPendingMessages: () => false,
+    modelRegistry: { find: () => ({ id: "scope" }), getApiKeyAndHeaders: async () => ({ ok: true }) }, ui: { setWidget() {}, notify() {} } };
+  let scopeBusy = false;
+  const scopeCtl = m.registerWorkStatus({ on: (event, handler) => { scopeHandlers[event] = handler; }, registerCommand: () => {} }, {
+    now: () => scopeClock, agentDir: path.join(dir, "scope-inputs"), complete: scopeComplete, autoTick: false,
+    subagentsRunning: () => false, parallelJobs: () => 0,
+  });
+  await scopeHandlers.session_start({}, scopeCtx);
+  await scopeHandlers.input({ text: "initial request at C:\\private\\initial.ts bearer sk-initial-secret-123456789", source: "interactive" }, scopeCtx);
+  await scopeHandlers.input({ text: "first added scope", source: "interactive" }, scopeCtx);
+  await scopeHandlers.input({ text: "latest added scope", source: "interactive" }, scopeCtx);
+  resolveInitial({ content: [{ type: "text", text: '{"label":"Stale scope","summary":"stale scope","kind":"feature","seconds":20,"steps":[{"label":"stale","seconds":20}]}' }] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(scopeCalls.filter((call) => call.systemPrompt === m.CLASSIFIER_PROMPT).length, 2, "one in-flight classifier is followed by one latest-scope classification");
+  const latestClassifierInput = scopeCalls.filter((call) => call.systemPrompt === m.CLASSIFIER_PROMPT)[1].messages[0].content[0].text;
+  assert.match(latestClassifierInput, /initial request/);
+  assert.match(latestClassifierInput, /first added scope/);
+  assert.match(latestClassifierInput, /latest added scope/);
+  assert.ok(!latestClassifierInput.includes("C:\\private") && !latestClassifierInput.includes("sk-initial-secret"), "initial scope and additions are scrubbed before classification");
+  assert.equal(scopeCtl.getTask().label, "Scope task", "stale classification cannot replace the latest scope estimate");
+
+  scopeBusy = true;
+  await scopeHandlers.agent_start({}, scopeCtx);
+  await scopeHandlers.tool_execution_start({ toolName: "Agent", toolCallId: "agent-call-1", args: { subagent_type: "scout" } }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().prompt.includes("agent-call-1"), "Agent start/receipt metadata is not scope completion evidence");
+  await scopeHandlers.input({ text: "[AGENT UPDATE scout] inspect bounded config", source: "interactive" }, scopeCtx);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(scopeCalls.filter((call) => call.systemPrompt === m.REPLAN_PROMPT).length, 1, "scope change prompts one immediate replan");
+  const staleRequest = scopeCalls.find((call) => call.systemPrompt === m.REPLAN_PROMPT).messages[0].content[0].text;
+  assert.match(staleRequest, /AGENT UPDATE scout/);
+  await scopeHandlers.tool_execution_update({ type: "tool_execution_update", toolName: "Agent", toolCallId: "agent-call-1", partialResult: { content: [{ type: "text", text: "partial output must not be evidence" }] } }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().prompt.includes("partial output must not be evidence"), "Agent progress is not completion evidence");
+  const previousManager = globalThis[Symbol.for("pi-subagents:manager")];
+  const agentStatuses = new Map([["scope-agent-1", "queued"]]);
+  globalThis[Symbol.for("pi-subagents:manager")] = { getRecord: (id) => ({ id, type: "scout", startedAt: scopeClock, status: agentStatuses.get(id) }) };
+  const backgroundReceipt = { content: [{ type: "text", text: "Agent queued in background. receipt must not be evidence" }], details: { agentId: "scope-agent-1", status: "queued" } };
+  await scopeHandlers.tool_execution_end({ type: "tool_execution_end", toolName: "Agent", toolCallId: "agent-call-1", result: backgroundReceipt, isError: false }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().completedAgentCalls.has("agent-call-1"), "queued Agent receipt is not marked completed");
+  assert.ok(!scopeCtl.getTask().prompt.includes("receipt must not be evidence"), "queued Agent receipt is not scope evidence");
+  await scopeHandlers.tool_execution_start({ toolName: "Agent", toolCallId: "agent-call-running", args: { subagent_type: "scout" } }, scopeCtx);
+  agentStatuses.set("scope-agent-running", "running");
+  const runningReceipt = { content: [{ type: "text", text: "Agent running receipt must not be evidence" }], details: { agentId: "scope-agent-running", status: "running" } };
+  await scopeHandlers.tool_execution_end({ type: "tool_execution_end", toolName: "Agent", toolCallId: "agent-call-running", result: runningReceipt, isError: false }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().completedAgentCalls.has("agent-call-running"), "running Agent receipt is not marked completed");
+  assert.ok(!scopeCtl.getTask().prompt.includes("running receipt must not be evidence"), "running Agent receipt is not scope evidence");
+  agentStatuses.set("scope-agent-1", "completed");
+  const agentCompletion = { role: "custom", customType: "subagent-notification", content: "Agent completed", details: { id: "scope-agent-1", status: "completed", description: "scout", resultPreview: "completed evidence from C:\\private\\result.ts bearer sk-result-secret-123456789" } };
+  await scopeHandlers.message_end({ message: agentCompletion }, scopeCtx);
+  await scopeHandlers.message_end({ message: agentCompletion }, scopeCtx);
+  if (previousManager === undefined) delete globalThis[Symbol.for("pi-subagents:manager")];
+  else globalThis[Symbol.for("pi-subagents:manager")] = previousManager;
+  await scopeHandlers.tool_execution_start({ toolName: "Agent", toolCallId: "agent-call-error", args: { subagent_type: "scout" } }, scopeCtx);
+  await scopeHandlers.tool_execution_end({ type: "tool_execution_end", toolName: "Agent", toolCallId: "agent-call-error", result: { content: [{ type: "text", text: "failed result is not evidence" }] }, isError: true }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().prompt.includes("failed result is not evidence"), "failed Agent completion is not treated as scope evidence");
+  await scopeHandlers.input({ text: "[AGENT UPDATE scout] preserve the existing boundary", source: "interactive" }, scopeCtx);
+  resolveStaleReplan({ content: [{ type: "text", text: '{"steps":[{"label":"stale result","status":"doing","remainingSeconds":900}]}' }] });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const replannedCalls = scopeCalls.filter((call) => call.systemPrompt === m.REPLAN_PROMPT);
+  assert.equal(replannedCalls.length, 2, "stale response coalesces multiple evidence updates into one follow-up");
+  const latestReplanInput = replannedCalls[1].messages[0].content[0].text;
+  assert.match(latestReplanInput, /first added scope/);
+  assert.match(latestReplanInput, /latest added scope/);
+  assert.match(latestReplanInput, /completed evidence/);
+  assert.match(latestReplanInput, /preserve the existing boundary/);
+  assert.equal((scopeCtl.getTask().prompt.match(/completed evidence/g) ?? []).length, 1, "duplicate terminal result with same toolCallId is deduplicated in canonical scope");
+  assert.ok(!latestReplanInput.includes("partial output") && !latestReplanInput.includes("C:\\private") && !latestReplanInput.includes("sk-result-secret"), "partial output, paths and credentials are excluded/scrubbed");
+  assert.equal(scopeCtl.getTask().steps[0].label, "fresh scope", "stale replan cannot overwrite the latest-scope response");
+  await scopeHandlers.tool_execution_start({ toolName: "Agent", toolCallId: "late-agent-call", args: { subagent_type: "scout" } }, scopeCtx);
+  scopeBusy = false;
+  await scopeHandlers.agent_settled({}, scopeCtx);
+  scopeClock += 3_000; scopeCtl.tick();
+  scopeClock += 2_000; scopeCtl.tick();
+  assert.equal(scopeCtl.getTask(), null, "the prior task settles before the next root task");
+  await scopeHandlers.input({ text: "new independent task", source: "interactive" }, scopeCtx);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await scopeHandlers.tool_execution_end({ type: "tool_execution_end", toolName: "Agent", toolCallId: "late-agent-call", result: { content: [{ type: "text", text: "late result belongs to previous task" }] }, isError: false }, scopeCtx);
+  assert.ok(!scopeCtl.getTask().prompt.includes("late result belongs to previous task"), "a late Agent result cannot leak into the next root task");
+  await scopeHandlers.session_shutdown({}, scopeCtx);
+
   const handlers = {}; const commands = {}; const notices = []; let clock = 1_000_000;
   let idle = true; let subs = false; let jobs = 0;
   let widgetFactory; let renders = 0;
