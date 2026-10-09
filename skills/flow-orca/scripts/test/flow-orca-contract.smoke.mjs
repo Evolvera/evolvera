@@ -474,6 +474,13 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Never inspect live or production systems to avoid asking/, "no production probing instead of asking");
   has(path, /a stale or rejected Orca record gets at most one note/, "Orca bookkeeping is not delivery work");
 }
+// Measurement tasks deliver real numbers, not harness work.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /\*\*Measurements deliver numbers:\*\*[^\n]*the real run and its numbers are the deliverable, not the harness/, "measurement deliverable is the real run");
+  has(path, /run the smallest valid real slice as soon as it can execute, then extend it/, "pilot-first real run");
+  has(path, /A conservative cost estimate above the approved cap is a reason to shrink the sample until it fits, not to stop/, "worst-case estimate shrinks scope instead of stopping");
+  has(path, /Asked for the result, answer with the numbers you have, or say in one line that none exist yet and run it now/, "result questions get numbers or an immediate run");
+}
 // Commit discipline in the standard prompt.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /\*\*Commit constantly, in a standard format:\*\*/, "standard mode commits constantly");
