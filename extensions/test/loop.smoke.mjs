@@ -40,7 +40,7 @@ assert.equal(m.validateSchedule({ intervalSeconds: 60, task: "" }), undefined);
 
 // ── controlador ──
 function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
-  const commands = {}; const handlers = {}; const userMsgs = []; const results = []; const entries = []; const notices = [];
+  const commands = {}; const handlers = {}; const userMsgs = []; const results = []; const entries = []; const notices = []; const noticeEvents = [];
   let clock = 1_000_000; let idle = true;
   const pi = {
     registerCommand: (n, c) => { commands[n] = c; }, on: (e, h) => { handlers[e] = h; },
@@ -50,7 +50,7 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
   const ctx = {
     cwd, hasUI: false, model: { provider: "fake", id: "m" }, isIdle: () => idle,
     modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true }) },
-    sessionManager: { getEntries: () => entries }, ui: { notify: (t) => notices.push(t) },
+    sessionManager: { getEntries: () => entries }, ui: { notify: (t, type = "info") => { notices.push(t); noticeEvents.push({ text: t, type }); } },
   };
   const complete = async (_model, req) => {
     const text = req.messages[0].content[0].text;
@@ -58,7 +58,7 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
     return { content: [{ type: "text", text: reply === undefined ? "no json" : JSON.stringify(reply) }] };
   };
   const ctl = m.registerLoop(pi, { now: () => clock, complete, autoTick: false, runAgent, worktreeRoot: cwd === process.cwd() ? undefined : path.join(cwd, "..", "wt") });
-  return { commands, handlers, userMsgs, results, entries, notices, ctx, ctl,
+  return { commands, handlers, userMsgs, results, entries, notices, noticeEvents, ctx, ctl,
     advance: async (ms) => { clock += ms; ctl.tick(); await new Promise((r) => setTimeout(r, 20)); },
     setIdle: (v) => { idle = v; } };
 }
@@ -81,16 +81,68 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
   assert.equal(f.ctl.loops.get("L1").status, "done");
 }
 
-// 2) modelo interpreta o corpo; execução anterior ainda rodando e dependente → disparo ignorado.
+// 2) avisos de disparo ignorado são limitados por loop, com relógio falso e janela exata.
 {
-  const f = fixture({ modelReply: { intervalSeconds: 600, maxRuns: 10, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: "rode os testes" } });
-  await f.commands.loop.handler('"1h" "execute isso 10 vezes de 10 em 10 min: rode os testes"', f.ctx);
+  const f = fixture({ cwd: tmpdir(), modelReply: { intervalSeconds: 1, maxRuns: null, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: "rode os testes" } });
+  await f.commands.loop.handler('"1s" "rode os testes"', f.ctx);
   await new Promise((r) => setTimeout(r, 20));
-  assert.equal(f.userMsgs.at(-1).text, "[/loop L1 · execução 1/10] rode os testes");
+  assert.equal(f.userMsgs.at(-1).text, "[/loop L1 · execução 1] rode os testes");
   f.setIdle(false);
-  await f.advance(600_000);
-  assert.equal(f.userMsgs.length, 1);
-  assert.equal(f.ctl.loops.get("L1").skipped, 1);
+  const first = f.ctl.loops.get("L1");
+  const skipNotices = () => f.notices.filter((text) => text.includes("disparo ignorado"));
+
+  await f.advance(1000); // primeira dependência bloqueada: aviso imediato
+  assert.equal(first.skipped, 1);
+  assert.equal(skipNotices().length, 1);
+  await f.advance(1000); // 1 segundo depois
+  assert.equal(first.skipped, 2);
+  assert.equal(skipNotices().length, 1);
+  await f.advance(1000); // 2 segundos depois
+  assert.equal(first.skipped, 3);
+  assert.equal(skipNotices().length, 1);
+  await f.advance(56_000); // 58 segundos desde o primeiro aviso
+  assert(first.skipped > 3, "disparos perdidos continuam contados");
+  assert.equal(skipNotices().length, 1, "antes do limite continua suprimido");
+  await f.advance(1000); // 59 segundos desde o primeiro aviso
+  assert.equal(skipNotices().length, 1, "59 segundos após o primeiro aviso continua suprimido");
+
+  first.schedule.dependsOnPrevious = false; // muda para o outro motivo, mesma instância de Loop
+  await f.advance(1000); // 60 segundos desde o aviso inicial
+  await new Promise((r) => setTimeout(r, 100)); // aguarda apenas a consulta Git local no diretório temporário
+  assert(first.skipped > 3, "cada disparo bloqueado continua contado");
+  assert.equal(skipNotices().length, 2, "o segundo aviso fica elegível aos 60 segundos, inclusive ao mudar o motivo");
+  await f.advance(59_000); // janela seguinte, 59 segundos após o aviso
+  assert.equal(skipNotices().length, 2, "a janela seguinte também suprime antes do limite");
+  first.schedule.dependsOnPrevious = true;
+  await f.advance(1000);
+  assert.equal(skipNotices().length, 3, "a próxima janela reabre exatamente no limite");
+
+  // Um loop diferente recebe seu primeiro aviso imediatamente, sem herdar a janela de L1.
+  await f.commands.loop.handler('"1s" "outro trabalho"', f.ctx);
+  await new Promise((r) => setTimeout(r, 100)); // aguarda a consulta Git local no diretório temporário
+  const second = f.ctl.loops.get("L2");
+  assert.equal(second.skipped, 1);
+  assert.equal(f.notices.filter((text) => text.includes("/loop L2:") && text.includes("disparo ignorado")).length, 1);
+
+  // Comandos informativos e avisos não relacionados ao throttler continuam imediatos; stop funciona.
+  const beforeStop = f.noticeEvents.length;
+  await f.commands.loop.handler("stop L1", f.ctx);
+  assert.equal(first.status, "stopped");
+  assert.equal(f.noticeEvents.length, beforeStop + 1);
+  assert.equal(f.noticeEvents.at(-1).type, "info");
+  await f.commands.loop.handler("stop L999", f.ctx);
+  assert.equal(f.noticeEvents.at(-1).type, "warning");
+
+  const invalid = fixture({ modelReply: undefined });
+  await invalid.commands.loop.handler('"invalid" "tarefa"', invalid.ctx);
+  assert.equal(invalid.noticeEvents.at(-1).type, "error");
+
+  const completed = fixture({ modelReply: { intervalSeconds: 1, maxRuns: 1, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: "sucesso" } });
+  await completed.commands.loop.handler('"1s" "sucesso"', completed.ctx);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(completed.ctl.loops.get("L1").status, "done");
+  assert(completed.noticeEvents.some(({ text, type }) => type === "info" && text.includes("concluído")), "conclusão informativa não é suprimida");
+
   // persistência e restauração
   assert.equal(f.entries.at(-1).customType, "loop-state");
 }

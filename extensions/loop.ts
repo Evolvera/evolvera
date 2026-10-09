@@ -235,6 +235,7 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	const now = deps.now ?? (() => Date.now());
 	const runAgent = deps.runAgent ?? defaultRunAgent;
 	const loops = new Map<string, Loop>();
+	const lastSkipNoticeAt = new WeakMap<Loop, number>();
 	const jobs = new Map<string, { loopId: string; runNumber: number; abort: AbortController; startedAt: number }>();
 	const firing = new Set<string>();
 	const depCache = new Map<string, boolean>();
@@ -255,6 +256,13 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	(globalThis as any)[Symbol.for("pi-loop:running-jobs")] = () => jobs.size;
 	(globalThis as any)[Symbol.for("pi-loop:work-status-jobs")] = workStatusJobs;
 	const notify = (msg: string, type: "info" | "warning" | "error" = "info") => safe(() => ctxRef?.ui.notify(msg, type));
+	function notifySkipped(loop: Loop, msg: string) {
+		const t = now();
+		const last = lastSkipNoticeAt.get(loop);
+		if (last !== undefined && t - last < 60_000) return;
+		lastSkipNoticeAt.set(loop, t);
+		notify(msg, "warning");
+	}
 
 	async function askModel(system: string, user: string): Promise<unknown> {
 		try {
@@ -407,13 +415,13 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 			}
 			if (await dependsOnRunning(loop, running)) {
 				loop.skipped++;
-				notify(`/loop ${loop.id}: disparo ignorado — depende de uma execução ainda em andamento.`, "warning");
+				notifySkipped(loop, `/loop ${loop.id}: disparo ignorado — depende de uma execução ainda em andamento.`);
 				return;
 			}
 			const inRepo = (await git(ctxRef!.cwd, "rev-parse", "--is-inside-work-tree")).stdout === "true";
 			if (!inRepo) {
 				loop.skipped++;
-				notify(`/loop ${loop.id}: disparo ignorado — há outra execução e esta pasta não é um repositório git para rodar em paralelo.`, "warning");
+				notifySkipped(loop, `/loop ${loop.id}: disparo ignorado — há outra execução e esta pasta não é um repositório git para rodar em paralelo.`);
 				return;
 			}
 			loop.runs++;
