@@ -35,7 +35,11 @@ assert.deepEqual(plan.map((x) => [x.status, x.remaining]), [["done", 0], ["doing
 assert.equal(m.planRemaining(plan), 60);
 assert.equal(m.parsePlan('{"steps":[{"label":"x","status":"done"}]}'), undefined, "etapa sem segundos invalida o plano");
 assert.equal(m.nextCheckDelay(400), 200, "reestima na metade do que falta");
-assert.equal(m.nextCheckDelay(10), 20, "mínimo de 20 s entre reestimativas");
+assert.equal(m.nextCheckDelay(10), 20, "cadência mínima de 20 s fora do vencimento do plano");
+assert.equal(m.progressPct(2209, 1108), 2209 / (2209 + 1108));
+assert.equal(Math.round(m.progressPct(2209, 1108) * 1000) / 10, 66.6, "36m49s / (36m49s + 18m28s) = 66.6%");
+assert.equal(m.progressPct(2209, null), 0, "progresso desconhecido enquanto estima");
+assert.equal(m.progressPct(0, 0), 0, "sem divisão por zero no início com estimativa zerada");
 assert.equal(m.project(100, 30), 70);
 assert.equal(m.project(100, 200), 3, "plano estourado: piso de 3 s até a próxima reestimativa");
 
@@ -74,9 +78,15 @@ try {
   };
   const calls = [];
   const replanReply = '{"steps":[{"label":"Ler código","status":"done","remainingSeconds":0},{"label":"Implementar barra","status":"doing","remainingSeconds":500}]}';
+  let overdueResolve;
+  const overdueResponse = new Promise((resolve) => { overdueResolve = resolve; });
   const complete = async (model, req) => {
     calls.push({ model, req });
-    if (req.systemPrompt === m.REPLAN_PROMPT) return { content: [{ type: "text", text: replanReply }] };
+    if (req.systemPrompt === m.REPLAN_PROMPT) {
+      if (calls.length === 4) return { content: [{ type: "text", text: '{"steps":[{"label":"Ler código","status":"done","remainingSeconds":0},{"label":"Implementar barra","status":"doing","remainingSeconds":5}]}' }] };
+      if (calls.length === 5) return overdueResponse;
+      return { content: [{ type: "text", text: replanReply }] };
+    }
     return { content: [{ type: "text", text: '{"label":"Criar barra de status","summary":"Criar extensão com barra de progresso no rodapé","kind":"feature","seconds":400,"steps":[{"label":"Ler código","seconds":100},{"label":"Implementar barra","seconds":300}]}' }] };
   };
   const flush = () => new Promise((r) => setTimeout(r, 10));
@@ -121,7 +131,27 @@ try {
   const pctBefore = v.pct;
   clock += 10_000; ctl.tick(); await flush();
   assert.equal(calls.length, 3, "metade do restante passou: reestima de novo");
-  assert.ok(ctl.currentView().pct >= pctBefore, "barra nunca recua");
+  assert.ok(ctl.currentView().pct < pctBefore, "a barra recua quando a reestimativa aumenta o restante");
+  await commands.status.handler("plan", ctx);
+  assert.match(notices.at(-1), /✓ Ler código\n▶ Implementar barra — ~8m 20s/);
+
+  // O plano seguinte passa a 5 s; seu vencimento dispara nova reestimação em menos de 20 s.
+  clock += 250_000; ctl.tick(); await flush();
+  assert.equal(calls.length, 4);
+  assert.equal(ctl.currentView().remaining, 5);
+  clock += 5_000; ctl.tick(); await flush();
+  assert.equal(calls.length, 5, "reestima no vencimento do plano, 5 s após a chamada anterior");
+  assert.equal(ctl.currentView().remaining, null, "mostra restante desconhecido durante a reestimação vencida");
+  assert.match(footer.render(100)[3], /~\? .* 0%/);
+  ctl.tick();
+  assert.equal(calls.length, 5, "não inicia replans concorrentes");
+  overdueResolve({ content: [{ type: "text", text: "resposta inválida" }] });
+  await flush();
+  clock += 19_000; ctl.tick(); await flush();
+  assert.equal(calls.length, 5, "reestimação com falha respeita o intervalo de retry");
+  clock += 1_000; ctl.tick(); await flush();
+  assert.equal(calls.length, 6, "retry ocorre após 20 s quando a reestimação falha");
+  assert.equal(ctl.currentView().remaining, 500, "retry recupera o plano válido");
   await commands.status.handler("plan", ctx);
   assert.match(notices.at(-1), /✓ Ler código\n▶ Implementar barra — ~8m 20s/);
 
@@ -132,14 +162,14 @@ try {
   subs = false; jobs = 0;
   clock += 1000; ctl.tick(); clock += 2500; ctl.tick();
   assert.equal(ctl.getTask(), null);
-  assert.match(footer.render(100)[3], /^⏱ 7m 41s \| ✓ .* 100%  2\/2  Criar barra de status/);
+  assert.match(footer.render(100)[3], /^⏱ 12m 16s \| ✓ .* 100%  2\/2  Criar barra de status/);
 
   const historyFile = path.join(dir, "work-history.jsonl");
   const saved = JSON.parse(readFileSync(historyFile, "utf8").trim());
-  assert.equal(saved.seconds, 461);
+  assert.equal(saved.seconds, 736);
   assert.equal(saved.estimate, 400);
   assert.equal(saved.steps, 2);
-  assert.equal(saved.replans, 2);
+  assert.equal(saved.replans, 5);
   assert.equal(saved.kind, "feature");
   assert.deepEqual(saved.subagents, { count: 1, types: ["scout"] });
   assert.deepEqual(saved.models, ["anthropic/opus"]);
@@ -159,7 +189,7 @@ try {
   m.registerWorkStatus(pi2, { agentDir: dir, complete, autoTick: false });
   await h2.session_start({}, { ...ctx, hasUI: false, mode: "print" });
   await h2.input({ text: "x", source: "interactive" }, ctx);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 7);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

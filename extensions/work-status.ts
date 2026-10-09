@@ -14,8 +14,8 @@
  * quando há ≥3 tarefas parecidas (1–2: mistura com o modelo; 0: só o modelo) e as
  * etapas são escaladas para esse total.
  *
- * Progresso: barra = decorrido / (decorrido + restante das etapas abertas) e nunca
- * recua. A cada vez que passa metade do tempo que faltava, o modelo recebe o
+ * Progresso: barra = decorrido / (decorrido + restante das etapas abertas), recalculado
+ * a cada renderização. A cada vez que passa metade do tempo que faltava, o modelo recebe o
  * checklist e a atividade recente do PI (ferramentas, respostas, subagentes),
  * marca etapas concluídas e reestima o restante de cada uma. Passou da primeira
  * estimativa: a linha mostra ⚠.
@@ -164,7 +164,14 @@ export function project(remainingAtPlan: number, secondsSincePlan: number): numb
 	return Math.max(3, remainingAtPlan - secondsSincePlan);
 }
 
-/** Próxima reestimativa: quando passar metade do que faltava (mínimo 20 s entre chamadas). */
+/** Progresso atual, recalculado a cada renderização e limitado enquanto a tarefa roda. */
+export function progressPct(elapsed: number, remaining: number | null): number {
+	if (remaining === null) return 0;
+	const total = elapsed + remaining;
+	return total > 0 ? Math.max(0, Math.min(0.99, elapsed / total)) : 0;
+}
+
+/** Próxima checagem é na metade do restante; o vencimento da estimativa é tratado por tick(). */
 export function nextCheckDelay(remaining: number): number {
 	return Math.max(20, remaining / 2);
 }
@@ -289,7 +296,7 @@ type Theme = { fg(color: string, text: string): string };
 export type View = {
 	elapsed: number;
 	remaining: number | null; // null = ainda estimando
-	pct: number; // 0..1, já monotônico
+	pct: number; // 0..0.99 enquanto roda; 1 quando concluída
 	label: string;
 	stepsDone?: number;
 	stepsTotal?: number;
@@ -341,8 +348,8 @@ type Task = {
 	planRemaining: number | null; // restante total no momento do plano
 	nextCheck: number | null;
 	replanning: boolean;
+	retryAfterFailure: boolean;
 	replans: number;
-	shownPct: number; // monotônico
 	activity: string[];
 	models: Set<string>;
 	subagentTypes: string[];
@@ -403,18 +410,16 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 
 	function remainingNow(t: Task): number | null {
 		if (t.planRemaining === null) return null;
-		return project(t.planRemaining, (now() - t.planAt) / 1000);
+		const sincePlan = (now() - t.planAt) / 1000;
+		if (t.replanning && sincePlan >= t.planRemaining) return null;
+		return project(t.planRemaining, sincePlan);
 	}
 
 	function viewOf(t: Task): View {
 		const elapsed = (now() - t.start) / 1000;
 		const remaining = remainingNow(t);
-		if (remaining !== null) {
-			// Avanço = decorrido / (decorrido + restante do checklist); nunca recua.
-			t.shownPct = Math.max(t.shownPct, Math.min(0.99, elapsed / (elapsed + remaining)));
-		}
 		return {
-			elapsed, remaining, pct: t.shownPct, label: t.label,
+			elapsed, remaining, pct: progressPct(elapsed, remaining), label: t.label,
 			stepsDone: t.steps.filter((s) => s.status === "done").length, stepsTotal: t.steps.length,
 			late: t.firstEstimate !== null && elapsed > t.firstEstimate,
 		};
@@ -500,6 +505,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		t.planRemaining = planRemaining(steps);
 		t.planAt = now();
 		t.nextCheck = now() + nextCheckDelay(t.planRemaining) * 1000;
+		t.retryAfterFailure = false;
 	}
 
 	async function doReplan(t: Task) {
@@ -513,7 +519,10 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 			if (task !== t) return;
 			t.replans++;
 			if (steps) applyPlan(t, steps);
-			else t.nextCheck = now() + 20_000; // falhou: mantém o plano e tenta de novo em 20 s
+			else {
+				t.nextCheck = now() + 20_000; // falhou: mantém o plano e tenta de novo em 20 s
+				t.retryAfterFailure = true;
+			}
 		} finally {
 			t.replanning = false;
 		}
@@ -527,7 +536,8 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 			if (running()) t.quietSince = null;
 			else if (t.quietSince === null) t.quietSince = now();
 			else if (now() - t.quietSince >= 2000) finish();
-			if (task === t && !t.replanning && t.nextCheck !== null && now() >= t.nextCheck) void doReplan(t);
+			const estimateExpired = t.planRemaining !== null && now() >= t.planAt + t.planRemaining * 1000;
+			if (task === t && !t.replanning && t.nextCheck !== null && (now() >= t.nextCheck || (estimateExpired && !t.retryAfterFailure))) void doReplan(t);
 		}
 		try { tui?.requestRender(); } catch { /* ui trocada */ }
 	}
@@ -536,7 +546,7 @@ export function registerWorkStatus(pi: ExtensionAPI, deps: WorkStatusDeps = {}) 
 		const mainModel = ctxRef?.model ? `${ctxRef.model.provider}/${ctxRef.model.id}` : "";
 		const t: Task = {
 			start: now(), prompt, label: "estimando…", firstEstimate: null, source: "none",
-			steps: [], planAt: now(), planRemaining: null, nextCheck: null, replanning: false, replans: 0, shownPct: 0, activity: [],
+			steps: [], planAt: now(), planRemaining: null, nextCheck: null, replanning: false, retryAfterFailure: false, replans: 0, activity: [],
 			models: new Set(mainModel ? [mainModel] : []), subagentTypes: [], tools: 0, prompts: 1, parallelSeen: 0, quietSince: null,
 		};
 		task = t;

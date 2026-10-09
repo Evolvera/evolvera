@@ -51,6 +51,10 @@ Use the smallest sufficient contract:
 
 Evidence depth and solution complexity are separate. Let scouts gather enough evidence for the real system, including exhaustive coverage when the mission requires it. Orchestrator must reconcile that evidence into a compact contract; planner/builders must not convert every discovered risk, module, or possibility into a task or mechanism. More context should reduce guessing, not enlarge approved implementation.
 
+## Orca worktree sessions
+
+When work is assigned to a git worktree that is (or is being made) visible in Orca, run the worker as a PI session in a terminal of that same worktree, not as a background Agent-tool subagent. Use one agent terminal per worktree per assigned role; multiple role terminals are allowed only when the workflow assigns multiple roles. Launch via `orca terminal create --worktree <selector> --title "<role>" --command "pi --model <provider/id> --thinking <level>"`, then wait for `tui-idle` and send a prompt pointing to a self-contained task file; for a newly created worktree, use its startup terminal instead. Keep the handoff and report in files and read the report plus `orca terminal read`. Background subagents remain appropriate for work not tied to a visible worktree, such as main-checkout scouts or research.
+
 ## Handoff Standard (all delegations)
 
 A subagent starts with zero context: it has not seen the conversation, the user's intent, or your prior findings. Whatever you omit, it will guess—and confident guesses are how subagents "fazem besteira". Every delegated prompt, for any agent type, must carry the orchestrator's reconciled contract at proportional detail and contain:
