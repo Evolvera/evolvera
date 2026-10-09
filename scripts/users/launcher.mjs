@@ -346,7 +346,7 @@ export async function launchUser(argv = process.argv.slice(2), options = {}) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  launchUser().then(() => { process.exitCode = 0; }).catch((error) => {
+  launchUser().catch((error) => {
     process.exitCode = 1;
     const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{1,80}$/.test(error.code) ? error.code : "USER_LAUNCH_FAILED";
     process.stderr.write(`${code}\n`);

@@ -232,6 +232,27 @@ test("launcher forwards native argv and delegates mode dispatch without a superv
   assert.equal(typeof observed.options.accountRuntimeFactory, "function");
 });
 
+test("executable preserves native exit status and reports only finite rejected errors", async () => {
+  const start = launcherSource.lastIndexOf("  launchUser().");
+  const end = launcherSource.lastIndexOf("\n}");
+  assert.ok(start >= 0 && end > start, "executable promise source boundaries found");
+  const invocation = launcherSource.slice(start, end).trim();
+  for (const status of [undefined, 0, 1, 2]) {
+    const errors = [];
+    const nativeProcess = { exitCode: status, stderr: { write: (text) => errors.push(text) } };
+    await vm.runInNewContext(invocation, { launchUser: async () => undefined, process: nativeProcess }, { timeout: 1000 });
+    assert.equal(nativeProcess.exitCode, status, `native status ${status} must not be overwritten`);
+    assert.deepEqual(errors, []);
+  }
+  for (const [code, expected] of [["ACCOUNT_SELECTION_REQUIRED", "ACCOUNT_SELECTION_REQUIRED"], ["private-path/or-secret", "USER_LAUNCH_FAILED"]]) {
+    const errors = [];
+    const nativeProcess = { exitCode: undefined, stderr: { write: (text) => errors.push(text) } };
+    await vm.runInNewContext(invocation, { launchUser: async () => { throw { code }; }, process: nativeProcess }, { timeout: 1000 });
+    assert.equal(nativeProcess.exitCode, 1);
+    assert.deepEqual(errors, [`${expected}\n`]);
+  }
+});
+
 test("managed usuario control validates use and returns fresh-process guidance only", async () => {
   const manager = new FakeSessionManager();
   let spawned = 0;
