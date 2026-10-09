@@ -85,9 +85,11 @@ function rejectLegacyMutation(raw, projected) {
 function serialize(records) { return `${JSON.stringify(records, null, 2)}\n`; }
 
 /** Bind the public CredentialStore protocol to the registry-issued profile's sole auth.json. */
-export function createUserCredentialStore(context, { lockTimeoutMs = 10_000, sdkRoot = CORE } = {}) {
+export function createUserCredentialStore(context, { lockTimeoutMs = 10_000, sdkRoot = CORE, accountEnv } = {}) {
   const profile = requireContext(context);
   if (!Number.isFinite(lockTimeoutMs) || lockTimeoutMs < 0) throw fail("CREDENTIAL_OPTION_INVALID");
+  if (accountEnv !== undefined && (!accountEnv || typeof accountEnv !== "object" || Array.isArray(accountEnv) || !Object.values(accountEnv).every((value) => typeof value === "string"))) throw fail("CREDENTIAL_OPTION_INVALID");
+  const sealedAccountEnv = accountEnv === undefined ? undefined : Object.freeze({ ...accountEnv });
   const authPath = path.join(profile.agentDir, "auth.json");
   const paths = checkedPaths(profile.agentDir, authPath);
   const directoryStat = fs.statSync(paths.actualDir);
@@ -246,7 +248,16 @@ export function createUserCredentialStore(context, { lockTimeoutMs = 10_000, sdk
       credential.key = credential.key.replace(/\$(\$|!|\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g, (_, token) => {
         if (token === "$" || token === "!") return token;
         const name = token.startsWith("{") ? token.slice(1, -1) : token;
-        const value = (Object.hasOwn(credential.env || {}, name) && credential.env[name]) || process.env[name];
+        let value;
+        if (Object.hasOwn(credential.env || {}, name)) {
+          value = credential.env[name];
+          if (value === "" && sealedAccountEnv !== undefined) value = "";
+          else if (value === "") value = process.env[name];
+        } else if (sealedAccountEnv !== undefined) {
+          value = Object.hasOwn(sealedAccountEnv, name) ? sealedAccountEnv[name] : undefined;
+        } else {
+          value = process.env[name];
+        }
         if (!value) missing = true;
         return value || "";
       });
