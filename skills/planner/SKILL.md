@@ -175,7 +175,7 @@ Apply engineering principles as decisions, not boilerplate:
 - DRY/Rule of Three: reuse existing helpers; no new abstraction before three proven repetitions or an architectural requirement.
 - KISS/YAGNI: smallest readable in-scope solution; no speculative dependency, API, flag, migration, extension point, cleanup, or future-proofing.
 - DYC: document only non-obvious decisions, invariants, failure/rollback behavior, or operations.
-- TDD where practical: targeted regression/characterization test before behavior changes, or the closest focused validation with its limitation.
+- Tests serve the outcome: the smallest check that proves each behavior change; no planned coverage, baselines, or suite-wide runs unless the user asked.
 
 ## 6. Routing and Validation
 

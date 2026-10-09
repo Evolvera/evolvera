@@ -167,7 +167,7 @@ CONSTRAINTS
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
-- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI/DYC/test-first defaults, so do not restate them]
+- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI/DYC defaults, so do not restate them]
 - Do not touch files outside TARGET FILES unless blocked and reported
 - Treat every `NOT TO DO` item as a hard boundary; if success requires violating one, stop `BLOCKED` and report the exact conflict rather than expanding scope
 

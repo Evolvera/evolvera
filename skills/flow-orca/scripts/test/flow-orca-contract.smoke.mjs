@@ -483,6 +483,16 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Re-anchor on the final outcome after every compaction, handoff, or added instruction/, "re-anchor after compaction and handoff");
   lacks(path, /Measurements deliver numbers/, "no task-specific measurement rule");
 }
+// Proportional testing: tests serve the outcome and never become the work.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /\*\*Tests serve the outcome:\*\*/, "tests are a means");
+  has(path, /Once that check passes, stop testing and deliver/, "stop testing once the change is proven");
+  has(path, /An unrelated pre-existing failure is reported, not fixed or chased/, "unrelated failures are not chased");
+  lacks(path, /\*\*TDD where practical:\*\*/, "no test-first mandate");
+}
+has(SKILL, /Testes são meio: provado o comportamento, pare de testar e entregue/, "flow-orca stops testing once proven");
+lacks(SKILL, /Regressão cumulativa é obrigatória/, "no cumulative-regression mandate");
+lacks(SKILL, /suíte padrão relevante do repositório/, "no default full-suite checkbox");
 // Commit discipline in the standard prompt.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /\*\*Commit constantly, in a standard format:\*\*/, "standard mode commits constantly");
@@ -583,8 +593,7 @@ for (const [pattern, message] of [
   [/sub_issues/, "native epics and sub-issues"],
   [/priority:p0/, "priority labels"],
   [/effort:xl/, "effort labels"],
-  [/baseline de caracterização/, "characterization baseline"],
-  [/Regressão cumulativa é obrigatória/, "cumulative regression"],
+  [/Não quebrar o que já funciona, sem espiral de testes/, "proportional regression"],
   [/## Phase 6 — Re-entry/, "autonomous re-entry"],
   [/review independente/, "independent issue/PR validation"],
   [/Tabela de reconciliação em memória/, "reconciliation table derived at read time"],
