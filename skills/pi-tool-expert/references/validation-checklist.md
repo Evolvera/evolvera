@@ -55,7 +55,7 @@
 ## MCP Validation
 
 ### Configuration
-- [ ] JSON válido em `~/.pi/agent/mcp.json`
+- [ ] JSON válido em `~/.pi/agent/mcp-adapter.json` para `pi-mcp-adapter` (distinto do `mcp.json` nativo do PI)
 - [ ] Cada server tem nome único
 - [ ] `command` existe e é executável
 - [ ] `args` são corretos

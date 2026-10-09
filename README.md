@@ -128,7 +128,7 @@ Os instaladores:
 4. copiam a configuração versionada para `~/.pi/agent`;
 5. copiam agentes, skills, extensões normais e temas; `extensions/plastic-memory/` não é instalado enquanto seu caminho de compactação estiver desativado;
 6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); o template de configuração não ativa `plastic-memory` nem `pi-observational-memory`;
-7. criam `mcp.json` somente quando ele ainda não existe;
+7. criam `mcp-adapter.json` somente quando ele ainda não existe; se só houver um `mcp.json` legado, bloqueiam apenas essa configuração e pedem reconciliação explícita;
 8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados. O template define `compaction.reserveTokens: 65536` para iniciar a compactação com mais margem antes do limite de saída.
 
 ### Patch de continuidade do PI 0.83.0
@@ -199,9 +199,9 @@ Nesse caso, preserve os dados da campanha em `.pi/flow`; eles não são o skill 
 - autenticação local;
 - sessões e histórico;
 - arquivos sem colisão de nome no runtime;
-- `~/.pi/agent/mcp.json` quando ele já existe.
+- a configuração nativa PI `~/.pi/agent/mcp.json` e a configuração do adapter `~/.pi/agent/mcp-adapter.json` quando já existem.
 
-Isso significa que mudar `config/mcp.json` não substitui automaticamente o MCP de quem já instalou. A atualização desse arquivo deve ser feita conscientemente no runtime.
+O `pi-mcp-adapter` usa `mcp-adapter.json`; o PI nativo continua usando `mcp.json`. O instalador preserva ambos. Se encontrar somente o arquivo nativo legado e ainda não houver configuração do adapter, não copia defaults nem move ou altera qualquer arquivo: o setup MCP do adapter fica bloqueado até uma reconciliação/transferência explícita por fluxo suportado.
 
 ### Diferenças de plataforma
 
@@ -283,7 +283,7 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `config/settings.json` | Provider/modelo padrão, thinking, tema e packages; não ativa `plastic-memory` nem o package OM. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
-| `config/mcp.json` | Configuração inicial de MCP; inclui o Playwright MCP isolado para controle completo de Chrome, com versão fixa. |
+| `config/mcp-adapter.json` | Configuração inicial do `pi-mcp-adapter`; inclui o Playwright MCP isolado para controle completo de Chrome, com versão fixa. É distinta da configuração nativa PI `mcp.json`. |
 | `.pi/` dentro de um projeto | Planos, memória, previews, recovery e outros artefatos locais daquele projeto. |
 
 Não existe `config/AGENTS.md` neste harness. O roteamento ativo está distribuído entre `SYSTEM.md`, skills e definições de agentes.
@@ -460,7 +460,7 @@ Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas f
 
 ## Desinstalar
 
-Não existe desinstalador automático. Feche o PI e compare os arquivos instalados com este checkout antes de remover somente os recursos do harness confirmados. Preserve sessões, histórico, dados de projeto, credenciais, `mcp.json` e `keybindings.json`; o instalador não mantém um manifesto completo de propriedade. A instalação global do PI e a chave Jev, se presentes, ficam fora da árvore do harness e precisam de avaliação própria antes de qualquer remoção.
+Não existe desinstalador automático. Feche o PI e compare os arquivos instalados com este checkout antes de remover somente os recursos do harness confirmados. Preserve sessões, histórico, dados de projeto, credenciais, o `mcp.json` nativo do PI, `mcp-adapter.json` e `keybindings.json`; o instalador não mantém um manifesto completo de propriedade. A instalação global do PI e a chave Jev, se presentes, ficam fora da árvore do harness e precisam de avaliação própria antes de qualquer remoção.
 
 ## Atualizar
 
@@ -550,7 +550,7 @@ Antes de uma atualização sensível, é possível copiar `~/.pi/agent`. Esse ba
 │   ├── settings.json
 │   ├── models.json
 │   ├── keybindings.json
-│   └── mcp.json
+│   └── mcp-adapter.json
 ├── subagents.json
 ├── agents/
 ├── skills/

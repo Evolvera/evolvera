@@ -201,23 +201,24 @@ if (-not $sameRoot) {
     Remove-Item (Join-Path $PI_DIR "extensions\plastic-memory") -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# -- MCP Servers ------------------------------------------
-Step "MCP Servers"
+# -- MCP adapter config -----------------------------------
+Step "MCP adapter config"
 
-$mcpPath = Join-Path $PI_DIR "mcp.json"
-$mcpSrc = Join-Path $SCRIPT_DIR "config\mcp.json"
+$adapterPath = Join-Path $PI_DIR "mcp-adapter.json"
+$adapterSrc = Join-Path $SCRIPT_DIR "config\mcp-adapter.json"
+$legacyMcpPath = Join-Path $PI_DIR "mcp.json"
 
 if ($sameRoot) {
     Info "origem e destino iguais - recursos preservados"
-} elseif (-not (Test-Path $mcpPath)) {
-    if (Test-Path $mcpSrc) {
-        Copy-Item $mcpSrc $mcpPath -Force
-        Info "mcp.json copiado de config/"
-    } else {
-        Info "config/mcp.json nao encontrado - pulando"
-    }
+} elseif (Test-Path -LiteralPath $adapterPath -PathType Leaf) {
+    Info "mcp-adapter.json ja existe - preservado"
+} elseif (Test-Path -LiteralPath $legacyMcpPath -PathType Leaf) {
+    Write-Warning "MCP config setup bloqueado: $legacyMcpPath legado existe; reconcilie/transfira-o por um fluxo suportado antes de configurar mcp-adapter.json."
+} elseif (Test-Path -LiteralPath $adapterSrc -PathType Leaf) {
+    Copy-Item -LiteralPath $adapterSrc -Destination $adapterPath
+    Info "mcp-adapter.json copiado de config/"
 } else {
-    Info "mcp.json ja existe - preservado"
+    Info "config/mcp-adapter.json nao encontrado - pulando"
 }
 
 # -- Packages ---------------------------------------------
