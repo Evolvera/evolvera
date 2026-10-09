@@ -37,6 +37,8 @@ const tmpdirProprioPadrao = new Set([
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
   // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
   "todo-reconciliation.smoke.mjs",
+  // Repo git descartável + worktrees no mkdtemp próprio, removido no finally; agente/modelo são fakes.
+  "loop.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);
