@@ -306,6 +306,8 @@ has(REFERENCE, /never invent a second reservation branch, lock file, claim servi
 has(REFERENCE, /Legacy reservations remain occupied/, "legacy reservations must remain occupied and reconciled");
 has(SKILL, /teto de \*\*doze\*\* workers PI de issue|no máximo \*\*12 workers PI de issue\*\*|\*\*Teto global: doze workers PI de issue simultâneos\*\*/, "the ceiling of six issue PI workers must be stated");
 has(REFERENCE, /\*\*at most twelve active issue PI workers in total\*\*/, "reference must state the global twelve-worker ceiling");
+has(SKILL, /limite de PIs simultâneos \(`≤ 12`\)/, "campaign intake must use the twelve-worker ceiling");
+lacks(SKILL, /limite de PIs simultâneos \(`≤ 6`\)/, "campaign intake must not keep the retired six-worker limit");
 has(REFERENCE, /twelve is a limit, not a target/, "the ceiling must not be treated as demand");
 has(SKILL, /work-conserving/, "the scheduler must be work-conserving");
 has(SKILL, /Não existe wave imutável/, "no immutable wave barrier");
