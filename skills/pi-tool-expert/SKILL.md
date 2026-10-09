@@ -28,7 +28,8 @@ Antes de criar ou alterar algo que dependa do ambiente, verifique o mínimo nece
 ls ~/.pi/agent/extensions/
 ls ~/.pi/agent/skills/
 cat ~/.pi/agent/settings.json
-cat ~/.pi/agent/mcp.json 2>/dev/null
+cat ~/.pi/agent/mcp.json 2>/dev/null          # MCP nativo do PI
+cat ~/.pi/agent/mcp-adapter.json 2>/dev/null # pi-mcp-adapter
 
 # 2. Documentação do PI
 ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/
@@ -69,7 +70,7 @@ Defina outcome, success criteria e validação antes de implementar.
 
 **Para MCP:**
 1. Verifica se `pi-mcp-adapter` está instalado
-2. Edita `~/.pi/agent/mcp.json` (nunca settings.json diretamente para MCP)
+2. Para servidores do `pi-mcp-adapter`, edita `~/.pi/agent/mcp-adapter.json` (não `settings.json`). Não confunde com `mcp.json` nativo do PI; são configurações distintas.
 3. Valida JSON antes de salvar
 4. Testa com `/mcp-status`
 
@@ -93,7 +94,7 @@ Valide com ferramenta quando possível: `pi_validate_skill`, `pi_validate_extens
 - [ ] Referências usam caminhos relativos ao skill
 
 **Checklist obrigatório para MCP:**
-- [ ] JSON válido no mcp.json
+- [ ] JSON válido no `mcp-adapter.json` para `pi-mcp-adapter`; use `mcp.json` somente para o MCP nativo do PI
 - [ ] Caminho do executável existe
 - [ ] Permissões de execução corretas
 - [ ] `lifecycle` adequado (lazy/eager/keep-alive)
@@ -160,7 +161,7 @@ export default function (pi: ExtensionAPI) {
 | Skills globais | `~/.pi/agent/skills/` |
 | Skills locais | `.pi/skills/` |
 | Configuração | `~/.pi/agent/settings.json` |
-| MCP Servers | `~/.pi/agent/mcp.json` |
+| Configuração de servidores do `pi-mcp-adapter` | `~/.pi/agent/mcp-adapter.json` (separada do `mcp.json` nativo do PI) |
 | Documentação PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/` |
 | Exemplos PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/` |
 
@@ -201,7 +202,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 |------|-------|-----------|
 | Skill sem frontmatter | Esquecer YAML no início | SEMPRE verificar `---\nname:...\ndescription:...\n---` |
 | Name mismatch | Nome do skill ≠ nome do diretório | Validar antes de salvar |
-| MCP no settings.json | Confundir com config PI | MCP vai em `mcp.json`, não `settings.json` |
+| MCP no settings.json | Confundir configuração do adapter com a nativa | Adapter usa `mcp-adapter.json`; MCP nativo do PI usa `mcp.json`; nenhum vai em `settings.json` |
 | Path errado | Usar caminho relativo incorreto | SEMPRE usar `ctx.cwd` ou caminho absoluto |
 | Schema inválido | Parâmetro sem description | Todos os campos Type.* devem ter description |
 | Tool name collision | Nome igual a built-in | Verificar `pi.getAllTools()` antes |

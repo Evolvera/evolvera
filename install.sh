@@ -159,19 +159,20 @@ rm -f "$PI_DIR/extensions/project-memory.ts"
 rm -rf "$PI_DIR/extensions/plastic-memory"
 fi
 
-# ── MCP (só cria se não existe) ──────────────
-step "MCP Servers"
+# ── MCP adapter (só cria se não existe) ───────
+step "MCP adapter config"
 
 if [ "$same_root" = false ]; then
-    if [ ! -f "$PI_DIR/mcp.json" ]; then
-        if [ -f "$SCRIPT_DIR/config/mcp.json" ]; then
-            cp "$SCRIPT_DIR/config/mcp.json" "$PI_DIR/mcp.json"
-            info "mcp.json copiado de config/"
-        else
-            info "config/mcp.json nao encontrado - pulando"
-        fi
+    adapter_path="$PI_DIR/mcp-adapter.json"
+    if [ -f "$adapter_path" ]; then
+        info "mcp-adapter.json ja existe - preservado"
+    elif [ -f "$PI_DIR/mcp.json" ]; then
+        echo "[!] MCP config setup bloqueado: $PI_DIR/mcp.json legado existe; reconcilie/transfira-o por um fluxo suportado antes de configurar mcp-adapter.json." >&2
+    elif [ -f "$SCRIPT_DIR/config/mcp-adapter.json" ]; then
+        cp "$SCRIPT_DIR/config/mcp-adapter.json" "$adapter_path"
+        info "mcp-adapter.json copiado de config/"
     else
-        info "mcp.json ja existe - preservado"
+        info "config/mcp-adapter.json nao encontrado - pulando"
     fi
 else
     info "origem e destino iguais - recursos preservados"
