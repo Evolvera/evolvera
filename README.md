@@ -283,7 +283,7 @@ O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
 | `config/settings.json` | Provider/modelo padrão, thinking, tema e packages; não ativa `plastic-memory` nem o package OM. |
 | `config/models.json` | Catálogo e overrides de modelos disponíveis. |
 | `subagents.json` | Limite de concorrência dos subagentes. |
-| `config/mcp.json` | Configuração inicial de MCP; atualmente não declara nenhum servidor (`mcpServers` vazio). |
+| `config/mcp.json` | Configuração inicial de MCP; inclui o Playwright MCP isolado para controle completo de Chrome, com versão fixa. |
 | `.pi/` dentro de um projeto | Planos, memória, previews, recovery e outros artefatos locais daquele projeto. |
 
 Não existe `config/AGENTS.md` neste harness. O roteamento ativo está distribuído entre `SYSTEM.md`, skills e definições de agentes.
