@@ -170,7 +170,7 @@ lacks(REFERENCE, /ORCA orchestration worktree|ORCA orchestration terminal/, "wor
 
 // ── 2. Active routes and mirrors ────────────────────────────────────────────
 equal(text.get(SYSTEM), text.get(SYSTEM_MIRROR), "SYSTEM.md and config/SYSTEM.md must remain byte-identical");
-has(SYSTEM, /Issue\/board delivery use `flow-orca`|delivery use `flow-orca`/, "SYSTEM must route issue/board delivery to flow-orca");
+has(SYSTEM, /Issue\/board delivery goes to `flow-orca`/, "SYSTEM must route issue/board delivery to flow-orca");
 has(SYSTEM, /branch-per-issue delivery, coordinated PI issue workers in Orca worktrees:\*\* load `flow-orca` automatically/, "SYSTEM skill routing table must automatically route campaign coordination to flow-orca");
 has(SYSTEM, /campaign grant/i, "SYSTEM must define the campaign-grant interpretation");
 has(SYSTEM, /YOLO/, "SYSTEM must state that the widest campaign mode is not a safety bypass");

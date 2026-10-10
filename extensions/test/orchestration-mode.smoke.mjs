@@ -21,7 +21,7 @@ const conductor = m.buildConductorPrompt(systemMd);
 assert.ok(conductor, "conductor prompt builds from the real SYSTEM.md");
 assert.ok(conductor.startsWith("# PI Coding Agent — Conductor mode"));
 for (const heading of m.KEPT_SECTIONS) assert.ok(conductor.includes(m.extractSection(systemMd, heading)), `${heading} kept verbatim`);
-for (const prefix of m.KEPT_BULLETS) assert.ok(conductor.includes(m.extractBullet(systemMd, prefix)), `${prefix} kept verbatim`);
+for (const prefix of ["- **GitHub issues, Project/Kanban", "- **Orca worktree with an agent, outside `flow-orca`:**", "- **Settling child PIs you launched", "- **Tests serve the outcome:**"]) { const bullet = systemMd.split("\n").find((line) => line.startsWith(prefix)); assert.ok(bullet && conductor.includes(bullet), `${prefix} kept verbatim`); }
 assert.match(conductor, /\*\*Consequential Action Gate:\*\*/);
 for (const dropped of ["## Engineering and Architecture", "## Workflow Selection", "## Retrieval and Evidence"]) assert.ok(!conductor.includes(dropped), `${dropped} dropped`);
 assert.match(conductor, /Never `sleep`, poll, or tail a worker's terminal/);
