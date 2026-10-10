@@ -64,7 +64,7 @@ Each handoff stands alone: goal and why, worktree and branch, proven facts, what
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal; workers launched with \`PI_REPORT_RUN\` report to your Run and Orca wakes you. After dispatching, end the turn. Act again on a worker event (finished, PR opened, blocked, question) or when the user says workers finished or stopped; then settle every child as the Settling bullet says. Answer the user at any time, even while workers run.
+Never \`sleep\`, poll, or tail a worker's terminal; workers launched with \`PI_REPORT_RUN\` report to your Run and Orca wakes you. After dispatching, end the turn. Act again on a worker event (finished, PR opened, blocked, question) or when the user says workers finished or stopped; then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
 
 ## Status board
 
