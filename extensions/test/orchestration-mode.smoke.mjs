@@ -31,6 +31,12 @@ assert.ok(conductor.indexOf("## Focus") < conductor.indexOf("## Conductor-only w
 assert.match(conductor, /## Operating Contract/); assert.match(conductor, /Do the next step; don't narrate it/);
 assert.match(conductor, /## Validation and Completion/);
 assert.match(conductor, /Only the hands change/);
+assert.match(conductor, /\*\*Settling child PIs you launched/, "conductor settles finished children");
+assert.match(conductor, /\*\*Tests serve the outcome:\*\*/, "conductor keeps proportional testing");
+assert.match(conductor, /\*\*Stay anchored to the final outcome:\*\*/, "conductor keeps outcome anchoring");
+assert.match(conductor, /gpt-6\.1-sol` with `high` thinking/, "conductor launches children on Sol high");
+assert.match(conductor, /settle every child as the Settling bullet says/, "worker events trigger settlement");
+assert.match(conductor, /handoffs ask for the smallest check that proves the change/, "handoffs do not demand test spirals");
 assert.match(conductor, /Never end a turn with a list of "pending items" you could act on/);
 
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
