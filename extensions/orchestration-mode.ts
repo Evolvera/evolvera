@@ -55,9 +55,7 @@ Every action must move the user's current request toward delivery; ownership mea
 
 ## Always delegated to a sub-PI
 
-Implementation, code investigation and debugging, tests and benchmarks, bug hunting, post-merge fixes, and reports on that work. Concretely, never in this context: builds, emulators, simulators or devices, SDK/toolchain setup, seeding or running databases, test suites, benchmarks, or launching \`builder\`, \`qa\`, \`app-validator\`, or \`bug-hunt\` (the session blocks these). Your own subagents are limited to \`scout\`/\`Explore\` for a quick lookup and \`validator\` for a final-head PR or safety review. When something breaks after a merge, send it back to the sub-PI that owns that area (or open a new issue and worker) instead of fixing it here. If you notice yourself editing product files, running a suite, or profiling, stop and hand it off.
-
-Your todo items, compaction summaries, and an issue's next steps describe the campaign, not your hands: when one names engineering work (\`build A\`, \`validate on device\`, \`fix the test\`), its next action is dispatching or messaging the sub-PI that owns it. When the user tells you to drop something, drop it at once—no further tool call on it—and return to the open campaign.
+Implementation, code investigation and debugging, tests and benchmarks, bug hunting, post-merge fixes, and reports on that work. When something breaks after a merge, send it back to the sub-PI that owns that area (or open a new issue and worker) instead of fixing it here. If you notice yourself editing product files, running a suite, or profiling, stop and hand it off.
 
 ## Handoff
 
@@ -98,19 +96,6 @@ export function applyConductor(systemPrompt: string, customPrompt: string): stri
   const at = systemPrompt.indexOf(customPrompt);
   if (!conductor || at < 0) return undefined;
   return systemPrompt.slice(0, at) + conductor + systemPrompt.slice(at + customPrompt.length);
-}
-
-/** Agents whose work is engineering; the conductor dispatches it to a sub-PI instead. */
-export const DELEGATED_AGENTS = ["builder", "builder-light", "builder-heavy", "builder-design", "builder-heavy-design", "qa", "app-validator", "bug-hunt"];
-/** Device/toolchain/build commands that never belong in the conductor's context. */
-const DELEGATED_COMMANDS = /(^|[;&|(\n]|\/)\s*(gradlew?|adb|emulator|avdmanager|sdkmanager|aapt2?|xcodebuild|simctl|initdb|pg_ctl)(\s|$)|\b(expo|eas)\s+(run|prebuild|build)\b/;
-
-/** Why a conductor tool call is engineering work for a sub-PI, or undefined when it is allowed. */
-export function conductorBlockReason(toolName: string, input: Record<string, unknown>): string | undefined {
-  const delegate = " is engineering work: in conductor mode dispatch it to the sub-PI that owns the issue (or open an issue and worker), then continue the campaign.";
-  if (toolName === "Agent" && DELEGATED_AGENTS.includes(String(input.subagent_type ?? ""))) return `Blocked: subagent \`${input.subagent_type}\`${delegate}`;
-  if (toolName === "bash" && DELEGATED_COMMANDS.test(String(input.command ?? ""))) return `Blocked: build/device/toolchain command${delegate}`;
-  return undefined;
 }
 
 export function readSessionMode(branch: Iterable<unknown>): OrchestrationMode {
@@ -166,12 +151,6 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
   });
 
   pi.on("session_start", async (_event, ctx) => { warned = false; showStatus(ctx as Ctx, currentMode(ctx as Ctx)); });
-
-  pi.on("tool_call", async (event, rawCtx) => {
-    if (currentMode(rawCtx as Ctx) !== "conductor") return;
-    const reason = conductorBlockReason(event.toolName, event.input as Record<string, unknown>);
-    return reason ? { block: true, reason } : undefined;
-  });
 
   pi.on("before_agent_start", async (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
