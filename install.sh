@@ -146,13 +146,8 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-# Maestro is a single file again; drop its old directory form (vendored tokenizer).
-rm -rf "$PI_DIR/extensions/maestro"
-# Maestro's Jev key: installed once, never overwritten, owner-only.
-jev_key="$HOME/.config/jev/api_key"
-if [ -f "$SCRIPT_DIR/config/jev/api_key" ] && [ ! -e "$jev_key" ]; then
-    mkdir -p "$(dirname "$jev_key")" && (umask 077; cp "$SCRIPT_DIR/config/jev/api_key" "$jev_key") && chmod 600 "$jev_key" && info "maestro: chave Jev instalada"
-fi
+# Maestro (automatic model selection) was retired; drop any installed copy.
+rm -rf "$PI_DIR/extensions/maestro" "$PI_DIR/extensions/maestro.ts"
 # Plastic Memory is intentionally not installed while its compaction path is disabled.
 # Its project-memory bridge imports that tree, so neither may remain installed alone.
 rm -f "$PI_DIR/extensions/project-memory.ts"

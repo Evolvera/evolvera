@@ -359,7 +359,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (event, ctx) => {
-    // `/new` replaces the maestro session; keep its explicit Fast mode for the new root.
+    // `/new` replaces the root session; keep its explicit Fast mode for the new root.
     if (event.reason !== "new") resetFastStateForOwner(ctx.sessionManager.getSessionId());
     eligibleModelSelected = false;
     currentModel = undefined;
