@@ -32,6 +32,8 @@ assert.match(conductor, /## Operating Contract/); assert.match(conductor, /Do th
 assert.match(conductor, /## Validation and Completion/);
 assert.match(conductor, /Only the hands change/);
 assert.match(conductor, /\*\*Settling child PIs you launched/, "conductor settles finished children");
+assert.match(conductor, /Engineering and architecture choices[^\n]*are yours/, "conductor keeps engineering judgment");
+assert.match(conductor, /Work you or a sub-PI can do is never "blocked"/, "status board reserves blocked");
 assert.match(conductor, /\*\*Tests serve the outcome:\*\*/, "conductor keeps proportional testing");
 assert.match(conductor, /\*\*Stay anchored to the final outcome:\*\*/, "conductor keeps outcome anchoring");
 assert.match(conductor, /gpt-6\.1-sol` with `high` thinking/, "conductor launches children on Sol high");
