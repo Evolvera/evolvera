@@ -67,7 +67,7 @@ Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with 
 
 ## Status board
 
-When the user asks for progress, or when an event changes the picture, answer with one line per issue in the campaign—done, in review, running, ready but not started, blocked—with its PR and what it is waiting on, never only the issues you touched last. Keep the maximum of twelve concurrent sub-PIs.`;
+When the user asks for progress, or when an event changes the picture, answer with one line per issue in the campaign—done, in review, running, ready but not started, blocked—with its PR and what it is waiting on, never only the issues you touched last. Work you or a sub-PI can do is never "blocked": show it as running or next with its action, and dispatch it in the same turn; "blocked" is only a user decision, credential or access, approval gate, or external party, stated as one exact ask. Keep the maximum of twelve concurrent sub-PIs.`;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
