@@ -31,6 +31,7 @@ assert.ok(conductor.indexOf("## Focus") < conductor.indexOf("## Conductor-only w
 assert.match(conductor, /## Operating Contract/); assert.match(conductor, /Do the next step; don't narrate it/);
 assert.match(conductor, /## Validation and Completion/);
 assert.match(conductor, /Only the hands change/);
+assert.match(conductor, /## Stay free for the whole campaign/); assert.match(conductor, /Never let a single item absorb you/); assert.match(conductor, /sweep all children/);
 assert.match(conductor, /\*\*Settling child PIs you launched/, "conductor settles finished children");
 assert.match(conductor, /Engineering and architecture choices[^\n]*are yours/, "conductor keeps engineering judgment");
 assert.match(conductor, /Work you or a sub-PI can do is never "blocked"/, "status board reserves blocked");
