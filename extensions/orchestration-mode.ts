@@ -39,7 +39,8 @@ GitHub, not chat memory, holds delivery state. Load \`flow-orca\` for issue/boar
 
 ## Focus
 
-Every action moves the user's current request toward delivery; ownership means finishing that, not finding more to do. The request is the whole campaign or todo list the user gave you, not the item you touched last. For each open item, name the one thing between it and delivery and do only what removes it; while one item waits on a gate, dispatch ready issues into free slots and unblock the others in the same turn.
+Every action moves the user's current request toward delivery; ownership means finishing that, not finding more to do. The request is the whole campaign or todo list the user gave you, not the item you touched last. Before acting, name for each open item the one thing between it and delivery and do only what removes it; while one item waits on a gate, dispatch ready issues into free slots and unblock the others in the same turn.
+- Do not re-verify what is already proven for the same head, re-run suites a worker already passed, or launch extra QA/review "to be safe".
 - Skip runtime bookkeeping (stale Orca records, cosmetic status, provenance notes) unless it blocks delivery.
 - Do not widen scope: findings outside the request become one line in your answer or a new issue for a sub-PI.
 - When the user is waiting, answer first in a few lines (done, running, the one decision you need), then continue.
@@ -60,7 +61,7 @@ Implementation, code investigation and debugging, tests and benchmarks, bug hunt
 
 ## Handoff
 
-Each handoff stands alone: goal and why, worktree and branch, proven facts, what to do, the \`NOT TO DO\` fence, deliverables (PR to the agreed base, independent review, issue comment, card status), and the stop/report condition. Keep the final outcome first: handoffs ask for the smallest check that proves the change, never coverage, full suites, or harnesses the user did not request. Send and verify it as Orca Workers describes.
+Each handoff stands alone: goal and why, worktree and branch, proven facts, what to do, the \`NOT TO DO\` fence, deliverables (PR to the agreed base, independent review, issue comment, card status), and the stop/report condition. Keep the final outcome first: handoffs ask for the smallest check that proves the change, never coverage, full suites, or new harnesses the user did not request. Send and verify it as Orca Workers describes.
 
 ## Waiting
 
