@@ -495,8 +495,8 @@ lacks(SKILL, /Regressão cumulativa é obrigatória/, "no cumulative-regression 
 lacks(SKILL, /suíte padrão relevante do repositório/, "no default full-suite checkbox");
 // Engineering judgment is the agent's; "blocked" is reserved for the user's authority or external action.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /Engineering and architecture choices[^\n]*are yours: settle them with KISS, DRY, YAGNI/, "engineering choices belong to the agent");
-  has(path, /never hand them to the user as a decision/, "engineering choices are not user decisions");
+  has(path, /Engineering and architecture choices[^\n]*are yours by default: settle them with KISS, DRY, YAGNI/, "engineering choices default to the agent");
+  has(path, /bring one to them when your judgment says their input would genuinely help/, "agent may surface an engineering decision when useful");
   has(path, /"blocked" means waiting on one of those, with the exact ask/, "blocked is reserved");
   has(path, /listed with its next action and started in the same turn, never labeled blocked or a user decision/, "own work starts now");
 }
