@@ -41,7 +41,7 @@ const tmpdirProprioPadrao = new Set([
   "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
-  "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
+  "anthropic-model-policy.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",

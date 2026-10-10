@@ -341,7 +341,7 @@ try {
   assert.equal(afterOwnerModelChange.service_tier, "priority");
   await fastCommand.handler("off", ctx);
 
-  // `/new` keeps the explicit Fast mode and transfers ownership to the new maestro.
+  // `/new` keeps the explicit Fast mode and transfers ownership to the new root session.
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   await fastCommand.handler("on", ctx);
