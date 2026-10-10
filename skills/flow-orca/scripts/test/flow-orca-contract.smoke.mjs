@@ -170,7 +170,7 @@ lacks(REFERENCE, /ORCA orchestration worktree|ORCA orchestration terminal/, "wor
 
 // ── 2. Active routes and mirrors ────────────────────────────────────────────
 equal(text.get(SYSTEM), text.get(SYSTEM_MIRROR), "SYSTEM.md and config/SYSTEM.md must remain byte-identical");
-has(SYSTEM, /Issue\/board delivery goes to `flow-orca`/, "SYSTEM must route issue/board delivery to flow-orca");
+has(SYSTEM, /\*\*GitHub issues, Project\/Kanban[^\n]*load `flow-orca` automatically/, "SYSTEM must route issue/board delivery to flow-orca");
 has(SYSTEM, /branch-per-issue delivery, coordinated PI issue workers in Orca worktrees:\*\* load `flow-orca` automatically/, "SYSTEM skill routing table must automatically route campaign coordination to flow-orca");
 has(SYSTEM, /campaign grant/i, "SYSTEM must define the campaign-grant interpretation");
 has(SYSTEM, /YOLO/, "SYSTEM must state that the widest campaign mode is not a safety bypass");
@@ -497,7 +497,7 @@ lacks(SKILL, /suíte padrão relevante do repositório/, "no default full-suite 
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Engineering and architecture choices[^\n]*are yours by default: settle them with KISS, DRY, YAGNI/, "engineering choices default to the agent");
   has(path, /bring one to them when your judgment says their input would genuinely help/, "agent may surface an engineering decision when useful");
-  has(path, /"blocked" means waiting on one of those, with the exact ask/, "blocked is reserved");
+  has(path, /"Blocked" means waiting on the user \([^)]*\) or an external party, with the exact ask/, "blocked is reserved");
   has(path, /listed with its next action and started in the same turn, never labeled blocked or a user decision/, "own work starts now");
 }
 // Commit discipline in the standard prompt.
@@ -517,9 +517,9 @@ has(SKILL, /O WIP de um worker ativo é dele até `worker_done`, pergunta ou esc
 // Child settlement: a report or user notice triggers triage of every child; merge asks once unless already authorized.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Act on that work again only when the user asks or the worker reports, through that Run, that it finished, is blocked, or stopped; then settle it as the next bullet says/, "direct handoff must point to child settlement");
-  has(path, /\*\*Settling child PIs you launched \(direct handoff or `flow-orca`\):\*\* a worker report through its Run, or the user saying children finished, stopped, or are idle, is the order to settle every child of this coordinator now—never a question about what to do/, "report or user notice triggers settlement of every child");
+  has(path, /\*\*Settling child PIs you launched \(direct handoff or `flow-orca`\):\*\* a worker report through its Run, or the user saying children finished, stopped, or are idle, orders you to settle every child of this coordinator now; it is never a question/, "report or user notice triggers settlement of every child");
   has(path, /`COMPLETE`[^\n]*`INCOMPLETE`[^\n]*`BLOCKED`/, "children are classified complete, incomplete, or blocked");
-  has(path, /merge without asking only when the user already authorized these merges in this conversation or the approved campaign grant covers merge—a saved execution mode, YOLO included, is not that authorization/, "merge needs an existing explicit authorization");
+  has(path, /merge without asking only if the user already authorized these merges in this conversation or the approved campaign grant covers merge \(a saved execution mode, YOLO included, does not\)/, "merge needs an existing explicit authorization");
   has(path, /otherwise ask one consolidated yes\/no for every ready PR/, "merge approval is one batched question");
   has(path, /reconcile it now without asking, sending the exact remaining work back to that same worker terminal/, "incomplete children are reconciled through the same worker");
   has(path, /tell the user the exact blocker and what unblocks it/, "blocked children are reported to the user");
