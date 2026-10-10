@@ -66,12 +66,24 @@ assert.equal(await start(systemMd, assembled), undefined, "standard by default")
 await commands.get("orchestration").handler("conductor", ctx);
 assert.equal(statuses.at(-1).text, "🎼 CONDUCTOR");
 assert.deepEqual(await start(systemMd, assembled), { systemPrompt: conductor + tail });
+// Conductor hands engineering to sub-PIs: implementation agents and device/build commands are blocked.
+const call = (toolName, input) => handlers.get("tool_call")({ toolName, input }, ctx);
+assert.match((await call("Agent", { subagent_type: "builder" })).reason, /dispatch it to the sub-PI/);
+assert.equal((await call("Agent", { subagent_type: "app-validator" })).block, true);
+assert.equal((await call("bash", { command: "cd android && ./gradlew assembleRelease" })).block, true);
+assert.equal((await call("bash", { command: "/x/sdk/build-tools/36.0.0/aapt dump resources a.apk" })).block, true);
+assert.equal((await call("bash", { command: "npx expo prebuild --clean" })).block, true);
+assert.equal((await call("bash", { command: "export A=1; adb devices" })).block, true);
+for (const [tool, input] of [["Agent", { subagent_type: "scout" }], ["Agent", { subagent_type: "validator" }], ["bash", { command: "gh pr merge 296 --merge" }], ["bash", { command: "orca orchestration check --run r --json" }], ["bash", { command: "git log --grep adb" }]])
+  assert.equal(await call(tool, input), undefined, `${tool} ${JSON.stringify(input)} allowed`);
+assert.match(conductor, /describe the campaign, not your hands/); assert.match(conductor, /drop it at once—no further tool call on it/);
 assert.equal(await start("# Builder agent\n", "# Builder agent\n"), undefined, "subagent prompts are never replaced");
 assert.equal(await start(broken, broken + tail), undefined, "fail-safe keeps standard");
 assert.equal(notices.at(-1).type, "warning");
 await commands.get("orchestration").handler("standard", ctx);
 assert.equal(statuses.at(-1).text, undefined);
 assert.equal(await start(systemMd, assembled), undefined, "back to standard");
+assert.equal(await handlers.get("tool_call")({ toolName: "Agent", input: { subagent_type: "builder" } }, ctx), undefined, "standard mode never blocks");
 await commands.get("orchestration").handler("bogus", ctx);
 assert.match(notices.at(-1).message, /Uso: \/orchestration/);
 assert.equal(m.readSessionMode([]), "standard", "new sessions start standard");
