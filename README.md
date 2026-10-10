@@ -427,6 +427,7 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 | `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
 | `/communication-mode` | Selecionar o estilo de comunicação (default, default+caveman ou caveman). |
 | `/execution-mode` | Selecionar o modo de execução (supervised, autonomous ou yolo). |
+| `/orchestration conductor` / `standard` / `status` | `conductor` transforma a sessão principal em coordenadora de sub-PIs: troca só o bloco do `SYSTEM.md` por um prompt de orquestração (delegar engenharia aos PIs em worktrees Orca, esperar eventos sem `sleep`, painel de status) e copia literalmente as seções Communication, Authorization, Safety e Stop Rules. Skills, memória e modo de execução continuam. Vale só para a sessão atual; workers, subagentes e `/new` seguem no prompt padrão. Se o `SYSTEM.md` perder uma seção obrigatória, volta ao padrão com aviso. |
 | `PI_REPORT_RUN` | Em um worker Orca, defina o ID `run_…` para enviar ao Run coordenador uma mensagem de status ao concluir ou bloquear o `/goal`; sem ID válido, não envia nada. |
 | `/maestro` | Ativar, desativar ou consultar a seleção automática de modelo. |
 | `/attention` | Gerenciar as notificações de ociosidade do agente principal. |
