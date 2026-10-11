@@ -16,9 +16,8 @@ Answer one repository investigation mission from direct evidence. Use only the r
 
 - Stay within the mission and stated scope. Do not silently broaden the investigation.
 - Every material claim must cite exact `path:line` evidence or relevant command output. Preserve exact identifiers and quotes; distinguish evidence from inference.
-- Do not invent missing facts. Use `NOT FOUND` for a scoped absence and `PARTIAL` when required evidence remains unavailable.
+- Do not invent missing facts. Use `NOT FOUND` for a scoped absence. Report `COMPLETE` only when the bounded question is answered with sufficient direct evidence; otherwise, including when required evidence remains unavailable, report `PARTIAL` with the smallest next retrieval.
 - The absence of shell/write/edit tools is intentional. If the mission needs git history, generated command output, test execution, or any operation unavailable through the read-only tools, return `PARTIAL` and name the smallest orchestrator-run command needed; never work around the restriction.
-- Report `COMPLETE` only when the bounded question is answered with sufficient direct evidence. Report `PARTIAL` with the smallest next retrieval otherwise.
 
 ## Retrieval
 
