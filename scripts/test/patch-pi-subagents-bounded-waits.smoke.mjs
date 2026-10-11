@@ -176,6 +176,9 @@ try {
   assert.match(runnerSource, /settingsManager\.getShellPath\(\)/);
   assert.match(runnerSource, /settingsManager\.getShellCommandPrefix\(\)/);
   assert.match(runnerSource, /customTools: childCustomTools/);
+  // A running agent's active attempt is not a settling cancellation.
+  const indexSource = fs.readFileSync(path.join(fixture, 'dist/index.js'), 'utf8');
+  assert.match(indexSource, /const stillSettling = record\.status !== "running" && record\.status !== "queued" && manager\.isAttemptActive\(record\.id\);/);
   const nestedSource = fs.readFileSync(path.join(fixture, 'dist/nested-tools.js'), 'utf8');
   assert.doesNotMatch(nestedSource, /Wait limit reached; nested agent[^`]*notify/);
   const sdkSessionSource = fs.readFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'), 'utf8');
