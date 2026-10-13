@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { types as utilTypes } from "node:util";
 import { assertOwnedSession, assertOwnedWorkspace } from "./ownership.mjs";
 import { createUserCredentialStore } from "./credentials.mjs";
+import { createProviderQuotaCollector } from "./provider-quotas.mjs";
 import { createAccount, selectSessionAccount } from "./account-session.mjs";
 import { createAccountConfigPolicy, createSealedAccountAuthContext, wrapModelsStore } from "./sdk-auth-source.mjs";
 import { ACCOUNT_LAUNCH_CONTEXT_ENV, decodeAccountLaunchContext, getUserHome } from "./environment.mjs";
@@ -653,7 +654,7 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
 }
 
 // The SDK owns CLI parsing, session selection, settings, trust and every execution mode.
-export function createUserRuntime(registryPath, { pickAccount, createStore = createUserCredentialStore, createModelRuntime, sdkRoot, inheritedAccountId, onAccountSelected, launchOrcaChild = launchOrcaAccountChild, orcaPlatform = process.platform, localAppData = process.env.LOCALAPPDATA } = {}) {
+export function createUserRuntime(registryPath, { pickAccount, createStore = createUserCredentialStore, createModelRuntime, sdkRoot, inheritedAccountId, onAccountSelected, launchOrcaChild = launchOrcaAccountChild, orcaPlatform = process.platform, localAppData = process.env.LOCALAPPDATA, providerQuotaFetch, providerQuotaNow } = {}) {
   if (typeof registryPath !== "string" || !path.isAbsolute(registryPath)) throw fail("REGISTRY_PATH_INVALID");
   if (inheritedAccountId !== undefined && (typeof inheritedAccountId !== "string" || !/^[a-z][a-z0-9-]{1,31}$/.test(inheritedAccountId))) throw fail("ACCOUNT_LAUNCH_CONTEXT_INVALID");
   if (onAccountSelected !== undefined && typeof onAccountSelected !== "function") throw fail("ACCOUNT_RUNTIME_CALLBACK_INVALID");
@@ -737,8 +738,16 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
     const result = { modelRuntime, credentials };
     if (request.purpose === "application") {
       const { createUsuarioFactory } = await import(new URL("../../extensions/usuario.ts", import.meta.url).href);
+      const { createManagedSessionUsageFactory } = await import(new URL("../../extensions/session-usage.ts", import.meta.url).href);
       const factoryPath = fileURLToPath(new URL("../../extensions/usuario.ts", import.meta.url));
+      const usagePath = fileURLToPath(new URL("../../extensions/session-usage.ts", import.meta.url));
+      const usageAgentPath = path.resolve(request.agentDir, "extensions", "session-usage.ts");
       const account = selected;
+      const quotaRead = createProviderQuotaCollector({ readCredential: (providerId, options) => selectedStore.read(providerId, options), fetchImpl: providerQuotaFetch, now: providerQuotaNow });
+      const boundQuotaRead = async (ctx) => {
+        if (ctx?.sessionManager !== request.sessionManager) throw fail("ACCOUNT_USAGE_NOT_ROOT");
+        return quotaRead();
+      };
       result.resourceLoaderOptions = {
         extensionFactories: [{ name: "usuario", builtin: true, factory: createUsuarioFactory(Object.freeze({
           async execute(command, ctx) {
@@ -794,10 +803,13 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
             }
             return "USUARIO_OPERATION_UNSUPPORTED";
           },
-        })) }],
+        })) }, { name: "session-usage-managed", builtin: true, factory: createManagedSessionUsageFactory(boundQuotaRead, account.id) }],
         extensionsOverride(loaded) {
           const original = loaded;
-          return { ...original, extensions: original.extensions.filter((extension) => extension.resolvedPath !== factoryPath) };
+          return { ...original, extensions: original.extensions.filter((extension) => {
+            const resolvedPath = path.resolve(extension.resolvedPath);
+            return resolvedPath !== factoryPath && resolvedPath !== usagePath && resolvedPath !== usageAgentPath;
+          }) };
         },
       };
     }

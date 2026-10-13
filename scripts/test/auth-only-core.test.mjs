@@ -262,10 +262,15 @@ test("managed usuario control validates use and returns fresh-process guidance o
     createModelRuntime: async ({ credentials }) => ({ accountId: credentials.accountId }),
   });
   const { resourceLoaderOptions } = await controlled({ purpose: "application", sessionManager: manager, sdkRoot, agentDir });
-  assert.equal(resourceLoaderOptions.extensionFactories.length, 1);
+  assert.equal(resourceLoaderOptions.extensionFactories.length, 2);
+  assert.equal(resourceLoaderOptions.extensionFactories[0].name, "usuario");
+  assert.equal(resourceLoaderOptions.extensionFactories[1].name, "session-usage-managed");
   const ordinary = { resolvedPath: fileURLToPath(new URL("../../extensions/usuario.ts", import.meta.url)), commands: new Map() };
+  const ordinaryUsage = { resolvedPath: fileURLToPath(new URL("../../extensions/session-usage.ts", import.meta.url)), commands: new Map() };
+  const agentUsage = { resolvedPath: path.join(agentDir, "extensions", "session-usage.ts"), commands: new Map() };
+  const customUsage = { resolvedPath: "/synthetic/custom-session-usage.ts", commands: new Map() };
   const unrelated = { resolvedPath: "/synthetic/other-extension.ts", commands: new Map() };
-  assert.deepEqual(resourceLoaderOptions.extensionsOverride({ extensions: [ordinary, unrelated] }).extensions, [unrelated]);
+  assert.deepEqual(resourceLoaderOptions.extensionsOverride({ extensions: [ordinary, ordinaryUsage, agentUsage, customUsage, unrelated] }).extensions, [customUsage, unrelated]);
   const { createUsuarioFactory } = await import("../../extensions/usuario.ts");
   let command;
   const pi = { registerCommand(_name, value) { command = value; }, sendMessage() {} };

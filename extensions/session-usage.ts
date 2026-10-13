@@ -1,5 +1,18 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 
+export interface ProviderQuotaWindow {
+  durationSeconds: number;
+  usedPercent: number;
+  resetAt: string;
+}
+
+export interface ProviderQuotaReport {
+  fetchedAt: string;
+  providers: Array<{ provider: string; windows: ProviderQuotaWindow[]; unavailable?: string }>;
+}
+
+export type SessionUsageQuotaReader = (ctx: ExtensionCommandContext) => Promise<ProviderQuotaReport>;
+
 export interface SessionUsageTotals {
   provider: string;
   model: string;
@@ -77,7 +90,7 @@ function formatUsd(value: number): string {
 
 /** Render local session usage, clearly distinguished from provider account quotas/billing. */
 export function formatSessionUsage(rows: readonly SessionUsageTotals[]): string {
-  const lines = ["Session usage (assistant messages)", SOURCE_LABEL];
+  const lines = ["Session usage (assistant messages)", QUOTA_LABEL, SOURCE_LABEL];
   if (rows.length === 0) {
     lines.push("No assistant usage recorded on this branch.");
     lines.push("Estimated SDK cost: $0.000000 USD");
@@ -226,12 +239,37 @@ function wrapPlain(text: string, width: number): string[] {
   return result;
 }
 
-function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unknown[], width: number, theme: Theme): string[] {
+function quotaLines(report: ProviderQuotaReport | undefined, accountId: string | undefined): string[] {
+  if (!report) return [QUOTA_LABEL];
+  const lines = [`Subscription quotas — PI account ${cleanLabel(accountId) ?? "selected"}`];
+  for (const provider of report.providers) {
+    if (provider.unavailable) {
+      lines.push(`${provider.provider}: unavailable (${provider.unavailable})`);
+      continue;
+    }
+    lines.push(`${provider.provider} OAuth quota`);
+    for (const window of provider.windows) {
+      const remaining = 100 - window.usedPercent;
+      lines.push(`  ${formatDuration(window.durationSeconds)} window: ${window.usedPercent}% used · ${remaining}% remaining · resets ${window.resetAt}`);
+    }
+  }
+  lines.push(`Fetched ${report.fetchedAt} UTC`);
+  return lines;
+}
+
+function formatDuration(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return [days ? `${days}d` : "", hours ? `${hours}h` : "", minutes || (!days && !hours) ? `${minutes}m` : ""].filter(Boolean).join(" ");
+}
+
+function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unknown[], width: number, theme: Theme, report?: ProviderQuotaReport, accountId?: string): string[] {
   const maxWidth = Math.max(1, Math.floor(width));
   const clip = (line: string) => truncateWidth(line, maxWidth);
   const title = theme.style(" Usage ", { fg: "accent", bold: true });
   const muted = (text: string) => theme.fg("muted", text);
-  const lines = [clip(title), ...wrapPlain(QUOTA_LABEL, maxWidth).map(muted), ...wrapPlain(SOURCE_LABEL, maxWidth).map(muted), ""];
+  const lines = [clip(title), ...quotaLines(report, accountId).flatMap((line) => wrapPlain(line, maxWidth)).map(muted), ...wrapPlain(SOURCE_LABEL, maxWidth).map(muted), ""];
   if (rows.length === 0) {
     lines.push(clip("No assistant usage recorded on this branch."));
     lines.push(clip("Estimated SDK cost: $0.000000 USD"));
@@ -286,18 +324,22 @@ class SessionUsagePanel {
   private readonly entries: readonly unknown[];
   private readonly theme: Theme;
   private readonly done: () => void;
-  constructor(rows: readonly SessionUsageTotals[], entries: readonly unknown[], theme: Theme, done: () => void) {
+  private readonly report?: ProviderQuotaReport;
+  private readonly accountId?: string;
+  constructor(rows: readonly SessionUsageTotals[], entries: readonly unknown[], theme: Theme, done: () => void, report?: ProviderQuotaReport, accountId?: string) {
     this.rows = rows;
     this.entries = entries;
     this.theme = theme;
     this.done = done;
+    this.report = report;
+    this.accountId = accountId;
   }
   render(width: number): string[] {
     const safeWidth = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
     if (safeWidth === 0) return [];
-    if (safeWidth < 3) return panelLines(this.rows, this.entries, safeWidth, this.theme).map((line) => truncateWidth(line, safeWidth));
+    if (safeWidth < 3) return panelLines(this.rows, this.entries, safeWidth, this.theme, this.report, this.accountId).map((line) => truncateWidth(line, safeWidth));
     const innerWidth = safeWidth - 2;
-    const content = panelLines(this.rows, this.entries, innerWidth, this.theme);
+    const content = panelLines(this.rows, this.entries, innerWidth, this.theme, this.report, this.accountId);
     const border = "─".repeat(innerWidth);
     const frameRow = (line: string) => {
       const clipped = truncateWidth(line, innerWidth);
@@ -310,7 +352,7 @@ class SessionUsagePanel {
   invalidate(): void { /* Theme is read during render; no cached ANSI content. */ }
 }
 
-export function registerSessionUsage(pi: ExtensionAPI): void {
+export function registerSessionUsage(pi: ExtensionAPI, options: { quotaReader?: SessionUsageQuotaReader; accountId?: string } = {}): void {
   // SDK 1.2 binds action methods after factories finish loading. A bound caller
   // can check conflicts; the native loader rejects this query before binding.
   try {
@@ -324,15 +366,26 @@ export function registerSessionUsage(pi: ExtensionAPI): void {
     handler: async (_args, ctx: ExtensionCommandContext) => {
       const branch = ctx.sessionManager.getBranch();
       const rows = aggregateSessionUsage(branch);
-      const text = formatSessionUsage(rows);
+      let report: ProviderQuotaReport | undefined;
+      if (options.quotaReader) {
+        try { report = await options.quotaReader(ctx); }
+        catch { report = { fetchedAt: new Date().toISOString(), providers: ["anthropic", "openai-codex"].map((provider) => ({ provider, windows: [], unavailable: "request failed" })) }; }
+      }
+      const localText = formatSessionUsage(rows);
+      const text = report ? `${quotaLines(report, options.accountId).join("\n")}\n\n${localText.replace(`${QUOTA_LABEL}\n`, "")}` : localText;
       if (ctx.mode === "tui" && ctx.hasUI) {
         const ui = ctx.ui as typeof ctx.ui & { custom?: ExtensionCommandContext["ui"]["custom"] };
         if (typeof ui.custom === "function") {
-          await ui.custom<void>((_tui, theme, _keybindings, done) => new SessionUsagePanel(rows, branch, theme, done));
+          await ui.custom<void>((_tui, theme, _keybindings, done) => new SessionUsagePanel(rows, branch, theme, done, report, options.accountId));
         } else ctx.ui.notify(text, "info");
       } else pi.sendMessage({ customType: "session-usage", content: text, display: true }, { triggerTurn: false });
     },
   });
+}
+
+export function createManagedSessionUsageFactory(quotaReader: SessionUsageQuotaReader, accountId: string): (pi: ExtensionAPI) => void {
+  if (typeof quotaReader !== "function" || !/^[a-z][a-z0-9-]{1,31}$/.test(accountId)) throw new TypeError("managed usage binding is invalid");
+  return (pi) => registerSessionUsage(pi, { quotaReader, accountId });
 }
 
 export default function sessionUsage(pi: ExtensionAPI): void {
