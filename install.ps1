@@ -278,6 +278,11 @@ if ($piCmd) {
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-cursor-reasoning-effort.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A compatibilidade de reasoning effort do Cursor recusou o patch." }
     Info "Compatibilidade de reasoning effort do Cursor verificada"
+
+    Info "pi-antigravity..."
+    & pi install npm:pi-antigravity@0.10.0 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-antigravity." }
+
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A normalização dos corpos de erro dos provedores recusou o patch." }
     Info "Normalização dos corpos de erro dos provedores verificada"
