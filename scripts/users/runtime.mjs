@@ -10,7 +10,7 @@ import { createAccount, selectSessionAccount } from "./account-session.mjs";
 import { createAccountConfigPolicy, createSealedAccountAuthContext, wrapModelsStore } from "./sdk-auth-source.mjs";
 import { ACCOUNT_LAUNCH_CONTEXT_ENV, decodeAccountLaunchContext, getUserHome } from "./environment.mjs";
 import { launchOrcaAccountChild } from "./child-command.mjs";
-import { UsersError, canonicalize, isWithin, requireContext, listUsers, registerUser, resolveUser } from "./registry.mjs";
+import { UsersError, canonicalize, isWithin, requireContext, listUsers, registerUser, removeUser, resolveUser } from "./registry.mjs";
 import { registerUserSwitchParticipant, lookupUserSwitchParticipants, acquireUserSwitchReadiness } from "./switch-readiness.mjs";
 import { buildAdmittedLoaderOptions, validateAdmittedResourceInventory } from "./resources.mjs";
 import { createAdmittedSettingsManager } from "./settings.mjs";
@@ -752,6 +752,25 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
             if (command.operation === "use") {
               resolveUser({ registryPath, id: command.id });
               return `Conta validada. Para usar ${command.id}, encerre este processo e inicie um novo com a conta desejada; sessões vinculadas a outra conta exigem um novo processo.`;
+            }
+            if (command.operation === "remove") {
+              if (command.id === account.id) return "USER_REMOVE_ACTIVE";
+              if (!ctx.hasUI || typeof ctx.ui?.confirm !== "function") return "USER_REMOVE_CONFIRMATION_REQUIRED";
+              let target;
+              try { target = resolveUser({ registryPath, id: command.id }); }
+              catch (error) { return error.code ?? "USER_REMOVE_FAILED"; }
+              let confirmed = false;
+              try {
+                confirmed = await ctx.ui.confirm(
+                  `Remove registration for ${target.id} (${target.label})?`,
+                  `This removes only the registry registration. Credentials and history remain on disk. Sessions bound to this account cannot resume until its registration is restored. Continue?`,
+                );
+              } catch { return "USER_REMOVE_CONFIRMATION_FAILED"; }
+              if (confirmed !== true) return "USER_REMOVE_CANCELLED";
+              try {
+                const removed = removeUser(target, { activeAccountId: account.id });
+                return JSON.stringify({ id: removed.id, recoveryPath: removed.recoveryPath });
+              } catch (error) { return error.code ?? "USER_REMOVE_FAILED"; }
             }
             if (command.operation === "orca") {
               if (orcaPlatform !== "win32") return "ORCA_PLATFORM_UNSUPPORTED";
