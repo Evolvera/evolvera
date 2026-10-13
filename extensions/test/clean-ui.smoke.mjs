@@ -228,4 +228,91 @@ test("clean-ui on/off/status persistence remains scoped to the run-owned fake ag
   assert.equal(harness.resolver("bash", () => stock).renderShell, "self");
 });
 
+test("redrawing an old reopen card cannot re-announce an already completed todo", () => {
+  const harness = extensionHarness();
+  const renderers = harness.resolver("todo", () => ({}));
+  const options = { isPartial: false, expanded: false };
+  const result = { content: [{ type: "text", text: "synthetic success" }] };
+  const reopened = renderContext({ action: "update", id: 81, status: "in_progress" });
+  renderers.renderCall(reopened.args, theme, reopened);
+  renderers.renderResult(result, options, theme, reopened);
+  const finished = renderContext({ action: "update", id: 81, status: "completed" });
+  const finishedCall = renderers.renderCall(finished.args, theme, finished);
+  renderers.renderResult(result, options, theme, finished);
+  assert.match(finishedCall.render(80).join(""), /todo/);
+  renderers.renderResult(result, { ...options, expanded: true }, theme, reopened);
+  const duplicate = renderContext(finished.args);
+  const duplicateCall = renderers.renderCall(duplicate.args, theme, duplicate);
+  renderers.renderResult(result, options, theme, duplicate);
+  assert.deepEqual(duplicateCall.render(80), [], "repaint is not a new reopening transition");
+});
+
+test("new-session lifecycle resets only the UI todo deduplication", async () => {
+  const harness = extensionHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  const renderers = harness.resolver("todo", () => ({}));
+  const args = { action: "update", id: 91, status: "completed" };
+  const result = { content: [{ type: "text", text: "finished" }] };
+  const before = structuredClone(result);
+  const show = () => {
+    const ctx = renderContext(args);
+    const call = renderers.renderCall(args, theme, ctx);
+    renderers.renderResult(result, { isPartial: false, expanded: false }, theme, ctx);
+    return call.render(80);
+  };
+  assert.match(show().join(""), /todo/);
+  assert.deepEqual(show(), []);
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  assert.match(show().join(""), /todo/, "IDs from another session cannot suppress this session");
+  assert.deepEqual(result, before);
+});
+
+test("image results delegate unchanged to stock while the Unicode header finishes", () => {
+  const result = { content: [{ type: "text", text: "synthetic image" }, { type: "image", data: "synthetic", mimeType: "image/png" }] };
+  const before = structuredClone(result);
+  const options = { isPartial: false, expanded: false };
+  for (const toolName of ["read", "todo"]) {
+    let forwarded;
+    const stockComponent = component(["stock image"]);
+    const stock = { renderResult(...args) { forwarded = args; return stockComponent; } };
+    const harness = extensionHarness();
+    const renderers = toolName === "todo" ? harness.resolver(toolName, () => stock) : ui.createCardRenderers(toolName, stock);
+    const ctx = renderContext({ action: "get", path: "synthetic.png" });
+    ctx.lastComponent = component(["previous component"]);
+    const call = renderers.renderCall(ctx.args, theme, ctx);
+    assert.equal(renderers.renderResult(result, options, theme, ctx), stockComponent);
+    assert.equal(forwarded[0], result);
+    assert.equal(forwarded[1], options);
+    assert.equal(forwarded[2], theme);
+    assert.notEqual(forwarded[3].state, ctx.state, "stock rendering keeps its own per-card state");
+    assert.equal(forwarded[3].lastComponent, undefined);
+    assert.match(call.render(80).join(""), new RegExp(`✓ ${toolName}`), "finished image must not remain a running spinner");
+    assert.deepEqual(result, before);
+  }
+});
+
+test("expanded output keeps head or shell tail, caps lines, and clips narrow cells", () => {
+  assert.equal(ui.MAX_EXPANDED_LINES, 20, "preserve the installed baseline output cap");
+  const text = Array.from({ length: 100 }, (_, i) => `line-${String(i).padStart(3, "0")} ${"x".repeat(120)}`).join("\n");
+  const result = { content: [{ type: "text", text }] };
+  const before = structuredClone(result);
+  for (const toolName of ["read", "bash", "powershell"]) {
+    const data = { toolName, result, partial: false, isError: false };
+    const expanded = ui.renderBody(data, theme, 80, true);
+    assert.equal(expanded.length, 21);
+    if (toolName === "read") {
+      assert.match(expanded[0], /line-000/);
+      assert.match(expanded[19], /line-019/);
+      assert.match(expanded[20], /80 more lines/);
+    } else {
+      assert.match(expanded[0], /80 earlier lines/);
+      assert.match(expanded[1], /line-080/);
+      assert.match(expanded[20], /line-099/);
+    }
+    for (const width of [6, 20, 80]) assert.ok(ui.renderBody(data, theme, width, true).every((line) => ui.cellWidth(line) <= width));
+    assert.deepEqual(ui.renderBody(data, theme, 80, false), []);
+  }
+  assert.deepEqual(result, before);
+});
+
 console.log(`clean-ui isolated fixture retained at ${runRoot}`);
