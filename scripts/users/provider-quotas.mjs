@@ -50,7 +50,7 @@ function codexDto(payload, now) {
     windows.push(windowDto(item.used_percent, item.limit_window_seconds, reset, now));
   }
   if (windows.length === 0) throw fail("invalid quota window");
-  return windows;
+  return { windows };
 }
 function accountHeader(credential) {
   if (credential.accountId !== undefined) return typeof credential.accountId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(credential.accountId) ? credential.accountId : undefined;
@@ -83,7 +83,11 @@ async function getJson(fetchImpl, provider, credential, now) {
     if (typeof text !== "string" || text.length > 256_000) throw fail("invalid response");
     let payload;
     try { payload = JSON.parse(text); } catch { throw fail("invalid response"); }
-    return provider === "anthropic" ? anthropicDto(payload, now) : codexDto(payload, now);
+    if (provider === "anthropic") return { windows: anthropicDto(payload, now) };
+    const result = codexDto(payload, now);
+    const availableCount = payload?.rate_limit_reset_credits?.available_count;
+    if (typeof availableCount === "number" && Number.isSafeInteger(availableCount) && availableCount >= 0) result.bankedResets = availableCount;
+    return result;
   } catch (error) {
     if (error?.reason) throw error;
     throw fail("provider request unavailable");
@@ -104,12 +108,12 @@ export function createProviderQuotaCollector({ readCredential, fetchImpl = globa
         if (provider === "openai-codex" && !workspaceId) throw fail("account metadata unavailable");
         const fingerprint = createHash("sha256").update(JSON.stringify([provider, credential.access, workspaceId])).digest("hex");
         const previous = cache.get(provider);
-        if (previous?.fingerprint === fingerprint && timestamp < previous.until) return { provider, windows: previous.windows, fetchedAt: previous.fetchedAt };
+        if (previous?.fingerprint === fingerprint && timestamp < previous.until) return { provider, windows: previous.windows, ...(previous.bankedResets === undefined ? {} : { bankedResets: previous.bankedResets }), fetchedAt: previous.fetchedAt };
         cache.delete(provider);
-        const windows = await getJson(fetchImpl, provider, credential, timestamp);
+        const { windows, bankedResets } = await getJson(fetchImpl, provider, credential, timestamp);
         const fetchedAt = new Date(timestamp).toISOString();
-        cache.set(provider, { fingerprint, until: timestamp + CACHE_MS, windows, fetchedAt });
-        return { provider, windows, fetchedAt };
+        cache.set(provider, { fingerprint, until: timestamp + CACHE_MS, windows, ...(bankedResets === undefined ? {} : { bankedResets }), fetchedAt });
+        return { provider, windows, ...(bankedResets === undefined ? {} : { bankedResets }), fetchedAt };
       } catch (error) {
         cache.delete(provider);
         return { provider, windows: [], unavailable: safeReason(error) };

@@ -52,6 +52,66 @@ test("collector validates OAuth quota DTOs, UTC reset units, and bounded fixed r
   assert.doesNotMatch(JSON.stringify(report), /synthetic-access|synthetic-refresh|synthetic-account/);
 });
 
+test("Codex available reset count is optional, validated independently, and cached with its quota", async () => {
+  const cases = [
+    ["missing", {}, undefined],
+    ["missing available_count", { rate_limit_reset_credits: {} }, undefined],
+    ["null", { rate_limit_reset_credits: null }, undefined],
+    ["zero", { rate_limit_reset_credits: { available_count: 0 } }, 0],
+    ["three despite capped details", { rate_limit_reset_credits: { available_count: 3, credits: [{ id: "detail-a" }] } }, 3],
+    ...[null, undefined, NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "3", true].map((available_count) => [String(available_count), { rate_limit_reset_credits: { available_count } }, undefined]),
+  ];
+  for (const [label, extra, expected] of cases) {
+    const calls = [];
+    const payload = { ...codex, ...extra };
+    const reader = createProviderQuotaCollector({
+      readCredential: async (provider) => oauth({ accountId: provider === "openai-codex" ? "synthetic-account" : undefined }),
+      fetchImpl: async (url, options) => { calls.push(url); return response(url === expectedUrl["openai-codex"] ? payload : { ...claude, ...extra }); }, now: () => now,
+    });
+    const report = await reader();
+    const codexResult = report.providers.find((item) => item.provider === "openai-codex");
+    const claudeResult = report.providers.find((item) => item.provider === "anthropic");
+    assert.equal(codexResult.bankedResets, expected, `${label} Codex count`);
+    assert.equal(Object.hasOwn(codexResult, "bankedResets"), expected !== undefined, `${label} optional field presence`);
+    assert.equal(codexResult.windows.length, 2, `${label} must not invalidate valid quota windows`);
+    assert.equal(Object.hasOwn(claudeResult, "bankedResets"), false, `${label} Claude lookalike must be ignored`);
+    assert.doesNotMatch(JSON.stringify(report), /detail-a|credits/);
+    assert.equal(calls.length, 2);
+  }
+
+  let time = now;
+  let access = "synthetic-access-one";
+  let codexPayload = { ...codex, rate_limit_reset_credits: { available_count: 3, credits: [{ id: "detail-a" }] } };
+  const calls = [];
+  const reader = createProviderQuotaCollector({
+    readCredential: async (provider) => oauth({ access, accountId: provider === "openai-codex" ? "synthetic-account" : undefined, expires: time + 60_000 }),
+    fetchImpl: async (url) => { calls.push(url); return response(url === expectedUrl["openai-codex"] ? codexPayload : claude); }, now: () => time,
+  });
+  const first = await reader();
+  const firstCodex = first.providers.find((item) => item.provider === "openai-codex");
+  firstCodex.bankedResets = 99;
+  firstCodex.windows[0].usedPercent = 99;
+  const cached = await reader();
+  const cachedCodex = cached.providers.find((item) => item.provider === "openai-codex");
+  assert.equal(cachedCodex.bankedResets, 3);
+  assert.equal(cachedCodex.windows[0].usedPercent, 37.5, "cache hits are clone-isolated");
+  assert.equal(calls.length, 2);
+
+  access = "synthetic-access-two";
+  codexPayload = { ...codex, rate_limit_reset_credits: { available_count: 0 } };
+  time += 1_000;
+  const rotated = await reader();
+  assert.equal(rotated.providers.find((item) => item.provider === "openai-codex").bankedResets, 0, "credential fingerprint change fetches new counter");
+  assert.equal(calls.length, 4);
+
+  codexPayload = { ...codex };
+  time += 5 * 60 * 1000 + 1;
+  const refreshed = await reader();
+  const refreshedCodex = refreshed.providers.find((item) => item.provider === "openai-codex");
+  assert.equal(Object.hasOwn(refreshedCodex, "bankedResets"), false, "refresh without a counter removes the previous optional value");
+  assert.equal(calls.length, 6);
+});
+
 test("invalid, expired, unsupported, malformed and failed credentials never become quota zero", async () => {
   for (const credential of [undefined, { type: "api_key", key: "secret" }, oauth({ expires: now }), oauth({ expires: NaN }), oauth({ access: "" })]) {
     let fetches = 0;
@@ -200,13 +260,15 @@ test("managed /usage binds selected account, blocks manager mismatch, and render
   const ctx = { mode: "tui", hasUI: true, sessionManager: manager, ui: { custom: async (make) => { panel = make({}, { style: (text) => text, fg: (_color, text) => text }, {}, () => {}); } } };
   await usageHandler("", ctx);
   const rendered = panel.render(120).join("\n");
-  assert.match(rendered, /PI account alpha/);
+  assert.match(rendered, /PI account · alpha/);
   assert.match(rendered, /61% used/);
   assert.match(rendered, /39% remaining/);
-  assert.match(rendered, /4h window: 37\.5% used · 62\.5% remaining/);
-  assert.match(rendered, /10d window: 12% used · 88% remaining/);
-  assert.match(rendered, /resets 2026-10-09T15:00:00.000Z/);
-  assert.match(rendered, /Fetched 2026-10-09T12:00:00.000Z/);
+  const stacked = panel.render(80).join("\n");
+  const codexCard = stacked.slice(stacked.indexOf("Codex · OAuth"), stacked.indexOf("Fetched"));
+  assert.match(codexCard, /4h window[\s\S]*37\.5% used[\s\S]*62\.5% remaining/);
+  assert.match(codexCard, /10d window[\s\S]*12% used[\s\S]*88% remaining/);
+  assert.match(rendered, /↺ 09 Oct 2026, 15:00 UTC/);
+  assert.match(rendered, /Fetched 09 Oct 2026, 12:00 UTC/);
   assert.match(rendered, /local/);
   assert.match(rendered, /Model: m/);
   for (const width of [24, 40, 80, 120]) assert.ok(panel.render(width).every((line) => visibleWidth(line) <= width));

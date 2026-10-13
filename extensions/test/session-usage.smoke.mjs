@@ -152,15 +152,15 @@ test("opens a custom Usage panel, closes on Enter/Escape, and remains width-boun
     }
     const plainLines = lines.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
     if (width === 1 || width === 2) assert.ok(plainLines.every((line) => visibleWidth(line) <= width));
-    if (width === 3) assert.equal(plainLines[0], "┌─┐");
+    if (width === 3) assert.equal(plainLines[0], "╭─╮");
     if (width >= 3) {
       assert.ok(plainLines.every((line) => visibleWidth(line) === width), `frame rows align at ${width} columns`);
-      assert.ok(plainLines.slice(1, -1).every((line) => line.startsWith("│") && line.endsWith("│")));
+      assert.ok(plainLines.slice(1, -1).every((line) => line.trim().startsWith("│") && line.trim().endsWith("│")));
       for (const line of lines.filter((line) => line.includes("\x1b["))) {
         assert.ok(line.lastIndexOf("\x1b[0m") < line.lastIndexOf("│"), "ANSI styles reset before the right frame edge");
       }
     }
-    if (width === 6) assert.equal(plainLines[0], "┌────┐");
+    if (width === 6) assert.equal(plainLines[0], "╭────╮");
     if (width === 80) assert.ok(lines.some((line) => line.includes("53-week calendar")));
     if (width === 20) assert.ok(lines.some((line) => line.includes("Narrow: last")));
     if (width >= 20) assert.ok(lines.some((line) => line.includes("p🚀")));
@@ -304,7 +304,7 @@ test("quota cards render truthful used bars, UTC dates and separated branch sect
   assert.match(text, /Atividade/);
   for (const used of [0, 10, 75, 94, 100, 20.125]) {
     const filled = Math.floor(24 * used / 100);
-    assert.ok(text.includes(`[${"█".repeat(filled)}${"░".repeat(24 - filled)}] ${used}% used`), `accurate discrete meter for ${used}`);
+    assert.ok(text.includes(`${"▰".repeat(filled)}${"▱".repeat(24 - filled)}  ${used}% used`), `accurate discrete meter for ${used}`);
   }
   assert.match(text, /79\.875% remaining/);
   assert.match(text, /14 Oct 2026, 04:00 UTC/);
@@ -329,7 +329,7 @@ test("unavailable, absent and invalid quota windows never acquire invented zero 
     await harness.pi.registered.handler("", harness.ctx);
     const text = harness.component.render(80).join("\n");
     assert.match(text, /Unavailable/);
-    assert.doesNotMatch(text, /[█░]|0% used|NaN|Infinity/);
+    assert.doesNotMatch(text, /[█░▰▱]|0% used|NaN|Infinity/);
   }
 });
 
@@ -351,4 +351,38 @@ test("does not replace a command named usage", () => {
   registerSessionUsage(harness.pi);
   assert.equal(harness.pi.registered, undefined);
   assert.deepEqual(harness.commands.map((command) => command.name), ["session", "usage"]);
+});
+
+
+test("provider cards share columns on wide terminals, stack narrowly and banked counts are explicit", async () => {
+  const report = { fetchedAt: "2026-10-13T18:57:00Z", providers: [
+    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 22, resetAt: "2026-10-20T05:04:58Z" }], bankedResets: 3 },
+    { provider: "anthropic", windows: [{ durationSeconds: 18000, usedPercent: 15, resetAt: "2026-10-13T20:10:00Z" }] },
+  ] };
+  const h = makeHarness();
+  registerSessionUsage(h.pi, { accountId: "evolvera", quotaReader: async () => report });
+  await h.pi.registered.handler("", h.ctx);
+  const plain = width => h.component.render(width).map(line => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
+  for (const width of [104, 140, 300]) {
+    const lines = plain(width);
+    const heading = lines.find(line => line.includes("Claude · OAuth") && line.includes("Codex · OAuth"));
+    assert.ok(heading, `same-row providers at ${width}`);
+    assert.ok(heading.indexOf("Claude") < heading.indexOf("Codex"));
+    assert.ok(lines.some(line => line.includes("15% used") && line.includes("22% used")));
+    assert.match(lines.join(String.fromCharCode(10)), /↻ Banked resets: 3/);
+    assert.match(lines.join(String.fromCharCode(10)), /↺ 13 Oct 2026, 20:10 UTC/);
+    assert.ok(lines.every(line => visibleWidth(line) <= width));
+    if (width === 300) assert.equal(lines[0].trim().length, 140, "board stays compact on very wide terminals");
+  }
+  const narrow = plain(40);
+  assert.ok(!narrow.some(line => line.includes("Claude") && line.includes("Codex")));
+  assert.ok(narrow.findIndex(line => line.includes("Claude")) < narrow.findIndex(line => line.includes("Codex")));
+  for (const count of [undefined, null, NaN, -1, 0.5, "3", Number.MAX_SAFE_INTEGER + 1, 0]) {
+    report.providers[0].bankedResets = count;
+    const text = plain(140).join(String.fromCharCode(10));
+    assert.match(text, count === 0 ? /Banked resets: 0/ : /Banked resets: não informado/);
+  }
+  report.providers[0].bankedResets = 2;
+  report.providers[0].unavailable = "expired";
+  assert.match(plain(140).join(String.fromCharCode(10)), /Banked resets: não informado/);
 });

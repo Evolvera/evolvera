@@ -8,7 +8,7 @@ export interface ProviderQuotaWindow {
 
 export interface ProviderQuotaReport {
   fetchedAt: string;
-  providers: Array<{ provider: string; windows: ProviderQuotaWindow[]; unavailable?: string }>;
+  providers: Array<{ provider: string; windows: ProviderQuotaWindow[]; unavailable?: string; bankedResets?: number }>;
 }
 
 export type SessionUsageQuotaReader = (ctx: ExtensionCommandContext) => Promise<ProviderQuotaReport>;
@@ -253,6 +253,7 @@ function quotaLines(report: ProviderQuotaReport | undefined, accountId: string |
       const remaining = 100 - window.usedPercent;
       lines.push(`  ${formatDuration(window.durationSeconds)} window: ${window.usedPercent}% used · ${remaining}% remaining · resets ${window.resetAt}`);
     }
+    if (provider.provider === "openai-codex") lines.push(`  Banked resets: ${bankedResetCount(provider.bankedResets) ?? "not reported"}`);
   }
   lines.push(`Fetched ${report.fetchedAt} UTC`);
   return lines;
@@ -271,43 +272,76 @@ function quotaTime(value: string): string {
   return `${date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", hour12: false })} UTC`;
 }
 
-function quotaPanelLines(report: ProviderQuotaReport | undefined, width: number, theme: Theme): string[] {
+function bankedResetCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function padWidth(text: string, width: number): string {
+  const clipped = truncateWidth(text, width);
+  return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+}
+
+function quotaCard(provider: ProviderQuotaReport["providers"][number], width: number, theme: Theme): string[] {
+  const framed = width >= 12;
+  const inner = framed ? width - 4 : width;
+  const wrap = (text: string) => wrapPlain(text, Math.max(1, inner));
   const muted = (text: string) => theme.fg("muted", text);
-  const wrap = (text: string) => wrapPlain(text, width);
-  if (!report) return wrap(QUOTA_LABEL).map(muted);
-  const lines: string[] = [];
-  for (const provider of report.providers) {
-    const name = provider.provider === "anthropic" ? "Claude" : provider.provider === "openai-codex" ? "Codex" : cleanLabel(provider.provider) ?? "Provider";
-    lines.push(...wrap(`${name} · OAuth`).map((line) => theme.style(line, { fg: "accent", bold: true })));
-    if (provider.unavailable || provider.windows.length === 0) {
-      lines.push(...wrap(`Unavailable · ${cleanLabel(provider.unavailable) ?? "no quota windows"}`).map(muted), "");
-      continue;
-    }
+  const name = provider.provider === "anthropic" ? "Claude" : provider.provider === "openai-codex" ? "Codex" : cleanLabel(provider.provider) ?? "Provider";
+  const symbol = provider.provider === "anthropic" ? "✦" : "◇";
+  const content = wrap(`${symbol} ${name} · OAuth`).map((line) => theme.style(line, { fg: "accent", bold: true }));
+  content.push("");
+  if (provider.unavailable || provider.windows.length === 0) {
+    content.push(...wrap(`Unavailable · ${cleanLabel(provider.unavailable) ?? "no quota windows"}`).map(muted));
+  } else {
     for (const window of provider.windows) {
       if (!Number.isFinite(window.usedPercent) || window.usedPercent < 0 || window.usedPercent > 100) {
-        lines.push(...wrap("Unavailable · invalid quota window").map(muted));
+        content.push(...wrap("Unavailable · invalid quota window").map(muted));
         continue;
       }
       const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 75 ? "warning" : "success";
-      const cells = Math.max(1, Math.min(24, width - 13));
+      const cells = Math.max(1, Math.min(24, inner - 13));
       const filled = Math.floor(cells * window.usedPercent / 100);
-      const bar = `[${"█".repeat(filled)}${"░".repeat(cells - filled)}]`;
-      const label = `${formatDuration(window.durationSeconds)} window`;
-      if (width < 48) lines.push(...wrap(label).map(muted));
-      const meter = `${width >= 48 ? `${label}  ` : ""}${width >= 8 ? `${bar} ` : ""}${window.usedPercent}% used`;
-      lines.push(...wrap(meter).map((line) => theme.fg(color, line)));
-      lines.push(...wrap(`${100 - window.usedPercent}% remaining · resets ${quotaTime(window.resetAt)}`).map(muted));
+      const bar = `${"▰".repeat(filled)}${"▱".repeat(cells - filled)}`;
+      content.push(...wrap(`${formatDuration(window.durationSeconds)} window`).map(muted));
+      content.push(...wrap(`${inner >= 8 ? `${bar}  ` : ""}${window.usedPercent}% used`).map((line) => theme.fg(color, line)));
+      content.push(...wrap(`${Number((100 - window.usedPercent).toPrecision(12))}% remaining`).map(muted));
+      content.push(...wrap(`↺ ${quotaTime(window.resetAt)}`).map(muted), "");
     }
+  }
+  if (provider.provider === "openai-codex") {
+    const count = provider.unavailable ? undefined : bankedResetCount(provider.bankedResets);
+    content.push(...wrap(`↻ Banked resets: ${count ?? "não informado"}`).map((line) => count === undefined ? muted(line) : theme.fg("success", line)));
+  }
+  if (!framed) return content;
+  const border = muted("─".repeat(width - 2));
+  return [`${muted("╭")}${border}${muted("╮")}`, ...content.map((line) => `${muted("│")} ${padWidth(line, inner)} ${muted("│")}`), `${muted("╰")}${border}${muted("╯")}`];
+}
+
+function quotaPanelLines(report: ProviderQuotaReport | undefined, width: number, theme: Theme): string[] {
+  const muted = (text: string) => theme.fg("muted", text);
+  if (!report) return wrapPlain(QUOTA_LABEL, width).map(muted);
+  const order = (provider: string) => provider === "anthropic" ? 0 : provider === "openai-codex" ? 1 : 2;
+  const providers = [...report.providers].sort((a, b) => order(a.provider) - order(b.provider));
+  const columns = width >= 100 ? 2 : 1;
+  const gap = 3;
+  const slot = columns === 2 ? Math.floor((width - gap) / 2) : width;
+  const lines: string[] = [];
+  for (let offset = 0; offset < providers.length; offset += columns) {
+    const cards = providers.slice(offset, offset + columns).map((provider) => quotaCard(provider, slot, theme));
+    const height = Math.max(0, ...cards.map((card) => card.length));
+    // Pad short cards above their bottom border, so both cards share a baseline.
+    for (const card of cards) if (slot >= 12 && card.length < height) card.splice(card.length - 1, 0, ...Array(height - card.length).fill(`${muted("│")} ${" ".repeat(slot - 4)} ${muted("│")}`));
+    for (let row = 0; row < height; row++) lines.push(cards.map((card) => padWidth(card[row] ?? "", slot)).join(" ".repeat(gap)));
     lines.push("");
   }
-  lines.push(...wrap(`Fetched ${quotaTime(report.fetchedAt)}`).map(muted));
+  lines.push(...wrapPlain(`Fetched ${quotaTime(report.fetchedAt)}`, width).map(muted));
   return lines;
 }
 
 function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unknown[], width: number, theme: Theme, report?: ProviderQuotaReport, accountId?: string): string[] {
   const maxWidth = Math.max(1, Math.floor(width));
   const clip = (line: string) => truncateWidth(line, maxWidth);
-  const title = theme.style(" Usage ", { fg: "accent", bold: true });
+  const title = theme.style(" ◈ Usage ", { fg: "accent", bold: true });
   const muted = (text: string) => theme.fg("muted", text);
   const section = (label: string) => [...wrapPlain(label, maxWidth).map((line) => theme.style(line, { fg: "accent", bold: true })), muted("─".repeat(maxWidth))];
   const lines = [clip(title)];
@@ -382,7 +416,8 @@ class SessionUsagePanel {
     const safeWidth = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
     if (safeWidth === 0) return [];
     if (safeWidth < 3) return panelLines(this.rows, this.entries, safeWidth, this.theme, this.report, this.accountId).map((line) => truncateWidth(line, safeWidth));
-    const innerWidth = safeWidth - 2;
+    const boardWidth = Math.min(140, safeWidth);
+    const innerWidth = boardWidth - 2;
     const content = panelLines(this.rows, this.entries, innerWidth, this.theme, this.report, this.accountId);
     const border = "─".repeat(innerWidth);
     const frameRow = (line: string) => {
@@ -390,7 +425,9 @@ class SessionUsagePanel {
       const padding = Math.max(0, innerWidth - visibleWidth(clipped));
       return `│${clipped}${" ".repeat(padding)}│`;
     };
-    return [truncateWidth(`┌${border}┐`, safeWidth), ...content.map(frameRow), truncateWidth(`└${border}┘`, safeWidth)];
+    const left = " ".repeat(Math.floor((safeWidth - boardWidth) / 2));
+    const right = " ".repeat(safeWidth - boardWidth - left.length);
+    return [`╭${border}╮`, ...content.map(frameRow), `╰${border}╯`].map((line) => left + line + right);
   }
   handleInput(data: string): void { if (data === "\x1b" || data === "\r" || data === "\n") this.done(); }
   invalidate(): void { /* Theme is read during render; no cached ANSI content. */ }
