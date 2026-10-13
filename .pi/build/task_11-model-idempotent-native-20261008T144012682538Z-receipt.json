@@ -1,0 +1,59 @@
+{
+  "outcome": "NATURAL_EXIT_ZERO_NATIVE_PRINCIPAL_MATRIX_OBSERVED",
+  "elapsedSeconds": 240.093,
+  "returnCode": 0,
+  "statusQueriedAfterObservedFatal": false,
+  "command": [
+    "C:/nvm4w/nodejs/node.exe",
+    "C:/Users/kevin/Documents/Pi/scripts/test/users-switch.smoke.mjs"
+  ],
+  "envKeyNames": [
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "WINDIR"
+  ],
+  "headBefore": "fd7dbaddd4d471cbccc383a713fff0514d8ea2b1",
+  "headAfter": "fd7dbaddd4d471cbccc383a713fff0514d8ea2b1",
+  "driverPid": 13916,
+  "ownedNativeParentPid": 22568,
+  "observedPhasePids": [
+    1112,
+    2264,
+    13748,
+    15420,
+    15796,
+    23800,
+    24028,
+    28984,
+    29464
+  ],
+  "namespacesFromExternalCaptureOnly": [
+    "C:\\Windows\\Temp\\pi-users-switch-kAo2Y7"
+  ],
+  "firstObservation": ".pi/build/task_11-model-idempotent-native-20261008T144012682538Z-first-observation.log",
+  "firstObservationBytes": 14482,
+  "firstObservationSha256": "0d5891825f7356b0cf9853485b3b7ec61da3c8ac4ac7d00f431dadf3d6b35dd1",
+  "originalCapture": ".pi/build/task_11-model-idempotent-native-20261008T144012682538Z.log",
+  "authorityConsumedSha256": "614c8357bbe7217e2745c9abdafbb23865bfbeb6503f1e3e71715ec8056d8ecb",
+  "sourceHashesUnchanged": {
+    "extensions/usuario.ts": true,
+    "scripts/users/registry.mjs": true,
+    "scripts/users/ownership.mjs": true,
+    "scripts/users/credentials.mjs": true,
+    "scripts/users/settings.mjs": true,
+    "scripts/users/resources.mjs": true,
+    "scripts/users/environment.mjs": true,
+    "scripts/users/runtime.mjs": true,
+    "scripts/users/launcher.mjs": true,
+    "scripts/users/switch-readiness.mjs": true,
+    "scripts/test/users-switch.smoke.mjs": true,
+    "scripts/test/lib/users-sandbox.mjs": true,
+    "scripts/compat/alibaba-users.mjs": true
+  },
+  "nativeMatrixObserved": true,
+  "scope": "Actual native principal SDK/RPC only if complete marker+exit0; synthetic readiness components; no full roots/nextTurn batch/WindowsTTY certification",
+  "failurePolicy": "If any unexpected/fatal: namespace/PIDs now foreverOFFLIMITS, no query/signal/IPC/cleanup/restore/retry; preserve all historical failures",
+  "signalCleanupRetryRestore": false,
+  "otherTerminalOrRealAccountProviderOperations": false,
+  "overallTask11": "PARTIAL; Tasks12–15 pending; /usuarioinactive; no install/activate/commit/push/merge/GigaFlow"
+}

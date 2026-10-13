@@ -1,6 +1,24 @@
 # Evolvera PI Setup - install.ps1
 # PowerShell 5.1+ compatible installer for Windows
 
+param(
+    [switch]$PrepareUsuarioEntry,
+    [string]$UsuarioBinDir,
+    [string]$UsuarioSdkRoot,
+    [string]$UsuarioNodePath
+)
+
+if ($PrepareUsuarioEntry) {
+    if (-not $UsuarioBinDir -or -not $UsuarioSdkRoot) { [Console]::Error.WriteLine("UsuarioBinDir and UsuarioSdkRoot are required."); exit 1 }
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    if (-not $scriptDir) { $scriptDir = $PWD.Path }
+    $renderer = Join-Path $scriptDir "scripts/users/entrypoints.mjs"
+    $argsList = @($renderer, "--bin-dir", $UsuarioBinDir, "--sdk-root", $UsuarioSdkRoot, "--platform", "win32")
+    if ($UsuarioNodePath) { $argsList += @("--node-path", $UsuarioNodePath); & $UsuarioNodePath @argsList }
+    else { & node @argsList }
+    exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = "Stop"
 
 # Colors

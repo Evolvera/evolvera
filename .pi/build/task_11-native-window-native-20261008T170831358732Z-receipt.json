@@ -1,0 +1,59 @@
+{
+  "outcome": "NATURAL_EXIT_ZERO_NATIVE_PRINCIPAL_NEXTTURN_MATRIX_OBSERVED",
+  "elapsedSeconds": 231.0,
+  "returnCode": 0,
+  "statusQueriedAfterObservedFatal": false,
+  "command": [
+    "C:/nvm4w/nodejs/node.exe",
+    "C:/Users/kevin/Documents/Pi/scripts/test/users-switch.smoke.mjs"
+  ],
+  "envKeyNames": [
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "WINDIR"
+  ],
+  "headBefore": "fcb94ce866cf773f45c89362536e81ee96c93aa4",
+  "headAfter": "fcb94ce866cf773f45c89362536e81ee96c93aa4",
+  "driverPid": 25968,
+  "ownedNativeParentPid": 29392,
+  "observedPhasePids": [
+    2024,
+    7956,
+    21056,
+    22484,
+    23760,
+    24712,
+    27068,
+    31972,
+    33032
+  ],
+  "namespacesFromExternalCaptureOnly": [
+    "C:\\Windows\\Temp\\pi-users-switch-vENOB3"
+  ],
+  "firstObservation": ".pi/build/task_11-native-window-native-20261008T170831358732Z-first-observation.log",
+  "firstObservationBytes": 14401,
+  "firstObservationSha256": "f9ec085a1ceaa6fe1df80f6588990f5095b312f8ce4f338b17debb0d1943480b",
+  "originalCapture": ".pi/build/task_11-native-window-native-20261008T170831358732Z.log",
+  "authorityConsumedSha256": "647390ca4d0a5e3ca6d917e566f8ce955fe1928b58497253fdd6beb023a13961",
+  "sourceHashesUnchanged": {
+    "extensions/usuario.ts": true,
+    "scripts/users/registry.mjs": true,
+    "scripts/users/ownership.mjs": true,
+    "scripts/users/credentials.mjs": true,
+    "scripts/users/settings.mjs": true,
+    "scripts/users/resources.mjs": true,
+    "scripts/users/environment.mjs": true,
+    "scripts/users/runtime.mjs": true,
+    "scripts/users/launcher.mjs": true,
+    "scripts/users/switch-readiness.mjs": true,
+    "scripts/test/users-switch.smoke.mjs": true,
+    "scripts/test/lib/users-sandbox.mjs": true,
+    "scripts/compat/alibaba-users.mjs": true
+  },
+  "nativeMatrixObserved": true,
+  "scope": "Actual native principal SDK/RPC plus exact nextTurn normalbatch/lateridentical preservation ONLY if fullmarker+exit0; syntheticroothelpers; NO fullSUB/Plastic orWindowsTTY orcompleteTask11 certification",
+  "failurePolicy": "If any unexpected/fatal: namespace/PIDs now foreverOFFLIMITS, no query/signal/IPC/cleanup/restore/retry; preserve all historical failures",
+  "signalCleanupRetryRestore": false,
+  "otherTerminalOrRealAccountProviderOperations": false,
+  "overallTask11": "PARTIAL; Tasks12–15 pending; /usuarioinactive; authorizedbaselinecommitfcb94ce done, no additionalcommit/push/merge/install/activate/GigaFlow"
+}
