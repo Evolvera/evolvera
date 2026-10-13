@@ -750,6 +750,7 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
       };
       result.resourceLoaderOptions = {
         extensionFactories: [{ name: "usuario", builtin: true, factory: createUsuarioFactory(Object.freeze({
+          label: account.label,
           async execute(command, ctx) {
             if (ctx.sessionManager !== request.sessionManager) return "ACCOUNT_CONTROL_NOT_ROOT";
             if (command.operation === "display" || command.operation === "status") return JSON.stringify({ id: account.id, label: account.label, managed: true, binding: "fixed-for-process" });
