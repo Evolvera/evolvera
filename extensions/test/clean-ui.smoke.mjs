@@ -34,6 +34,7 @@ function extensionHarness() {
   let sdkRuntimeBound = false;
   let availableCommands = [{ name: "fast" }, { name: "maestro" }];
   let renderRequests = 0;
+  let contextPercent = 50;
   const statuses = new Map();
   const pi = {
     registerToolRenderer(value) { resolver = value; },
@@ -53,7 +54,7 @@ function extensionHarness() {
   };
   const ctx = {
     mode: "tui", hasUI: true, cwd: ".", model: { id: "test-model" },
-    getContextUsage() { return { percent: 50 }; },
+    getContextUsage() { return { percent: contextPercent }; },
     sessionManager: { getBranch() { return []; } },
     ui: {
       theme,
@@ -69,6 +70,7 @@ function extensionHarness() {
     get getCommandsCalls() { return getCommandsCalls; },
     get renderRequests() { return renderRequests; },
     setAvailableCommands(value) { availableCommands = value; },
+    setContextPercent(value) { contextPercent = value; },
     makeFooter() {
       assert.ok(footerFactory, "session_start should install footer");
       return footerFactory({ requestRender() { renderRequests++; } }, theme, {
@@ -99,15 +101,14 @@ test("preserves Unicode clean cards, clipping, errors, images and renderer resul
 });
 
 test("context footer clamps finite values, marks unknown, and stays within responsive widths", () => {
-  for (const width of [20, 40, 80, 120, 160]) {
+  for (const width of [6, 20, 40, 80, 160]) {
     for (const value of [-25, 0, 37.4, 100, 120, null, Number.NaN, Infinity]) {
       const line = ui.formatFooter({ model: "model-name", thinking: "high", contextPercent: value, cost: 0.25, branch: "feature" }, theme, width);
       assert.ok(ui.cellWidth(line) <= width, `${width}: ${line}`);
+      assert.match(line, /model/);
     }
   }
-  assert.match(ui.formatFooter({ contextPercent: Number.NaN }, theme, 120), /ctx \[----/);
-  assert.match(ui.formatFooter({ contextPercent: 120 }, theme, 120), /100%/);
-  assert.match(ui.formatFooter({ contextPercent: -2 }, theme, 120), /0%/);
+  assert.doesNotMatch(ui.formatFooter({ contextPercent: Number.NaN }, theme, 120), /ctx/);
 });
 
 test("footer queries commands only after session runtime binding and preserves owner/other statuses", async () => {
@@ -121,12 +122,21 @@ test("footer queries commands only after session runtime binding and preserves o
   const footer = harness.makeFooter();
   const lines = footer.render(160);
   assert.equal(harness.getCommandsCalls, 1, "commands are read during footer rendering only");
-  assert.match(lines[0], /ctx \[/);
+  assert.match(lines[0], /test-model/);
+  assert.match(lines[1], /ctx \[/);
   assert.match(lines[1], /fast ON/);
   assert.match(lines[1], /maestro OFF/);
   assert.match(lines[1], /other-extension ready/);
-  for (const width of [20, 40, 80, 120, 160]) {
+  harness.setContextPercent(Number.NaN);
+  assert.match(footer.render(160)[1], /ctx \[----/);
+  harness.setContextPercent(120);
+  assert.match(footer.render(160)[1], /100%/);
+  harness.setContextPercent(-2);
+  assert.match(footer.render(160)[1], /0%/);
+  harness.setContextPercent(50);
+  for (const width of [6, 20, 40, 80, 160]) {
     assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width), `footer exceeds width ${width}`);
+    assert.match(footer.render(width).join(" "), /ctx/);
   }
   harness.statuses.clear();
   harness.setAvailableCommands([]);
@@ -147,7 +157,7 @@ test("mode labels include explicit ON and long external status tokens stay bound
   const footer = harness.makeFooter();
   assert.match(footer.render(160).join(" "), /fast ON.*ECO/);
   assert.match(footer.render(160).join(" "), /maestro ON.*routing/);
-  for (const width of [20, 40, 80, 120, 160]) assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
+  for (const width of [6, 20, 40, 80, 160]) assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
 });
 
 test("a completed todo stays visible on redraw and can be announced after reopening", () => {
@@ -289,6 +299,42 @@ test("image results delegate unchanged to stock while the Unicode header finishe
     assert.match(call.render(80).join(""), new RegExp(`✓ ${toolName}`), "finished image must not remain a running spinner");
     assert.deepEqual(result, before);
   }
+});
+
+test("collapsed edit cards show a bounded framed diff, delta summary, and visible errors", () => {
+  const diff = "--- before\n+++ after\n context\n-old line\n+new 界";
+  const data = { toolName: "edit", args: { path: "src/file.ts" }, cwd: ".", result: { content: [{ type: "text", text: "File updated" }], details: { diff } }, partial: false, isError: false };
+  assert.equal(ui.diffStats(diff).added, 1);
+  assert.equal(ui.diffStats(diff).removed, 1);
+  assert.match(ui.renderHeader(data, theme, 80), /✓ edit  src\/file.ts  \+1 -1/);
+  const preview = ui.renderBody(data, theme, 80, false);
+  assert.match(preview[0], /╭/);
+  assert.match(preview[3], /│  context/);
+  assert.match(preview[4], /│ -old line/);
+  assert.match(preview[5], /│ \+new 界/);
+  assert.match(preview.at(-1), /╰/);
+  for (const width of [6, 20, 40, 80, 160]) {
+    const rows = ui.renderBody(data, theme, width, false);
+    assert.ok(rows.every((line) => ui.cellWidth(ui.stripControl(line)) <= width), `edit preview exceeds ${width}`);
+    if (width <= 8) assert.ok(rows.every((line) => !/[╭│╰]/.test(line)), "narrow preview drops borders");
+  }
+  const largeDiff = Array.from({ length: 50 }, (_, i) => `${i % 2 ? "+" : "-"}line-${i}`).join("\n");
+  const bounded = ui.renderBody({ ...data, result: { details: { diff: largeDiff } } }, theme, 40, false);
+  assert.equal(bounded.length, ui.MAX_EXPANDED_LINES + 3, "20 diff rows plus skip label and two frame edges");
+  assert.match(bounded.join("\n"), /more lines/);
+  const error = { ...data, isError: true, result: { content: [{ type: "text", text: "edit failed\nCommand exited with code 2" }], details: { diff } } };
+  assert.deepEqual(ui.renderBody(error, theme, 40, false), ["  ╰ edit failed"]);
+});
+
+test("ANSI-colored Unicode cards retain terminal cell-width bounds", () => {
+  const ansiTheme = { fg: (_color, text) => `\u001b[31m${text}\u001b[0m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const data = { toolName: "edit", args: { path: "界.ts" }, result: { details: { diff: "-old\n+new 界" } }, partial: false, isError: false };
+  for (const width of [6, 20, 40, 80, 160]) {
+    for (const line of [ui.renderHeader(data, ansiTheme, width), ...ui.renderBody(data, ansiTheme, width, false)]) {
+      assert.ok(ui.cellWidth(ui.stripControl(line)) <= width, `${width}: ${line}`);
+    }
+  }
+  assert.ok(ui.renderBody(data, ansiTheme, 40, false).some((line) => line.includes("\u001b[31m")));
 });
 
 test("expanded output keeps head or shell tail, caps lines, and clips narrow cells", () => {
