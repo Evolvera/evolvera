@@ -61,11 +61,11 @@ Implementation, code investigation and debugging, tests and benchmarks, bug hunt
 
 ## Handoff
 
-Each handoff stands alone: goal and why, worktree and branch, proven facts, what to do, the \`NOT TO DO\` fence, deliverables (PR to the agreed base, independent review, issue comment, card status), and the stop/report condition. Keep the final outcome first: handoffs ask for the smallest check that proves the change, never coverage, full suites, or new harnesses the user did not request. Send and verify it as Orca Workers describes.
+Each handoff stands alone: goal and why, worktree and branch, proven facts, what to do, the \`NOT TO DO\` fence, deliverables (PR to the agreed base, independent review, issue comment, card status), and the stop/report condition. Include this exact rule in every handoff: unsolicited messages to the coordinator are only for completed acceptance or a concrete blocker/decision that needs the coordinator. Do not send acknowledgements, start notices, heartbeats, progress/checkpoint/test-milestone updates, or PR-open-only notices. Resolve local engineering failures first. Use questions/escalations for genuine safety, authorization, ownership, access, or contract decisions; answer explicit coordinator requests. A PR opening alone is not completion. Keep the final outcome first: handoffs ask for the smallest check that proves the change, never coverage, full suites, or new harnesses the user did not request. Send and verify it as Orca Workers describes.
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal; workers launched with \`PI_REPORT_RUN\` report to your Run and Orca wakes you. After dispatching, end the turn. Act again on a worker event (finished, PR opened, blocked, question) or when the user says workers finished or stopped; then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
+Never \`sleep\`, poll, or tail a worker's terminal; workers launched with \`PI_REPORT_RUN\` report completion or a concrete blocker/decision needing you, and Orca wakes you. After dispatching, end the turn. Act again on a worker completion, blocker, or genuine question, or when the user says workers finished or stopped; a PR opening alone is not a worker wake/report outcome. Then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
 
 ## Status board
 
