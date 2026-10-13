@@ -11,7 +11,8 @@ import { transformMainSource, transformMigrationsSource } from "./sdk-cli-source
 import { transformModelRuntimeSource, transformModelConfigSource } from "./sdk-auth-source.mjs";
 import { defaultRegistryPath, resolveUser } from "./registry.mjs";
 import { createAccount } from "./account-session.mjs";
-import { createUserEnvironment, installUserEnvironment } from "./environment.mjs";
+import { CREATE_ACCOUNT, selectAccountMenu } from "./account-selector.mjs";
+import { ACCOUNT_LAUNCH_CONTEXT_ENV, createUserEnvironment, decodeAccountLaunchContext, encodeAccountLaunchContext, extractAccountLaunchContextArgs, installUserEnvironment } from "./environment.mjs";
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const fail = (code) => Object.assign(new Error(code), { code });
@@ -138,7 +139,17 @@ async function superviseRpc(args, initialProfile, spawnProcess) {
       try {
         child = spawnProcess(process.execPath, [SCRIPT, "--managed-child", selected.id, selectedArgs.cwd, "rpc", "", selected.registryPath, JSON.stringify(binding), selectedArgs.initialSessionPath ?? ""],
           { cwd: selectedArgs.cwd, env: { ...env }, stdio: ["pipe", "pipe", "pipe", "ipc"], windowsHide: false });
-      } catch { throw fail(savedOrigin ? "USER_SWITCH_RELAUNCH_FAILED_OWN_ORIGIN_RECOVERABLE" : "LAUNCH_CHILD_FAILED"); }
+      } catch (error) {
+        // Finite diagnostic only: never relay exception messages, paths or stacks.
+        try {
+          const nameDescriptor = error instanceof Error ? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(error), "name") : undefined;
+          const name = ["AssertionError", "Error", "TypeError", "RangeError", "ReferenceError", "SyntaxError", "URIError", "EvalError"].includes(nameDescriptor?.value) ? nameDescriptor.value : "Error";
+          const codeDescriptor = error && (typeof error === "object" || typeof error === "function") ? Object.getOwnPropertyDescriptor(error, "code") : undefined;
+          const code = ["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EAGAIN", "ENOMEM", "EMFILE", "ENFILE", "E2BIG", "ENOEXEC", "EBADF", "EINVAL"].includes(codeDescriptor?.value) ? codeDescriptor.value : "none";
+          process.stderr.write(`USER_SWITCH_SPAWN_REJECTED ${JSON.stringify({ name, code })}\n`);
+        } catch { try { process.stderr.write('USER_SWITCH_SPAWN_REJECTED {"name":"Error","code":"none"}\n'); } catch {} }
+        throw fail(savedOrigin ? "USER_SWITCH_RELAUNCH_FAILED_OWN_ORIGIN_RECOVERABLE" : "LAUNCH_CHILD_FAILED");
+      }
       const r = { child, ready: false, inflight: [], handoff: undefined, shutdown: false, failed: false, buffer: "", wake: `usuario-wake-${binding.nonce}`, shutdownTimer: undefined };
       record = r;
       const closed = new Promise((resolve) => child.once("close", (code, signal) => resolve({ code, signal })));
@@ -273,8 +284,11 @@ async function runChild([, , id, cwd, mode, message, registryPath, bindingText, 
     if (channel) process.send(switchEnvelope({ ...JSON.parse(bindingText), originPid: process.pid, profile: profile.id }, "ready"));
     return await runUserMode(runtime, mode, mode === "text" || mode === "json" ? { initialMessage: message } : {});
   } finally {
-    if (runtime) await runtime.host.dispose();
-    channel?.dispose();
+    try {
+      if (runtime) await runtime.host.dispose();
+    } finally {
+      channel?.dispose();
+    }
   }
 }
 
@@ -285,10 +299,10 @@ function publishedSdkRoot() {
 
 async function askAccount(users, registryPath) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw fail("ACCOUNT_SELECTION_REQUIRED");
+  const selected = await selectAccountMenu({ users, input: process.stdin, output: process.stdout });
+  if (selected !== CREATE_ACCOUNT) return selected;
   const lines = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    if (users.length) process.stdout.write(`Accounts: ${users.map(({ id, label }) => `${id} (${label})`).join(", ")}\n`);
-    else process.stdout.write("No accounts registered yet.\n");
     const answer = await new Promise((resolve) => {
       let settled = false;
       lines.once("close", () => { if (!settled) { settled = true; resolve(""); } });
@@ -301,10 +315,10 @@ async function askAccount(users, registryPath) {
 }
 
 function isNativeEarlyCommand(argv) {
-  return argv.some((argument) => ["--version", "-v"].includes(argument)) || argv[0] === "package" || argv[0] === "config";
+  return argv.some((argument) => ["--version", "-v"].includes(argument)) || argv[0] === "package" || argv[0] === "config" || argv[0] === "update";
 }
 
-async function createNativeAdapter(options, registryPath, argv) {
+async function createNativeAdapter(options, registryPath, argv, launchContext, publicationEnv) {
   if (options.nativeMain) return { main: options.nativeMain, factory: options.accountRuntimeFactory };
   const packageRoot = options.packageRoot ?? publishedSdkRoot();
   if (isNativeEarlyCommand(argv)) {
@@ -327,7 +341,11 @@ async function createNativeAdapter(options, registryPath, argv) {
   if (typeof mainModule.main !== "function" || !runtimeModule.ModelRuntime) throw fail("NATIVE_SDK_API_UNAVAILABLE");
   const factory = createUserRuntime(registryPath, {
     sdkRoot: packageRoot,
-    pickAccount: options.pickAccount ?? ((users) => askAccount(users, registryPath)),
+    inheritedAccountId: launchContext?.accountId,
+    onAccountSelected: (account) => {
+      publicationEnv[ACCOUNT_LAUNCH_CONTEXT_ENV] = encodeAccountLaunchContext(account);
+    },
+    pickAccount: options.pickAccount ?? ((users) => launchContext?.accountId ?? askAccount(users, registryPath)),
     createModelRuntime: (request) => runtimeModule.ModelRuntime.create({
       ...request,
       allowModelNetwork: request.purpose === "application" && process.env.PI_OFFLINE === undefined,
@@ -337,9 +355,21 @@ async function createNativeAdapter(options, registryPath, argv) {
 }
 
 export async function launchUser(argv = process.argv.slice(2), options = {}) {
-  const registryPath = options.registryPath ?? defaultRegistryPath(os.homedir());
-  const adapter = await createNativeAdapter(options, registryPath, argv);
-  return runUserMode(adapter.main, argv, {
+  const extracted = extractAccountLaunchContextArgs(argv);
+  const publicationEnv = options.env ?? process.env;
+  const envEncoded = publicationEnv[ACCOUNT_LAUNCH_CONTEXT_ENV];
+  const optionContext = options.accountLaunchContext;
+  const suppliedCount = Number(extracted.encoded !== undefined) + Number(envEncoded !== undefined) + Number(optionContext !== undefined);
+  if (suppliedCount > 1) throw fail("ACCOUNT_LAUNCH_CONTEXT_INVALID");
+  let launchContext;
+  if (extracted.encoded !== undefined) launchContext = decodeAccountLaunchContext(extracted.encoded);
+  else if (envEncoded !== undefined) launchContext = decodeAccountLaunchContext(envEncoded);
+  else if (optionContext !== undefined) launchContext = decodeAccountLaunchContext(typeof optionContext === "string" ? optionContext : encodeAccountLaunchContext(optionContext));
+  if (launchContext && options.registryPath !== undefined && path.resolve(options.registryPath) !== launchContext.registryPath) throw fail("ACCOUNT_LAUNCH_REGISTRY_CONFLICT");
+  const registryPath = launchContext?.registryPath ?? options.registryPath ?? defaultRegistryPath(os.homedir());
+  const nativeArgv = extracted.argv;
+  const adapter = await createNativeAdapter(options, registryPath, nativeArgv, launchContext, publicationEnv);
+  return runUserMode(adapter.main, nativeArgv, {
     ...(options.nativeOptions ?? {}),
     ...(adapter.factory ? { accountRuntimeFactory: adapter.factory } : {}),
   });

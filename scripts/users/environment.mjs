@@ -53,3 +53,62 @@ export function installUserEnvironment(profileContext, options = {}) {
 export function isAmbientCredentialVariable(name) {
   return typeof name === "string" && AMBIENT_DENY.test(name);
 }
+
+// Managed-launcher child context: account identity and its shared registry namespace only.
+export const ACCOUNT_LAUNCH_CONTEXT_ENV = "PI_ACCOUNT_LAUNCH_CONTEXT";
+const ACCOUNT_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
+const ACCOUNT_CONTEXT_KEYS = ["accountId", "registryPath", "version"];
+const contextFail = () => Object.assign(new Error("ACCOUNT_LAUNCH_CONTEXT_INVALID"), { code: "ACCOUNT_LAUNCH_CONTEXT_INVALID" });
+
+function validateAccountLaunchContext(context) {
+  if (!context || typeof context !== "object" || Array.isArray(context) ||
+      Object.keys(context).sort().join(",") !== ACCOUNT_CONTEXT_KEYS.join(",") || context.version !== 1 ||
+      typeof context.accountId !== "string" || !ACCOUNT_ID_RE.test(context.accountId) ||
+      typeof context.registryPath !== "string" || !path.isAbsolute(context.registryPath) ||
+      context.registryPath.includes("\0") || path.resolve(context.registryPath) !== context.registryPath) throw contextFail();
+  return Object.freeze({ version: 1, accountId: context.accountId, registryPath: context.registryPath });
+}
+
+export function encodeAccountLaunchContext(context) {
+  const valid = validateAccountLaunchContext(context);
+  return Buffer.from(JSON.stringify(valid), "utf8").toString("base64url");
+}
+
+export function decodeAccountLaunchContext(encoded) {
+  if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 4096 || !/^[A-Za-z0-9_-]+$/.test(encoded)) throw contextFail();
+  try {
+    const json = Buffer.from(encoded, "base64url").toString("utf8");
+    if (Buffer.from(json, "utf8").toString("base64url") !== encoded) throw contextFail();
+    const context = validateAccountLaunchContext(JSON.parse(json));
+    if (JSON.stringify(context) !== json) throw contextFail();
+    return context;
+  } catch {
+    throw contextFail();
+  }
+}
+
+/** Strip only wrapper-owned context flags before native argv parsing; arguments after -- are literal. */
+export function extractAccountLaunchContextArgs(argv) {
+  if (!Array.isArray(argv) || argv.some((value) => typeof value !== "string")) throw contextFail();
+  const nativeArgs = [];
+  let encoded;
+  let ended = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const value = argv[index];
+    if (ended) { nativeArgs.push(value); continue; }
+    if (value === "--") { ended = true; nativeArgs.push(value); continue; }
+    if (value === "--usuario-context" || value.startsWith("--usuario-context=")) {
+      if (encoded !== undefined) throw contextFail();
+      if (value === "--usuario-context") {
+        encoded = argv[++index];
+        if (typeof encoded !== "string" || encoded.length === 0 || encoded.startsWith("--")) throw contextFail();
+      } else {
+        encoded = value.slice("--usuario-context=".length);
+        if (!encoded) throw contextFail();
+      }
+      continue;
+    }
+    nativeArgs.push(value);
+  }
+  return Object.freeze({ argv: Object.freeze(nativeArgs), encoded });
+}

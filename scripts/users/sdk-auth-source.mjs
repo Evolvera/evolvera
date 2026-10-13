@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
 import { requireContext } from "./registry.mjs";
 
 const fail = (message) => { throw new Error(`SDK auth source refused: ${message}`); };
@@ -14,6 +16,38 @@ function cloneConfigValue(value) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneConfigValue(entry)]));
 }
+const ACCOUNT_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
+
+/** Scope only the native personalized OpenRouter cache entry; all other keys remain native/shared. */
+export function wrapModelsStore(store, accountId, registryPath) {
+  if (!store || typeof store !== "object" || typeof store.read !== "function" || typeof store.write !== "function" || typeof store.delete !== "function") {
+    fail("models store must implement read, write and delete");
+  }
+  if (accountId !== undefined && (typeof accountId !== "string" || !ACCOUNT_ID_RE.test(accountId))) fail("account id is invalid for models store");
+  if (accountId !== undefined && (typeof registryPath !== "string" || !path.isAbsolute(registryPath) || registryPath.includes("\0"))) fail("registry path is required for models store identity");
+  // Account IDs are only unique within their canonical registry, not across launchers.
+  const registryIdentity = accountId === undefined ? undefined : createHash("sha256")
+    .update(process.platform === "win32" ? registryPath.toLowerCase() : registryPath).digest("hex");
+  const scopedKey = accountId === undefined ? undefined : `pi.account/${registryIdentity}/${accountId}/openrouter`;
+  return Object.freeze({
+    async read(providerId, options) {
+      if (providerId !== "openrouter") return store.read(providerId, options);
+      if (scopedKey === undefined) { options?.signal?.throwIfAborted(); return undefined; }
+      return store.read(scopedKey, options);
+    },
+    async write(providerId, entry, options) {
+      if (providerId !== "openrouter") return store.write(providerId, entry, options);
+      if (scopedKey === undefined) fail("metadata models store is read-only for personalized OpenRouter catalogs");
+      return store.write(scopedKey, entry, options);
+    },
+    async delete(providerId, options) {
+      if (providerId !== "openrouter") return store.delete(providerId, options);
+      if (scopedKey === undefined) fail("metadata models store is read-only for personalized OpenRouter catalogs");
+      return store.delete(scopedKey, options);
+    },
+  });
+}
+
 function withoutAuthValues(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const copy = cloneConfigValue(value);
@@ -112,6 +146,7 @@ export function createAccountConfigPolicy({ profile, env = {} } = {}) {
     env: accountEnv,
     filterConfig,
     filterRegistration,
+    wrapModelsStore: (store) => wrapModelsStore(store, profile.id, profile.registryPath),
   });
 }
 
@@ -130,10 +165,27 @@ export function transformModelRuntimeSource(text) {
     "        const config = await ModelConfig.load(modelsPath);",
     "        const config = await ModelConfig.load(modelsPath, options.accountConfigPolicy?.filterConfig);",
     "initial ModelConfig policy");
-  output = replaceOnce(output,
-    "new ModelRuntime(credentials, config, modelsPath, modelsStore, providers, process.env.PI_OFFLINE === undefined);",
-    "new ModelRuntime(credentials, config, modelsPath, modelsStore, providers, process.env.PI_OFFLINE === undefined, options.authContext, options.accountConfigPolicy);",
-    "ModelRuntime factory propagation");
+  const personalizedCatalogAnchor = 'import { personalizeOpenRouterCatalog } from "@earendil-works/pi-ai/providers/openrouter";';
+  if (text.includes(personalizedCatalogAnchor)) {
+    const nativeStoreBlock = `        const modelsStore = options.modelsStore ??
+            (modelsPath
+                ? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
+                : new InMemoryCodingAgentModelsStore());`;
+    output = replaceOnce(output, nativeStoreBlock, `${nativeStoreBlock}\n        const scopedModelsStore = options.accountConfigPolicy ? options.accountConfigPolicy.wrapModelsStore(modelsStore) : modelsStore;`, "1.2.0 personalized cache store");
+    output = replaceOnce(output,
+      "new ModelRuntime(credentials, config, modelsPath, modelsStore, providers, process.env.PI_OFFLINE === undefined);",
+      "new ModelRuntime(credentials, config, modelsPath, scopedModelsStore, providers, process.env.PI_OFFLINE === undefined);",
+      "1.2.0 scoped ModelRuntime store");
+    output = replaceOnce(output,
+      "new ModelRuntime(credentials, config, modelsPath, scopedModelsStore, providers, process.env.PI_OFFLINE === undefined);",
+      "new ModelRuntime(credentials, config, modelsPath, scopedModelsStore, providers, process.env.PI_OFFLINE === undefined, options.authContext, options.accountConfigPolicy);",
+      "1.2.0 scoped ModelRuntime store and policy");
+  } else {
+    output = replaceOnce(output,
+      "new ModelRuntime(credentials, config, modelsPath, modelsStore, providers, process.env.PI_OFFLINE === undefined);",
+      "new ModelRuntime(credentials, config, modelsPath, modelsStore, providers, process.env.PI_OFFLINE === undefined, options.authContext, options.accountConfigPolicy);",
+      "ModelRuntime factory propagation");
+  }
   output = replaceOnce(output,
     "        this.config = await ModelConfig.load(this.modelsPath);",
     "        this.config = await ModelConfig.load(this.modelsPath, this.accountConfigPolicy?.filterConfig);",
@@ -150,9 +202,19 @@ export function transformModelRuntimeSource(text) {
 
 /** Prepare a post-schema, pre-freeze ModelConfig policy hook. */
 export function transformModelConfigSource(text) {
+  const sdk120Anchor = `        const providers = new Map();\n        for (const [providerId, provider] of Object.entries(parsed.providers)) {`;
+  let output;
+  if (text.includes(sdk120Anchor)) {
+    output = replaceOnce(text, sdk120Anchor, `        const policyProviders = typeof transform === "function" ? transform(parsed.providers) : parsed.providers;\n        const providers = new Map();\n        for (const [providerId, provider] of Object.entries(policyProviders)) {`, "1.2.0 pre-freeze ModelConfig policy hook");
+    output = replaceOnce(output,
+      "    static async load(modelsJsonPath) {",
+      "    static async load(modelsJsonPath, transform) {",
+      "1.2.0 ModelConfig load options");
+    return output;
+  }
   const anchor = `        const config = parsed;\n        const providers = new Map();`;
   const replacement = `        const config = parsed;\n        const policyProviders = typeof transform === "function" ? transform(config.providers) : config.providers;\n        const providers = new Map();`;
-  let output = replaceOnce(text, anchor, replacement, "ModelConfig policy hook");
+  output = replaceOnce(text, anchor, replacement, "ModelConfig policy hook");
   output = replaceOnce(output,
     "    static async load(modelsJsonPath) {",
     "    static async load(modelsJsonPath, transform) {",
