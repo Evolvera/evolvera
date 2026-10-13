@@ -163,6 +163,14 @@ As trocas são fail-closed por nome/versão/cardinalidade, idempotentes, atômic
 node scripts/test/patch-ultra-thinking.smoke.mjs
 ```
 
+### Login OAuth do Gemini no navegador
+
+O template instala `pi-antigravity@0.10.0`, um provedor OAuth não oficial para login Google no navegador (não requer API key). Após instalar ou atualizar, use `/reload` e `/login antigravity`, conclua o consentimento no navegador, execute `/antigravity.refresh` e consulte `/antigravity.models` para escolher um modelo anunciado pelo servidor. Isso não altera o provedor nem o modelo padrão. O Gemini 3.8 está incluído no Pro; Argon requer plano Ultra ou Enterprise.
+
+Quando a conta anunciar `gemini-4-argon`, selecione `/model antigravity/gemini-4-argon`. O override em `config/models.json` ajusta esse modelo descoberto para contexto unificado de 1.048.576 tokens e saída síncrona de 65.536, conforme a [documentação do Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon). Ele não cria um modelo ausente do catálogo, não inventa variantes de reasoning nem libera acesso no plano Pro. A disponibilidade e a resposta real precisam ser verificadas após o login.
+
+Este fluxo usa OAuth de terceiros, não oficial do Google. Os termos do Antigravity, cláusula 6, proíbem OAuth de terceiros e o uso pode resultar em suspensão da conta: https://antigravity.google/terms. Credenciais não devem ser versionadas no Git.
+
 ### Compatibilidade OAuth do Claude Fable 5.1
 
 O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@0.83.0` e `@gotgenes/pi-anthropic-auth@2.0.6` ou a instalação adaptada `2.0.1` (preservada sem reinstalação), alterando somente os anchors conhecidos para reportar Claude Code `2.1.280`. Isso é necessário porque o OAuth do Opus 5.5 exige Claude Code `2.1.280+` (o Fable 5.1 exigia `2.1.251+`); o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
