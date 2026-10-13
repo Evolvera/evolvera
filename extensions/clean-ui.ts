@@ -4,12 +4,18 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 
 // clean-ui: OMP-inspired quiet terminal chrome built only on public extension seams
 // (registerToolRenderer, ctx.ui.setFooter/setWorkingIndicator/setHiddenThinkingLabel).
-// Plain Unicode terminal art (box/branch strokes, check/cross signs, braille spinner): single-cell
+// Plain Unicode terminal art (box/branch strokes, check/cross signs, comet indicator): single-cell
 // glyphs from ordinary monospace fonts. No emoji, no private-use/Nerd Font glyphs, no banners.
 
 export const MAX_EXPANDED_LINES = 20;
 export const STATE_FILE_NAME = "clean-ui.json";
-export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const SPINNER_FRAMES = Array.from({ length: 8 }, (_, step) =>
+  Array.from({ length: 8 }, (_, cell) => cell === step ? "◆" : cell === (step + 7) % 8 ? "━" : "·").join(""));
+
+export function coloredWorkingFrames(theme: ThemeLike): string[] {
+  return SPINNER_FRAMES.map((frame, step) => [...frame].map((glyph) =>
+    theme.fg(glyph === "◆" ? (step % 2 ? "success" : "accent") : glyph === "━" ? "accent" : "muted", glyph)).join(""));
+}
 const BUILTIN_TOOLS = new Set(["bash", "powershell", "read", "edit", "write", "grep", "find", "ls"]);
 // Extension tools that stay quiet even if they bring their own (verbose) renderer.
 const EXTRA_COLLAPSED_TOOLS = new Set(["todo"]);
@@ -685,7 +691,7 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
     // Empty label renders no line at all (pi-tui Text skips blank text). It is only consulted when
     // the hideThinkingBlock setting is true; extensions cannot flip that setting.
     ui.setHiddenThinkingLabel("");
-    ui.setWorkingIndicator({ frames: SPINNER_FRAMES.map((frame) => ui.theme.fg("accent", frame)), intervalMs: 80 });
+    ui.setWorkingIndicator({ frames: coloredWorkingFrames(ui.theme), intervalMs: 125 });
     ui.setWorkingMessage("working");
     ui.setFooter((tui, theme, footerData) => {
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());

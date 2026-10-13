@@ -362,3 +362,33 @@ test("expanded output keeps head or shell tail, caps lines, and clips narrow cel
 });
 
 console.log(`clean-ui isolated fixture retained at ${runRoot}`);
+
+
+test("working art has constant-width colored Unicode phases and uses the existing native indicator", async () => {
+  const palette = { muted: 2, accent: 36, success: 32 };
+  const colorTheme = { fg: (color, text) => `\x1b[${palette[color]}m${text}\x1b[0m`, bold: text => text };
+  const frames = ui.coloredWorkingFrames(colorTheme);
+  assert.equal(frames.length, 8);
+  assert.equal(new Set(frames).size, 8);
+  for (const frame of frames) {
+    assert.equal([...frame.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")].length, 8);
+    assert.match(frame, /◆/);
+    assert.match(frame, /━/);
+    assert.match(frame, /\x1b\[2m/);
+    assert.match(frame, /\x1b\[36m/);
+    assert.ok(frame.endsWith("\x1b[0m"));
+      assert.ok(!frame.includes(String.fromCharCode(13)) && !frame.includes(String.fromCharCode(10)));
+  }
+  assert.ok(frames.some(frame => frame.includes("\x1b[32m◆")));
+  const h = extensionHarness();
+  const received = [];
+  h.ctx.ui.theme = colorTheme;
+  h.ctx.ui.setWorkingIndicator = options => received.push(options);
+  await h.handlers.get("session_start")({}, h.ctx);
+  assert.deepEqual(received[0], { frames, intervalMs: 125 });
+  await h.commands.get("clean-ui").handler("off", h.ctx);
+  assert.equal(received.at(-1), undefined);
+  received.length = 0;
+  await h.commands.get("clean-ui").handler("on", { ...h.ctx, mode: "rpc", hasUI: false });
+  assert.equal(received.length, 0);
+});
