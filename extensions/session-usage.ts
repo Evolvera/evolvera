@@ -136,10 +136,11 @@ export interface SessionUsageActivityGrid {
   excluded: number;
 }
 
-/** Count timestamped assistant responses in the 53 UTC weeks ending this week. */
-export function activityGrid(entries: readonly unknown[], now = Date.now()): SessionUsageActivityGrid {
+/** Count timestamped assistant responses in up to 53 UTC weeks ending this week. */
+export function activityGrid(entries: readonly unknown[], now = Date.now(), windowWeeks = 53): SessionUsageActivityGrid {
+  const columns = Number.isFinite(windowWeeks) ? Math.max(1, Math.min(53, Math.floor(windowWeeks))) : 53;
   const endWeek = mondayUtc(now);
-  const startWeek = endWeek - 52 * WEEK_MS;
+  const startWeek = endWeek - (columns - 1) * WEEK_MS;
   const valid: number[] = [];
   let excluded = 0;
   for (const entry of entries) {
@@ -148,13 +149,13 @@ export function activityGrid(entries: readonly unknown[], now = Date.now()): Ses
     if (timestamp === undefined || timestamp > now) excluded++;
     else valid.push(timestamp);
   }
-  const weeks = Array.from({ length: 53 }, () => Array<number>(7).fill(0));
+  const weeks = Array.from({ length: columns }, () => Array<number>(7).fill(0));
   let inWindow = 0;
   for (const timestamp of valid) {
     const week = Math.floor((endWeek - mondayUtc(timestamp)) / WEEK_MS);
-    if (week < 0 || week >= 53) continue;
+    if (week < 0 || week >= columns) continue;
     const day = (new Date(timestamp).getUTCDay() + 6) % 7;
-    weeks[52 - week]![day]++;
+    weeks[columns - 1 - week]![day]++;
     inWindow++;
   }
   const months: string[] = [];
@@ -176,7 +177,7 @@ export function activityGrid(entries: readonly unknown[], now = Date.now()): Ses
 
 function graphemeWidth(grapheme: string): number {
   if (/^\p{Mark}+$/u.test(grapheme)) return 0;
-  return /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}]/u.test(grapheme) ? 2 : 1;
+  return /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u.test(grapheme) ? 2 : 1;
 }
 
 function visibleWidth(value: string): number {
@@ -252,7 +253,8 @@ function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unkno
   }
   lines.push("");
   lines.push(...wrapPlain(ACTIVITY_LABEL, maxWidth).map(muted));
-  const activity = activityGrid(entries);
+  const columns = Math.min(53, Math.max(1, maxWidth - 12));
+  const activity = activityGrid(entries, Date.now(), columns);
   if (activity.dated === 0) {
     lines.push(clip("No dated assistant responses for this branch."));
     if (activity.excluded > 0) lines.push(clip(`No date used for ${activity.excluded} assistant responses (missing, invalid, or future timestamp).`));
@@ -260,14 +262,11 @@ function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unkno
     const dateLabel = `UTC range: ${new Date(activity.startWeek).toISOString().slice(0, 10)} – ${new Date(activity.asOf).toISOString().slice(0, 10)}`;
     lines.push(...wrapPlain(dateLabel, maxWidth).map(muted));
     lines.push(...wrapPlain(`Months: ${activity.months.join(" ")}`, maxWidth).map(muted));
-    const available = Math.max(1, maxWidth - 12);
-    const columns = Math.min(53, available);
-    const start = 53 - columns;
     const narrow = columns < 53;
     lines.push(clip(`${narrow ? `Narrow: last ${columns}w` : "53-week calendar"} · assistant responses`));
     const symbols = ["·", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
     for (let day = 0; day < 7; day++) {
-      const cells = activity.weeks.slice(start).map((week) => {
+      const cells = activity.weeks.map((week) => {
         const count = week[day] ?? 0;
         return count === 0 ? "·" : symbols[Math.min(symbols.length - 1, count)]!;
       }).join("");
