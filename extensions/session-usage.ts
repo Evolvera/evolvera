@@ -264,12 +264,54 @@ function formatDuration(seconds: number): string {
   return [days ? `${days}d` : "", hours ? `${hours}h` : "", minutes || (!days && !hours) ? `${minutes}m` : ""].filter(Boolean).join(" ");
 }
 
+function quotaTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "unknown UTC time";
+  return `${date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC", hour12: false })} UTC`;
+}
+
+function quotaPanelLines(report: ProviderQuotaReport | undefined, width: number, theme: Theme): string[] {
+  const muted = (text: string) => theme.fg("muted", text);
+  const wrap = (text: string) => wrapPlain(text, width);
+  if (!report) return wrap(QUOTA_LABEL).map(muted);
+  const lines: string[] = [];
+  for (const provider of report.providers) {
+    const name = provider.provider === "anthropic" ? "Claude" : provider.provider === "openai-codex" ? "Codex" : cleanLabel(provider.provider) ?? "Provider";
+    lines.push(...wrap(`${name} · OAuth`).map((line) => theme.style(line, { fg: "accent", bold: true })));
+    if (provider.unavailable || provider.windows.length === 0) {
+      lines.push(...wrap(`Unavailable · ${cleanLabel(provider.unavailable) ?? "no quota windows"}`).map(muted), "");
+      continue;
+    }
+    for (const window of provider.windows) {
+      if (!Number.isFinite(window.usedPercent) || window.usedPercent < 0 || window.usedPercent > 100) {
+        lines.push(...wrap("Unavailable · invalid quota window").map(muted));
+        continue;
+      }
+      const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 75 ? "warning" : "success";
+      const cells = Math.max(1, Math.min(24, width - 13));
+      const filled = Math.floor(cells * window.usedPercent / 100);
+      const bar = `[${"█".repeat(filled)}${"░".repeat(cells - filled)}]`;
+      const label = `${formatDuration(window.durationSeconds)} window`;
+      if (width < 48) lines.push(...wrap(label).map(muted));
+      const meter = `${width >= 48 ? `${label}  ` : ""}${width >= 8 ? `${bar} ` : ""}${window.usedPercent}% used`;
+      lines.push(...wrap(meter).map((line) => theme.fg(color, line)));
+      lines.push(...wrap(`${100 - window.usedPercent}% remaining · resets ${quotaTime(window.resetAt)}`).map(muted));
+    }
+    lines.push("");
+  }
+  lines.push(...wrap(`Fetched ${quotaTime(report.fetchedAt)}`).map(muted));
+  return lines;
+}
+
 function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unknown[], width: number, theme: Theme, report?: ProviderQuotaReport, accountId?: string): string[] {
   const maxWidth = Math.max(1, Math.floor(width));
   const clip = (line: string) => truncateWidth(line, maxWidth);
   const title = theme.style(" Usage ", { fg: "accent", bold: true });
   const muted = (text: string) => theme.fg("muted", text);
-  const lines = [clip(title), ...quotaLines(report, accountId).flatMap((line) => wrapPlain(line, maxWidth)).map(muted), ...wrapPlain(SOURCE_LABEL, maxWidth).map(muted), ""];
+  const section = (label: string) => [...wrapPlain(label, maxWidth).map((line) => theme.style(line, { fg: "accent", bold: true })), muted("─".repeat(maxWidth))];
+  const lines = [clip(title)];
+  if (report) lines.push(...wrapPlain(`PI account · ${cleanLabel(accountId) ?? "selected"}`, maxWidth).map(muted));
+  lines.push("", ...section("Cotas de assinatura"), ...quotaPanelLines(report, maxWidth, theme), "", ...section("Sessão atual · branch"), ...wrapPlain(SOURCE_LABEL, maxWidth).map(muted), "");
   if (rows.length === 0) {
     lines.push(clip("No assistant usage recorded on this branch."));
     lines.push(clip("Estimated SDK cost: $0.000000 USD"));
@@ -290,6 +332,7 @@ function panelLines(rows: readonly SessionUsageTotals[], entries: readonly unkno
     }
   }
   lines.push("");
+  lines.push(...section("Atividade"));
   lines.push(...wrapPlain(ACTIVITY_LABEL, maxWidth).map(muted));
   const columns = Math.min(53, Math.max(1, maxWidth - 12));
   const activity = activityGrid(entries, Date.now(), columns);
