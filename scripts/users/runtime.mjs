@@ -7,8 +7,9 @@ import { types as utilTypes } from "node:util";
 import { assertOwnedSession, assertOwnedWorkspace } from "./ownership.mjs";
 import { createUserCredentialStore } from "./credentials.mjs";
 import { createAccount, selectSessionAccount } from "./account-session.mjs";
-import { createAccountConfigPolicy, createSealedAccountAuthContext } from "./sdk-auth-source.mjs";
-import { getUserHome } from "./environment.mjs";
+import { createAccountConfigPolicy, createSealedAccountAuthContext, wrapModelsStore } from "./sdk-auth-source.mjs";
+import { ACCOUNT_LAUNCH_CONTEXT_ENV, decodeAccountLaunchContext, getUserHome } from "./environment.mjs";
+import { launchOrcaAccountChild } from "./child-command.mjs";
 import { UsersError, canonicalize, isWithin, requireContext, listUsers, registerUser, resolveUser } from "./registry.mjs";
 import { registerUserSwitchParticipant, lookupUserSwitchParticipants, acquireUserSwitchReadiness } from "./switch-readiness.mjs";
 import { buildAdmittedLoaderOptions, validateAdmittedResourceInventory } from "./resources.mjs";
@@ -476,7 +477,10 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
           active = false;
           if (shutdownLease) {
             const released = shutdownLease.release();
-            if (!released.ok) throw fail("USER_SWITCH_SHUTDOWN_RELEASE_UNPROVED");
+            if (!released.ok) {
+              process.stderr.write(`${JSON.stringify({ code: "USER_SWITCH_SHUTDOWN_RELEASE_UNPROVED", reason: released.reason, participant: released.participant ?? "none", failure: released.failure ?? "none" })}\n`);
+              throw fail("USER_SWITCH_SHUTDOWN_RELEASE_UNPROVED");
+            }
             shutdownLease = undefined;
           }
           await host.services.settingsManager.flush();
@@ -649,10 +653,15 @@ async function createUsuarioRuntimeControl(profile, receipt, channel) {
 }
 
 // The SDK owns CLI parsing, session selection, settings, trust and every execution mode.
-export function createUserRuntime(registryPath, { pickAccount, createStore = createUserCredentialStore, createModelRuntime, sdkRoot } = {}) {
+export function createUserRuntime(registryPath, { pickAccount, createStore = createUserCredentialStore, createModelRuntime, sdkRoot, inheritedAccountId, onAccountSelected, launchOrcaChild = launchOrcaAccountChild, orcaPlatform = process.platform, localAppData = process.env.LOCALAPPDATA } = {}) {
   if (typeof registryPath !== "string" || !path.isAbsolute(registryPath)) throw fail("REGISTRY_PATH_INVALID");
-  const invocation = { accountId: undefined };
-  const makePicker = async (users) => {
+  if (inheritedAccountId !== undefined && (typeof inheritedAccountId !== "string" || !/^[a-z][a-z0-9-]{1,31}$/.test(inheritedAccountId))) throw fail("ACCOUNT_LAUNCH_CONTEXT_INVALID");
+  if (onAccountSelected !== undefined && typeof onAccountSelected !== "function") throw fail("ACCOUNT_RUNTIME_CALLBACK_INVALID");
+  const invocation = { accountId: inheritedAccountId };
+  const boundProcessEnv = Object.freeze(Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === "string")));
+  const makePicker = async (users, explicitId) => {
+    if (explicitId !== undefined) return explicitId;
+    if (inheritedAccountId !== undefined) return inheritedAccountId;
     if (typeof pickAccount !== "function") throw fail("ACCOUNT_SELECTION_REQUIRED");
     return pickAccount(users);
   };
@@ -684,7 +693,8 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
     if (request.purpose === "application") {
       if (!request.sessionManager) throw fail("ACCOUNT_SESSION_INVALID");
       const pickForInvocation = async (users) => {
-        const id = await makePicker(users);
+        const id = await makePicker(users, request.accountId);
+        if (inheritedAccountId !== undefined && id !== inheritedAccountId) throw fail("ACCOUNT_BINDING_CONFLICT");
         if (invocation.accountId !== undefined && id !== invocation.accountId) throw fail("ACCOUNT_PROCESS_RESTART_REQUIRED");
         return id;
       };
@@ -695,22 +705,27 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
         predecessorSessionManager: request.predecessorSessionManager,
         pickAccount: pickForInvocation,
       });
+      if (inheritedAccountId !== undefined && selected.id !== inheritedAccountId) throw fail("ACCOUNT_BINDING_CONFLICT");
       if (invocation.accountId !== undefined && selected.id !== invocation.accountId) throw fail("ACCOUNT_PROCESS_RESTART_REQUIRED");
       invocation.accountId ??= selected.id;
+      await onAccountSelected?.(Object.freeze({ version: 1, accountId: selected.id, registryPath: path.resolve(registryPath) }));
     } else if (request.purpose === "auth-command") {
       const users = listUsers({ registryPath });
-      const id = await makePicker(users);
+      const id = await makePicker(users, request.accountId);
+      if (inheritedAccountId !== undefined && id !== inheritedAccountId) throw fail("ACCOUNT_BINDING_CONFLICT");
       selected = resolveUser({ registryPath, id });
     } else if (!metadata) throw fail("ACCOUNT_RUNTIME_PURPOSE_UNSUPPORTED");
 
-    const accountEnv = Object.freeze({});
+    const accountEnv = !metadata && selected.id === "evolvera" && selected.adoption === "reference"
+      ? boundProcessEnv
+      : Object.freeze({});
     const explicitSdkRoot = request.sdkRoot ?? sdkRoot;
     if (!metadata && (typeof explicitSdkRoot !== "string" || !path.isAbsolute(explicitSdkRoot))) throw fail("ACCOUNT_SDK_ROOT_REQUIRED");
     const selectedStore = metadata ? metadataCredentials : createStore(selected, { sdkRoot: explicitSdkRoot, accountEnv });
     const credentials = request.purpose === "auth-command" && request.readonly ? readOnlyStore(selectedStore) : selectedStore;
     const authContext = createSealedAccountAuthContext({ env: accountEnv, files: [] });
     const accountConfigPolicy = metadata
-      ? Object.freeze({ env: accountEnv, filterConfig: stripAuth, filterRegistration: (config) => stripAuth({ value: config }).value })
+      ? Object.freeze({ env: accountEnv, filterConfig: stripAuth, filterRegistration: (config) => stripAuth({ value: config }).value, wrapModelsStore: (store) => wrapModelsStore(store, undefined) })
       : createAccountConfigPolicy({ profile: selected, env: accountEnv });
     if (typeof createModelRuntime !== "function") throw fail("ACCOUNT_RUNTIME_ADAPTER_UNAVAILABLE");
     const timeout = metadata || request.purpose === "application" ? AbortSignal.timeout(request.modelRuntimeTimeoutMs ?? 15_000) : request.signal;
@@ -737,6 +752,26 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
             if (command.operation === "use") {
               resolveUser({ registryPath, id: command.id });
               return `Conta validada. Para usar ${command.id}, encerre este processo e inicie um novo com a conta desejada; sessões vinculadas a outra conta exigem um novo processo.`;
+            }
+            if (command.operation === "orca") {
+              if (orcaPlatform !== "win32") return "ORCA_PLATFORM_UNSUPPORTED";
+              try {
+                const context = decodeAccountLaunchContext(process.env[ACCOUNT_LAUNCH_CONTEXT_ENV]);
+                if (context.accountId !== account.id || context.registryPath !== path.resolve(registryPath)) return "ACCOUNT_LAUNCH_CONTEXT_INVALID";
+                if (typeof localAppData !== "string" || !path.isAbsolute(localAppData) || typeof process.argv[1] !== "string" || !path.isAbsolute(process.argv[1])) return "ORCA_CONFIGURATION_MISSING";
+                const status = launchOrcaChild({
+                  orcaCommand: path.resolve(localAppData, "Programs", "orca", "resources", "bin", "orca.EXE"),
+                  nodePath: path.resolve(process.execPath),
+                  entrypointPath: path.resolve(process.argv[1]),
+                  shell: "powershell.exe",
+                  worktree: command.worktree,
+                });
+                return status === 0 ? "Orca terminal created." : `ORCA_TERMINAL_CREATE_FAILED${Number.isInteger(status) ? ` (${status})` : ""}`;
+              } catch (error) {
+                const code = ["ACCOUNT_CHILD_LAUNCH_INVALID", "ACCOUNT_CHILD_INVOCATION_FAILED", "ACCOUNT_CHILD_COMMAND_INVALID", "ACCOUNT_LAUNCH_CONTEXT_INVALID"].includes(error?.code)
+                  ? error.code : "ORCA_TERMINAL_CREATE_FAILED";
+                return code;
+              }
             }
             return "USUARIO_OPERATION_UNSUPPORTED";
           },
