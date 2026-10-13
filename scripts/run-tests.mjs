@@ -33,6 +33,7 @@ const tmpdirProprioPadrao = new Set([
   "patch-anthropic-client-version.smoke.mjs",
   "patch-pi-cursor-reasoning-effort.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
+  "patch-pi-083-auth-load-recovery.smoke.mjs",
   // Writes only to owned temp copies; global package and install scripts are read-only.
   "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
