@@ -223,12 +223,51 @@ try {
       assert.doesNotMatch(first.systemPrompt, new RegExp(`EXECUTION MODE: ${mod.executionModeLabel(other)}`));
     }
     assert.match(first.systemPrompt, /not runtime, sandbox, credential, or tool-permission access/);
+    // Contract presence/injection checks, not a claim of real-model adherence.
+    assert.match(first.systemPrompt, /answer interim questions briefly and continue executable work in the same turn/);
+    assert.match(first.systemPrompt, /unfinished work you can perform is not a blocker/);
+    assert.match(first.systemPrompt, /A later approval boundary does not suspend already-authorized prerequisites/);
+    assert.match(first.systemPrompt, /Respect explicit pauses, scope changes, subject switches, and standalone explanation\/review\/plan requests/);
+    assert.match(first.systemPrompt, /never use continuation to revive unrelated backlog or grant new authority/);
+    assert.match(first.systemPrompt, /A blocker pauses only the affected item and its actual dependents/);
+    assert.match(first.systemPrompt, /continue all other safe, authorized, in-scope work/);
+    assert.match(first.systemPrompt, /every requested item is completed or genuinely blocked and no executable work remains/);
+    assert.match(first.systemPrompt, /including YOLO, without widening scope, authority, or safety limits/);
+    assert.doesNotMatch(first.systemPrompt, /but stop at the requested-deliverable boundary or for unresolved material authority/);
+    if (mode === "yolo") {
+      assert.match(first.systemPrompt, /Take ownership of the requested outcome/);
+      assert.match(first.systemPrompt, /without waiting for the user to direct each step or approve routine decisions/);
+      assert.match(first.systemPrompt, /Do not substitute analysis, suggestions, status updates, or intermediate artifacts/);
+      assert.match(first.systemPrompt, /Respect explicit limits on the deliverable/);
+      assert.match(first.systemPrompt, /required independent final-head review and checks/);
+      assert.match(first.systemPrompt, /consequential effects remain separately named and approved/);
+      assert.doesNotMatch(first.systemPrompt, /A bug report|any user reply other than an explicit no|waives that review/);
+    }
     const repeated = await beforeAgentStart(
       { systemPrompt: first.systemPrompt, systemPromptOptions: { customPrompt: "# Custom agent" } },
       context,
     );
     assert.equal((repeated.systemPrompt.match(/PI EXECUTION MODE START/g) ?? []).length, 1, "repeated hooks must not duplicate the block");
   }
+
+  // The real primary prompt and runtime mode must preserve coordinator ownership,
+  // rather than turning a worker's terminal result into a global stopping point.
+  const primaryPrompt = readFileSync(path.join(root, "SYSTEM.md"), "utf8");
+  assert.equal(primaryPrompt, readFileSync(path.join(root, "config", "SYSTEM.md"), "utf8"));
+  await command("yolo global", makeContext());
+  const primary = await beforeAgentStart({ systemPrompt: primaryPrompt }, makeContext());
+  assert.match(primary.systemPrompt, /a delegated result completes only that assignment, not the user's outcome/);
+  assert.match(primary.systemPrompt, /The orchestrator owns the remaining work/);
+  assert.match(primaryPrompt, /interpret the latest message within the active user-authorized outcome/);
+  assert.match(primaryPrompt, /a question about purpose, progress, remaining work, or available parallel work does not itself pause or narrow that delivery/);
+  assert.match(primaryPrompt, /Work you owe \([^)]*\) is listed with its next action and started in the same turn, never labeled blocked/);
+  assert.match(primaryPrompt, /An approval required for a later action \([^)]*\) does not block its already-authorized prerequisites/);
+  assert.match(primaryPrompt, /A standalone request for explanation, review, plan, or draft ends at that deliverable and grants no implementation/);
+  assert.doesNotMatch(primaryPrompt, /\*\*Requested deliverable is the stop boundary:\*\* a request for explanation/);
+  assert.match(primary.systemPrompt, /Missing evidence is unfinished work, not by itself a reason to pause/);
+  assert.match(primary.systemPrompt, /These conditions do not end the whole request while other safe, authorized work remains/);
+  assert.match(primary.systemPrompt, /Respect any safety gate that explicitly requires a broader freeze/);
+  assert.match(primary.systemPrompt, /Take ownership of the requested outcome/);
 
   const selectorContext = makeContext();
   selectorContext.hasUI = true;

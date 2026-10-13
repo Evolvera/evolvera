@@ -37,6 +37,7 @@ Read:
 - `.pi/previews/<slug>/TASK_builder-home.md`
 - `.pi/previews/<slug>/index.html`
 - `.pi/previews/<slug>/HOME_POLISH_PLAN.md` when present
+- `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` with HOME_PLAN.md's `## Design Vocabulary Selection`: verify each selected term is implemented; report mismatches as "term X specified, Y implemented" and propose fixes using vocabulary term names.
 - `.pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md`
 - portrait and landscape screenshots when image reading is available
 

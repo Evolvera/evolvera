@@ -142,6 +142,8 @@ done
 # Remove retired harnesses so updates do not leave stale global commands/tools.
 rm -f "$PI_DIR/extensions/plan-heavy.ts"
 rm -f "$PI_DIR/extensions/goal-mode.ts"
+# delivery-closure became midrun-compaction; the continuation reviewer was retired.
+rm -f "$PI_DIR/extensions/delivery-closure.ts" "$PI_DIR/extensions/continuation-reviewer.ts" "$PI_DIR/continuation-reviewer.json"
 
 # Remove retired agents so updates do not leave stale routes.
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md
@@ -150,13 +152,8 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-# Maestro is a single file again; drop its old directory form (vendored tokenizer).
-rm -rf "$PI_DIR/extensions/maestro"
-# Maestro's Jev key: installed once, never overwritten, owner-only.
-jev_key="$HOME/.config/jev/api_key"
-if [ -f "$SCRIPT_DIR/config/jev/api_key" ] && [ ! -e "$jev_key" ]; then
-    mkdir -p "$(dirname "$jev_key")" && (umask 077; cp "$SCRIPT_DIR/config/jev/api_key" "$jev_key") && chmod 600 "$jev_key" && info "maestro: chave Jev instalada"
-fi
+# Maestro (automatic model selection) was retired; drop any installed copy.
+rm -rf "$PI_DIR/extensions/maestro" "$PI_DIR/extensions/maestro.ts"
 # Plastic Memory is intentionally not installed while its compaction path is disabled.
 # Its project-memory bridge imports that tree, so neither may remain installed alone.
 rm -f "$PI_DIR/extensions/project-memory.ts"
@@ -187,6 +184,8 @@ if command -v pi &>/dev/null; then
     if install_pi_package "npm:pi-mcp-adapter" "pi-mcp-adapter"; then :; fi
     if install_pi_package "npm:@tintinweb/pi-subagents@0.18.2" "pi-subagents"; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2
@@ -212,6 +211,12 @@ if command -v pi &>/dev/null; then
         info "Compatibilidade OAuth Anthropic verificada"
     else
         echo "[!] Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado." >&2
+    fi
+    if install_pi_package "npm:@rahularya01/pi-cursor@1.4.39" "pi-cursor"; then
+        node "$SCRIPT_DIR/scripts/patch-pi-cursor-reasoning-effort.mjs"
+        info "Compatibilidade de reasoning effort do Cursor verificada"
+    else
+        echo "[!] Pulando patch de reasoning effort: pacote pi-cursor não instalado." >&2
     fi
     node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
     info "Normalização dos corpos de erro dos provedores verificada"
