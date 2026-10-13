@@ -12,7 +12,7 @@ import { transformModelRuntimeSource, transformModelConfigSource } from "./sdk-a
 import { defaultRegistryPath, resolveUser } from "./registry.mjs";
 import { createAccount } from "./account-session.mjs";
 import { CREATE_ACCOUNT, selectAccountMenu } from "./account-selector.mjs";
-import { ACCOUNT_LAUNCH_CONTEXT_ENV, createUserEnvironment, decodeAccountLaunchContext, encodeAccountLaunchContext, extractAccountLaunchContextArgs, installUserEnvironment } from "./environment.mjs";
+import { ACCOUNT_LAUNCH_CONTEXT_ENV, createUserEnvironment, decodeAccountLaunchContext, encodeAccountLaunchContext, extractAccountLaunchContextArgs, extractUserSelectorArgs, installUserEnvironment } from "./environment.mjs";
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const fail = (code) => Object.assign(new Error(code), { code });
@@ -355,7 +355,8 @@ async function createNativeAdapter(options, registryPath, argv, launchContext, p
 }
 
 export async function launchUser(argv = process.argv.slice(2), options = {}) {
-  const extracted = extractAccountLaunchContextArgs(argv);
+  const selected = extractUserSelectorArgs(argv);
+  const extracted = extractAccountLaunchContextArgs(selected.argv);
   const publicationEnv = options.env ?? process.env;
   const envEncoded = publicationEnv[ACCOUNT_LAUNCH_CONTEXT_ENV];
   const optionContext = options.accountLaunchContext;
@@ -365,6 +366,16 @@ export async function launchUser(argv = process.argv.slice(2), options = {}) {
   if (extracted.encoded !== undefined) launchContext = decodeAccountLaunchContext(extracted.encoded);
   else if (envEncoded !== undefined) launchContext = decodeAccountLaunchContext(envEncoded);
   else if (optionContext !== undefined) launchContext = decodeAccountLaunchContext(typeof optionContext === "string" ? optionContext : encodeAccountLaunchContext(optionContext));
+  if (selected.accountId !== undefined) {
+    if (launchContext && launchContext.accountId !== selected.accountId) throw fail("ACCOUNT_BINDING_CONFLICT");
+    if (!launchContext) {
+      launchContext = decodeAccountLaunchContext(encodeAccountLaunchContext({
+        version: 1,
+        accountId: selected.accountId,
+        registryPath: options.registryPath ?? defaultRegistryPath(os.homedir()),
+      }));
+    }
+  }
   if (launchContext && options.registryPath !== undefined && path.resolve(options.registryPath) !== launchContext.registryPath) throw fail("ACCOUNT_LAUNCH_REGISTRY_CONFLICT");
   const registryPath = launchContext?.registryPath ?? options.registryPath ?? defaultRegistryPath(os.homedir());
   const nativeArgv = extracted.argv;
