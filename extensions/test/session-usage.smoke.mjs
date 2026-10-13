@@ -11,6 +11,7 @@ function makeHarness({ mode = "tui", hasUI = true, branch = [], existing = ["ses
   const commands = existing.map((name) => ({ name }));
   const sent = [];
   const notifications = [];
+  const colors = [];
   const pi = {
     getCommands: () => commands,
     registerCommand(name, options) {
@@ -24,12 +25,12 @@ function makeHarness({ mode = "tui", hasUI = true, branch = [], existing = ["ses
   if (customAvailable) ui.custom = async (factory) => {
     component = factory({ width: 80 }, {
       style: (text, options) => `\u001b[${options.bold ? "1" : ""}m${text}\u001b[0m`,
-      fg: (_color, text) => `\u001b[2m${text}\u001b[0m`,
+      fg: (color, text) => { colors.push({ color, text }); return `\u001b[2m${text}\u001b[0m`; },
     }, {}, () => { component.closed = true; });
     return undefined;
   };
   const ctx = { mode, hasUI, sessionManager: { getBranch: () => branch }, ui };
-  return { pi, ctx, commands, sent, notifications, get component() { return component; } };
+  return { pi, ctx, commands, sent, notifications, colors, get component() { return component; } };
 }
 
 const visibleWidth = (value) => {
@@ -270,6 +271,67 @@ test("falls back to plain TUI notification when custom UI is unavailable", async
   await harness.pi.registered.handler("", harness.ctx);
   assert.equal(harness.notifications.length, 1);
   assert.match(harness.notifications[0].message, /Estimated SDK cost/);
+});
+
+test("quota cards render truthful used bars, UTC dates and separated branch sections", async () => {
+  const report = { fetchedAt: "2026-10-13T18:57:29.231Z", providers: [
+    { provider: "anthropic", windows: [0, 10, 75, 94, 100, 20.125].map((usedPercent) => ({ durationSeconds: 18000, usedPercent, resetAt: "2026-10-14T04:00:00.000Z" })) },
+    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58.000Z" }] },
+  ] };
+  const before = structuredClone(report);
+  const harness = makeHarness();
+  registerSessionUsage(harness.pi, { accountId: "evolvera", quotaReader: async () => report });
+  await harness.pi.registered.handler("", harness.ctx);
+  const plain = (lines) => lines.join("\n").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+  const text = plain(harness.component.render(140));
+  assert.match(text, /PI account · evolvera/);
+  assert.match(text, /Cotas de assinatura/);
+  assert.match(text, /Claude · OAuth/);
+  assert.match(text, /Codex · OAuth/);
+  assert.match(text, /Sessão atual · branch/);
+  assert.match(text, /Atividade/);
+  for (const used of [0, 10, 75, 94, 100, 20.125]) {
+    const filled = Math.floor(24 * used / 100);
+    assert.ok(text.includes(`[${"█".repeat(filled)}${"░".repeat(24 - filled)}] ${used}% used`), `accurate discrete meter for ${used}`);
+  }
+  assert.match(text, /79\.875% remaining/);
+  assert.match(text, /14 Oct 2026, 04:00 UTC/);
+  assert.match(text, /Fetched 13 Oct 2026, 18:57 UTC/);
+  assert.doesNotMatch(text, /T04:00:00|\.231Z/);
+  assert.ok(harness.colors.some(({ color, text }) => color === "error" && text.includes("94% used")));
+  assert.ok(harness.colors.some(({ color, text }) => color === "warning" && text.includes("75% used")));
+  for (const width of [1, 2, 3, 20, 40, 80, 140]) {
+    assert.ok(harness.component.render(width).every((line) => visibleWidth(line) <= width));
+  }
+  assert.deepEqual(report, before);
+});
+
+test("unavailable, absent and invalid quota windows never acquire invented zero bars", async () => {
+  for (const provider of [
+    { provider: "anthropic", windows: [], unavailable: "OAuth credential unavailable or expired" },
+    { provider: "anthropic", windows: [] },
+    { provider: "anthropic", windows: [{ durationSeconds: 18000, usedPercent: NaN, resetAt: "invalid" }] },
+  ]) {
+    const harness = makeHarness();
+    registerSessionUsage(harness.pi, { accountId: "evolvera", quotaReader: async () => ({ fetchedAt: "invalid", providers: [provider] }) });
+    await harness.pi.registered.handler("", harness.ctx);
+    const text = harness.component.render(80).join("\n");
+    assert.match(text, /Unavailable/);
+    assert.doesNotMatch(text, /[█░]|0% used|NaN|Infinity/);
+  }
+});
+
+test("headless quota formatting retains measured values without terminal decoration", async () => {
+  const harness = makeHarness({ mode: "rpc", hasUI: false });
+  registerSessionUsage(harness.pi, { accountId: "evolvera", quotaReader: async () => ({ fetchedAt: "2026-10-13T18:57:00Z", providers: [
+    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58Z" }] },
+  ] }) });
+  await harness.pi.registered.handler("", harness.ctx);
+  const text = harness.sent[0].message.content;
+  assert.match(text, /7d window: 18% used · 82% remaining/);
+  assert.match(text, /Estimated SDK cost/);
+  assert.doesNotMatch(text, /\x1b|[█░]/);
+  assert.equal(harness.sent[0].options.triggerTurn, false);
 });
 
 test("does not replace a command named usage", () => {
