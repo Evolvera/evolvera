@@ -207,6 +207,7 @@ export function diffStats(diff: unknown): { added: number; removed: number } {
   let removed = 0;
   if (typeof diff === "string") {
     for (const line of diff.split("\n")) {
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
       if (line.startsWith("+")) added++;
       else if (line.startsWith("-")) removed++;
     }
@@ -337,21 +338,33 @@ export function renderBody(data: CardData, theme: ThemeLike, width: number, expa
   const row = (rail: string, railColor: string, color: string, text: string) =>
     `${railed ? `  ${theme.fg(railColor, rail)} ` : ""}${theme.fg(color, cut(text, room))}`;
   if (!expanded) {
-    if (!data.isError) return [];
-    const line = firstErrorLine(resultText(data.result));
-    return line === undefined ? [] : [row("╰", "error", "error", line)];
+    if (data.isError) {
+      const line = firstErrorLine(resultText(data.result));
+      return line === undefined ? [] : [row("╰", "error", "error", line)];
+    }
+    if (data.toolName !== "edit" || typeof data.result.details?.diff !== "string") return [];
   }
   const { lines, skipped, from } = bodyLines(data);
   const isDiff = data.toolName === "edit" && !data.isError && typeof data.result.details?.diff === "string";
   const rows = lines.map((line) => {
     let color = "toolOutput";
-    if (isDiff) color = line.startsWith("+") ? "success" : line.startsWith("-") ? "error" : "dim";
+    if (isDiff) {
+      if (line.startsWith("+++") || line.startsWith("---")) color = "dim";
+      else if (line.startsWith("+")) color = "success";
+      else if (line.startsWith("-")) color = "error";
+      else color = "dim";
+    }
     return { color, text: line };
   });
   if (skipped > 0) {
     const note = { color: "muted", text: from === "tail" ? `… ${skipped} earlier lines` : `… ${skipped} more lines` };
     if (from === "tail") rows.unshift(note);
     else rows.push(note);
+  }
+  if (!rows.length) return [];
+  if (isDiff && railed) {
+    const edge = (glyph: string) => `  ${theme.fg("dim", glyph)}${"─".repeat(Math.max(0, Math.min(width - 3, 12)))}`;
+    return [edge("╭"), ...rows.map((item) => row("│", "dim", item.color, item.text)), edge("╰")];
   }
   return rows.map((item, index) => row(index === rows.length - 1 ? "╰" : "│", "dim", item.color, item.text));
 }
@@ -511,27 +524,14 @@ export interface FooterData {
   branch?: string | null;
 }
 
-/**
- * `model · thinking · ctx 34% · $0.12 · branch`, never wider than `width`. Model leads in the accent
- * color, the rest is muted, separators are dim, and context turns warning/error when nearly full.
- * When space runs out the current field is ellipsized and later fields are dropped.
- */
+/** First footer segment: concise metadata, kept separate from context and extension status. */
 export function formatFooter(data: FooterData, theme: ThemeLike, width: number): string {
-  const rawPercent = data.contextPercent;
-  const validPercent = typeof rawPercent === "number" && Number.isFinite(rawPercent) ? Math.min(100, Math.max(0, rawPercent)) : undefined;
-  const rounded = validPercent === undefined ? undefined : Math.round(validPercent);
-  const ctxColor = rounded === undefined ? "muted" : rounded >= 95 ? "error" : rounded >= 80 ? "warning" : "muted";
-  const barWidth = Math.max(4, Math.min(20, Math.floor(Math.max(0, width) / 8)));
-  const filled = rounded === undefined ? 0 : Math.round((rounded / 100) * barWidth);
-  const bar = rounded === undefined ? "-".repeat(barWidth) : "#".repeat(filled) + "-".repeat(barWidth - filled);
-  const context = rounded === undefined ? `ctx [${bar}] --` : `ctx [${bar}] ${rounded}%`;
   const parts: Array<[string, string]> = [
     ["accent", data.model || "no-model"],
     ["muted", data.thinking || "off"],
-    [ctxColor, context],
     ["muted", `$${(data.cost ?? 0).toFixed(2)}`],
   ];
-  if (data.branch) parts.push(["muted", data.branch]);
+  if (data.branch) parts.push(["muted", oneLine(data.branch)]);
   let remaining = Math.max(0, width);
   let out = "";
   for (const [index, [color, raw]] of parts.entries()) {
@@ -546,7 +546,16 @@ export function formatFooter(data: FooterData, theme: ThemeLike, width: number):
   return out;
 }
 
-function modeFooter(pi: ExtensionAPI, footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number): string[] {
+function contextLabel(percent: number | null | undefined, width: number): { text: string; color: string } {
+  const valid = typeof percent === "number" && Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : undefined;
+  const rounded = valid === undefined ? undefined : Math.round(valid);
+  const barWidth = Math.max(4, Math.min(20, Math.floor(Math.max(0, width) / 8)));
+  const filled = rounded === undefined ? 0 : Math.round((rounded / 100) * barWidth);
+  const bar = rounded === undefined ? "-".repeat(barWidth) : "#".repeat(filled) + "-".repeat(barWidth - filled);
+  return { text: rounded === undefined ? `ctx [${bar}] --` : `ctx [${bar}] ${rounded}%`, color: rounded === undefined ? "muted" : rounded >= 95 ? "error" : rounded >= 80 ? "warning" : "muted" };
+}
+
+function modeFooter(pi: ExtensionAPI, footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number, context: { text: string; color: string }): string[] {
   // getCommands() is deliberately deferred until render: the SDK is not bound during extension loading.
   const commands = new Set(pi.getCommands().map((command) => command.name.replace(/^\/+/, "")));
   const statuses = footerData.getExtensionStatuses();
@@ -558,31 +567,38 @@ function modeFooter(pi: ExtensionAPI, footerData: { getExtensionStatuses(): Read
     return label ? `ON (${label})` : "ON";
   };
   const known = new Set(["codex-fast-mode", "maestro"]);
-  const fields = [`fast ${modeStatus("codex-fast-mode", "fast")}`, `maestro ${modeStatus("maestro", "maestro")}`];
-  for (const [key, value] of statuses) if (!known.has(key)) fields.push(`${key} ${value}`);
+  const fields: Array<{ text: string; color: string }> = [
+    { text: context.text, color: context.color },
+    { text: `fast ${modeStatus("codex-fast-mode", "fast")}`, color: "muted" },
+    { text: `maestro ${modeStatus("maestro", "maestro")}`, color: "muted" },
+  ];
+  for (const [key, value] of statuses) if (!known.has(key)) fields.push({ text: `${key} ${value}`, color: "muted" });
   const lines: string[] = [];
   let line = "";
-  for (const rawField of fields) {
-    const field = oneLine(rawField);
+  let lineColor = "muted";
+  for (const entry of fields) {
+    const field = oneLine(entry.text);
     const candidate = line ? `${line}${FOOTER_SEP}${field}` : field;
     if (cellWidth(field) <= width && (!line || cellWidth(candidate) <= width)) {
       line = candidate;
+      if (lineColor === "muted") lineColor = entry.color;
       continue;
     }
-    if (line) lines.push(theme.fg("muted", line));
+    if (line) lines.push(theme.fg(lineColor, line));
     line = "";
+    lineColor = entry.color;
     for (const word of field.split(" ")) {
       const token = cut(word, width);
       const wrapped = line ? `${line}${FOOTER_SEP}${token}` : token;
       if (line && cellWidth(wrapped) > width) {
-        lines.push(theme.fg("muted", line));
+        lines.push(theme.fg(lineColor, line));
         line = token;
       } else {
         line = wrapped;
       }
     }
   }
-  if (line) lines.push(theme.fg("muted", line));
+  if (line) lines.push(theme.fg(lineColor, line));
   return lines;
 }
 
@@ -683,19 +699,17 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
         invalidate() {},
         render(width: number): string[] {
           try {
+            const data = {
+              model: ctx.model?.id,
+              thinking: pi.getThinkingLevel(),
+              contextPercent: ctx.getContextUsage()?.percent,
+              cost: sessionCost(ctx),
+              branch: footerData.getGitBranch(),
+            };
+            const context = contextLabel(data.contextPercent, width);
             return [
-              formatFooter(
-                {
-                  model: ctx.model?.id,
-                  thinking: pi.getThinkingLevel(),
-                  contextPercent: ctx.getContextUsage()?.percent,
-                  cost: sessionCost(ctx),
-                  branch: footerData.getGitBranch(),
-                },
-                theme,
-                width,
-              ),
-              ...modeFooter(pi, footerData, theme, width),
+              formatFooter(data, theme, width),
+              ...modeFooter(pi, footerData, theme, width, context),
             ];
           } catch {
             return [""];
