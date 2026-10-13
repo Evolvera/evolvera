@@ -36,7 +36,7 @@ const visibleWidth = (value) => {
   const plain = value.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g, "");
   return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(plain)].reduce((width, { segment }) => {
     if (/^\p{Mark}+$/u.test(segment)) return width;
-    return width + (/[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}]/u.test(segment) ? 2 : 1);
+    return width + (/[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u.test(segment) ? 2 : 1);
   }, 0);
 };
 
@@ -176,6 +176,36 @@ test("opens a custom Usage panel, closes on Enter/Escape, and remains width-boun
   harness.component.handleInput("\r");
   assert.equal(harness.component.closed, true);
   assert.deepEqual(branch, before, "calendar and panel leave the active branch immutable");
+});
+
+test("supplementary CJK labels align using an independent two-cell oracle", async () => {
+  const harness = makeHarness({ branch: [assistant("provider-𠀀", "model-𰀀", usage())] });
+  registerSessionUsage(harness.pi);
+  await harness.pi.registered.handler("", harness.ctx);
+  for (const width of [20, 40, 80, 160]) {
+    for (const line of harness.component.render(width)) {
+      const plain = line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      const cells = [...plain.replaceAll("𠀀", "XX").replaceAll("𰀀", "XX")].length;
+      assert.equal(cells, width, `CJK frame fits ${width}: ${plain}`);
+    }
+  }
+});
+
+test("reduced calendar range and counts match the displayed weeks", () => {
+  const now = Date.parse("2026-10-09T12:00:00.000Z");
+  const entries = [
+    { ...assistant("p", "m", usage()), timestamp: "2026-03-09T00:00:00.000Z" },
+    { ...assistant("p", "m", usage()), timestamp: "2026-10-05T00:00:00.000Z" },
+  ];
+  const full = activityGrid(entries, now);
+  const narrow = activityGrid(entries, now, 26);
+  assert.equal(full.inWindow, 2);
+  assert.equal(narrow.weeks.length, 26);
+  assert.equal(narrow.startWeek, Date.parse("2026-04-13T00:00:00.000Z"));
+  assert.equal(narrow.dated, 2);
+  assert.equal(narrow.inWindow, 1);
+  assert.deepEqual(narrow.weeks[25], [1, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(narrow.months, ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"]);
 });
 
 test("empty branch calendar explicitly reports no dated responses", async () => {
