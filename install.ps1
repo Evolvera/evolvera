@@ -268,6 +268,13 @@ if ($piCmd) {
     & node (Join-Path $SCRIPT_DIR "scripts\patch-anthropic-client-version.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A compatibilidade OAuth Anthropic recusou o patch de versao do cliente." }
     Info "Compatibilidade OAuth Anthropic verificada"
+
+    Info "pi-cursor..."
+    & pi install npm:@rahularya01/pi-cursor@1.4.39 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-cursor." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-cursor-reasoning-effort.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "A compatibilidade de reasoning effort do Cursor recusou o patch." }
+    Info "Compatibilidade de reasoning effort do Cursor verificada"
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A normalização dos corpos de erro dos provedores recusou o patch." }
     Info "Normalização dos corpos de erro dos provedores verificada"

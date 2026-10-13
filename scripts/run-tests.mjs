@@ -31,6 +31,7 @@ const tmpdirProprioPadrao = new Set([
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
+  "patch-pi-cursor-reasoning-effort.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   // Writes only to owned temp copies; global package and install scripts are read-only.
   "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",

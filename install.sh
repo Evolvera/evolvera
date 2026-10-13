@@ -206,6 +206,12 @@ if command -v pi &>/dev/null; then
     else
         echo "[!] Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado." >&2
     fi
+    if install_pi_package "npm:@rahularya01/pi-cursor@1.4.39" "pi-cursor"; then
+        node "$SCRIPT_DIR/scripts/patch-pi-cursor-reasoning-effort.mjs"
+        info "Compatibilidade de reasoning effort do Cursor verificada"
+    else
+        echo "[!] Pulando patch de reasoning effort: pacote pi-cursor não instalado." >&2
+    fi
     node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
     info "Normalização dos corpos de erro dos provedores verificada"
 fi
