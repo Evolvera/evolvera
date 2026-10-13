@@ -48,6 +48,8 @@ Read the user briefing, supplied references, existing site, and relevant brand a
 
 Prioritize user-supplied references. Use `/skill:design-catalog` only when it materially improves category, audience, maturity, or mood grounding, and read any selected reference before relying on it. Use one primary reference and optional secondary references; synthesize principles rather than copying a brand wholesale.
 
+Before baseline design decisions, read `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. For each relevant design field choose ONE primary term (+ at most one secondary) by its exact name; never invent or rename terms; `None / Conventional default` is valid. Record the choices in the `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail) in DESIGN_PLAN.md, with the rejected alternative and why. Brand references supply tokens and taste; the vocabulary supplies the named decisions. Distinctive mechanics stay with `website-creative`.
+
 If evidence is missing, label the assumption or placeholder. Ask a narrow question only when missing brand, page, audience, or conversion information would materially change the direction; otherwise proceed.
 
 ## Content and Asset Boundaries
@@ -99,6 +101,11 @@ Write `.pi/plans/DESIGN_PLAN.md` with the following structure. Be concrete enoug
 - Premium trust thesis: [why this will not feel cheap, generic, or DIY]
 - Deliberate anti-patterns: [visual tropes or category mismatches to avoid]
 
+## Design Vocabulary Selection
+Exact terms from `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`, one primary (+ at most one secondary) per relevant field:
+| Field | Term | Fit | Rejected alternative | Guardrail |
+|-------|------|-----|----------------------|-----------|
+
 ## 3. Brand Assets and Placeholder Strategy
 ### Verified provided assets
 - Logo/wordmark:
@@ -141,6 +148,7 @@ Write `.pi/plans/DESIGN_PLAN.md` with the following structure. Be concrete enoug
 
 ### Motion
 - Baseline motion language (designer-owned): restrained, purposeful orientation/state feedback that preserves normal flow and never gates content, navigation, forms, CTAs, or proof.
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 | Pattern | Duration | Easing | Purpose | Reduced-motion fallback |
 
 ## 5.1 Creative Opportunity Map (designer-owned)

@@ -47,6 +47,7 @@ The builder task must be specific enough for the `builder-home` agent to generat
 
 - No human-in-the-loop. Do not ask for approval.
 - Choose one design direction or fuse options; record the decision.
+- Read `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. Record the final fused `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail) in HOME_PLAN.md, using exact term names, and carry it into TASK_builder-home.md. Never invent or rename terms.
 - If the optional post-design `HOME_CREATIVE_DIRECTION.md` exists, consume it only after `HOME_DESIGN_OPTIONS.md`; carry its mapped additive mechanics into HOME_PLAN.md and the builder task without redesigning or overriding the design artifact. Preserve reduced-motion/static fallback, keyboard/DOM accessibility, mobile/touch behavior, normal scroll, native-only Home constraints, and the performance budget. Record any downgrade or `DESIGN_CONFLICT` against the named design anchor. If absent, plan exactly as usual.
 - Use `HOME_CONTENT_PLAN.md` as the source of truth for copy; only adapt copy when needed for visual fit and preserve its source/placeholder labels.
 - Do not invent unverifiable facts, metrics, awards, prices, certifications, guarantees, or testimonials.
@@ -121,6 +122,10 @@ Do not add, infer, or relabel assets. Library names from memory, “inspired by,
 - Icon policy: [avoid emoji/font-dependent icons in CTAs; use text-only buttons by default. Inline SVG is allowed only for an exact Asset Provenance Ledger entry and must include its exact `data-asset-source`, explicit viewBox, size, alignment, and aria-hidden labels]
 - Motion/interactions:
 
+## Design Vocabulary Selection
+| Field | Term | Fit | Rejected alternative | Guardrail |
+|-------|------|-----|----------------------|-----------|
+
 ## 5. Responsive Composition Plan
 - Mobile-first approach:
 - Portrait/mobile viewport target: 390x844
@@ -166,6 +171,10 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - `.pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md` if present (optional post-design additive addendum; read after HOME_DESIGN_OPTIONS.md)
 - `.pi/previews/<slug>/HOME_CONTENT_PLAN.md`
 - `.pi/previews/<slug>/HOME_PLAN.md`
+- `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` (definitions for the terms below)
+
+## Design Vocabulary Selection
+[Copy HOME_PLAN.md's final Design Vocabulary Selection table here; builder implements each term's defined behavior and guardrail exactly and reports any deviation.]
 
 ## Must Create/Modify
 - Create or replace only `.pi/previews/<slug>/index.html`.
@@ -183,6 +192,7 @@ Write `.pi/previews/<slug>/TASK_builder-home.md` as a direct prompt for the `bui
 - Accessible landmarks: header, main, section, footer.
 - Keyboard-visible focus states.
 - Hover/active states for interactive elements.
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only.
 - Respect `prefers-reduced-motion`.
 - No package manager, no framework, no build step.
 - No external assets required to render well.

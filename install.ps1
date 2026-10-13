@@ -196,22 +196,16 @@ if (-not $sameRoot) {
 if (-not $sameRoot) {
     # -- Extensions -------------------------------------------
     Remove-Item (Join-Path $PI_DIR "extensions\goal-mode.ts") -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $PI_DIR "extensions\continuation-reviewer.ts") -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $PI_DIR "continuation-reviewer.json") -Force -ErrorAction SilentlyContinue
     $extensions = Get-ChildItem -Path (Join-Path $SCRIPT_DIR "extensions") -Filter "*.ts" -ErrorAction SilentlyContinue
     if ($extensions) {
         $dest = Join-Path $PI_DIR "extensions"
         Copy-Item $extensions.FullName $dest -Force
         Info ($extensions.Count.ToString() + " extensoes")
-        # Maestro is a single file again; drop its old directory form (vendored tokenizer).
+        # Maestro (automatic model selection) was retired; drop any installed copy.
         Remove-Item (Join-Path $dest "maestro") -Recurse -Force -ErrorAction SilentlyContinue
-        # Maestro's Jev key: installed once, never overwritten, current user only.
-        $jevSrc = Join-Path $SCRIPT_DIR "config\jev\api_key"
-        $jevKey = Join-Path $HOME ".config\jev\api_key"
-        if ((Test-Path $jevSrc) -and -not (Test-Path $jevKey)) {
-            New-Item -ItemType Directory -Force -Path (Split-Path $jevKey) | Out-Null
-            Copy-Item $jevSrc $jevKey
-            icacls $jevKey /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
-            Info "maestro: chave Jev instalada"
-        }
+        Remove-Item (Join-Path $dest "maestro.ts") -Force -ErrorAction SilentlyContinue
     }
     # Plastic Memory is intentionally not installed while its compaction path is disabled.
     # Its project-memory bridge imports that tree, so neither may remain installed alone.
@@ -251,6 +245,10 @@ if ($piCmd) {
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-subagents." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-ultra-thinking.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de thinking ultra." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-deferred-nudges.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de avisos adiados." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-bounded-waits.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de timeouts limitados." }
     Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."
@@ -288,6 +286,13 @@ if ($piCmd) {
     & node (Join-Path $SCRIPT_DIR "scripts\patch-anthropic-client-version.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A compatibilidade OAuth Anthropic recusou o patch de versao do cliente." }
     Info "Compatibilidade OAuth Anthropic verificada"
+
+    Info "pi-cursor..."
+    & pi install npm:@rahularya01/pi-cursor@1.4.39 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-cursor." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-cursor-reasoning-effort.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "A compatibilidade de reasoning effort do Cursor recusou o patch." }
+    Info "Compatibilidade de reasoning effort do Cursor verificada"
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A normalização dos corpos de erro dos provedores recusou o patch." }
     Info "Normalização dos corpos de erro dos provedores verificada"

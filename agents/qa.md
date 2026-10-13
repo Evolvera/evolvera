@@ -9,7 +9,7 @@ max_turns: 80
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: [codex-fast-mode]
+extensions: [codex-fast-mode, write-guard]
 skills: false
 ---
 
