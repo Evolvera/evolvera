@@ -61,7 +61,7 @@ const agentWriteTargets = [
   ...[
     '@tintinweb/pi-subagents', '@gotgenes/pi-anthropic-auth',
     'pi-mcp-adapter', 'pi-alibaba-models', '@narumitw/pi-goal',
-    '@juicesharp/rpiv-todo',
+    '@juicesharp/rpiv-todo', '@rahularya01/pi-cursor',
   ].map((name) => path.join(realAgent, 'npm', 'node_modules', name)),
 ];
 const realWriteTargets = [
@@ -118,11 +118,19 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   const fakeSdk = path.join(fakeGlobalModules, '@earendil-works', 'pi-coding-agent');
   const fakeSubagents = path.join(parent, 'fixtures', 'pi-subagents');
   const fakeAuth = path.join(parent, 'fixtures', 'pi-anthropic-auth');
+  const fakeCursor = path.join(parent, 'fixtures', 'pi-cursor');
   const fakeBin = path.join(parent, 'bin');
   fs.mkdirSync(fakeBin, { recursive: true });
   copyPackage(sdkSource, fakeSdk, sdkFiles);
   copyPackage(subagentsSource, fakeSubagents, subagentsFiles);
   copyPackage(authSource, fakeAuth, authFiles);
+  fs.mkdirSync(path.join(fakeCursor, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(fakeCursor, 'package.json'), JSON.stringify({ name: '@rahularya01/pi-cursor', version: '1.4.39' }) + '\n');
+  fs.writeFileSync(path.join(fakeCursor, 'dist/index.js'), [
+    'synthetic Cursor fixture',
+    'function _u(e){if(e.parameters.some(t=>t.id==="reasoning"))return "reasoning";if(e.parameters.some(t=>t.id==="effort"))return "effort"}',
+    'var ku=/^(cursor-)?grok-4\\.7(-max)?$/',
+  ].join('\n') + '\n');
   for (const command of ['pi', 'npm']) {
     const source = path.join(root, 'scripts', 'test', 'fixtures', command);
     const destination = path.join(fakeBin, command);
@@ -130,6 +138,10 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     fs.chmodSync(destination, 0o755);
   }
   fs.copyFileSync(path.join(root, 'scripts/test/fixtures/npm.cmd'), path.join(fakeBin, 'npm.cmd'));
+  const fakePi = path.join(fakeBin, 'pi');
+  const piStub = fs.readFileSync(fakePi, 'utf8').replace('esac\n', `  "install npm:@rahularya01/pi-cursor@1.4.39")\n    mkdir -p "$HOME/.pi/agent/npm/node_modules/@rahularya01"\n    cp -R "$FAKE_CURSOR_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@rahularya01/pi-cursor"\n    ;;\nesac\n`);
+  assert.notEqual(piStub, fs.readFileSync(fakePi, 'utf8'), 'fake pi stub did not accept Cursor fixture case');
+  fs.writeFileSync(fakePi, piStub);
   const log = path.join(parent, 'install.log');
   // Poison inherited destination selectors so this smoke catches accidental
   // fallback to the caller's PI/npm configuration.
@@ -153,6 +165,7 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     FAKE_NPM_ROOT: fakeGlobalModules,
     FAKE_SUBAGENTS_FIXTURE: fakeSubagents,
     FAKE_AUTH_FIXTURE: fakeAuth,
+    FAKE_CURSOR_FIXTURE: fakeCursor,
     PI_CODING_AGENT_DIR: path.join(home, '.pi', 'agent'),
   };
   delete env.WSL_DISTRO_NAME;
@@ -219,6 +232,19 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
   assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf('patch-pi-subagents-deferred-nudges.mjs'), `${file}: bounded-waits patch must follow deferred-nudges`);
   assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf(install), `${file}: bounded-waits patch must follow package install`);
 }
+const shellText = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
+const powershellText = fs.readFileSync(path.join(root, 'install.ps1'), 'utf8');
+const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
+const cursorPatcher = 'patch-pi-cursor-reasoning-effort.mjs';
+const shellCursorInstall = shellText.indexOf(`if install_pi_package "${cursorPackage}"`);
+const shellCursorPatch = shellText.indexOf(cursorPatcher);
+const powershellCursorInstall = powershellText.indexOf(`& pi install ${cursorPackage}`);
+const powershellCursorPatch = powershellText.indexOf(cursorPatcher);
+assert.ok(shellCursorInstall >= 0 && shellCursorPatch > shellCursorInstall, 'install.sh must patch Cursor after pinned install');
+assert.match(shellText.slice(shellCursorInstall, shellCursorPatch), /then\s*$/m);
+assert.match(shellText.slice(shellCursorInstall, shellText.indexOf('\n    fi\n', shellCursorInstall)), /Pulando patch de reasoning effort/u);
+assert.ok(powershellCursorInstall >= 0 && powershellCursorPatch > powershellCursorInstall, 'install.ps1 must patch Cursor after pinned install');
+assert.match(powershellText.slice(powershellCursorInstall, powershellCursorPatch), /\$LASTEXITCODE -ne 0/);
 
 // STATEFUL RESOURCE PROOF: this unique mkdtemp owns HOME, USERPROFILE, XDG_CONFIG_HOME,
 // fake npm-global, fixtures, and logs. Bash resolves fake pi/npm first on PATH; the fake
@@ -244,6 +270,10 @@ try {
   const cleanOutput = runInstall(home);
   assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp.json')));
   assert.ok(cleanOutput.includes('Setup completo!'), 'clean install should still report full success');
+  const installedCursor = path.join(home.home, '.pi/agent/npm/node_modules/@rahularya01/pi-cursor/dist/index.js');
+  const installedCursorSource = fs.readFileSync(installedCursor, 'utf8');
+  assert.ok(installedCursorSource.includes('return "reasoning_effort"'), 'shell installer did not patch synthetic Cursor package');
+  assert.ok(installedCursorSource.includes('grok-4\\.7(?:-\\d+[km])?(-max)?'), 'shell installer did not patch contextual Grok matcher');
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);
@@ -263,6 +293,16 @@ try {
   assert.equal(fs.existsSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents')), false,
     'pi-subagents package must remain absent after simulated install failure');
   assertInstalled(home, expected);
+
+  const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
+  const installedCursorRoot = path.join(home.home, '.pi/agent/npm/node_modules/@rahularya01/pi-cursor');
+  fs.rmSync(installedCursorRoot, { recursive: true, force: true });
+  home.env.FAKE_PI_FAIL = cursorPackage;
+  home.env.FAKE_PI_FAIL_REASON = 'synthetic Cursor install failure';
+  const cursorFailure = runInstall(home);
+  assert.ok(cursorFailure.includes('Pulando patch de reasoning effort: pacote pi-cursor não instalado.'),
+    'Cursor patch must be skipped visibly when pinned package install fails');
+  assert.equal(fs.existsSync(installedCursorRoot), false, 'failed Cursor package must remain absent');
 } finally {
   fs.rmSync(home.parent, { recursive: true, force: true });
 }
