@@ -676,14 +676,17 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
   };
   const home = process.env.USERPROFILE || process.env.HOME;
 
-  pi.registerToolRenderer((toolName, next) => {
-    // Decided per card at creation: existing cards keep their look until the transcript is redrawn.
-    if (!isEnabled()) return next();
-    const stock = next();
-    if (toolName === "todo") return createTodoRenderers(stock, home, completedTodoIds);
-    if (!shouldCollapse(toolName, stock)) return stock;
-    return createCardRenderers(toolName, stock, home);
-  });
+  // SDK 0.83 lacks renderer middleware: keep native tool cards while retaining the footer/chrome.
+  if (typeof pi.registerToolRenderer === "function") {
+    pi.registerToolRenderer((toolName, next) => {
+      // Decided per card at creation: existing cards keep their look until the transcript is redrawn.
+      if (!isEnabled()) return next();
+      const stock = next();
+      if (toolName === "todo") return createTodoRenderers(stock, home, completedTodoIds);
+      if (!shouldCollapse(toolName, stock)) return stock;
+      return createCardRenderers(toolName, stock, home);
+    });
+  }
 
   const applyChrome = (ctx: ExtensionContext) => {
     if (ctx.mode !== "tui" || !ctx.hasUI) return;

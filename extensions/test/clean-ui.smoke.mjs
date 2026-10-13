@@ -25,7 +25,7 @@ const ui = await import(pathToFileURL(copiedExtension).href);
 const theme = { fg: (_color, text) => text, bold: (text) => text };
 const component = (lines = []) => ({ render: () => lines, invalidate() {} });
 
-function extensionHarness() {
+function extensionHarness({ toolRenderer = true } = {}) {
   const handlers = new Map();
   const commands = new Map();
   let resolver;
@@ -63,6 +63,7 @@ function extensionHarness() {
       notify() {},
     },
   };
+  if (!toolRenderer) delete pi.registerToolRenderer;
   ui.registerCleanUi(pi, () => path.join(agentRoot, ui.STATE_FILE_NAME));
   return {
     pi, ctx, handlers, commands, statuses,
@@ -146,6 +147,20 @@ test("footer queries commands only after session runtime binding and preserves o
   await harness.handlers.get("thinking_level_select")({}, harness.ctx);
   await harness.handlers.get("session_compact")({}, harness.ctx);
   assert.equal(harness.renderRequests, 3);
+});
+
+test("SDK without tool-renderer middleware retains native cards and the account footer", async () => {
+  const h = extensionHarness({ toolRenderer: false });
+  assert.equal(h.resolver, undefined, "native tool rendering remains untouched");
+  assert.ok(h.commands.has("clean-ui"));
+  await h.handlers.get("session_start")({}, h.ctx);
+  h.statuses.set("usuario", "EVOLVERA");
+  const footer = h.makeFooter();
+  assert.match(footer.render(160).join(" "), /usuario EVOLVERA/);
+  assert.match(footer.render(160).join(" "), /test-model/);
+  for (const width of [6, 20, 40, 80, 160]) {
+    assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
+  }
 });
 
 test("mode labels include explicit ON and long external status tokens stay bounded", async () => {
