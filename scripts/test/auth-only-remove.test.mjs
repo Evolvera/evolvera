@@ -251,3 +251,40 @@ test("exclusive backup collision never removes a file the operation did not crea
   assert.equal(fs.readFileSync(collision, "utf8"), "pre-existing synthetic recovery");
   assert.deepEqual(fs.readFileSync(file), before);
 });
+
+
+test("recovery directory cannot overlap another registered resource", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "auth-only-remove-overlap-"));
+  const file = path.join(root, "registry.json");
+  const target = registerUser({ registryPath: file, id: "gamma", label: "gamma", agentDir: path.join(root, "gamma") });
+  registerUser({ registryPath: file, id: "alpha", label: "alpha", agentDir: path.join(root, "registry-recovery") });
+  const before = fs.readFileSync(file);
+  assert.throws(() => removeUser(target, { activeAccountId: "alpha" }), { code: "REGISTRY_RECOVERY_CONFLICT" });
+  assert.deepEqual(fs.readFileSync(file), before);
+  assert.equal(fs.existsSync(path.join(root, "registry-recovery")), false);
+});
+
+test("changed recovery directory identity prevents registry removal", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "auth-only-remove-recovery-race-"));
+  const file = path.join(root, "registry.json");
+  const target = registerUser({ registryPath: file, id: "gamma", label: "gamma", agentDir: path.join(root, "gamma") });
+  const before = fs.readFileSync(file);
+  const recovery = path.join(root, "registry-recovery");
+  const moved = path.join(root, "retained-original-recovery");
+  const originalClose = fs.closeSync;
+  let changed = false;
+  fs.closeSync = function (fd) {
+    const result = originalClose.call(this, fd);
+    if (!changed && fs.existsSync(recovery)) {
+      changed = true;
+      fs.renameSync(recovery, moved);
+      fs.mkdirSync(recovery);
+    }
+    return result;
+  };
+  try {
+    assert.throws(() => removeUser(target, { activeAccountId: "alpha" }), { code: "REGISTRY_RECOVERY_ALIAS" });
+  } finally { fs.closeSync = originalClose; }
+  assert.deepEqual(fs.readFileSync(file), before);
+  assert.equal(fs.readdirSync(moved).length, 1);
+});
