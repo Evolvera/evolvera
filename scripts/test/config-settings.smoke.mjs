@@ -12,4 +12,14 @@ const settings = JSON.parse(readFileSync(path.join(root, "config/settings.json")
 const reserve = settings.compaction?.reserveTokens;
 assert.ok(Number.isInteger(reserve) && reserve >= 65536,
   `config/settings.json precisa de compaction.reserveTokens >= 65536 (atual: ${reserve})`);
-console.log("config-settings ok: reserveTokens =", reserve);
+const models = JSON.parse(readFileSync(path.join(root, "config/models.json"), "utf8"));
+const antigravity = models.providers?.antigravity;
+assert.deepEqual(antigravity?.modelOverrides?.["gemini-4-argon"], {
+  name: "Gemini 4 Argon (Antigravity)",
+  contextWindow: 1048576,
+  maxTokens: 65536,
+});
+assert.equal(antigravity.models, undefined,
+  "Argon must be discovered from the account catalog, not invented as a static model");
+assert.equal(antigravity.apiKey, undefined, "Antigravity must use OAuth, not an API key");
+console.log("config-settings ok: reserveTokens =", reserve, "; Argon discovery-only override PASS");
