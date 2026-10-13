@@ -111,6 +111,81 @@ test("abort is checked before and after native delegation; metadata and file-tri
 	assert.equal(await pending, null);
 });
 
+test("the same provider reads each current branch without retaining prior suggestions", async () => {
+	let branch = [entry("user", "helfrombranchA")];
+	let branchReads = 0;
+	let nativeCalls = 0;
+	const provider = createTextAutocompleteProvider(fakeBase({ get: async () => { nativeCalls++; return null; } }), () => {
+		branchReads++;
+		return branch;
+	});
+
+	const fromA = await suggest(provider, "hel");
+	assert.ok(fromA.items.some((item) => item.value === "helfrombranchA"));
+
+	branch = [entry("user", "helfrombranchB")];
+	const fromB = await suggest(provider, "hel");
+	assert.ok(fromB.items.some((item) => item.value === "helfrombranchB"));
+	assert.ok(!fromB.items.some((item) => item.value === "helfrombranchA"));
+	assert.equal(branchReads, 2);
+	assert.equal(nativeCalls, 2);
+});
+
+test("extension factory collects only the newest 60 entries of a linear branch", async () => {
+	const entries = [entry("user", "heloldestentry")];
+	for (let index = 1; index < 60; index++) entries.push(entry("assistant", `filler${index}`));
+	entries.push(entry("user", "helrecententry"));
+
+	let handler;
+	const registrations = [];
+	extension({ on: (_event, callback) => { handler = callback; } });
+	await handler({}, {
+		mode: "tui",
+		hasUI: true,
+		ui: { addAutocompleteProvider: (factory) => registrations.push(factory) },
+		sessionManager: branchReader(entries),
+	});
+	const provider = registrations[0](fakeBase());
+	const result = await suggest(provider, "hel");
+	assert.ok(result.items.some((item) => item.value === "helrecententry"));
+	assert.ok(!result.items.some((item) => item.value === "heloldestentry"));
+});
+
+test("per-message text limit keeps the tail and ignores non-text array content", async () => {
+	const message = [
+		{ type: "text", text: "helleadingword " + "filler ".repeat(700) + "heltailword" },
+		{ type: "image", text: "helimageonly" },
+	];
+	const provider = createTextAutocompleteProvider(fakeBase(), () => [entry("user", message)]);
+	const result = await suggest(provider, "hel");
+	assert.ok(result.items.some((item) => item.value === "heltailword"));
+	assert.ok(!result.items.some((item) => ["helleadingword", "helimageonly"].includes(item.value)));
+});
+
+test("distinct-word limit is enforced across small user messages", async () => {
+	const encodeLetters = (number) => {
+		let value = "";
+		do {
+			value = String.fromCharCode(97 + number % 26) + value;
+			number = Math.floor(number / 26) - 1;
+		} while (number >= 0);
+		return value;
+	};
+	const words = Array.from({ length: 600 }, (_, index) => `pre${encodeLetters(index)}`);
+	const entries = [];
+	for (let offset = 0; offset < words.length; offset += 10) {
+		const chunk = words.slice(offset, offset + 10);
+		if (offset + 10 === words.length) chunk.push("zebraword");
+		entries.push(entry("user", chunk.join(" ")));
+	}
+	const provider = createTextAutocompleteProvider(fakeBase(), () => entries);
+
+	const retained = await suggest(provider, "pre");
+	assert.ok(retained.items.some((item) => item.value === words[0]));
+	assert.ok(retained.items.every((item) => words.includes(item.value)));
+	assert.equal(await suggest(provider, "zeb"), null);
+});
+
 test("extension installs only in native TUI sessions and starts no other work", async () => {
 	let handler;
 	const registrations = [];

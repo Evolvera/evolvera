@@ -401,11 +401,6 @@ export function createCardRenderers(toolName: string, stock: ToolRenderersLike |
     },
     renderResult(result, options, theme, context) {
       const state: SharedState = (context.state ??= {});
-      if (hasImage(result) && stock?.renderResult) {
-        // Image results keep the stock presentation; the SDK draws the image itself.
-        state.stock ??= {};
-        return stock.renderResult(result, options, theme, { ...context, state: state.stock, lastComponent: undefined });
-      }
       const card = cardOf(state, toolName);
       card.result = result;
       card.partial = Boolean(options?.isPartial);
@@ -413,6 +408,11 @@ export function createCardRenderers(toolName: string, stock: ToolRenderersLike |
       card.args = context.args ?? card.args;
       card.cwd = context.cwd ?? card.cwd;
       if (!card.partial || card.isError) card.endedAt ??= Date.now();
+      if (hasImage(result) && stock?.renderResult) {
+        // Finish our header first, but leave image presentation to the SDK.
+        state.stock ??= {};
+        return stock.renderResult(result, options, theme, { ...context, state: state.stock, lastComponent: undefined });
+      }
       const expanded = Boolean(options?.expanded);
       return new LazyComponent((width) => renderBody(card, theme, width, expanded));
     },
@@ -428,7 +428,7 @@ export function shouldCollapse(toolName: string, stock: ToolRenderersLike | unde
 interface TodoRenderState extends SharedState {
   visible?: boolean;
   args?: Record<string, unknown>;
-  announcedCompletionId?: string;
+  finalDecisionMade?: boolean;
 }
 
 function todoAction(args: Record<string, unknown> | undefined): string {
@@ -467,30 +467,31 @@ function createTodoRenderers(stock: ToolRenderersLike | undefined, home: string 
       const args = context.args ?? state.args;
       const error = Boolean(context.isError);
       const completion = isTodoCompletion(args);
-      const id = completion ? todoId(args) : undefined;
+      const id = todoId(args);
       if (hasImage(result) && stock?.renderResult) {
         state.visible = true;
         return card.renderResult!(result, options, theme, context);
       }
       if (error) {
         state.visible = true;
-      } else if (options?.isPartial) {
-        state.visible = false;
-      } else if (isTodoCreation(args)) {
-        state.visible = true;
-      } else if (completion && (!id || state.announcedCompletionId === id || !completedIds.has(id))) {
-        state.visible = true;
-        if (id) {
-          completedIds.add(id);
-          state.announcedCompletionId = id;
+      } else if (!state.finalDecisionMade) {
+        if (options?.isPartial) {
+          state.visible = false;
+        } else {
+          // One decision per completed call: repainting old cards is not a
+          // new task transition and must not mutate completion/reopening state.
+          state.finalDecisionMade = true;
+          if (isTodoCreation(args)) {
+            state.visible = true;
+          } else if (completion && (!id || !completedIds.has(id))) {
+            state.visible = true;
+            if (id) completedIds.add(id);
+          } else {
+            state.visible = false;
+            if (id && ["update", "set"].includes(todoAction(args)) &&
+                (args?.status === "pending" || args?.status === "in_progress")) completedIds.delete(id);
+          }
         }
-      } else {
-        state.visible = false;
-        // A successful reopening starts a new transition; querying or merely
-        // redrawing an existing completed card must not change the dedup state.
-        const reopenedId = todoId(args);
-        if (reopenedId && ["update", "set"].includes(todoAction(args)) &&
-            (args?.status === "pending" || args?.status === "in_progress")) completedIds.delete(reopenedId);
       }
       if (!state.visible) return new LazyComponent(() => []);
       return card.renderResult!(result, options, theme, context);
