@@ -1,5 +1,14 @@
 {
   "providers": {
+    "antigravity": {
+      "modelOverrides": {
+        "gemini-4-argon": {
+          "name": "Gemini 4 Argon (Antigravity)",
+          "contextWindow": 1048576,
+          "maxTokens": 65536
+        }
+      }
+    },
     "minimax": {
       "models": [
         {

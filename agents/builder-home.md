@@ -84,6 +84,8 @@ Before finalizing, verify the page has:
 
 ## Implementation Guidance
 
+Within the single-file contract, keep HTML/CSS/JS sections shallow and organized by feature, use descriptive section/selector/function names, explain why in comments rather than narrating code, and keep responsibilities explicit. Use the existing validation to demonstrate expected behavior. These preferences do not authorize extra modules, tests, website files, or tooling.
+
 - Work efficiently: read the required artifacts once, apply all planned edits in one pass, run the validation commands once on the final file, and rerun only the checks affected by a fix.
 - Prefer CSS variables in `:root` for tokens.
 - Prefer CSS Grid/Flexbox over complex JS.

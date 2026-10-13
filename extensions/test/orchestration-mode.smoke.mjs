@@ -13,6 +13,10 @@ const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-w
 const m = await jiti.import(path.join(root, "extensions/orchestration-mode.ts"));
 
 const systemMd = fs.readFileSync(path.join(root, "SYSTEM.md"), "utf8");
+const configSystemMd = fs.readFileSync(path.join(root, "config/SYSTEM.md"), "utf8");
+const workerPolicy = systemMd.split("\n").find((line) => line.startsWith("- **Worker communication:**"));
+assert.ok(workerPolicy && configSystemMd.split("\n").includes(workerPolicy), "worker communication policy is mirrored exactly");
+for (const phrase of ["completed acceptance", "concrete blocker/decision", "Do not send acknowledgements", "heartbeats", "PR-open-only notices", "Resolve local engineering failures first", "answer explicit coordinator requests", "A PR opening alone is not completion"]) assert.ok(workerPolicy.includes(phrase), `worker policy includes ${phrase}`);
 const tail = "\n\n<available_skills>flow-orca orchestration</available_skills>\n<!-- PI EXECUTION MODE START -->yolo<!-- PI EXECUTION MODE END -->";
 const assembled = systemMd + tail;
 
@@ -40,6 +44,9 @@ assert.match(conductor, /\*\*Stay anchored to the final outcome:\*\*/, "conducto
 assert.match(conductor, /gpt-6\.1-sol` with `high` thinking/, "conductor launches children on Sol high");
 assert.match(conductor, /settle every child as the Settling bullet says/, "worker events trigger settlement");
 assert.match(conductor, /handoffs ask for the smallest check that proves the change/, "handoffs do not demand test spirals");
+assert.match(conductor, /Include this exact rule in every handoff: unsolicited messages to the coordinator are only for completed acceptance or a concrete blocker\/decision that needs the coordinator\./, "worker handoff repeats the communication policy");
+assert.match(conductor, /a PR opening alone is not a worker wake\/report outcome/, "PR-open-only events do not wake the conductor");
+assert.doesNotMatch(conductor.match(/## Waiting[\s\S]*?(?=^## |$)/m)?.[0] ?? "", /worker event \(finished, PR opened/);
 assert.match(conductor, /Never end a turn with a list of "pending items" you could act on/);
 
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
