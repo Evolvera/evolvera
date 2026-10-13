@@ -373,6 +373,9 @@ export function removeUser(context, { activeAccountId, lockTimeoutMs = 5000 } = 
     for (const p of [...privateRoots(current), ...current.contexts, ...current.sharedAssets]) strictRootDrift(p);
 
     const recoveryDir = path.join(path.dirname(file), "registry-recovery");
+    if (data.users.some((user) => [...privateRoots(user), ...user.sharedAssets].some((root) => overlap(root, recoveryDir)))) {
+      throw fail("REGISTRY_RECOVERY_CONFLICT", "recovery directory overlaps registered resources");
+    }
     try {
       fs.mkdirSync(recoveryDir);
     } catch (error) {
@@ -392,19 +395,34 @@ export function removeUser(context, { activeAccountId, lockTimeoutMs = 5000 } = 
 
     const recoveryPath = path.join(recoveryDir, `${current.id}.${process.pid}.${randomBytes(12).toString("hex")}.json`);
     let fd;
-    let created = false;
+    let recoveryStat;
     try {
       fd = fs.openSync(recoveryPath, "wx", 0o600);
-      created = true;
       fs.writeSync(fd, `${JSON.stringify(current, null, 2)}\n`);
       fs.fsyncSync(fd);
+      recoveryStat = fs.fstatSync(fd);
       fs.closeSync(fd);
       fd = undefined;
     } catch {
-      if (fd !== undefined) try { fs.closeSync(fd); } catch { /* only our own file */ }
-      // Exclusive-open failure does not make an existing backup ours to remove.
-      if (created) try { fs.unlinkSync(recoveryPath); } catch { /* only our own partial backup */ }
+      if (fd !== undefined) try { fs.closeSync(fd); } catch { /* only our own descriptor */ }
+      // Retain evidence: a pathname may no longer identify the file we created.
       throw fail("REGISTRY_RECOVERY_FAILED", "registration recovery copy could not be saved");
+    }
+    try {
+      const directoryNow = fs.lstatSync(recoveryDir);
+      if (!directoryNow.isDirectory() || directoryNow.isSymbolicLink() ||
+          directoryNow.dev !== directoryStat.dev || directoryNow.ino !== directoryStat.ino ||
+          !samePath(canonicalize(recoveryDir), recoveryDir)) {
+        throw fail("REGISTRY_RECOVERY_ALIAS", "recovery identity changed");
+      }
+      const backupNow = fs.lstatSync(recoveryPath);
+      if (!backupNow.isFile() || backupNow.isSymbolicLink() || backupNow.nlink !== 1 ||
+          backupNow.dev !== recoveryStat.dev || backupNow.ino !== recoveryStat.ino) {
+        throw fail("REGISTRY_RECOVERY_ALIAS", "recovery identity changed");
+      }
+    } catch (error) {
+      if (error instanceof UsersError) throw error;
+      throw fail("REGISTRY_RECOVERY_FAILED", "recovery copy can no longer be verified");
     }
 
     writeRegistryAtomic(file, { version: REGISTRY_VERSION, users: data.users.filter((u) => u.id !== current.id) });
