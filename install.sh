@@ -214,6 +214,7 @@ if command -v pi &>/dev/null; then
     else
         echo "[!] Pulando patch de reasoning effort: pacote pi-cursor não instalado." >&2
     fi
+    if install_pi_package "npm:pi-antigravity@0.10.0" "pi-antigravity"; then :; fi
     node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
     info "Normalização dos corpos de erro dos provedores verificada"
 fi
