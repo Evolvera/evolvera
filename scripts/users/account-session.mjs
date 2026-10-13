@@ -19,6 +19,62 @@ function hasConversation(entries) {
     (entry.message?.role === "user" || entry.message?.role === "assistant"));
 }
 
+// Validate every record, but retain only account metadata: a large history must never
+// become one V8 string or a second in-memory copy of the native conversation.
+function inspectPersistedEntries(sessionFile) {
+  const fd = fs.openSync(sessionFile, "r");
+  const chunk = Buffer.allocUnsafe(64 * 1024);
+  const fragments = [];
+  let fragmentBytes = 0;
+  let headerCount = 0;
+  let headerId;
+  const bindings = [];
+
+  const parseRecord = () => {
+    if (fragmentBytes === 0) return;
+    const line = Buffer.concat(fragments, fragmentBytes).toString("utf8");
+    fragments.length = 0;
+    fragmentBytes = 0;
+    if (!line.trim()) return;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error();
+    } catch { throw fail("ACCOUNT_SESSION_UNDECIDABLE"); }
+    if (entry.type === "session") {
+      headerCount += 1;
+      if (headerCount === 1) headerId = entry.id;
+    } else if (entry.customType === ACCOUNT_BINDING_TYPE) {
+      bindings.push(entry);
+    }
+  };
+
+  try {
+    let bytesRead;
+    while ((bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+      let start = 0;
+      for (let i = 0; i < bytesRead; i += 1) {
+        if (chunk[i] !== 0x0a) continue;
+        const length = i - start;
+        if (length > 0) {
+          fragments.push(Buffer.from(chunk.subarray(start, i)));
+          fragmentBytes += length;
+        }
+        parseRecord();
+        start = i + 1;
+      }
+      if (start < bytesRead) {
+        fragments.push(Buffer.from(chunk.subarray(start, bytesRead)));
+        fragmentBytes += bytesRead - start;
+      }
+    }
+    parseRecord();
+  } finally {
+    fs.closeSync(fd);
+  }
+  return { headerCount, headerId, bindings };
+}
+
 function entriesFor(manager) {
   if (!manager || typeof manager.getEntries !== "function") throw fail("ACCOUNT_SESSION_INVALID");
   const loadedEntries = manager.getEntries();
@@ -36,25 +92,17 @@ function entriesFor(manager) {
     }
     if (stat) {
       if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink > 1) throw fail("ACCOUNT_SESSION_UNDECIDABLE");
-      let raw;
-      try { raw = fs.readFileSync(sessionFile, "utf8"); } catch { throw fail("ACCOUNT_SESSION_UNDECIDABLE"); }
-      const parsed = [];
-      for (const line of raw.split(/\r?\n/)) {
-        if (!line.trim()) continue;
-        try {
-          const entry = JSON.parse(line);
-          if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error();
-          parsed.push(entry);
-        } catch { throw fail("ACCOUNT_SESSION_UNDECIDABLE"); }
-      }
-      const headers = parsed.filter((entry) => entry.type === "session");
-      if (headers.length !== 1 || headers[0].id !== sessionId ||
-        (typeof manager.getHeader === "function" && manager.getHeader()?.id !== headers[0].id)) {
+      let inspected;
+      try { inspected = inspectPersistedEntries(sessionFile); } catch (error) {
+        if (error?.code === "ACCOUNT_SESSION_UNDECIDABLE") throw error;
         throw fail("ACCOUNT_SESSION_UNDECIDABLE");
       }
-      const rawEntries = parsed.filter((entry) => entry.type !== "session");
-      if (bindingIn(rawEntries) !== bindingIn(entries)) throw fail("ACCOUNT_SESSION_UNDECIDABLE");
-      return { entries: rawEntries, sessionFile, persisted, sessionId };
+      if (inspected.headerCount !== 1 || inspected.headerId !== sessionId ||
+        (typeof manager.getHeader === "function" && manager.getHeader()?.id !== inspected.headerId)) {
+        throw fail("ACCOUNT_SESSION_UNDECIDABLE");
+      }
+      if (bindingIn(inspected.bindings) !== bindingIn(entries)) throw fail("ACCOUNT_SESSION_UNDECIDABLE");
+      return { entries, sessionFile, persisted, sessionId };
     }
   }
   return { entries, sessionFile, persisted, sessionId };
