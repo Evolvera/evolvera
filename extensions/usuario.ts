@@ -8,6 +8,7 @@ export type UsuarioRequest =
 
 /** Native-session account context supplied by the managed runtime, never by command arguments. */
 export type UsuarioControl = Readonly<{
+  label?: string;
   execute(request: UsuarioRequest, ctx: ExtensionCommandContext): Promise<string | undefined>;
 }>;
 
@@ -31,6 +32,12 @@ function parseRequest(args: string): UsuarioRequest | undefined {
 /** One authoritative facade; the native runtime owns account binding and command behavior. */
 export function createUsuarioFactory(control?: UsuarioControl): ExtensionFactory {
   return (pi) => {
+    const label = control?.label;
+    if (label?.trim()) {
+      pi.on("session_start", (_event, ctx) => {
+        if (ctx.hasUI) ctx.ui.setStatus("usuario", label);
+      });
+    }
     const display = (text: string, ctx: ExtensionCommandContext) => {
       if (ctx.hasUI) ctx.ui.notify(text, "info");
       else pi.sendMessage({ customType: "usuario", content: text, display: true });
