@@ -22,6 +22,7 @@ const authSource = path.join(realAgent, 'npm', 'node_modules', '@gotgenes', 'pi-
 const sdkFiles = [
   'package.json',
   'dist/core/agent-session.js',
+  'dist/core/auth-storage.js',
   'dist/cli/args.js',
   'dist/core/model-config.js',
   'dist/modes/interactive/components/settings-selector.js',
@@ -234,6 +235,15 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
 }
 const shellText = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
 const powershellText = fs.readFileSync(path.join(root, 'install.ps1'), 'utf8');
+const shellAuthPatch = shellText.indexOf('patch-pi-083-auth-load-recovery.mjs');
+const powershellAuthPatch = powershellText.indexOf('patch-pi-083-auth-load-recovery.mjs');
+const shellPiInstall = shellText.indexOf('npm install -g --ignore-scripts');
+const powershellPiInstall = powershellText.indexOf('npm install -g ');
+const shellCorePatch = shellText.indexOf('patch-pi-083-threshold-cancel.mjs');
+const powershellCorePatch = powershellText.indexOf('patch-pi-083-threshold-cancel.mjs');
+assert.ok(shellAuthPatch > shellCorePatch && shellCorePatch > shellPiInstall, 'shell auth patch must follow PI install/core patch');
+assert.ok(powershellAuthPatch > powershellCorePatch && powershellCorePatch > powershellPiInstall, 'PowerShell auth patch must follow PI install/core patch');
+assert.match(powershellText.slice(powershellAuthPatch), /if \(\$LASTEXITCODE -ne 0\)/);
 const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
 const cursorPatcher = 'patch-pi-cursor-reasoning-effort.mjs';
 const shellCursorInstall = shellText.indexOf(`if install_pi_package "${cursorPackage}"`);
@@ -274,6 +284,8 @@ try {
   const installedCursorSource = fs.readFileSync(installedCursor, 'utf8');
   assert.ok(installedCursorSource.includes('return "reasoning_effort"'), 'shell installer did not patch synthetic Cursor package');
   assert.ok(installedCursorSource.includes('grok-4\\.7(?:-\\d+[km])?(-max)?'), 'shell installer did not patch contextual Grok matcher');
+  const installedAuth = fs.readFileSync(path.join(home.fakeGlobalModules, '@earendil-works/pi-coding-agent/dist/core/auth-storage.js'), 'utf8');
+  assert.ok(installedAuth.includes('async ensureInitialized()'), 'shell installer did not patch SDK auth recovery');
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);
