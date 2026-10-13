@@ -1,20 +1,20 @@
 ---
 name: flow-orca
-description: "Transform a backlog into an approved GitHub Project that owns issues, campaign decisions and dependencies, derive scheduling in memory, then deliver it as an approved campaign in which Orca creates one workspace, one real branch, and one PI session per issue. Supports autonomous new-chat re-entry: reconciles Project, issues, claims, PRs, remote branches, Orca workspaces/terminals, dependencies, and shared hazards to recommend safe concurrent work without requiring the user to repeat context. Scouts first, records the base branch per repository and one campaign mode, and requires explicit approval for external or material changes."
+description: "Use automatically for GitHub issue/board delivery, branch-per-issue campaigns, or coordinated PI issue workers in Orca worktrees; the user need not name this skill. GitHub owns the campaign grant, acceptance, dependencies and Status; Orca owns one workspace, real branch and PI session per issue. Supports autonomous campaign re-entry, event-driven worker completion without polling, and safely authorized cleanup after verified merge/Done. Scouts new backlogs first; approved campaigns dispatch directly under the per-repository bases, campaign mode and twelve-worker ceiling. Not for simple worktree creation, unsupervised ownership handoffs, or standalone explanations."
 ---
 
 # Flow Orca — Backlog → Issues → Campanha → Ship
 
 Skill operacional única de entrega por issue. Transforma uma lista grande de implementação em issues de um GitHub Project, prioriza/estima, e entrega como **campanha aprovada** na qual o **Orca** cria um workspace, uma branch real e uma sessão PI por issue.
 
-**Regra de ouro:** esta skill quase sempre roda em **projeto existente** (não greenfield). Antes de perguntar ou criar issues, **entenda o repo com scouts por módulo**. Depois proponha, tire dúvidas, e só avance com aprovação explícita — no intake da campanha ou a cada passo, conforme o modo escolhido.
+**Regra de ouro:** esta skill quase sempre roda em **projeto existente** (não greenfield). Backlog novo: **entenda o repo com scouts por módulo**, proponha e obtenha aprovação no intake. Campanha já aprovada: vá direto às Phases 6/7, sem repetir scout/proposta/intake; prepare o handoff antes de abrir o PI e termine seu dispatch antes de abrir outro. Preserve os gates do modo e de segurança.
 
 ```txt
 Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá para rodar junto?” / só `/skill:flow-orca`)
   → Educar se faltar contexto (não inventar backlog)
   → Permission gate GitHub + preflight Orca (executável resolvido, os dois guias live, `status --json`)
   → Ler o kanban atual (Project + issues + PRs) e inventariar workspaces/terminais Orca já existentes
-  → Scout do projeto por módulos (evidence-first)
+  → Backlog novo: scout por módulos + proposta/intake; campanha aprovada: direto às Phases 6/7
   → Draft de backlog + candidatos a epic/área + dúvidas abertas
   → REVIEW GATE: usuário aprova (Project + issues + hierarquia)
   → INTAKE DA CAMPANHA: base branch POR REPOSITÓRIO + o modo resolvido (SUPERVISIONADO | AUTÔNOMO | YOLO; default AUTÔNOMO) + limites
@@ -23,19 +23,24 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
   → Registrar o grant de campanha no **README do GitHub Project** e as ACs/dependências/escopos nos **bodies das issues**
   → Derivar ordem topológica, gates e candidatos **em memória**, sempre a partir de uma releitura do GitHub
   → Analisar dependências externas primeiro: bloqueio vira comentário na issue + Project `Blocked`; pula a issue e seus dependentes
-  → Scheduler contínuo e work-conserving, teto de SEIS PIs de issue simultâneos no total:
+  → Scheduler contínuo e work-conserving, teto de DOZE PIs de issue simultâneos no total:
        admissão serial do coordenador único (intenção visível no GitHub + releitura antes do dispatch)
-       → `worktree create … --issue <N> --base-branch <base do repo> --no-parent --agent pi`
-       → adotar o terminal PI exato da resposta em `orchestration worker-start --terminal`
+       → `worktree create … --issue <N> --base-branch <base do repo> --parent-worktree <pai verificado da campanha> --agent pi`
+       → adotar o terminal PI exato em `orchestration worker-start --terminal` e ativar `/goal <objetivo da Task>` imediatamente
        → Project: `In progress` (atualizar **e reler**)
        → PI implementa dentro do workspace da issue → commit/push → PR contra a base escolhida
        → Project: `In review` + review independente no head SHA final
        → merge serial autorizado na base escolhida → `mergedAt` real → issue fechada → `Done` (atualizar **e reler**)
-       → workspace preservada; terminal só liberado quando settled; só então a vaga volta ao scheduler
+       → assentar (Goal finalizado, terminal liberado/retido) → vaga volta ao scheduler
+       → cleanup condicional da worktree descartável só com autoridade + prova (7.6); senão retida com motivo
   → Voltar ao board
 ```
 
 ## Quando usar
+
+**Acione automaticamente, sem exigir `/skill:flow-orca` ou que o usuário lembre o nome**, quando o pedido for entrega/continuação por issues ou board do GitHub, campanha branch-per-issue, ou coordenação de workers PI de issues em worktrees Orca com retorno de resultados e integração. Carregue esta skill **antes** de criar Run/Task/workspace ou iniciar a coordenação; não substitua a campanha por `orca-cli`, `orchestration` isolada ou subagents sem provenance Orca. Os guias live do Orca continuam sendo usados como interfaces, não como workflow concorrente. Acionamento não concede autorização: pergunta apenas informativa (`o que dá para rodar junto?`) termina na recomendação read-only, salvo entrega já autorizada em curso.
+
+**Não acione para** criação simples de worktree/terminal, handoff completo sem supervisão, operação pontual já ordenada em artefatos prontos, ou explicação isolada sem campanha: mantenha `orca-cli`/`orchestration` ou o caminho direto conforme o pedido. Não invente GitHub Project/issues para esses casos.
 
 - Usuário entrega uma lista grande do que já é pra implementar
 - Quer issues reais no GitHub ligadas ao(s) repo(s)
@@ -57,10 +62,10 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
 6. **One concern per gate** — não misture “aprova as 20 issues” com “escolhe stack” na mesma pergunta confusa; separe decisões.
 7. **Read the board first** — em continue/próxima, leia issues+labels+PRs+branches antes de codar.
 8. **1 issue = 1 workspace Orca = 1 branch real** — a branch nasce do `worktree create` do Orca a partir da **base escolhida para aquele repositório**; leia ID e branch **reais** da resposta e nunca calcule a branch pelo nome do workspace. Nunca reutilize workspace/branch de outra issue. Atualize **e releia** o Project na hora de cada transição (Ready → In progress → In review/Blocked → Done).
-9. **Teto de seis PIs de issue simultâneos** — o scheduler é contínuo e work-conserving em todos os repos/hosts da campanha; seis é teto, não demanda. Um único writer por workspace de issue. A vaga só volta quando aquele writer estiver **settled com segurança**; timeout, silêncio ou terminal ocioso nunca liberam vaga.
+9. **Teto de doze PIs de issue simultâneos** — o scheduler é contínuo e work-conserving em todos os repos/hosts da campanha; doze é teto, não demanda. Um único writer por workspace de issue. A vaga só volta quando aquele writer estiver **settled com segurança**; timeout, silêncio ou terminal ocioso nunca liberam vaga.
 10. **GitHub é autoridade; Orca é evidência viva de execução; cache continua cache** — precedência: **GitHub Project Status → issue/assignee + claim marker + PR → branch remota/SHA → workspaces/terminais/dispatches do Orca → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura nova substitui estado antigo. Workspace prova checkout e ligação de issue, não resultado entregue; cache, chat e idade nunca são claim, lock ou autorização de takeover. `.pi/flow/` é **histórico/cache opcional e somente-leitura, sem autoridade nenhuma**: sua ausência nunca bloqueia re-entry, e grants ou planos antigos ali guardados nunca são migrados nem publicados automaticamente.
-11. **Regressão cumulativa é obrigatória** — toda issue preserva e executa a suíte relevante já existente; novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
-12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na base escolhida daquele repositório. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
+11. **Não quebrar o que já funciona, sem espiral de testes** — rode os testes existentes da área afetada; escreva teste novo só quando a mudança corrigir um bug ou criar um contrato que nenhum teste cobre, e quando for barato. Falha causada pela issue impede o done; falha pré-existente sem relação é reportada, não perseguida. Testes são meio: provado o comportamento, pare de testar e entregue.
+12. **Baseline só quando pedida** — issue de baseline de caracterização entra no backlog apenas por pedido do usuário. Sem ela, a mudança segue com os testes existentes da área; a falta de cobertura é registrada na issue, não vira trabalho extra.
 13. **Project/Kanban é obrigatório para a entrega** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. As colunas são `Backlog`, `Ready`, `In progress`, `In review`, `Blocked` e `Done`; `Blocked` é aditivo e preserva todos os outros status e fields já configurados. Cada issue entra como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo pedido explícito. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
 14. **DAG adaptativo derivado do GitHub e work-conserving** — ordem topológica, gates, hazards e oportunidades de concorrência são **derivados em memória** a cada releitura do GitHub (dependências e gate declarados no body de cada issue), nunca de um plano local obrigatório. Nenhum arquivo local de plano/schedule/DAG/índice/estado precisa ser produzido ou reconciliado. O DAG ordena dependências, gates e oportunidades de concorrência, e nunca exige múltiplos workers. Não existe wave imutável nem barreira “todos terminam juntos”: cada assentamento seguro reabastece o scheduler dentro do teto aprovado. Concorrência só admite nós `ready` com dependências satisfeitas, write/validation scopes fundamentados, recursos exclusivos livres e workspaces Orca isoladas.
 15. **Sub-issues nativas são hierarquia, não execução** — crie uma epic/área-pai quando issues-filhas compartilham um outcome, princípios, bloqueio ou sequência macro aprovados; o critério é coerência de produto, não quantidade. A pai guarda somente visão, ordem macro e progresso nativo; cada filha mantém body, ACs, dependências e histórico completos. Apenas filhas executáveis entram no DAG, `Ready`, claim, branch ou PR. Ordem visual das sub-issues não é dependência técnica; o DAG e evidência remota continuam sendo a autoridade. Divida uma epic quando ela deixar de ter um outcome compreensível, não porque atingiu um número arbitrário de filhas. Nunca crie uma filha apenas para preencher uma epic, nem aninhe hierarquias sem necessidade comprovada.
@@ -159,6 +164,7 @@ gh label list --limit 50
 2. Carregue **os dois guias live desta versão** a cada sessão, sem fallback e sem cópia em cache: `ORCA skills get orca-cli` e `ORCA skills get orchestration`. Guia ausente/ilegal é `BLOCKED`, não permissão para adivinhar subcomando ou flag. Nada aqui substitui o guia: esta skill descreve política, e o guia da versão em execução descreve a interface. O stub instalado pode ser mais novo que o binário. Se precisar de detalhe adicional, consulte `ORCA skills get --help`: use a referência/tópico suportado ou `ORCA skills get orchestration --full`. Não tente repetidamente `--reference`/`--references` quando a versão só oferece `--topic`/`--full`; carregue detalhes somente quando a operação precisar deles.
 3. Confirme disponibilidade com `ORCA status --json`; se o app não estiver de pé, use o caminho de abertura documentado no guia. Prefira `--json` em toda chamada.
 4. Inventarie o que já existe antes de propor qualquer coisa (`worktree ps --json`, `terminal list --json`). Workspaces, terminais e reservas **não relacionados à campanha permanecem intocados**.
+5. **Wake automático por evento (evidência fresca).** Antes do primeiro dispatch, prove que o Run da campanha está vinculado ao PI coordenador exato e que o runtime expõe estado vivo/idle legível desse terminal (status/guia live da versão). A prova de fonte vem da versão instalada verificada e não promete toda instalação Orca/PI: suporte, status ou vínculo ausentes = wake automático **não verificado** (lacuna de capacidade a reportar, nunca falha de worker). Veja 7.4.
 
 Sem preflight completo não há dispatch. É legítimo criar/refinar backlog, Project e DAG mesmo sem Orca disponível; a execução de issue é que fica bloqueada.
 
@@ -210,7 +216,7 @@ Apresente o checklist de acesso no chat; quando já existir uma issue afetada ac
 
 ## Phase 1 — Entender o projeto (scouts por módulo) **ANTES** de perguntar
 
-> Projetos reais não são greenfield. **Proibido** montar backlog sério ou questionário gordo sem mapear o código.
+> Projetos reais não são greenfield. **Proibido** montar backlog sério ou questionário gordo sem mapear o código. **Escopo desta fase:** é *intake* (backlog novo ou uma fronteira específica ainda não resolvida), não pré-requisito de cada issue já contratada: continue/execução aprovada segue Phase 6/7 e não abre novo ciclo de scout de módulo/proposta/intake.
 
 ### 1.1 Shape rápido (orquestrador, sem agent se for barato)
 
@@ -223,7 +229,7 @@ Identifique stack, entrypoints, pastas top-level.
 
 ### 1.2 Scouts por módulo (obrigatório se >3 arquivos de entendimento)
 
-Carregue `agent-guide` + `scout`. Prefira **vários scouts paralelos e estreitos** por módulo/ângulo:
+Carregue `agent-guide` + `scout`. O coordenador aprende apenas fatos que mudam decisão (escopo, dependência, hazard, autoridade); descoberta de implementação dentro de um escopo de issue já estabelecido pertence ao PI atribuído, mas DoR/escopo ausente continua bloqueando o dispatch — nunca terceirize descoberta vaga ao agente. Prefira **vários scouts paralelos e estreitos** por módulo/ângulo:
 
 | Scout | Pergunta típica |
 |-------|-----------------|
@@ -234,7 +240,7 @@ Carregue `agent-guide` + `scout`. Prefira **vários scouts paralelos e estreitos
 | tests/ci | como validar, pipelines, quality gates |
 | existing issues | issues/PRs abertos que se sobrepõem ao backlog |
 
-Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI também deve inventariar a cobertura realmente executável por jornada (unit, integração, contrato, E2E/smoke, browser/app e manual), apontar features funcionais sem proteção e recomendar a baseline mínima antes de mudanças naquela superfície. Quando houver frontend, o inventário inclui build/typecheck/lint, smoke das rotas afetadas, falhas de rede e erros `console.error`/exceções não esperadas durante as jornadas críticas.
+Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI informa como validar cada área (comandos existentes e o que eles cobrem); não proponha baseline nem campanha de cobertura.
 
 ### 1.3 Síntese local
 
@@ -283,17 +289,10 @@ Para cada item:
 3. **Acceptance criteria** (bullets testáveis)
 4. **Área do sistema** (módulos/paths do PROJECT_MAP)
 5. **Dependências**
-6. **Impacto de regressão** — jornadas, contratos, integrações e dados já existentes que a issue pode afetar; identificar a suíte/comandos que devem ser executados.
+6. **Testes da área** — quais testes existentes cobrem o que a issue toca (serão rodados antes do PR).
 7. **Tipo**: `feature` | `fix` | `chore` | `refactor` | `docs` | `infra`
 
-Para toda issue de código, os acceptance criteria devem incluir, quando aplicável:
-
-- teste novo ou ajustado que reproduz o bug/contrato/mudança;
-- suíte de regressão direcionada aos módulos e jornadas afetados;
-- suíte padrão do repositório (ou uma justificativa explícita e aprovada para a parte que não puder rodar);
-- regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência.
-
-Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o backlog deve conter uma issue de **baseline de caracterização** antes das mudanças que possam afetá-la. Essa issue deve: catalogar comportamento válido versus bugs/vulnerabilidades conhecidos; automatizar primeiro as jornadas Tier 0 (auth, dinheiro, dados críticos) e depois as jornadas core; usar banco/fixtures e providers fake; e provar que a baseline passa na branch default. Quando a superfície incluir frontend, a baseline também cobre build/typecheck/lint, navegação e interação das jornadas afetadas, contratos de rede e ausência de `console.error`/exceções inesperadas; avisos conhecidos só podem ser tolerados se forem documentados e tiverem issue de acompanhamento. As issues posteriores devem depender dela.
+Os acceptance criteria descrevem o comportamento observável que a issue entrega. A validação de uma issue de código é: testes existentes da área afetada, mais um teste novo só para bug corrigido ou contrato sem cobertura. Cobertura, suíte completa e baseline de caracterização **não** são critério de aceite, salvo pedido do usuário.
 
 ### Dedup e corte
 
@@ -304,7 +303,7 @@ Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o
 - Marcar `blocked` se depender de decisão externa
 - Não criar issue para “pesquisar depois” sem outcome
 
-Rascunho local **opcional** da proposta (a issue criada no GitHub é que passa a valer): `.pi/flow/<project-slug>/BACKLOG.md`
+Apresente o rascunho da proposta no chat, sem criar arquivo local; a issue criada no GitHub é que passa a valer:
 
 ```md
 # Flow Backlog — OWNER/REPO — YYYY-MM-DD
@@ -327,7 +326,7 @@ Rascunho local **opcional** da proposta (a issue criada no GitHub é que passa a
 
 ## Phase 3 — Estimar priority + effort (baseado no sistema)
 
-Não chute no vácuo. Use PROJECT_MAP + evidência:
+Não chute no vácuo. Use o mapa do projeto apresentado no chat + evidência:
 
 1. Módulos tocados e shared surfaces
 2. Complexidade (arquivos, tests, migrations)
@@ -412,7 +411,7 @@ Responde com **OK** (e ajustes se quiser), ou corrige a lista.
 
 Para uma campanha nova aprovada, o modo vem do owner de runtime `extensions/execution-mode.ts`: leia e registre o receipt verificado `EXECUTION_MODE={"mode":"…","source":"…"}` injetado pela sessão coordenadora. O enum canônico continua `SUPERVISIONADO | AUTÔNOMO | YOLO`, com default `AUTÔNOMO`; normalize o grant para `supervised|autonomous|yolo` antes do pin no terminal (`AUTÔNOMO ATÉ PR` → `autonomous`) e não faça uma pergunta separada de escolha de modo. O modo default **não autoriza a campanha por si só** — continue exigindo um grant de campanha explícito e escopado. `AUTÔNOMO ATÉ PR` continua aceito como **alias legado** de `AUTÔNOMO`, com a mesma fronteira de não fazer merge automático. Grants existentes válidos permanecem como estão: nenhuma migração remota, nenhuma reescrita de registro antigo. Preferências de runtime não são grants nem podem elevar um grant existente; para grants existentes, o modo e o escopo registrados no GitHub continuam sendo a autoridade.
 
-Registre, em uma única decisão do usuário, o **grant de campanha**: escopo e conjunto de issues; **base branch escolhida para cada repositório**; modo; limite de PIs simultâneos (`≤ 6`); operações permitidas; e, quando houver deploy/migração autorizada, as identidades de ambiente, métodos, limites de blast radius e caminho de recuperação. Nunca assuma `main`/default e nunca pergunte de novo enquanto ação, alvo, método e evidência continuarem os mesmos — inclusive após resume em chat novo.
+Registre, em uma única decisão do usuário, o **grant de campanha**: escopo e conjunto de issues; **base branch escolhida para cada repositório**; modo; limite de PIs simultâneos (`≤ 12`); operações permitidas; e, quando houver deploy/migração autorizada, as identidades de ambiente, métodos, limites de blast radius e caminho de recuperação. Nunca assuma `main`/default e nunca pergunte de novo enquanto ação, alvo, método e evidência continuarem os mesmos — inclusive após resume em chat novo.
 
 | Modo | O que o grant cobre | O que continua exigindo gate exato |
 |------|---------------------|------------------------------------|
@@ -421,6 +420,8 @@ Registre, em uma única decisão do usuário, o **grant de campanha**: escopo e 
 | **YOLO** | Tudo do modo anterior **mais** merge, após review independente do head SHA final e checks exigidos; e as operações de deploy/migração **separadamente nomeadas e aprovadas** | Incidente, mudança material de grant, alvo/método novo, recurso não descartável não nomeado, operação destrutiva fora do manifesto aprovado |
 
 YOLO é **escopo de aprovação**, não flag de runtime nem bypass de segurança: não desliga o gate de ação consequente, não autoriza usar base de dados de staging/usuário como recurso descartável de teste, não autoriza restore/reseed/cleanup automático após mutação inesperada e não transforma exemplo colado pelo usuário em autorização.
+
+**Cleanup pós-merge no grant.** Remover a worktree de uma issue é efeito destrutivo (7.6): nem YOLO, nem “entregar”, nem um grant mutável genérico o autorizam. Só entra no grant, de forma estreita (worktrees de issue criadas pela campanha, método de 7.6, manifesto de efeitos, recuperação independente e proveniência), se o **usuário** o aprovou; grants antigos nunca são ampliados em silêncio. Um pedido explícito do usuário para aquele cleanup exato, com apenas os efeitos inerentes esperados, basta sob o Consequential Action Gate existente e não exige nova pergunta enquanto ação, alvo, método e evidência continuarem iguais. Recurso não descartável ou efeito ambíguo permanece bloqueado até a confirmação explícita exigida.
 
 Grave o intake no **README do GitHub Project**, em uma seção `## Campaign grant` delimitada, com data, escopo, conjunto de issues aprovado, bases por repositório, modo, teto, operações nomeadas e a **proveniência da aprovação** (quem aprovou, onde e quando o usuário disse isso). A escrita é **bounded**: preserve integralmente o texto já existente do README, altere apenas essa seção e **releia o README depois de escrever** para provar a pós-condição. Não crie issue de controle, arquivo local, board paralelo, serviço ou schema novo de aprovação para guardar o grant.
 
@@ -620,13 +621,15 @@ As fontes 5 e 6 são dicas somente-leitura sem autoridade nenhuma. O re-entry pr
 
 Conflito é reconciliado entre as fontes, nunca apagado pela primeira que parece conveniente. Uma leitura nova invalida fatos antigos. `.pi/flow` é rebuildable e nunca é lock, claim ou motivo para recriar backlog ausente. Workspace Orca ausente neste host não libera claim remoto: o trabalho pode estar em outro host.
 
-### 6.0 Re-entry remoto: fast path vs completo
+### 6.0 Re-entry remoto: completo, fast path e delta de campanha
 
 Após compactação ou perda de contexto, use re-entry completo: o resumo do chat é uma pista, nunca inventário atual nem prova de autoridade. Persistência não é sincronização automática.
 
-**Fast path (mesma sessão, uma issue):** se o coordenador já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a workspace/terminal Orca atribuídos**. Se tudo confere, prossiga. Qualquer pedido de concorrência, cálculo de nova candidata, divergência, troca de issue, chat novo, handoff ou anomalia exige o re-entry completo abaixo. Re-entry de campanha nunca usa fast path.
+**Fast path (mesma sessão, mesma issue WIP):** se o coordenador já completou um re-entry completo nesta sessão, está na mesma issue WIP e nenhuma anomalia/handoff ocorreu desde então, releia a issue WIP, claim marker, PR, branch remota **e a workspace/terminal Orca atribuídos**. Se tudo confere, prossiga. Divergência, troca de issue, chat novo, handoff ou anomalia saem do fast path.
 
-**Re-entry completo** — execute nesta ordem no início de um chat novo, antes de puxar issue diferente, e após anomalia/handoff:
+**Delta de campanha (mesma sessão ininterrupta, candidata diferente):** só quando **todas** as precondições valem: o re-entry completo (baseline) já foi concluído nesta sessão; não houve compactação, perda de contexto, chat novo, handoff nem anomalia desde então; grant, repositório(s), base(s) e coordenador são os mesmos. Cada admissão ainda exige evidência **atual** de ocupação de toda a campanha: Status dos itens do Project (com a checagem de truncamento), todos os claims ativos e PRs, inventário de branches remotas com SHAs (`git fetch --prune origin` + `git ls-remote --heads origin`) e workers Orca alcançáveis (`worktree ps`, `terminal list` e dispatches dos ativos). Releia as linhas que mudaram desde o baseline, o body/claims da candidata atual, os gates das dependências transitivas e o contrato de **todo** WIP ativo para colisão. Um contrato conhecido só é reutilizado após comparar a identidade e o body obtidos na leitura remota atual (podem vir de uma consulta em lote) com o baseline; `updated_at` sozinho não prova conteúdo igual. Linha nova ou desconhecida é reconciliada. Não é exigido reler o histórico de issues fechadas nem todos os módulos a cada candidata. Branch/claim/conflito novo e inexplicado, ou inventário incompleto (truncado, inalcançável, ambíguo), volta ao re-entry completo. Compactação, chat novo, handoff e anomalia exigem o completo — nunca o delta.
+
+**Re-entry completo** — execute nesta ordem no início de um chat novo, após compactação/perda de contexto, handoff ou anomalia, sempre que não houver baseline válido na sessão, e quando o delta cair para ele:
 
 ```bash
 REPO_NWO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
@@ -736,14 +739,14 @@ ORCA orchestration task-list --run <run-id> --json
 
 2. **Provar o vínculo.** Cruze URL do Project, repositórios/bases aprovados e URLs das issues com o objetivo do Run, specs das Tasks, claims e vínculos nativos das workspaces. IDs vêm das respostas; título parecido, idade ou terminal ocioso não provam identidade nem propriedade. Para as Tasks identificadas, use `orchestration dispatch-show --task <task-id> --json`, depois `orchestration worker-show --dispatch <dispatch-id> --json` e `orchestration worker-read --dispatch <dispatch-id> --json`. Task sem Dispatch ainda não foi comprovadamente iniciada; preserve e reconcilie, sem criar substituta.
 3. **Reusar, não duplicar.** Não use `run-create` para recuperar contexto perdido. Run ausente, inacessível ou ambíguo com WIP existente bloqueia novas admissões afetadas; preserve workers e reporte a lacuna. Não crie outro Run/Task/workspace para contornar isso. Somente numa campanha realmente nova, autorizada e sem execução/claim correspondente, crie um Run; seu `--objective` deve citar a URL do Project e o mapeamento de repos/bases, sem segredo nem path local. Isso facilita descoberta, mas nunca concede autorização. Runs legados sem esses dados precisam de vínculo comprovado pelas Tasks/claims, não de recriação.
-4. **Vincular com autoridade.** Se o terminal atual já tem o vínculo correto comprovado, mantenha-o. Em outro terminal, `run-use` só depois da prova de propriedade ou handoff explícito e conforme a autoridade aceita pelo runtime: `orchestration run-use --id <run-id> --json`. Não use `--from` nem `--takeover-legacy` como atalho para tomar uma campanha atual; um coordenador concorrente ou autoridade desconhecida bloqueia o vínculo.
+4. **Vincular com autoridade.** Se o terminal atual já tem o vínculo correto comprovado, mantenha-o. Em outro terminal, `run-use` só depois da prova de propriedade ou handoff explícito e conforme a autoridade aceita pelo runtime: `orchestration run-use --id <run-id> --json`. Não use `--from` nem `--takeover-legacy` como atalho para tomar uma campanha atual; um coordenador concorrente ou autoridade desconhecida bloqueia o vínculo. O Run da campanha precisa ficar vinculado (ou reconciliado) ao **PI coordenador exato**: é a mailbox desse dono que recebe o ponteiro automático de 7.4.
 5. **Recuperar pendências antes de seguir.** No Run vinculado, inspecione sem consumir:
 
 ```text
 ORCA orchestration check --peek --json
 ```
 
-Reconcilie perguntas, escalations e resultados pendentes antes de admitir novo trabalho. Processe o lote FIFO completo; responda apenas perguntas ainda pendentes com `orchestration reply --id <message-id> --body <resposta> --json`, preservando seus IDs em vez de abrir perguntas duplicadas. Verifique cada resultado contra a issue/Dispatch e resolva a liberação ou retenção autorizada do terminal **antes do ack do Delivery exato**. Se o peek não fornecer Delivery acionável, obtenha-o pelo `check` documentado depois da inspeção; nunca invente ID de ack nem considere o peek consumo. Depois retome a espera limitada da Phase 7.4.
+Reconcilie perguntas, escalations e resultados pendentes antes de admitir novo trabalho. Processe o lote FIFO completo; responda apenas perguntas ainda pendentes com `orchestration reply --id <message-id> --body <resposta> --json`, preservando seus IDs em vez de abrir perguntas duplicadas. Verifique cada resultado contra a issue/Dispatch e resolva a liberação ou retenção autorizada do terminal **antes do ack do Delivery exato**. Se o peek não fornecer Delivery acionável, obtenha-o pelo `check` documentado depois da inspeção; nunca invente ID de ack nem considere o peek consumo. Depois volte ao wake por evento da Phase 7.4, sem espera ativa. Na reentrada, `check --peek` é só diagnóstico seguro da inbox existente quando o wake automático não está comprovado.
 
 O resumo no chat mostra Project, Run verificado, issues/workers ativos, perguntas/blockers pendentes, último instante de releitura e próxima ação segura. É uma visão derivada, não outra fonte persistente. Runtime indisponível não vira prova de worker encerrado ou vaga livre; a retomada real após reinício depende de o Orca conseguir comprovar o estado preservado.
 
@@ -757,7 +760,7 @@ O produto do re-entry é uma tabela **em memória**, derivada do que acabou de s
 - Authority: Project Status → issue/claim/PR → remote branch → Orca workspace/terminal
 - Campaign grant (Project README): mode, base per repo, ceiling, named operations, approval provenance
 - Campaign base for this repo: release/2.1@<40-char SHA>
-- Approved concurrency: N (ceiling 6); active issue PI workers: N
+- Approved concurrency: N (ceiling 12); active issue PI workers: N
 - Remote read at: 2026-07-09T12:00:00Z
 
 ## Reconciled active claims
@@ -839,14 +842,13 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - [ ] Não conflita com issue/PR/claim/branch/workspace já ativos no mesmo pedaço
 - [ ] Nenhuma dependência externa aberta (credencial, acesso, decisão humana, provider); se houver, vai para `Blocked`, não para `Ready`
 - [ ] Para concorrência: write scopes, recursos exclusivos e recursos de validação estão declarados e fundamentados **no body da issue**; qualquer independência desconhecida força serialização
-- [ ] Impacto de regressão mapeado: jornadas/contratos anteriores, testes existentes e comandos obrigatórios estão identificados
-- [ ] Para features existentes afetadas, a baseline de caracterização já passa na base escolhida do repositório ou há uma issue predecessora explícita que a estabelecerá
+- [ ] Testes existentes da área afetada identificados
 
 **Ready ≠ compromisso de fazer agora.** Ready = “pode ser puxado sem vergonha”.
 
 #### `in progress` — WIP real
 
-- Um único writer por issue e por workspace; no máximo seis workers PI de issue ativos na campanha
+- Um único writer por issue e por workspace; no máximo doze workers PI de issue ativos na campanha
 - **Obrigatório:** workspace Orca criada para a issue, com branch **real** lida da resposta, a partir da base escolhida daquele repositório
 - Status no GitHub atualizado **e relido** no momento em que a workspace nasce / o trabalho é injetado — não no fim do dia
 - Comentário curto na issue com branch real + intenção ajuda o board humano
@@ -882,7 +884,7 @@ Trate estas intenções como operação de primeira classe:
 
 Não peça resumo do chat anterior. Faça sozinho:
 
-1. resolver o repo pelo cwd/remote e rodar **re-entry completo**, nunca fast path;
+1. resolver o repo pelo cwd/remote e rodar **re-entry completo** em chat novo ou sem baseline (nunca o fast path de issue única); em sessão ininterrupta com baseline completo, aplique o delta de campanha de 6.0 antes de cada admissão;
 2. carregar `references/parallel-execution.md`;
 3. reconstruir a tabela de todos os Project items, claims, assignees, PRs, branches remotas e workspaces/terminais Orca;
 4. ler o grant de campanha no README do Project e as dependências/escopos nos bodies das issues, e **derivar o DAG em memória** — sem depender de arquivo local, sem recriar backlog e sem inventar dependência que o remoto não declara;
@@ -913,7 +915,7 @@ Em todo “continua / próxima / segue o projeto / o que dá para rodar junto?�
    - workers ativos acima do teto aprovado, ou vaga “liberada” por timeout/idle em vez de assentamento provado
    - issue P0 parada enquanto P3 está in progress
 4. **Calcular nós executáveis agora**: status remoto `ready`, dependências satisfeitas, nenhum claim prévio, nenhum bloqueio externo aberto e nenhum hazard de path/contrato/recurso incompatível com **qualquer** WIP reconciliado
-5. **Preencher as vagas livres** com as melhores candidatas (não só o menor número), respeitando o teto de seis
+5. **Preencher as vagas livres** com as melhores candidatas (não só o menor número), respeitando o teto de doze
 6. **Pedir OK** apenas quando o modo ou a natureza da ação exigir
 7. Só então admitir
 
@@ -951,7 +953,7 @@ Workspace plan: Orca cria a branch; branch real vem da resposta
 
 ## Phase 7 — Uma issue = uma workspace Orca = uma branch real (hard rule)
 
-Toda execução de issue acontece dentro de uma workspace criada pelo Orca. O checkout canônico é do coordenador: ele coordena, integra e publica, e **nunca** é workspace de worker. Para mais de uma issue simultânea, o protocolo completo de `references/parallel-execution.md` é obrigatório.
+Toda execução de issue acontece dentro de uma workspace criada pelo Orca. O checkout canônico é do coordenador: ele coordena, integra e publica, e **nunca** é workspace de worker. Para qualquer admissão/dispatch — inclusive uma única issue — a seção 6 de `references/parallel-execution.md` é obrigatória; para mais de uma issue simultânea, o protocolo completo dessa referência.
 
 ### 7.0 Contrato de interface Orca
 
@@ -963,14 +965,16 @@ Todos os comandos de orquestração (`run-create`, `run-use`, `task-create`, `wo
 |---|---|---|
 | Namespace da campanha | `orchestration run-create --objective ... --json`; `orchestration run-use --id <id> --json` | Um Run por mapeamento campanha/base; Run é inbox/namespace, **não** scheduler. Antes de criar ou vincular, aplique 6.0.1: descubra/reuse a execução existente; `run-use` só após reconciliar propriedade, nunca takeover cego. Detalhe interno: não exponha Run ao usuário como se fosse o board |
 | Registro de tentativa | `orchestration task-create --spec ... --run <id> --json` | Estados `pending`/`ready`/`dispatched`/`completed`/`failed`/`blocked`. Uma Task é **registro de supervisão de uma tentativa**, nunca uma issue, backlog ou fonte de ACs/status. Crie **uma Task só no momento da admissão**, para a issue corrente; nunca pré-crie tasks para o board inteiro. `completed` é desfecho de tentativa, nunca prova de merge/dependência satisfeita |
-| Workspace + branch + terminal PI | `worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --no-parent --agent pi --setup <policy> --json` | Cria a branch e o primeiro terminal PI. **Não existe** flag documentada de nome de branch nem de attach em branch existente: não invente. `--no-parent` controla linhagem de sidebar, não a base Git. Leia da resposta o ID do workspace, a **branch real** e o handle do terminal; nunca derive branch do `--name` |
+| Workspace + branch + terminal PI | `worktree create --repo <selector> --name <name> --issue <N> --base-branch <base do repo> --parent-worktree <pai verificado da campanha> --agent pi --setup <policy> --json` | Cria a branch e o primeiro terminal PI como child do contexto da campanha naquele repo/host. **Não existe** flag documentada de nome de branch nem de attach em branch existente: não invente. `--parent-worktree` controla linhagem de sidebar, não a base Git. Leia da resposta o ID do workspace, a **branch real** e o handle do terminal; nunca derive branch do `--name` |
 | Preparar antes de injetar | `worktree create` com `--agent pi` e **sem** prompt de trabalho | Permite preparar o PI e conferir claim/setup/status antes de qualquer edição. Inspecione e autorize política de setup e terminais default **antes** do create: eles podem mutar estado mesmo com `--setup skip`. Preserve a política de wait-for-setup |
 | Metadados do workspace | `worktree set --worktree <id exato> --issue <N> --workspace-status <id> --comment ... --json` | Status conhecidos: `todo`, `in-progress`, `in-review`, `completed`. `Blocked` **não** é status Orca conhecido: sem mapeamento descoberto, mantenha o status atual e adicione comentário de bloqueio; o `Blocked` vive no GitHub Project |
-| Dispatch para o PI preparado | `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json` | Adote o terminal PI exato retornado pelo create. O caminho de agente novo do `worker-start` aceita `--base-branch`, mas **não** aceita `--issue`: quando a ligação com a issue precisa existir antes do dispatch, use `worktree create` + adoção do terminal exato. `--model`/`--effort` valem para Claude/Codex/Cursor e **não** para PI: nunca os passe ao Orca. Antes do primeiro dispatch, reinicie apenas esse PI preparado no modelo-base obrigatório `openai-codex/gpt-6.1-sol` com `medium`, pela sequência verificada de 7.2; planner/plan-heavy internos mantêm suas próprias rotas. Nunca crie um segundo terminal de agente para a mesma issue |
+| Dispatch para o PI preparado | `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json` | Adote o terminal PI exato retornado pelo create. O caminho de agente novo do `worker-start` aceita `--base-branch`, mas **não** aceita `--issue`: quando a ligação com a issue precisa existir antes do dispatch, use `worktree create` + adoção do terminal exato. `--model`/`--effort` valem para Claude/Codex/Cursor e **não** para PI: nunca os passe ao Orca. Antes do primeiro dispatch, prove no PI preparado o modelo-base obrigatório `openai-codex/gpt-6.1-sol` com `high` (reiniciando apenas quando a UI fresca não o prova), pela sequência da seção 6 da referência; planner/plan-heavy internos mantêm suas próprias rotas. Nunca crie um segundo terminal de agente para a mesma issue |
 | Verificação | `orchestration dispatch-show --task <id>`, `orchestration worker-show --dispatch <id>`, `orchestration worker-read --dispatch <id>` | Fonte de verdade do que foi injetado e do que voltou |
-| Espera limitada | `orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json` | Devolve um lote FIFO limitado: processe **todos** os itens e faça ack do Delivery exato. Timeout/idle não é falha, conclusão nem vaga livre |
+| Evento de conclusão (padrão) | Ponteiro nativo do Orca no PI coordenador ocioso; depois `ORCA orchestration check --run <run-id verificado> --json` (**sem** `--wait`) e `ORCA orchestration check --run <run-id verificado> --ack <delivery-id> --json` | Sem polling, monitor, extensão ou arquivo novo. O ponteiro só acorda o coordenador; veja 7.4. Timeout/idle/`check` vazio não é falha, conclusão nem vaga livre |
+| Espera manual (fallback explícito) | `orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json` | Só por pedido explícito do usuário ou quando o push do runtime está comprovadamente indisponível, com a lacuna reportada; nunca substituto silencioso de monitoramento ativo. Devolve um lote FIFO limitado: processe **todos** os itens e faça ack do Delivery exato |
 | Comunicação | `orchestration send --to dispatch:<id>` para orientação; `orchestration ask`/`orchestration reply` para perguntas | Sem `--from` impersonado, sem broadcast de ciclo de vida, sem gravar capability em GitHub/cache |
-| Encerrar terminal | `orchestration worker-release --dispatch <id> --json` | Só em terminal **settled e próprio**; preserva a saída. `release_pending`/desconhecido não é limpo e não libera vaga. Sem fallback de fechar terminal. Terminal reusado/preexistente/não comprovado é retido. A workspace é preservada |
+| Encerrar terminal | `orchestration worker-release --dispatch <id> --json` | Só em terminal **settled e próprio**; preserva a saída enquanto a workspace existir (não sobrevive a `worktree rm`). `release_pending`/desconhecido não é limpo e não libera vaga. Sem fallback de fechar terminal. Terminal reusado/preexistente/não comprovado é retido |
+| Remover worktree da issue | `worktree rm --worktree <seletor exato> --json` | Só após merge/`Done` e assentamento, com autoridade e prova de 7.6; **uma** worktree por chamada; sem `--force` nem `--run-hooks`. Sem autoridade/prova: retenha com motivo |
 
 Resultado desconhecido de `worktree create`/`worker-start` é **reconciliação**: releia `worktree ps`, `terminal list` e o dispatch antes de qualquer nova chamada. Nunca faça retry cego nem crie uma segunda workspace/terminal para a mesma issue.
 
@@ -979,7 +983,7 @@ Resultado desconhecido de `worktree create`/`worker-start` é **reconciliação*
 O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é exigência da interface, não um segundo backlog:
 
 - a Task é **registro de tentativa** de uma issue **já admitida**; ela referencia a **URL exata da issue** e o **timestamp da leitura remota** que autorizou a admissão;
-- o `--spec` carrega um **snapshot de handoff autossuficiente derivado** naquele momento (ACs, base, branch real, escopos, comandos de validação). O snapshot é cópia derivada, **nunca autoridade**;
+- o `--spec` carrega um **snapshot de handoff autossuficiente derivado** naquele momento (ACs, base, branch real, escopos, comandos de validação), como texto inline preparado em memória, nunca apenas um caminho de arquivo. Não crie `.md` só para transportar prompts/handoffs nem copie bodies de issues para arquivos locais. O snapshot é cópia derivada, **nunca autoridade**;
 - a Task **não** tem autoridade independente sobre backlog, ACs ou status: se divergir do GitHub, o GitHub vence;
 - **releia a issue imediatamente antes do dispatch**; mudança material (ACs, escopo, dependências, base, Status) invalida o snapshot stale e exige derivar outro;
 - **não** pré-crie Tasks para o board inteiro nem espelhe o backlog em Tasks;
@@ -993,14 +997,15 @@ O Orca exige Run/Task/Dispatch para iniciar um worker supervisionado. Isso é ex
 | 1 issue → 1 workspace → 1 branch real | Nunca misture duas issues na mesma branch/workspace; a branch é a que o Orca criou e retornou |
 | Workspace | Uma workspace por issue neste ambiente; o checkout canônico do coordenador nunca é editado por worker |
 | Base | A **base escolhida no intake para aquele repositório**, passada em `--base-branch`; nunca a default implícita. SHA da base registrado no claim |
+| Pai Orca | Workers da mesma campanha naquele repo/host são children do mesmo contexto verificado, passado explicitamente em `--parent-worktree`. Não use `--no-parent` nem o painel ativo para decidir o pai. A seção 6 da referência é dona da resolução e da verificação bidirecional antes do dispatch; a base Git continua independente |
 | Nome | O nome do workspace é rótulo humano; identidade real = ID do workspace + branch retornada. Branches legadas continuam reconhecidas e nunca duplicadas |
 | Executor | `FLOW_EXECUTOR_ID` único e estável por issue; login GitHub sozinho não separa chats/agentes |
 | Claim | Project/assignee + marker + branch real + workspace/terminal; nenhum sinal isolado é lock suficiente |
-| WIP | 1 writer por issue/workspace; no máximo **6 workers PI de issue** ativos no total, dentro do teto aprovado |
+| WIP | 1 writer por issue/workspace; no máximo **12 workers PI de issue** ativos no total, dentro do teto aprovado |
 | Sujo | Estado sujo pertence à workspace onde foi observado; outro executor nunca stasha/commita/descarta |
-| Preservação | Workspace, branch, terminal e reserva **não relacionados à campanha** ficam intocados; nada de deletar, arquivar, renomear ou reatribuir |
+| Preservação | Workspace, branch, terminal e reserva **não relacionados à campanha** ficam intocados (incluindo WIP, órfãs, stale, reusadas, preexistentes ou não provadas); nada de deletar, arquivar, renomear ou reatribuir |
 | Reuso | Só com prova exata de issue, repositório, branch real, base, PR e dono; nome parecido, idade ou terminal ocioso não são prova |
-| Cleanup | Não há limpeza automática: workspaces concluídas são preservadas, branches não são apagadas, terminais só são liberados quando settled |
+| Cleanup | Só a worktree de issue criada pela campanha, descartável, com merge/`Done` e assentamento provados e autoridade específica, pode ser removida (7.6); caso contrário é retida com motivo. Terminais só são liberados quando settled; branch remota, PR e issue nunca são apagados |
 
 Antes do claim, complete a Phase 6, inventarie as workspaces/terminais existentes e classifique **todas** as branches remotas, procurando claim marker, branch ligada à issue por PR/comentário ou PR cujo head represente o mesmo trabalho. Branch não conforme sem vínculo não vira claim por suposição. Se já há branch/PR/workspace ligada, reconcilie e retome; não crie outra. Não admita se outro login/marker é dono, se há múltiplos assignees/markers, ou se o `FLOW_EXECUTOR_ID` proposto já tem WIP.
 
@@ -1008,14 +1013,17 @@ Handoff exige evidência explícita no GitHub (assignee/marker atualizado e come
 
 ### 7.2 Admissão, workspace e dispatch como transições verificadas
 
-O coordenador admite **em série**, mesmo quando a implementação vai correr em paralelo. GitHub e Orca não oferecem transação única nem claim atômico entre máquinas: o que existe é intenção visível + releitura antes do dispatch. Para cada issue admitida:
+O coordenador admite **em série**, mesmo quando a implementação vai correr em paralelo. GitHub e Orca não oferecem transação única nem claim atômico entre máquinas: o que existe é intenção visível + releitura antes do dispatch.
 
-1. **Recheque** imediatamente antes: Project item, issue, claim markers, PRs, branch remota e workspaces/terminais.
-2. **Publique a intenção no GitHub**: resolva o usuário autenticado por `gh api user -q .login`, atribua a issue a ele e prove que ele é o único assignee antes de marker de claim e `In progress`. Assignee existente diferente ou múltiplos assignees bloqueiam a admissão; nunca remova outro assignee automaticamente. Em seguida, releia:
+**Protocolo detalhado único: `references/parallel-execution.md`, seção 6.** Carregue-a antes de qualquer admissão/dispatch, mesmo de uma só issue; ela é o único dono dos comandos de create, terminal, modelo, modo, Task, `worker-start` e recuperação. Esta seção traz apenas os estágios e o claim — não mantenha um segundo protocolo aqui.
+
+1. **Handoff em memória primeiro.** Antes de criar a workspace, feche o handoff limitado (ACs, escopo, recursos, validação, NOT TO DO, grant); depois do create só entram os campos derivados do runtime (ID do workspace, branch real, handle do terminal, SHA). Sem Task pré-criada.
+2. **Recheque e publique a intenção no GitHub** (esta seção é a dona do exemplo): resolva o usuário autenticado por `gh api user -q .login`, atribua a issue a ele e prove que ele é o único assignee antes de marker de claim e `In progress`. Assignee existente diferente ou múltiplos assignees bloqueiam a admissão; nunca remova outro assignee automaticamente. O `FLOW_EXECUTOR_ID` é derivado **por issue nova** (nunca herdado do shell do coordenador para a próxima linha); reuse um ID só para aquela exata issue própria já existente, vindo do marker dela. Em seguida, releia:
 
 ```bash
-EXECUTOR=$(gh api user -q .login)
-FLOW_EXECUTOR_ID=${FLOW_EXECUTOR_ID:-primary}
+export EXECUTOR=$(gh api user -q .login)
+# Issue nova: ID único e fresco. Issue própria existente: use o ID do marker dela.
+export FLOW_EXECUTOR_ID="pi-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)"
 BASE="<base aprovada para este repositório>"
 BASE_SHA=$(git rev-parse "origin/$BASE")
 
@@ -1034,33 +1042,34 @@ gh project item-edit --id "$PROJECT_ITEM_ID" --project-id "$PROJECT_ID" \
 flow_project_items   # releia: o item precisa mostrar In progress
 ```
 
-3. **Autorize setup e terminais default**, depois crie a workspace com `worktree create ... --issue <N> --base-branch "$BASE" --no-parent --agent pi --setup <policy> --json`.
-4. **Leia a resposta real**: ID do workspace, branch criada, handle do terminal PI. Para o handle, prefira `agentTerminalHandle`, com `startupTerminal.handle` como compatibilidade. Se faltar ou ficar stale, resolva por `ORCA terminal list --worktree <workspace exata> --json`, conferindo agente e ownership; use somente o handle confirmado, nunca envie aos dois. Não crie outro terminal para resolver um handle perdido. Complete o claim com a branch real (novo comentário/marker) e, quando útil, `worktree set --worktree <id> --issue <N> --workspace-status in-progress`.
-5. **Verifique as pós-condições** antes de injetar trabalho: assignee único, marker coerente, branch real única no SHA da base, nenhum PR/claim conflitante, Project `In progress` relido, workspace ligada à issue e um único terminal PI.
-6. **Prepare e verifique o modelo-base no terminal PI recém-criado, antes de criar a Task ou fazer `worker-start`**. Espere `tui-idle` com `ORCA terminal wait --terminal <handle exato> --for tui-idle --timeout-ms <n> --json`; sem prompt de trabalho injetado, leia `ORCA terminal read --terminal <handle exato> --limit <n> --json` e salve o `nextCursor` real. Envie `ORCA terminal send --terminal <handle exato> --text "/quit" --enter --json`; espere o prompt de shell real, então envie `ORCA terminal send --terminal <handle exato> --text "pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium" --enter --json`. Espere `tui-idle` e leia apenas a saída nova desde o cursor salvo. Aceite somente a indicação nova e exata de `openai-codex/gpt-6.1-sol` com `medium` na UI/saída do PI; echo do comando, saída stale, inferência pela configuração global ou exit 0 não são prova. Falha, timeout, saída ausente ou modelo/esforço divergente bloqueiam aquele dispatch e preservam workspace/terminal: nunca faça fallback, nunca envie `--model`/`--effort` ao Orca, e nunca reconfigure worker ativo não relacionado. Esta preparação é exclusiva do PI de issue; não altera as rotas de planner/plan-heavy internos.
-7. **Fixe e verifique o modo no mesmo terminal PI preparado, antes de criar a Task ou fazer `worker-start`**. Salve o `nextCursor` da leitura anterior e envie o pin nativo `ORCA terminal send --terminal <handle exato> --text "/execution-mode <canonical grant mode> session" --enter --json`; espere `tui-idle` novamente e leia apenas a saída nova com `--cursor <cursor anterior>`. Aceite somente o receipt exato e novo `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}`. Echo do comando, saída stale, prosa do agente ou exit 0 não são prova. Sem receipt esperado, erro, timeout ou extensão indisponível, bloqueie o dispatch afetado e preserve workspace/terminal: nunca faça fallback para dispatch nem altere settings global/project. Registre os receipts de modelo e modo no progresso existente da issue/Task handoff, não em artefato local de controle. Em reuso/resume, repita essas provas antes de cada dispatch subsequente no PI próprio assentado; não interrompa nem reconfigure worker ativo não relacionado.
-8. **Só então** crie a Task de tentativa daquela issue (`orchestration task-create`, referenciando a URL da issue e o timestamp da leitura) e injete: `orchestration worker-start --task <id> --terminal <handle exato> --run <id> --json`, confirmando com `orchestration dispatch-show`/`orchestration worker-show`.
-9. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. A tabela de reconciliação continua em memória.
+3. **Resolva o pai verificado da campanha naquele repo/host, autorize setup e terminais default, crie a workspace como child e confira o vínculo nos dois sentidos antes de injetar trabalho** (comando e campos exatos na referência, seção 6).
+4. **Unidade ininterrupta.** Criação, preparação e dispatch são uma só unidade limitada. Aberto o PI, as próximas ações do coordenador são exclusivamente desta linha: pós-condições → modelo-base `openai-codex/gpt-6.1-sol` com `high` provado na UI fresca → receipt de sessão `EXECUTION_MODE={"mode":"<canonical grant mode>","source":"session"}` → releitura da issue → Task → `worker-start` → ativação imediata de `/goal <objetivo da Task>` no mesmo terminal → verificação do dispatch vivo e do Goal; ou bloqueio explícito que preserve a linha. Enquanto a linha estiver sem atribuição e acionável: nenhum scouting alheio, nenhuma reanálise do board, nenhum outro PI aberto e nenhuma resposta de “progresso” como fim de turno. Ambos os receipts são obrigatórios antes da Task; sem eles, bloqueie o dispatch afetado, preserve workspace/terminal, sem fallback e sem `--model`/`--effort` ao Orca.
+5. **`worker-start` com falha ou resultado desconhecido** congela o ciclo de vida: leia `stage`, `effects` e `residualResources` e reconcilie workspace/terminal/dispatch existentes **antes** de qualquer nova mutação — sem retry cego, sem nova workspace, sem prompt direto como fallback e sem baixar gates.
+6. Registre o desfecho onde ele sobrevive ao chat: comentário na issue com branch real, base e SHA verificado. Diga `worker active` somente após ler o dispatch vivo. A tabela de reconciliação continua em memória.
 
-O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se qualquer passo falhar: **pare aquela linha**, releia tudo e complete apenas a parte ausente quando a propriedade continuar inequívoca; caso contrário registre `partial-claim` com branch, assignees, status, SHA e erro exatos. Não faça “rollback” apagando branch, workspace ou terminal, e não sobrescreva trabalho do usuário.
+O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se qualquer passo falhar: **pare aquela linha**, releia tudo e complete apenas a parte ausente quando a propriedade continuar inequívoca; caso contrário registre `partial-claim` com branch, assignees, status, SHA e erro exatos. Não faça “rollback” apagando branch, workspace ou terminal, e não sobrescreva trabalho do usuário. Uma linha bloqueada só libera linhas independentes sob os gates de segurança/isolamento já existentes.
 
 ### 7.3 Scheduler contínuo
 
 - O scheduler é **work-conserving**: sempre que houver vaga livre, candidata `ADMIT` e nenhum hazard, admita. Não existe wave imutável nem espera por todos terminarem.
-- **Teto global: seis workers PI de issue simultâneos**, somando todos os repositórios e hosts da campanha. Seis é limite, não meta; o teto aprovado no intake pode ser menor.
-- Uma vaga só volta quando aquele writer **assentou com segurança**: resultado lido, PR/estado registrado, transição de Project relida e terminal liberado (`worker-release` em terminal settled) ou explicitamente retido com justificativa. Timeout, idle, silêncio, `check` vazio ou terminal quieto **não** liberam vaga.
+- **Teto global: doze workers PI de issue simultâneos**, somando todos os repositórios e hosts da campanha. Doze é limite, não meta; o teto aprovado no intake pode ser menor.
+- Uma vaga só volta quando aquele writer **assentou com segurança**: resultado lido, PR/estado registrado, transição de Project relida e terminal liberado (`worker-release` em terminal settled) ou explicitamente retido com justificativa. Retenção da worktree por cleanup sem autoridade/prova não segura, por si só, a vaga de um worker já assentado. Timeout, idle, silêncio, `check` vazio ou terminal quieto **não** liberam vaga.
 - Writer bloqueado ou de estado desconhecido, mas ainda vivo, **mantém** sua vaga até assentamento seguro.
 - Issues com bloqueio externo não ocupam vaga: vão para `Blocked` com a ação do usuário registrada, junto com seus dependentes, e a fila segue com trabalho independente.
+- **Prioridade de ações do coordenador:** (1) tratar pergunta/resultado pendente (6.0.1, `check`); (2) terminar primeiro um PI aberto ainda sem atribuição; (3) despachar candidatas independentes seguras — prepare-as em conjunto a partir da matriz atual, mas termine o dispatch de uma antes de criar a próxima, sem esperar a conclusão do primeiro worker; (4) só então observação limitada pontual (o padrão é o wake por evento de 7.4, sem polling) ou trabalho independente útil em **outras** issues. O WIP de um worker ativo é dele até `worker_done`, pergunta ou escalation: o coordenador não o revisa, testa, caça bugs nele, prepara recursos de validação para ele nem manda mensagens sobre ele; a validação do coordenador começa depois do resultado. Sem timer fixo de polling nem mecanismo novo; idle nunca prova atividade nem permissão.
 - Sem aninhar campanhas dentro de workers e sem contornar as guardas de nesting do Orca. Papéis internos do PI (planner/builder/QA) podem ser usados **dentro** da issue, com escopo delimitado, mas nunca para substituir um dispatch de issue nem para criar workers extras fora do teto.
 
 ### 7.4 Durante o trabalho: worker PI, monitoramento e incidentes
 
 - O worker PI é dono da engenharia da issue **dentro da sua workspace**. O coordenador é dono do GitHub, do ciclo de vida Orca, da publicação e da integração, salvo delegação suportada e explícita.
-- O prompt injetado é autossuficiente: issue e ACs, base e branch real, escopo de escrita e paths proibidos, recursos exclusivos, comandos de validação e se há autoridade de commit/push. Ausência de autorização significa não commitar nem pushar. Não é tutorial sobre o PI.
+- O prompt injetado é autossuficiente e inline: issue e ACs, base e branch real, escopo de escrita e paths proibidos, recursos exclusivos, comandos de validação e se há autoridade de commit/push. Não crie `.md` só para prompts/handoffs. A Task exige aguardar a ativação do Goal antes de implementar; o coordenador ativa `/goal` como comando nativo, não como texto dentro do `--spec`, seguindo a seção 6 da referência. Ausência de autorização significa não commitar nem pushar. Não é tutorial sobre o PI.
 - Commits e validação final acontecem **só** na branch e workspace daquela issue.
+- O `/goal` cobre somente a entrega autorizada daquele worker, sem incluir PR/merge/deploy do coordenador. Após sucesso verificado, o worker envia `worker_done` uma só vez e chama `goal_complete` com o `goal_id` atual como última ferramenta (ela encerra o turno). O `worker_done` vai ao Run do seu Dispatch pela forma existente do guia live/handoff — sem `--to`, sem `--from`, sem terminal direto duplicado. Antes de liberar o terminal, confira também `Goal complete` e assentamento sem continuação pendente. Nenhum desses sinais substitui as pós-condições de `Done` no GitHub.
 - Antes de retomar em chat novo e antes de cada push, refaça fetch e compare o SHA remoto com o último SHA verificado e registrado no comentário de claim da issue. Remoto avançou inesperadamente: pare, reconcilie, sem rebase/merge automático e sem sobrescrever.
 - Push sempre normal, nunca force; rejeição non-fast-forward é barreira de concorrência e exige nova reconciliação.
-- Use `orchestration check --wait --types worker_done,escalation,question --timeout-ms <n> --json` para acompanhar; processe **todo** o lote e faça ack do Delivery exato. Escalation/question são respondidas por `send`/`reply`, com o worker reportando task/dispatch/capability exatos e um veredito explícito de sucesso/falha.
+- **Conclusão por evento, sem polling.** O Orca já entrega o evento: quando chega mensagem sem waiter e o PI coordenador dono do Run está ocioso, ele injeta `You have <N> orchestration messages. Run \`orca orchestration check --run <id>\`.` e submete Enter; evento durante ocupação fica não lido e é reentregue na transição para idle. Um Delivery pendente suprime outro ponteiro, e um `check --wait` ativo reserva os tipos e suprime o push. O ponteiro é **só despertar**, nunca `worker_done`, nem GitHub `Done`. Ao acordar: (1) rode **um** `ORCA orchestration check --run <run-id verificado> --json` sem `--wait`; (2) processe o lote FIFO **inteiro**, validando Run, Task, Dispatch, issue e veredito explícito; mensagem de worker/ID inesperado, duplicada ou sem correspondência não é aceita nem liberada — reconcilie; (3) responda perguntas pelo ID existente (`reply`, ver abaixo); (4) resolva ciclo de vida/Goal (`goal_complete` correspondente, terminal settled, sem continuação) **antes** do ack — o wake chega já no `worker_done` e pode preceder o `goal_complete` final, então `worker_done` nunca prova Goal; é permitida **uma** verificação pontual de assentamento, guiada por esta conclusão (seção 8 da referência), que não é monitoramento contínuo. Assentamento não provado: não libere, mantenha vaga e terminal, registre a retenção explícita (motivo `assentamento pendente` + IDs de Run/Task/Dispatch/Delivery para reentrada/replay) e reporte a pendência com verdade; sem timer, espera repetida ou loop; (5) `ORCA orchestration check --run <run-id verificado> --ack <delivery-id> --json` do Delivery exato, depois de processar o lote inteiro e resolver cada decisão de liberação/retenção — retenção registrada conta como resolvida, para que um Goal não provado não congele a inbox inteira, e o ack nunca libera vaga nem prova Goal; (6) drene lotes limitados adicionais só enquanto houver mensagens realmente pendentes — nunca por timer. Depois o coordenador pode ficar ocioso/encerrar o turno com workers rodando; o Orca o acorda. Ocioso, timeout ou `check` vazio não é falha nem vaga livre. Sem sleep, loops de espera, `check --wait` repetido ou leituras repetidas de terminal só para observar.
+- **Fechamento de cada worker (triagem obrigatória).** O wake do Orca, o report do worker ou o usuário dizendo que os workers finalizaram, pararam ou estão ociosos é a ordem para fechar **todos** os workers da campanha agora, nunca uma pergunta sobre o que fazer. Com uma leitura fresca por worker (`worker-read`, `/goal status`, branch e SHA remoto, PR, checks), classifique: **completo** → siga 7.5/7.6 sem pedir instrução (PR na base aprovada, base incorporada por merge normal com conflito mecânico resolvido, checks verdes e review independente do head final, reaproveitando `PASS` do mesmo SHA) e faça merge só se o grant de campanha ou uma autorização explícita do usuário nesta conversa já cobrir esses merges; senão faça **uma** pergunta consolidada com todos os PRs prontos (ex.: “#12, #14 e #15 concluídas, PRs abertos e sem conflito — autoriza o merge?”); **incompleto sem bloqueio** → reconcilie sem perguntar: com Goal ainda ativo, oriente pelo Dispatch existente (`reply`/`send --to dispatch:<id>`); com Goal encerrado, devolva o restante exato ao **mesmo** PI e workspace como nova tentativa pela seção 6 da referência, sem nova workspace; ou conclua você a parte do coordenador; **bloqueado** → comente na issue a ação exata que destrava, mova o card para `Blocked`, releia e avise o usuário com essa ação. Worker ainda trabalhando fica intocado. Bloqueio, pergunta ou aprovação pendente de um worker nunca para o fechamento, a reconciliação, o merge ou a admissão dos outros. Reporte todos numa só mensagem.
+- **Fallback manual explícito.** `check --wait --types worker_done,escalation,question --timeout-ms <n> --json` (7.0) só por pedido explícito do usuário ou quando o push do runtime está genuinamente indisponível; reporte a lacuna de capacidade e processe **todo** o lote com ack do Delivery exato. Suporte, status ou vínculo de Run ausentes = wake automático não verificado, não falha de worker; a inbox existente (`check --peek`, 6.0.1) serve para diagnóstico seguro na reentrada, sem virar monitoramento ativo. A prova é da versão instalada verificada e não cobre toda implantação. Escalation/question são respondidas por `send`/`reply`, com o worker reportando task/dispatch/capability exatos e um veredito explícito de sucesso/falha.
 - **Ler o worker sem perder a posição:** use `ORCA orchestration worker-read --dispatch <id> --json` e continue com o `cursor` devolvido. A resposta informa `source` e, quando aplicável, `fallbackReason`: saída de terminal é um fallback legítimo, não prova de falha. Se vier `source_changed`, releia sem o cursor antigo. Nunca adivinhe ID de sessão do provedor ou caminho de transcript.
 - **Pergunta pendente não é pergunta nova:** se `ask` expirar ou desconectar, retome com `ORCA orchestration ask --resume <message_id> --timeout-ms <n> --json`, usando o ID real já recebido. O coordenador responde com `ORCA orchestration reply --id <message_id> --body "<resposta>" --json`. Sem ID comprovado, consulte a inbox existente; não repita a pergunta às cegas.
 - **Start incompleto:** leia `stage`, `effects` e `residualResources` do receipt antes de decidir o próximo passo. Setup ainda `running` após timeout não prova falha; não reinicie nem substitua o worker por silêncio. Resultado desconhecido segue reconciliação e as regras de incidente, nunca cleanup automático.
@@ -1086,10 +1095,7 @@ PR_URL=$(gh pr create --head "$BRANCH" --base "$BASE" --title "<title>" --body "
 Closes #<N>
 
 ## Validation
-- [ ] teste novo/ajustado para o comportamento desta issue
-- [ ] regressão direcionada para jornadas, contratos e issues anteriores afetadas
-- [ ] suíte padrão relevante do repositório
-- [ ] diagnostics clean (relevant)
+- [ ] testes da área afetada (comandos e resultado)
 - [ ] review independente por `validator` (sem editar), sem blockers pendentes
 - [ ] limitações de ambiente/validação, se houver, documentadas (não marcar done sem decisão explícita)
 
@@ -1115,7 +1121,7 @@ Releia PR e issue: URL/número existem, `headRefName` é a branch real, `baseRef
 
 ### 7.6 Integração, Done e assentamento
 
-A integração é **serial por repositório**, sempre na base escolhida, nunca em `main` implícita. Merge exige autorização do modo vigente: em SUPERVISIONADO e AUTÔNOMO, aprovação explícita; em YOLO, o grant cobre o merge **depois** de review independente do head SHA final e dos checks exigidos.
+A integração é **serial por repositório**, sempre na base escolhida, nunca em `main` implícita. Merge exige autorização do modo vigente: em SUPERVISIONADO e AUTÔNOMO, aprovação explícita; em YOLO, o grant cobre o merge **depois** de review independente do head SHA final e dos checks exigidos. Quando falta aprovação de merge, prepare todos os PRs prontos e peça-a numa única pergunta consolidada (7.4); autorização explícita já dada nesta conversa para esses merges vale e não é perguntada de novo.
 
 Se a base avançou enquanto o PR esperava, incorpore-a apenas por merge normal autorizado, com o writer parado em checkpoint; depois rode de novo a validação afetada e obtenha novo review do head SHA final. Nunca force push, nunca rebase automático, nunca merge de PR cuja evidência ficou obsoleta.
 
@@ -1138,9 +1144,11 @@ flow_project_items
 
 Nunca são `Done`: `worker_done`, exit verde, task `completed`, PR aberto, PR fechado com `mergedAt=null`, deployment/migração exigida pela AC ainda incompleta, ou aceitação pendente do usuário quando a AC a exige.
 
-Assentamento final da issue: registre o resultado em comentário da issue e no Status relido do Project, libere o terminal com `worker-release` **somente** se ele for próprio e settled (do contrário retenha e diga por quê), e **preserve a workspace e a branch** — não existe deleção, arquivamento ou cleanup automático. Só depois desse assentamento a vaga volta ao scheduler. Volte à Phase 6 antes de admitir a próxima issue.
+Assentamento final da issue: registre o resultado em comentário da issue e no Status relido do Project, libere o terminal com `worker-release` **somente** se ele for próprio e settled (do contrário retenha e diga por quê). Só depois desse assentamento a vaga volta ao scheduler; a retenção da worktree por falta de autoridade/prova não a segura. Volte à Phase 6 antes de admitir a próxima issue.
 
-Se restar apenas trabalho bloqueado ou em review e nenhum worker ativo, encerre a campanha com relatório: entregue, PRs abertos, ações pendentes do usuário, issues bloqueadas e workspaces preservadas.
+**Cleanup condicional da worktree da issue.** Receita detalhada única: `references/parallel-execution.md`, seção 10. Resumo: depois de merge/`Done` provados **e** ciclo de vida assentado (Goal finalizado, sem continuação/pergunta/Delivery/reuso pendente), o coordenador pode remover **uma** worktree de issue criada e descartável da campanha com `ORCA worktree rm --worktree <seletor exato> --json`, sem `--force`/`--run-hooks`, somente com autoridade específica (4.1) e prova fresca de dono, repositório, host, caminho canônico, ID, registro Git, branch, PR/SHA publicado, base, `mergedAt`, issue fechada e `Done`. Classifique **todo** o conteúdo — incluindo ignorados, histórico/refs/reflogs ou trabalho salvo não publicado — e preserve fora dela o que importa; conteúdo desconhecido, aliases/links/filhos/processos/terminais compartilhados bloqueiam só esse cleanup. Sem `git clean`/`rm` de pré-limpeza. `worker-release` isoladamente não preserva evidência após `worktree rm`: o remove encerra PTYs, apaga diretório, registro, metadata e histórico de terminal. Falha ou pós-estado ambíguo é incidente (congelamento read-only, sem retry/workaround). Registre remoção ou retenção e motivo na issue. Cleanup nunca é recuperação nem autorização para remover órfãs/stale/reusadas/preexistentes/não provadas.
+
+Se restar apenas trabalho bloqueado ou em review e nenhum worker ativo, encerre a campanha com relatório: entregue, PRs abertos, ações pendentes do usuário, issues bloqueadas e worktrees removidas ou retidas com motivo.
 ---
 
 ## Phase 8 — Implementar a issue puxada
@@ -1157,18 +1165,16 @@ Sempre:
 1. `agent-guide` antes de subagents
 2. Scout extra se a issue exigir entendimento novo
 3. Todo planner/scout/builder/tester usado dentro da issue recebe apenas a workspace Orca daquela issue e seu contrato de ownership; nenhum agent pode editar o checkout canônico do coordenador nem workspace alheia, e nenhum deles substitui um dispatch de issue
-4. Antes de editar, mapear o impacto de regressão: testes, contratos, jornadas e issues anteriores na mesma superfície
-5. Criar/ajustar o teste de regressão junto da mudança sempre que praticável
+4. Identificar os testes existentes da área afetada
+5. Teste novo só para bug corrigido ou contrato sem cobertura, quando barato
 6. Planner quando L/complexa
-7. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante e checks estáticos; não substituir testes por inspeção manual
+7. Antes do PR, rodar os testes da área afetada e os checks estáticos que a mudança toca; sem suíte completa, caça de cobertura ou refatoração de testes por padrão
 8. Antes de abrir **qualquer PR**, garantir um único `PASS` independente de `validator` para o head SHA final; reutilizar PASS existente desse SHA e nunca relançar por metadado opcional ou falso positivo fora da matriz
 9. Registrar comandos, resultados e parecer bounded no PR; se uma camada exigida não rodar, declarar motivo, risco e próxima ação
-10. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita
+10. Não avançar para `done` se houver falha causada pela issue ou blocker comprovado no escopo; falha pré-existente sem relação é reportada, não perseguida
 11. Planos em `.pi/plans/` referenciando `#N`
 
-A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.
-
-Exceção estreita: contenção emergencial que reduz exposição ativa pode preceder uma baseline completa somente com escopo mínimo, smoke test da jornada válida, rollback conhecido e aprovação explícita do usuário. A caracterização completa continua como dependência da próxima alteração funcional; nunca use a exceção para normalizar cobertura ausente.
+Em áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), o teste da área inclui os cenários adversos que a mudança toca diretamente. Provado o comportamento, pare de testar.
 
 Se o planner gerar plano grande: **mostre resumo e peça OK** antes de builders.
 
@@ -1188,7 +1194,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 
 1. `cd` / confirmar repo X (path ou `owner/name`)
 2. Permission gate leve (`gh issue list` ok?) + preflight Orca quando houver execução
-3. Rodar **re-entry completo** (Phase 6): fetch/prune, Project, issues, claim markers, PRs all-state, branches remotas e workspaces/terminais Orca
+3. Rodar **re-entry completo** (Phase 6) em chat novo, após compactação/handoff/anomalia ou sem baseline: fetch/prune, Project, issues, claim markers, PRs all-state, branches remotas e workspaces/terminais Orca; na mesma sessão ininterrupta com baseline, o delta de campanha de 6.0 substitui o refazer total para a próxima candidata. Continue aprovado usa Phase 6/7, não novo ciclo de scout/proposta/intake
 4. Classificar/reparar ou reportar anomalias; preservar todo WIP existente e calcular somente candidatas independentes para as vagas livres
 5. Derivar o DAG e a tabela de reconciliação em memória a partir do grant no README, dos bodies e do board; histórico local opcional entra por último e só como dica, e sua ausência nunca recria backlog nem bloqueia o resume
 6. Emitir resume report com `lastVerifiedAt`, evidência do claim/PR/SHA/workspace e próximas admissões
@@ -1202,6 +1208,7 @@ Quando o user **não** manda lista nova, e sim continuidade:
 - Ler cache/chat antes do remoto e tratá-lo como verdade
 - Recriar backlog porque `.pi/flow`/`.pi/memory` sumiu
 - Perguntar de novo base/modo já aprovados quando os fatos não mudaram
+- Abrir novo ciclo de scout de módulo/proposta/intake para issue já contratada; ou terceirizar ao PI uma descoberta que o DoR deveria ter fechado
 - Admitir issue do backlog sem DoR, com bloqueio externo aberto ou já reclamada por outro executor
 - Trabalhar em branch aleatória ou no checkout canônico do coordenador
 - Avançar cards sem verificar pós-condições, reler o Project e registrar a evidência no GitHub
@@ -1218,7 +1225,7 @@ Resume report compacto obrigatório:
 ## Flow Orca resume — OWNER/REPO
 - Remote verified at: 2026-07-09T12:00:00Z
 - Authority read: Project <number|not configured>; issues/claims/PRs; remote branches; Orca workspaces/terminals
-- Campaign: mode=…; base per repo=…; ceiling=6; approved concurrency=…; active issue PI workers=…
+- Campaign: mode=…; base per repo=…; ceiling=12; approved concurrency=…; active issue PI workers=…
 - Board: backlog=… ready=… in-progress=… in-review=… blocked=… done=…
 - Grant (Project README): mode/bases/ceiling/named ops=…; approval provenance=…; derived DAG: current layer=…; executable issues=…
 - Executor / WIP: `<FLOW_EXECUTOR_ID>` / login — #N | none
@@ -1272,6 +1279,7 @@ Pare / eduque / pergunte quando:
 - Resultado desconhecido de create/dispatch (exige reconciliação, nunca retry cego)
 - Incidente: pós-estado inesperado em qualquer recurso — congele e só diagnostique
 - Recuperação exigiria force push, reset destrutivo, deleção remota silenciosa, remoção de workspace ou enfraquecer aprovação/review
+- Cleanup sem autoridade específica, sem prova de propriedade/conteúdo/recuperação, ou com efeito ambíguo/recurso não descartável (retenha com motivo)
 - Duas falhas de reparo sem hipótese nova
 
 ---
@@ -1296,12 +1304,18 @@ Pare / eduque / pergunte quando:
 - Criar uma segunda branch/serviço de reserva para simular o esquema antigo de exclusão mútua
 - Esquecer de atualizar **e reler** Project/label quando cria workspace/PR ou registra bloqueio
 - Injetar trabalho antes de claim + workspace + status terem pós-condições verificadas
+- Deixar um PI aberto sem atribuição enquanto faz scout repetido, reanálise do board, abre outro PI ou encerra o turno com resposta de “progresso”
+- Despachar sem ativar o `/goal` da Task; achar que `/goal` escrito no `--spec` ativa o comando; ou criar `.md` apenas para transportar prompts
+- Herdar o `FLOW_EXECUTOR_ID` do shell para a próxima issue; ou tentar de novo `worker-start` com erro/desconhecido sem reconciliar `stage`/`effects`/`residualResources`
+- Reiniciar o PI quando a UI fresca já prova `openai-codex/gpt-6.1-sol` com `high`, ou dar o modelo/modo por provado por echo de comando/settings
 - Dar ao worker o checkout canônico, outra workspace ou autoridade GitHub/cleanup não declarada
 - Assumir que workspace presente significa processo vivo, que timeout significa falha, ou que ausência local significa claim livre
 - Rodar concorrência só porque paths parecem diferentes, ignorando contratos, generators, lockfiles, migrations e recursos de validação
 - Tratar YOLO como bypass de segurança, ou tratar exemplo colado pelo usuário como autorização
 - Restaurar, reseedar ou limpar recurso depois de mutação inesperada sem autorização nova
-- Apagar, arquivar ou reatribuir workspace/branch/terminal de terceiros ou de trabalho concluído
+- Apagar, arquivar ou reatribuir workspace/branch/terminal de terceiros, órfãos, stale, reusados, preexistentes ou não provados
+- Remover worktree de issue sem merge/`Done` e assentamento provados, sem autoridade específica, usando `--force`/`--run-hooks`/`git clean`/`rm`/`git worktree`/prune/fechar terminal, ou tratando `git status` limpo como prova (ignorados, histórico e refs importam); ou usar cleanup como recuperação de incidente
+- Fazer polling, sleep, `check --wait` ou leitura de terminal repetidos só para observar, ou tratar o ponteiro/idle/`check` vazio como `worker_done` ou vaga livre; ou enviar `worker_done` com `--to`/`--from`/terminal direto em duplicidade
 - Pular planner em L/XL
 - Done sem PR merged (`mergedAt`), review/checks, issue fechada e status relido
 - Engolir erro de permissão
@@ -1314,7 +1328,7 @@ Pare / eduque / pergunte quando:
 ### A) Lista nova → Project + issues + DAG + campanha
 1. Educar se incompleto
 2. Permission gate + preflight Orca
-3. Scouts por módulo → `PROJECT_MAP.md`
+3. Scouts por módulo → mapa fundamentado apresentado no chat, sem arquivo local
 4. Draft + **REVIEW GATE** → OK
 5. Intake da campanha: base por repositório + modo + teto + operações nomeadas
 6. Project/labels + create issues/cards (`Blocked` aditivo no board)
@@ -1322,16 +1336,16 @@ Pare / eduque / pergunte quando:
 8. Registrar bloqueios externos e começar a agendar conforme o modo
 
 ### B) Continuar projeto / board
-1. Confirmar repo/Project, executar re-entry completo e preflight Orca
+1. Confirmar repo/Project e preflight Orca; re-entry completo em chat novo/sem baseline (delta de campanha de 6.0 na mesma sessão ininterrupta com baseline); continue aprovado vai direto a Phase 6/7
 2. Reconciliar Project + issues/claims/PRs + branches remotas + workspaces/terminais, e derivar o DAG em memória do grant e dos bodies
 3. Retomar WIP existente e preencher vagas livres com nós executáveis da camada mais antiga
 4. Aprovação conforme o modo registrado (sem repetir grant inalterado)
-5. Admissão verificada: marker + assignee + `In progress` relido → `worktree create` com a base do repo → branch/terminal reais → `worker-start` no terminal exato
+5. Admissão verificada: marker + assignee + `In progress` relido → `worktree create` com a base do repo → branch/terminal reais → `worker-start` no terminal exato → `/goal` da mesma Task ativado e comprovado, sem arquivo de prompt
 6. Implement → validar → PR na base escolhida → `In review` → merge serial autorizado → `mergedAt` + issue fechada → `Done` relido
-7. Assentar com segurança (terminal liberado ou retido, workspace preservada), registrar o desfecho no GitHub e liberar a vaga
+7. Assentar com segurança (terminal liberado ou retido), registrar o desfecho no GitHub, liberar a vaga e remover a worktree só se autorizada e provada (7.6); senão reter com motivo
 
 ### C) Chat novo → descobrir trabalho concorrente sem contexto repetido
-1. Resolver repo pelo cwd e rodar re-entry completo
+1. Resolver repo pelo cwd e rodar re-entry completo: chat novo nunca usa delta nem o fast path de issue única
 2. Ler `references/parallel-execution.md` e inventariar board, claims, PRs, branches e workspaces/terminais
 3. Reconciliar DAG/dependências e construir matriz de colisão com todo WIP
 4. Recomendar as melhores candidatas `ADMIT` dentro das vagas, ou dizer que nada é seguro em concorrência

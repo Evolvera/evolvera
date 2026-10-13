@@ -1,6 +1,6 @@
 ---
 name: agent-guide
-description: Mandatory pre-flight skill. Load BEFORE using scout, planner, builder, or qa. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
+description: Mandatory pre-flight skill. Load BEFORE using scout, bug-hunt, planner, builder, or qa. Contains the complete playbook for delegating work to subagents correctly. Do not use subagents without reading this first.
 ---
 
 # Agent Guide — How to Use Subagents
@@ -20,7 +20,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 |---|---|---|---|---|
 | Default | `scout`, `builder` | Standard general tier (GPT-6 Luna high for builder) | **default for normal bounded development**: code, APIs, tests, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance | relation/rule/declarative semantic modeling, visual judgment, or exceptional runtime coordination |
 | Design | `builder-design` | Normal design tier (Claude Sonnet 5.5 high) | frontend/UI implementation plus bounded normal-complexity state/relation, policy/rule, selector, and reversible structural semantics | procedural API/streaming/lifecycle integration, correctness-heavy operational work, formal/numerical work, advanced visual spectacle |
-| Light | `builder-light` | Routine deterministic tier (GPT-5.3 Codex Spark medium) | cheap execution after the task is already narrowed: mechanical/multi-spot edits, small utilities, focused tests, tooling, exact pattern-following config/docs, local reproduced bug fixes | implicit cross-module contracts, broad code search, subtle state/lifecycle/concurrency, serialization compatibility, auth/data-flow judgment, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
+| Light | `builder-light` | Routine deterministic tier (GPT-6 Luna medium) | cheap execution after the task is already narrowed: mechanical/multi-spot edits, small utilities, focused tests, tooling, exact pattern-following config/docs, local reproduced bug fixes | implicit cross-module contracts, broad code search, subtle state/lifecycle/concurrency, serialization compatibility, auth/data-flow judgment, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
 | Heavy | `builder-heavy` | Exceptional local-integration/correctness tier (GPT-6.1 Sol medium) | concrete exceptional local runtime/service/lifecycle coordination, or bounded non-frontend work with a stated invariant/oracle and demonstrated exceptional formal/numerical/scientific difficulty. Host/SSH/deploy/network/provider/reload/rollback stay with the orchestrator unless the user explicitly requests a subagent. | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
 | Heavy Design | `builder-heavy-design` | Exceptional design tier (Claude Opus 5.5 high) | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
 | QA | `qa` | Dedicated evidence tier (GPT-6.1 Sol medium) | fresh SHA-bound post-build behavioral evidence at exactly `CORE` or `FULL`; default source-read-only | implementation/repair, direct static closure, live/external operations, or a third QA level |
@@ -60,7 +60,7 @@ A subagent starts with zero context: it has not seen the conversation, the user'
 3. **Exact write set** — files it may CREATE/MODIFY; everything else is untouchable by default. For nontrivial semantic changes, derive it from a compact coverage receipt—semantic anchors, searched relationship paths/scope, discovered candidates and their evidence-backed disposition—not from a confident completeness label.
 4. **`NOT TO DO` scope fence** — include a concrete `## NOT TO DO` section naming prohibited files/systems/operations, preserved capabilities, unsafe validation/actions, and the exact `BLOCKED` boundary. Derive it from the reconciled contract; generic repetition is not sufficient. No adjacent improvements, dependency additions, formatting churn, or plans/config/registries unless named.
 5. **Conventions** — patterns/helpers/tokens to follow, with a file to imitate when one exists.
-6. **Acceptance + validation** — observable criteria and exact commands; for behavior changes, the runtime evidence expected, not just compile checks. For any command that may start application code or touch a database/schema, filesystem, bucket, queue/topic, cache, search index, emulator/device state, or external service, include `STATEFUL RESOURCE PROOF`: resolved command/config/hooks, sanitized identities, `NO_STATEFUL_RESOURCES` or all-`DISPOSABLE_VERIFIED`, unique run ownership, synthetic data, no fallback, destructive-hook confinement, egress/credentials, teardown, and protected-resource postcheck. `localhost`, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof; absent/unknown proof means do not execute.
+6. **Acceptance + validation** — observable criteria and exact commands, with CPU-heavy work (tests, builds, checks, codegen, processing) at full available parallelism: about 80% of logical CPUs with ~20% left free, one budget split across concurrent runs, each worker on isolated resources and serial where isolation is unproven, timeouts raised in a run-owned config before any test is weakened; include the project's recorded fast command from project memory (`setup.md`) when one exists, and tell the builder to verify the suite is parallel-ready once, then record the verified command there rather than rechecking each run; for behavior changes, the runtime evidence expected, not just compile checks. For any command that may start application code or touch a database/schema, filesystem, bucket, queue/topic, cache, search index, emulator/device state, or external service, include `STATEFUL RESOURCE PROOF`: resolved command/config/hooks, sanitized identities, `NO_STATEFUL_RESOURCES` or all-`DISPOSABLE_VERIFIED`, unique run ownership, synthetic data, no fallback, destructive-hook confinement, egress/credentials, teardown, and protected-resource postcheck. `localhost`, `.env.test`, `NODE_ENV=test`, Docker, a `test` name, transactions, or backup are not proof; absent/unknown proof means do not execute.
 7. **Stop rules** — when to return BLOCKED instead of improvising: missing files, failed assumptions, conflicting evidence, required scope expansion, or unproven stateful-resource isolation. On suspected mutation, stop; never retry/restore/reseed without explicit authorization.
 8. **Authorization boundary** — state the resolved authorization mode (`SUPERVISIONADO | AUTÔNOMO | YOLO`, default `AUTÔNOMO`), the already-approved stages/actions it covers for this task, and the exact boundary where the agent must stop and return to the orchestrator. Inside that boundary the agent works to completion without re-asking for the same scoped authority while action, target, method, limits, and evidence are unchanged; it may never widen or self-upgrade the grant, and any authority beyond the boundary returns `BLOCKED`. The orchestrator alone requests human decisions and performs host/external operations unless the user explicitly asked for a subagent. Resolve the mode from the runtime owner `extensions/execution-mode.ts` and its verified `EXECUTION_MODE={"mode":"…","source":"…"}` receipt, not chat memory or model recall. Actual PI workers spawned by Orca must load this extension; a custom agent with `extensions: false` cannot receive the hook and must retain the bounded handoff mode/scope without a false runtime claim.
 9. **Consequential operations** — include the Consequential Action Gate and an exact action manifest for any operation that can destroy, irreversibly mutate, or make `NONDISPOSABLE` state unreachable. The manifest names the action, target, method, semantic identity/blast-radius evidence, effect semantics, irreversibility, recovery artifact/independence, and approval boundary. Require fresh confirmation after evidence, one irreversible effect per tool call, failure freeze, and read-only incident diagnosis; never let a delegated agent infer cleanup authority or use delete/unregister as move/transfer. Require a fresh read-only review of the exact manifest when it can catch alias/cascade risk.
@@ -103,6 +103,38 @@ Agent({
 - Ask for **exact file paths and line numbers**.
 - **Use a mapped capacity-filling wave, not an arbitrary swarm.** When orientation finds independent questions, inventory roots, classify candidates `ADMIT | DEFER | MERGE | SYNTHESIS`, and launch every ready `ADMIT` scout up to free configured background capacity. Audit a candidate spanning 3+ independent regions; a named causal coupling may keep it coherent, otherwise split at an evidenced seam. If one question depends on another's result, mark it `DEFER` or `SYNTHESIS` rather than occupying a first-wave slot.
 - **Do useful parent work while scouts run**: read high-signal files, grep exact symbols, inspect tests/config/logs, and build hypotheses to validate against scout reports.
+
+---
+
+## bug-hunt — Bug Discovery
+
+Read-only defect finder on GPT-6.1 Sol medium. Where `scout` explains how a system works, `bug-hunt` looks for where it is wrong. Every finding comes back with `path:line` causal-chain evidence, a refutation attempt, `CONFIRMED | LIKELY | SUSPECT` confidence, severity, reproduction steps, and a fix direction. It never edits code or runs project code; it returns the exact reproduction for you to run under the stateful-resource gate.
+
+**When to use:**
+- **Hinted:** a symptom, error, log, failing or flaky test, user report, or suspect commit range whose root cause is unknown. Pass the raw evidence verbatim; the hunter confirms or refutes the hint.
+- **Unhinted:** pre-merge or pre-release sweeps, auditing an unfamiliar or risky module, after an incident, or after a fix to look for sibling bugs with the same pattern.
+
+**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (`validator`); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
+
+**Default to a parallel wave.** After bounded orientation, split the hunt into independent shards and launch them together in one message with `run_in_background: true`, up to free background capacity:
+- **By region:** one shard per independent subsystem or layer, such as client, API, domain/data, jobs/async, auth, or config/infra.
+- **By lens:** across one coherent but large region, one shard per lens group: logic and data, state and concurrency, contracts and error handling, security, performance.
+- **Hinted:** one coherent shard traces the symptom end to end. Run parallel shards only for alternative-cause layers that do not depend on its result; never fragment one causal chain.
+
+Declare each shard in its prompt:
+
+```
+Agent({
+  subagent_type: "bug-hunt",
+  description: "Bug hunt: API layer",
+  run_in_background: true,
+  prompt: "BUG HUNT SHARD api — Mode: UNHINTED. Outcome: find real defects before release. Scope: /abs/repo/apps/api/src (routes, services). Overlap: shared types in packages/shared/src/types.ts are read-only context; other shards cover the client and jobs. Context: <known contracts, recent commits, constraints>. Stop at COMPLETE coverage of the scope or PARTIAL with the next retrieval."
+})
+```
+
+For a hinted hunt, include the verbatim error/log/stack, the reproduction steps and environment when known, what was already ruled out, and the suspect commit range.
+
+**After the wave:** deduplicate findings across shards and follow up on cross-boundary leads, using a synthesis hunt only when the leads conflict. Verify each `CONFIRMED`/`LIKELY` finding you intend to fix by reproducing it, either directly or through `qa`, before fixing. Never fix a `SUSPECT` finding without new evidence. Fixes then follow the normal builder route, with a failing test first when practical.
 
 ---
 
@@ -190,7 +222,7 @@ Agent({
 ```
 
 **Rules:**
-- Route `builder-light` by determinism, not size: it is Spark medium and should execute tasks whose correct edit is fully determined by the task plus visible code. If the task requires broad search, implicit contracts, subtle semantics, or judgment, use `builder` instead; a plausible-but-wrong light result can pass shallow validation.
+- Route `builder-light` by determinism, not size: it is GPT-6 Luna medium and should execute tasks whose correct edit is fully determined by the task plus visible code. If the task requires broad search, implicit contracts, subtle semantics, or judgment, use `builder` instead; a plausible-but-wrong light result can pass shallow validation.
 - For non-frontend work, default to `builder` once normal code understanding is needed. Use `builder-heavy` only for concrete exceptional local multi-runtime integration that normal builder cannot safely own or exceptional invariant/oracle-driven correctness. The orchestrator performs host/external operations unless the user explicitly requests a subagent. Auth/payment, migration, config, shared files, multiple files, and a high-risk label do not select heavy by themselves. Select a design tier only for a local semantic/declarative model with a clear oracle—not merely because the task is unusual or configuration contains rules.
 - Use `builder` for normal-risk procedural implementation: bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, deterministic control flow, and structured integration. Its relative weakness is relation/rule/declarative semantic modeling; route that shape to design tiers only when that shape is actually present.
 - Use `builder-design` for normal frontend/UI coding quality and also as a direct first choice for bounded normal-complexity state/relation behavior, policy/rule composition, selector semantics, or reversible structural conversion with a clear oracle.
@@ -249,7 +281,7 @@ For a selected planner gate, the schedule edge is authoritative: `builder checkp
 | Treating a scout verdict as coverage proof | `COMPLETE` can answer a bounded mission while leaving semantic relationships unresolved | Require a coverage receipt with anchors, searched relationship paths/scope, candidate dispositions, and explicit gaps |
 | Not doing evidence-grounded pre-plan before planner | Planner guesses architecture/write sets, misses affected artifacts/validation wiring, and produces bad tasks | Use proportional scouts/direct reads, reconcile evidence, then run planner |
 | Stuffing independent concerns into one builder | Context overload, poor quality | Split at independent contract, write-set, and validation boundaries; keep one coherent change together even across many files |
-| Letting Spark light infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require exact grep/package/symbol verification or route to `builder` |
+| Letting the light tier infer APIs/packages/contracts | Produces plausible-but-wrong results that pass shallow validation | Require exact grep/package/symbol verification or route to `builder` |
 | Routing subtle state/lifecycle/compat work to `builder-light` | It errs exactly where `builder` would not | Route by decidability, not size |
 | Skipping scout when planner evidence is incomplete | You miss dependencies, schemas, consumers, runners, and side effects even in a familiar repository | Scout proportionally before planner; familiarity alone is not evidence |
 | Splitting when coherence is required | Independent reports can miss contradictions | Use one coherent `scout` for synthesis |
