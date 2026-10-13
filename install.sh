@@ -5,6 +5,12 @@ set -e
 # Evolvera PI Setup — install.sh
 # ──────────────────────────────────────────────
 
+if [ "${1:-}" = "--prepare-usuario-entry" ]; then
+    shift
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    exec node "$SCRIPT_DIR/scripts/users/entrypoints.mjs" "$@"
+fi
+
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
