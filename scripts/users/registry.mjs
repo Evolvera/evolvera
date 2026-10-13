@@ -352,6 +352,66 @@ export function resolveUser(opts = {}) {
   for (const p of privateRoots(record)) strictRootDrift(p);
   return issue(record, file);
 }
+
+/** Remove only a confirmed registry registration, preserving its complete metadata snapshot. */
+export function removeUser(context, { activeAccountId, lockTimeoutMs = 5000 } = {}) {
+  requireContext(context);
+  if (typeof activeAccountId !== "string" || !ID_RE.test(activeAccountId)) throw fail("OPTION_INVALID", "activeAccountId is required");
+  if (context.id === activeAccountId) throw fail("USER_REMOVE_ACTIVE", "the active account cannot be removed");
+  if (typeof lockTimeoutMs !== "number" || !Number.isFinite(lockTimeoutMs) || lockTimeoutMs < 0) throw fail("OPTION_INVALID", "lockTimeoutMs must be a finite non-negative number");
+  const file = canonRegistryPath(context.registryPath);
+  return withLock(file, lockTimeoutMs, () => {
+    const data = readRegistry(file, { required: true });
+    const current = data.users.find((u) => u.id === context.id);
+    if (!current) throw fail("USER_REMOVE_CHANGED", "registration is missing or changed");
+    const snapshot = {
+      id: context.id, label: context.label, agentDir: context.agentDir,
+      sessionRoots: [...context.sessionRoots], workspaces: [...context.workspaces],
+      contexts: [...context.contexts], sharedAssets: [...context.sharedAssets], adoption: context.adoption,
+    };
+    if (canonicalJson(current) !== canonicalJson(snapshot)) throw fail("USER_REMOVE_CHANGED", "registration is missing or changed");
+    for (const p of [...privateRoots(current), ...current.contexts, ...current.sharedAssets]) strictRootDrift(p);
+
+    const recoveryDir = path.join(path.dirname(file), "registry-recovery");
+    try {
+      fs.mkdirSync(recoveryDir);
+    } catch (error) {
+      if (error.code !== "EEXIST") throw fail("REGISTRY_RECOVERY_FAILED", "recovery directory cannot be created");
+    }
+    let directoryStat;
+    try {
+      directoryStat = fs.lstatSync(recoveryDir);
+      if (directoryStat.isSymbolicLink() || !samePath(canonicalize(recoveryDir), recoveryDir)) {
+        throw fail("REGISTRY_RECOVERY_ALIAS", "recovery directory is an alias");
+      }
+      if (!directoryStat.isDirectory()) throw fail("REGISTRY_RECOVERY_FAILED", "recovery path is not a directory");
+    } catch (error) {
+      if (error instanceof UsersError) throw error;
+      throw fail("REGISTRY_RECOVERY_FAILED", "recovery directory cannot be validated");
+    }
+
+    const recoveryPath = path.join(recoveryDir, `${current.id}.${process.pid}.${randomBytes(12).toString("hex")}.json`);
+    let fd;
+    let created = false;
+    try {
+      fd = fs.openSync(recoveryPath, "wx", 0o600);
+      created = true;
+      fs.writeSync(fd, `${JSON.stringify(current, null, 2)}\n`);
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+    } catch {
+      if (fd !== undefined) try { fs.closeSync(fd); } catch { /* only our own file */ }
+      // Exclusive-open failure does not make an existing backup ours to remove.
+      if (created) try { fs.unlinkSync(recoveryPath); } catch { /* only our own partial backup */ }
+      throw fail("REGISTRY_RECOVERY_FAILED", "registration recovery copy could not be saved");
+    }
+
+    writeRegistryAtomic(file, { version: REGISTRY_VERSION, users: data.users.filter((u) => u.id !== current.id) });
+    return Object.freeze({ id: current.id, label: current.label, recoveryPath });
+  });
+}
+
 function strictRootDrift(p) {
   let canon;
   try { canon = canonicalize(p); } catch { throw fail("ROOT_DRIFT", "registered root can no longer be resolved"); }
