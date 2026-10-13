@@ -59,6 +59,28 @@ export const ACCOUNT_LAUNCH_CONTEXT_ENV = "PI_ACCOUNT_LAUNCH_CONTEXT";
 const ACCOUNT_ID_RE = /^[a-z][a-z0-9-]{1,31}$/;
 const ACCOUNT_CONTEXT_KEYS = ["accountId", "registryPath", "version"];
 const contextFail = () => Object.assign(new Error("ACCOUNT_LAUNCH_CONTEXT_INVALID"), { code: "ACCOUNT_LAUNCH_CONTEXT_INVALID" });
+const selectorFail = () => Object.assign(new Error("ACCOUNT_SELECTOR_INVALID"), { code: "ACCOUNT_SELECTOR_INVALID" });
+
+/** Consume only a leading wrapper selector; all later native arguments stay untouched. */
+export function extractUserSelectorArgs(argv) {
+  if (!Array.isArray(argv) || argv.some((value) => typeof value !== "string")) throw selectorFail();
+  let accountId;
+  let index = 0;
+  while (index < argv.length) {
+    const value = argv[index];
+    if (value !== "-u" && value !== "--user" && !value.startsWith("--user=")) break;
+    if (accountId !== undefined) throw selectorFail();
+    if (value.startsWith("--user=")) {
+      accountId = value.slice("--user=".length);
+      index += 1;
+    } else {
+      accountId = argv[index + 1];
+      index += 2;
+    }
+    if (typeof accountId !== "string" || !ACCOUNT_ID_RE.test(accountId)) throw selectorFail();
+  }
+  return Object.freeze({ argv: Object.freeze(argv.slice(index)), accountId });
+}
 
 function validateAccountLaunchContext(context) {
   if (!context || typeof context !== "object" || Array.isArray(context) ||
