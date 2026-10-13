@@ -192,6 +192,18 @@ test("supplementary CJK labels align using an independent two-cell oracle", asyn
   }
 });
 
+test("flags, keycaps and emoji-presentation labels use two cells with an independent oracle", async () => {
+  const harness = makeHarness({ branch: [assistant("p🇧🇷❤️", "m🇵🇹1️⃣", usage())] });
+  registerSessionUsage(harness.pi);
+  await harness.pi.registered.handler("", harness.ctx);
+  for (const width of [20, 40, 80, 140]) {
+    for (const line of harness.component.render(width)) {
+      const plain = line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      assert.equal([...plain.replaceAll("🇧🇷", "XX").replaceAll("🇵🇹", "XX").replaceAll("❤️", "XX").replaceAll("1️⃣", "XX")].length, width, `flag frame fits ${width}: ${plain}`);
+    }
+  }
+});
+
 test("reduced calendar range and counts match the displayed weeks", () => {
   const now = Date.parse("2026-10-09T12:00:00.000Z");
   const entries = [

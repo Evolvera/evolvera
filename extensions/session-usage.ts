@@ -190,7 +190,8 @@ export function activityGrid(entries: readonly unknown[], now = Date.now(), wind
 
 function graphemeWidth(grapheme: string): number {
   if (/^\p{Mark}+$/u.test(grapheme)) return 0;
-  return /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u.test(grapheme) ? 2 : 1;
+  if (/\p{Emoji_Presentation}/u.test(grapheme) || /\u20e3/u.test(grapheme) || (grapheme.includes("\ufe0f") && /\p{Extended_Pictographic}/u.test(grapheme))) return 2;
+  return /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f1e6}-\u{1f1ff}\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u.test(grapheme) ? 2 : 1;
 }
 
 function visibleWidth(value: string): number {
