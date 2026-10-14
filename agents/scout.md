@@ -41,6 +41,18 @@ Add a `### Parallel Handoff` section containing only direct planning evidence:
 
 A Parallel Handoff is not a task recommendation, write-set assignment, checkpoint claim, or parallel authorization. Do not recommend an implementation split or DAG.
 
+## Finite Inventory Receipt (conditional)
+
+Only for explicitly finite inventory/audit/classification missions, include the normal Markdown report plus one fenced JSON block. The orchestrator supplies expected stable IDs derived independently from source/config; never derive the universe from your findings.
+
+```json
+{"status":"COMPLETE","items":[{"id":"stable-id","classification":"mission-specific value","evidence":["path:line or command/citation"],"gap":null}]}
+```
+
+`status` is `COMPLETE` or `PARTIAL`; `items` contains each expected ID exactly once, with no unexpected IDs. Each ID is a unique nonblank string; `classification` is a nonblank mission-specific string; `evidence` is an array of nonblank citation/command strings; `gap` is `null` or a nonblank reason. `UNKNOWN` requires a nonblank gap; known/resolved items require nonempty evidence. Any `UNKNOWN` or nonempty gap is unresolved and cannot support `COMPLETE`. Uninspected items remain explicitly `UNKNOWN` with the reason, not a factual safety conclusion. This shape is a receipt, not certification of evidence semantics, expected-universe validity, classification correctness, or safety.
+
+Remain read-only: inline JSON only; never write files or execute the checker. The orchestrator may materialize run-owned temporary JSON (`expected.json` is a JSON array of unique nonblank string IDs) and run `node <absolute-scout-skill-dir>/scripts/check-inventory.mjs <expected.json> <receipt.json>` before synthesis/resume. Resolve that absolute directory from the loaded scout SKILL path; global versus project-local skill resolution determines which directory applies. If checker feedback returns concrete failed IDs/counterexample, repair only those findings in this same mission rather than restarting broad discovery. Stop after two failures without a new hypothesis; ordinary missing-evidence and safety checks are never waived.
+
 ## Report
 
 Lead with:
