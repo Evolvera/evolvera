@@ -111,7 +111,7 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
 3. Before launching any writing task, verify its `Proof` workload receipt shows at most two complex fronts, with two only when tightly coupled; more is `BLOCKED: BUILDER_COMPLEXITY_LIMIT` before delegation. Before launching a task with more than 20 declared changed paths or three or more semantic regions, also verify its `Proof` contains a grounded Wide-Task Receipt. It must show compatibility seams/cuts attempted and either a safe split or exact checkpoint evidence for atomicity. Missing or generic claims such as coupling, one typecheck/checkpoint, internal phases, or stronger model are `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`; never let one builder absorb an unproven wide scope.
 4. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
-5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. Prefer groups of 2–4; do not start one member and wait while another independent member is already ready.
+5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. 2–4 is a coordination preference, not a cap; do not start one member and wait while another independent member is already ready. Launch all safe, ready authoring together up to available capacity and do not leave independent ready work idle.
 6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
 7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
 8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
@@ -213,11 +213,11 @@ Every delegated prompt containing a potentially stateful command must include `S
 
 ## Parallelization
 
-Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
+Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. Commit count is a coordination hint, never an executor or cost proxy. Trivial known changes/lookups and already-ordered external operations stay direct; for substantial bounded implementation, prefer a suitable existing builder when expected parent work replaced exceeds handoff, integration, and likely rework overhead, even for one commit. Preserve 2–5 clear units as focused-delegation heuristic and more than ~5 as a strong planner signal when coordination is material. This is not a cap.
 
 For one coherent non-wide outcome, default to one builder within the two-complex-front admission limit; a large homogeneous or mechanical batch may stay one builder after proportional proof. A direct or planner-driven assignment with more than 20 declared changed paths or three or more semantic regions must first pass the Wide-Task Parallelization Gate: seek repository-supported compatibility seams and safe fan-out; if it remains atomic, require the exact Wide-Task Receipt. Internal phases or a stronger model do not satisfy this gate.
 
-Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, or configuration surface—with focused tests traveling alongside the production slice they verify. At each wave, launch all safe ready members together rather than serially dispatching independent work. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
+Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, configuration surface, or test authoring—with production tests traveling with their concern by default. All safe, ready authoring is launched together, not just scouting; capacity is a ceiling, not a target. Parallel test authoring is permitted only after the observable contract is settled, with disjoint full test/implementation write sets, isolated validation resources, and no dependence on unresolved implementation choices. Execute implementation-dependent tests only against the ready combined producer checkpoint; syntax-only or blocked tests never establish acceptance. Do not create independently invalid test-only planner tasks or weaken checkpoint validity; focused contributors may form one coherent combined checkpoint when separately authored results cannot pass alone. Serialize real prerequisites, contract transitions, shared writes/resources, or external effects; a shared unchanged settled interface alone is not a dependency.
 
 Run builders in parallel only when:
 - full write sets are disjoint, including registries, manifests, lockfiles, generated/recovery/build artifacts, and shared configuration;
@@ -226,7 +226,7 @@ Run builders in parallel only when:
 - each task has exact targets, independent recovery/commit scope, and validation.
 
 Run serially when:
-- any source, registry, config, lockfile, migration, shared type/API contract, validation resource, or external environment overlaps;
+- any source, registry, config, lockfile, migration, shared writable type/API file, unsettled contract transition, validation resource, or external environment overlaps; a read-only consumer of an unchanged settled interface does not by itself force serial work;
 - task B depends on task A or its validator `PASS`;
 - deployment, provider, network, staging/production, reload, rollback, or another external side effect is involved;
 - validation from one task determines the next.
@@ -261,12 +261,15 @@ Every applicable box must be satisfied before launch; mark a conditional box not
 ## Result Handling
 
 After a producer builder finishes:
-- treat `COMPLETE` as ready for integration/testing, not automatic closure of the user's outcome;
-- inspect actual diff, not just its summary;
+- treat `COMPLETE` as ready for integration/testing, not automatic closure of the user's outcome; the writing builder owns implementation, focused validation, and in-scope corrections through acceptance;
+- inspect actual diff and exact-head proof, not just its summary; verify decisive anchors and integration delta rather than blanket re-investigation, with focused rereads for contradictions or quality gaps;
+- return concrete local defects to the same builder; do not write the same files in parallel. Take over/reroute only if the owner is unavailable, genuinely blocked, capability-mismatched, or a known trivial repair is clearly cheaper/faster, and explicitly reassign ownership first;
+- separate contract/safety decisions from engineering repairs; preserve two-failure re-grounding and proper tier escalation;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
+- takeover or reroute never bypasses a safety, authorization, or scope gate; explicitly reassign ownership first and take over only for an unavailable owner, genuine blockage/capability mismatch, or a clearly cheaper known trivial fix;
 - decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add QA or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; when independent edge/error, integration, browser, or runtime proof materially improves confidence, load `testing`, select `CORE` or `FULL`, and launch one fresh dedicated `qa` session against the exact checkpoint; a validator runs only for an already-linked named escape risk or final PR gate;
 - if builder returns empty or reports no change, first check the current state against acceptance: if it is already satisfied, close with that evidence; otherwise identify the cause and retry once only with a concrete correction (missing context, smaller scope, or a better-suited tier);
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
