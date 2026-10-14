@@ -73,7 +73,7 @@ try {
   run = invoke(); assert.equal(run.status, 1); assert.equal(JSON.parse(run.stdout).ok, false);
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
-  await assert.rejects(readFile(tempRoot));
+  await assert.rejects(readFile(tempRoot), { code: "ENOENT" });
 }
 
 console.log("inventory receipt smoke: PASS");
