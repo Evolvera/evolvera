@@ -14,14 +14,13 @@ export const SPINNER_FRAMES = Array.from({ length: 8 }, (_, step) =>
 
 export function coloredWorkingFrames(theme: ThemeLike): string[] {
   return SPINNER_FRAMES.map((frame, step) => [...frame].map((glyph) =>
-    theme.fg(glyph === "◆" ? (step % 2 ? "success" : "accent") : glyph === "━" ? "accent" : "muted", glyph)).join(""));
+    theme.fg(glyph === "◆" ? (step % 2 ? "warning" : "accent") : glyph === "━" ? "accent" : "muted", glyph)).join(""));
 }
 const BUILTIN_TOOLS = new Set(["bash", "powershell", "read", "edit", "write", "grep", "find", "ls"]);
 // Extension tools that stay quiet even if they bring their own (verbose) renderer.
 const EXTRA_COLLAPSED_TOOLS = new Set(["todo"]);
 const ELLIPSIS = "…";
 const SUMMARY_SEP = " · ";
-const FOOTER_SEP = " · ";
 
 // ---------------------------------------------------------------------------
 // Structural types (kept minimal so plain fakes work in tests; the SDK types are assignable).
@@ -71,6 +70,14 @@ export function stripControl(text: string): string {
   return text.replace(ANSI_PATTERN, "").replace(/\r/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
 }
 
+// BMP symbols with default emoji presentation (e.g. ⚡ ✅ ❌ ⭐) occupy two terminal cells.
+const WIDE_BMP_EMOJI = new Set([
+  0x231a, 0x231b, 0x23e9, 0x23ea, 0x23eb, 0x23ec, 0x23f0, 0x23f3, 0x25fd, 0x25fe, 0x2614, 0x2615,
+  0x26a1, 0x26aa, 0x26ab, 0x26bd, 0x26be, 0x26c4, 0x26c5, 0x26d4, 0x26ea, 0x26f2, 0x26f3, 0x26f5,
+  0x26fa, 0x26fd, 0x2705, 0x270a, 0x270b, 0x2728, 0x274c, 0x274e, 0x2753, 0x2754, 0x2755, 0x2757,
+  0x2795, 0x2796, 0x2797, 0x27b0, 0x27bf, 0x2b1b, 0x2b1c, 0x2b50, 0x2b55,
+]);
+
 function charWidth(cp: number): number {
   if (cp === 0 || cp < 32 || (cp >= 0x7f && cp < 0xa0)) return 0;
   if (
@@ -80,7 +87,8 @@ function charWidth(cp: number): number {
   if (
     (cp >= 0x1100 && cp <= 0x115f) || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3) ||
     (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfe30 && cp <= 0xfe6f) || (cp >= 0xff00 && cp <= 0xff60) ||
-    (cp >= 0xffe0 && cp <= 0xffe6) || (cp >= 0x1f300 && cp <= 0x1faff) || (cp >= 0x20000 && cp <= 0x3fffd)
+    (cp >= 0xffe0 && cp <= 0xffe6) || (cp >= 0x1f300 && cp <= 0x1faff) || (cp >= 0x20000 && cp <= 0x3fffd) ||
+    WIDE_BMP_EMOJI.has(cp)
   ) return 2;
   return 1;
 }
@@ -548,86 +556,125 @@ export interface FooterData {
   model?: string;
   thinking?: string;
   contextPercent?: number | null;
-  cost?: number;
   branch?: string | null;
 }
 
-/** First footer segment: concise metadata, kept separate from context and extension status. */
-export function formatFooter(data: FooterData, theme: ThemeLike, width: number): string {
-  const parts: Array<[string, string]> = [
-    ["accent", data.model || "no-model"],
-    ["muted", data.thinking || "off"],
-    ["muted", `$${(data.cost ?? 0).toFixed(2)}`],
-  ];
-  if (data.branch) parts.push(["muted", oneLine(data.branch)]);
-  let remaining = Math.max(0, width);
-  let out = "";
-  for (const [index, [color, raw]] of parts.entries()) {
-    const sep = index === 0 ? 0 : cellWidth(FOOTER_SEP);
-    if (remaining < sep + 1) break;
-    const full = oneLine(raw);
-    const text = cut(full, remaining - sep);
-    out += (sep ? theme.fg("dim", FOOTER_SEP) : "") + theme.fg(color, text);
-    remaining -= sep + cellWidth(text);
-    if (text !== full) break;
-  }
-  return out;
+// Cyberpunk HUD: a neon rail glyph, colour-coded tokens, and only *active* modes. Inactive or
+// unavailable modes are hidden instead of spelled out; emoji from other extensions' statuses are
+// translated into short single-cell tags so the footer stays quiet and width-exact.
+const HUD_RAIL = "▌";
+const HUD_GAP = "  ";
+// Palette: red, orange, white and gray from the active theme (cyberpsycho maps warning to orange).
+const BAR_CELL = "━";
+
+type Segment = { text: string; color: string; bold?: boolean; parts?: Array<{ text: string; color: string }> };
+
+function paint(theme: ThemeLike, segment: Segment, text = segment.text): string {
+  const colored = segment.parts && text === oneLine(segment.text)
+    ? segment.parts.map((part) => theme.fg(part.color, part.text)).join("")
+    : theme.fg(segment.color, text);
+  return segment.bold ? theme.bold(colored) : colored;
 }
 
-function contextLabel(percent: number | null | undefined, width: number): { text: string; color: string } {
-  const valid = typeof percent === "number" && Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : undefined;
-  const rounded = valid === undefined ? undefined : Math.round(valid);
-  const barWidth = Math.max(4, Math.min(20, Math.floor(Math.max(0, width) / 8)));
-  const filled = rounded === undefined ? 0 : Math.round((rounded / 100) * barWidth);
-  const bar = rounded === undefined ? "-".repeat(barWidth) : "#".repeat(filled) + "-".repeat(barWidth - filled);
-  return { text: rounded === undefined ? `ctx [${bar}] --` : `ctx [${bar}] ${rounded}%`, color: rounded === undefined ? "muted" : rounded >= 95 ? "error" : rounded >= 80 ? "warning" : "muted" };
-}
-
-function modeFooter(pi: ExtensionAPI, footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number, context: { text: string; color: string }): string[] {
-  // getCommands() is deliberately deferred until render: the SDK is not bound during extension loading.
-  const commands = new Set(pi.getCommands().map((command) => command.name.replace(/^\/+/, "")));
-  const statuses = footerData.getExtensionStatuses();
-  const modeStatus = (key: string, command: string) => {
-    const status = statuses.get(key);
-    if (status === undefined) return commands.has(command) ? "OFF" : "--/unavailable";
-    const label = oneLine(status);
-    if (label === "ON" || label === "OFF") return label;
-    return label ? `ON (${label})` : "ON";
+/** Theme token for a thinking level, so the label matches the editor's thinking border. */
+export function thinkingColor(level: string | undefined): string {
+  const key = (level || "off").toLowerCase();
+  const tokens: Record<string, string> = {
+    off: "thinkingOff", minimal: "thinkingMinimal", low: "thinkingLow", medium: "thinkingMedium",
+    high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax", ultra: "thinkingMax",
   };
-  const known = new Set(["codex-fast-mode", "maestro"]);
-  const fields: Array<{ text: string; color: string }> = [
-    { text: context.text, color: context.color },
-    { text: `fast ${modeStatus("codex-fast-mode", "fast")}`, color: "muted" },
-    { text: `maestro ${modeStatus("maestro", "maestro")}`, color: "muted" },
-  ];
-  for (const [key, value] of statuses) if (!known.has(key)) fields.push({ text: `${key} ${value}`, color: "muted" });
+  return tokens[key] ?? "accent";
+}
+
+/** Lay segments onto as many lines as needed, each prefixed by the rail and never wider than `width`. */
+function layoutHud(segments: Segment[], theme: ThemeLike, width: number, railColor: string, wrap = true): string[] {
+  const railWidth = width >= 8 ? cellWidth(HUD_RAIL) + 1 : 0;
+  const rail = railWidth ? theme.fg(railColor, HUD_RAIL) + " " : "";
+  const room = Math.max(0, width - railWidth);
   const lines: string[] = [];
   let line = "";
-  let lineColor = "muted";
-  for (const entry of fields) {
-    const field = oneLine(entry.text);
-    const candidate = line ? `${line}${FOOTER_SEP}${field}` : field;
-    if (cellWidth(field) <= width && (!line || cellWidth(candidate) <= width)) {
-      line = candidate;
-      if (lineColor === "muted") lineColor = entry.color;
-      continue;
-    }
-    if (line) lines.push(theme.fg(lineColor, line));
-    line = "";
-    lineColor = entry.color;
-    for (const word of field.split(" ")) {
-      const token = cut(word, width);
-      const wrapped = line ? `${line}${FOOTER_SEP}${token}` : token;
-      if (line && cellWidth(wrapped) > width) {
-        lines.push(theme.fg(lineColor, line));
-        line = token;
-      } else {
-        line = wrapped;
+  let used = 0;
+  for (const segment of segments) {
+    const full = oneLine(segment.text);
+    if (!full) continue;
+    const gap = used ? cellWidth(HUD_GAP) : 0;
+    if (used && used + gap + cellWidth(full) > room) {
+      if (!wrap) {
+        const tail = cut(full, room - used - gap);
+        if (tail) line += HUD_GAP + paint(theme, segment, tail);
+        break;
       }
+      lines.push(rail + line);
+      line = "";
+      used = 0;
     }
+    const sep = used ? HUD_GAP : "";
+    const text = cut(full, room - (used ? cellWidth(HUD_GAP) : 0));
+    if (!text) continue;
+    line += sep + paint(theme, segment, text);
+    used += cellWidth(sep) + cellWidth(text);
   }
-  if (line) lines.push(theme.fg(lineColor, line));
+  if (line || !lines.length) lines.push(rail + line);
   return lines;
+}
+
+/** First footer line: model, thinking, branch (truncated, never wrapped). */
+export function formatFooter(data: FooterData, theme: ThemeLike, width: number): string {
+  const segments: Segment[] = [
+    { text: data.model || "no-model", color: "accent", bold: true },
+    { text: `› ${data.thinking || "off"}`, color: thinkingColor(data.thinking) },
+  ];
+  if (data.branch) segments.push({ text: `◇ ${oneLine(data.branch)}`, color: "muted" });
+  return layoutHud(segments, theme, width, "accent", false)[0];
+}
+
+/** Context gauge: a red bar (scarlet past 80%) on a gray track, matching the first line, then the percentage. */
+function contextSegments(percent: number | null | undefined, width: number): Segment[] {
+  const valid = typeof percent === "number" && Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : undefined;
+  const rounded = valid === undefined ? undefined : Math.round(valid);
+  const barWidth = Math.max(4, Math.min(16, Math.floor(Math.max(0, width) / 10)));
+  const filled = rounded === undefined ? 0 : Math.round((rounded / 100) * barWidth);
+  const heat = (cell: number) => (cell + 1) / barWidth > 0.8 ? "thinkingXhigh" : "accent";
+  const label = rounded === undefined ? "--" : `${rounded}%`;
+  const labelColor = rounded === undefined ? "dim" : rounded >= 95 ? "thinkingXhigh" : rounded >= 80 ? "warning" : "text";
+  const parts = [{ text: "ctx ", color: "dim" }];
+  for (let cell = 0; cell < barWidth; cell++) parts.push({ text: BAR_CELL, color: cell < filled ? heat(cell) : "borderMuted" });
+  parts.push({ text: ` ${label}`, color: labelColor });
+  return [{ text: parts.map((part) => part.text).join(""), color: labelColor, parts }];
+}
+
+/** Keep the fast-mode lightning/rocket icon and its qualifier (e.g. ⚡ECO); state dots become colour. */
+export function fastTag(status: string | undefined): Segment | undefined {
+  if (status === undefined) return undefined;
+  const raw = oneLine(status);
+  if (!raw || raw === "OFF") return undefined;
+  const icon = raw.includes("🚀") ? "🚀" : "⚡";
+  const color = raw.includes("🟡") ? "muted" : "warning";
+  const rest = raw.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter((word) => word && word !== "ON");
+  return { text: icon + rest.join("·"), color };
+}
+
+/** Second footer line: context gauge plus only the active modes and identities (truncated, never wrapped). */
+function modeFooter(footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number, context: Segment[]): string[] {
+  const statuses = footerData.getExtensionStatuses();
+  const segments: Segment[] = [...context];
+  const fast = fastTag(statuses.get("codex-fast-mode"));
+  if (fast) segments.push(fast);
+  const maestro = oneLine(statuses.get("maestro") ?? "");
+  if (maestro && maestro !== "OFF") segments.push({ text: maestro === "ON" ? "MAESTRO" : `MAESTRO·${maestro}`, color: "warning" });
+  const execution = oneLine(statuses.get("execution-mode") ?? "");
+  if (execution) {
+    const match = /^MODE\s+(.+?)(?:\s*·\s*(\S+))?$/.exec(execution);
+    const mode = match?.[1] ?? execution;
+    const source = match?.[2];
+    const color = /YOLO/.test(mode) ? "thinkingXhigh" : /SUPERVIS/.test(mode) ? "muted" : "warning";
+    segments.push({ text: source && source !== "GLOBAL" ? `${mode}·${source.toLowerCase()}` : mode, color, bold: color === "thinkingXhigh" });
+  }
+  const user = oneLine(statuses.get("usuario") ?? "");
+  if (user) segments.push({ text: `@${user}`, color: "muted" });
+  const known = new Set(["codex-fast-mode", "maestro", "execution-mode", "usuario"]);
+  for (const [key, value] of statuses) if (!known.has(key) && oneLine(value)) segments.push({ text: `${key} ${value}`, color: "dim" });
+  return layoutHud(segments, theme, width, "accent", false);
 }
 
 // ---------------------------------------------------------------------------
@@ -673,17 +720,6 @@ export function parseCommand(args: string | undefined): "on" | "off" | "status" 
 // Extension wiring
 // ---------------------------------------------------------------------------
 
-function sessionCost(ctx: ExtensionContext): number {
-  let cost = 0;
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type === "message" && (entry.message as any)?.role === "assistant") {
-      const total = (entry.message as any).usage?.cost?.total;
-      if (typeof total === "number") cost += total;
-    }
-  }
-  return cost;
-}
-
 export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void {
   let enabled = true;
   let loaded = false;
@@ -720,7 +756,7 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
     ui.setWorkingIndicator({ frames: coloredWorkingFrames(ui.theme), intervalMs: 125 });
     ui.setWorkingMessage("working");
     ui.setFooter((tui, theme, footerData) => {
-      let cachedStats: { manager: object; sessionId: unknown; leafId: unknown; entryCount: unknown; model: unknown; modelId: unknown; contextWindow: unknown; cost: number; contextPercent: number | null | undefined } | undefined;
+      let cachedStats: { manager: object; sessionId: unknown; leafId: unknown; entryCount: unknown; model: unknown; modelId: unknown; contextWindow: unknown; contextPercent: number | null | undefined } | undefined;
       invalidateFooterStats = () => { cachedStats = undefined; };
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
       const renderRequest = () => tui.requestRender();
@@ -738,7 +774,6 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
             const hasStableKey = typeof manager.getSessionId === "function" &&
               typeof manager.getLeafId === "function";
             let contextPercent: number | null | undefined;
-            let cost: number;
             if (hasStableKey) {
               const sessionId = manager.getSessionId();
               const leafId = manager.getLeafId();
@@ -749,27 +784,23 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
               if (cached && cached.manager === manager && cached.sessionId === sessionId &&
                   cached.leafId === leafId && cached.entryCount === entryCount && cached.model === model &&
                   cached.modelId === modelId && cached.contextWindow === contextWindow) {
-                ({ contextPercent, cost } = cached);
+                ({ contextPercent } = cached);
               } else {
                 contextPercent = ctx.getContextUsage()?.percent;
-                cost = sessionCost(ctx);
-                cachedStats = { manager, sessionId, leafId, entryCount, model, modelId, contextWindow, contextPercent, cost };
+                cachedStats = { manager, sessionId, leafId, entryCount, model, modelId, contextWindow, contextPercent };
               }
             } else {
               contextPercent = ctx.getContextUsage()?.percent;
-              cost = sessionCost(ctx);
             }
             const data = {
               model: model?.id,
               thinking: pi.getThinkingLevel(),
               contextPercent,
-              cost,
               branch: footerData.getGitBranch(),
             };
-            const context = contextLabel(data.contextPercent, width);
             return [
               formatFooter(data, theme, width),
-              ...modeFooter(pi, footerData, theme, width, context),
+              ...modeFooter(footerData, theme, width, contextSegments(data.contextPercent, width)),
             ];
           } catch {
             return [""];
