@@ -48,6 +48,9 @@ assert.match(conductor, /Include this exact rule in every handoff: unsolicited m
 assert.match(conductor, /a PR opening alone is not a worker wake\/report outcome/, "PR-open-only events do not wake the conductor");
 assert.doesNotMatch(conductor.match(/## Waiting[\s\S]*?(?=^## |$)/m)?.[0] ?? "", /worker event \(finished, PR opened/);
 assert.match(conductor, /Never end a turn with a list of "pending items" you could act on/);
+assert.match(conductor, /\*\*Reclaim finished children \(standing user instruction\):\*\*/, "conductor keeps the reclaim rule");
+assert.match(conductor, /reclaim the merged ones as the Reclaim bullet says/, "sweep reclaims merged children");
+assert.match(conductor, /stop every process, container, emulator, and VM\/sandbox you started/, "handoffs require workers to stop what they started");
 
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
 const replaced = m.applyConductor(assembled, systemMd);
