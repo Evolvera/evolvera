@@ -377,23 +377,41 @@ export function renderBody(data: CardData, theme: ThemeLike, width: number, expa
 
 class LazyComponent implements RenderComponent {
   private readonly produce: (width: number) => string[];
-  constructor(produce: (width: number) => string[]) {
+  private readonly revision: () => number;
+  private readonly onInvalidate?: () => void;
+  private cached?: { width: number; revision: number; lines: string[] };
+  constructor(produce: (width: number) => string[], revision: () => number = () => 0, onInvalidate?: () => void) {
     this.produce = produce;
+    this.revision = revision;
+    this.onInvalidate = onInvalidate;
   }
   render(width: number): string[] {
-    return this.produce(Math.max(1, width));
+    const actualWidth = Math.max(1, width);
+    const revision = this.revision();
+    if (this.cached?.width === actualWidth && this.cached.revision === revision) return this.cached.lines;
+    const lines = this.produce(actualWidth);
+    this.cached = { width: actualWidth, revision, lines };
+    return lines;
   }
-  invalidate(): void {}
+  invalidate(): void {
+    this.cached = undefined;
+    this.onInvalidate?.();
+  }
 }
 
 interface SharedState {
   cleanUi?: CardData;
+  revision?: number;
   stock?: Record<string, unknown>;
 }
 
 function cardOf(state: SharedState, toolName: string): CardData {
   state.cleanUi ??= { toolName, partial: true, isError: false };
   return state.cleanUi;
+}
+
+function bumpRevision(state: SharedState): number {
+  return state.revision = (state.revision ?? 0) + 1;
 }
 
 export interface ToolRenderersLike {
@@ -412,15 +430,18 @@ export function createCardRenderers(toolName: string, stock: ToolRenderersLike |
   return {
     renderShell: "self",
     renderCall(args, theme, context) {
-      const card = cardOf((context.state ??= {}), toolName);
+      const state: SharedState = (context.state ??= {});
+      const card = cardOf(state, toolName);
+      bumpRevision(state);
       card.args = args;
       card.cwd = context.cwd;
       if (context.executionStarted && card.startedAt === undefined) card.startedAt = Date.now();
-      return new LazyComponent((width) => [renderHeader(card, theme, width, home)]);
+      return new LazyComponent((width) => [renderHeader(card, theme, width, home)], () => state.revision ?? 0);
     },
     renderResult(result, options, theme, context) {
       const state: SharedState = (context.state ??= {});
       const card = cardOf(state, toolName);
+      bumpRevision(state);
       card.result = result;
       card.partial = Boolean(options?.isPartial);
       card.isError = Boolean(context.isError);
@@ -433,7 +454,7 @@ export function createCardRenderers(toolName: string, stock: ToolRenderersLike |
         return stock.renderResult(result, options, theme, { ...context, state: state.stock, lastComponent: undefined });
       }
       const expanded = Boolean(options?.expanded);
-      return new LazyComponent((width) => renderBody(card, theme, width, expanded));
+      return new LazyComponent((width) => renderBody(card, theme, width, expanded), () => state.revision ?? 0);
     },
   };
 }
@@ -479,10 +500,11 @@ function createTodoRenderers(stock: ToolRenderersLike | undefined, home: string 
       const state: TodoRenderState = (context.state ??= {});
       state.args = args;
       const component = card.renderCall!(args, theme, context);
-      return new LazyComponent((width) => state.visible ? component.render(width) : []);
+      return new LazyComponent((width) => state.visible ? component.render(width) : [], () => state.revision ?? 0, () => component.invalidate());
     },
     renderResult(result, options, theme, context) {
       const state: TodoRenderState = (context.state ??= {});
+      bumpRevision(state);
       const args = context.args ?? state.args;
       const error = Boolean(context.isError);
       const completion = isTodoCompletion(args);
@@ -666,6 +688,7 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
   let enabled = true;
   let loaded = false;
   let requestFooterRender: (() => void) | undefined;
+  let invalidateFooterStats: () => void = () => {};
   const completedTodoIds = new Set<string>();
   const isEnabled = () => {
     if (!loaded) {
@@ -697,6 +720,8 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
     ui.setWorkingIndicator({ frames: coloredWorkingFrames(ui.theme), intervalMs: 125 });
     ui.setWorkingMessage("working");
     ui.setFooter((tui, theme, footerData) => {
+      let cachedStats: { manager: object; sessionId: unknown; leafId: unknown; entryCount: unknown; model: unknown; modelId: unknown; contextWindow: unknown; cost: number; contextPercent: number | null | undefined } | undefined;
+      invalidateFooterStats = () => { cachedStats = undefined; };
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
       const renderRequest = () => tui.requestRender();
       requestFooterRender = renderRequest;
@@ -708,11 +733,37 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
         invalidate() {},
         render(width: number): string[] {
           try {
+            const manager = ctx.sessionManager as any;
+            const model = ctx.model;
+            const hasStableKey = typeof manager.getSessionId === "function" &&
+              typeof manager.getLeafId === "function";
+            let contextPercent: number | null | undefined;
+            let cost: number;
+            if (hasStableKey) {
+              const sessionId = manager.getSessionId();
+              const leafId = manager.getLeafId();
+              const entryCount = typeof manager.getEntryCount === "function" ? manager.getEntryCount() : undefined;
+              const modelId = model?.id;
+              const contextWindow = model?.contextWindow;
+              const cached = cachedStats;
+              if (cached && cached.manager === manager && cached.sessionId === sessionId &&
+                  cached.leafId === leafId && cached.entryCount === entryCount && cached.model === model &&
+                  cached.modelId === modelId && cached.contextWindow === contextWindow) {
+                ({ contextPercent, cost } = cached);
+              } else {
+                contextPercent = ctx.getContextUsage()?.percent;
+                cost = sessionCost(ctx);
+                cachedStats = { manager, sessionId, leafId, entryCount, model, modelId, contextWindow, contextPercent, cost };
+              }
+            } else {
+              contextPercent = ctx.getContextUsage()?.percent;
+              cost = sessionCost(ctx);
+            }
             const data = {
-              model: ctx.model?.id,
+              model: model?.id,
               thinking: pi.getThinkingLevel(),
-              contextPercent: ctx.getContextUsage()?.percent,
-              cost: sessionCost(ctx),
+              contextPercent,
+              cost,
               branch: footerData.getGitBranch(),
             };
             const context = contextLabel(data.contextPercent, width);
@@ -737,13 +788,20 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    invalidateFooterStats();
     completedTodoIds.clear();
     if (isEnabled()) applyChrome(ctx);
   });
 
-  pi.on("model_select", async () => requestFooterRender?.());
+  pi.on("model_select", async () => {
+    invalidateFooterStats();
+    requestFooterRender?.();
+  });
   pi.on("thinking_level_select", async () => requestFooterRender?.());
-  pi.on("session_compact", async () => requestFooterRender?.());
+  pi.on("session_compact", async () => {
+    invalidateFooterStats();
+    requestFooterRender?.();
+  });
 
   // working-time resets the message to the default on turn_end; re-apply our short one for the next turn.
   pi.on("agent_start", async (_event, ctx) => {

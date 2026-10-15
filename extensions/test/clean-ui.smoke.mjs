@@ -25,7 +25,7 @@ const ui = await import(pathToFileURL(copiedExtension).href);
 const theme = { fg: (_color, text) => text, bold: (text) => text };
 const component = (lines = []) => ({ render: () => lines, invalidate() {} });
 
-function extensionHarness({ toolRenderer = true } = {}) {
+function extensionHarness({ toolRenderer = true, keyed = false, entryCount = true } = {}) {
   const handlers = new Map();
   const commands = new Map();
   let resolver;
@@ -35,6 +35,15 @@ function extensionHarness({ toolRenderer = true } = {}) {
   let availableCommands = [{ name: "fast" }, { name: "maestro" }];
   let renderRequests = 0;
   let contextPercent = 50;
+  let branchScans = 0;
+  let contextReads = 0;
+  const sessionManager = { getBranch() { branchScans++; return []; } };
+  const keys = { session: "session-1", leaf: "leaf-1", count: 3 };
+  if (keyed) {
+    sessionManager.getSessionId = () => keys.session;
+    sessionManager.getLeafId = () => keys.leaf;
+    if (entryCount) sessionManager.getEntryCount = () => keys.count;
+  }
   const statuses = new Map();
   const pi = {
     registerToolRenderer(value) { resolver = value; },
@@ -50,12 +59,12 @@ function extensionHarness({ toolRenderer = true } = {}) {
       getCommandsCalls++;
       return availableCommands;
     },
-    getThinkingLevel() { return "high"; },
+    getThinkingLevel() { return this.thinkingLevel ?? "high"; },
   };
   const ctx = {
     mode: "tui", hasUI: true, cwd: ".", model: { id: "test-model" },
-    getContextUsage() { return { percent: contextPercent }; },
-    sessionManager: { getBranch() { return []; } },
+    getContextUsage() { contextReads++; return { percent: contextPercent }; },
+    sessionManager,
     ui: {
       theme,
       setFooter(factory) { footerFactory = factory; },
@@ -70,6 +79,10 @@ function extensionHarness({ toolRenderer = true } = {}) {
     get resolver() { return resolver; },
     get getCommandsCalls() { return getCommandsCalls; },
     get renderRequests() { return renderRequests; },
+    get branchScans() { return branchScans; },
+    get contextReads() { return contextReads; },
+    sessionManager,
+    keys,
     setAvailableCommands(value) { availableCommands = value; },
     setContextPercent(value) { contextPercent = value; },
     makeFooter() {
@@ -374,6 +387,134 @@ test("expanded output keeps head or shell tail, caps lines, and clips narrow cel
     assert.deepEqual(ui.renderBody(data, theme, 80, false), []);
   }
   assert.deepEqual(result, before);
+});
+
+test("completed card redraw caches output but refreshes on updates, layout, and invalidation", () => {
+  let textReads = 0;
+  const result = { content: [{ type: "text", get text() { textReads++; return "cached output"; } }] };
+  const args = { command: "first" };
+  let themeWork = 0;
+  const countingTheme = { fg(color, text) { themeWork++; return text; }, bold(text) { themeWork++; return text; } };
+  const renderers = ui.createCardRenderers("bash", undefined);
+  const ctx = renderContext(args);
+  const call = renderers.renderCall(args, countingTheme, ctx);
+  const body = renderers.renderResult(result, { expanded: true }, countingTheme, ctx);
+  call.render(80);
+  body.render(80);
+  const readsAfterFirst = textReads;
+  const themeAfterFirst = themeWork;
+  for (let i = 0; i < 5; i++) { call.render(80); body.render(80); }
+  assert.equal(textReads, readsAfterFirst, "unchanged redraw must not reread full result");
+  assert.equal(themeWork, themeAfterFirst, "unchanged redraw must not redo theme work");
+  args.command = "mutated argument";
+  result.content = [{ type: "text", text: "mutated result" }];
+  const updatedBody = renderers.renderResult(result, { expanded: true }, countingTheme, ctx);
+  assert.match(call.render(80).join(""), /mutated argument/);
+  assert.match(updatedBody.render(80).join(""), /mutated result/);
+  const workBeforeResize = themeWork;
+  updatedBody.render(40);
+  assert.ok(themeWork > workBeforeResize, "a new width recomputes the layout");
+  const collapsed = renderers.renderResult(result, { expanded: false }, countingTheme, ctx);
+  assert.deepEqual(collapsed.render(80), []);
+  updatedBody.render(40);
+  updatedBody.invalidate();
+  const workBeforeInvalidate = themeWork;
+  updatedBody.render(40);
+  assert.ok(themeWork > workBeforeInvalidate, "explicit invalidation forces theme work");
+});
+
+test("footer memoizes only history-derived stats with complete public keys", async () => {
+  const h = extensionHarness({ keyed: true });
+  await h.handlers.get("session_start")({}, h.ctx);
+  const footer = h.makeFooter();
+  footer.render(160);
+  footer.render(160);
+  assert.equal(h.branchScans, 1);
+  assert.equal(h.contextReads, 1);
+  h.keys.count++;
+  footer.render(160);
+  assert.equal(h.branchScans, 2);
+  h.keys.leaf = "leaf-2";
+  footer.render(160);
+  assert.equal(h.branchScans, 3);
+  h.keys.session = "session-2";
+  footer.render(160);
+  assert.equal(h.branchScans, 4);
+  const priorManager = h.ctx.sessionManager;
+  h.ctx.sessionManager = { ...priorManager, getBranch() { priorManager.getBranch(); h.keys.managerScans = (h.keys.managerScans ?? 0) + 1; return []; } };
+  footer.render(160);
+  assert.equal(h.keys.managerScans, 1, "manager identity participates in the cache key");
+  h.ctx.model = { id: "other", contextWindow: 4096 };
+  footer.render(160);
+  assert.equal(h.branchScans, 6);
+  h.ctx.model.contextWindow = 8192;
+  footer.render(160);
+  assert.equal(h.branchScans, 7);
+  await h.handlers.get("session_compact")({}, h.ctx);
+  footer.render(160);
+  assert.equal(h.branchScans, 8, "compaction explicitly invalidates history stats");
+});
+
+test("todo call invalidation reaches its nested themed card", () => {
+  let palette = "blue";
+  const mutableTheme = { fg: (_color, text) => `${palette}:${text}`, bold: text => `${palette}:${text}` };
+  const h = extensionHarness();
+  const renderers = h.resolver("todo", () => ({}));
+  const args = { action: "update", id: 301, status: "completed" };
+  const ctx = renderContext(args);
+  const call = renderers.renderCall(args, mutableTheme, ctx);
+  renderers.renderResult({ content: [{ type: "text", text: "done" }] }, { isPartial: false }, mutableTheme, ctx);
+  assert.match(call.render(80).join(""), /blue:/);
+  palette = "green";
+  call.invalidate();
+  const redraw = call.render(80).join("");
+  assert.match(redraw, /green:/);
+  assert.doesNotMatch(redraw, /blue:/);
+});
+
+test("footer memoizes with session and leaf keys when entry count is unavailable", async () => {
+  const h = extensionHarness({ keyed: true, entryCount: false });
+  await h.handlers.get("session_start")({}, h.ctx);
+  const footer = h.makeFooter();
+  footer.render(160);
+  footer.render(160);
+  assert.equal(h.branchScans, 1);
+  assert.equal(h.contextReads, 1);
+  h.keys.leaf = "older-sdk-leaf";
+  footer.render(160);
+  assert.equal(h.branchScans, 2);
+  h.keys.session = "older-sdk-session";
+  footer.render(160);
+  assert.equal(h.branchScans, 3);
+});
+
+test("model selection invalidates context stats even when visible model and leaf keys are unchanged", async () => {
+  const h = extensionHarness({ keyed: true });
+  await h.handlers.get("session_start")({}, h.ctx);
+  const footer = h.makeFooter();
+  assert.match(footer.render(160).join(" "), /50%/);
+  h.setContextPercent(73);
+  await h.handlers.get("model_select")({}, h.ctx);
+  assert.match(footer.render(160).join(" "), /73%/);
+  assert.equal(h.branchScans, 2);
+  assert.equal(h.contextReads, 2);
+});
+
+test("footer falls back to live history reads without keys and keeps dynamic chrome live", async () => {
+  const h = extensionHarness();
+  await h.handlers.get("session_start")({}, h.ctx);
+  const footer = h.makeFooter();
+  footer.render(160);
+  footer.render(160);
+  assert.equal(h.branchScans, 2);
+  assert.equal(h.contextReads, 2);
+  h.pi.getThinkingLevel = () => "low";
+  h.statuses.set("live-status", "changed");
+  h.setAvailableCommands([]);
+  const dynamic = footer.render(160).join(" ");
+  assert.match(dynamic, /low/);
+  assert.match(dynamic, /live-status changed/);
+  assert.match(dynamic, /fast --\/unavailable/);
 });
 
 console.log(`clean-ui isolated fixture retained at ${runRoot}`);

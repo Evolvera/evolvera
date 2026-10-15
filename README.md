@@ -183,6 +183,17 @@ A operação é fail-closed, idempotente, atômica por arquivo, rollback-safe en
 node scripts/test/patch-anthropic-client-version.smoke.mjs
 ```
 
+### Lag do Orca com o PI 1.2.0 em fullscreen
+
+No `@earendil-works/pi-coding-agent@1.2.0`, o renderer fullscreen escreve cada linha como `ESC[<linha>;1H ESC[2K <texto>`. O parser de tail do processo principal do Orca (1.4.192) descarta o `H`, mas mantém o `ESC[2K`; a coluna virtual nunca volta a 0, cada linha é preenchida com a largura acumulada das anteriores e o trim `/[ \t]+$/` fica quadrático. Isso custava ~86 ms (pior ~172 ms) do main thread do Orca por frame do PI e travava entrada/saída de todos os terminais do Orca.
+
+`scripts/patch-pi-tui-orca-redraw.mjs` insere `\r` antes de cada posicionamento absoluto do cursor em `pi-tui/dist/tui-alt-screen.js`. `CR` seguido de `CUP` deixa tela e cursor idênticos no terminal real (validado célula a célula com `@xterm/headless`), e o custo no Orca cai para ~0,1 ms por escrita. O patcher só atua na baseline 1.2.0 com hash exato, é idempotente, atômico e recusa conteúdo desconhecido; outras versões (incluindo a 0.83.0 dos instaladores, que renderiza inline e não é afetada) são ignoradas. Após `npm install -g` da 1.2.0, rode-o de novo e reinicie as sessões do PI:
+
+```bash
+node scripts/patch-pi-tui-orca-redraw.mjs
+node scripts/test/patch-pi-tui-orca-redraw.smoke.mjs
+```
+
 ### Ativação, colisões e atualização
 
 A ativação é deferred e collision-aware quando o extension é disponibilizado manualmente no runtime. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito. Os instaladores atuais não copiam o extension nem ativam sua configuração.
