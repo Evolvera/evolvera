@@ -252,6 +252,8 @@ if ($piCmd) {
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de avisos adiados." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-bounded-waits.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de timeouts limitados." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-hud.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch visual HUD." }
     Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."
@@ -262,6 +264,12 @@ if ($piCmd) {
 
     Info "rpiv-todo..."
     & pi install npm:@juicesharp/rpiv-todo@2.11.0 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        & node (Join-Path $SCRIPT_DIR "scripts\patch-rpiv-todo-hud.mjs")
+        if ($LASTEXITCODE -ne 0) { throw "rpiv-todo recusou o patch visual HUD." }
+    } else {
+        Write-Host "[!] Pulando patch de rpiv-todo: pacote não instalado." -ForegroundColor Yellow
+    }
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     $todoRoot = if ($env:XDG_CONFIG_HOME -and [System.IO.Path]::IsPathRooted($env:XDG_CONFIG_HOME)) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME ".config" }
     $todoCfg = Join-Path (Join-Path $todoRoot "rpiv-todo") "config.json"
