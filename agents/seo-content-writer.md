@@ -11,6 +11,7 @@ prompt_mode: replace
 inherit_context: false
 extensions: true
 skills: true
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Role: Senior SEO Content Strategist and Conversion Copywriter
