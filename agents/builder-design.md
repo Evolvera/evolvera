@@ -6,6 +6,7 @@ tools: read, grep, find, ls, bash, write, edit
 model: anthropic/claude-sonnet-5-5
 thinking: high
 max_turns: 80
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Builder Design — Bounded Design Implementation

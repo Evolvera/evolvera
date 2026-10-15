@@ -6,6 +6,7 @@ thinking: medium
 tools: read, grep, find, ls
 model: openai-codex/gpt-6-luna
 max_turns: 70
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Scout — Read-Only Evidence Explorer
