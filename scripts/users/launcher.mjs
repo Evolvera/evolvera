@@ -326,7 +326,7 @@ async function createNativeAdapter(options, registryPath, argv, launchContext, p
     if (typeof native.main !== "function") throw fail("NATIVE_MAIN_UNAVAILABLE");
     return { main: native.main };
   }
-  const stageParent = options.stageParent ?? fs.mkdtempSync(path.join(os.tmpdir(), "pi-account-sdk-"));
+  const stageParent = options.stageParent ?? fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "pi-account-sdk-"));
   const stageRoot = path.join(stageParent, "prepared-sdk");
   const manifest = await prepareSdkStage({ packageRoot, stageRoot, transforms: {
     "dist/main.js": transformMainSource,
