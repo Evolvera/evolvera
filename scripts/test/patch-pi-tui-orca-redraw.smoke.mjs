@@ -53,9 +53,10 @@ try {
 
   // Pristine -> patched, mode preserved; second run is a no-op.
   const ok = fixture('ok');
+  const originalMode = fs.statSync(ok.target).mode & 0o777;
   assert.deepEqual(await patcher.applyPatch({ packageRoot: ok.packageRoot, pins }), { status: 'patched', target: ok.target });
   assert.equal(fs.readFileSync(ok.target, 'utf8'), patchedText);
-  assert.equal(fs.statSync(ok.target).mode & 0o777, 0o644);
+  assert.equal(fs.statSync(ok.target).mode & 0o777, originalMode, "patch preserves the platform-reported mode");
   assert.deepEqual(await patcher.applyPatch({ packageRoot: ok.packageRoot, pins }), { status: 'already-patched', target: ok.target });
   assert.deepEqual(fs.readdirSync(path.dirname(ok.target)), ['tui-alt-screen.js']);
 

@@ -76,7 +76,7 @@ function escapeRegExp(value: string): string {
 }
 
 export function extractSection(prompt: string, heading: string): string | undefined {
-  const match = new RegExp(`^## ${escapeRegExp(heading)}\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))`, "m").exec(prompt);
+  const match = new RegExp(`^## ${escapeRegExp(heading)}\\r?\\n[\\s\\S]*?(?=^## |(?![\\s\\S]))`, "m").exec(prompt);
   return match ? match[0].trimEnd() : undefined;
 }
 
