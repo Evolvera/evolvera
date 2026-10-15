@@ -163,6 +163,15 @@ As trocas são fail-closed por nome/versão/cardinalidade, idempotentes, atômic
 node scripts/test/patch-ultra-thinking.smoke.mjs
 ```
 
+### Painéis HUD de todo e subagentes
+
+Os instaladores executam `scripts/patch-rpiv-todo-hud.mjs` depois de instalar `@juicesharp/rpiv-todo@2.11.0` e `scripts/patch-pi-subagents-hud.mjs` depois do patch de timeouts limitados de `@tintinweb/pi-subagents@0.18.2`. Os dois redesenham os painéis acima do editor no estilo do rodapé (trilho `▌`, glifos de uma célula, barra `━` de progresso, sem conectores de árvore) usando só tokens do tema em vermelho, laranja, branco e cinza (`accent`, `warning`, `thinkingXhigh`, `text`, `muted`, `dim`, `borderMuted`). É apenas apresentação: estado, orçamento de linhas, `/todos`, modos do widget e cálculo de overflow ficam como no upstream, e o badge colorido por agente não aparece no widget. Ambos são fail-closed por nome/versão/cardinalidade, idempotentes, atômicos e compõem com os demais patches do pacote; reinicie o PI depois de aplicar. Validação em cópias descartáveis, sem tocar nos pacotes instalados:
+
+```bash
+node scripts/test/patch-rpiv-todo-hud.smoke.mjs
+node scripts/test/patch-pi-subagents-hud.smoke.mjs
+```
+
 ### Login OAuth do Gemini no navegador
 
 O template instala `pi-antigravity@0.10.0`, um provedor OAuth não oficial para login Google no navegador (não requer API key). Após instalar ou atualizar, use `/reload` e `/login antigravity`, conclua o consentimento no navegador, execute `/antigravity.refresh` e consulte `/antigravity.models` para escolher um modelo anunciado pelo servidor. Isso não altera o provedor nem o modelo padrão. O Gemini 3.8 está incluído no Pro; Argon requer plano Ultra ou Enterprise.
