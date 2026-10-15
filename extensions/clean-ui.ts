@@ -803,7 +803,7 @@ export function registerCleanUi(pi: ExtensionAPI, statePath: () => string): void
               ...modeFooter(footerData, theme, width, contextSegments(data.contextPercent, width)),
             ];
           } catch {
-            return [""];
+            return ["", ""];
           }
         },
       };
