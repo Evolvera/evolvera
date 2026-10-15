@@ -188,13 +188,18 @@ if command -v pi &>/dev/null; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-hud.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2
     fi
     if install_pi_package "npm:pi-alibaba-models@1.0.14" "pi-alibaba-models"; then :; fi
     if install_pi_package "npm:@narumitw/pi-goal@0.43.0" "pi-goal"; then :; fi
-    if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then :; fi
+    if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then
+        node "$SCRIPT_DIR/scripts/patch-rpiv-todo-hud.mjs"
+    else
+        echo "[!] Pulando patch de rpiv-todo: pacote não instalado." >&2
+    fi
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     case "${XDG_CONFIG_HOME:-}" in /*) todo_cfg_root="$XDG_CONFIG_HOME" ;; *) todo_cfg_root="$HOME/.config" ;; esac
     todo_cfg="$todo_cfg_root/rpiv-todo/config.json"
