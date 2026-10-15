@@ -31,6 +31,8 @@ const tmpdirProprioPadrao = new Set([
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
+  // Synthetic fixture under its own mkdtemp; packageRoot is always explicit, never the live npm root.
+  "patch-pi-tui-orca-redraw.smoke.mjs",
   "patch-pi-cursor-reasoning-effort.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-pi-083-auth-load-recovery.smoke.mjs",
