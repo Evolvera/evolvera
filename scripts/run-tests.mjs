@@ -30,6 +30,8 @@ const tmpdirProprioPadrao = new Set([
   "install-wsl-keybindings.smoke.mjs",
   // Mid-run compaction uses a faux provider and removes its owned mkdtemp agentDir in finally.
   "midrun-compaction.smoke.mjs",
+  // Faux provider + real bash tool (sleep/echo only) inside its owned mkdtemp root, removed in finally.
+  "bash-timeout.smoke.mjs",
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",

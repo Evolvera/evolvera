@@ -4,6 +4,10 @@ const STATUS_KEY = "codex-fast-mode";
 const FAST_REQUEST_TIER = "priority";
 const ULTRAFAST_REQUEST_TIER = "ultrafast";
 const FAST_STATE_KEY = Symbol.for("evolvera.codex-fast-mode.state");
+// Captured once per process, before this process publishes its own mode, so /reload keeps the parent's value.
+const INHERITED_MODE_KEY = Symbol.for("evolvera.codex-fast-mode.inherited");
+// A PI process publishes its current mode here; child PI processes started from its bash inherit it.
+export const FAST_MODE_ENV = "PI_FAST_MODE";
 
 // "ultra"/"ultra-subagents" mirror "all"/"subagents" but request Ultrafast where the model supports it.
 type FastMode = "off" | "all" | "subagents" | "ultra" | "ultra-subagents";
@@ -17,6 +21,43 @@ interface SharedFastState {
 }
 
 const globalState = globalThis as typeof globalThis & { [key: symbol]: unknown };
+
+const FLAG_BY_MODE: Record<FastMode, string> = {
+  off: "off",
+  all: "on",
+  subagents: "eco",
+  ultra: "ultra",
+  "ultra-subagents": "ultra-eco",
+};
+
+export function fastModeFromFlag(value: unknown): FastMode | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (Object.keys(FLAG_BY_MODE) as FastMode[]).find((mode) => FLAG_BY_MODE[mode] === normalized);
+}
+
+export function fastFlagFor(mode: FastMode): string {
+  return FLAG_BY_MODE[mode];
+}
+
+/** A root TUI starts at --fast, else the mode inherited from the parent PI, else ECO. */
+export function startupFastMode(flag: unknown, inherited: unknown): FastMode {
+  return fastModeFromFlag(flag) ?? fastModeFromFlag(inherited) ?? "subagents";
+}
+
+/**
+ * Orca terminals are spawned by Orca, not by this process, so they do not inherit
+ * PI_FAST_MODE. Pass the mode explicitly to a `pi` launched through `--command`.
+ */
+export function propagateFastToOrcaCommand(command: string, mode: FastMode): string {
+  if (!/\borca\s+(?:terminal|worktree)\s+create\b/.test(command) || /--fast\b/.test(command)) return command;
+  return command.replace(/(--command(?:=|\s+)["']?)pi(?=\s|["']|$)/g, `$1pi --fast ${fastFlagFor(mode)}`);
+}
+
+function inheritedFastMode(): string | undefined {
+  if (!(INHERITED_MODE_KEY in globalState)) globalState[INHERITED_MODE_KEY] = process.env[FAST_MODE_ENV];
+  return globalState[INHERITED_MODE_KEY] as string | undefined;
+}
 
 function getSharedFastState(): SharedFastState {
   const existing = globalState[FAST_STATE_KEY];
@@ -36,6 +77,7 @@ function setFastMode(state: SharedFastState, mode: FastMode, ownerSessionId?: st
   state.mode = mode;
   state.enabled = mode !== "off";
   state.ownerSessionId = mode === "off" ? undefined : ownerSessionId;
+  process.env[FAST_MODE_ENV] = fastFlagFor(mode);
 }
 
 function resetFastStateForOwner(sessionId: string): void {
@@ -97,6 +139,11 @@ export function applyFastServiceTier(payload: unknown, tier: string = FAST_REQUE
 }
 
 export default function codexFastModeExtension(pi: ExtensionAPI) {
+  const inherited = inheritedFastMode();
+  pi.registerFlag?.("fast", {
+    description: "Start with Fast mode: on | eco | ultra | ultra-eco | off (default: inherited from the parent PI, else eco)",
+    type: "string",
+  });
   let eligibleModelSelected = false;
   let currentModel: ModelIdentity | undefined;
   let fastRequestInFlight = false;
@@ -242,7 +289,9 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     if (event.reason === "new" && ctx.mode === "tui") {
       continueFastStateForNewOwner(sessionId);
     } else if (ctx.mode === "tui") {
-      setFastMode(sharedState, "subagents", sessionId);
+      const mode = startupFastMode(pi.getFlag?.("fast"), inherited);
+      setFastMode(sharedState, mode, sessionId);
+      if (mode !== "subagents") ctx.ui.notify(`Fast Mode iniciado como /fast ${fastFlagFor(mode)} (--fast ou herdado do Pi pai).`, "info");
     } else {
       resetFastStateForOwner(sessionId);
     }
@@ -251,6 +300,13 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     fastRequestInFlight = false;
     fastRequestAccepted = false;
     updateStatus(ctx);
+  });
+
+  pi.on("tool_call", (event) => {
+    if (event.toolName !== "bash") return;
+    const input = event.input as { command?: unknown };
+    if (typeof input.command !== "string") return;
+    input.command = propagateFastToOrcaCommand(input.command, getFastMode(getSharedFastState()));
   });
 
   pi.on("model_select", (event, ctx) => {
