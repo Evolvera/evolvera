@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
 const sandbox = mkdtempSync(path.join(tmpdir(), "codex-fast-mode-smoke-"));
+// Running inside a PI would otherwise inherit that PI's Fast mode; root-default cases need a clean start.
+delete process.env.PI_FAST_MODE;
 
 try {
   const packageRoot = resolvePiSdkRoot(import.meta.url);
@@ -418,6 +420,87 @@ try {
   assert.equal(legacyPayload.service_tier, "priority");
   globalThis[sharedStateKey] = currentSharedState;
 
+  // ── Fast mode inherited by a PI started from another PI ──
+  assert.equal(mod.fastModeFromFlag("on"), "all");
+  assert.equal(mod.fastModeFromFlag(" ECO "), "subagents");
+  assert.equal(mod.fastModeFromFlag("ultra-eco"), "ultra-subagents");
+  assert.equal(mod.fastModeFromFlag("bogus"), undefined);
+  assert.equal(mod.fastModeFromFlag(undefined), undefined);
+  for (const mode of ["off", "all", "subagents", "ultra", "ultra-subagents"]) {
+    assert.equal(mod.fastModeFromFlag(mod.fastFlagFor(mode)), mode, `flag round-trip ${mode}`);
+  }
+  assert.equal(mod.startupFastMode(undefined, undefined), "subagents", "a root PI without parent stays ECO");
+  assert.equal(mod.startupFastMode(undefined, "on"), "all", "inherits the parent's mode");
+  assert.equal(mod.startupFastMode("off", "ultra"), "off", "--fast wins over the inherited mode");
+  assert.equal(mod.startupFastMode("junk", "junk"), "subagents");
+  const launch = 'orca terminal create --worktree active --title "builder" --command "pi --model openai-codex/gpt-6-luna --thinking high"';
+  assert.equal(mod.propagateFastToOrcaCommand(launch, "all"), launch.replace('"pi --model', '"pi --fast on --model'));
+  assert.equal(mod.propagateFastToOrcaCommand("orca terminal create --command=pi", "ultra"), "orca terminal create --command=pi --fast ultra");
+  assert.equal(mod.propagateFastToOrcaCommand(launch.replace("pi --model", "pi --fast off --model"), "all"), launch.replace("pi --model", "pi --fast off --model"), "explicit --fast is kept");
+  assert.equal(mod.propagateFastToOrcaCommand('orca terminal create --command "pipx run x"', "all"), 'orca terminal create --command "pipx run x"', "only the pi binary is rewritten");
+  assert.equal(mod.propagateFastToOrcaCommand("pi --model x", "all"), "pi --model x", "direct children inherit through the environment instead");
+
+  {
+    const savedEnv = process.env[mod.FAST_MODE_ENV];
+    const inheritedKey = Symbol.for("evolvera.codex-fast-mode.inherited");
+    const savedShared = globalThis[sharedStateKey];
+    const startRoot = async ({ flag, inherited, sessionId }) => {
+      delete globalThis[inheritedKey];
+      delete globalThis[sharedStateKey];
+      if (inherited === undefined) delete process.env[mod.FAST_MODE_ENV]; else process.env[mod.FAST_MODE_ENV] = inherited;
+      const handlers = new Map();
+      const flags = new Map();
+      mod.default({
+        registerCommand() {},
+        registerFlag(name, options) { flags.set(name, options); },
+        getFlag: (name) => (name === "fast" ? flag : undefined),
+        on: (name, handler) => handlers.set(name, handler),
+      });
+      assert.equal(flags.get("fast")?.type, "string", "--fast is registered as a CLI flag");
+      const notices = []; const statuses = [];
+      const rootCtx = { mode: "tui", model: gpt56, sessionManager: { getSessionId: () => sessionId }, ui: { notify: (message) => notices.push(message), setStatus: (_key, text) => statuses.push(text) } };
+      await handlers.get("session_start")({ reason: "startup" }, rootCtx);
+      return { handlers, rootCtx, notices, statuses };
+    };
+
+    const inheritedOn = await startRoot({ inherited: "on", sessionId: "child-pi" });
+    assert.equal(inheritedOn.statuses.at(-1), "⚡🟡", "child PI starts with /fast on like its parent");
+    assert.match(inheritedOn.notices.at(-1), /\/fast on/);
+    const payload = await inheritedOn.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, inheritedOn.rootCtx);
+    assert.equal(payload.service_tier, "priority", "the child's own requests use Fast");
+    assert.equal(process.env[mod.FAST_MODE_ENV], "on", "the child republishes the mode for its own children");
+
+    // /reload re-runs the factory: the inherited value captured at process start is kept.
+    process.env[mod.FAST_MODE_ENV] = "off";
+    const reloaded = new Map();
+    mod.default({ registerCommand() {}, on: (name, handler) => reloaded.set(name, handler) });
+    await reloaded.get("session_start")({ reason: "reload" }, inheritedOn.rootCtx);
+    assert.equal(process.env[mod.FAST_MODE_ENV], "on");
+
+    const explicit = await startRoot({ flag: "ultra", inherited: "on", sessionId: "flag-pi" });
+    assert.match(explicit.notices.at(-1), /\/fast ultra/, "--fast overrides the inherited mode");
+
+    const plainRoot = await startRoot({ sessionId: "plain-pi" });
+    assert.equal(plainRoot.statuses.at(-1), "⚡ECO", "without parent or flag the default stays ECO");
+    assert.equal(plainRoot.notices.length, 0);
+    assert.equal(process.env[mod.FAST_MODE_ENV], "eco");
+
+    // The bash hook only rewrites orca launches, using the live mode.
+    const bashInput = { command: launch };
+    await plainRoot.handlers.get("tool_call")({ toolName: "bash", input: bashInput }, plainRoot.rootCtx);
+    assert.match(bashInput.command, /"pi --fast eco --model/);
+    const readInput = { path: "x" };
+    await plainRoot.handlers.get("tool_call")({ toolName: "read", input: readInput }, plainRoot.rootCtx);
+    assert.deepEqual(readInput, { path: "x" });
+    const noCommand = {};
+    await plainRoot.handlers.get("tool_call")({ toolName: "bash", input: noCommand }, plainRoot.rootCtx);
+    assert.deepEqual(noCommand, {});
+
+    delete globalThis[inheritedKey];
+    globalThis[sharedStateKey] = savedShared;
+    if (savedEnv === undefined) delete process.env[mod.FAST_MODE_ENV]; else process.env[mod.FAST_MODE_ENV] = savedEnv;
+  }
+
   for (const agentName of [
     "app-validator",
     "builder-heavy",
@@ -428,7 +511,12 @@ try {
     "validator",
   ]) {
     const frontmatter = readFileSync(path.join(root, "agents", `${agentName}.md`), "utf8");
-    assert.match(frontmatter, /^extensions: \[codex-fast-mode\]$/m, agentName);
+    assert.match(frontmatter, /^extensions: \[codex-fast-mode(?:, [a-z-]+)*\]\r?$/m, agentName);
+  }
+  // Allowlisted agents that run bash must also load the bash timeout guard.
+  for (const agentName of ["app-validator", "bug-hunt", "builder-heavy", "qa", "validator"]) {
+    const frontmatter = readFileSync(path.join(root, "agents", `${agentName}.md`), "utf8");
+    assert.match(frontmatter, /^extensions: \[[^\]]*\bbash-timeout\b[^\]]*\]\r?$/m, agentName);
   }
   assert.match(readFileSync(path.join(root, "agents", "deep-research-auditor.md"), "utf8"), /^isolated: true$/m);
   assert.match(readFileSync(path.join(root, "agents", "plan-briefer-fable.md"), "utf8"), /^extensions: false$/m);

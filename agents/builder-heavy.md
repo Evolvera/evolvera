@@ -9,7 +9,7 @@ max_turns: 100
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: [codex-fast-mode, write-guard]
+extensions: [codex-fast-mode, write-guard, bash-timeout]
 skills: false
 ---
 
