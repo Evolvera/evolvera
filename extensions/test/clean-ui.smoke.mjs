@@ -117,7 +117,7 @@ test("preserves Unicode clean cards, clipping, errors, images and renderer resul
 test("context footer clamps finite values, marks unknown, and stays within responsive widths", () => {
   for (const width of [6, 20, 40, 80, 160]) {
     for (const value of [-25, 0, 37.4, 100, 120, null, Number.NaN, Infinity]) {
-      const line = ui.formatFooter({ model: "model-name", thinking: "high", contextPercent: value, cost: 0.25, branch: "feature" }, theme, width);
+      const line = ui.formatFooter({ model: "model-name", thinking: "high", contextPercent: value, branch: "feature" }, theme, width);
       assert.ok(ui.cellWidth(line) <= width, `${width}: ${line}`);
       assert.match(line, /model/);
     }
@@ -125,37 +125,45 @@ test("context footer clamps finite values, marks unknown, and stays within respo
   assert.doesNotMatch(ui.formatFooter({ contextPercent: Number.NaN }, theme, 120), /ctx/);
 });
 
-test("footer queries commands only after session runtime binding and preserves owner/other statuses", async () => {
+test("HUD footer shows only active modes, translates emoji statuses, and stays within widths", async () => {
   const harness = extensionHarness();
-  assert.equal(harness.getCommandsCalls, 0, "factory must not query commands");
   await harness.handlers.get("session_start")({}, harness.ctx);
-  assert.equal(harness.getCommandsCalls, 0, "session_start only binds presentation");
-  harness.statuses.set("codex-fast-mode", "ON");
+  harness.statuses.set("codex-fast-mode", "⚡ECO");
   harness.statuses.set("maestro", "OFF");
+  harness.statuses.set("execution-mode", "MODE  YOLO · GLOBAL");
+  harness.statuses.set("usuario", "EVOLVERA");
   harness.statuses.set("other-extension", "ready");
   const footer = harness.makeFooter();
   const lines = footer.render(160);
-  assert.equal(harness.getCommandsCalls, 1, "commands are read during footer rendering only");
+  assert.equal(harness.getCommandsCalls, 0, "footer no longer needs the command registry");
   assert.match(lines[0], /test-model/);
-  assert.match(lines[1], /ctx \[/);
-  assert.match(lines[1], /fast ON/);
-  assert.match(lines[1], /maestro OFF/);
-  assert.match(lines[1], /other-extension ready/);
+  assert.doesNotMatch(lines.join(" "), /\$/, "cost is not shown");
+  const modes = lines.slice(1).join(" ");
+  assert.match(modes, /ctx ━+ /);
+  assert.match(modes, /⚡ECO/);
+  assert.doesNotMatch(modes, /FAST|MAESTRO|unavailable|GLOBAL|MODE/);
+  assert.match(modes, /YOLO/);
+  assert.match(modes, /@EVOLVERA/);
+  assert.match(modes, /other-extension ready/);
+  harness.statuses.set("codex-fast-mode", "🚀🟢");
+  harness.statuses.set("execution-mode", "MODE  AUTÔNOMO · SESSION");
+  assert.match(footer.render(160).slice(1).join(" "), /🚀(?!·)/);
+  assert.match(footer.render(160).slice(1).join(" "), /AUTÔNOMO·session/);
   harness.setContextPercent(Number.NaN);
-  assert.match(footer.render(160)[1], /ctx \[----/);
+  assert.match(footer.render(160)[1], /ctx ━+ --/);
   harness.setContextPercent(120);
   assert.match(footer.render(160)[1], /100%/);
   harness.setContextPercent(-2);
   assert.match(footer.render(160)[1], /0%/);
   harness.setContextPercent(50);
   for (const width of [6, 20, 40, 80, 160]) {
-    assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width), `footer exceeds width ${width}`);
+    const rendered = footer.render(width);
+    assert.equal(rendered.length, 2, `footer is always exactly two lines at width ${width}`);
+    assert.ok(rendered.every((line) => ui.cellWidth(line) <= width), `footer exceeds width ${width}`);
     assert.match(footer.render(width).join(" "), /ctx/);
   }
   harness.statuses.clear();
-  harness.setAvailableCommands([]);
-  assert.match(harness.makeFooter().render(160).join(" "), /fast --\/unavailable/);
-  assert.match(harness.makeFooter().render(160).join(" "), /maestro --\/unavailable/);
+  assert.doesNotMatch(harness.makeFooter().render(160).join(" "), /fast|maestro|unavailable/i);
   await harness.handlers.get("model_select")({}, harness.ctx);
   await harness.handlers.get("thinking_level_select")({}, harness.ctx);
   await harness.handlers.get("session_compact")({}, harness.ctx);
@@ -169,23 +177,27 @@ test("SDK without tool-renderer middleware retains native cards and the account 
   await h.handlers.get("session_start")({}, h.ctx);
   h.statuses.set("usuario", "EVOLVERA");
   const footer = h.makeFooter();
-  assert.match(footer.render(160).join(" "), /usuario EVOLVERA/);
+  assert.match(footer.render(160).join(" "), /@EVOLVERA/);
   assert.match(footer.render(160).join(" "), /test-model/);
   for (const width of [6, 20, 40, 80, 160]) {
     assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
   }
 });
 
-test("mode labels include explicit ON and long external status tokens stay bounded", async () => {
+test("mode labels keep extra detail and long external status tokens stay bounded", async () => {
   const harness = extensionHarness();
   await harness.handlers.get("session_start")({}, harness.ctx);
-  harness.statuses.set("codex-fast-mode", "ECO");
+  harness.statuses.set("codex-fast-mode", "ON");
   harness.statuses.set("maestro", "routing xhigh");
   harness.statuses.set("a-very-long-extension-status-key-with-no-break", "a-very-long-status-value-with-no-break");
   const footer = harness.makeFooter();
-  assert.match(footer.render(160).join(" "), /fast ON.*ECO/);
-  assert.match(footer.render(160).join(" "), /maestro ON.*routing/);
-  for (const width of [6, 20, 40, 80, 160]) assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
+  assert.match(footer.render(160).join(" "), /⚡/);
+  assert.match(footer.render(160).join(" "), /MAESTRO·routing xhigh/);
+  assert.equal(ui.cellWidth("⚡"), 2, "lightning is measured as a wide glyph");
+  for (const width of [6, 20, 40, 80, 160]) {
+    assert.equal(footer.render(width).length, 2);
+    assert.ok(footer.render(width).every((line) => ui.cellWidth(line) <= width));
+  }
 });
 
 test("a completed todo stays visible on redraw and can be announced after reopening", () => {
@@ -429,30 +441,29 @@ test("footer memoizes only history-derived stats with complete public keys", asy
   const footer = h.makeFooter();
   footer.render(160);
   footer.render(160);
-  assert.equal(h.branchScans, 1);
   assert.equal(h.contextReads, 1);
   h.keys.count++;
   footer.render(160);
-  assert.equal(h.branchScans, 2);
+  assert.equal(h.contextReads, 2);
   h.keys.leaf = "leaf-2";
   footer.render(160);
-  assert.equal(h.branchScans, 3);
+  assert.equal(h.contextReads, 3);
   h.keys.session = "session-2";
   footer.render(160);
-  assert.equal(h.branchScans, 4);
+  assert.equal(h.contextReads, 4);
   const priorManager = h.ctx.sessionManager;
-  h.ctx.sessionManager = { ...priorManager, getBranch() { priorManager.getBranch(); h.keys.managerScans = (h.keys.managerScans ?? 0) + 1; return []; } };
+  h.ctx.sessionManager = { ...priorManager };
   footer.render(160);
-  assert.equal(h.keys.managerScans, 1, "manager identity participates in the cache key");
+  assert.equal(h.contextReads, 5, "manager identity participates in the cache key");
   h.ctx.model = { id: "other", contextWindow: 4096 };
   footer.render(160);
-  assert.equal(h.branchScans, 6);
+  assert.equal(h.contextReads, 6);
   h.ctx.model.contextWindow = 8192;
   footer.render(160);
-  assert.equal(h.branchScans, 7);
+  assert.equal(h.contextReads, 7);
   await h.handlers.get("session_compact")({}, h.ctx);
   footer.render(160);
-  assert.equal(h.branchScans, 8, "compaction explicitly invalidates history stats");
+  assert.equal(h.contextReads, 8, "compaction explicitly invalidates history stats");
 });
 
 test("todo call invalidation reaches its nested themed card", () => {
@@ -478,14 +489,13 @@ test("footer memoizes with session and leaf keys when entry count is unavailable
   const footer = h.makeFooter();
   footer.render(160);
   footer.render(160);
-  assert.equal(h.branchScans, 1);
   assert.equal(h.contextReads, 1);
   h.keys.leaf = "older-sdk-leaf";
   footer.render(160);
-  assert.equal(h.branchScans, 2);
+  assert.equal(h.contextReads, 2);
   h.keys.session = "older-sdk-session";
   footer.render(160);
-  assert.equal(h.branchScans, 3);
+  assert.equal(h.contextReads, 3);
 });
 
 test("model selection invalidates context stats even when visible model and leaf keys are unchanged", async () => {
@@ -496,7 +506,6 @@ test("model selection invalidates context stats even when visible model and leaf
   h.setContextPercent(73);
   await h.handlers.get("model_select")({}, h.ctx);
   assert.match(footer.render(160).join(" "), /73%/);
-  assert.equal(h.branchScans, 2);
   assert.equal(h.contextReads, 2);
 });
 
@@ -506,7 +515,6 @@ test("footer falls back to live history reads without keys and keeps dynamic chr
   const footer = h.makeFooter();
   footer.render(160);
   footer.render(160);
-  assert.equal(h.branchScans, 2);
   assert.equal(h.contextReads, 2);
   h.pi.getThinkingLevel = () => "low";
   h.statuses.set("live-status", "changed");
@@ -514,14 +522,14 @@ test("footer falls back to live history reads without keys and keeps dynamic chr
   const dynamic = footer.render(160).join(" ");
   assert.match(dynamic, /low/);
   assert.match(dynamic, /live-status changed/);
-  assert.match(dynamic, /fast --\/unavailable/);
+  assert.doesNotMatch(dynamic, /unavailable/);
 });
 
 console.log(`clean-ui isolated fixture retained at ${runRoot}`);
 
 
 test("working art has constant-width colored Unicode phases and uses the existing native indicator", async () => {
-  const palette = { muted: 2, accent: 36, success: 32 };
+  const palette = { muted: 2, accent: 36, warning: 33 };
   const colorTheme = { fg: (color, text) => `\x1b[${palette[color]}m${text}\x1b[0m`, bold: text => text };
   const frames = ui.coloredWorkingFrames(colorTheme);
   assert.equal(frames.length, 8);
@@ -535,7 +543,7 @@ test("working art has constant-width colored Unicode phases and uses the existin
     assert.ok(frame.endsWith("\x1b[0m"));
       assert.ok(!frame.includes(String.fromCharCode(13)) && !frame.includes(String.fromCharCode(10)));
   }
-  assert.ok(frames.some(frame => frame.includes("\x1b[32m◆")));
+  assert.ok(frames.some(frame => frame.includes("\x1b[33m◆")));
   const h = extensionHarness();
   const received = [];
   h.ctx.ui.theme = colorTheme;
