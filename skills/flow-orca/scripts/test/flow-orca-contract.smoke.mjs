@@ -549,7 +549,29 @@ has(REFERENCE, /If settlement is still unproven: do not release; keep the slot a
 has(REFERENCE, /a recorded retention counts as resolved, so an unproven Goal never freezes the entire inbox indefinitely/, "reference retention allows ack");
 has(SKILL, /duplicada ou sem correspondência não é aceita nem liberada/, "duplicate or unmatched messages must not release anything");
 has(SKILL, /drene lotes limitados adicionais só enquanto houver mensagens realmente pendentes — nunca por timer/, "extra batches only while pending");
-has(SKILL, /Sem sleep, loops de espera, `check --wait` repetido ou leituras repetidas de terminal/, "no sleep/poll loops");
+has(SKILL, /Sem sleep, loops de espera, polling ou leituras repetidas de terminal só para observar/, "no sleep/poll loops");
+lacks(SKILL, /Sem sleep, loops de espera, `check --wait` repetido/, "blanket repeated-wait ban is replaced by the conditional rolling fallback");
+// Lost-wake correction: queued != woken; conditional native rolling long-poll; unfiltered for untracked status/handoff.
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /`ok: true`\) proves only that mail was queued, never that this coordinator resumed/, "queued mail is not a wake");
+  lacks(path, /which wakes you/, "no unconditional wake promise");
+}
+has(SKILL, /recibo de envio `ok: true` prova só que a mensagem foi enfileirada, nunca que o coordenador retomou/, "skill: queued is not a wake");
+has(SKILL, /Fallback manual explícito[\s\S]{0,200}pedido explícito do usuário ou quando o push do runtime está genuinamente indisponível ou não verificado[\s\S]{0,200}wake perdido confirmado/, "skill: fallback is conditional on unavailable/unverified push or confirmed lost wake");
+has(SKILL, /`check --run <run-id verificado> --wait --timeout-ms <n> --json` sem `--types`[^\n]*PI_REPORT_RUN[^\n]*sem Task\/Dispatch/, "skill: unfiltered waiter for untracked PI_REPORT_RUN children");
+has(SKILL, /rearme[^\n]*timeout[^\n]*enquanto houver workers conhecidos pendentes/, "skill: rolling rearm after timeout");
+has(SKILL, /status\/handoff[^\n]*evidência de report apenas[^\n]*nunca assentamento de ciclo de vida, liberação, GitHub `Done`, autorização de merge ou sucesso do runtime/, "skill: status/handoff is not settlement");
+has(SKILL, /não fabrique `worker_done` nem IDs retroativos/, "skill: no fabricated worker_done");
+has(SKILL, /prompt chamado “handoff”[^\n]*supervisão[^\n]*Task\/Dispatch/, "skill: supervised handoff routes through Task/Dispatch");
+has(SKILL, /transferência completa genuína[^\n]*termina após entrega comprovada/, "skill: genuine full transfer needs no monitoring");
+has(SKILL, /encerrar trabalho supervisionado[^\n]*wake não verificado/, "skill anti-pattern: no abandon on unverified wake");
+has(REFERENCE, /`ok: true` proves only that mail was queued, never that the coordinator resumed/, "reference: queued is not a wake");
+has(REFERENCE, /fallback only on explicit user request or when runtime push is genuinely unavailable or unverified for this Run, including a lost wake confirmed/, "reference: conditional fallback");
+has(REFERENCE, /^ORCA orchestration check --run <verified run-id> --wait --timeout-ms <n> --json$/m, "reference: unfiltered rolling waiter");
+has(REFERENCE, /Rearm after a timeout checkpoint while known workers remain pending/, "reference: rolling rearm");
+has(REFERENCE, /Status\/handoff reports are report evidence only/, "reference: status/handoff is evidence only");
+has(REFERENCE, /Do not sleep, poll, or repeatedly read terminals merely to observe/, "reference: no polling");
+lacks(REFERENCE, /Do not sleep, loop, repeat waits, or repeatedly read terminals merely to observe/, "reference: blanket repeated-wait ban replaced");
 has(SKILL, /Fallback manual explícito[\s\S]{0,200}pedido explícito do usuário ou quando o push do runtime está genuinamente indisponível/, "manual wait is an explicit fallback only");
 has(SKILL, /wake automático não verificado, não falha de worker/, "unverified wake must not be worker failure");
 has(SKILL, /sem `--to`, sem `--from`, sem terminal direto duplicado/, "worker_done must be sent once to the Run");
@@ -560,7 +582,6 @@ has(REFERENCE, /^ORCA orchestration check --run <verified run-id> --ack <deliver
 has(REFERENCE, /Resolve lifecycle and Goal settlement \*\*before\*\* acknowledging/, "reference settlement before ack");
 has(REFERENCE, /pointer is a wakeup \*\*only\*\*; it is neither `worker_done` nor GitHub `Done`/, "reference pointer is wakeup only");
 has(REFERENCE, /fallback only on explicit user request or when runtime push is genuinely unavailable/, "reference manual wait is fallback only");
-has(REFERENCE, /Do not sleep, loop, repeat waits, or repeatedly read terminals merely to observe/, "reference forbids observation polling");
 // Cleanup: authority, proof, content classification, recovery, exact command, incident freeze.
 has(SKILL, /ORCA worktree rm --worktree <seletor exato> --json`, sem `--force`\/`--run-hooks`/, "cleanup must use the exact supported command without force/hooks");
 has(REFERENCE, /^ORCA worktree rm --worktree <exact selector> --json$/m, "reference cleanup command");
