@@ -10,6 +10,7 @@ const PINNED = {
 };
 const MAIN_110 = "866d65f2d42f74d2bb72ed4a755c8ace1b8a2c497a32cb57cc4db594a4fcb2bf";
 const MAIN_120 = "f4e68ceeeb8ddfd905662d2c55497fea8ccdf252a83a2ca14233ec872d742016";
+const MAIN_130 = "08b91f9eb3adf9a5027c18732d1e4de70999bd15c445b65cb0ddd0cd68f2746b";
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 function once(source, anchor, replacement, label) {
   const first = source.indexOf(anchor);
@@ -23,9 +24,9 @@ function validateText(source, label) {
 export function transformMainSource(source) {
   validateText(source, "main");
   const digest = hash(source);
-  if (digest !== PINNED["dist/main.js"] && digest !== MAIN_110 && digest !== MAIN_120) throw new Error("SDK main source pin mismatch");
+  if (digest !== PINNED["dist/main.js"] && digest !== MAIN_110 && digest !== MAIN_120 && digest !== MAIN_130) throw new Error("SDK main source pin mismatch");
   let out = source;
-  if (digest === MAIN_120) {
+  if (digest === MAIN_120 || digest === MAIN_130) {
     // A temporary account bridge must not clean quarantines owned by the installed SDK.
     out = once(out, "        cleanupWindowsSelfUpdateQuarantine(getPackageDir());", "        if (!accountRuntimeFactory) cleanupWindowsSelfUpdateQuarantine(getPackageDir());", "1.2.0 managed quarantine preservation");
   }
@@ -38,10 +39,10 @@ export function transformMainSource(source) {
   out = once(out, "    const projectTrustByCwd = new Map();", "    const projectTrustByCwd = new Map();\n    let predecessorSessionManager;", "predecessor manager capture");
   out = once(out, "        const services = await createAgentSessionServices({\n            cwd,", "        const account = accountRuntimeFactory ? await accountRuntimeFactory({ purpose: parsed.help || parsed.listModels !== undefined ? \"metadata\" : \"application\", sessionManager, predecessorSessionManager: sessionStartEvent === undefined ? undefined : predecessorSessionManager, sessionStartEvent, cwd, agentDir, parsed, modelRuntimeTimeoutMs: 15_000, readonly: parsed.help === true || parsed.listModels !== undefined }) : undefined;\n        if (accountRuntimeFactory && !account?.modelRuntime) throw new Error('account runtime factory did not supply a ModelRuntime');\n        const nativeResourceLoaderOptions = {\n                additionalExtensionPaths: resolvedExtensionPaths,\n                additionalSkillPaths: resolvedSkillPaths,\n                additionalPromptTemplatePaths: resolvedPromptTemplatePaths,\n                additionalThemePaths: resolvedThemePaths,\n                noExtensions: parsed.noExtensions,\n                noSkills: parsed.noSkills,\n                noPromptTemplates: parsed.noPromptTemplates,\n                noThemes: parsed.noThemes,\n                noContextFiles: parsed.noContextFiles,\n                systemPrompt: parsed.systemPrompt,\n                appendSystemPrompt: parsed.appendSystemPrompt,\n                extensionFactories,\n            };\n        const suppliedResources = account?.resourceLoaderOptions ?? {};\n        const resourceLoaderOptions = { ...nativeResourceLoaderOptions, extensionFactories: [...extensionFactories, ...(suppliedResources.extensionFactories ?? [])], ...(typeof suppliedResources.extensionsOverride === \"function\" ? { extensionsOverride: suppliedResources.extensionsOverride } : {}) };\n        const services = await createAgentSessionServices({\n            cwd,", "pre-services account factory");
   out = once(out, "            modelRuntimeSignal: AbortSignal.timeout(15_000),", "            modelRuntimeSignal: AbortSignal.timeout(15_000),\n            ...(account ? { modelRuntime: account.modelRuntime } : {}),", "selected model runtime");
-  const nativeMcpOption = digest === MAIN_110 || digest === MAIN_120 ? "                disabledBuiltinExtensions: parsed.noMcp ? [\"mcp\"] : undefined,\n" : "";
+  const nativeMcpOption = digest === MAIN_110 || digest === MAIN_120 || digest === MAIN_130 ? "                disabledBuiltinExtensions: parsed.noMcp ? [\"mcp\"] : undefined,\n" : "";
   const resourceOptionsAnchor = `            resourceLoaderOptions: {\n                additionalExtensionPaths: resolvedExtensionPaths,\n                additionalSkillPaths: resolvedSkillPaths,\n                additionalPromptTemplatePaths: resolvedPromptTemplatePaths,\n                additionalThemePaths: resolvedThemePaths,\n                noExtensions: parsed.noExtensions,\n${nativeMcpOption}                noSkills: parsed.noSkills,\n                noPromptTemplates: parsed.noPromptTemplates,\n                noThemes: parsed.noThemes,\n                noContextFiles: parsed.noContextFiles,\n                systemPrompt: parsed.systemPrompt,\n                appendSystemPrompt: parsed.appendSystemPrompt,\n                extensionFactories,\n            },`;
   out = once(out, resourceOptionsAnchor, "            resourceLoaderOptions,", "bounded resource options");
-  if (digest === MAIN_110 || digest === MAIN_120) out = once(out, "                noExtensions: parsed.noExtensions,\n                noSkills: parsed.noSkills,", "                noExtensions: parsed.noExtensions,\n                disabledBuiltinExtensions: parsed.noMcp ? [\"mcp\"] : undefined,\n                noSkills: parsed.noSkills,", "1.1.0/1.2.0 MCP resource option");
+  if (digest === MAIN_110 || digest === MAIN_120 || digest === MAIN_130) out = once(out, "                noExtensions: parsed.noExtensions,\n                noSkills: parsed.noSkills,", "                noExtensions: parsed.noExtensions,\n                disabledBuiltinExtensions: parsed.noMcp ? [\"mcp\"] : undefined,\n                noSkills: parsed.noSkills,", "1.1.0/1.2.0/1.3.0 MCP resource option");
   out = once(out, "        return {\n            ...created,\n            services,\n            diagnostics,\n        };", "        const result = { ...created, services, diagnostics };\n        predecessorSessionManager = sessionManager;\n        return result;", "successful native runtime capture");
   return out;
 }
