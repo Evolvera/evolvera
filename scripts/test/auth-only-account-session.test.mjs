@@ -14,9 +14,9 @@ const sentinel = path.join(ROOT, "shared", "sentinel.json");
 fs.mkdirSync(path.dirname(sentinel), { recursive: true });
 fs.writeFileSync(sentinel, JSON.stringify({ cwd: "shared-cwd", settings: "shared-settings", history: "shared-history", memory: "shared-memory" }));
 const protectedFiles = [
-  ["SDK package", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/package.json", "fa487897918283976006d8c4f450772a9c90b9674f2a19d5f01e3ab9af35ce8f"],
-  ["SDK main", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/main.js", "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db"],
-  ["SDK model runtime", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/core/model-runtime.js", "da26f76339a031456f6d239a249159231776f760ab4ac538c6b54c417dea6f67"],
+  ["SDK package", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/package.json", "d4231a02b6a2ccb357a8e9e420fab9c217490137ade958d4a45a12e169daad0c"],
+  ["SDK main", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/main.js", "f4e68ceeeb8ddfd905662d2c55497fea8ccdf252a83a2ca14233ec872d742016"],
+  ["SDK model runtime", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/core/model-runtime.js", "578b742bea061fed029b8e139c6c0bcfe31e60665e9c0c6a08769761ef169dfd"],
   ["SDK runtime types", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/core/model-runtime.d.ts", "5a7aac47a83c20316f593c74798f60ec4e521a0fddff03a0608dbc5514012bf5"],
   ["SDK services", "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session-services.js", "20b7aa4b0657b53fb522ea051df26f72901802e03cc06c89e0a8926388bca601"],
   ["protected selector", "C:/Users/kevin/Documents/Pi/scripts/patch-pi-101-interactive-activity.mjs", "e47429c2e2c20393cc57fa561b897ad126d0008994ca36d75779d7a0b9e1f48f"],
@@ -302,6 +302,66 @@ test("persisted raw session identity and binding must match the loaded native ma
     { type: "session", version: 3, id: "loaded-same", cwd: "shared-cwd" }, bindEntry("bravo"),
   ].map((entry) => `${JSON.stringify(entry)}\n`).join(""));
   assert.throws(() => inspectSessionBinding({ registryPath: REGISTRY, sessionManager: loaded }), { code: "ACCOUNT_SESSION_UNDECIDABLE" });
+});
+
+test("persisted inspection streams multi-chunk UTF-8 JSONL without reading the whole session", async () => {
+  const file = path.join(ROOT, "sessions", "streamed-session.jsonl");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const header = { type: "session", version: 3, id: "streamed-session", cwd: "shared-cwd" };
+  const binding = bindEntry("alpha");
+  const preface = `${JSON.stringify(header)}\r\n\r\n`;
+  const prefix = JSON.stringify({ type: "message", id: "large", content: "" });
+  const start = Buffer.byteLength(preface + prefix.slice(0, prefix.indexOf('""') + 1));
+  const padding = (64 * 1024 - 1 - start + 64 * 1024) % (64 * 1024);
+  const large = { type: "message", id: "large", content: `${"x".repeat(padding)}😀${"y".repeat(150_000)}` };
+  const largeLine = JSON.stringify(large);
+  const bytes = Buffer.from(`${preface}${largeLine}\r\n${JSON.stringify(binding)}`);
+  const emojiOffset = bytes.indexOf(Buffer.from("😀"));
+  assert.equal(emojiOffset % (64 * 1024), 64 * 1024 - 1, "emoji must cross a read-chunk boundary");
+  fs.writeFileSync(file, bytes);
+  const manager = new NativeShapedSessionManager({ file, persist: true, entries: [binding], sessionId: header.id });
+  const before = fs.readFileSync(file);
+  const readFileSync = fs.readFileSync;
+  const readSync = fs.readSync;
+  let readCalls = 0;
+  fs.readFileSync = function (target, ...args) {
+    assert.notEqual(path.resolve(String(target)), path.resolve(file), "inspector must not read whole session file");
+    return readFileSync.call(this, target, ...args);
+  };
+  fs.readSync = function (...args) { readCalls += 1; return readSync.apply(this, args); };
+  try {
+    assert.equal(inspectSessionBinding({ registryPath: REGISTRY, sessionManager: manager }).id, "alpha");
+    assert.equal((await selectSessionAccount({ registryPath: REGISTRY, sessionManager: manager })).id, "alpha");
+  } finally {
+    fs.readFileSync = readFileSync;
+    fs.readSync = readSync;
+  }
+  assert.ok(readCalls > 2, `expected multiple chunk reads, got ${readCalls}`);
+  assert.deepEqual(fs.readFileSync(file), before, "inspection/selection must not rewrite session bytes");
+});
+
+test("streamed inspection rejects late malformed records before header/binding decisions", () => {
+  const file = path.join(ROOT, "sessions", "streamed-invalid.jsonl");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const header = { type: "session", version: 3, id: "streamed-invalid", cwd: "shared-cwd" };
+  const binding = bindEntry("alpha");
+  const makeManager = (records) => {
+    fs.writeFileSync(file, `${[header, ...records].map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+    return new NativeShapedSessionManager({ file, persist: true, entries: [binding], sessionId: header.id });
+  };
+  for (const suffix of ["not-json", "42", "[]", "null"]) {
+    const manager = makeManager([binding, { type: "message", content: "late" }]);
+    fs.appendFileSync(file, `${suffix}\n`);
+    assert.throws(() => inspectSessionBinding({ registryPath: REGISTRY, sessionManager: manager }), { code: "ACCOUNT_SESSION_UNDECIDABLE" }, suffix);
+  }
+  const duplicate = makeManager([binding, header]);
+  assert.throws(() => inspectSessionBinding({ registryPath: REGISTRY, sessionManager: duplicate }), { code: "ACCOUNT_SESSION_UNDECIDABLE" });
+
+  const malformedLateBinding = { ...binding, type: "custom_message" };
+  const malformed = makeManager([{ type: "message", content: "late" }, malformedLateBinding]);
+  assert.throws(() => inspectSessionBinding({ registryPath: REGISTRY, sessionManager: malformed }), { code: "ACCOUNT_BINDING_MALFORMED" });
+  const conflicting = makeManager([{ type: "message", content: "late" }, binding, bindEntry("bravo", { id: "off-branch" })]);
+  assert.throws(() => inspectSessionBinding({ registryPath: REGISTRY, sessionManager: conflicting }), { code: "ACCOUNT_BINDING_CONFLICT" });
 });
 
 test("cancellation fails closed and malformed metadata never becomes a legacy picker", async () => {
