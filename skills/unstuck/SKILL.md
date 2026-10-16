@@ -150,7 +150,7 @@ Invocation does not relax any of this.
 - **Never** touch production, staging, shared, user, or dev state, or any pre-existing data you did not create this run.
 - **Never** use as an experiment: delete, drop, truncate, reset, reseed, restore, force-push, `git clean`/`checkout --`/`reset --hard` over uncommitted work, reinstalling the main environment, or clearing caches/state that exist independently of this run.
 - **No external or live operation is delegated to a builder.** The orchestrator owns host, network, deploy, provider, and CI actions, and only with explicit user authorization.
-- **Unexpected effect ⇒ `INCIDENT`:** stop every mutating command, freeze read-only, preserve evidence, report affected resources. No automatic cleanup, retry, rollback, restore, or reseed without fresh authorization obtained after the facts are known.
+- **Unexpected effect on state this run does not own ⇒ `INCIDENT`:** a crash, kill, or timeout of your own run is evidence for the next hypothesis, not an incident. Otherwise stop every mutating command, freeze read-only, preserve evidence, report affected resources. No automatic cleanup, retry, rollback, restore, or reseed without fresh authorization obtained after the facts are known.
 
 ## Mutation protocol
 

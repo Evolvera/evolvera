@@ -29,4 +29,4 @@ In an Orca-managed PI terminal:
 
 Outside Orca, use another verified, supported same-session control only if actually available. The package's optional trusted-extension managed-run protocol is disabled by default; do not enable it, bypass it, or call private controllers just to satisfy this instruction. If no supported self-start path exists, state the exact capability blocker rather than silently delegating or pretending a goal exists.
 
-Goal does not broaden scope or authorize consequential operations. Preserve all existing safety gates, user pauses, budgets, stale-id guards, and explicit worker-specific Goal instructions.
+Retrying or resuming your own interrupted job inside the goal's approved limits is goal work, never a blocker; `goal_blocked` never covers a permission question that no quoted rule requires. Goal does not broaden scope or authorize consequential operations. Preserve all existing safety gates, user pauses, budgets, stale-id guards, and explicit worker-specific Goal instructions.
