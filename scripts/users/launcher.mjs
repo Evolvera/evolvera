@@ -297,6 +297,20 @@ function publishedSdkRoot() {
   return fs.realpathSync.native(candidate);
 }
 
+const ACCOUNT_ID_RE = /^[a-z][a-z0-9-]{1,31}$/u;
+
+export function parseNewAccountInput(input) {
+  const answer = String(input ?? "").trim();
+  if (!answer) return null;
+  const legacy = /^create\s+(.+)$/u.exec(answer);
+  const value = legacy ? legacy[1].trim() : answer;
+  const separator = value.search(/\s/u);
+  const id = separator < 0 ? value : value.slice(0, separator);
+  const label = separator < 0 ? id : value.slice(separator).trim();
+  if (!ACCOUNT_ID_RE.test(id)) throw fail("USER_ID_INVALID");
+  return { id, label: label || id };
+}
+
 async function askAccount(users, registryPath) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw fail("ACCOUNT_SELECTION_REQUIRED");
   const selected = await selectAccountMenu({ users, input: process.stdin, output: process.stdout });
@@ -306,11 +320,11 @@ async function askAccount(users, registryPath) {
     const answer = await new Promise((resolve) => {
       let settled = false;
       lines.once("close", () => { if (!settled) { settled = true; resolve(""); } });
-      lines.question('Account ID, or "create <id> [label]": ', (value) => { settled = true; resolve(value); });
+      lines.question('New account ID [label]: ', (value) => { settled = true; resolve(value); });
     });
-    const match = /^create\s+([a-z][a-z0-9-]{1,31})(?:\s+(.+))?$/u.exec(answer.trim());
-    if (!match) return answer.trim();
-    return createAccount({ registryPath, id: match[1], label: match[2] ?? match[1] }).id;
+    const account = parseNewAccountInput(answer);
+    if (!account) return "";
+    return createAccount({ registryPath, ...account }).id;
   } finally { lines.close(); }
 }
 
