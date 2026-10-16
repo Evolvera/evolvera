@@ -357,7 +357,18 @@ Agentes não substituem o PI principal: o orquestrador continua responsável por
 
 ### Política Anthropic
 
-Os modelos Anthropic nativos com janela de contexto de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5.5 mantém 128K). As rotas aprovadas para Opus 5.5 são:
+No modo de contexto padrão, os modelos Anthropic nativos com janela de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5.5 mantém 128K).
+
+`/context-mode` abre o seletor **Padrão / High**. Também aceita `/context-mode high`, `/context-mode default` e `/context-mode status`. A extensão `extensions/context-mode.ts` é a única responsável por essa política:
+
+- **Padrão:** preserva a janela configurada de cada modelo e o teto Anthropic de 450K.
+- **High:** usa **800K** para GPT ≥ 6 e Claude ≥ 5 nos provedores `openai-codex`, `openai` e `anthropic`; os demais modelos ficam inalterados.
+- A preferência `contextMode` é salva no `settings.json` global, vale imediatamente na sessão atual e é lida pelas novas sessões e após `/reload` (inclusive subagentes que carreguem a extensão).
+- A janela controla a compactação e o medidor `ctx` do rodapé; `◈800K` aparece apenas quando o High se aplica ao modelo atual. A reserva de compactação continua valendo, então 800K não são 800K de histórico livre.
+
+High não amplia a capacidade real do provedor nem garante que toda rota aceite 800K. Mais contexto pode aumentar custo e latência; os limites de saída continuam iguais.
+
+As rotas aprovadas para Opus 5.5 são:
 
 - `agents/builder-design.md` — `anthropic/claude-opus-5-5`, `medium`;
 - `agents/builder-heavy-design.md` — `anthropic/claude-opus-5-5`, `high`;
