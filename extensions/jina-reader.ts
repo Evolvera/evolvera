@@ -132,6 +132,6 @@ export default function jinaReaderExtension(pi: ExtensionAPI) {
       }
     },
   });
-  
-  console.log("[jina-reader] Extension loaded: jina_read tool available");
+  // No load-time console output: in TUI mode stdout writes land on top of the rendered screen,
+  // and every in-process subagent session reloads extensions, so a banner here corrupts the footer.
 }
