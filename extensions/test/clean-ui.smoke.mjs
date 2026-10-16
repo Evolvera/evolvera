@@ -145,6 +145,10 @@ test("HUD footer shows only active modes, translates emoji statuses, and stays w
   assert.match(modes, /YOLO/);
   assert.match(modes, /@EVOLVERA/);
   assert.match(modes, /other-extension ready/);
+  assert.doesNotMatch(modes, /◈/, "default context mode shows nothing");
+  harness.statuses.set("context-mode", "800K");
+  assert.match(footer.render(160).slice(1).join(" "), /\d+%  ◈800K  ⚡ECO/, "high context mode follows the gauge");
+  harness.statuses.delete("context-mode");
   harness.statuses.set("codex-fast-mode", "🚀🟢");
   harness.statuses.set("execution-mode", "MODE  AUTÔNOMO · SESSION");
   assert.match(footer.render(160).slice(1).join(" "), /🚀(?!·)/);

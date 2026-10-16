@@ -65,7 +65,11 @@ Each handoff stands alone: goal and why, worktree and branch, proven facts, what
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal; workers launched with \`PI_REPORT_RUN\` report completion or a concrete blocker/decision needing you, and Orca wakes you. After dispatching, end the turn. Act again on a worker completion, blocker, or genuine question, or when the user says workers finished or stopped; a PR opening alone is not a worker wake/report outcome. Then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
+Never \`sleep\`, poll, or tail a worker's terminal. Workers launched with \`PI_REPORT_RUN\` report completion or a concrete blocker/decision needing you as mail to that Run; a send receipt proves only that mail was queued. Native wake is the normal route only when verified for this Run, session, and runtime, so end the turn only when the wake is verified. Act again on a worker completion, blocker, or genuine question, or when the user says workers finished or stopped; a PR opening alone is not a worker wake/report outcome. Then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
+
+If the wake is unverified or unavailable, or the user reports a lost wake and the Run shows queued reports, never end supervised work by telling the user to return: note the capacity gap once and arm the native long-poll from Orca Workers (unfiltered for children without Task/Dispatch), process the whole FIFO batch, ack only after decisions, and rearm after a timeout while known workers remain pending. Status/handoff mail is report evidence only, never settlement, release, GitHub \`Done\`, merge authorization, or runtime success.
+
+A prompt called "handoff" where you expect results, integration, or continuation is supervision, routed through the \`flow-orca\` Task/Dispatch path for issue workers; only a genuine standalone full transfer ends after proven delivery with no monitoring.
 
 ## Status board
 
