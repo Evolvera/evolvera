@@ -74,7 +74,7 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
 18. **Admissão serial honesta, sem falsa atomicidade** — implementação nunca começa só porque o card está `Ready`. Um **único coordenador de campanha** admite issues em série: publica intenção visível no GitHub (assignee + claim marker + `In progress`), cria a workspace Orca, verifica as pós-condições e **relê** tudo imediatamente antes de injetar trabalho. Isso é serialização com intenção visível e recheck, **não** lock atômico entre máquinas: claim ambíguo, marker duplicado ou dois coordenadores param as issues envolvidas. Nunca crie uma segunda branch/serviço de reserva para simular exclusão mútua.
 19. **Sem falsa certeza de atividade** — diga `worker active` somente quando o coordenador atual leu o dispatch vivo no Orca. Fora disso, reporte `claim active`, `branch present` ou `workspace present`. Ausência local pode significar outro host; timeout, idle ou tempo parado nunca são falha, conclusão, vaga livre ou autorização de auto-reclaim.
 20. **Done exige merge provado** — `Done` só com PR de `mergedAt` real na base escolhida, checks/review exigidos, review independente do head SHA final, issue fechada (fechamento explícito quando a base não é a default e o GitHub não auto-fecha) e status relido coerente. `worker_done`, exit verde, task `completed`, PR fechado sem merge ou AC de deploy incompleta **não** são Done.
-21. **Incidente congela** — qualquer pós-estado inesperado (mutação não prevista, efeito fora do alvo, resultado contraditório) suspende as autorizações de mutação dos recursos afetados, inclusive limpeza, restore, reseed e cleanup em `finally`. Só diagnóstico read-only até nova autorização explícita; trabalho não afetado continua apenas com isolamento provado.
+21. **Incidente congela** — pós-estado inesperado em recurso que o trabalho não possui (mutação não prevista, efeito fora do alvo) suspende as autorizações de mutação dos recursos afetados, inclusive limpeza, restore, reseed e cleanup em `finally`. Só diagnóstico read-only até nova autorização explícita; trabalho não afetado continua apenas com isolamento provado.
 
 ---
 
@@ -1074,7 +1074,7 @@ O PI preparado **não edita nada** antes desse conjunto de pós-condições. Se 
 - **Pergunta pendente não é pergunta nova:** se `ask` expirar ou desconectar, retome com `ORCA orchestration ask --resume <message_id> --timeout-ms <n> --json`, usando o ID real já recebido. O coordenador responde com `ORCA orchestration reply --id <message_id> --body "<resposta>" --json`. Sem ID comprovado, consulte a inbox existente; não repita a pergunta às cegas.
 - **Start incompleto:** leia `stage`, `effects` e `residualResources` do receipt antes de decidir o próximo passo. Setup ainda `running` após timeout não prova falha; não reinicie nem substitua o worker por silêncio. Resultado desconhecido segue reconciliação e as regras de incidente, nunca cleanup automático.
 - **Reparo de defeito:** no máximo duas tentativas, cada uma com hipótese nova; no máximo um retry quando a falha for comprovadamente transitória. Depois disso, pare e reporte.
-- **Incidente:** qualquer pós-estado inesperado congela os recursos afetados e a parte correspondente da campanha. Diagnóstico read-only apenas; nada de restore, reseed, cleanup, retry ou recriação sem autorização nova e explícita. Trabalho não afetado continua somente com isolamento provado.
+- **Incidente:** pós-estado inesperado em recurso que o trabalho não possui congela os recursos afetados e a parte correspondente da campanha. Diagnóstico read-only apenas; nada de restore, reseed, cleanup, retry ou recriação sem autorização nova e explícita. Trabalho não afetado continua somente com isolamento provado.
 - Escopo extra vira nova issue no backlog; não misture concerns.
 - Após push, blocker, handoff ou mudança de SHA/estágio, releia a evidência afetada e registre a transição no GitHub (comentário da issue + Status do Project relido).
 
@@ -1277,7 +1277,7 @@ Pare / eduque / pergunte quando:
 - Claim remoto sem workspace local sendo tratado como livre, ou takeover baseado apenas em idade/inatividade aparente
 - Teto de concorrência excedido, vaga “liberada” por timeout/idle, ou `FLOW_EXECUTOR_ID` já com WIP
 - Resultado desconhecido de create/dispatch (exige reconciliação, nunca retry cego)
-- Incidente: pós-estado inesperado em qualquer recurso — congele e só diagnostique
+- Incidente: pós-estado inesperado em recurso que o trabalho não possui — congele e só diagnostique; falha do próprio trabalho (crash, kill, timeout, teste falho) é trabalho comum: corrija e retome dentro dos limites aprovados
 - Recuperação exigiria force push, reset destrutivo, deleção remota silenciosa, remoção de workspace ou enfraquecer aprovação/review
 - Cleanup sem autoridade específica, sem prova de propriedade/conteúdo/recuperação, ou com efeito ambíguo/recurso não descartável (retenha com motivo)
 - Duas falhas de reparo sem hipótese nova

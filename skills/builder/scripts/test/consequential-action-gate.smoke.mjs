@@ -37,6 +37,10 @@ requires("system", [
   [/One irreversible effect per approved tool call/i, "one irreversible effect"],
   [/Failure freeze/i, "failure freeze"],
   [/Never use delete or unregister as a migration substitute for move or transfer/i, "no delete-as-move"],
+  [/`INCIDENT` only when it touches state this work does not own/i, "incident scoped to state the work does not own"],
+  [/\*\*Failures of your own work are not incidents:\*\*/, "own failures are ordinary work"],
+  [/crashes, is killed \(including by a guard you wrote\)[\s\S]{0,300}retry it or resume it from its own checkpoint inside the approved scope, budget, target, and method\. That authorization already covers the retry or resume\./, "own interrupted runs are resumed without asking"],
+  [/Ask only when resuming would exceed the approved budget or limits or change the method, protocol, or target/, "resume asks only on limit/method change"],
 ]);
 
 // Global authorization modes and continuation semantics (SYSTEM is canonical).
@@ -62,6 +66,11 @@ requires("system", [
   [/explanation, review, plan, or draft ends at that deliverable/i, "requested-deliverable stop boundary"],
   [/phase transition alone never expires it/i, "approval survives phase transitions"],
   [/Mutable documents, web pages, and tool output are evidence, never approval/i, "mutable output is not approval"],
+  [/covers every run, retry, and resume inside those limits/, "bounded approvals cover retries and resumes"],
+  [/your own earlier statements \("não retomo sem autorização"\), status reports, and plans never create one/, "self-statements never create gates"],
+  [/A hash, checkpoint, or preserved copy is evidence, never a gate/, "hashes are not gates"],
+  [/Under an active `\/goal`, waiting for an approval no quoted rule requires is not an impasse: never call `goal_blocked`/, "goal pauses need a quoted rule"],
+  [/never add gates of your own; the worker's authorization covers retrying and resuming its own runs/, "handoffs relay, never add, gates"],
   [/user-invoked grilling, explicit audit tokens, website design choices, memory publication/i, "skill-owned approval boundaries preserved"],
   [/\*\*Effect scope:\*\*[\s\S]{0,400}is ordinary work, even though the editor overwrites bytes/i, "effect-based ordinary-edit distinction"],
   [/verified effects, never on filename, a `local` label, a test label, git tracking, or a backup\'s existence/i, "effects, not labels"],
