@@ -94,6 +94,8 @@ assert.deepEqual(fable51, {
   maxTokens: 128_000,
   cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
   compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+  // Custom definitions must keep the built-in cache lifetime, or PI's cache warmer never runs for them.
+  promptCache: { short: 300, long: 3600 },
 });
 const opus55 = modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-opus-5-5");
 assert.deepEqual(opus55, {
@@ -107,7 +109,14 @@ assert.deepEqual(opus55, {
   maxTokens: 128_000,
   cost: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
   compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+  // Custom definitions must keep the built-in cache lifetime, or PI's cache warmer never runs for them.
+  promptCache: { short: 300, long: 3600 },
 });
+assert.deepEqual(
+  modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-sonnet-5-5").promptCache,
+  { short: 300, long: 3600 },
+  "custom Sonnet must keep the built-in cache lifetime",
+);
 assert.deepEqual(
   JSON.parse(read("models.json")).providers.anthropic,
   modelsConfig.providers.anthropic,
