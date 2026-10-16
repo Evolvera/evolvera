@@ -113,6 +113,11 @@ assert.deepEqual(opus55, {
   promptCache: { short: 300, long: 3600 },
 });
 assert.deepEqual(
+  modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-sonnet-5-5").promptCache,
+  { short: 300, long: 3600 },
+  "custom Sonnet must keep the built-in cache lifetime",
+);
+assert.deepEqual(
   JSON.parse(read("models.json")).providers.anthropic,
   modelsConfig.providers.anthropic,
 );
