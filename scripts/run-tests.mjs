@@ -17,6 +17,8 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // limpeza explícita; in-memory não cria arquivo/serviço persistente. Revisado
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
+  // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
+  "anthropic-model-policy.smoke.mjs",
   "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
@@ -47,7 +49,6 @@ const tmpdirProprioPadrao = new Set([
   "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
-  "anthropic-model-policy.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",

@@ -658,6 +658,8 @@ export function fastTag(status: string | undefined): Segment | undefined {
 function modeFooter(footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number, context: Segment[]): string[] {
   const statuses = footerData.getExtensionStatuses();
   const segments: Segment[] = [...context];
+  const window = oneLine(statuses.get("context-mode") ?? "");
+  if (window) segments.push({ text: `◈${window}`, color: "warning" });
   const fast = fastTag(statuses.get("codex-fast-mode"));
   if (fast) segments.push(fast);
   const maestro = oneLine(statuses.get("maestro") ?? "");
@@ -672,7 +674,7 @@ function modeFooter(footerData: { getExtensionStatuses(): ReadonlyMap<string, st
   }
   const user = oneLine(statuses.get("usuario") ?? "");
   if (user) segments.push({ text: `@${user}`, color: "muted" });
-  const known = new Set(["codex-fast-mode", "maestro", "execution-mode", "usuario"]);
+  const known = new Set(["codex-fast-mode", "maestro", "execution-mode", "usuario", "context-mode"]);
   for (const [key, value] of statuses) if (!known.has(key) && oneLine(value)) segments.push({ text: `${key} ${value}`, color: "dim" });
   return layoutHud(segments, theme, width, "accent", false);
 }
