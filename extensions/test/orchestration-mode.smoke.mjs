@@ -52,6 +52,26 @@ assert.match(conductor, /\*\*Reclaim finished children \(standing user instructi
 assert.match(conductor, /reclaim the merged ones as the Reclaim bullet says/, "sweep reclaims merged children");
 assert.match(conductor, /stop every process, container, emulator, and VM\/sandbox you started/, "handoffs require workers to stop what they started");
 
+// Lost-wake correction: queued mail is not a wake; supervised work never ends on an unproven wake.
+for (const [name, doc] of [["SYSTEM.md", systemMd], ["config/SYSTEM.md", configSystemMd], ["conductor prompt", conductor]]) {
+  assert.doesNotMatch(doc, /which wakes you/, `${name} does not promise an unconditional wake`);
+  assert.match(doc, /`ok: true`\) proves only that mail was queued, never that this coordinator resumed/, `${name}: queued is not woken`);
+  assert.match(doc, /native wake is the normal route only when verified for this Run, session, and runtime/i, `${name}: native wake is conditional`);
+  assert.match(doc, /user reports a lost wake[^\n]*(?:confirm|confirms)[^\n]*queued reports[^\n]*live idle\/status capability[^\n]*unavailable[^\n]*capacity gap/, `${name}: lost-wake trigger notes the capacity gap`);
+  assert.match(doc, /check --run <run-id> --wait --timeout-ms <n> --json/, `${name}: native long-poll fallback`);
+  assert.match(doc, /unfiltered[^\n]*(?:status|handoff)[^\n]*without Task\/Dispatch/, `${name}: unfiltered waiter for untracked status/handoff`);
+  assert.match(doc, /rearm[^\n]*timeout[^\n]*while known workers remain pending/, `${name}: rolling rearm`);
+  assert.match(doc, /no sleeps, polling, repeated terminal reads, or new watchdog/i, `${name}: no polling or watchdog`);
+  assert.match(doc, /Status\/handoff reports are evidence only[^\n]*never[^\n]*lifecycle settlement[^\n]*release[^\n]*GitHub `Done`[^\n]*merge authorization[^\n]*runtime success/, `${name}: status is not settlement`);
+}
+const waiting = conductor.match(/## Waiting\n[\s\S]*?(?=\n## )/)?.[0] ?? "";
+assert.doesNotMatch(waiting, /Orca wakes you\. After dispatching, end the turn/, "Waiting no longer ends every turn on an assumed wake");
+assert.match(waiting, /end the turn only when the wake is verified/i, "end the turn is guarded by a verified wake");
+assert.match(waiting, /never end supervised work by telling the user to return/i, "supervised work is not abandoned");
+assert.match(waiting, /prompt called "handoff"[^\n]*supervision[^\n]*Task\/Dispatch/, "handoff wording does not make supervision a transfer");
+assert.match(waiting, /genuine standalone full transfer[^\n]*ends after proven delivery/, "true full transfer still needs no monitoring");
+assert.match(systemMd, /Proven delivery completes this full ownership handoff/, "full transfer rule preserved");
+
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
 const replaced = m.applyConductor(assembled, systemMd);
 assert.equal(replaced, conductor + tail);
