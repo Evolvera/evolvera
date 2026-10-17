@@ -6,6 +6,7 @@ tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-6-luna
 thinking: high
 max_turns: 120
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Builder — Normal-Risk Task Executor

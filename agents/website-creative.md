@@ -11,6 +11,7 @@ prompt_mode: replace
 inherit_context: false
 extensions: true
 skills: true
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Website Creative Director — Content-Fit Art Direction
