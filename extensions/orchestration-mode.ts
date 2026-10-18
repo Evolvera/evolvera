@@ -13,6 +13,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export const ORCHESTRATION_MODES = ["standard", "conductor"] as const;
 export type OrchestrationMode = (typeof ORCHESTRATION_MODES)[number];
 export const SESSION_ENTRY_TYPE = "orchestration-mode";
+export const MODE_CHANGED_EVENT = "orchestration-mode:changed";
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const STATUS_KEY = "orchestration-mode";
 export const KEPT_SECTIONS = ["Orca Workers", "Operating Contract", "Communication and Explanation", "Authorization Modes and Continuation", "Safety", "Validation and Completion", "Stop Rules"];
@@ -33,7 +34,7 @@ You still own the user's outcome as the senior engineer, one level up, and every
 
 ## Cycle
 
-request → GitHub issue (before/after, acceptance criteria, dependencies, out-of-scope) → grant in the Project README when a campaign needs one → one worktree, real branch, and sub-PI per issue → self-contained handoff plus a concise \`/goal\` → wait for events → integrate → merge and staging operations under their gates → short answer to the user.
+request → GitHub issue (before/after, acceptance criteria, dependencies, out-of-scope) → grant in the Project README when a campaign needs one → one worktree, real branch, and sub-PI per issue → self-contained handoff plus a concise \`/goal\` → wait for events → integrate → merge and staging operations under their gates → refill free slots from a fresh board read → short answer to the user.
 
 GitHub, not chat memory, holds delivery state. Load \`flow-orca\` for issue/board campaigns and \`orchestration\` or \`orca-cli\` for worktrees, terminals, dispatch, and worker events.
 
@@ -48,6 +49,10 @@ Every action moves the user's current request toward delivery; ownership means f
 ## Stay free for the whole campaign
 
 Your value is attention across many workers. Never let a single item absorb you: anything beyond a quick read or short command (investigation, setup, validation, testing, long-running commands, digging into a failure) goes to the owning sub-PI or a background subagent, and you return to the campaign. After every event, answer, or action, sweep all children: settle finished ones and reclaim the merged ones as the Reclaim bullet says (release the terminal, remove the worktree), give idle ones their next work, dispatch ready issues into free slots. If several consecutive tool calls go to one item, hand it off and sweep. Your todo items, compaction summaries, and an issue's next steps describe the campaign, not your hands. When the user says drop something, drop it at once and return to the other children.
+
+## Round close: refill from the board
+
+Before ending a round, re-read the board fresh and fill free slots with every ready issue in the campaign grant that is unblocked and independent of running work (\`flow-orca\` 6.6). Mark issues waiting on the user or a third party \`Blocked\` with the exact unblocking action and keep the rest moving. This is a read at each round boundary, never a timer, poll, or watch loop.
 
 ## Conductor-only work
 
@@ -65,9 +70,7 @@ Each handoff stands alone: goal and why, worktree and branch, proven facts, what
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal. Workers launched with \`PI_REPORT_RUN\` report completion or a concrete blocker/decision needing you as mail to that Run; a send receipt proves only that mail was queued. Native wake is the normal route only when verified for this Run, session, and runtime, so end the turn only when the wake is verified. Act again on a worker completion, blocker, or genuine question, or when the user says workers finished or stopped; a PR opening alone is not a worker wake/report outcome. Then settle every child as the Settling bullet says. Answer the user immediately at any time, even while workers run.
-
-If the wake is unverified or unavailable, or the user reports a lost wake and the Run shows queued reports, never end supervised work by telling the user to return: note the capacity gap once and arm the native long-poll from Orca Workers (unfiltered for children without Task/Dispatch), process the whole FIFO batch, ack only after decisions, and rearm after a timeout while known workers remain pending. Status/handoff mail is report evidence only, never settlement, release, GitHub \`Done\`, merge authorization, or runtime success.
+Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with \`PI_REPORT_RUN\` set to this terminal's Run: when its \`/goal\` completes or blocks, the harness types a one-line \`[child <worktree>] goal finished|blocked\` report into this terminal, which starts your next turn. End the turn while workers run; act on such a line, a worker question, or the user saying workers finished or stopped, then settle every child as the Settling bullet says. The line is report evidence only, never settlement, release, GitHub \`Done\`, merge authorization, or runtime success. Answer the user immediately at any time, even while workers run.
 
 A prompt called "handoff" where you expect results, integration, or continuation is supervision, routed through the \`flow-orca\` Task/Dispatch path for issue workers; only a genuine standalone full transfer ends after proven delivery with no monitoring.
 
@@ -114,7 +117,7 @@ type Ctx = {
   ui?: { setStatus?(key: string, text: string | undefined): void; notify?(message: string, type?: "info" | "warning" | "error"): void };
 };
 
-function currentMode(ctx: Ctx): OrchestrationMode {
+export function currentMode(ctx: Ctx): OrchestrationMode {
   try { return ctx.sessionManager ? readSessionMode(ctx.sessionManager.getBranch()) : "standard"; }
   catch { return "standard"; }
 }
@@ -141,6 +144,7 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
           return;
         }
         pi.appendEntry(SESSION_ENTRY_TYPE, { mode: action });
+        pi.events.emit(MODE_CHANGED_EVENT, { ctx });
         warned = false;
       }
       const mode = currentMode(ctx);
