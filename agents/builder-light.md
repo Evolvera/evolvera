@@ -6,6 +6,7 @@ tools: read, grep, find, ls, bash, write, edit
 model: openai-codex/gpt-6-luna
 thinking: medium
 max_turns: 80
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Builder Light — Routine Task Executor

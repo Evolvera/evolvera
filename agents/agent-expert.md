@@ -6,6 +6,7 @@ model: inherit
 thinking: high
 max_turns: 50
 inherit_context: false
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Agent Expert 🏗️
