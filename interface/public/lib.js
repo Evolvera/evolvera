@@ -42,6 +42,25 @@ export async function waitSessionGate(holder) {
   while (holder.gate) await holder.gate;
 }
 
+// Replayed history is display-only, except a response to a request this page still awaits.
+export function isAwaitedResponse(payload, pending) {
+  return payload?.type === "response" && typeof payload.id === "string" && pending.has(payload.id);
+}
+
+// Runs a project/session switch as one gated unit. The gate is claimed synchronously (at
+// click time) and chained after any switch already in flight, so a prompt submitted at any
+// moment waits for every pending switch. `task` must not call runGated itself (it would wait
+// on its own gate); it resolves once PI has applied the switch.
+export function runGated(holder, task) {
+  const prior = holder.gate;
+  const run = (async () => {
+    if (prior) await prior;
+    return task();
+  })();
+  setSessionGate(holder, run);
+  return run;
+}
+
 const SUBAGENT_STATUS_LABELS = { completed: "concluído", error: "falhou", aborted: "interrompido", steered: "redirecionado", stopped: "parado" };
 
 // Chat line for an extension message. pi-subagents' "subagent-notification" carries raw

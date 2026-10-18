@@ -47,6 +47,40 @@ describe("text utils", () => {
     assert.equal(holder.gate, null);
   });
 
+  test("isAwaitedResponse: only responses to requests still pending on this page", () => {
+    const pending = new Map([["ns1", {}]]);
+    assert.equal(lib.isAwaitedResponse({ type: "response", id: "ns1" }, pending), true);
+    assert.equal(lib.isAwaitedResponse({ type: "response", id: "other" }, pending), false);
+    assert.equal(lib.isAwaitedResponse({ type: "response" }, pending), false);
+    assert.equal(lib.isAwaitedResponse({ type: "agent_start", id: "ns1" }, pending), false);
+    assert.equal(lib.isAwaitedResponse(null, pending), false);
+  });
+
+  test("runGated claims the gate synchronously and chains after the switch in flight", async () => {
+    const holder = {};
+    const order = [];
+    let finishOpen;
+    const open = lib.runGated(holder, () => new Promise((resolve) => { finishOpen = () => { order.push("open"); resolve("opened"); }; }));
+    // A second switch ("Nova conversa" clicked while the project opens) claims the gate at once.
+    const fresh = lib.runGated(holder, async () => { order.push("new"); return "new"; });
+    const gateAfterClaim = holder.gate;
+    // A prompt submitted now must run only after both switches.
+    const prompt = lib.waitSessionGate(holder).then(() => order.push("prompt"));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(order, []);
+    assert.ok(gateAfterClaim);
+    finishOpen();
+    assert.equal(await open, "opened");
+    assert.equal(await fresh, "new");
+    await prompt;
+    assert.deepEqual(order, ["open", "new", "prompt"]);
+    assert.equal(holder.gate, null);
+    // A failing switch rejects its caller but still releases the gate for later work.
+    await assert.rejects(lib.runGated(holder, async () => { throw new Error("boom"); }), /boom/);
+    await lib.waitSessionGate(holder);
+    assert.equal(holder.gate, null);
+  });
+
   test("shouldShowToast", () => {
     const seen = new Map();
     assert.equal(lib.shouldShowToast(seen, "a", 1000), true);

@@ -7,7 +7,8 @@ import {
   eventNotice,
   subagentRecords,
   tabKeyTarget,
-  setSessionGate,
+  isAwaitedResponse,
+  runGated,
   waitSessionGate,
   stripAnsi,
   shouldShowToast,
@@ -593,9 +594,7 @@ async function refreshProjects() {
 // Opening a project starts PI for it (seconds on a cold start). The session gate makes a
 // prompt or "Nova conversa" issued meanwhile wait for it instead of being dropped.
 function openProject(projectId) {
-  const opening = loadProject(projectId);
-  setSessionGate(state, opening);
-  return opening;
+  return runGated(state, () => loadProject(projectId));
 }
 
 async function loadProject(projectId) {
@@ -624,21 +623,24 @@ async function loadProject(projectId) {
   connectProjectEvents(project.id);
 }
 
-async function openSession(projectId, sessionPath) {
-  if (state.currentProject?.id !== projectId) await openProject(projectId);
-  resetConversation();
-  state.session = { ...(state.session || {}), sessionFile: sessionPath };
-  updateHeader();
-  renderProjects();
-  renderThread();
-  const id = newId();
-  setSessionGate(state, awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS));
-  try {
-    await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
-  } catch (error) {
-    failPending(id, error);
-    throw error;
-  }
+function openSession(projectId, sessionPath) {
+  return runGated(state, async () => {
+    if (state.currentProject?.id !== projectId) await loadProject(projectId);
+    resetConversation();
+    state.session = { ...(state.session || {}), sessionFile: sessionPath };
+    updateHeader();
+    renderProjects();
+    renderThread();
+    const id = newId();
+    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
+    } catch (error) {
+      failPending(id, error);
+      throw error;
+    }
+    await applied;
+  });
 }
 
 async function refreshHistory() {
@@ -648,28 +650,30 @@ async function refreshHistory() {
   renderProjects();
 }
 
-async function newSession() {
-  await waitSessionGate(state);
-  if (!state.currentProject) return;
-  const restarting = state.processExited;
-  const id = newId();
-  setSessionGate(state, awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS));
-  try {
-    await sendRpc({ type: "new_session", id });
-  } catch (error) {
-    failPending(id, error);
-    throw error;
-  }
-  if (restarting) {
-    setExited(false);
-    connectProjectEvents(state.currentProject.id);
-  }
-  resetConversation();
-  state.session = { ...(state.session || {}), sessionFile: null };
-  renderThread();
-  renderPanel();
-  setTimeout(() => refreshState().catch(() => {}), 300);
-  refreshHistory().catch(() => {});
+function newSession() {
+  return runGated(state, async () => {
+    if (!state.currentProject) return;
+    const restarting = state.processExited;
+    const id = newId();
+    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+    try {
+      await sendRpc({ type: "new_session", id });
+    } catch (error) {
+      failPending(id, error);
+      throw error;
+    }
+    if (restarting) {
+      setExited(false);
+      connectProjectEvents(state.currentProject.id);
+    }
+    resetConversation();
+    state.session = { ...(state.session || {}), sessionFile: null };
+    renderThread();
+    renderPanel();
+    setTimeout(() => refreshState().catch(() => {}), 300);
+    refreshHistory().catch(() => {});
+    await applied;
+  });
 }
 
 // --------------------------------------------------------------------- SSE
@@ -687,6 +691,9 @@ function connectProjectEvents(projectId) {
   });
   on("rpc", (payload) => {
     if (!state.replaying) handleRpc(payload);
+    // A command sent right after opening the project (e.g. new_session) can be answered
+    // before this stream connects; its response then only arrives in the replay.
+    else if (isAwaitedResponse(payload, state.pending)) handleResponse(payload);
   });
   on("replay_done", () => {
     state.replaying = false;
@@ -2071,7 +2078,7 @@ els.customizeDialog.addEventListener("close", () => {
 
 function appMenuItems() {
   return [
-    { label: "Nova conversa", icon: "i-plus", onSelect: () => newSession() },
+    { label: "Nova conversa", icon: "i-plus", onSelect: () => newSession().catch(report) },
     { label: "Recarregar projetos", icon: "i-folder-open", onSelect: () => refreshProjects() },
     { label: "Console RPC", icon: "i-terminal", onSelect: () => setDrawer(els.drawer.hidden) },
     { separator: true },
@@ -2118,7 +2125,7 @@ els.projectMenuBtn.addEventListener("click", () => {
       label: project.name,
       sub: project.cwd,
       checked: project.id === state.currentProject?.id,
-      onSelect: () => openProject(project.id),
+      onSelect: () => openProject(project.id).catch(report),
     })),
   ]);
 });
