@@ -81,11 +81,12 @@ assert.equal(m.buildConductorPrompt(broken), undefined);
 assert.equal(m.applyConductor(broken + tail, broken), undefined);
 
 // Extension wiring with a fake PI.
-const handlers = new Map(); const commands = new Map(); const entries = []; const notices = []; const statuses = [];
+const handlers = new Map(); const commands = new Map(); const entries = []; const notices = []; const statuses = []; const emitted = [];
 m.default({
   on: (name, fn) => handlers.set(name, fn),
   registerCommand: (name, def) => commands.set(name, def),
   appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
+  events: { emit: (name, data) => emitted.push({ name, data }) },
 });
 const ctx = {
   sessionManager: { getBranch: () => entries },
@@ -96,6 +97,8 @@ const start = (customPrompt, systemPrompt) => handlers.get("before_agent_start")
 assert.equal(await start(systemMd, assembled), undefined, "standard by default");
 await commands.get("orchestration").handler("conductor", ctx);
 assert.equal(statuses.at(-1).text, "🎼 CONDUCTOR");
+assert.equal(emitted.at(-1).name, m.MODE_CHANGED_EVENT);
+assert.equal(emitted.at(-1).data.ctx, ctx, "notification carries current command context after session entry append");
 assert.deepEqual(await start(systemMd, assembled), { systemPrompt: conductor + tail });
 assert.equal(await start("# Builder agent\n", "# Builder agent\n"), undefined, "subagent prompts are never replaced");
 assert.equal(await start(broken, broken + tail), undefined, "fail-safe keeps standard");

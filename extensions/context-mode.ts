@@ -1,13 +1,11 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, lstatSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { currentMode, MODE_CHANGED_EVENT } from "./orchestration-mode";
 
-// Owns the runtime context window of Claude and GPT models. The window decides when PI compacts
-// and what the footer's ctx gauge measures; maxTokens and the provider's actual capacity stay unchanged.
-//   default: Anthropic native 1M windows are capped to 450K; every other model keeps its own value.
-//   high:    GPT >= 6 and Claude >= 5 on first-party providers get 800K.
-// The mode is global (`contextMode` in the agent settings.json) and applies to every session that
-// loads this extension, including in-process subagents.
+// Owns the runtime context window. Normal capacity policy is applied first; conductor sessions
+// use 70% of that effective window. maxTokens and provider capacity stay unchanged.
+// The contextMode preference remains global, while conductor status is read from this session's branch.
 
 export type ContextMode = "default" | "high";
 export const CONTEXT_MODES: readonly ContextMode[] = ["default", "high"];
@@ -17,6 +15,11 @@ export const HIGH_CONTEXT_WINDOW = 800_000;
 const SETTINGS_KEY = "contextMode";
 const STATUS_KEY = "context-mode";
 const HIGH_PROVIDERS = new Set(["anthropic", "openai", "openai-codex"]);
+const QWEN_PROVIDER = "alibaba-plan";
+const QWEN_MODEL = "qwen3.8-max-preview";
+const QWEN_CONTEXT_WINDOW = 200_000;
+const CONDUCTOR_RATIO = 0.7;
+
 // Stored on the model object itself so a /reload (new extension instance, same model objects)
 // still restores the real default instead of capturing an already-raised window.
 const DEFAULT_WINDOW = Symbol.for("evolvera.context-mode.default-window");
@@ -32,24 +35,28 @@ export function isHighContextModel(model: Pick<ModelContext, "provider" | "id">)
 }
 
 function defaultWindow(model: ModelContext): number {
-  if (model[DEFAULT_WINDOW] === undefined) {
-    const base = model.provider === "anthropic" && model.contextWindow === ANTHROPIC_NATIVE_CONTEXT_WINDOW
-      ? ANTHROPIC_APPLIED_CONTEXT_WINDOW
-      : model.contextWindow;
+  const qwen = model.provider === QWEN_PROVIDER && model.id === QWEN_MODEL;
+  if (qwen || model[DEFAULT_WINDOW] === undefined) {
+    const base = qwen ? QWEN_CONTEXT_WINDOW
+      : model.provider === "anthropic" && model.contextWindow === ANTHROPIC_NATIVE_CONTEXT_WINDOW
+        ? ANTHROPIC_APPLIED_CONTEXT_WINDOW
+        : model.contextWindow;
     try {
       Object.defineProperty(model, DEFAULT_WINDOW, { value: base, enumerable: false, configurable: true });
     } catch {
       return base;
     }
+    return base;
   }
   return model[DEFAULT_WINDOW] as number;
 }
 
-/** Set the model's window for `mode`; returns true when it changed. */
-export function applyContextMode(model: ModelContext | undefined, mode: ContextMode): boolean {
+/** Apply policy selection then optional session-local conductor reduction. */
+export function applyContextMode(model: ModelContext | undefined, mode: ContextMode, conductor = false): boolean {
   if (!model || !Number.isSafeInteger(model.contextWindow)) return false;
-  const base = defaultWindow(model); // record the default before the first raise
-  const target = mode === "high" && isHighContextModel(model) ? HIGH_CONTEXT_WINDOW : base;
+  const base = defaultWindow(model);
+  const normal = mode === "high" && isHighContextModel(model) ? HIGH_CONTEXT_WINDOW : base;
+  const target = conductor ? Math.floor(normal * CONDUCTOR_RATIO) : normal;
   if (model.contextWindow === target) return false;
   model.contextWindow = target;
   return true;
@@ -92,9 +99,12 @@ export function writeContextMode(settingsPath: string, mode: ContextMode): void 
 // Only the session's live model object matters: ctx.model and model_select's event.model are
 // agent.state.model, while modelRegistry.getAll() returns fresh copies whose mutation has no effect.
 function applyToSession(ctx: ExtensionContext, mode: ContextMode): void {
-  applyContextMode(ctx.model, mode);
+  const conductor = currentMode(ctx);
+  applyContextMode(ctx.model, mode, conductor === "conductor");
   const activeHigh = mode === "high" && ctx.model !== undefined && isHighContextModel(ctx.model);
-  ctx.ui?.setStatus?.(STATUS_KEY, activeHigh ? `${HIGH_CONTEXT_WINDOW / 1000}K` : undefined);
+  const effective = ctx.model?.contextWindow;
+  const showCapacity = conductor === "conductor" || activeHigh;
+  ctx.ui?.setStatus?.(STATUS_KEY, showCapacity && effective ? `${Math.round(effective / 1000)}K` : undefined);
 }
 
 export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(getAgentDir(), "settings.json")) {
@@ -103,6 +113,12 @@ export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(
   pi.on("session_start", async (_event, ctx) => {
     mode = readContextMode(settingsPath());
     applyToSession(ctx, mode);
+  });
+
+  pi.events.on(MODE_CHANGED_EVENT, (data: unknown) => {
+    if (!data || typeof data !== "object") return;
+    const ctx = (data as { ctx?: unknown }).ctx;
+    if (ctx && typeof ctx === "object") applyToSession(ctx as ExtensionContext, mode);
   });
 
   pi.on("model_select", async (_event, ctx) => {

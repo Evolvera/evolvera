@@ -19,6 +19,7 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 const tmpdirProprioPadrao = new Set([
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
+  "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
   "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",

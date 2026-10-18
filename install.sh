@@ -147,7 +147,7 @@ rm -f "$PI_DIR/extensions/goal-mode.ts"
 # delivery-closure became midrun-compaction; the continuation reviewer was retired.
 rm -f "$PI_DIR/extensions/delivery-closure.ts" "$PI_DIR/extensions/continuation-reviewer.ts" "$PI_DIR/continuation-reviewer.json"
 # anthropic-context-limit became context-mode (same default 450K cap plus /context-mode high).
-rm -f "$PI_DIR/extensions/anthropic-context-limit.ts"
+rm -f "$PI_DIR/extensions/anthropic-context-limit.ts" "$PI_DIR/extensions/qwen-context-limit.ts"
 
 # Remove retired agents so updates do not leave stale routes.
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md

@@ -13,6 +13,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export const ORCHESTRATION_MODES = ["standard", "conductor"] as const;
 export type OrchestrationMode = (typeof ORCHESTRATION_MODES)[number];
 export const SESSION_ENTRY_TYPE = "orchestration-mode";
+export const MODE_CHANGED_EVENT = "orchestration-mode:changed";
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const STATUS_KEY = "orchestration-mode";
 export const KEPT_SECTIONS = ["Orca Workers", "Operating Contract", "Communication and Explanation", "Authorization Modes and Continuation", "Safety", "Validation and Completion", "Stop Rules"];
@@ -114,7 +115,7 @@ type Ctx = {
   ui?: { setStatus?(key: string, text: string | undefined): void; notify?(message: string, type?: "info" | "warning" | "error"): void };
 };
 
-function currentMode(ctx: Ctx): OrchestrationMode {
+export function currentMode(ctx: Ctx): OrchestrationMode {
   try { return ctx.sessionManager ? readSessionMode(ctx.sessionManager.getBranch()) : "standard"; }
   catch { return "standard"; }
 }
@@ -141,6 +142,7 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
           return;
         }
         pi.appendEntry(SESSION_ENTRY_TYPE, { mode: action });
+        pi.events.emit(MODE_CHANGED_EVENT, { ctx });
         warned = false;
       }
       const mode = currentMode(ctx);
