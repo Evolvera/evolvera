@@ -590,7 +590,15 @@ async function refreshProjects() {
   renderPanel();
 }
 
-async function openProject(projectId) {
+// Opening a project starts PI for it (seconds on a cold start). The session gate makes a
+// prompt or "Nova conversa" issued meanwhile wait for it instead of being dropped.
+function openProject(projectId) {
+  const opening = loadProject(projectId);
+  setSessionGate(state, opening);
+  return opening;
+}
+
+async function loadProject(projectId) {
   const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}" });
   setExited(false);
   state.currentProject = project;
@@ -641,6 +649,8 @@ async function refreshHistory() {
 }
 
 async function newSession() {
+  await waitSessionGate(state);
+  if (!state.currentProject) return;
   const restarting = state.processExited;
   const id = newId();
   setSessionGate(state, awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS));
@@ -1601,11 +1611,12 @@ function openDiff(toolIds) {
 
 function updateComposer() {
   const hasContent = Boolean(els.prompt.value.trim() || state.attachments.length);
-  els.send.disabled = state.processExited || state.sending || !hasContent || !state.currentProject;
+  // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
+  els.send.disabled = state.processExited || state.sending || !hasContent || (!state.currentProject && !state.gate);
   els.stop.hidden = !state.isStreaming;
   els.send.classList.toggle("is-queue", state.isStreaming);
   els.send.setAttribute("aria-label", state.isStreaming ? "Direcionar (steer)" : "Enviar");
-  els.hint.textContent = state.isStreaming ? "Enter direciona · Ctrl+Enter enfileira" : "";
+  els.hint.textContent = state.sending && state.gate ? "Aguardando o PI iniciar… a mensagem sai em seguida" : state.isStreaming ? "Enter direciona · Ctrl+Enter enfileira" : "";
   els.prompt.disabled = state.processExited;
 }
 
@@ -1651,7 +1662,7 @@ async function addImages(files) {
 }
 
 async function submit(mode) {
-  if (state.processExited || state.sending || !state.currentProject) return;
+  if (state.processExited || state.sending) return;
   if (state.gate) {
     // Hold the text in the composer until PI finishes switching sessions, then send it.
     state.sending = true;
@@ -1662,8 +1673,9 @@ async function submit(mode) {
       state.sending = false;
       updateComposer();
     }
-    if (state.processExited || !state.currentProject) return;
+    if (state.processExited) return;
   }
+  if (!state.currentProject) return;
   const message = els.prompt.value.trim();
   if (!message && !state.attachments.length) return;
   const type = mode === "steer" || mode === "follow_up" ? mode : "prompt";
