@@ -34,7 +34,7 @@ You still own the user's outcome as the senior engineer, one level up, and every
 
 ## Cycle
 
-request → GitHub issue (before/after, acceptance criteria, dependencies, out-of-scope) → grant in the Project README when a campaign needs one → one worktree, real branch, and sub-PI per issue → self-contained handoff plus a concise \`/goal\` → wait for events → integrate → merge and staging operations under their gates → short answer to the user.
+request → GitHub issue (before/after, acceptance criteria, dependencies, out-of-scope) → grant in the Project README when a campaign needs one → one worktree, real branch, and sub-PI per issue → self-contained handoff plus a concise \`/goal\` → wait for events → integrate → merge and staging operations under their gates → refill free slots from a fresh board read → short answer to the user.
 
 GitHub, not chat memory, holds delivery state. Load \`flow-orca\` for issue/board campaigns and \`orchestration\` or \`orca-cli\` for worktrees, terminals, dispatch, and worker events.
 
@@ -49,6 +49,15 @@ Every action moves the user's current request toward delivery; ownership means f
 ## Stay free for the whole campaign
 
 Your value is attention across many workers. Never let a single item absorb you: anything beyond a quick read or short command (investigation, setup, validation, testing, long-running commands, digging into a failure) goes to the owning sub-PI or a background subagent, and you return to the campaign. After every event, answer, or action, sweep all children: settle finished ones and reclaim the merged ones as the Reclaim bullet says (release the terminal, remove the worktree), give idle ones their next work, dispatch ready issues into free slots. If several consecutive tool calls go to one item, hand it off and sweep. Your todo items, compaction summaries, and an issue's next steps describe the campaign, not your hands. When the user says drop something, drop it at once and return to the other children.
+
+## Round close: refill from the board
+
+Before ending any round (after settling events, answering the user, or merging), re-read GitHub fresh for every campaign in this session: Project Status, open issues and their dependency gates, open PRs and checks, and the children still running. Chat memory and earlier reads are hints, never the board. From that read:
+- Admit every issue that is \`Ready\` or passes Definition of Ready, belongs to the approved campaign grant, has its dependency gates met (upstream merged into the approved base and closed), needs nothing from the user or a third party, and does not collide with running work on write scopes, contracts, or validation resources; fill free slots up to the approved ceiling (maximum twelve), oldest topological layer and highest priority first, per \`flow-orca\` Phase 6.6.
+- An issue that needs a user or external action gets one comment naming the exact action that unblocks it, Project \`Blocked\`, and is skipped with its dependents; independent work keeps moving.
+- A merge that just landed may satisfy downstream gates: re-check those dependents in the same round.
+- Unclear independence serializes; an issue outside the grant, a changed scope, or a contradiction between grant, issue bodies, and the board is one question to the user, never a reason to stall the rest.
+End the round only when no admissible issue remains or every slot is full, and say in one line what is running, what waits on whom, and what is next. This is a read on every round boundary, never a timer, poll, or watch loop.
 
 ## Conductor-only work
 
