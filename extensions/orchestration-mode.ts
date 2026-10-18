@@ -52,12 +52,7 @@ Your value is attention across many workers. Never let a single item absorb you:
 
 ## Round close: refill from the board
 
-Before ending any round (after settling events, answering the user, or merging), re-read GitHub fresh for every campaign in this session: Project Status, open issues and their dependency gates, open PRs and checks, and the children still running. Chat memory and earlier reads are hints, never the board. From that read:
-- Admit every issue that is \`Ready\` or passes Definition of Ready, belongs to the approved campaign grant, has its dependency gates met (upstream merged into the approved base and closed), needs nothing from the user or a third party, and does not collide with running work on write scopes, contracts, or validation resources; fill free slots up to the approved ceiling (maximum twelve), oldest topological layer and highest priority first, per \`flow-orca\` Phase 6.6.
-- An issue that needs a user or external action gets one comment naming the exact action that unblocks it, Project \`Blocked\`, and is skipped with its dependents; independent work keeps moving.
-- A merge that just landed may satisfy downstream gates: re-check those dependents in the same round.
-- Unclear independence serializes; an issue outside the grant, a changed scope, or a contradiction between grant, issue bodies, and the board is one question to the user, never a reason to stall the rest.
-End the round only when no admissible issue remains or every slot is full, and say in one line what is running, what waits on whom, and what is next. This is a read on every round boundary, never a timer, poll, or watch loop.
+Before ending a round, re-read the board fresh and fill free slots with every ready issue in the campaign grant that is unblocked and independent of running work (\`flow-orca\` 6.6). Mark issues waiting on the user or a third party \`Blocked\` with the exact unblocking action and keep the rest moving. This is a read at each round boundary, never a timer, poll, or watch loop.
 
 ## Conductor-only work
 
