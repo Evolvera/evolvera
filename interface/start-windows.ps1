@@ -15,8 +15,12 @@ function Test-Up {
 # Host paths for the bind mounts and the session path map, with forward slashes.
 $env:PI_HOST_HOME = $env:USERPROFILE -replace '\\', '/'
 # Same commit identity as the host git (optional).
-$env:GIT_USER_NAME = (git config --global user.name 2>$null)
-$env:GIT_USER_EMAIL = (git config --global user.email 2>$null)
+# Run from this folder: a broken repo in the caller's cwd must not stop the launcher.
+function Get-GitGlobal([string]$key) {
+  try { (& git -C $here config --global $key 2>$null) } catch { "" }
+}
+$env:GIT_USER_NAME = Get-GitGlobal "user.name"
+$env:GIT_USER_EMAIL = Get-GitGlobal "user.email"
 
 docker info --format '{{.ServerVersion}}' *> $null
 if ($LASTEXITCODE -ne 0) {
