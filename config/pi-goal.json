@@ -5,5 +5,8 @@
   },
   "experimental": {
     "goals": false
+  },
+  "rpc": {
+    "enabled": true
   }
 }
