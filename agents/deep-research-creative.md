@@ -9,6 +9,7 @@ lifecycle: lazy
 prompt_mode: replace
 extensions: true
 isolated: false
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 ## Role and outcome

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Orca fullscreen-lag mitigation for @earendil-works/pi-tui 1.2.0 (bundled in pi-coding-agent 1.2.0).
+ * Orca fullscreen-lag mitigation for @earendil-works/pi-tui 1.2.0 and 1.3.0.
  *
  * Why: the fullscreen renderer writes every changed row as `ESC[<row>;1H ESC[2K <text>`.
  * Orca's main-process terminal-tail parser drops CUP (`H`) but keeps `ESC[2K`, so its virtual
@@ -13,7 +13,7 @@
  * screen and cursor identical (CUP overrides the column; no cell is printed in between), while
  * Orca's parser resets its column to 0, so the per-frame cost drops to ~0.2 ms.
  *
- * Fail-closed: only the exact pristine 1.2.0 file is patched; an already-patched file is a no-op;
+ * Fail-closed: only the exact pristine source file published in 1.2.0/1.3.0 is patched; an already-patched file is a no-op;
  * any other content is refused without writing.
  */
 import { createHash } from 'node:crypto';
@@ -26,6 +26,7 @@ export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 export const PI_PACKAGE_VERSION = '1.2.0';
 export const TUI_PACKAGE_NAME = '@earendil-works/pi-tui';
 export const TUI_PACKAGE_VERSION = '1.2.0';
+export const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.2.0', '1.3.0']);
 export const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js';
 export const UNPATCHED_SHA256 = 'aa0b953c0158357d20a1d6f868cd4d7b667fd6646848a788ffded9808c9ef720';
 export const PATCHED_SHA256 = '4266c1e4239c8b39d17b9b62e3421b349b81c928244ad32f70786db30ec60ce0';
@@ -69,10 +70,10 @@ function defaultPackageRoot() {
 /** Returns { status: 'patched' | 'already-patched' | 'skipped', reason?, target? }. Throws on unknown content. */
 export async function applyPatch({ packageRoot = defaultPackageRoot(), pins = { unpatched: UNPATCHED_SHA256, patched: PATCHED_SHA256 } } = {}) {
   const piVersion = await readPackageVersion(packageRoot, PI_PACKAGE_NAME);
-  if (piVersion !== PI_PACKAGE_VERSION) return { status: 'skipped', reason: `${PI_PACKAGE_NAME}@${piVersion} is not ${PI_PACKAGE_VERSION}` };
+  if (!SUPPORTED_PACKAGE_VERSIONS.includes(piVersion)) return { status: 'skipped', reason: `${PI_PACKAGE_NAME}@${piVersion} is unsupported` };
   const tuiRoot = path.join(packageRoot, 'node_modules', ...TUI_PACKAGE_NAME.split('/'));
   const tuiVersion = await readPackageVersion(tuiRoot, TUI_PACKAGE_NAME);
-  if (tuiVersion !== TUI_PACKAGE_VERSION) return { status: 'skipped', reason: `${TUI_PACKAGE_NAME}@${tuiVersion} is not ${TUI_PACKAGE_VERSION}` };
+  if (!SUPPORTED_PACKAGE_VERSIONS.includes(tuiVersion) || tuiVersion !== piVersion) return { status: 'skipped', reason: `${TUI_PACKAGE_NAME}@${tuiVersion} is unsupported for ${PI_PACKAGE_NAME}@${piVersion}` };
 
   const target = path.join(packageRoot, ...TARGET_RELATIVE_PATH.split('/'));
   const stat = await lstat(target);
