@@ -18,7 +18,9 @@ function setup(env, runner = async () => ({ stdout: '{"ok":true}' }), entries = 
   else process.env.PI_REPORT_RUN = env;
   const handlers = new Map();
   const notices = [];
-  createWorkerReportExtension(runner)({
+  const coordinator = JSON.stringify({ ok: true, result: { run: { coordinator_handle: "term_conductor" } } });
+  const withRun = async (file, args, options) => file === "orca" && args[1] === "run-show" ? { stdout: coordinator } : runner(file, args, options);
+  createWorkerReportExtension(withRun)({
     on: (name, handler) => handlers.set(name, handler),
     appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
   });
@@ -53,10 +55,9 @@ await active.finishGoal(complete, "complete");
 await active.handlers.get("tool_execution_end")(complete, active.ctx);
 assert.equal(calls.filter(({ file }) => file === "orca").length, 1, "duplicate completion does not resend");
 assert.deepEqual(calls.find(({ file }) => file === "orca").args, [
-  "orchestration", "send", "--to", "run:run_3419a9bd44e8",
-  "--subject", "finished: worker-project",
-  "--body", "goal_id: goal-1\noutcome: finished\ncwd: /tmp/worker-project\nbranch: feature/worker\nSummary: Implemented and tested.",
-  "--type", "status", "--json",
+  "terminal", "send", "--terminal", "term_conductor",
+  "--text", "[child worker-project] goal finished | goal_id=goal-1 | branch=feature/worker | Summary: Implemented and tested.",
+  "--enter", "--json",
 ]);
 assert.equal(calls.every(({ options }) => options.timeout === 10_000), true);
 
@@ -68,9 +69,8 @@ const blocked = setup("run_3419a9bd44e8", async (file, args) => {
 blocked.handlers.get("tool_call")({ toolCallId: "b1", toolName: "goal_blocked", input: { goal_id: "goal-2", reason: "Needs access", evidence: "Access denied three times" } });
 await blocked.finishGoal({ toolCallId: "b1", toolName: "goal_blocked", isError: false }, "blocked");
 const blockedMessage = blockedCalls.find(({ file }) => file === "orca").args;
-assert.equal(blockedMessage[5], "blocked: worker-project");
-assert.match(blockedMessage[7], /goal_id: goal-2\noutcome: blocked/);
-assert.match(blockedMessage[7], /Reason: Needs access\nEvidence: Access denied three times/);
+assert.match(blockedMessage[5], /^\[child worker-project\] goal blocked \| goal_id=goal-2/);
+assert.match(blockedMessage[5], /Reason: Needs access Evidence: Access denied three times/);
 
 // pi-goal returns rejections (stale goal_id, empty summary…) as normal results: never report them.
 let rejectedSends = 0;
