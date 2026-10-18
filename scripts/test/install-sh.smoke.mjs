@@ -257,8 +257,10 @@ assert.ok(powershellAuthPatch > powershellCorePatch && powershellCorePatch > pow
 assert.match(powershellText.slice(powershellAuthPatch), /if \(\$LASTEXITCODE -ne 0\)/);
 const antigravityPackage = 'npm:pi-antigravity@0.10.0';
 const settingsPackages = JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).packages;
-assert.equal(settingsPackages.filter((name) => name === antigravityPackage).length, 1,
-  'config/settings.json must include pi-antigravity exactly once');
+const antigravityEntries = settingsPackages.filter((entry) => (typeof entry === 'string' ? entry : entry?.source) === antigravityPackage);
+assert.equal(antigravityEntries.length, 1, 'config/settings.json must include pi-antigravity exactly once');
+assert.deepEqual(antigravityEntries[0].extensions, ['-src/features/google-search.ts'],
+  'google_search stays unregistered: research uses jina_read/MCP, not Antigravity credentials');
 assert.ok(shellText.includes(`install_pi_package "${antigravityPackage}" "pi-antigravity"`),
   'install.sh must install pinned pi-antigravity');
 assert.ok(powershellText.includes(`& pi install ${antigravityPackage} 2>$null`),
