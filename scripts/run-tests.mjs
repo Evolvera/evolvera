@@ -34,6 +34,8 @@ const tmpdirProprioPadrao = new Set([
   "bash-timeout.smoke.mjs",
   // Faux provider session in its owned mkdtemp root; Git Bash probe only echoes an env var.
   "msys-slash-restore.smoke.mjs",
+  // Faux provider session + installed pi-goal (read-only) inside its owned mkdtemp agentDir.
+  "swarm-mode.smoke.mjs",
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
