@@ -33,6 +33,30 @@ function branch(ctx: SessionContext): SessionEntry[] | undefined {
   } catch { return undefined; }
 }
 
+function goalStates(ctx: SessionContext): SessionEntry[] | undefined {
+  return branch(ctx)?.filter((entry) => entry.type === "custom" && entry.customType === GOAL_STATE_ENTRY_TYPE);
+}
+
+/**
+ * Only canonical state persisted during this tool call proves acceptance. pi-goal
+ * persists the terminal Goal and then clears it (`goal: null`), so a cleared latest
+ * entry is accepted only when it directly follows this call's matching terminal entry.
+ * Older terminal entries, malformed data, or another Goal never authorize a report.
+ */
+function canonicalGoalStatus(ctx: SessionContext, goalId: unknown, statesBeforeCall: number): string | undefined {
+  if (typeof goalId !== "string" || !goalId) return undefined;
+  const fresh = goalStates(ctx)?.slice(statesBeforeCall);
+  if (!fresh?.length) return undefined;
+  const goalOf = (entry: SessionEntry | undefined) => entry && entry.data && typeof entry.data === "object" && "goal" in entry.data
+    ? (entry.data as { goal?: unknown }).goal
+    : undefined;
+  let candidate = goalOf(fresh.at(-1));
+  if (candidate === null && fresh.length >= 2) candidate = goalOf(fresh.at(-2));
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const state = candidate as { id?: unknown; status?: unknown };
+  return state.id === goalId && typeof state.status === "string" ? state.status : undefined;
+}
+
 function activeCanonicalGoalId(ctx: SessionContext): string | undefined {
   const entries = branch(ctx);
   if (!entries) return undefined;
@@ -40,8 +64,8 @@ function activeCanonicalGoalId(ctx: SessionContext): string | undefined {
   if (!latest || !latest.data || typeof latest.data !== "object") return undefined;
   const goal = (latest.data as { goal?: unknown }).goal;
   if (!goal || typeof goal !== "object") return undefined;
-  const id = (goal as { id?: unknown }).id;
-  return typeof id === "string" && id ? id : undefined;
+  const state = goal as { id?: unknown; status?: unknown };
+  return typeof state.id === "string" && state.id && state.status === "active" ? state.id : undefined;
 }
 
 function hasNativeDoneReceipt(ctx: SessionContext, goalId: unknown): boolean {
@@ -83,10 +107,46 @@ export function createWorkerReportExtension(run: Runner = execFile) {
     const runId = process.env.PI_REPORT_RUN;
     if (!runId || !RUN_ID_PATTERN.test(runId)) return;
 
-    const pending = new Map<string, { toolName: string; args: GoalArgs }>();
+    const pending = new Map<string, { toolName: string; args: GoalArgs; statesBeforeCall: number }>();
     const pendingBash = new Map<string, string | undefined>();
+    const retryAtAgentEnd = new Map<string, { goalId: string; outcome: "finished" | "blocked"; body: string; cwd: string }>();
     const reported = new Set<string>();
-    let warned = false;
+    const warned = new Set<string>();
+
+    const send = async (report: { goalId: string; outcome: "finished" | "blocked"; body: string; cwd: string }) => {
+      try {
+        let branch = "";
+        try {
+          branch = (await run("git", ["-C", report.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { cwd: report.cwd, timeout: 10_000, encoding: "utf8" })).stdout.trim();
+        } catch {
+          // Branch information is optional; report even outside a Git worktree.
+        }
+        const body = [`goal_id: ${report.goalId}`, `outcome: ${report.outcome}`, `cwd: ${report.cwd}`, ...(branch ? [`branch: ${branch}`] : []), report.body].join("\n").slice(0, 1500);
+        const result = await run("orca", [
+          "orchestration", "send", "--to", `run:${runId}`,
+          "--subject", `${report.outcome}: ${path.basename(report.cwd)}`,
+          "--body", body,
+          "--type", "status", "--json",
+        ], { timeout: 10_000, encoding: "utf8" });
+        const receipt: unknown = JSON.parse(result.stdout);
+        return Boolean(receipt && typeof receipt === "object" && !Array.isArray(receipt) && (receipt as { ok?: unknown }).ok === true);
+      } catch {
+        return false;
+      }
+    };
+
+    const warn = (ctx: { ui?: { notify?: (message: string, type: string) => void } }, key: string, goalId: string) => {
+      if (warned.has(key)) return;
+      warned.add(key);
+      try { ctx.ui?.notify?.(`Worker report for goal ${goalId} was not delivered after one retry; the accepted Goal remains unchanged.`, "warning"); } catch { /* Never affect goal completion. */ }
+    };
+
+    const makeReport = (call: { toolName: string; args: GoalArgs; statesBeforeCall: number }, cwd: string, outcome: "finished" | "blocked") => {
+      const description = outcome === "finished"
+        ? `Summary: ${text(call.args.summary)}`
+        : `Reason: ${text(call.args.reason)}\nEvidence: ${text(call.args.evidence)}`;
+      return { goalId: call.args.goal_id as string, outcome, cwd, body: description };
+    };
 
     pi.on("tool_call", (event, ctx) => {
       if (event.toolName === "bash") {
@@ -96,7 +156,7 @@ export function createWorkerReportExtension(run: Runner = execFile) {
         return;
       }
       if (event.toolName !== "goal_complete" && event.toolName !== "goal_blocked") return;
-      pending.set(event.toolCallId, { toolName: event.toolName, args: event.input as GoalArgs });
+      pending.set(event.toolCallId, { toolName: event.toolName, args: event.input as GoalArgs, statesBeforeCall: goalStates(ctx)?.length ?? 0 });
     });
 
     pi.on("tool_execution_end", async (event, ctx) => {
@@ -117,33 +177,24 @@ export function createWorkerReportExtension(run: Runner = execFile) {
       if (/^\s*(goal completion rejected|goal_blocked rejected)/i.test(resultText)) return;
 
       const outcome = call.toolName === "goal_complete" ? "finished" : "blocked";
+      const terminalStatus = outcome === "finished" ? "complete" : "blocked";
+      if (canonicalGoalStatus(ctx, call.args.goal_id, call.statesBeforeCall) !== terminalStatus) return;
       if (hasNativeDoneReceipt(ctx, call.args.goal_id)) return;
       const key = `${call.args.goal_id}\0${outcome}`;
-      if (reported.has(key)) return;
-      reported.add(key);
+      if (reported.has(key) || retryAtAgentEnd.has(key)) return;
+      const report = makeReport(call, ctx.cwd, outcome);
+      if (await send(report)) {
+        reported.add(key);
+      } else {
+        retryAtAgentEnd.set(key, report);
+      }
+    });
 
-      try {
-        let branch = "";
-        try {
-          branch = (await run("git", ["-C", ctx.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { cwd: ctx.cwd, timeout: 10_000, encoding: "utf8" })).stdout.trim();
-        } catch {
-          // Branch information is optional; report even outside a Git worktree.
-        }
-        const description = outcome === "finished"
-          ? `Summary: ${text(call.args.summary)}`
-          : `Reason: ${text(call.args.reason)}\nEvidence: ${text(call.args.evidence)}`;
-        const body = [`cwd: ${ctx.cwd}`, ...(branch ? [`branch: ${branch}`] : []), description].join("\n").slice(0, 1500);
-        await run("orca", [
-          "orchestration", "send", "--to", `run:${runId}`,
-          "--subject", `${outcome}: ${path.basename(ctx.cwd)}`,
-          "--body", body,
-          "--type", "status", "--json",
-        ], { timeout: 10_000, encoding: "utf8" });
-      } catch (error) {
-        if (!warned) {
-          warned = true;
-          try { ctx.ui.notify(`Worker report could not be sent: ${error instanceof Error ? error.message : String(error)}`, "warning"); } catch { /* Never affect goal completion. */ }
-        }
+    pi.on("agent_end", async (_event, ctx) => {
+      for (const [key, report] of retryAtAgentEnd) {
+        retryAtAgentEnd.delete(key);
+        if (await send(report)) reported.add(key);
+        else warn(ctx, key, report.goalId);
       }
     });
   };
