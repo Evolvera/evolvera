@@ -1,24 +1,42 @@
-# PI Studio launcher for Windows: starts the local server once (hidden) and opens it
+# PI Studio launcher for Windows: runs the app in Docker (docker compose) and opens it
 # as a standalone app window (Edge/Chrome --app). Safe to run repeatedly.
-param([int]$Port = 4123)
+#   -Rebuild  rebuild the image (after pulling harness/interface changes)
+param([int]$Port = 4123, [switch]$Rebuild)
 
 $ErrorActionPreference = "Stop"
 $url = "http://127.0.0.1:$Port"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$compose = Join-Path $here "docker-compose.yml"
 
-function Test-Listening {
-  [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+function Test-Up {
+  try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 $url).StatusCode -eq 200 } catch { $false }
 }
 
-if (-not (Test-Listening)) {
-  $node = (Get-Command node -ErrorAction Stop).Source
-  $log = Join-Path $env:TEMP "pi-studio.log"
-  $env:PI_WEB_PORT = "$Port"
-  Start-Process -FilePath $node -ArgumentList "server.mjs" -WorkingDirectory $here `
-    -WindowStyle Hidden -RedirectStandardOutput $log -RedirectStandardError "$log.err"
-  for ($i = 0; $i -lt 50 -and -not (Test-Listening); $i++) { Start-Sleep -Milliseconds 200 }
-  if (-not (Test-Listening)) { throw "PI Studio não subiu; veja $log.err" }
+# Host paths for the bind mounts and the session path map, with forward slashes.
+$env:PI_HOST_HOME = $env:USERPROFILE -replace '\\', '/'
+# Same commit identity as the host git (optional).
+$env:GIT_USER_NAME = (git config --global user.name 2>$null)
+$env:GIT_USER_EMAIL = (git config --global user.email 2>$null)
+
+docker info --format '{{.ServerVersion}}' *> $null
+if ($LASTEXITCODE -ne 0) {
+  $desktop = "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
+  if (Test-Path $desktop) { Start-Process $desktop }
+  for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Seconds 2
+    docker info --format '{{.ServerVersion}}' *> $null
+    if ($LASTEXITCODE -eq 0) { break }
+  }
+  if ($LASTEXITCODE -ne 0) { throw "Docker não está rodando. Abra o Docker Desktop e tente de novo." }
 }
+
+$composeArgs = @("compose", "-f", $compose, "up", "-d")
+if ($Rebuild) { $composeArgs += "--build" }
+docker @composeArgs
+if ($LASTEXITCODE -ne 0) { throw "docker compose falhou." }
+
+for ($i = 0; $i -lt 60 -and -not (Test-Up); $i++) { Start-Sleep -Milliseconds 500 }
+if (-not (Test-Up)) { throw "PI Studio não respondeu em $url; veja: docker logs pi-studio" }
 
 $browsers = @(
   "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",

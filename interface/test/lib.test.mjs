@@ -3,9 +3,48 @@ import { describe, test } from "node:test";
 import * as lib from "../public/lib.js";
 
 describe("text utils", () => {
+  test("reconcileEntries keeps prompts submitted after a stale entries snapshot", () => {
+    const pending = { role: "user", content: [{ type: "text", text: "run this" }], _optimistic: true };
+    const stale = [];
+    assert.deepEqual(lib.reconcileEntries(stale, [pending]), [pending]);
+    assert.deepEqual(lib.reconcileEntries(stale, [null, { role: "assistant" }]), stale);
+    const committed = [{ role: "user", content: "run this" }];
+    assert.deepEqual(lib.reconcileEntries(committed, [pending]), committed);
+  });
   test("escapeHtml", () => {
     assert.equal(lib.escapeHtml(`<a href="x">'&'</a>`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;");
     assert.equal(lib.escapeHtml(null), "");
+  });
+
+  test("session gate: prompts wait for the in-flight switch, never reject, clear themselves", async () => {
+    const holder = {};
+    await lib.waitSessionGate(holder);
+    let finish;
+    const gate = lib.setSessionGate(holder, new Promise((resolve) => { finish = resolve; }));
+    assert.equal(holder.gate, gate);
+    let waited = false;
+    const waiter = lib.waitSessionGate(holder).then(() => { waited = true; });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(waited, false);
+    finish({ success: true });
+    await waiter;
+    assert.equal(waited, true);
+    assert.equal(holder.gate, null);
+    // A rejected switch still opens the gate.
+    await lib.setSessionGate(holder, Promise.reject(new Error("x")));
+    assert.equal(holder.gate, null);
+    // A newer switch replaces an older one; the older settling does not clear it.
+    let finishOld;
+    let finishNew;
+    lib.setSessionGate(holder, new Promise((resolve) => { finishOld = resolve; }));
+    const newer = lib.setSessionGate(holder, new Promise((resolve) => { finishNew = resolve; }));
+    finishOld();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(holder.gate, newer);
+    const both = lib.waitSessionGate(holder);
+    finishNew();
+    await both;
+    assert.equal(holder.gate, null);
   });
 
   test("shouldShowToast", () => {

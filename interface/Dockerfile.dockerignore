@@ -1,0 +1,7 @@
+.git
+**/node_modules
+_contract
+.pi
+research
+interface/test
+**/*.bak*

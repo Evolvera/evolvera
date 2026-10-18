@@ -1,4 +1,6 @@
 import {
+  setSessionGate,
+  waitSessionGate,
   stripAnsi,
   shouldShowToast,
   applyAssistantDelta,
@@ -20,6 +22,7 @@ import {
   normalizeModels,
   plural,
   relativeTime,
+  reconcileEntries,
   renderMarkdown,
   runningTool,
   samePath,
@@ -88,7 +91,6 @@ const els = {
   rawForm: $("#rawForm"),
   rawInput: $("#rawInput"),
   envPath: $("#envPath"),
-  envOthers: $("#envOthers"),
   contextBody: $("#contextBody"),
   outputsList: $("#outputsList"),
   outputsCard: $("#outputsCard"),
@@ -204,6 +206,28 @@ async function sendRpc(command) {
   const payload = { id: newId(), ...command };
   await api(`/api/projects/${encodeURIComponent(state.currentProject.id)}/command`, { method: "POST", body: JSON.stringify(payload) });
   return payload.id;
+}
+
+// new_session/switch_session may wait on extension hooks during PI's cold start.
+const SESSION_SWITCH_TIMEOUT_MS = 60000;
+
+// Resolves with the RPC `response` event for an id the caller sends itself.
+function awaitResponse(id, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      state.pending.delete(id);
+      reject(new Error("Sem resposta do PI para a troca de sessão"));
+    }, timeoutMs);
+    state.pending.set(id, { resolve, reject, timer });
+  });
+}
+
+function failPending(id, error) {
+  const pending = state.pending.get(id);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  state.pending.delete(id);
+  pending.reject(error);
 }
 
 // Resolves with the RPC `response` event carrying our id (delivered over SSE).
@@ -380,6 +404,7 @@ function renderProjects() {
     wrap.innerHTML = `
       <div class="project-row-wrap">
         <button type="button" class="project-row" data-action="open-project" data-project="${esc(project.id)}" title="${esc(project.cwd)}"${active ? ' aria-current="true"' : ""}>
+          ${svg("i-code", "project-ico")}
           <span class="project-name">${esc(project.name)}</span>
           <span class="run-dot" aria-hidden="true"></span>
         </button>
@@ -570,7 +595,14 @@ async function openSession(projectId, sessionPath, { push = true } = {}) {
   updateHeader();
   renderProjects();
   renderThread();
-  await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id: newId() }) });
+  const id = newId();
+  setSessionGate(state, awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS));
+  try {
+    await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
+  } catch (error) {
+    failPending(id, error);
+    throw error;
+  }
 }
 
 async function refreshHistory() {
@@ -582,7 +614,14 @@ async function refreshHistory() {
 
 async function newSession() {
   const restarting = state.processExited;
-  await sendRpc({ type: "new_session" });
+  const id = newId();
+  setSessionGate(state, awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS));
+  try {
+    await sendRpc({ type: "new_session", id });
+  } catch (error) {
+    failPending(id, error);
+    throw error;
+  }
   if (restarting) {
     setExited(false);
     connectProjectEvents(state.currentProject.id);
@@ -686,7 +725,7 @@ function handleResponse(event) {
       break;
     case "get_entries":
       if (!Array.isArray(event.data?.entries)) break;
-      state.messages = entriesToMessages(event.data.entries, event.data.leafId);
+      state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
       for (const [id, tool] of state.runtime) if (tool.status !== "running") state.runtime.delete(id);
       scheduleRender();
@@ -1064,10 +1103,6 @@ function renderPanel() {
   els.envPath.innerHTML = project
     ? `<div class="path-row"><code title="${esc(project.cwd)}">${esc(project.cwd)}</code><button type="button" class="icon-btn small" data-copy-path aria-label="Copiar caminho">${svg("i-copy")}</button></div>`
     : `<p class="muted">Nenhum projeto aberto.</p>`;
-  const others = state.projects.filter((item) => item.id !== project?.id).slice(0, 5);
-  els.envOthers.innerHTML = others.length
-    ? `<div class="card-sub">Outros projetos</div>${others.map((item) => `<button type="button" class="env-item" data-project="${esc(item.id)}" title="${esc(item.cwd)}"><span>${esc(item.name)}</span>${item.lastUsedAt ? `<small>${esc(relativeTime(item.lastUsedAt))}</small>` : ""}</button>`).join("")}`
-    : "";
 
   const usage = contextUsage(state.stats);
   const model = state.session?.model;
@@ -1104,10 +1139,6 @@ function renderOutputs() {
 els.envPath.addEventListener("click", (event) => {
   if (!event.target.closest("[data-copy-path]") || !state.currentProject) return;
   navigator.clipboard?.writeText(state.currentProject.cwd).then(() => toast("Caminho copiado.")).catch(() => {});
-});
-els.envOthers.addEventListener("click", (event) => {
-  const target = event.target.closest("[data-project]");
-  if (target) openProject(target.dataset.project).catch(report);
 });
 els.outputsList.addEventListener("click", (event) => {
   const target = event.target.closest("[data-tools]");
@@ -1197,6 +1228,18 @@ async function addImages(files) {
 
 async function submit(mode) {
   if (state.processExited || state.sending || !state.currentProject) return;
+  if (state.gate) {
+    // Hold the text in the composer until PI finishes switching sessions, then send it.
+    state.sending = true;
+    updateComposer();
+    try {
+      await waitSessionGate(state);
+    } finally {
+      state.sending = false;
+      updateComposer();
+    }
+    if (state.processExited || !state.currentProject) return;
+  }
   const message = els.prompt.value.trim();
   if (!message && !state.attachments.length) return;
   const type = mode === "steer" || mode === "follow_up" ? mode : "prompt";

@@ -34,6 +34,8 @@ Object.assign(process.env, {
   PI_AGENT_DIR: agentDir,
   PI_PROJECT_ROOTS: rootsDir,
   PI_WEB_PROJECT_LIMIT: "3",
+  // A host (Windows-style) prefix mapped onto the owned tmp dir, like the Docker bind mount.
+  PI_WEB_PATH_MAP: JSON.stringify([["Z:\\Host\\", tmp]]),
   PI_WEB_PI_BIN: process.execPath,
   PI_WEB_PI_BIN_ARGS: JSON.stringify([path.join(here, "fake-pi-rpc.mjs")]),
 });
@@ -72,6 +74,26 @@ describe("main mode", () => {
         for (const listener of process.listeners(signal)) if (!before[signal === "SIGINT" ? "int" : "term"].includes(listener)) process.off(signal, listener);
       }
     }
+  });
+});
+
+describe("host path map", () => {
+  test("parsePathMap accepts only [[from, to], ...] JSON", () => {
+    assert.deepEqual(server.parsePathMap(""), []);
+    assert.deepEqual(server.parsePathMap(undefined), []);
+    assert.deepEqual(server.parsePathMap('[["C:/a", "/a"]]'), [["C:/a", "/a"]]);
+    for (const bad of ["{", '{"a":1}', '[["C:/a"]]', '[["C:/a", ""]]', '[["C:/a", 1]]', '["x"]']) assert.deepEqual(server.parsePathMap(bad), [], bad);
+  });
+
+  test("mapHostPath maps drive prefixes caselessly, posix prefixes exactly, on segment boundaries", () => {
+    const map = [["C:\\Users\\Me\\", "/home/me/"], ["/srv/data", "/data"]];
+    assert.equal(server.mapHostPath("c:\\users\\me\\Desktop\\proj", map), "/home/me/Desktop/proj");
+    assert.equal(server.mapHostPath("C:/Users/Me", map), "/home/me");
+    assert.equal(server.mapHostPath("C:\\Users\\MeToo\\x", map), "C:\\Users\\MeToo\\x");
+    assert.equal(server.mapHostPath("/srv/data/x", map), "/data/x");
+    assert.equal(server.mapHostPath("/SRV/data/x", map), "/SRV/data/x");
+    assert.equal(server.mapHostPath("D:\\other", map), "D:\\other");
+    assert.equal(server.mapHostPath("/any", []), "/any");
   });
 });
 
@@ -252,6 +274,8 @@ describe("history discovery + routes", () => {
       { type: "message", id: "x", message: { role: "user", content: [{ type: "text", text: "Olá beta" }] } },
     ]);
     await sessionFile("--beta--", "b-3.jsonl", { type: "session", cwd: histB }, 1_700_000_000);
+    // Recorded by a host PI: Windows path under the mapped prefix (other drive-letter casing).
+    await sessionFile("--beta-host--", "b-host.jsonl", { type: "session", cwd: "z:\\host\\beta-history" }, 1_650_000_000);
     await sessionFile("--delta--", "d.jsonl", { type: "session", cwd: histD }, 1_500_000_000);
     await sessionFile("--gone--", "g.jsonl", { type: "session", cwd: path.join(tmp, "deleted") }, 1_900_000_000);
     await sessionFile("--junk--", "bad.jsonl", "{oops", 1_900_000_000);
@@ -304,6 +328,7 @@ describe("history discovery + routes", () => {
     const history = await getJson(`/api/projects/${data.projects[0].id}/history`);
     const paths = history.history.map((item) => item.path);
     assert.ok(paths.includes(historyFileB) && paths.includes(path.join(sessionsRoot, "--beta--", "b-3.jsonl")));
+    assert.ok(paths.includes(path.join(sessionsRoot, "--beta-host--", "b-host.jsonl")));
     assert.equal(paths.includes(path.join(sessionsRoot, "--beta--", "b-1.jsonl")), process.platform === "win32");
     assert.equal(history.history.find((item) => item.path === historyFileB).title, "Olá beta");
   });

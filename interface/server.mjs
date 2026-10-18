@@ -96,6 +96,36 @@ export function cwdKey(cwd, platform = process.platform) {
   return platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+// Sessions recorded by a host PI (e.g. Windows "C:\\Users\\me\\proj") are visible to a
+// containerized PI Studio only through a bind mount. PI_WEB_PATH_MAP maps host prefixes to
+// mount points: JSON [["C:/Users/me", "/home/me"], ...]. Matching ignores slash style and,
+// for drive-letter prefixes, case. Unmapped paths are returned unchanged.
+export function parsePathMap(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((pair) => Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string" && part))) return parsed;
+  } catch {
+    // fall through to the warning
+  }
+  recordLog("warn", "Ignoring PI_WEB_PATH_MAP; expected JSON [[from, to], ...].");
+  return [];
+}
+
+export function mapHostPath(value, pathMap) {
+  const slashed = String(value).replace(/\\/g, "/");
+  for (const [from, to] of pathMap) {
+    const prefix = from.replace(/\\/g, "/").replace(/\/+$/, "");
+    const head = slashed.slice(0, prefix.length);
+    const matches = /^[A-Za-z]:/.test(prefix) ? head.toLowerCase() === prefix.toLowerCase() : head === prefix;
+    const rest = slashed.slice(prefix.length);
+    if (matches && (rest === "" || rest.startsWith("/"))) return to.replace(/\/+$/, "") + rest;
+  }
+  return value;
+}
+
+const PATH_MAP = parsePathMap(process.env.PI_WEB_PATH_MAP);
+
 function projectIdFor(cwd) {
   return createHash("sha1").update(cwdKey(cwd)).digest("hex").slice(0, 16);
 }
@@ -305,7 +335,7 @@ export async function readFirstLine(filePath, maxBytes = 16 * 1024) {
 
 // Projects the user actually used with PI: cwd from each session header, newest first,
 // keeping only directories that still exist.
-export async function discoverHistoryProjects(sessionsDir) {
+export async function discoverHistoryProjects(sessionsDir, pathMap = PATH_MAP) {
   const byKey = new Map();
   for (const dir of await readdirSafe(sessionsDir)) {
     if (!dir.isDirectory()) continue;
@@ -317,9 +347,10 @@ export async function discoverHistoryProjects(sessionsDir) {
         const header = JSON.parse(await readFirstLine(filePath));
         if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd) continue;
         const { mtimeMs } = await stat(filePath);
-        const key = cwdKey(header.cwd);
+        const cwd = mapHostPath(header.cwd, pathMap);
+        const key = cwdKey(cwd);
         const previous = byKey.get(key);
-        if (!previous || mtimeMs > previous.lastUsedMs) byKey.set(key, { cwd: path.resolve(header.cwd), lastUsedMs: mtimeMs });
+        if (!previous || mtimeMs > previous.lastUsedMs) byKey.set(key, { cwd: path.resolve(cwd), lastUsedMs: mtimeMs });
       } catch {
         // Ignore malformed/partial session files.
       }
@@ -656,7 +687,7 @@ async function listProjectHistory(project) {
       try {
         const firstLine = await readFirstLine(filePath);
         const header = JSON.parse(firstLine);
-        if (cwdKey(header.cwd || "") !== cwdKey(project.cwd)) continue;
+        if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
         out.push({

@@ -1,21 +1,29 @@
+# Start: interface/start-windows.ps1 (sets PI_HOST_HOME) or
+#   PI_HOST_HOME=C:/Users/you docker compose -f interface/docker-compose.yml up -d --build
 services:
   pi-studio:
     build:
-      context: .
+      context: ..
+      dockerfile: interface/Dockerfile
+    image: pi-studio:local
     container_name: pi-studio
     environment:
       PI_WEB_HOST: 0.0.0.0
       PI_WEB_PORT: 4123
-      PI_WORKSPACES_DIR: /workspaces
-      # Optional overrides:
-      # PI_WEB_MODEL: openai-codex/gpt-5.5
-      # PI_WEB_PROVIDER: openai-codex
+      PI_WORKSPACES_DIR: /home/host
+      # Session headers recorded by the host PI use host paths; map them onto the mount.
+      PI_WEB_PATH_MAP: '[["${PI_HOST_HOME:?set PI_HOST_HOME to your home folder, forward slashes}", "/home/host"]]'
+      # Lets git follow Windows worktree pointers (gitdir: C:/...) through the mount.
+      GIT_HOST_PREFIX: ${PI_HOST_HOME}
+      GIT_HOST_MOUNT: /home/host
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
     ports:
-      - "4123:4123"
+      - "127.0.0.1:4123:4123"
     volumes:
-      # Mount the folder that contains your projects. Override with:
-      # PI_WORKSPACES_DIR=/path/to/projects docker compose up --build
-      - ${PI_WORKSPACES_DIR:-$HOME}:/workspaces
-      # Reuse your local PI config/auth/agents/sessions inside the container.
-      - ${HOME}/.pi/agent:/root/.pi/agent
+      # Your projects (whole home, like the host PI sees it).
+      - ${PI_HOST_HOME}:/home/host
+      # Shared login and history with the host PI. Everything else comes from the image.
+      - ${PI_HOST_HOME}/.pi/agent/auth.json:/root/.pi/agent/auth.json
+      - ${PI_HOST_HOME}/.pi/agent/sessions:/root/.pi/agent/sessions
     restart: unless-stopped

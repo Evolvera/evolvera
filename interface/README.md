@@ -22,32 +22,19 @@ Ou múltiplas raízes:
 PI_PROJECT_ROOTS="/Users/j.henrique/EVOLVERA:/Users/j.henrique/AYA" npm start
 ```
 
-## Windows (app de janela própria)
+## Windows (Docker, janela própria)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File interfacestart-windows.ps1
+powershell -ExecutionPolicy Bypass -File interfacestart-windows.ps1            # sobe e abre
+powershell -ExecutionPolicy Bypass -File interfacestart-windows.ps1 -Rebuild   # após atualizar o repo
 ```
 
-Sobe o servidor oculto (se ainda não estiver na porta 4123) e abre o Edge/Chrome em modo `--app`. No Windows o servidor encontra o `cli.js` global do PI sozinho (ou use `PI_WEB_PI_BIN`) e lista os projetos que já têm sessões em `~/.pi/agent/sessions`, os mais recentes primeiro.
+Roda `docker compose` (Docker Desktop precisa estar instalado) e abre o Edge/Chrome em modo `--app` em http://127.0.0.1:4123.
 
-## Rodar no Docker
-
-```bash
-cd /Users/j.henrique/.pi/agent/interface
-PI_WORKSPACES_DIR="$HOME" docker compose up --build
-# http://127.0.0.1:4123
-```
-
-O Docker monta:
-
-- `${PI_WORKSPACES_DIR:-$HOME}` em `/workspaces` para descobrir projetos;
-- `${HOME}/.pi/agent` em `/root/.pi/agent` para reutilizar auth, settings, agents, skills e sessões.
-
-Se algum pacote PI montado do host não carregar dentro do Linux do container, rode:
-
-```bash
-docker compose exec pi-studio pi update
-```
+- A imagem roda o `install.sh` do repositório: mesmo PI 0.83.0, patches, agentes, skills, extensões e pacotes do harness, em Linux.
+- Do host são montados só: a pasta do usuário em `/home/host` (projetos), `~/.pi/agent/auth.json` (mesmo login) e `~/.pi/agent/sessions` (mesmo histórico). O resto de `~/.pi/agent` não é montado porque os pacotes npm de lá são compilados para Windows.
+- `PI_WEB_PATH_MAP` traduz os caminhos Windows gravados nas sessões (`C:\Users\...`) para o caminho montado, então os projetos e conversas do PI do Windows aparecem na barra lateral.
+- Sem Docker: `node interface/server.mjs` também funciona no Windows (encontra o `cli.js` global do PI sozinho).
 
 ## Experiência
 

@@ -27,6 +27,21 @@ export function shouldShowToast(seen, key, now, windowMs = 60_000) {
   return true;
 }
 
+// A prompt sent while PI is still applying new_session/switch_session runs in the session
+// being replaced and is lost. holder.gate tracks the in-flight switch; prompts await it.
+// The gate never rejects and clears itself when its switch settles.
+export function setSessionGate(holder, promise) {
+  const gate = Promise.resolve(promise).then(() => {}, () => {}).finally(() => {
+    if (holder.gate === gate) holder.gate = null;
+  });
+  holder.gate = gate;
+  return gate;
+}
+
+export async function waitSessionGate(holder) {
+  while (holder.gate) await holder.gate;
+}
+
 export function countLines(text) {
   if (typeof text !== "string" || text === "") return 0;
   return text.replace(/\n$/, "").split("\n").length;
@@ -449,6 +464,19 @@ export function entriesToMessages(entries, leafId) {
     else if (entry.type === "branch_summary") out.push({ role: "branchSummary", summary: entry.summary });
   }
   return out;
+}
+
+// An entries snapshot can be older than a prompt submitted while PI is starting.
+// Keep that optimistic message visible until PI's own entry catches up.
+export function reconcileEntries(entries, currentMessages = []) {
+  const reconciled = [...entries];
+  for (const message of currentMessages) {
+    if (!message?._optimistic) continue;
+    const text = messageText(message);
+    if (reconciled.some((entry) => entry.role === "user" && messageText(entry) === text)) continue;
+    reconciled.push(message);
+  }
+  return reconciled;
 }
 
 export function messageText(message) {
