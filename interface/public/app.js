@@ -1,6 +1,10 @@
 import {
   INSPECTOR_TABS,
   NOTIFY_KEY,
+  SETTINGS_KEY,
+  paletteSections,
+  parseSettings,
+  settingsAttributes,
   SHORTCUT_GROUPS,
   appendBashOutput,
   attentionState,
@@ -93,6 +97,7 @@ const els = {
   searchWrap: $("#searchWrap"),
   search: $("#searchInput"),
   searchBtn: $("#searchBtn"),
+  searchResults: $("#searchResults"),
   settingsBtn: $("#settingsBtn"),
   refreshProjects: $("#refreshProjectsBtn"),
   projects: $("#projectsList"),
@@ -168,6 +173,18 @@ const els = {
   diffBody: $("#diffBody"),
   shortcutsDialog: $("#shortcutsDialog"),
   shortcutsBody: $("#shortcutsBody"),
+  settingsDialog: $("#settingsDialog"),
+  settingFont: [...document.querySelectorAll('input[name="settingFont"]')],
+  settingWidth: [...document.querySelectorAll('input[name="settingWidth"]')],
+  settingNotify: $("#settingNotify"),
+  settingNotifyHint: $("#settingNotifyHint"),
+  settingMotion: $("#settingMotion"),
+  settingThinking: $("#settingThinking"),
+  renameDialog: $("#renameDialog"),
+  renameInput: $("#renameInput"),
+  paletteDialog: $("#paletteDialog"),
+  paletteInput: $("#paletteInput"),
+  paletteList: $("#paletteList"),
   customizeDialog: $("#customizeDialog"),
   customizeForm: $("#customizeForm"),
   prefName: $("#prefName"),
@@ -186,6 +203,18 @@ try {
   // Corrupt prefs fall back to defaults.
 }
 const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+
+// Display settings (font size, chat width, reduced motion). public/boot.js applies the saved values
+// before first paint; this keeps <html> in step when they change.
+const settings = parseSettings(localStorage.getItem(SETTINGS_KEY));
+function applySettings() {
+  Object.assign(document.documentElement.dataset, settingsAttributes(settings));
+}
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  applySettings();
+}
+applySettings();
 
 const state = {
   projects: [],
@@ -248,6 +277,7 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${
 const svg = (name, cls = "") => `<svg class="${cls}" aria-hidden="true"><use href="#${name}"/></svg>`;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const prefersReducedMotion = () => reduceMotion.matches || settings.reduceMotion;
 
 // ------------------------------------------------------------------ basics
 
@@ -280,9 +310,12 @@ function toast(message, type = "info", action = null) {
   }, action ? 9000 : 4200);
 }
 
-async function api(path, options = {}) {
+// timeoutMs bounds requests a session switch waits on, so a hung server can never hold the
+// session gate (and the composer) forever.
+async function api(path, { timeoutMs, ...options } = {}) {
   const res = await fetch(path, {
     ...options,
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     headers: { "content-type": "application/json", "x-pi-studio-token": apiToken, ...(options.headers || {}) },
   });
   const data = await res.json().catch(() => ({}));
@@ -504,6 +537,8 @@ function matchesFilter(...values) {
 }
 
 function sessionButton(project, item, active) {
+  const row = document.createElement("div");
+  row.className = "session-row";
   const button = document.createElement("button");
   button.type = "button";
   button.className = `session-item${active ? " active" : ""}`;
@@ -513,8 +548,57 @@ function sessionButton(project, item, active) {
   if (active) button.setAttribute("aria-current", "true");
   button.innerHTML = `<span class="session-title">${esc(item.title || "Nova conversa")}</span><span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
   button.title = item.title || "Nova conversa";
-  return button;
+  const menu = document.createElement("button");
+  menu.type = "button";
+  menu.className = "session-menu-btn";
+  menu.dataset.action = "session-menu";
+  menu.dataset.project = project.id;
+  menu.dataset.path = item.path;
+  menu.dataset.title = item.title || "";
+  menu.setAttribute("aria-haspopup", "menu");
+  menu.setAttribute("aria-label", `Ações da conversa ${item.title || "Nova conversa"}`);
+  menu.innerHTML = svg("i-more");
+  row.append(button, menu);
+  return row;
 }
+
+// Rename and export go through RPC, which only acts on the open session: the other conversations of
+// the list show the entries disabled (open one first) instead of silently switching sessions.
+function openSessionMenu(anchor) {
+  const { project: projectId, path: sessionPath, title } = anchor.dataset;
+  const available = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile) && !state.processExited;
+  const sub = available ? undefined : "Abra a conversa primeiro";
+  anchor.setAttribute("aria-expanded", "true");
+  openMenu(anchor, [
+    { label: "Renomear", icon: "i-edit", disabled: !available, sub, onSelect: () => promptRename(title) },
+    { label: "Exportar conversa", icon: "i-file", disabled: !available, sub, onSelect: exportSession },
+  ], { align: "end", onClose: () => anchor.removeAttribute("aria-expanded") });
+}
+
+function promptRename(current = "") {
+  els.renameInput.value = current;
+  els.renameDialog.returnValue = "";
+  els.renameDialog.showModal();
+  els.renameInput.select();
+}
+
+// Enter would submit through the first button (Cancelar); save explicitly instead.
+els.renameInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
+  event.preventDefault();
+  if (els.renameInput.value.trim()) els.renameDialog.close("save");
+});
+
+els.renameDialog.addEventListener("close", () => {
+  if (els.renameDialog.returnValue === "save") renameSession(els.renameInput.value.trim()).catch(report);
+});
+
+els.projects.addEventListener("contextmenu", (event) => {
+  const anchor = event.target.closest(".session-row")?.querySelector(".session-menu-btn");
+  if (!anchor) return;
+  event.preventDefault();
+  openSessionMenu(anchor);
+});
 
 function renderProjects() {
   const fragment = document.createDocumentFragment();
@@ -596,8 +680,10 @@ els.projects.addEventListener("click", (event) => {
     renderProjects();
   } else if (action === "open-session") {
     openSession(projectId, path).catch(report);
+  } else if (action === "session-menu") {
+    openSessionMenu(target);
   }
-  if (action !== "expand-project" && action !== "more-sessions") closeOverlays();
+  if (action !== "expand-project" && action !== "more-sessions" && action !== "session-menu") closeOverlays();
 });
 
 // ------------------------------------------------------------------ header
@@ -695,7 +781,7 @@ function openProject(projectId) {
 }
 
 async function loadProject(projectId) {
-  const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}" });
+  const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
   setExited(false);
   state.currentProject = project;
   state.session = session;
@@ -1287,7 +1373,7 @@ els.jump.addEventListener("click", () => {
   // Re-enable following right away: the smooth scroll takes a few frames to reach the bottom.
   state.stick = true;
   els.jump.hidden = true;
-  els.scroller.scrollTo({ top: els.scroller.scrollHeight, behavior: reduceMotion.matches ? "auto" : "smooth" });
+  els.scroller.scrollTo({ top: els.scroller.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
 });
 
 els.thread.addEventListener("click", (event) => {
@@ -1715,7 +1801,7 @@ els.term.addEventListener("scroll", () => {
 els.termJump.addEventListener("click", () => {
   term.stick = true;
   els.termJump.hidden = true;
-  els.term.scrollTo({ top: els.term.scrollHeight, behavior: reduceMotion.matches ? "auto" : "smooth" });
+  els.term.scrollTo({ top: els.term.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
 });
 els.term.addEventListener("click", (event) => {
   const toggle = event.target.closest(".tb-toggle");
@@ -2752,14 +2838,206 @@ els.customizeDialog.addEventListener("close", () => {
   renderThread();
 });
 
+// ------------------------------------------------------- settings dialog
+
+function openSettings() {
+  const denied = canNotify && Notification.permission === "denied";
+  for (const input of els.settingFont) input.checked = input.value === settings.fontSize;
+  for (const input of els.settingWidth) input.checked = input.value === settings.chatWidth;
+  els.settingNotify.checked = notifyOn() && !denied;
+  els.settingNotifyHint.textContent = denied
+    ? "Bloqueadas pelo navegador: libere nas permissões do site."
+    : "Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.";
+  els.settingMotion.checked = settings.reduceMotion;
+  els.settingThinking.checked = Boolean(prefs.showThinking);
+  els.settingsDialog.showModal();
+}
+
+els.settingsDialog.addEventListener("change", (event) => {
+  const { target } = event;
+  if (target.name === "settingFont") settings.fontSize = target.value;
+  else if (target.name === "settingWidth") settings.chatWidth = target.value;
+  else if (target === els.settingMotion) settings.reduceMotion = target.checked;
+  else if (target === els.settingNotify) {
+    localStorage.setItem(NOTIFY_KEY, target.checked ? "1" : "0");
+    ensureNotifyPermission();
+  } else if (target === els.settingThinking) {
+    prefs.showThinking = target.checked;
+    savePrefs();
+    nodeCache.clear();
+    renderThread();
+    return;
+  }
+  saveSettings();
+});
+
+// ------------------------------------------------------ command palette
+
+const PALETTE_ICONS = { session: "i-code", hit: "i-search" };
+const palette = { query: "", entries: [], index: 0, hits: [], loading: false, seq: 0, timer: null };
+
+function paletteActions() {
+  const rightTab = (tab) => () => {
+    setPanel("right", true);
+    selectTab(tab);
+  };
+  return [
+    { label: "Nova conversa", icon: "i-plus", keywords: "novo chat", run: () => newSession() },
+    { label: "Alternar Inspector", icon: "i-panel", keywords: "painel inspetor", run: () => setPanel("right", layout.right !== "open") },
+    { label: "Abrir aba Terminal", icon: "i-terminal", run: rightTab("terminal") },
+    { label: "Abrir aba Subagentes", icon: "i-agents", run: rightTab("subagents") },
+    { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
+    { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
+    { label: "Exportar conversa", icon: "i-file", keywords: "html salvar", run: () => exportSession() },
+    { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
+    { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },
+    { label: "Configurações", icon: "i-gear", keywords: "preferências fonte largura", run: openSettings },
+  ];
+}
+
+function paletteSessions() {
+  const tagged = (projectId, list) => list.map((item) => ({ ...item, projectId }));
+  const all = [
+    ...(state.currentProject ? tagged(state.currentProject.id, state.history) : []),
+    ...[...state.otherHistory].flatMap(([projectId, list]) => tagged(projectId, list)),
+  ].sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  return all.map((item) => ({
+    label: item.title || "Nova conversa",
+    sub: state.projects.find((project) => project.id === item.projectId)?.name || "",
+    icon: PALETTE_ICONS.session,
+    run: () => openSession(item.projectId, item.path),
+  }));
+}
+
+function paletteGroups() {
+  return [
+    { title: "Ações", items: paletteActions(), limit: 10 },
+    {
+      title: "Projetos",
+      items: state.projects.map((project) => ({ label: "Abrir projeto " + project.name, sub: project.cwd, icon: "i-folder-open", run: () => openProject(project.id) })),
+      limit: 5,
+    },
+    { title: "Conversas recentes", items: paletteSessions(), limit: 6 },
+    {
+      title: "Nas conversas",
+      raw: true,
+      limit: 10,
+      items: palette.hits.map((hit) => ({ label: hit.title, sub: hit.snippet, icon: PALETTE_ICONS.hit, run: () => openSession(hit.projectId, hit.sessionPath) })),
+    },
+  ];
+}
+
+function renderPalette() {
+  const sections = paletteSections(paletteGroups(), palette.query);
+  palette.entries = sections.flatMap((section) => section.items);
+  palette.index = Math.min(palette.index, Math.max(0, palette.entries.length - 1));
+  const nodes = [];
+  let position = 0;
+  for (const section of sections) {
+    nodes.push(el("div", "palette-section", section.title));
+    for (const item of section.items) {
+      const index = position++;
+      const option = document.createElement("div");
+      option.id = "palette-opt-" + index;
+      option.className = "palette-item" + (index === palette.index ? " active" : "");
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === palette.index));
+      option.dataset.index = String(index);
+      const sub = item.sub ? "<small>" + esc(item.sub) + "</small>" : "";
+      option.innerHTML = (item.icon ? svg(item.icon, "palette-ico") : "") + '<span class="palette-text"><span>' + esc(item.label) + "</span>" + sub + "</span>";
+      nodes.push(option);
+    }
+  }
+  if (palette.loading) nodes.push(el("div", "palette-empty", "Buscando nas conversas…"));
+  else if (!nodes.length) nodes.push(el("div", "palette-empty", "Nada encontrado."));
+  els.paletteList.replaceChildren(...nodes);
+  els.paletteInput.setAttribute("aria-activedescendant", palette.entries.length ? "palette-opt-" + palette.index : "");
+  els.paletteList.querySelector(".palette-item.active")?.scrollIntoView({ block: "nearest" });
+}
+
+function openPalette() {
+  closeMenu();
+  Object.assign(palette, { query: "", index: 0, hits: [], loading: false });
+  els.paletteInput.value = "";
+  els.paletteDialog.showModal();
+  renderPalette();
+  els.paletteInput.focus();
+}
+
+function closePalette() {
+  if (els.paletteDialog.open) els.paletteDialog.close();
+}
+
+els.paletteDialog.addEventListener("close", () => {
+  clearTimeout(palette.timer);
+  palette.seq++;
+  palette.loading = false;
+});
+
+function choosePaletteEntry(index) {
+  const entry = palette.entries[index];
+  if (!entry) return;
+  closePalette();
+  Promise.resolve(entry.run()).catch(report);
+}
+
+els.paletteInput.addEventListener("input", () => {
+  palette.query = els.paletteInput.value;
+  palette.index = 0;
+  clearTimeout(palette.timer);
+  const seq = ++palette.seq;
+  const query = palette.query.trim();
+  palette.hits = [];
+  palette.loading = query.length >= SEARCH_MIN_CHARS;
+  renderPalette();
+  if (!palette.loading) return;
+  palette.timer = setTimeout(async () => {
+    try {
+      const hits = await searchConversations(query);
+      if (seq === palette.seq) palette.hits = hits;
+    } catch (error) {
+      if (seq === palette.seq) report(error);
+    }
+    if (seq !== palette.seq) return;
+    palette.loading = false;
+    renderPalette();
+  }, SEARCH_DEBOUNCE_MS);
+});
+
+els.paletteInput.addEventListener("keydown", (event) => {
+  const count = palette.entries.length;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    if (!count) return;
+    palette.index = (palette.index + (event.key === "ArrowDown" ? 1 : -1) + count) % count;
+    renderPalette();
+  } else if (event.key === "Enter" && !event.isComposing) {
+    event.preventDefault();
+    choosePaletteEntry(palette.index);
+  }
+});
+
+// Keep focus in the input while the pointer picks an entry; clicking the backdrop closes.
+els.paletteList.addEventListener("mousedown", (event) => event.preventDefault());
+els.paletteList.addEventListener("click", (event) => {
+  const option = event.target.closest(".palette-item");
+  if (option) choosePaletteEntry(Number(option.dataset.index));
+});
+els.paletteDialog.addEventListener("click", (event) => {
+  if (event.target === els.paletteDialog) closePalette();
+});
+
 // ------------------------------------------------------------------ wiring
 
 function appMenuItems() {
   return [
     { label: "Nova conversa", icon: "i-plus", onSelect: () => newSession().catch(report) },
     { label: "Recarregar projetos", icon: "i-folder-open", onSelect: () => refreshProjects() },
+    { label: "Exportar conversa", icon: "i-file", disabled: !state.currentProject || state.processExited, onSelect: exportSession },
+    { label: "Paleta de comandos", icon: "i-search", badge: "Ctrl K", onSelect: openPalette },
     { label: "Console RPC", icon: "i-terminal", onSelect: () => setDrawer(els.drawer.hidden) },
     { separator: true },
+    { label: "Configurações", icon: "i-gear", onSelect: openSettings },
     { label: "Personalização", icon: "i-brush", onSelect: openCustomize },
     { label: "Rodar no Docker", icon: "i-code", onSelect: () => els.dockerDialog.showModal() },
   ];
@@ -2778,19 +3056,86 @@ const showOutputs = () => {
   els.filesView.classList.add("flash");
 };
 els.filesBtn.addEventListener("click", showOutputs);
-els.settingsBtn.addEventListener("click", openCustomize);
+els.settingsBtn.addEventListener("click", openSettings);
 els.searchBtn.addEventListener("click", () => {
   els.searchWrap.hidden = !els.searchWrap.hidden;
   if (!els.searchWrap.hidden) els.search.focus();
   else {
     state.filter = "";
     els.search.value = "";
+    resetSidebarSearch();
     renderProjects();
   }
 });
+// ---------------------------------------------- conversation search
+
+const SEARCH_MIN_CHARS = 3;
+const SEARCH_DEBOUNCE_MS = 250;
+
+async function searchConversations(query) {
+  const { results } = await api(`/api/search?q=${encodeURIComponent(query)}`);
+  return results || [];
+}
+
+const sidebarSearch = { seq: 0, timer: null };
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function renderSearchResults(results, note = "") {
+  const parts = [];
+  if (results.length) {
+    parts.push(el("div", "search-heading", "Nas conversas"));
+    for (const hit of results) {
+      const button = el("button", "search-hit");
+      button.type = "button";
+      button.dataset.action = "open-hit";
+      button.dataset.project = hit.projectId;
+      button.dataset.path = hit.sessionPath;
+      button.title = hit.title;
+      button.append(el("span", "search-hit-title", hit.title), el("span", "search-hit-snippet", hit.snippet));
+      parts.push(button);
+    }
+  }
+  if (note) parts.push(el("div", "search-note", note));
+  els.searchResults.replaceChildren(...parts);
+  els.searchResults.hidden = !parts.length;
+}
+
+function resetSidebarSearch() {
+  clearTimeout(sidebarSearch.timer);
+  sidebarSearch.seq++;
+  renderSearchResults([]);
+}
+
 els.search.addEventListener("input", () => {
   state.filter = els.search.value;
   renderProjects();
+  resetSidebarSearch();
+  const query = state.filter.trim();
+  if (query.length < SEARCH_MIN_CHARS) return;
+  const seq = sidebarSearch.seq;
+  renderSearchResults([], "Buscando nas conversas…");
+  sidebarSearch.timer = setTimeout(async () => {
+    try {
+      const results = await searchConversations(query);
+      if (seq === sidebarSearch.seq) renderSearchResults(results, results.length ? "" : "Nada nas conversas.");
+    } catch (error) {
+      if (seq === sidebarSearch.seq) renderSearchResults([]);
+      report(error);
+    }
+  }, SEARCH_DEBOUNCE_MS);
+});
+
+els.searchResults.addEventListener("click", (event) => {
+  const target = event.target.closest('[data-action="open-hit"]');
+  if (!target) return;
+  openSession(target.dataset.project, target.dataset.path).catch(report);
+  closeOverlays();
 });
 els.refreshProjects.addEventListener("click", () => refreshProjects().catch(report));
 els.newSession.addEventListener("click", () => newSession().catch(report));
@@ -2820,6 +3165,10 @@ document.addEventListener("keydown", (event) => {
     if (modalOpen && !els.shortcutsDialog.open) return;
     event.preventDefault();
     toggleShortcuts();
+  } else if (action === "palette") {
+    event.preventDefault();
+    if (els.paletteDialog.open) closePalette();
+    else if (!modalOpen) openPalette();
   } else if (action === "todos") {
     event.preventDefault();
     if (!modalOpen) toggleTodo();

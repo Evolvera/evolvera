@@ -7,8 +7,9 @@ import { access, open, readdir, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { rankFiles } from "./public/lib.js";
+import { foldText, rankFiles, searchSnippet } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -19,6 +20,11 @@ const apiToken = randomBytes(32).toString("hex");
 const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
+const SESSION_SCAN_MAX_BYTES = 5 * 1024 * 1024;
+const SEARCH_LIMIT = 30;
+const SEARCH_MAX_FILES = 400;
+const SEARCH_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+const SEARCH_MIN_CHARS = 2;
 const LOG_LIMIT = 1000;
 const PROJECT_LIMIT = Number.parseInt(process.env.PI_WEB_PROJECT_LIMIT || "200", 10);
 const PROJECT_MARKERS = new Set([
@@ -657,21 +663,71 @@ function compactTitle(text, fallback) {
   return cleaned.length > 72 ? `${cleaned.slice(0, 69)}…` : cleaned;
 }
 
-async function readSessionTitle(filePath, fallback) {
-  const content = await readFile(filePath, "utf8");
-  const lines = content.split(/\r?\n/).slice(1, 220);
-  for (const line of lines) {
-    if (!line.trim()) continue;
+// One bounded pass over a session file: its title (the latest `session_info` name, else the first
+// user prompt, else `fallback`) and, for a folded query, a snippet of the first matching user/assistant
+// message. Streams at most `maxBytes`, so a huge session is never loaded whole; a line cut by the cap
+// fails to parse and is skipped.
+export async function scanSession(filePath, { foldedQuery = "", maxBytes = SESSION_SCAN_MAX_BYTES, fallback = "Nova conversa" } = {}) {
+  const input = createReadStream(filePath, { encoding: "utf8", end: maxBytes - 1 });
+  let name = "";
+  let firstPrompt = "";
+  let snippet = "";
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    let entry;
     try {
-      const entry = JSON.parse(line);
-      if (entry.type === "message" && entry.message?.role === "user") {
-        return compactTitle(messageText(entry.message), fallback);
-      }
+      entry = JSON.parse(line);
     } catch {
-      // Ignore malformed partial lines.
+      continue;
+    }
+    if (entry?.type === "session_info") {
+      name = typeof entry.name === "string" ? entry.name.trim() : "";
+    } else if (entry?.type === "message" && (entry.message?.role === "user" || entry.message?.role === "assistant")) {
+      const body = messageText(entry.message);
+      if (entry.message.role === "user" && !firstPrompt) firstPrompt = body;
+      if (!snippet) snippet = searchSnippet(body, foldedQuery);
     }
   }
-  return fallback;
+  return { title: compactTitle(name || firstPrompt, fallback), snippet };
+}
+
+// Conversation search over the session files of known projects (`projectsByCwd`: cwdKey -> project),
+// newest files first. Paths come from listing `sessionsRoot` itself (links are not followed), so
+// nothing outside it is ever read. Bounds: files, bytes per file, total bytes, results.
+export async function searchSessions(sessionsRoot, query, { projectsByCwd, pathMap = PATH_MAP, limit = SEARCH_LIMIT, maxFiles = SEARCH_MAX_FILES, maxFileBytes = SESSION_SCAN_MAX_BYTES, maxTotalBytes = SEARCH_MAX_TOTAL_BYTES, statFile = stat } = {}) {
+  const foldedQuery = foldText(String(query).trim().slice(0, 200));
+  if (foldedQuery.length < SEARCH_MIN_CHARS) return [];
+  const files = [];
+  for (const dir of await readdirSafe(sessionsRoot)) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsRoot, dir.name);
+    for (const file of await readdirSafe(fullDir)) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const { size, mtimeMs } = await statFile(filePath);
+        files.push({ filePath, size, mtimeMs });
+      } catch {
+        // Vanished between listing and stat.
+      }
+    }
+  }
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const results = [];
+  let budget = maxTotalBytes;
+  for (const { filePath, size, mtimeMs } of files.slice(0, maxFiles)) {
+    if (results.length >= limit || budget <= 0) break;
+    try {
+      const header = JSON.parse(await readFirstLine(filePath));
+      const project = typeof header.cwd === "string" && header.cwd ? projectsByCwd.get(cwdKey(mapHostPath(header.cwd, pathMap))) : undefined;
+      if (!project) continue;
+      budget -= Math.min(size, maxFileBytes);
+      const { title, snippet } = await scanSession(filePath, { foldedQuery, maxBytes: maxFileBytes });
+      if (snippet) results.push({ projectId: project.id, sessionPath: filePath, title, snippet, timestamp: header.timestamp || new Date(mtimeMs).toISOString() });
+    } catch {
+      // Ignore malformed/partial session files.
+    }
+  }
+  return results;
 }
 
 async function listProjectHistory(project) {
@@ -699,7 +755,7 @@ async function listProjectHistory(project) {
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
         out.push({
           path: filePath,
-          title: await readSessionTitle(filePath, "Nova conversa"),
+          title: (await scanSession(filePath)).title,
           timestamp,
           bytes: fileStat.size,
           sessionId: header.id,
@@ -936,6 +992,12 @@ async function route(req, res) {
 
     if (req.method === "GET" && pathname === "/api/logs") {
       return json(res, 200, { logs: serverLogs.slice(-300) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/search") {
+      await discoverProjects();
+      const projectsByCwd = new Map([...projects.values()].map((project) => [cwdKey(project.cwd), project]));
+      return json(res, 200, { results: await searchSessions(path.join(AGENT_DIR, "sessions"), url.searchParams.get("q") || "", { projectsByCwd }) });
     }
 
     if (req.method === "GET" && pathname === "/api/sessions") {

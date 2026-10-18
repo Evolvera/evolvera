@@ -881,6 +881,7 @@ export function shortcutAction(event, { typing = false } = {}) {
   if (event.ctrlKey || event.metaKey) {
     if (key === "/") return "shortcuts";
     if (key === "`") return "console";
+    if (key.toLowerCase() === "k" && !event.shiftKey) return "palette";
     return event.shiftKey && key.toLowerCase() === "o" ? "new" : null;
   }
   if (key === "Escape") return "escape";
@@ -911,12 +912,89 @@ export const SHORTCUT_GROUPS = [
   {
     title: "Interface",
     items: [
+      { keys: ["Ctrl", "K"], label: "Paleta de comandos e busca nas conversas" },
       { keys: ["Ctrl", "/"], label: "Mostrar ou ocultar esta lista" },
       { keys: ["Ctrl", "`"], label: "Console RPC" },
       { keys: ["Alt", "T"], label: "Mostrar ou ocultar a lista de tarefas" },
     ],
   },
 ];
+
+// ---------------------------------------- conversation search + palette
+
+// Accent- and case-insensitive form of a text with the same length as its NFC form, so a match
+// position in the folded text is a valid position in the original (see searchSnippet).
+export function foldText(text) {
+  return String(text ?? "").normalize("NFC").replace(/[\s\S]/gu, (ch) => {
+    const folded = ch.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    return folded.length === ch.length ? folded : ch;
+  });
+}
+
+// First match of an already folded query, with up to `radius` characters of context per side.
+// "" when the text does not contain it.
+export function searchSnippet(text, foldedQuery, radius = 60) {
+  const source = String(text ?? "").normalize("NFC");
+  const at = foldedQuery ? foldText(source).indexOf(foldedQuery) : -1;
+  if (at === -1) return "";
+  const start = Math.max(0, at - radius);
+  const end = Math.min(source.length, at + foldedQuery.length + radius);
+  const body = source.slice(start, end).replace(/\s+/g, " ").trim();
+  return `${start > 0 ? "…" : ""}${body}${end < source.length ? "…" : ""}`;
+}
+
+// Palette ranking over { label, sub?, keywords? }: label prefix, then a word prefix, then a label
+// substring, then sub/keywords; ties keep the given order. An empty query keeps everything.
+export function rankPalette(items, query, limit = 30) {
+  const needle = foldText(query).trim();
+  if (!needle) return items.slice(0, limit);
+  const scored = [];
+  items.forEach((item) => {
+    const label = foldText(item.label);
+    const score = label.startsWith(needle) ? 0
+      : label.split(/[\s/\\._-]+/).some((word) => word.startsWith(needle)) ? 1
+        : label.includes(needle) ? 2
+          : foldText([item.sub, item.keywords].filter(Boolean).join(" ")).includes(needle) ? 3 : -1;
+    if (score >= 0) scored.push({ item, score });
+  });
+  return scored.sort((a, b) => a.score - b.score).slice(0, limit).map((entry) => entry.item);
+}
+
+// groups: [{ title, items, limit?, raw? }]. `raw` groups (server search hits) are already matched
+// and are not re-ranked. Empty sections are dropped.
+export function paletteSections(groups, query) {
+  return groups
+    .map(({ title, items, limit, raw }) => ({ title, items: raw ? items.slice(0, limit) : rankPalette(items, query, limit) }))
+    .filter((section) => section.items.length);
+}
+
+// ------------------------------------------------------------- settings
+
+export const SETTINGS_KEY = "pi-studio:settings";
+export const SETTING_OPTIONS = { fontSize: ["small", "medium", "large"], chatWidth: ["normal", "wide"] };
+export const DEFAULT_SETTINGS = { fontSize: "medium", chatWidth: "normal", reduceMotion: false };
+
+// Stored JSON (or null) -> a complete, validated settings object; unknown or corrupt values fall back.
+export function parseSettings(raw) {
+  let stored = null;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    // Corrupt or missing: defaults.
+  }
+  const settings = { ...DEFAULT_SETTINGS };
+  if (!stored || typeof stored !== "object") return settings;
+  for (const [key, options] of Object.entries(SETTING_OPTIONS)) {
+    if (options.includes(stored[key])) settings[key] = stored[key];
+  }
+  settings.reduceMotion = stored.reduceMotion === true;
+  return settings;
+}
+
+// <html> data attributes the stylesheet keys on (public/boot.js applies the same mapping before first paint).
+export function settingsAttributes(settings) {
+  return { font: settings.fontSize, width: settings.chatWidth, motion: settings.reduceMotion ? "reduce" : "normal" };
+}
 
 // ------------------------------------------------- message actions (fork)
 

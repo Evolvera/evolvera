@@ -50,6 +50,10 @@ Roda `docker compose` (Docker Desktop precisa estar instalado) e abre o Edge/Chr
 - Lista de tarefas fixa acima do campo de envio, montada a partir do último resultado válido da ferramenta `todo` (`details.tasks`); `Alt+T` recolhe/expande (o navegador reserva `Ctrl+T` para nova aba; o cabeçalho do painel também é clicável).
 - Avisos: ao fim de uma execução (`agent_settled`) ou quando uma extensão pede resposta, com a página oculta ou sem foco, mostra uma notificação do sistema (a permissão é pedida só no primeiro envio; preferência `pi-studio:notify`, padrão ligada, `0` desliga). A bolinha do projeto na barra lateral vira contorno ("terminou sem você ver", some ao voltar à página) ou âmbar pulsante ("aguardando resposta"). Só o projeto aberto emite eventos para o navegador, então os avisos valem para ele.
 - Botão ↓ para voltar ao fim da conversa quando você rola para cima durante a resposta.
+- Campo de envio: `/` abre os comandos (do PI via `get_commands` + embutidos `/new`, `/compact [instruções]`, `/name <título>`, `/export`, `/atalhos`); `@` sugere arquivos do projeto (`git ls-files`, ou varredura limitada fora de git); `!comando` roda no shell do projeto (RPC `bash`, saída ao vivo, Esc cancela) e o resultado entra no contexto.
+- Atalhos: `Ctrl+/` lista todos, `Ctrl+K` paleta de comandos (ações, projetos, conversas e busca), `Ctrl+Shift+O` nova conversa, Esc interrompe, `↑` no campo vazio recupera a última mensagem, `Alt+T` tarefas.
+- Conversas: menu ⋯ (ou clique direito) na conversa ativa para **Renomear** (`set_session_name`; a barra lateral usa o nome salvo) e **Exportar** em HTML (`export_html`, com "Copiar caminho"). Busca por texto em todas as conversas pela lupa da barra lateral ou pelo `Ctrl+K` (`GET /api/search`, sem acento/maiúsculas, limitada em arquivos e bytes).
+- Configurações (engrenagem): tamanho da fonte, largura do chat, notificações, reduzir animações e mostrar raciocínio por padrão; salvas no navegador e aplicadas antes da primeira pintura.
 
 ## Segurança
 

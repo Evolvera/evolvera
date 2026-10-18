@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, test } from "node:test";
+import vm from "node:vm";
 import * as lib from "../public/lib.js";
 
 describe("text utils", () => {
@@ -1294,5 +1296,103 @@ describe("wave 2: message actions, task list, notifications", () => {
     assert.equal(lib.attentionState({ waiting: true, unseen: true }), "waiting");
     assert.equal(lib.attentionState({ waiting: false, unseen: true }), "unseen");
     assert.equal(lib.attentionState({ waiting: false, unseen: false }), "");
+  });
+});
+
+describe("wave 3: search, palette, settings", () => {
+  const key = (k, extra = {}) => ({ key: k, ...extra });
+
+  test("foldText ignores case and accents and keeps positions aligned", () => {
+    assert.equal(lib.foldText("Ação ÇÃO Café"), "acao cao cafe");
+    assert.equal(lib.foldText("cafe\u0301"), "cafe");
+    assert.equal(lib.foldText(null), "");
+    assert.equal(lib.foldText(undefined), "");
+    // A lone combining mark and decomposed Hangul have no 1:1 fold and stay as they are.
+    assert.equal(lib.foldText("\u0301x"), "\u0301x");
+    assert.equal(lib.foldText("가").length, "가".length);
+    for (const text of ["Ação", "İstanbul", "𐐀𐐨 ß", "e\u0301\u0301"]) assert.equal(lib.foldText(text).length, text.normalize("NFC").length, text);
+  });
+
+  test("searchSnippet returns the first match with context and ellipses", () => {
+    const folded = lib.foldText("autenticação");
+    assert.equal(lib.searchSnippet("Preciso de AUTENTICAÇÃO segura", folded), "Preciso de AUTENTICAÇÃO segura");
+    assert.equal(lib.searchSnippet("nada aqui", folded), "");
+    assert.equal(lib.searchSnippet("qualquer", ""), "");
+    assert.equal(lib.searchSnippet(null, folded), "");
+    const long = `${"a".repeat(100)}\n  meio   alvo  ${"b".repeat(100)}`;
+    const snippet = lib.searchSnippet(long, "alvo");
+    assert.equal(snippet, `…${"a".repeat(50)} meio alvo ${"b".repeat(58)}…`);
+    assert.equal(lib.searchSnippet("abcdefghij", "e", 2), "…cdefg…");
+    assert.equal(lib.searchSnippet("abcdefghij", "b", 2), "abcd…");
+    assert.equal(lib.searchSnippet("abcdefghij", "i", 2), "…ghij");
+    // Decomposed input matches composed queries and the snippet is the composed text.
+    assert.equal(lib.searchSnippet("cafe\u0301 quente", "cafe"), "café quente");
+  });
+
+  test("rankPalette orders prefix, word prefix, substring, then sub/keywords; ties keep order", () => {
+    const items = [
+      { label: "Abrir aba Terminal" },
+      { label: "Exportar conversa", keywords: "salvar html" },
+      { label: "Nova conversa" },
+      { label: "Conversa recente", sub: "projeto-x/src" },
+      { label: "Alternar Inspector" },
+      { label: "Terminal", sub: "painel" },
+    ];
+    assert.deepEqual(lib.rankPalette(items, "conv").map((item) => item.label), ["Conversa recente", "Exportar conversa", "Nova conversa"]);
+    assert.deepEqual(lib.rankPalette(items, "TERM").map((item) => item.label), ["Terminal", "Abrir aba Terminal"]);
+    assert.deepEqual(lib.rankPalette(items, "versa").map((item) => item.label), ["Exportar conversa", "Nova conversa", "Conversa recente"]);
+    assert.deepEqual(lib.rankPalette(items, "salvar").map((item) => item.label), ["Exportar conversa"]);
+    assert.deepEqual(lib.rankPalette(items, "projeto-x").map((item) => item.label), ["Conversa recente"]);
+    assert.deepEqual(lib.rankPalette(items, "painel").map((item) => item.label), ["Terminal"]);
+    assert.deepEqual(lib.rankPalette(items, "zzz"), []);
+    assert.equal(lib.rankPalette(items, "").length, 6);
+    assert.equal(lib.rankPalette(items, "   ", 2).length, 2);
+    assert.equal(lib.rankPalette(items, "a", 1).length, 1);
+    assert.deepEqual(lib.rankPalette([{ label: "Ação rápida" }], "acao").map((item) => item.label), ["Ação rápida"]);
+    const slashed = `a${String.fromCharCode(92)}b`;
+    assert.deepEqual(lib.rankPalette([{ label: slashed }, { label: "c" }], "b").map((item) => item.label), [slashed]);
+  });
+
+  test("paletteSections ranks groups, keeps raw groups as given and drops empty ones", () => {
+    const sections = lib.paletteSections([
+      { title: "Ações", items: [{ label: "Nova conversa" }, { label: "Atalhos" }], limit: 5 },
+      { title: "Conversas", items: [{ label: "Outra" }] },
+      { title: "Resultados", items: [{ label: "x1" }, { label: "x2" }, { label: "x3" }], raw: true, limit: 2 },
+      { title: "Vazio", items: [], raw: true },
+    ], "nova");
+    assert.deepEqual(sections.map((section) => [section.title, section.items.length]), [["Ações", 1], ["Resultados", 2]]);
+    assert.equal(lib.paletteSections([{ title: "R", items: [{ label: "a" }, { label: "b" }], raw: true }], "q")[0].items.length, 2);
+  });
+
+  test("Ctrl/Cmd+K opens the palette, even while typing", () => {
+    assert.equal(lib.shortcutAction(key("k", { ctrlKey: true })), "palette");
+    assert.equal(lib.shortcutAction(key("K", { metaKey: true }), { typing: true }), "palette");
+    assert.equal(lib.shortcutAction(key("k", { ctrlKey: true, shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(key("k")), null);
+    assert.ok(lib.SHORTCUT_GROUPS.flatMap((group) => group.items).some((item) => item.keys.join("+") === "Ctrl+K"));
+  });
+
+  test("parseSettings validates every field and falls back to defaults", () => {
+    assert.deepEqual(lib.DEFAULT_SETTINGS, { fontSize: "medium", chatWidth: "normal", reduceMotion: false });
+    for (const raw of [null, undefined, "", "{oops", "null", "5", '"x"', "[]", "{}"]) assert.deepEqual(lib.parseSettings(raw), lib.DEFAULT_SETTINGS, String(raw));
+    assert.deepEqual(lib.parseSettings('{"fontSize":"large","chatWidth":"wide","reduceMotion":true}'), { fontSize: "large", chatWidth: "wide", reduceMotion: true });
+    assert.deepEqual(lib.parseSettings('{"fontSize":"huge","chatWidth":3,"reduceMotion":"yes"}'), lib.DEFAULT_SETTINGS);
+    assert.deepEqual(lib.parseSettings('{"fontSize":"small"}'), { fontSize: "small", chatWidth: "normal", reduceMotion: false });
+    assert.equal(lib.SETTINGS_KEY, "pi-studio:settings");
+    assert.deepEqual(lib.settingsAttributes({ fontSize: "large", chatWidth: "wide", reduceMotion: true }), { font: "large", width: "wide", motion: "reduce" });
+    assert.deepEqual(lib.settingsAttributes(lib.DEFAULT_SETTINGS), { font: "medium", width: "normal", motion: "normal" });
+  });
+
+  test("boot.js applies exactly what parseSettings/settingsAttributes produce", async () => {
+    const source = await readFile(new URL("../public/boot.js", import.meta.url), "utf8");
+    const boot = (getItem) => {
+      const dataset = {};
+      vm.runInNewContext(source, { localStorage: { getItem }, document: { documentElement: { dataset } } });
+      return { ...dataset };
+    };
+    for (const raw of [null, "{oops", "null", "5", "[]", '{"fontSize":"small","chatWidth":"wide","reduceMotion":true}', '{"fontSize":"nope","chatWidth":"normal"}', '{"reduceMotion":"true"}']) {
+      assert.deepEqual(boot(() => raw), lib.settingsAttributes(lib.parseSettings(raw)), String(raw));
+    }
+    assert.deepEqual(boot(() => { throw new Error("storage blocked"); }), lib.settingsAttributes(lib.DEFAULT_SETTINGS));
   });
 });

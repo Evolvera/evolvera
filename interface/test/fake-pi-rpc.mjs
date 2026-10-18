@@ -3,6 +3,8 @@
 // Prompt "tools" streams thinking + tool executions; prompt "ui" asks an extension dialog; a prompt containing
 // "todo-demo" streams `todo` tool results (full snapshots in details, plus one error result that must be ignored).
 // `fork` switches to a new fake session holding the history before the chosen user message.
+// FAKE_PI_SESSION_FILE: path reported as sessionFile; set_session_name then appends a session_info line to it.
+import { appendFileSync } from "node:fs";
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const entries = [];
@@ -225,6 +227,7 @@ function streamInspector(command) {
 // "nobytes" answers with an error response. Output streams as bash_execution_update chunks.
 let activeBash = null;
 let sessionName = "fake";
+let sessionFile = process.env.FAKE_PI_SESSION_FILE || undefined;
 let forks = 0;
 
 function finishBash(run, cancelled) {
@@ -352,6 +355,7 @@ function handle(command) {
 
   if (command.type === "set_session_name") {
     sessionName = command.name;
+    if (sessionFile) appendFileSync(sessionFile, JSON.stringify({ type: "session_info", id: `n${Date.now()}`, parentId: null, timestamp: new Date().toISOString(), name: command.name }) + "\n");
     respond(command);
     return;
   }
@@ -367,7 +371,7 @@ function handle(command) {
       thinkingLevel: "off",
       isStreaming: false,
       isCompacting: false,
-      sessionFile: undefined,
+      sessionFile,
       sessionId: forks ? `fake-session-fork-${forks}` : "fake-session",
       sessionName,
       messageCount: entries.length,
@@ -394,6 +398,12 @@ function handle(command) {
       cost: 0.45,
       contextUsage: { tokens: 60000, contextWindow: 200000, percent: 30 },
     });
+    return;
+  }
+
+  if (command.type === "switch_session") {
+    sessionFile = command.sessionPath;
+    respond(command, true, { cancelled: false });
     return;
   }
 

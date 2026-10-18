@@ -7,6 +7,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f5f5f5'/%3E%3Ctext x='16' y='24' font-size='22' font-weight='700' text-anchor='middle' fill='%230a0a0a' font-family='Segoe UI,sans-serif'%3E%CF%80%3C/text%3E%3C/svg%3E" />
     <title>PI Studio</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/boot.js"></script>
   </head>
   <body>
     <svg width="0" height="0" class="sprite" aria-hidden="true" focusable="false">
@@ -67,6 +68,7 @@
           <svg><use href="#i-search" /></svg>
           <input id="searchInput" type="search" placeholder="Buscar projetos e conversas" aria-label="Buscar projetos e conversas" />
         </div>
+        <div id="searchResults" class="search-results" hidden></div>
         <div class="side-heading"><span>Projetos</span><button id="refreshProjectsBtn" class="mini-btn" type="button">Atualizar</button></div>
         <div id="projectsList" class="projects" role="list"></div>
         <footer class="side-footer">
@@ -231,6 +233,53 @@
         <div id="shortcutsBody" class="shortcuts"></div>
         <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
       </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="dialog" aria-labelledby="settingsTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="settingsTitle">Configurações</h3>
+        <div class="setting-row">
+          <span><strong>Tamanho da fonte</strong><small>Texto das conversas.</small></span>
+          <div class="seg-group" role="radiogroup" aria-label="Tamanho da fonte">
+            <label><input type="radio" name="settingFont" value="small" /><span>Pequena</span></label>
+            <label><input type="radio" name="settingFont" value="medium" /><span>Média</span></label>
+            <label><input type="radio" name="settingFont" value="large" /><span>Grande</span></label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span><strong>Largura da conversa</strong><small>Coluna central de mensagens.</small></span>
+          <div class="seg-group" role="radiogroup" aria-label="Largura da conversa">
+            <label><input type="radio" name="settingWidth" value="normal" /><span>Normal</span></label>
+            <label><input type="radio" name="settingWidth" value="wide" /><span>Larga</span></label>
+          </div>
+        </div>
+        <label class="switch-row"><span><strong>Notificações</strong><small id="settingNotifyHint">Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.</small></span><input id="settingNotify" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Reduzir movimento</strong><small>Desliga animações e rolagem suave.</small></span><input id="settingMotion" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Mostrar raciocínio por padrão</strong><small>Expande o raciocínio do modelo nas respostas.</small></span><input id="settingThinking" type="checkbox" class="switch" /></label>
+        <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="renameDialog" class="dialog" aria-labelledby="renameTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="renameTitle">Renomear conversa</h3>
+        <label class="field"><span>Título</span><input id="renameInput" maxlength="120" autocomplete="off" required /></label>
+        <menu>
+          <button class="btn" value="cancel" formnovalidate>Cancelar</button>
+          <button class="btn btn-primary" value="save">Salvar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="paletteDialog" class="dialog dialog-palette" aria-label="Paleta de comandos">
+      <div class="palette">
+        <div class="palette-input">
+          <svg><use href="#i-search" /></svg>
+          <input id="paletteInput" type="text" role="combobox" aria-expanded="true" aria-controls="paletteList" aria-autocomplete="list" placeholder="Digite um comando ou busque nas conversas…" aria-label="Paleta de comandos" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="paletteList" class="palette-list" role="listbox" aria-label="Resultados"></div>
+        <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></div>
+      </div>
     </dialog>
 
     <dialog id="dockerDialog" class="dialog dialog-wide">

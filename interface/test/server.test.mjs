@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -384,6 +384,123 @@ describe("history discovery + routes", () => {
     assert.ok(Number.isInteger(done.payload.count) && done.payload.count > 0);
     assert.equal(replay.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-1"), false);
   });
+  describe("session titles + conversation search", () => {
+    const user = (text) => ({ type: "message", message: { role: "user", content: text } });
+    const assistant = (text) => ({ type: "message", message: { role: "assistant", content: [{ type: "text", text }] } });
+    const header = (cwd, timestamp) => ({ type: "session", cwd, ...(timestamp ? { timestamp } : {}) });
+    const search = async (query) => (await getJson(`/api/search?q=${encodeURIComponent(query)}`)).results;
+    let alphaId;
+    let rich;
+    let accent;
+    let outsideDir;
+
+    before(async () => {
+      const { projects } = await getJson("/api/projects");
+      alphaId = projects.find((item) => item.cwd === projA).id;
+      rich = await sessionFile("--search--", "rich.jsonl", header(projA, "2025-03-01T10:00:00.000Z"), 1_400_000_100, [
+        { type: "session_info", name: 5 },
+        { type: "session_info", name: "Plano de login" },
+        user("Preciso de uma função de AUTENTICAÇÃO segura"),
+        assistant("Claro, vou implementar a autenticacao com tokens"),
+        { type: "message", message: { role: "toolResult", content: [{ type: "text", text: "segredo-tool" }] } },
+        { type: "message" },
+        { type: "message", message: { role: "assistant", content: [{ type: "toolCall" }] } },
+        user("outra coisa com autenticacao"),
+        { type: "session_info", name: "  Plano de auth final  " },
+      ]);
+      await writeFile(rich, `${await readFile(rich, "utf8")}\n{cortada\nnull\n`);
+      accent = await sessionFile("--search--", "accent.jsonl", header(histB), 1_400_000_200, [assistant("Resposta sobre Café com leite e açúcar")]);
+      await sessionFile("--search--", "blank-name.jsonl", header(projA), 1_400_000_050, [{ type: "session_info", name: "   " }, user("só o prompt: quokka-unico")]);
+      await sessionFile("--search--", "unknown.jsonl", header(histD), 1_400_000_300, [user("autenticacao em projeto desconhecido")]);
+      await sessionFile("--search--", "nocwd.jsonl", header(""), 1_400_000_310, [user("autenticacao sem cwd")]);
+      await sessionFile("--search--", "broken.jsonl", "{oops", 1_400_000_320);
+      for (let index = 0; index < 35; index++) {
+        await sessionFile("--bulk--", `bulk-${index}.jsonl`, header(projA), 1_300_000_000 + index, [user(`palavra-em-massa ${index}`)]);
+      }
+      outsideDir = await mkdtemp(path.join(tmp, "search-outside-"));
+      await writeFile(path.join(outsideDir, "leak.jsonl"), [JSON.stringify(header(projA)), JSON.stringify(user("autenticacao vazada"))].join("\n"));
+      try {
+        await symlink(outsideDir, path.join(sessionsRoot, "--link--"), "junction");
+      } catch {
+        // Links need privileges on some Windows setups; the path comes from readdir either way.
+      }
+    });
+
+    test("titles prefer the latest session name over the first prompt, falling back to the prompt", async () => {
+      const history = (await getJson(`/api/projects/${alphaId}/history`)).history;
+      assert.equal(history.find((item) => item.path === rich).title, "Plano de auth final");
+      assert.equal(history.find((item) => item.path.endsWith("blank-name.jsonl")).title, "só o prompt: quokka-unico");
+      assert.equal((await server.scanSession(rich, { fallback: "x" })).title, "Plano de auth final");
+      const empty = path.join(tmp, "empty-session.jsonl");
+      await writeFile(empty, "");
+      assert.deepEqual(await server.scanSession(empty, { fallback: "vazia" }), { title: "vazia", snippet: "" });
+    });
+
+    test("GET /api/search matches user and assistant text, ignoring case and accents, with a snippet", async () => {
+      const hits = await search("autenticacao");
+      assert.deepEqual(hits.map((hit) => hit.sessionPath), [rich]);
+      assert.equal(hits[0].projectId, alphaId);
+      assert.equal(hits[0].title, "Plano de auth final");
+      assert.equal(hits[0].timestamp, "2025-03-01T10:00:00.000Z");
+      assert.equal(hits[0].snippet, "Preciso de uma função de AUTENTICAÇÃO segura");
+      const viaAssistant = await search("CAFÉ");
+      assert.equal(viaAssistant.length, 1);
+      assert.equal(viaAssistant[0].sessionPath, accent);
+      assert.equal(viaAssistant[0].title, "Nova conversa");
+      assert.match(viaAssistant[0].snippet, /Café com leite/);
+      assert.equal(new Date(viaAssistant[0].timestamp).getTime() > 0, true);
+      assert.deepEqual((await search("quokka")).map((hit) => hit.title), ["só o prompt: quokka-unico"]);
+    });
+
+    test("tool results, unknown projects, header-less files and files outside the sessions dir are never searched", async () => {
+      for (const needle of ["segredo-tool", "projeto desconhecido", "sem cwd", "vazada"]) assert.deepEqual(await search(needle), [], needle);
+    });
+
+    test("empty or one-character queries return nothing; results are capped at 30", async () => {
+      for (const query of ["", "a", "  ", " é "]) assert.deepEqual(await search(query), [], JSON.stringify(query));
+      assert.deepEqual((await getJson("/api/search")).results, []);
+      assert.equal((await search("palavra-em-massa")).length, 30);
+    });
+
+    test("bounds: a file is read up to its byte cap, files and total bytes are limited", async () => {
+      const known = new Map([[server.cwdKey(projA), { id: alphaId }]]);
+      const dir = path.join(tmp, "bounded-sessions");
+      const put = async (name, lines, mtimeSeconds) => {
+        await mkdir(path.join(dir, "d"), { recursive: true });
+        const file = path.join(dir, "d", name);
+        await writeFile(file, lines.map((line) => JSON.stringify(line)).join("\n"));
+        await utimes(file, mtimeSeconds, mtimeSeconds);
+      };
+      await put("early.jsonl", [header(projA), user("zebra no inicio")], 1_000_000_003);
+      await put("late.jsonl", [header(projA), { type: "custom", data: "x".repeat(2000) }, user("zebra no fim")], 1_000_000_002);
+      await put("third.jsonl", [header(projA), user("zebra terceira")], 1_000_000_001);
+      const names = async (options) => (await server.searchSessions(dir, "zebra", { projectsByCwd: known, ...options })).map((hit) => path.basename(hit.sessionPath));
+      assert.deepEqual(await names({}), ["early.jsonl", "late.jsonl", "third.jsonl"]);
+      assert.deepEqual(await names({ maxFileBytes: 1000 }), ["early.jsonl", "third.jsonl"]);
+      assert.deepEqual(await names({ maxFiles: 2 }), ["early.jsonl", "late.jsonl"]);
+      assert.deepEqual(await names({ limit: 1 }), ["early.jsonl"]);
+      assert.deepEqual(await names({ maxTotalBytes: 1 }), ["early.jsonl"]);
+
+      // The real 5 MB cap: the oversized filler line is cut, so the match behind it is never read.
+      const huge = path.join(dir, "d", "huge.jsonl");
+      await writeFile(huge, [JSON.stringify(header(projA)), JSON.stringify({ type: "custom", data: "x".repeat(5 * 1024 * 1024 + 10) }), JSON.stringify(user("narval-escondido"))].join("\n"));
+      assert.deepEqual(await server.searchSessions(dir, "narval", { projectsByCwd: known }), []);
+      const flaky = async (file) => {
+        if (file.endsWith("late.jsonl")) throw new Error("vanished");
+        return stat(file);
+      };
+      assert.deepEqual(await names({ statFile: flaky }), ["early.jsonl", "third.jsonl"]);
+      assert.deepEqual(await server.searchSessions(path.join(tmp, "no-such-sessions"), "zebra", { projectsByCwd: known }), []);
+    });
+
+    test("GET /api/search needs auth, an allowed origin and GET", async () => {
+      const url = `${base}/api/search?q=autenticacao`;
+      assert.equal((await fetch(url)).status, 401);
+      assert.equal((await fetch(url, { headers: headers({ origin: "https://evil.example" }) })).status, 403);
+      assert.equal((await fetch(url, { method: "POST", headers: headers({ "content-type": "application/json" }), body: "{}" })).status, 405);
+    });
+  });
+
   describe("project files (@ mentions)", () => {
     const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, stdio: "ignore" });
     const put = async (root, files) => {
