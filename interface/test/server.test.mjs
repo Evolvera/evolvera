@@ -1,7 +1,8 @@
 // In-process tests for server.mjs helpers and routes (fake PI only; owned temp dirs only).
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import http from "node:http";
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -382,5 +383,101 @@ describe("history discovery + routes", () => {
     const done = replay.find((item) => item.event === "replay_done");
     assert.ok(Number.isInteger(done.payload.count) && done.payload.count > 0);
     assert.equal(replay.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-1"), false);
+  });
+  describe("project files (@ mentions)", () => {
+    const git = (cwd, ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, stdio: "ignore" });
+    const put = async (root, files) => {
+      for (const [name, content = "x"] of files.map((file) => (Array.isArray(file) ? file : [file]))) {
+        await mkdir(path.dirname(path.join(root, name)), { recursive: true });
+        await writeFile(path.join(root, name), content);
+      }
+    };
+    let repo;
+    let plain;
+
+    before(async () => {
+      repo = path.join(tmp, "files-repo");
+      plain = path.join(tmp, "files-plain");
+      await mkdir(repo, { recursive: true });
+      await put(repo, ["README.md", "src/app.js", "src/lib/util.js", [".gitignore", "ignored.txt\n"]]);
+      git(repo, "init", "-q");
+      git(repo, "add", "-A");
+      git(repo, "commit", "-qm", "init");
+      await put(repo, ["src/new file.js", "ignored.txt"]);
+      await put(plain, ["a.txt", ".env", "src/deep/er/f.js", ".hidden/x.txt", "node_modules/m/index.js", "build/b.js", "dist/d.js", ".next/n.js", "coverage/c.js", ".git/config"]);
+    });
+
+    test("gitListFiles lists tracked + untracked files without ignored ones; failures resolve null", async () => {
+      assert.deepEqual((await server.gitListFiles(repo)).sort(), [".gitignore", "README.md", "src/app.js", "src/lib/util.js", "src/new file.js"]);
+      assert.equal(await server.gitListFiles(repo, { bin: path.join(tmp, "no-such-git") }), null);
+    });
+
+    test("walkProjectFiles is breadth-first, skips build/dot dirs, honors the entry limit and ignores links", async () => {
+      assert.deepEqual((await server.walkProjectFiles(plain)).sort(), [".env", "a.txt", "src/deep/er/f.js"]);
+      const limited = await server.walkProjectFiles(plain, 1);
+      assert.equal(limited.length, 1);
+      assert.ok([".env", "a.txt"].includes(limited[0]));
+      assert.deepEqual(await server.walkProjectFiles(path.join(tmp, "files-missing")), []);
+      const outside = path.join(tmp, "files-outside");
+      await put(outside, ["secret.txt"]);
+      try {
+        await symlink(outside, path.join(plain, "link"), "junction");
+        await symlink(path.join(outside, "secret.txt"), path.join(plain, "secret-link.txt"), "file");
+      } catch {
+        // Links need privileges on some Windows setups; the rest of the test still holds.
+      }
+      assert.deepEqual((await server.walkProjectFiles(plain)).filter((file) => file.includes("secret")), []);
+    });
+
+    test("listProjectFiles keeps only paths inside the project, dedupes, caps the list and caches for 10 s", async () => {
+      const calls = [];
+      const lister = (files) => async (cwd) => {
+        calls.push(cwd);
+        return files;
+      };
+      const dir = path.join(tmp, "files-cache");
+      const dirty = ["ok/a.js", "ok/a.js", "../evil.js", "/etc/passwd", "C:\\win.txt", "C:rel.txt", "a/../../b.js", "..\\back.js", "a/../kept.js", "ok/b..c/d.js"];
+      const first = await server.listProjectFiles(dir, { git: lister(dirty), now: 1000 });
+      assert.deepEqual(first, ["ok/a.js", "a/../kept.js", "ok/b..c/d.js"]);
+      assert.equal(await server.listProjectFiles(dir, { git: lister(["other.js"]), now: 10_999 }), first);
+      assert.equal(calls.length, 1);
+      assert.deepEqual(await server.listProjectFiles(dir, { git: lister(["other.js"]), now: 11_000 }), ["other.js"]);
+      assert.equal(calls.length, 2);
+
+      // Not a git repository (git resolves null): falls back to the bounded walk.
+      assert.deepEqual((await server.listProjectFiles(plain, { git: async () => null, now: 5 })).sort(), [".env", "a.txt", "src/deep/er/f.js"]);
+      const huge = await server.listProjectFiles(path.join(tmp, "files-huge"), { git: async () => Array.from({ length: 100_005 }, (_, i) => `f/${i}.js`), now: 5 });
+      assert.equal(huge.length, 100_000);
+    });
+
+    test("GET /files ranks git files by query, returns at most 50, and needs auth + a known project", async () => {
+      const { projects } = await getJson("/api/projects");
+      const id = projects.find((item) => item.cwd === projA).id;
+      for (const file of ["src/app.js", "docs/app-notes.md", "src/lib/happy.js", "README.md"]) {
+        await mkdir(path.dirname(path.join(projA, file)), { recursive: true });
+        await writeFile(path.join(projA, file), "x");
+      }
+      git(projA, "init", "-q");
+      git(projA, "add", "-A");
+      git(projA, "commit", "-qm", "init");
+      const files = async (query) => (await getJson(`/api/projects/${id}/files${query}`)).files;
+      assert.deepEqual(await files("?q=app"), ["src/app.js", "docs/app-notes.md", "src/lib/happy.js"]);
+      assert.deepEqual(await files("?q=readme"), ["README.md"]);
+      assert.deepEqual(await files("?q=%2E%2E%2F%2E%2E%2Fetc%2Fpasswd"), []);
+      assert.ok((await files("")).includes("package.json"));
+
+      // 60 files in a non-git project: capped at 50 (git may or may not see a parent repo; the files are untracked either way).
+      const gamma = projects.find((item) => item.cwd === projC).id;
+      for (let index = 0; index < 60; index++) await writeFile(path.join(projC, `bulk-${String(index).padStart(2, "0")}.txt`), "x");
+      const bulk = (await getJson(`/api/projects/${gamma}/files?q=bulk`)).files;
+      assert.equal(bulk.length, 50);
+      assert.equal(bulk[0], "bulk-00.txt");
+
+      const url = `${base}/api/projects/${id}/files?q=app`;
+      assert.equal((await fetch(url)).status, 401);
+      assert.equal((await fetch(url, { headers: headers({ origin: "https://evil.example" }) })).status, 403);
+      assert.equal((await fetch(`${base}/api/projects/nope/files`, { headers: headers() })).status, 404);
+      assert.equal((await fetch(url, { method: "POST", headers: headers({ "content-type": "application/json" }), body: "{}" })).status, 405);
+    });
   });
 });

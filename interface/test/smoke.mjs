@@ -362,6 +362,44 @@ try {
   assert.deepEqual(toolTypes, ["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
   assert.ok(seen.some((item) => item.payload?.assistantMessageEvent?.type === "thinking_delta"));
 
+  // Comandos do PI para o menu `/`, e renomear/exportar a sessão.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-commands", type: "get_commands" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-commands" && item.payload.success));
+  const commands = seen.find((item) => item.payload?.id === "smoke-commands").payload.data.commands;
+  assert.deepEqual(commands.map((item) => item.source), ["prompt", "skill", "extension", "extension"]);
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-name", type: "set_session_name", name: "Renomeada" }, token);
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-export", type: "export_html" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-export" && item.payload.data?.path === "/tmp/fake-session.html"));
+  assert.ok(seen.some((item) => item.payload?.id === "smoke-name" && item.payload.success));
+
+  // Shell `!`: saída em blocos (bash_execution_update com o id do comando) e resposta final.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-bash", type: "bash", command: "echo oi" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-bash" && item.payload.type === "response"));
+  const bashEvents = seen.filter((item) => item.payload?.id === "smoke-bash").map((item) => item.payload);
+  assert.deepEqual(bashEvents.map((payload) => payload.type), ["bash_execution_update", "bash_execution_update", "response"]);
+  assert.equal(bashEvents[0].delta, "saída de: echo oi\n");
+  assert.deepEqual(bashEvents[2].data, { output: "saída de: echo oi\nlinha 2\n", exitCode: 0, cancelled: false, truncated: false });
+  // abort_bash interrompe um comando longo: a resposta do bash volta com cancelled.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-sleep", type: "bash", command: "sleep" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-sleep" && item.payload.type === "bash_execution_update"));
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-abort-bash", type: "abort_bash" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-sleep" && item.payload.type === "response"));
+  assert.equal(seen.find((item) => item.payload?.id === "smoke-sleep" && item.payload.type === "response").payload.data.cancelled, true);
+  const failedShell = await post(base, `/api/projects/${projectId}/command`, { id: "smoke-bash-fail", type: "bash", command: "nobytes" }, token);
+  assert.equal(failedShell.res.status, 202);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-bash-fail" && item.payload.success === false));
+  // As mensagens bashExecution entram nas entradas da sessão (histórico exibido pela interface).
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-entries", type: "get_entries" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.id === "smoke-entries"));
+  const shellEntries = seen.find((item) => item.payload?.id === "smoke-entries").payload.data.entries.filter((entry) => entry.message?.role === "bashExecution");
+  assert.deepEqual(shellEntries.map((entry) => [entry.message.command, entry.message.cancelled]), [["echo oi", false], ["sleep", true]]);
+
+  // Lista de arquivos para @: exige token e responde com caminhos relativos.
+  const filesUrl = `/api/projects/${projectId}/files?q=package`;
+  assert.equal((await fetch(`${base}${filesUrl}`)).status, 401);
+  const filesRes = await fetch(`${base}${filesUrl}`, { headers: { "x-pi-studio-token": token } });
+  assert.deepEqual(await filesRes.json(), { files: ["package.json"] });
+
   // Diálogo de extensão: pedido -> resposta -> PI recebe o valor escolhido.
   await post(base, `/api/projects/${projectId}/command`, { id: "smoke-ui", type: "prompt", message: "ui" }, token);
   await waitFor(() => seen.some((item) => item.payload?.type === "extension_ui_request" && item.payload.id === "fake-ui-1"));

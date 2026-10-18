@@ -91,12 +91,13 @@
           <div id="queueArea" class="queue-area" hidden></div>
           <form id="composer" class="composer">
             <div id="attachments" class="attachments"></div>
-            <textarea id="promptInput" rows="1" placeholder="Mensagem" aria-label="Mensagem para o PI"></textarea>
+            <textarea id="promptInput" rows="1" placeholder="Mensagem · / comandos · @ arquivos · ! shell" aria-label="Mensagem para o PI" aria-autocomplete="list" aria-controls="menu"></textarea>
             <div class="composer-row">
               <label class="icon-btn attach-btn" title="Anexar imagem">
                 <input id="imageInput" type="file" accept="image/*" multiple />
                 <svg><use href="#i-plus" /></svg><span class="sr-only">Anexar imagem</span>
               </label>
+              <span id="shellChip" class="shell-chip" hidden>$ shell</span>
               <span id="composerHint" class="composer-hint"></span>
               <button id="stopBtn" class="stop-btn" type="button" aria-label="Interromper" hidden><svg><use href="#i-stop" /></svg></button>
               <button id="sendBtn" class="send-btn" type="submit" aria-label="Enviar" disabled><svg><use href="#i-send" /></svg></button>
@@ -210,6 +211,14 @@
           <button class="btn" value="cancel">Cancelar</button>
           <button class="btn btn-primary" value="save" id="prefSaveBtn">Salvar</button>
         </menu>
+      </form>
+    </dialog>
+
+    <dialog id="shortcutsDialog" class="dialog dialog-shortcuts" aria-labelledby="shortcutsTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="shortcutsTitle">Atalhos de teclado</h3>
+        <div id="shortcutsBody" class="shortcuts"></div>
+        <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
       </form>
     </dialog>
 

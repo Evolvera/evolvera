@@ -477,17 +477,20 @@ describe("buildTimeline", () => {
       { role: "assistant" },
     ];
     const items = lib.buildTimeline(messages);
-    assert.deepEqual(items.map((item) => item.kind), ["user", "tools", "assistant", "assistant", "thinking", "error", "notice", "tools", "note", "divider", "divider"]);
-    const [user, group, done, simple, thinking, , , failures, , compaction, branch] = items;
+    assert.deepEqual(items.map((item) => item.kind), ["user", "tools", "bash", "assistant", "assistant", "thinking", "error", "notice", "bash", "bash", "note", "divider", "divider"]);
+    const [user, group, shell, done, simple, thinking, , , , failures, , compaction, branch] = items;
     assert.equal(user.optimistic, true);
     assert.equal(group.key, "t:2:c1");
     assert.equal(group.thinking, "plano\n\nsegundo");
-    assert.deepEqual(group.tools.map((tool) => [tool.id, tool.name, tool.status]), [["c1", "bash", "done"], ["4.1", "edit", "pending"], ["r5", "read", "error"], ["b:6", "bash", "done"]]);
+    assert.deepEqual(group.tools.map((tool) => [tool.id, tool.name, tool.status]), [["c1", "bash", "done"], ["4.1", "edit", "pending"], ["r5", "read", "error"]]);
+    assert.deepEqual([shell.key, shell.text, shell.output, shell.state, shell.exitCode, shell.truncated, shell.detail], ["x:6", "pwd", "/x", "done", 0, false, "done|0|false|2"]);
     assert.equal(done.text, "Pronto");
     assert.equal(done.thinking, "x\n\ny");
     assert.equal(simple.text, "texto simples");
     assert.equal(thinking.text, "só pensando");
-    assert.deepEqual(failures.tools.map((tool) => tool.status), ["error", "error"]);
+    assert.deepEqual([failures.state, failures.exitCode, failures.output], ["cancelled", null, ""]);
+    const [, , , , , , , , failed] = items;
+    assert.deepEqual([failed.state, failed.exitCode, failed.detail], ["error", 1, "error|1|false|0"]);
     assert.equal(compaction.text, "Contexto compactado");
     assert.equal(compaction.detail, "resumo");
     assert.equal(branch.text, "Resumo do ramo");
@@ -698,6 +701,8 @@ describe("terminal", () => {
       { role: "branchSummary" },
       { role: "mystery" },
       { role: "assistant" },
+      { role: "bashExecution", command: "tail -f x", output: "l1", _live: true },
+      { role: "bashExecution", command: "boom", output: "x", failed: true },
     ];
     const runtime = new Map([
       ["c3", { name: "bash", status: "running", partial: { content: [{ type: "text", text: "tick" }] } }],
@@ -730,6 +735,8 @@ describe("terminal", () => {
       ["c:14", "custom", "", "dim:[extensão]|out:nota"],
       ["d:15", "divider", "", "rule:Contexto compactado|dim:resumo"],
       ["d:16", "divider", "", "rule:Resumo do ramo"],
+      ["b:19", "tool", "running", "cmd:$ tail -f x|out:l1"],
+      ["b:20", "tool", "error", "cmd:$ boom|err:x"],
       ["l:live", "tool", "running", "cmd:write |add:+ "],
       ["n:2", "notice", "", "dim:fim"],
     ]);
@@ -919,5 +926,243 @@ describe("context breakdown", () => {
     assert.equal(zero.provider, "");
     assert.equal(zero.sessionFile, "/f");
     assert.equal(lib.contextBreakdown({}, { model: { id: "m" } }).thinking, "");
+  });
+});
+
+describe("composer: slash commands", () => {
+  test("sourceLabel names each command origin", () => {
+    assert.deepEqual(["studio", "extension", "skill", "prompt", "nope", undefined].map(lib.sourceLabel), ["Studio", "extensão", "skill", "prompt", "comando", "comando"]);
+  });
+
+  test("mergeCommands puts Studio built-ins first and drops colliding or malformed PI entries", () => {
+    const merged = lib.mergeCommands([
+      { name: "fix-tests", description: "Fix", source: "prompt" },
+      { name: "compact", description: "extension compact", source: "extension" },
+      { name: "skill:x", source: "skill" },
+      { name: "bare", description: 7 },
+      { name: "" },
+      { description: "sem nome" },
+      null,
+    ]);
+    assert.deepEqual(merged.map((command) => command.name), ["new", "compact", "name", "export", "atalhos", "fix-tests", "skill:x", "bare"]);
+    assert.equal(merged.find((command) => command.name === "compact").source, "studio");
+    assert.deepEqual(merged.slice(5), [
+      { name: "fix-tests", args: "", description: "Fix", source: "prompt" },
+      { name: "skill:x", args: "", description: "", source: "skill" },
+      { name: "bare", args: "", description: "", source: "extension" },
+    ]);
+    assert.equal(lib.mergeCommands(undefined).length, 5);
+    assert.equal(lib.mergeCommands("lixo").length, 5);
+  });
+
+  test("slashQuery only applies while the whole composer is a single /word", () => {
+    assert.equal(lib.slashQuery("/"), "");
+    assert.equal(lib.slashQuery("/com"), "com");
+    assert.equal(lib.slashQuery("/skill:brave"), "skill:brave");
+    for (const text of ["", "oi", " /new", "/new ", "/new arg", "/a\nb", "texto /x"]) assert.equal(lib.slashQuery(text), null, JSON.stringify(text));
+    assert.equal(lib.slashQuery(undefined), null);
+  });
+
+  test("filterCommands ranks name prefix, name substring, then description", () => {
+    const commands = [
+      { name: "skill:brave-search", description: "Web search" },
+      { name: "fix-tests", description: "Fix failing tests" },
+      { name: "retest", description: "" },
+      { name: "deploy" },
+      { name: "Test", description: "x" },
+    ];
+    assert.deepEqual(lib.filterCommands(commands, "test").map((command) => command.name), ["Test", "fix-tests", "retest"]);
+    assert.deepEqual(lib.filterCommands(commands, "fail").map((command) => command.name), ["fix-tests"]);
+    assert.deepEqual(lib.filterCommands(commands, "").map((command) => command.name), commands.map((command) => command.name));
+    assert.deepEqual(lib.filterCommands(commands, "BRAVE").map((command) => command.name), ["skill:brave-search"]);
+    assert.deepEqual(lib.filterCommands(commands, "zzz"), []);
+    assert.equal(lib.filterCommands(commands, undefined).length, 5);
+    assert.deepEqual(lib.filterCommands(lib.STUDIO_COMMANDS, "c").map((command) => command.name), ["compact", "new", "name", "export", "atalhos"]);
+  });
+
+  test("slashCompletion adds the separating space", () => {
+    assert.equal(lib.slashCompletion({ name: "compact" }), "/compact ");
+  });
+
+  test("slashEnterSubmits: exact PI commands and argument-free built-ins submit; others complete", () => {
+    const [newCommand, compact, name] = lib.STUDIO_COMMANDS;
+    assert.equal(lib.slashEnterSubmits(newCommand, "new"), true);
+    assert.equal(lib.slashEnterSubmits(compact, "compact"), true);
+    assert.equal(lib.slashEnterSubmits(name, "name"), false);
+    assert.equal(lib.slashEnterSubmits(newCommand, "ne"), false);
+    assert.equal(lib.slashEnterSubmits({ name: "fix", args: "", source: "prompt" }, "fix"), true);
+    assert.equal(lib.slashEnterSubmits({ name: "fix", args: "", source: "prompt" }, "fi"), false);
+  });
+
+  test("parseBuiltin recognizes Studio built-ins with trimmed arguments only", () => {
+    assert.deepEqual(lib.parseBuiltin("/new"), { name: "new", args: "" });
+    assert.deepEqual(lib.parseBuiltin("  /COMPACT  foco no código  \n"), { name: "compact", args: "foco no código" });
+    assert.deepEqual(lib.parseBuiltin("/name Meu título\ncom linhas"), { name: "name", args: "Meu título\ncom linhas" });
+    assert.deepEqual(lib.parseBuiltin("/atalhos"), { name: "atalhos", args: "" });
+    for (const text of ["", "/", "/fix-tests", "oi /new", "new", "/skill:x arg", undefined]) assert.equal(lib.parseBuiltin(text), null, JSON.stringify(text));
+  });
+});
+
+describe("composer: @ mentions", () => {
+  test("mentionToken finds an @word at a word boundary around the caret", () => {
+    assert.deepEqual(lib.mentionToken("@", 1), { start: 0, end: 1, query: "" });
+    assert.deepEqual(lib.mentionToken("veja @src/ap", 12), { start: 5, end: 12, query: "src/ap" });
+    assert.deepEqual(lib.mentionToken("veja @src/ap", undefined), { start: 5, end: 12, query: "src/ap" });
+    assert.deepEqual(lib.mentionToken("a\n@x y", 4), { start: 2, end: 4, query: "x" });
+    // Caret inside the word: the whole word is replaced.
+    assert.deepEqual(lib.mentionToken("ver @src/app.js agora", 7), { start: 4, end: 15, query: "sr" });
+    // Out-of-range carets clamp.
+    assert.deepEqual(lib.mentionToken("@ab", 99), { start: 0, end: 3, query: "ab" });
+    assert.equal(lib.mentionToken("@ab", -5), null);
+    for (const [text, cursor] of [["", 0], ["mail a@b.com", 12], ["@a b", 4], ["sem arroba", 4], ["@@x", 3], ["a @b c", 6]]) {
+      assert.equal(lib.mentionToken(text, cursor), null, JSON.stringify([text, cursor]));
+    }
+    assert.equal(lib.mentionToken(undefined, 0), null);
+  });
+
+  test("insertMention replaces the token, adds one space and places the caret after it", () => {
+    const token = lib.mentionToken("veja @src/ap", 12);
+    assert.deepEqual(lib.insertMention("veja @src/ap", token, "src/app.js"), { text: "veja @src/app.js ", cursor: 17 });
+    const middle = lib.mentionToken("ver @sr agora", 7);
+    assert.deepEqual(lib.insertMention("ver @sr agora", middle, "src/a.js"), { text: "ver @src/a.js agora", cursor: 14 });
+    const quoted = lib.mentionToken("@do", 3);
+    assert.deepEqual(lib.insertMention("@do", quoted, "docs/meu arquivo.md"), { text: '@"docs/meu arquivo.md" ', cursor: 23 });
+    assert.deepEqual(lib.insertMention(undefined, { start: 0, end: 0 }, "a"), { text: "@a ", cursor: 3 });
+  });
+
+  test("rankFiles: basename prefix > basename substring > path substring, shorter then alphabetical, limited", () => {
+    const files = ["docs/app-guide.md", "src/app.js", "src/lib/happy.js", "app.js", "src/app/index.js", "README.md", "src/Apple.js", "src/app.js"];
+    assert.deepEqual(lib.rankFiles(files, "app"), ["app.js", "src/app.js", "src/app.js", "src/Apple.js", "docs/app-guide.md", "src/lib/happy.js", "src/app/index.js"]);
+    assert.deepEqual(lib.rankFiles(files, "APP.JS", 2), ["app.js", "src/app.js"]);
+    assert.deepEqual(lib.rankFiles(["b/x.js", "a/x.js"], "x"), ["a/x.js", "b/x.js"]);
+    assert.deepEqual(lib.rankFiles(files, "readme"), ["README.md"]);
+    assert.deepEqual(lib.rankFiles(files, "nada"), []);
+    assert.equal(lib.rankFiles(files, "").length, files.length);
+    assert.equal(lib.rankFiles(files, undefined).length, files.length);
+    assert.equal(lib.rankFiles(Array.from({ length: 80 }, (_, i) => `f${i}.js`), "f").length, 50);
+  });
+});
+
+describe("composer: shell mode", () => {
+  test("isShellText / shellCommand", () => {
+    assert.equal(lib.isShellText("!ls"), true);
+    assert.equal(lib.isShellText("  !ls"), true);
+    assert.equal(lib.isShellText("ls !"), false);
+    assert.equal(lib.isShellText(""), false);
+    assert.equal(lib.isShellText(undefined), false);
+    assert.equal(lib.shellCommand("!ls -la "), "ls -la");
+    assert.equal(lib.shellCommand("  ! git status"), "git status");
+    assert.equal(lib.shellCommand("!"), "");
+    assert.equal(lib.shellCommand(undefined), "");
+  });
+
+  test("bashState and bashLabels", () => {
+    assert.equal(lib.bashState({ _live: true, exitCode: 1 }), "running");
+    assert.equal(lib.bashState({ cancelled: true, exitCode: 1 }), "cancelled");
+    assert.equal(lib.bashState({ exitCode: 2 }), "error");
+    assert.equal(lib.bashState({ failed: true }), "error");
+    assert.equal(lib.bashState({ exitCode: 0 }), "done");
+    assert.equal(lib.bashState({}), "done");
+    assert.deepEqual(lib.bashLabels({ state: "running" }), ["em execução"]);
+    assert.deepEqual(lib.bashLabels({ state: "done", truncated: true }), ["concluído", "truncado"]);
+    assert.deepEqual(lib.bashLabels({ state: "cancelled" }), ["cancelado"]);
+    assert.deepEqual(lib.bashLabels({ state: "error", exitCode: 127 }), ["código 127"]);
+    assert.deepEqual(lib.bashLabels({ state: "error", exitCode: null }), ["falhou"]);
+  });
+
+  test("appendBashOutput streams chunks and keeps only the newest 200k characters", () => {
+    const block = { output: "" };
+    lib.appendBashOutput(block, "a\n");
+    lib.appendBashOutput(block, undefined);
+    lib.appendBashOutput(block, "b");
+    assert.equal(block.output, "a\nb");
+    lib.appendBashOutput(block, "x".repeat(250_000));
+    assert.equal(block.output.length, 200_000);
+    assert.equal(block.output.endsWith("x"), true);
+    lib.appendBashOutput(block, "z");
+    assert.equal(block.output.length, 200_000);
+    assert.equal(block.output.endsWith("xz"), true);
+  });
+
+  test("finishBash applies the final bash response or its failure", () => {
+    const ok = lib.finishBash({ _live: true, output: "streamed" }, { success: true, data: { output: "final", exitCode: 3, cancelled: false, truncated: true } });
+    assert.deepEqual(ok, { _live: false, output: "final", exitCode: 3, cancelled: false, truncated: true });
+    const keepsStream = lib.finishBash({ _live: true, output: "streamed" }, { success: true, data: { cancelled: true } });
+    assert.deepEqual(keepsStream, { _live: false, output: "streamed", exitCode: 0, cancelled: true, truncated: false });
+    const noData = lib.finishBash({ _live: true, output: "" }, { success: true });
+    assert.deepEqual(noData, { _live: false, output: "", exitCode: 0, cancelled: false, truncated: false });
+    const failed = lib.finishBash({ _live: true, output: "parcial" }, { success: false, error: "Sem shell" });
+    assert.deepEqual(failed, { _live: false, output: "parcial\nSem shell", failed: true });
+    const bare = lib.finishBash({ _live: true, output: "" }, undefined);
+    assert.deepEqual(bare, { _live: false, output: "Falha ao executar o comando.", failed: true });
+    assert.equal(lib.bashState(failed), "error");
+  });
+
+  test("reconcileEntries keeps a Studio shell block until PI's own bashExecution entry exists", () => {
+    const local = { role: "bashExecution", command: "ls", output: "a", timestamp: 10_000, _bash: true };
+    assert.deepEqual(lib.reconcileEntries([], [local]), [local]);
+    const persisted = { role: "bashExecution", command: "ls", output: "a", exitCode: 0, timestamp: 10_050 };
+    assert.deepEqual(lib.reconcileEntries([persisted], [local]), [persisted]);
+    assert.deepEqual(lib.reconcileEntries([{ ...persisted, timestamp: undefined }], [local]).length, 1);
+    // An older run of the same command, or another command, does not hide the new block.
+    assert.deepEqual(lib.reconcileEntries([{ ...persisted, timestamp: 1_000 }], [local]).length, 2);
+    assert.deepEqual(lib.reconcileEntries([{ ...persisted, command: "pwd" }], [local]).length, 2);
+    assert.deepEqual(lib.reconcileEntries([{ role: "user", command: "ls" }], [local]).length, 2);
+  });
+
+  test("shell blocks re-render when status or output changes", () => {
+    const [running] = lib.buildTimeline([{ role: "bashExecution", command: "make", output: "a", _live: true }]);
+    const [grown] = lib.buildTimeline([{ role: "bashExecution", command: "make", output: "ab", _live: true }]);
+    const [done] = lib.buildTimeline([{ role: "bashExecution", command: "make", output: "ab", exitCode: 0, truncated: true }]);
+    const signatures = [running, grown, done].map(lib.timelineSignature);
+    assert.equal(new Set(signatures).size, 3);
+  });
+});
+
+describe("keyboard shortcuts", () => {
+  const key = (name, extra = {}) => ({ key: name, ...extra });
+
+  test("shortcutAction maps global shortcuts", () => {
+    assert.equal(lib.shortcutAction(key("/", { ctrlKey: true })), "shortcuts");
+    assert.equal(lib.shortcutAction(key("/", { metaKey: true }), { typing: true }), "shortcuts");
+    assert.equal(lib.shortcutAction(key("`", { ctrlKey: true })), "console");
+    assert.equal(lib.shortcutAction(key("O", { ctrlKey: true, shiftKey: true })), "new");
+    assert.equal(lib.shortcutAction(key("o", { metaKey: true, shiftKey: true })), "new");
+    assert.equal(lib.shortcutAction(key("o", { ctrlKey: true })), null);
+    assert.equal(lib.shortcutAction(key("x", { ctrlKey: true, shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(key("Escape")), "escape");
+    assert.equal(lib.shortcutAction(key("Escape"), { typing: true }), "escape");
+    assert.equal(lib.shortcutAction(key("/")), "focus");
+    assert.equal(lib.shortcutAction(key("/"), { typing: true }), null);
+    assert.equal(lib.shortcutAction(key("/", { shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(key("a")), null);
+    assert.equal(lib.shortcutAction(key("/", { altKey: true })), null);
+    assert.equal(lib.shortcutAction(key("/", { ctrlKey: true, isComposing: true })), null);
+    assert.equal(lib.shortcutAction(null), null);
+    assert.equal(lib.shortcutAction({}), null);
+  });
+
+  test("recallAction: ArrowUp recalls into an empty composer; ArrowDown/Esc clear a recalled message", () => {
+    assert.equal(lib.recallAction(key("ArrowUp"), { empty: true, recalled: false }), "recall");
+    assert.equal(lib.recallAction(key("ArrowUp"), { empty: false, recalled: true }), null);
+    assert.equal(lib.recallAction(key("ArrowDown"), { empty: false, recalled: true }), "clear");
+    assert.equal(lib.recallAction(key("Escape"), { empty: false, recalled: true }), "clear");
+    assert.equal(lib.recallAction(key("Escape"), { empty: true, recalled: false }), null);
+    assert.equal(lib.recallAction(key("ArrowDown"), { empty: true, recalled: false }), null);
+    assert.equal(lib.recallAction(key("a"), { empty: true, recalled: true }), null);
+    for (const modifier of ["shiftKey", "ctrlKey", "metaKey", "altKey", "isComposing"]) {
+      assert.equal(lib.recallAction(key("ArrowUp", { [modifier]: true }), { empty: true, recalled: false }), null, modifier);
+    }
+    assert.equal(lib.recallAction(null, { empty: true, recalled: true }), null);
+  });
+
+  test("SHORTCUT_GROUPS documents every shortcut with keys and a label", () => {
+    assert.ok(lib.SHORTCUT_GROUPS.length >= 3);
+    for (const group of lib.SHORTCUT_GROUPS) {
+      assert.ok(group.title && group.items.length);
+      for (const item of group.items) assert.ok(item.keys.length && item.keys.every(Boolean) && item.label);
+    }
+    const all = lib.SHORTCUT_GROUPS.flatMap((group) => group.items.map((item) => item.keys.join("+")));
+    for (const combo of ["Esc", "Ctrl+/", "Ctrl+Shift+O", "Ctrl+`", "↑", "Enter", "Ctrl+Enter", "Shift+Enter"]) assert.ok(all.includes(combo), combo);
   });
 });

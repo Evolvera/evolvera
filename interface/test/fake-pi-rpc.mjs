@@ -191,6 +191,36 @@ function streamInspector(command) {
   });
 }
 
+// Direct `!` shell commands. "sleep" runs until abort_bash; "fail" exits 1; "big" reports truncation;
+// "nobytes" answers with an error response. Output streams as bash_execution_update chunks.
+let activeBash = null;
+let sessionName = "fake";
+
+function finishBash(run, cancelled) {
+  clearTimeout(run.timer);
+  const exitCode = cancelled ? undefined : run.command.command.startsWith("fail") ? 1 : 0;
+  const truncated = run.command.command === "big";
+  record({ role: "bashExecution", command: run.command.command, output: run.output, exitCode, cancelled, truncated, timestamp: Date.now() });
+  respond(run.command, true, { output: run.output, exitCode, cancelled, truncated, ...(truncated ? { fullOutputPath: "/tmp/pi-bash-fake.log" } : {}) });
+  activeBash = null;
+}
+
+function startBash(command) {
+  if (command.command === "nobytes") {
+    emit({ id: command.id, type: "response", command: "bash", success: false, error: "Shell indisponível" });
+    return;
+  }
+  const run = { command, output: "", timer: null };
+  activeBash = run;
+  const chunks = command.command === "sleep" ? ["dormindo\n"] : [`saída de: ${command.command}\n`, "linha 2\n"];
+  chunks.forEach((delta, index) => setTimeout(() => {
+    if (activeBash !== run) return;
+    run.output += delta;
+    emit({ type: "bash_execution_update", id: command.id, delta });
+    if (command.command !== "sleep" && index === chunks.length - 1) run.timer = setTimeout(() => activeBash === run && finishBash(run, false), 30);
+  }, 20 * (index + 1)));
+}
+
 function handle(command) {
   if (command.type === "test_exit") {
     process.exit(Number.isInteger(command.code) ? command.code : 0);
@@ -234,6 +264,40 @@ function handle(command) {
     return;
   }
 
+  if (command.type === "get_commands") {
+    respond(command, true, {
+      commands: [
+        { name: "fix-tests", description: "Fix failing tests", source: "prompt", location: "project", path: "/p/.pi/prompts/fix-tests.md" },
+        { name: "skill:brave-search", description: "Web search via Brave API", source: "skill", location: "user" },
+        { name: "session-info", source: "extension" },
+        { name: "compact", description: "Colide com o built-in do Studio", source: "extension" },
+      ],
+    });
+    return;
+  }
+
+  if (command.type === "bash") {
+    startBash(command);
+    return;
+  }
+
+  if (command.type === "abort_bash") {
+    if (activeBash) finishBash(activeBash, true);
+    respond(command);
+    return;
+  }
+
+  if (command.type === "set_session_name") {
+    sessionName = command.name;
+    respond(command);
+    return;
+  }
+
+  if (command.type === "export_html") {
+    respond(command, true, { path: command.outputPath || "/tmp/fake-session.html" });
+    return;
+  }
+
   if (command.type === "get_state") {
     respond(command, true, {
       model: { provider: "fake", id: "fake-model", name: "Fake Model", reasoning: true, contextWindow: 200000 },
@@ -242,7 +306,7 @@ function handle(command) {
       isCompacting: false,
       sessionFile: undefined,
       sessionId: "fake-session",
-      sessionName: "fake",
+      sessionName,
       messageCount: entries.length,
       pendingMessageCount: 0,
     });

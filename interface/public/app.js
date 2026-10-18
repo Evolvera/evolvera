@@ -1,6 +1,25 @@
 import {
   INSPECTOR_TABS,
+  SHORTCUT_GROUPS,
+  appendBashOutput,
+  bashLabels,
   buildTerminal,
+  capTail,
+  filterCommands,
+  finishBash,
+  insertMention,
+  isShellText,
+  mentionToken,
+  mergeCommands,
+  parseBuiltin,
+  recallAction,
+  shellCommand,
+  shortcutAction,
+  slashCompletion,
+  slashEnterSubmits,
+  slashQuery,
+  sourceLabel,
+  splitLines,
   clampPanelWidth,
   collectSubagents,
   contextBreakdown,
@@ -80,6 +99,7 @@ const els = {
   prompt: $("#promptInput"),
   imageInput: $("#imageInput"),
   hint: $("#composerHint"),
+  shellChip: $("#shellChip"),
   stop: $("#stopBtn"),
   send: $("#sendBtn"),
   modeLabel: $("#modeLabel"),
@@ -129,6 +149,8 @@ const els = {
   diffPath: $("#diffPath"),
   diffStats: $("#diffStats"),
   diffBody: $("#diffBody"),
+  shortcutsDialog: $("#shortcutsDialog"),
+  shortcutsBody: $("#shortcutsBody"),
   customizeDialog: $("#customizeDialog"),
   customizeForm: $("#customizeForm"),
   prefName: $("#prefName"),
@@ -187,6 +209,11 @@ const state = {
   notices: [],
   subagentRecords: new Map(),
   compacting: false,
+  commands: null,
+  commandsLoading: false,
+  lastSent: null,
+  recalled: null,
+  bash: null,
 };
 
 const nodeCache = new Map();
@@ -200,17 +227,31 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const toastSeen = new Map();
 
-function toast(message, type = "info") {
+// action: { label, run } adds a button (and keeps the toast a little longer).
+function toast(message, type = "info", action = null) {
   if (!shouldShowToast(toastSeen, `${type}:${message}`, Date.now())) return;
   const item = document.createElement("div");
-  item.className = `toast ${type}`;
+  item.className = `toast ${type}${action ? " has-action" : ""}`;
   item.setAttribute("role", type === "error" ? "alert" : "status");
-  item.textContent = message;
+  const text = document.createElement("span");
+  text.textContent = message;
+  item.append(text);
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      Promise.resolve().then(action.run).catch(report);
+      item.remove();
+    });
+    item.append(button);
+  }
   els.toasts.append(item);
   setTimeout(() => {
     item.classList.add("leaving");
     setTimeout(() => item.remove(), 220);
-  }, 4200);
+  }, action ? 9000 : 4200);
 }
 
 async function api(path, options = {}) {
@@ -256,7 +297,7 @@ function failPending(id, error) {
 
 // Resolves with the RPC `response` event carrying our id (delivered over SSE).
 function rpcRequest(command, timeoutMs = 20000) {
-  const id = newId();
+  const id = command.id || newId();
   return new Promise((resolve, reject) => {
     const timer = timeoutMs ? setTimeout(() => {
       state.pending.delete(id);
@@ -341,13 +382,23 @@ let menuCleanup = null;
 function closeMenu() {
   els.menu.hidden = true;
   els.menu.replaceChildren();
+  els.menu.classList.remove("menu-wide", "menu-live");
+  els.menu.setAttribute("role", "menu");
+  els.menu.onmousedown = null;
   menuCleanup?.();
   menuCleanup = null;
 }
 
-// items: { label, sub?, icon?, checked?, disabled?, onSelect } | { section } | { separator: true }
-function openMenu(anchor, items, { align = "start", placement = "below" } = {}) {
+// items: { label, sub?, badge?, icon?, checked?, active?, disabled?, onSelect } | { section } | { separator: true }
+// passive: a listbox the owner drives (the composer / and @ pickers): no focus move, no key handling,
+// and onClose runs whenever the menu closes for any reason.
+function openMenu(anchor, items, { align = "start", placement = "below", passive = false, wide = false, onClose } = {}) {
   closeMenu();
+  els.menu.classList.toggle("menu-wide", wide);
+  els.menu.classList.toggle("menu-live", passive);
+  els.menu.setAttribute("role", passive ? "listbox" : "menu");
+  els.menu.onmousedown = passive ? (event) => event.preventDefault() : null;
+  let optionIndex = 0;
   for (const item of items) {
     if (item.section) {
       const label = document.createElement("div");
@@ -362,11 +413,16 @@ function openMenu(anchor, items, { align = "start", placement = "below" } = {}) 
     }
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `menu-item${item.checked ? " checked" : ""}`;
-    button.setAttribute("role", item.checked === undefined ? "menuitem" : "menuitemradio");
+    button.className = `menu-item${item.checked ? " checked" : ""}${item.active ? " active" : ""}`;
+    button.setAttribute("role", passive ? "option" : item.checked === undefined ? "menuitem" : "menuitemradio");
+    if (passive) {
+      button.id = `menu-opt-${optionIndex++}`;
+      button.tabIndex = -1;
+      button.setAttribute("aria-selected", String(Boolean(item.active)));
+    }
     if (item.checked !== undefined) button.setAttribute("aria-checked", String(Boolean(item.checked)));
     button.disabled = Boolean(item.disabled);
-    button.innerHTML = `${item.icon ? svg(item.icon, "menu-ico") : ""}<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<small>${esc(item.sub)}</small>` : ""}</span>${item.checked ? svg("i-check", "menu-check") : ""}`;
+    button.innerHTML = `${item.icon ? svg(item.icon, "menu-ico") : ""}<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<small>${esc(item.sub)}</small>` : ""}</span>${item.badge ? `<span class="menu-badge">${esc(item.badge)}</span>` : ""}${item.checked ? svg("i-check", "menu-check") : ""}`;
     button.addEventListener("click", () => {
       closeMenu();
       Promise.resolve(item.onSelect?.()).catch(report);
@@ -383,7 +439,8 @@ function openMenu(anchor, items, { align = "start", placement = "below" } = {}) 
   els.menu.style.left = `${left}px`;
   els.menu.style.top = `${Math.max(8, top)}px`;
   const buttons = () => [...els.menu.querySelectorAll(".menu-item:not(:disabled)")];
-  (els.menu.querySelector(".menu-item.checked:not(:disabled)") || buttons()[0])?.focus();
+  if (passive) els.menu.querySelector(".menu-item.active")?.scrollIntoView({ block: "nearest" });
+  else (els.menu.querySelector(".menu-item.checked:not(:disabled)") || buttons()[0])?.focus();
   const onKey = (event) => {
     const list = buttons();
     const index = list.indexOf(document.activeElement);
@@ -402,12 +459,14 @@ function openMenu(anchor, items, { align = "start", placement = "below" } = {}) 
   const onPointer = (event) => {
     if (!els.menu.contains(event.target) && !anchor.contains(event.target)) closeMenu();
   };
-  document.addEventListener("keydown", onKey, true);
-  setTimeout(() => document.addEventListener("pointerdown", onPointer, true), 0);
+  if (!passive) document.addEventListener("keydown", onKey, true);
+  const pointerTimer = setTimeout(() => document.addEventListener("pointerdown", onPointer, true), 0);
   window.addEventListener("resize", closeMenu, { once: true });
   menuCleanup = () => {
+    clearTimeout(pointerTimer);
     document.removeEventListener("keydown", onKey, true);
     document.removeEventListener("pointerdown", onPointer, true);
+    onClose?.();
   };
 }
 
@@ -544,6 +603,11 @@ function resetConversation() {
   state.liveThinking = "";
   state.notices = [];
   state.subagentRecords = new Map();
+  state.commands = null;
+  state.lastSent = null;
+  state.recalled = null;
+  state.bash = null;
+  closeComposerMenu();
   nodeCache.clear();
   els.thread.replaceChildren();
   state.stick = true;
@@ -860,6 +924,11 @@ function handleRpc(event) {
       state.phase = "thinking";
       break;
     }
+    case "bash_execution_update": {
+      const block = state.messages.find((message) => message._bashId === event.id);
+      if (block) appendBashOutput(block, event.delta);
+      break;
+    }
     case "queue_update":
       state.queue = { steering: event.steering || [], followUp: event.followUp || [] };
       renderQueue();
@@ -1028,6 +1097,16 @@ function renderItem(item) {
         </button>
         ${open ? `<div class="tool-list">${item.tools.map(toolRow).join("")}</div>` : ""}
         ${files.length ? `<div class="file-cards">${files.map(fileCard).join("")}</div>` : ""}`;
+      break;
+    }
+    case "bash": {
+      const lines = capTail(splitLines(item.output), 200);
+      const outputText = (lines.hidden ? [`… ${plural(lines.hidden, "linha oculta", "linhas ocultas")}`, ...lines.lines] : lines.lines).join("\n");
+      const icon = item.state === "running" ? svg("i-spinner", "spin") : item.state === "done" ? svg("i-check") : svg("i-alert");
+      node.className = `msg msg-bash is-${item.state}`;
+      node.innerHTML = `<div class="bash-head"><span class="bash-prompt" aria-hidden="true">$</span><code class="bash-cmd" title="${esc(item.text)}">${esc(item.text)}</code>
+        <span class="bash-state">${icon}${esc(bashLabels(item).join(" · "))}</span></div>
+        ${lines.lines.length ? `<div class="bash-scroll"><pre class="bash-out">${esc(outputText)}</pre></div>` : `<div class="bash-empty">${item.state === "running" ? "Aguardando saída…" : "Sem saída"}</div>`}`;
       break;
     }
     case "divider":
@@ -1519,9 +1598,13 @@ function confirmDialog({ title, message, confirm }) {
   });
 }
 
-async function compactNow() {
-  if (state.compacting || !state.currentProject || state.isStreaming) return;
-  const ok = await confirmDialog({
+async function compactNow({ instructions = "", confirm = true } = {}) {
+  if (state.compacting || !state.currentProject) return;
+  if (state.isStreaming) {
+    toast("Disponível quando o PI terminar a resposta atual.", "warning");
+    return;
+  }
+  const ok = !confirm || await confirmDialog({
     title: "Compactar o contexto agora?",
     message: "O PI resume o histórico desta conversa e passa a enviar o resumo ao modelo no lugar das mensagens antigas. As mensagens continuam salvas na sessão.",
     confirm: "Compactar",
@@ -1531,7 +1614,7 @@ async function compactNow() {
   scheduleInspector("context");
   try {
     // Compaction calls the model and can take a while: no client-side timeout.
-    const res = await rpcRequest({ type: "compact" }, 0);
+    const res = await rpcRequest({ type: "compact", ...(instructions ? { customInstructions: instructions } : {}) }, 0);
     if (!res.success) throw new Error(res.error || "Não foi possível compactar o contexto.");
     toast("Contexto compactado.");
   } catch (error) {
@@ -1616,16 +1699,39 @@ function openDiff(toolIds) {
 
 // ---------------------------------------------------------------- composer
 
+function composerHint(shell) {
+  if (state.sending && state.gate) return "Aguardando o PI iniciar… a mensagem sai em seguida";
+  if (state.bash) return "Comando em execução · Esc interrompe";
+  if (shell) return state.isStreaming ? "Shell indisponível enquanto o PI responde" : "Executa no shell do projeto; o resultado entra no contexto";
+  return state.isStreaming ? "Enter direciona · Ctrl+Enter enfileira" : "";
+}
+
 function updateComposer() {
-  const hasContent = Boolean(els.prompt.value.trim() || state.attachments.length);
+  const value = els.prompt.value;
+  const shell = isShellText(value);
+  const hasContent = Boolean(value.trim() || state.attachments.length);
+  // A shell command needs an idle agent and a command; nothing is sent while one is running.
+  const blocked = Boolean(state.bash) || (shell && (state.isStreaming || !shellCommand(value)));
   // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
-  els.send.disabled = state.processExited || state.sending || !hasContent || (!state.currentProject && !state.gate);
-  els.stop.hidden = !state.isStreaming;
-  els.send.classList.toggle("is-queue", state.isStreaming);
-  els.send.setAttribute("aria-label", state.isStreaming ? "Direcionar (steer)" : "Enviar");
-  els.hint.textContent = state.sending && state.gate ? "Aguardando o PI iniciar… a mensagem sai em seguida" : state.isStreaming ? "Enter direciona · Ctrl+Enter enfileira" : "";
+  els.send.disabled = state.processExited || state.sending || !hasContent || blocked || (!state.currentProject && !state.gate);
+  els.composer.classList.toggle("is-shell", shell);
+  els.shellChip.hidden = !shell;
+  els.stop.hidden = !(state.isStreaming || state.bash);
+  els.send.classList.toggle("is-queue", state.isStreaming && !shell);
+  els.send.setAttribute("aria-label", shell ? "Executar" : state.isStreaming ? "Direcionar (steer)" : "Enviar");
+  els.hint.textContent = composerHint(shell);
+  els.hint.title = els.hint.textContent;
   els.prompt.disabled = state.processExited;
 }
+
+// The long placeholder (/ commands, @ files, ! shell) does not fit a phone-width composer.
+const narrowComposer = window.matchMedia("(max-width: 560px)");
+const PLACEHOLDER_LONG = els.prompt.placeholder;
+const applyPlaceholder = () => {
+  els.prompt.placeholder = narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
+};
+narrowComposer.addEventListener("change", applyPlaceholder);
+applyPlaceholder();
 
 function autoResize() {
   els.prompt.style.height = "auto";
@@ -1685,6 +1791,13 @@ async function submit(mode) {
   if (!state.currentProject) return;
   const message = els.prompt.value.trim();
   if (!message && !state.attachments.length) return;
+  if (state.bash) return;
+  closeComposerMenu();
+  const builtin = parseBuiltin(message);
+  if (builtin) return runBuiltin(builtin, message);
+  if (isShellText(message)) return runShell(message);
+  if (message) state.lastSent = message;
+  state.recalled = null;
   const type = mode === "steer" || mode === "follow_up" ? mode : "prompt";
   const images = state.attachments.map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
   let optimistic = null;
@@ -1727,6 +1840,21 @@ els.composer.addEventListener("submit", (event) => {
   submit(state.isStreaming ? "steer" : "prompt");
 });
 els.prompt.addEventListener("keydown", (event) => {
+  if (composerMenu.kind && handleComposerMenuKey(event)) return;
+  const recalled = state.recalled !== null && els.prompt.value === state.recalled;
+  const recall = recallAction(event, { empty: !els.prompt.value.trim(), recalled });
+  if (recall === "recall" && state.lastSent) {
+    event.preventDefault();
+    state.recalled = state.lastSent;
+    setComposerText(state.lastSent);
+    return;
+  }
+  if (recall === "clear") {
+    event.preventDefault();
+    event.stopPropagation();
+    clearComposer();
+    return;
+  }
   const action = composerAction(event, state.isStreaming);
   if (!action || action === "newline") return;
   event.preventDefault();
@@ -1735,7 +1863,9 @@ els.prompt.addEventListener("keydown", (event) => {
 els.prompt.addEventListener("input", () => {
   autoResize();
   updateComposer();
+  syncComposerMenus();
 });
+els.prompt.addEventListener("blur", () => closeComposerMenu());
 els.prompt.addEventListener("paste", (event) => {
   const files = [...(event.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
   if (!files.length) return;
@@ -1758,7 +1888,279 @@ els.composer.addEventListener("drop", (event) => {
 els.imageInput.addEventListener("change", () => {
   addImages(els.imageInput.files).catch(report).finally(() => (els.imageInput.value = ""));
 });
-els.stop.addEventListener("click", () => sendRpc({ type: "abort" }).catch(report));
+
+function setComposerText(text, cursor = text.length) {
+  els.prompt.value = text;
+  els.prompt.setSelectionRange(cursor, cursor);
+  autoResize();
+  updateComposer();
+}
+
+function clearComposer() {
+  els.prompt.value = "";
+  state.recalled = null;
+  autoResize();
+  updateComposer();
+}
+
+// Stop button and Esc: a running shell command first, otherwise the agent's response.
+function interrupt() {
+  if (state.bash) return sendRpc({ type: "abort_bash" }).catch(report);
+  if (state.isStreaming) return sendRpc({ type: "abort" }).catch(report);
+  return undefined;
+}
+els.stop.addEventListener("click", interrupt);
+
+// ----------------------------------------------------- built-in / commands
+
+async function renameSession(title) {
+  if (!title) {
+    toast("Use /name seguido do título da conversa.", "warning");
+    return;
+  }
+  const res = await rpcRequest({ type: "set_session_name", name: title });
+  if (!res.success) throw new Error(res.error || "Não foi possível renomear a conversa.");
+  toast(`Conversa renomeada: ${truncate(title, 60)}`);
+  sendRpc({ type: "get_state" }).catch(() => {});
+  await refreshHistory();
+}
+
+async function exportSession() {
+  // Rendering the whole session can take a while on a long conversation.
+  const res = await rpcRequest({ type: "export_html" }, 120000);
+  if (!res.success) throw new Error(res.error || "Não foi possível exportar a conversa.");
+  const file = res.data?.path;
+  if (!file) {
+    toast("Conversa exportada.");
+    return;
+  }
+  toast(`Exportado em ${file}`, "info", {
+    label: "Copiar caminho",
+    run: () => {
+      if (!navigator.clipboard) throw new Error("A cópia não está disponível neste navegador.");
+      return navigator.clipboard.writeText(file).then(() => toast("Caminho copiado."));
+    },
+  });
+}
+
+const BUILTIN_HANDLERS = {
+  new: () => newSession(),
+  compact: (instructions) => compactNow({ instructions, confirm: false }),
+  name: renameSession,
+  export: exportSession,
+  atalhos: () => toggleShortcuts(true),
+};
+
+async function runBuiltin({ name, args }, text) {
+  state.lastSent = text;
+  clearComposer();
+  try {
+    await BUILTIN_HANDLERS[name](args);
+  } catch (error) {
+    report(error);
+  }
+}
+
+// `!command`: runs in the project shell through PI's bash RPC; the block streams into the thread.
+async function runShell(text) {
+  const command = shellCommand(text);
+  if (!command) return;
+  if (state.isStreaming) {
+    toast("O shell fica indisponível enquanto o PI responde.", "warning");
+    return;
+  }
+  state.lastSent = text;
+  const id = newId();
+  const block = { role: "bashExecution", command, output: "", exitCode: null, cancelled: false, truncated: false, timestamp: Date.now(), _bash: true, _live: true, _bashId: id };
+  state.messages.push(block);
+  state.bash = { id };
+  state.stick = true;
+  clearComposer();
+  scheduleRender();
+  try {
+    // The response arrives when the command ends, however long it runs: no client-side timeout.
+    finishBash(block, await rpcRequest({ type: "bash", id, command }, 0));
+  } catch (error) {
+    finishBash(block, { success: false, error: error.message });
+  } finally {
+    if (state.bash?.id === id) state.bash = null;
+    updateComposer();
+    scheduleRender();
+  }
+  if (!state.processExited) {
+    sendRpc({ type: "get_entries" }).catch(() => {});
+    refreshStats();
+  }
+}
+
+// ---------------------------------------------------- shortcuts overlay
+
+function renderShortcuts() {
+  els.shortcutsBody.replaceChildren(...SHORTCUT_GROUPS.map((group) => {
+    const section = document.createElement("section");
+    const rows = group.items.map((item) => `<div class="shortcut-row"><span>${esc(item.label)}</span><span class="shortcut-keys">${item.keys.map((key) => `<kbd>${esc(key)}</kbd>`).join("")}</span></div>`);
+    section.innerHTML = `<h4>${esc(group.title)}</h4>${rows.join("")}`;
+    return section;
+  }));
+}
+
+function toggleShortcuts(open = !els.shortcutsDialog.open) {
+  if (open === els.shortcutsDialog.open) return;
+  if (open) els.shortcutsDialog.showModal();
+  else els.shortcutsDialog.close();
+}
+
+// ------------------------------------------ composer popovers (/ and @)
+
+// kind: "slash" | "mention" | null (closed). entries: [{ item, command | file }].
+const composerMenu = { kind: null, entries: [], index: 0 };
+let mentionTimer = null;
+let mentionSeq = 0;
+
+function resetComposerMenu() {
+  composerMenu.kind = null;
+  composerMenu.entries = [];
+  composerMenu.index = 0;
+  els.prompt.removeAttribute("aria-activedescendant");
+}
+
+function cancelMention() {
+  mentionSeq++;
+  clearTimeout(mentionTimer);
+}
+
+function closeComposerMenu() {
+  cancelMention();
+  if (composerMenu.kind) closeMenu();
+  resetComposerMenu();
+}
+
+function showComposerMenu(kind, entries, index = 0) {
+  // Another menu (model, project) opened meanwhile owns the popover, and late results (commands,
+  // files) must not pop up after the user left the composer.
+  if ((!els.menu.hidden && !composerMenu.kind) || document.activeElement !== els.prompt) return;
+  closeMenu();
+  if (!entries.length) return;
+  composerMenu.kind = kind;
+  composerMenu.entries = entries;
+  composerMenu.index = index;
+  const items = entries.map((entry, position) => ({ ...entry.item, active: position === index, onSelect: () => acceptComposerEntry(kind, entry, "click") }));
+  openMenu(els.composer, items, { placement: "above", passive: true, wide: true, onClose: resetComposerMenu });
+  els.prompt.setAttribute("aria-activedescendant", `menu-opt-${index}`);
+}
+
+function setComposerCompletion(text, cursor) {
+  setComposerText(text, cursor);
+  closeComposerMenu();
+  els.prompt.focus();
+}
+
+// via: "enter" | "tab" | "click". Enter submits a command that is already complete.
+function acceptComposerEntry(kind, entry, via) {
+  if (kind === "slash") {
+    const query = slashQuery(els.prompt.value);
+    if (via === "enter" && query !== null && slashEnterSubmits(entry.command, query)) {
+      closeComposerMenu();
+      return submit(state.isStreaming ? "steer" : "prompt").catch(report);
+    }
+    return setComposerCompletion(slashCompletion(entry.command));
+  }
+  const token = mentionToken(els.prompt.value, els.prompt.selectionStart);
+  if (!token) return closeComposerMenu();
+  const next = insertMention(els.prompt.value, token, entry.file);
+  return setComposerCompletion(next.text, next.cursor);
+}
+
+function handleComposerMenuKey(event) {
+  if (event.isComposing) return false;
+  const plain = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && plain) {
+    event.preventDefault();
+    const count = composerMenu.entries.length;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    showComposerMenu(composerMenu.kind, composerMenu.entries, (composerMenu.index + step + count) % count);
+    return true;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeComposerMenu();
+    return true;
+  }
+  if ((event.key === "Tab" || event.key === "Enter") && plain) {
+    event.preventDefault();
+    acceptComposerEntry(composerMenu.kind, composerMenu.entries[composerMenu.index], event.key === "Enter" ? "enter" : "tab");
+    return true;
+  }
+  // Moving the caret leaves the word the menu was completing.
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) closeComposerMenu();
+  return false;
+}
+
+function slashEntries(commands, query) {
+  return filterCommands(commands, query).map((command) => ({
+    command,
+    item: { label: `/${command.name}`, sub: [command.args, command.description].filter(Boolean).join(" · "), badge: sourceLabel(command.source) },
+  }));
+}
+
+// PI's get_commands (extensions, prompt templates, skills): fetched once per conversation.
+async function loadCommands() {
+  if (state.commandsLoading) return;
+  state.commandsLoading = true;
+  const project = state.currentProject;
+  try {
+    const res = await rpcRequest({ type: "get_commands" }, 15000);
+    if (res.success && state.currentProject === project) state.commands = Array.isArray(res.data?.commands) ? res.data.commands : [];
+  } catch {
+    // Built-ins still work; the next "/" retries.
+  } finally {
+    state.commandsLoading = false;
+  }
+  if (state.commands) refreshSlashMenu(true);
+}
+
+function refreshSlashMenu(keepIndex = false) {
+  const query = slashQuery(els.prompt.value);
+  if (query === null) {
+    if (composerMenu.kind === "slash") closeComposerMenu();
+    return;
+  }
+  if (!state.commands && state.currentProject && !state.processExited) loadCommands();
+  const entries = slashEntries(mergeCommands(state.commands || []), query);
+  const index = keepIndex && composerMenu.kind === "slash" ? Math.min(composerMenu.index, entries.length - 1) : 0;
+  if (entries.length) showComposerMenu("slash", entries, index);
+  else closeComposerMenu();
+}
+
+function refreshMentionMenu(token) {
+  cancelMention();
+  const seq = mentionSeq;
+  mentionTimer = setTimeout(async () => {
+    const project = state.currentProject;
+    if (!project) return;
+    try {
+      const { files } = await api(`/api/projects/${encodeURIComponent(project.id)}/files?q=${encodeURIComponent(token.query)}`);
+      if (seq !== mentionSeq) return;
+      const entries = (files || []).map((file) => ({ file, item: { label: basename(file), sub: file === basename(file) ? "" : file, icon: "i-file" } }));
+      if (entries.length) showComposerMenu("mention", entries);
+      else closeComposerMenu();
+    } catch {
+      if (seq === mentionSeq) closeComposerMenu();
+    }
+  }, 120);
+}
+
+function syncComposerMenus() {
+  const value = els.prompt.value;
+  if (isShellText(value)) return closeComposerMenu();
+  if (slashQuery(value) !== null) {
+    cancelMention();
+    return refreshSlashMenu();
+  }
+  const token = mentionToken(value, els.prompt.selectionStart);
+  return token ? refreshMentionMenu(token) : closeComposerMenu();
+}
 
 function renderQueue() {
   const items = [...state.queue.steering.map((text) => ["Direcionada", text]), ...state.queue.followUp.map((text) => ["Na fila", text])];
@@ -2129,15 +2531,32 @@ els.projectMenuBtn.addEventListener("click", () => {
     })),
   ]);
 });
+const isTypingTarget = (target) => Boolean(target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false])"));
+
 document.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "`") {
+  const modalOpen = Boolean(document.querySelector("dialog[open]"));
+  const action = shortcutAction(event, { typing: isTypingTarget(event.target) || modalOpen });
+  if (action === "console") {
     event.preventDefault();
     setDrawer(els.drawer.hidden);
-  } else if (event.key === "Escape" && !els.drawer.hidden && !document.querySelector("dialog[open]") && els.menu.hidden) {
-    setDrawer(false);
+  } else if (action === "shortcuts") {
+    // The overlay toggles itself, but never opens on top of another dialog.
+    if (modalOpen && !els.shortcutsDialog.open) return;
+    event.preventDefault();
+    toggleShortcuts();
+  } else if (action === "new") {
+    event.preventDefault();
+    if (!modalOpen) newSession().catch(report);
+  } else if (action === "focus") {
+    if (!els.prompt.disabled) els.prompt.focus();
+  } else if (action === "escape" && !event.defaultPrevented && !modalOpen && els.menu.hidden) {
+    // The drawer closes first; otherwise Esc interrupts, except while typing in another field.
+    if (!els.drawer.hidden) setDrawer(false);
+    else if (!isTypingTarget(event.target) || event.target === els.prompt) interrupt();
   }
 });
 
+renderShortcuts();
 updateComposer();
 renderAttachments();
 applyPanelWidth();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { access, open, readdir, readFile, stat } from "node:fs/promises";
@@ -8,6 +8,7 @@ import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rankFiles } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -711,6 +712,56 @@ async function listProjectHistory(project) {
   return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50);
 }
 
+// ---- @-mention file picker: relative POSIX paths of a project, ranked per query.
+const FILE_RESULT_LIMIT = 50;
+const FILE_CACHE_TTL_MS = 10_000;
+const FILE_LIST_MAX = 100_000;
+const FILE_WALK_LIMIT = 5000;
+const FILE_WALK_SKIP = new Set([".git", "node_modules", "dist", "build", ".next", "coverage"]);
+const fileCache = new Map();
+
+// Tracked + untracked-but-not-ignored files, NUL-separated so odd names survive. Resolves null
+// (never rejects) when git is missing, times out or cwd is not a repository.
+export function gitListFiles(cwd, { bin = "git", timeoutMs = 3000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(bin, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+      resolve(error ? null : stdout.split(String.fromCharCode(0)).filter(Boolean));
+    });
+  });
+}
+
+// Breadth-first, so shallow files win when the entry budget runs out. Symlinks are not followed.
+export async function walkProjectFiles(cwd, limit = FILE_WALK_LIMIT) {
+  const files = [];
+  const queue = [""];
+  for (let next = 0; next < queue.length && files.length < limit; next++) {
+    for (const entry of await readdirSafe(path.join(cwd, queue[next]))) {
+      const relative = queue[next] ? `${queue[next]}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (!FILE_WALK_SKIP.has(entry.name) && !entry.name.startsWith(".")) queue.push(relative);
+      } else if (entry.isFile() && files.length < limit) {
+        files.push(relative);
+      }
+    }
+  }
+  return files;
+}
+
+// Only paths that stay inside cwd are ever returned, whatever the source produced.
+function insideProject(relative) {
+  return !path.win32.parse(relative).root && !path.win32.normalize(relative).split(path.win32.sep).includes("..");
+}
+
+export async function listProjectFiles(cwd, { git = gitListFiles, now = Date.now() } = {}) {
+  const key = cwdKey(cwd);
+  const cached = fileCache.get(key);
+  if (cached && now - cached.at < FILE_CACHE_TTL_MS) return cached.files;
+  const listed = (await git(cwd)) ?? (await walkProjectFiles(cwd));
+  const files = [...new Set(listed.filter(insideProject))].slice(0, FILE_LIST_MAX);
+  fileCache.set(key, { at: now, files });
+  return files;
+}
+
 function normalizedAuthority(value) {
   if (typeof value !== "string" || !value) return null;
   try {
@@ -838,7 +889,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 function parseProjectRoute(pathname) {
-  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch))?$/);
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files))?$/);
   if (!match) return null;
   return { projectId: decodeURIComponent(match[1]), action: match[2] };
 }
@@ -929,6 +980,11 @@ async function route(req, res) {
 
       if (req.method === "GET" && action === "history") {
         return json(res, 200, { history: await listProjectHistory(project) });
+      }
+
+      if (req.method === "GET" && action === "files") {
+        const files = await listProjectFiles(project.cwd);
+        return json(res, 200, { files: rankFiles(files, url.searchParams.get("q") || "", FILE_RESULT_LIMIT) });
       }
 
       if (req.method === "POST" && action === "switch") {

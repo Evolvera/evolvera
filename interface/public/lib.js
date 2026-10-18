@@ -506,6 +506,11 @@ export function entriesToMessages(entries, leafId) {
 export function reconcileEntries(entries, currentMessages = []) {
   const reconciled = [...entries];
   for (const message of currentMessages) {
+    // A shell block the user ran from the composer stays until PI's own bashExecution entry exists.
+    if (message?._bash) {
+      if (!reconciled.some((entry) => entry.role === "bashExecution" && entry.command === message.command && !(entry.timestamp < message.timestamp - 1000))) reconciled.push(message);
+      continue;
+    }
     if (!message?._optimistic) continue;
     const text = messageText(message);
     if (reconciled.some((entry) => entry.role === "user" && messageText(entry) === text)) continue;
@@ -646,10 +651,11 @@ export function buildTimeline(messages = [], runtime = new Map()) {
         break;
       }
       case "bashExecution": {
-        const failed = Boolean(message.exitCode) || Boolean(message.cancelled);
-        const tool = { id: `b:${mi}`, name: "bash", args: { command: message.command }, status: failed ? "error" : "done", result: { content: [{ type: "text", text: message.output || "" }] }, isError: failed };
-        ensureGroup(`${mi}:${tool.id}`).tools.push(tool);
-        tools.set(tool.id, tool);
+        group = null;
+        const output = message.output || "";
+        const item = { kind: "bash", key: `x:${mi}`, text: message.command, output, state: bashState(message), exitCode: message.exitCode ?? null, truncated: Boolean(message.truncated) };
+        item.detail = `${item.state}|${item.exitCode}|${item.truncated}|${output.length}`;
+        items.push(item);
         break;
       }
       case "custom":
@@ -702,6 +708,209 @@ export function composerAction(event, isStreaming) {
   if (event.ctrlKey || event.metaKey) return isStreaming ? "follow_up" : "prompt";
   return isStreaming ? "steer" : "prompt";
 }
+
+// ------------------------------------------------- composer: / @ ! and keys
+
+// Commands Studio runs itself; they are never sent to the model as text. `args` starting with
+// "<" marks a required argument.
+export const STUDIO_COMMANDS = [
+  { name: "new", args: "", description: "Começar uma nova conversa", source: "studio" },
+  { name: "compact", args: "[instruções]", description: "Compactar o contexto da conversa", source: "studio" },
+  { name: "name", args: "<título>", description: "Dar um nome a esta conversa", source: "studio" },
+  { name: "export", args: "", description: "Exportar a conversa em HTML", source: "studio" },
+  { name: "atalhos", args: "", description: "Mostrar os atalhos de teclado", source: "studio" },
+];
+
+const SOURCE_LABELS = { studio: "Studio", extension: "extensão", skill: "skill", prompt: "prompt" };
+
+export function sourceLabel(source) {
+  return SOURCE_LABELS[source] || "comando";
+}
+
+// Studio built-ins first, then PI's get_commands entries (a built-in name wins a collision).
+export function mergeCommands(piCommands) {
+  const taken = new Set(STUDIO_COMMANDS.map((command) => command.name));
+  const extra = (Array.isArray(piCommands) ? piCommands : [])
+    .filter((command) => typeof command?.name === "string" && command.name && !taken.has(command.name))
+    .map((command) => ({ name: command.name, args: "", description: typeof command.description === "string" ? command.description : "", source: command.source || "extension" }));
+  return [...STUDIO_COMMANDS, ...extra];
+}
+
+// The slash menu is open while the whole composer is one "/word"; returns the word or null.
+export function slashQuery(text) {
+  const match = /^\/(\S*)$/.exec(String(text ?? ""));
+  return match ? match[1] : null;
+}
+
+// Name prefix, then name substring, then description substring; original order within a rank.
+export function filterCommands(commands, query) {
+  const needle = String(query ?? "").toLowerCase();
+  const ranked = [];
+  commands.forEach((command, order) => {
+    const name = command.name.toLowerCase();
+    let rank = 3;
+    if (name.startsWith(needle)) rank = 0;
+    else if (name.includes(needle)) rank = 1;
+    else if (String(command.description ?? "").toLowerCase().includes(needle)) rank = 2;
+    if (rank < 3) ranked.push({ command, rank, order });
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.order - b.order).map((entry) => entry.command);
+}
+
+export function slashCompletion(command) {
+  return `/${command.name} `;
+}
+
+// Enter on a suggestion submits (instead of completing) only when the typed word already is that
+// command and nothing more is needed: PI commands, and Studio built-ins without a required argument.
+export function slashEnterSubmits(command, query) {
+  if (command.name !== query) return false;
+  return command.source !== "studio" || !command.args.startsWith("<");
+}
+
+// "/compact foco no código" -> { name: "compact", args: "foco no código" }; null for anything else.
+export function parseBuiltin(text) {
+  const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(String(text ?? "").trim());
+  const command = match && STUDIO_COMMANDS.find((item) => item.name === match[1].toLowerCase());
+  return command ? { name: command.name, args: (match[2] || "").trim() } : null;
+}
+
+// `@file` token around the cursor: starts at a word boundary, replaced through the end of the word.
+export function mentionToken(text, cursor) {
+  const value = String(text ?? "");
+  const end = Math.min(Math.max(Number.isInteger(cursor) ? cursor : value.length, 0), value.length);
+  const match = /(?:^|\s)@([^\s@]*)$/.exec(value.slice(0, end));
+  if (!match) return null;
+  const tail = /^\S*/.exec(value.slice(end))[0];
+  return { start: end - match[1].length - 1, end: end + tail.length, query: match[1] };
+}
+
+// Replaces the token with `@path ` (quoted when the path has spaces); the caret lands after the space.
+export function insertMention(text, token, filePath) {
+  const value = String(text ?? "");
+  const reference = /\s/.test(filePath) ? `@"${filePath}"` : `@${filePath}`;
+  const after = value.slice(token.end);
+  const gap = after.startsWith(" ") ? "" : " ";
+  const head = `${value.slice(0, token.start)}${reference}${gap}`;
+  return { text: head + after, cursor: head.length + (gap ? 0 : 1) };
+}
+
+// Basename prefix > basename substring > path substring; shorter, then alphabetical, within a rank.
+export function rankFiles(files, query, limit = 50) {
+  const needle = String(query ?? "").toLowerCase();
+  const ranked = [];
+  for (const file of files) {
+    const lower = file.toLowerCase();
+    const name = lower.slice(lower.lastIndexOf("/") + 1);
+    let rank = 3;
+    if (name.startsWith(needle)) rank = 0;
+    else if (name.includes(needle)) rank = 1;
+    else if (lower.includes(needle)) rank = 2;
+    if (rank < 3) ranked.push({ file, rank });
+  }
+  ranked.sort((a, b) => a.rank - b.rank || a.file.length - b.file.length || a.file.localeCompare(b.file));
+  return ranked.slice(0, limit).map((entry) => entry.file);
+}
+
+export function isShellText(text) {
+  return /^\s*!/.test(String(text ?? ""));
+}
+
+export function shellCommand(text) {
+  return String(text ?? "").replace(/^\s*!/, "").trim();
+}
+
+// ---- shell (`!`) blocks: bashExecution messages the composer creates and updates live.
+
+const BASH_OUTPUT_MAX = 200_000;
+
+export function bashState(message) {
+  if (message._live) return "running";
+  if (message.cancelled) return "cancelled";
+  return message.exitCode || message.failed ? "error" : "done";
+}
+
+const BASH_LABELS = { running: "em execução", done: "concluído", cancelled: "cancelado" };
+
+export function bashLabels(item) {
+  const labels = [BASH_LABELS[item.state] || (item.exitCode ? `código ${item.exitCode}` : "falhou")];
+  if (item.truncated) labels.push("truncado");
+  return labels;
+}
+
+// Streaming chunk (bash_execution_update). Keeps the newest BASH_OUTPUT_MAX characters.
+export function appendBashOutput(message, delta) {
+  const output = `${message.output}${delta ?? ""}`;
+  message.output = output.length > BASH_OUTPUT_MAX ? output.slice(output.length - BASH_OUTPUT_MAX) : output;
+  return message;
+}
+
+// Applies the final `bash` response (or its failure) to the live block.
+export function finishBash(message, response) {
+  message._live = false;
+  if (response?.success) {
+    const data = response.data || {};
+    if (typeof data.output === "string") message.output = data.output;
+    message.exitCode = data.exitCode ?? 0;
+    message.cancelled = Boolean(data.cancelled);
+    message.truncated = Boolean(data.truncated);
+  } else {
+    message.failed = true;
+    message.output = `${message.output ? `${message.output}\n` : ""}${response?.error || "Falha ao executar o comando."}`;
+  }
+  return message;
+}
+
+// Esc/ArrowDown clear a recalled message; ArrowUp in an empty composer recalls the last one.
+export function recallAction(event, { empty, recalled }) {
+  if (!event || event.isComposing || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return null;
+  if (event.key === "ArrowUp" && empty) return "recall";
+  if ((event.key === "ArrowDown" || event.key === "Escape") && recalled) return "clear";
+  return null;
+}
+
+// Global shortcuts. `typing`: focus is in a text field or a modal is open.
+export function shortcutAction(event, { typing = false } = {}) {
+  if (!event || event.isComposing || event.altKey) return null;
+  const key = String(event.key);
+  if (event.ctrlKey || event.metaKey) {
+    if (key === "/") return "shortcuts";
+    if (key === "`") return "console";
+    return event.shiftKey && key.toLowerCase() === "o" ? "new" : null;
+  }
+  if (key === "Escape") return "escape";
+  return key === "/" && !event.shiftKey && !typing ? "focus" : null;
+}
+
+export const SHORTCUT_GROUPS = [
+  {
+    title: "Mensagem",
+    items: [
+      { keys: ["Enter"], label: "Enviar (durante a resposta, direciona o PI)" },
+      { keys: ["Ctrl", "Enter"], label: "Enfileirar durante a resposta" },
+      { keys: ["Shift", "Enter"], label: "Nova linha" },
+      { keys: ["↑"], label: "Campo vazio: recuperar a última mensagem" },
+      { keys: ["/"], label: "No início: comandos · fora de um campo: focar a mensagem" },
+      { keys: ["@"], label: "Mencionar um arquivo do projeto" },
+      { keys: ["!"], label: "No início: executar no shell do projeto" },
+      { keys: ["Tab"], label: "Completar a sugestão" },
+    ],
+  },
+  {
+    title: "Conversa",
+    items: [
+      { keys: ["Esc"], label: "Interromper a resposta ou o comando em execução" },
+      { keys: ["Ctrl", "Shift", "O"], label: "Nova conversa" },
+    ],
+  },
+  {
+    title: "Interface",
+    items: [
+      { keys: ["Ctrl", "/"], label: "Mostrar ou ocultar esta lista" },
+      { keys: ["Ctrl", "`"], label: "Console RPC" },
+    ],
+  },
+];
 
 // ------------------------------------------------------- extension dialogs
 
@@ -898,9 +1107,9 @@ export function buildTerminal(messages = [], runtime = new Map(), notices = [], 
         break;
       }
       case "bashExecution": {
-        const failed = Boolean(message.exitCode) || Boolean(message.cancelled);
+        const outcome = bashState(message);
         const tool = newTool(`b:${mi}`, "bash", { command: message.command });
-        Object.assign(tool, { status: failed ? "error" : "done", isError: failed, result: { content: [{ type: "text", text: message.output || "" }] } });
+        Object.assign(tool, { status: outcome === "cancelled" ? "error" : outcome, isError: outcome === "error" || outcome === "cancelled", result: { content: [{ type: "text", text: message.output || "" }] } });
         addTool(`b:${mi}`, tool);
         break;
       }
