@@ -388,7 +388,15 @@ describe("history discovery + routes", () => {
     const user = (text) => ({ type: "message", message: { role: "user", content: text } });
     const assistant = (text) => ({ type: "message", message: { role: "assistant", content: [{ type: "text", text }] } });
     const header = (cwd, timestamp) => ({ type: "session", cwd, ...(timestamp ? { timestamp } : {}) });
-    const search = async (query) => (await getJson(`/api/search?q=${encodeURIComponent(query)}`)).results;
+    const search = async (query) => {
+      let response;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        response = await getJson(`/api/search?q=${encodeURIComponent(query)}`);
+        if (!response.indexing) return response.results;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error("Session index did not finish refreshing");
+    };
     let alphaId;
     let rich;
     let accent;
@@ -424,6 +432,7 @@ describe("history discovery + routes", () => {
       } catch {
         // Links need privileges on some Windows setups; the path comes from readdir either way.
       }
+      await server.refreshSessionIndex();
     });
 
     test("titles prefer the latest session name over the first prompt, falling back to the prompt", async () => {
@@ -431,6 +440,10 @@ describe("history discovery + routes", () => {
       assert.equal(history.find((item) => item.path === rich).title, "Plano de auth final");
       assert.equal(history.find((item) => item.path.endsWith("blank-name.jsonl")).title, "só o prompt: quokka-unico");
       assert.equal((await server.scanSession(rich, { fallback: "x" })).title, "Plano de auth final");
+      // A session written after the last index refresh is titled by a direct scan.
+      const fresh = await sessionFile("--search--", "fresh-after-index.jsonl", header(projA, "2031-01-01T00:00:00.000Z"), 1_900_000_000, [{ type: "session_info", name: "Recém-criada" }, user("depois do índice")]);
+      const after = (await getJson(`/api/projects/${alphaId}/history`)).history;
+      assert.equal(after.find((item) => item.path === fresh).title, "Recém-criada");
       const empty = path.join(tmp, "empty-session.jsonl");
       await writeFile(empty, "");
       assert.deepEqual(await server.scanSession(empty, { fallback: "vazia" }), { title: "vazia", snippet: "" });
@@ -462,7 +475,7 @@ describe("history discovery + routes", () => {
       assert.equal((await search("palavra-em-massa")).length, 30);
     });
 
-    test("bounds: a file is read up to its byte cap, files and total bytes are limited", async () => {
+    test("index scans remain bounded per file and retain the newest text", async () => {
       const known = new Map([[server.cwdKey(projA), { id: alphaId }]]);
       const dir = path.join(tmp, "bounded-sessions");
       const put = async (name, lines, mtimeSeconds) => {
@@ -477,9 +490,10 @@ describe("history discovery + routes", () => {
       const names = async (options) => (await server.searchSessions(dir, "zebra", { projectsByCwd: known, ...options })).map((hit) => path.basename(hit.sessionPath));
       assert.deepEqual(await names({}), ["early.jsonl", "late.jsonl", "third.jsonl"]);
       assert.deepEqual(await names({ maxFileBytes: 1000 }), ["early.jsonl", "third.jsonl"]);
-      assert.deepEqual(await names({ maxFiles: 2 }), ["early.jsonl", "late.jsonl"]);
       assert.deepEqual(await names({ limit: 1 }), ["early.jsonl"]);
-      assert.deepEqual(await names({ maxTotalBytes: 1 }), ["early.jsonl"]);
+      const capped = await server.scanSessionIndexEntry(path.join(dir, "d", "late.jsonl"), { textCap: 8 });
+      assert.equal(capped.text.length <= 8, true);
+      assert.match(capped.text, /fim$/);
 
       // The real 5 MB cap: the oversized filler line is cut, so the match behind it is never read.
       const huge = path.join(dir, "d", "huge.jsonl");
@@ -491,6 +505,118 @@ describe("history discovery + routes", () => {
       };
       assert.deepEqual(await names({ statFile: flaky }), ["early.jsonl", "third.jsonl"]);
       assert.deepEqual(await server.searchSessions(path.join(tmp, "no-such-sessions"), "zebra", { projectsByCwd: known }), []);
+    });
+
+    test("incremental index coalesces refreshes, skips unchanged files, updates and removes entries", async () => {
+      const dir = path.join(tmp, "incremental-sessions");
+      const sub = path.join(dir, "project");
+      await mkdir(sub, { recursive: true });
+      const file = path.join(sub, "one.jsonl");
+      await writeFile(file, "first");
+      const indexed = [];
+      let scans = 0;
+      const index = new server.SessionIndex(dir, { scan: async (filePath) => {
+        scans++;
+        indexed.push(filePath);
+        return { filePath, mtimeMs: (await stat(filePath)).mtimeMs, size: (await stat(filePath)).size, cwdKey: server.cwdKey(projA), timestamp: "now", title: "Title", text: "needle" };
+      } });
+      await Promise.all([index.refresh(), index.refresh()]);
+      assert.equal(scans, 1);
+      await index.refresh();
+      assert.equal(scans, 1);
+      await writeFile(file, "changed-content");
+      await utimes(file, new Date(), new Date());
+      await index.refresh();
+      assert.equal(scans, 2);
+      await rm(file);
+      await index.refresh();
+      assert.equal(index.entries.size, 0);
+
+      await writeFile(file, "pending");
+      let release;
+      const slow = new server.SessionIndex(dir, { scan: async (filePath) => {
+        await new Promise((resolve) => { release = resolve; });
+        const info = await stat(filePath);
+        return { filePath, ...info, cwdKey: server.cwdKey(projA), timestamp: "now", title: "T", text: "needle" };
+      } });
+      const building = slow.refresh();
+      assert.equal(slow.refresh(), building);
+      assert.equal(slow.search("needle", new Map()).length, 0);
+      assert.equal(slow.indexing, true);
+      await waitFor(() => typeof release === "function");
+      release();
+      await building;
+      assert.equal(slow.indexing, false);
+
+      // A file that stops being a valid session (scan -> null) leaves the index.
+      let valid = true;
+      const shrinking = new server.SessionIndex(dir, { scan: async (filePath) => {
+        if (!valid) return null;
+        const info = await stat(filePath);
+        return { filePath, mtimeMs: info.mtimeMs, size: info.size, cwdKey: "k", timestamp: "now", title: "T", text: "x" };
+      } });
+      await shrinking.refresh();
+      assert.equal(shrinking.entries.size, 1);
+      valid = false;
+      await writeFile(file, "no longer a session header");
+      await shrinking.refresh();
+      assert.equal(shrinking.entries.size, 0);
+
+      // A scan that throws (unreadable file) also drops the entry.
+      valid = true;
+      await writeFile(file, "valid again");
+      await shrinking.refresh();
+      assert.equal(shrinking.entries.size, 1);
+      shrinking.scan = async () => { throw new Error("EACCES"); };
+      await writeFile(file, "unreadable now!");
+      await shrinking.refresh();
+      assert.equal(shrinking.entries.size, 0);
+    });
+
+    test("knownProjects reuses the known list and discovers only when it is empty", async () => {
+      let discovered = 0;
+      const discover = async () => { discovered++; return [{ id: "d" }]; };
+      assert.deepEqual(await server.knownProjects(new Map([["a", { id: "a" }]]), discover), [{ id: "a" }]);
+      assert.equal(discovered, 0);
+      assert.deepEqual(await server.knownProjects(new Map(), discover), [{ id: "d" }]);
+      assert.equal(discovered, 1);
+    });
+
+    test("search uses the pre-folded text when present and folds on the fly otherwise", () => {
+      const index = new server.SessionIndex(path.join(tmp, "unused"));
+      const project = { id: "p" };
+      const base = { cwdKey: "k", timestamp: "t", title: "T" };
+      index.entries.set("a", { ...base, filePath: "a", mtimeMs: 2, text: "Ação rápida", folded: "acao rapida" });
+      index.entries.set("b", { ...base, filePath: "b", mtimeMs: 1, text: "Outra AÇÃO" });
+      assert.deepEqual(index.search("acao", new Map([["k", project]])).map((hit) => hit.sessionPath), ["a", "b"]);
+      // A stale fold that matches but no message does yields no hit.
+      index.entries.set("c", { ...base, filePath: "c", mtimeMs: 3, text: "nada aqui", folded: "fantasma" });
+      assert.deepEqual(index.search("fantasma", new Map([["k", project]])), []);
+    });
+
+    test("indexedTitle reuses the index only for an unchanged file", () => {
+      const entry = { mtimeMs: 5, size: 10, title: "Nome salvo" };
+      assert.equal(server.indexedTitle(entry, { mtimeMs: 5, size: 10 }), "Nome salvo");
+      assert.equal(server.indexedTitle(entry, { mtimeMs: 6, size: 10 }), null);
+      assert.equal(server.indexedTitle(entry, { mtimeMs: 5, size: 11 }), null);
+      assert.equal(server.indexedTitle(undefined, { mtimeMs: 5, size: 10 }), null);
+    });
+
+    test("refreshIfStale refreshes in the background only when stale and idle, and logs failures", async () => {
+      const logs = [];
+      const log = (...args) => logs.push(args);
+      let calls = 0;
+      const fake = (overrides) => ({ refreshPromise: null, lastRefresh: 0, refresh: () => { calls++; return Promise.resolve(); }, ...overrides });
+      assert.equal(server.refreshIfStale(fake({ refreshPromise: Promise.resolve() }), { now: 1e9, log }), false);
+      assert.equal(server.refreshIfStale(fake({ lastRefresh: 1e9 - 1000 }), { now: 1e9, log }), false);
+      assert.equal(calls, 0);
+      assert.equal(server.refreshIfStale(fake({}), { now: 1e9, log }), true);
+      assert.equal(calls, 1);
+      assert.equal(server.refreshIfStale(fake({ refresh: () => Promise.reject(new Error("disco")) }), { now: 1e9, log }), true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(logs, [["warn", "Session search index refresh failed", { error: "disco" }]]);
+      // Default clock/logger path.
+      assert.equal(server.refreshIfStale(fake({ lastRefresh: Date.now() })), false);
     });
 
     test("GET /api/search needs auth, an allowed origin and GET", async () => {

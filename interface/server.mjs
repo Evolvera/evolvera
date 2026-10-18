@@ -22,9 +22,10 @@ const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
 const SESSION_SCAN_MAX_BYTES = 5 * 1024 * 1024;
 const SEARCH_LIMIT = 30;
-const SEARCH_MAX_FILES = 400;
-const SEARCH_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const SEARCH_MIN_CHARS = 2;
+const SEARCH_TEXT_CAP = 64 * 1024;
+const SEARCH_REFRESH_INTERVAL_MS = 15_000;
+const SEARCH_INDEX_CONCURRENCY = 4;
 const LOG_LIMIT = 1000;
 const PROJECT_LIMIT = Number.parseInt(process.env.PI_WEB_PROJECT_LIMIT || "200", 10);
 const PROJECT_MARKERS = new Set([
@@ -690,45 +691,148 @@ export async function scanSession(filePath, { foldedQuery = "", maxBytes = SESSI
   return { title: compactTitle(name || firstPrompt, fallback), snippet };
 }
 
-// Conversation search over the session files of known projects (`projectsByCwd`: cwdKey -> project),
-// newest files first. Paths come from listing `sessionsRoot` itself (links are not followed), so
-// nothing outside it is ever read. Bounds: files, bytes per file, total bytes, results.
-export async function searchSessions(sessionsRoot, query, { projectsByCwd, pathMap = PATH_MAP, limit = SEARCH_LIMIT, maxFiles = SEARCH_MAX_FILES, maxFileBytes = SESSION_SCAN_MAX_BYTES, maxTotalBytes = SEARCH_MAX_TOTAL_BYTES, statFile = stat } = {}) {
-  const foldedQuery = foldText(String(query).trim().slice(0, 200));
-  if (foldedQuery.length < SEARCH_MIN_CHARS) return [];
-  const files = [];
-  for (const dir of await readdirSafe(sessionsRoot)) {
-    if (!dir.isDirectory()) continue;
-    const fullDir = path.join(sessionsRoot, dir.name);
-    for (const file of await readdirSafe(fullDir)) {
-      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
-      const filePath = path.join(fullDir, file.name);
-      try {
-        const { size, mtimeMs } = await statFile(filePath);
-        files.push({ filePath, size, mtimeMs });
-      } catch {
-        // Vanished between listing and stat.
+// In-memory bound: at most 64 KiB of user/assistant text per indexed session (plus metadata).
+// When over cap, retain the newest text so recent conversation context remains searchable.
+export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_MAX_BYTES, textCap = SEARCH_TEXT_CAP, statFile = stat } = {}) {
+  const fileStat = await statFile(filePath);
+  const input = createReadStream(filePath, { encoding: "utf8", end: maxBytes - 1 });
+  let header;
+  let name = "";
+  let firstPrompt = "";
+  const textParts = [];
+  let textLength = 0;
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!header && entry?.type === "session") header = entry;
+    if (entry?.type === "session_info") name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (entry?.type !== "message" || !["user", "assistant"].includes(entry.message?.role)) continue;
+    const body = messageText(entry.message);
+    if (entry.message.role === "user" && !firstPrompt) firstPrompt = body;
+    if (body) {
+      textParts.push(body);
+      textLength += body.length + 1;
+      while (textLength > textCap && textParts.length) {
+        const oldest = textParts.shift();
+        textLength -= oldest.length + 1;
+        if (!textParts.length && oldest.length > textCap) {
+          textParts.push(oldest.slice(-textCap));
+          textLength = textCap;
+        }
       }
     }
   }
-  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const results = [];
-  let budget = maxTotalBytes;
-  for (const { filePath, size, mtimeMs } of files.slice(0, maxFiles)) {
-    if (results.length >= limit || budget <= 0) break;
-    try {
-      const header = JSON.parse(await readFirstLine(filePath));
-      const project = typeof header.cwd === "string" && header.cwd ? projectsByCwd.get(cwdKey(mapHostPath(header.cwd, pathMap))) : undefined;
-      if (!project) continue;
-      budget -= Math.min(size, maxFileBytes);
-      const { title, snippet } = await scanSession(filePath, { foldedQuery, maxBytes: maxFileBytes });
-      if (snippet) results.push({ projectId: project.id, sessionPath: filePath, title, snippet, timestamp: header.timestamp || new Date(mtimeMs).toISOString() });
-    } catch {
-      // Ignore malformed/partial session files.
-    }
-  }
-  return results;
+  if (!header || typeof header.cwd !== "string" || !header.cwd) return null;
+  const entry = {
+    filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size,
+    cwdKey: cwdKey(mapHostPath(header.cwd, PATH_MAP)),
+    timestamp: header.timestamp || new Date(fileStat.mtimeMs).toISOString(),
+    title: compactTitle(name || firstPrompt, "Nova conversa"),
+    text: textParts.join("\n").slice(-textCap),
+  };
+  // Folded once here so a query is a plain substring test, not a re-fold of every session.
+  entry.folded = foldText(entry.text);
+  return entry;
 }
+
+export class SessionIndex {
+  constructor(sessionsRoot, { scan = scanSessionIndexEntry, statFile = stat, concurrency = SEARCH_INDEX_CONCURRENCY, now = Date.now } = {}) {
+    this.sessionsRoot = sessionsRoot;
+    this.scan = scan;
+    this.statFile = statFile;
+    this.concurrency = concurrency;
+    this.now = now;
+    this.entries = new Map();
+    this.refreshPromise = null;
+    this.lastRefresh = 0;
+    this.indexing = false;
+  }
+
+  refresh() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.indexing = true;
+    this.refreshPromise = this.refreshEntries().finally(() => {
+      this.lastRefresh = this.now();
+      this.indexing = false;
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
+  }
+
+  async refreshEntries() {
+    const listed = new Map();
+    for (const dir of await readdirSafe(this.sessionsRoot)) {
+      if (!dir.isDirectory()) continue;
+      for (const file of await readdirSafe(path.join(this.sessionsRoot, dir.name))) {
+        if (file.isFile() && file.name.endsWith(".jsonl")) listed.set(path.join(this.sessionsRoot, dir.name, file.name), true);
+      }
+    }
+    const pending = [];
+    for (const filePath of listed.keys()) {
+      try {
+        const info = await this.statFile(filePath);
+        const previous = this.entries.get(filePath);
+        if (!previous || previous.mtimeMs !== info.mtimeMs || previous.size !== info.size) pending.push(filePath);
+      } catch { /* vanished between listing and stat */ }
+    }
+    for (const filePath of this.entries.keys()) if (!listed.has(filePath)) this.entries.delete(filePath);
+    let next = 0;
+    const workers = Array.from({ length: Math.max(1, this.concurrency) }, async () => {
+      while (next < pending.length) {
+        const filePath = pending[next++];
+        try {
+          const entry = await this.scan(filePath, { statFile: this.statFile });
+          if (entry) this.entries.set(filePath, entry);
+          else this.entries.delete(filePath);
+        } catch { this.entries.delete(filePath); }
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  search(query, projectsByCwd, { limit = SEARCH_LIMIT, pathMap = PATH_MAP } = {}) {
+    const foldedQuery = foldText(String(query).trim().slice(0, 200));
+    if (foldedQuery.length < SEARCH_MIN_CHARS) return [];
+    const results = [];
+    const ordered = [...this.entries.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const entry of ordered) {
+      if (results.length >= limit) break;
+      const project = projectsByCwd.get(entry.cwdKey);
+      if (!project) continue;
+      if (!(entry.folded ?? foldText(entry.text)).includes(foldedQuery)) continue;
+      let snippet = "";
+      for (const message of entry.text.split("\n")) if ((snippet = searchSnippet(message, foldedQuery))) break;
+      if (snippet) results.push({ projectId: project.id, sessionPath: entry.filePath, title: entry.title, snippet, timestamp: entry.timestamp });
+    }
+    return results;
+  }
+}
+
+export async function searchSessions(sessionsRoot, query, { projectsByCwd, pathMap = PATH_MAP, limit = SEARCH_LIMIT, maxFileBytes = SESSION_SCAN_MAX_BYTES, statFile = stat } = {}) {
+  const index = new SessionIndex(sessionsRoot, { statFile, scan: (filePath) => scanSessionIndexEntry(filePath, { maxBytes: maxFileBytes, statFile }) });
+  await index.refresh();
+  return index.search(query, projectsByCwd, { limit, pathMap });
+}
+
+// Title of an indexed session, only while the file is unchanged since it was indexed.
+export function indexedTitle(entry, fileStat) {
+  return entry && entry.mtimeMs === fileStat.mtimeMs && entry.size === fileStat.size ? entry.title : null;
+}
+
+// Search answers from memory; a stale index refreshes in the background, never in the request.
+export function refreshIfStale(index, { now = Date.now(), log = recordLog } = {}) {
+  if (index.refreshPromise || now - index.lastRefresh < SEARCH_REFRESH_INTERVAL_MS) return false;
+  index.refresh().catch((error) => log("warn", "Session search index refresh failed", { error: error.message }));
+  return true;
+}
+
+// Discovery reads every session header (seconds on a big history); reuse the known list.
+export async function knownProjects(known, discover) {
+  return known.size ? [...known.values()] : discover();
+}
+
+const sessionIndex = new SessionIndex(path.join(AGENT_DIR, "sessions"));
+export function refreshSessionIndex() { return sessionIndex.refresh(); }
 
 async function listProjectHistory(project) {
   const sessionsRoot = path.join(AGENT_DIR, "sessions");
@@ -753,9 +857,10 @@ async function listProjectHistory(project) {
         if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
+        const title = indexedTitle(sessionIndex.entries.get(filePath), fileStat) ?? (await scanSession(filePath)).title;
         out.push({
           path: filePath,
-          title: (await scanSession(filePath)).title,
+          title,
           timestamp,
           bytes: fileStat.size,
           sessionId: header.id,
@@ -995,9 +1100,10 @@ async function route(req, res) {
     }
 
     if (req.method === "GET" && pathname === "/api/search") {
-      await discoverProjects();
-      const projectsByCwd = new Map([...projects.values()].map((project) => [cwdKey(project.cwd), project]));
-      return json(res, 200, { results: await searchSessions(path.join(AGENT_DIR, "sessions"), url.searchParams.get("q") || "", { projectsByCwd }) });
+      const projectsByCwd = new Map((await knownProjects(projects, discoverProjects)).map((project) => [cwdKey(project.cwd), project]));
+      refreshIfStale(sessionIndex);
+      // "Indexando" only until the first build completes; later background refreshes are silent.
+      return json(res, 200, { results: sessionIndex.search(url.searchParams.get("q") || "", projectsByCwd), indexing: sessionIndex.lastRefresh === 0 });
     }
 
     if (req.method === "GET" && pathname === "/api/sessions") {
@@ -1117,6 +1223,7 @@ export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
       const line = `PI Studio listening on http://${host}:${listeningPort}`;
       recordLog("info", line);
       console.log(line);
+      setTimeout(() => sessionIndex.refresh().catch((error) => recordLog("warn", "Session search index warm-up failed", { error: error.message })), 25).unref();
       if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(host.toLowerCase())) {
         console.warn("PI Studio is exposed beyond loopback; protect this server and its network access.");
       }

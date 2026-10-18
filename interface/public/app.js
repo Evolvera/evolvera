@@ -2874,7 +2874,7 @@ els.settingsDialog.addEventListener("change", (event) => {
 // ------------------------------------------------------ command palette
 
 const PALETTE_ICONS = { session: "i-code", hit: "i-search" };
-const palette = { query: "", entries: [], index: 0, hits: [], loading: false, seq: 0, timer: null };
+const palette = { query: "", entries: [], index: 0, hits: [], loading: false, indexing: false, seq: 0, timer: null };
 
 function paletteActions() {
   const rightTab = (tab) => () => {
@@ -2948,7 +2948,8 @@ function renderPalette() {
       nodes.push(option);
     }
   }
-  if (palette.loading) nodes.push(el("div", "palette-empty", "Buscando nas conversas…"));
+  if (palette.indexing) nodes.push(el("div", "palette-empty", "Indexando conversas…"));
+  else if (palette.loading) nodes.push(el("div", "palette-empty", "Buscando nas conversas…"));
   else if (!nodes.length) nodes.push(el("div", "palette-empty", "Nada encontrado."));
   els.paletteList.replaceChildren(...nodes);
   els.paletteInput.setAttribute("aria-activedescendant", palette.entries.length ? "palette-opt-" + palette.index : "");
@@ -2993,8 +2994,11 @@ els.paletteInput.addEventListener("input", () => {
   if (!palette.loading) return;
   palette.timer = setTimeout(async () => {
     try {
-      const hits = await searchConversations(query);
-      if (seq === palette.seq) palette.hits = hits;
+      const response = await searchConversations(query);
+      if (seq === palette.seq) {
+        palette.hits = response.results;
+        palette.indexing = response.indexing;
+      }
     } catch (error) {
       if (seq === palette.seq) report(error);
     }
@@ -3073,8 +3077,8 @@ const SEARCH_MIN_CHARS = 3;
 const SEARCH_DEBOUNCE_MS = 250;
 
 async function searchConversations(query) {
-  const { results } = await api(`/api/search?q=${encodeURIComponent(query)}`);
-  return results || [];
+  const response = await api(`/api/search?q=${encodeURIComponent(query)}`);
+  return { results: response.results || [], indexing: Boolean(response.indexing) };
 }
 
 const sidebarSearch = { seq: 0, timer: null };
@@ -3122,8 +3126,8 @@ els.search.addEventListener("input", () => {
   renderSearchResults([], "Buscando nas conversas…");
   sidebarSearch.timer = setTimeout(async () => {
     try {
-      const results = await searchConversations(query);
-      if (seq === sidebarSearch.seq) renderSearchResults(results, results.length ? "" : "Nada nas conversas.");
+      const response = await searchConversations(query);
+      if (seq === sidebarSearch.seq) renderSearchResults(response.results, response.indexing ? "Indexando conversas…" : (response.results.length ? "" : "Nada nas conversas."));
     } catch (error) {
       if (seq === sidebarSearch.seq) renderSearchResults([]);
       report(error);

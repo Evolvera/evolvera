@@ -52,7 +52,7 @@ Roda `docker compose` (Docker Desktop precisa estar instalado) e abre o Edge/Chr
 - Botão ↓ para voltar ao fim da conversa quando você rola para cima durante a resposta.
 - Campo de envio: `/` abre os comandos (do PI via `get_commands` + embutidos `/new`, `/compact [instruções]`, `/name <título>`, `/export`, `/atalhos`); `@` sugere arquivos do projeto (`git ls-files`, ou varredura limitada fora de git); `!comando` roda no shell do projeto (RPC `bash`, saída ao vivo, Esc cancela) e o resultado entra no contexto.
 - Atalhos: `Ctrl+/` lista todos, `Ctrl+K` paleta de comandos (ações, projetos, conversas e busca), `Ctrl+Shift+O` nova conversa, Esc interrompe, `↑` no campo vazio recupera a última mensagem, `Alt+T` tarefas.
-- Conversas: menu ⋯ (ou clique direito) na conversa ativa para **Renomear** (`set_session_name`; a barra lateral usa o nome salvo) e **Exportar** em HTML (`export_html`, com "Copiar caminho"). Busca por texto em todas as conversas pela lupa da barra lateral ou pelo `Ctrl+K` (`GET /api/search`, sem acento/maiúsculas, limitada em arquivos e bytes).
+- Conversas: menu ⋯ (ou clique direito) na conversa ativa para **Renomear** (`set_session_name`; a barra lateral usa o nome salvo) e **Exportar** em HTML (`export_html`, com "Copiar caminho"). Busca por texto em todas as conversas pela lupa da barra lateral ou pelo `Ctrl+K` (`GET /api/search`, sem acento/maiúsculas). O índice incremental em memória limita o texto a 64 KiB por sessão (no máximo 64 KiB × número de sessões, além dos metadados); a indexação inicial ocorre em segundo plano.
 - Configurações (engrenagem): tamanho da fonte, largura do chat, notificações, reduzir animações e mostrar raciocínio por padrão; salvas no navegador e aplicadas antes da primeira pintura.
 
 ## Segurança
