@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Coverage gate: runs the suites under V8 coverage, then reports line + branch coverage for
-// (a) server.mjs lines changed vs a git base (read-only `git diff`, default HEAD) and (b) all of public/lib.js.
+// (a) server.mjs lines changed vs a git base (read-only `git diff`, default HEAD), (b) public/lib.js, and (c) all of cli-lib.mjs.
 // Usage: node test/coverage.mjs [git-base]. Exits 1 below 100%.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || "HEAD";
 const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs"];
+const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs"];
 
 const run = spawnSync(process.execPath, [
   "--test", "--experimental-test-coverage",
-  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js",
+  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs",
   "--test-reporter=dot", "--test-reporter-destination=stdout",
   "--test-reporter=lcov", `--test-reporter-destination=${lcovPath}`,
   ...suites,
@@ -83,5 +83,6 @@ function report(label, data, only) {
 const changed = changedLines("server.mjs");
 let missed = report(`server.mjs changed vs ${base} (${changed.size} changed lines)`, files.get("server.mjs"), changed);
 missed += report("public/lib.js (whole file)", files.get("public/lib.js"));
+missed += report("cli-lib.mjs (whole file)", files.get("cli-lib.mjs"));
 report("server.mjs (whole file, informational)", files.get("server.mjs"));
 process.exit(missed ? 1 : 0);

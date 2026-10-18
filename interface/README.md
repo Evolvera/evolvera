@@ -36,6 +36,16 @@ Roda `docker compose` (Docker Desktop precisa estar instalado) e abre o Edge/Chr
 - `PI_WEB_PATH_MAP` traduz os caminhos Windows gravados nas sessões (`C:\Users\...`) para o caminho montado, então os projetos e conversas do PI do Windows aparecem na barra lateral.
 - Sem Docker: `node interface/server.mjs` também funciona no Windows (encontra o `cli.js` global do PI sozinho).
 
+## Cliente de terminal (Windows)
+
+O cliente de terminal se conecta ao mesmo projeto PI Studio aberto no navegador (não inicia outro PI independente):
+
+```powershell
+node C:\Users\Miguel.N.Zane\evolvera-MiguelNevesZane\interface\cli.mjs amphipod
+```
+
+Ou use `pi-studio amphipod` se a pasta `interface` já estiver no PATH. Opcionalmente informe `--url http://127.0.0.1:4123`. Para instalar o atalho, adicione a pasta ao PATH manualmente; o projeto não altera configurações do sistema.
+
 ## Experiência
 
 - Sem formulário de start: abrir projeto = start automático do `pi --mode rpc` dentro daquela pasta.
