@@ -330,17 +330,33 @@ describe("messages", () => {
       { type: "session" },
       { type: "message", id: "1", message: { role: "user", content: "oi" } },
       { type: "message", id: "1b" },
-      { type: "custom_message", id: "2", content: "ctx", display: true, timestamp: "t" },
+      { type: "custom_message", id: "2", customType: "note", content: "ctx", display: true, details: { a: 1 }, timestamp: "t" },
       { type: "compaction", id: "3", summary: "s", tokensBefore: 10 },
       { type: "branch_summary", id: "4", summary: "b" },
       { type: "model_change", id: "5" },
     ]);
     assert.deepEqual(messages, [
       { role: "user", content: "oi" },
-      { role: "custom", content: "ctx", display: true, timestamp: "t" },
+      { role: "custom", customType: "note", content: "ctx", display: true, details: { a: 1 }, timestamp: "t" },
       { role: "compactionSummary", summary: "s", tokensBefore: 10 },
       { role: "branchSummary", summary: "b" },
     ]);
+  });
+
+  test("customNoteText summarizes subagent notifications, passes other custom messages through", () => {
+    const xml = "<task-notification>\n<task-id>a1</task-id>\n</task-notification>";
+    assert.equal(lib.customNoteText({ customType: "other", content: "hello" }), "hello");
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", content: xml }), xml);
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", content: xml, details: { id: "a1" } }), xml);
+    assert.equal(lib.customNoteText(null), "");
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", content: xml, details: { description: "Auditar", status: "completed" } }), "Subagente: Auditar · concluído");
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", details: { description: "Auditar", status: "error", error: "timeout" } }), "Subagente: Auditar · falhou — timeout");
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", details: { description: "X", status: "queued" } }), "Subagente: X · queued");
+    assert.equal(lib.customNoteText({ customType: "subagent-notification", details: { description: "X" } }), "Subagente: X · atualizado");
+    assert.equal(
+      lib.customNoteText({ customType: "subagent-notification", details: { description: "A", status: "completed", others: [{ description: "B", status: "aborted" }, null, {}] } }),
+      "Subagentes (2): A · concluído; B · interrompido",
+    );
   });
 
   test("messageText / messageImages", () => {
@@ -424,6 +440,7 @@ describe("buildTimeline", () => {
       { role: "compactionSummary", summary: "resumo" },
       { role: "branchSummary" },
       { role: "mystery" },
+      { role: "assistant" },
     ];
     const items = lib.buildTimeline(messages);
     assert.deepEqual(items.map((item) => item.kind), ["user", "tools", "assistant", "assistant", "thinking", "error", "notice", "tools", "note", "divider", "divider"]);
@@ -532,5 +549,341 @@ describe("composer + dialogs", () => {
     assert.equal(lib.samePath("a", "b"), false);
     assert.equal(lib.samePath("", "a"), false);
     assert.equal(lib.samePath("a", null), false);
+  });
+});
+
+describe("inspector layout", () => {
+  test("tabKeyTarget implements tablist arrow/Home/End navigation", () => {
+    assert.equal(lib.tabKeyTarget("ArrowRight", 3, 4), 0);
+    assert.equal(lib.tabKeyTarget("ArrowDown", 0, 4), 1);
+    assert.equal(lib.tabKeyTarget("ArrowLeft", 0, 4), 3);
+    assert.equal(lib.tabKeyTarget("ArrowUp", 2, 4), 1);
+    assert.equal(lib.tabKeyTarget("Home", 2, 4), 0);
+    assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
+    assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
+    assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files"]);
+  });
+
+  test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
+    assert.equal(lib.clampPanelWidth(null, 1500), 460);
+    assert.equal(lib.clampPanelWidth("abc", 1500), 460);
+    assert.equal(lib.clampPanelWidth("612.4", 1500), 612);
+    assert.equal(lib.clampPanelWidth(100, 1500), 320);
+    assert.equal(lib.clampPanelWidth(5000, 1500), 900);
+    assert.equal(lib.clampPanelWidth(600, 400), 320);
+    assert.equal(lib.clampPanelWidth(undefined, 1000, { min: 200, maxRatio: 0.5, fallback: 900 }), 500);
+  });
+
+  test("splitLines / capTail", () => {
+    assert.deepEqual(lib.splitLines(null), []);
+    assert.deepEqual(lib.splitLines("\n"), []);
+    assert.deepEqual(lib.splitLines("a\r\nb\rc\n"), ["a", "b", "c"]);
+    assert.deepEqual(lib.capTail([1, 2], 3), { hidden: 0, lines: [1, 2] });
+    assert.deepEqual(lib.capTail([1, 2, 3, 4, 5], 2), { hidden: 3, lines: [4, 5] });
+    assert.equal(lib.capTail(Array.from({ length: 401 })).hidden, 1);
+  });
+});
+
+describe("terminal", () => {
+  const texts = (lines) => lines.map((line) => line.text);
+
+  test("terminalToolHead prints each tool with its full arguments", () => {
+    assert.deepEqual(lib.terminalToolHead("bash", { command: "npm test\necho ok" }), [{ text: "$ npm test", cls: "cmd" }, { text: "  echo ok", cls: "cmd" }]);
+    assert.deepEqual(texts(lib.terminalToolHead("bash", {})), ["$ "]);
+    assert.deepEqual(texts(lib.terminalToolHead("read", { path: "a.js" })), ["read a.js"]);
+    assert.deepEqual(texts(lib.terminalToolHead("read", { path: "a.js", offset: 10, limit: 5 })), ["read a.js:10-14"]);
+    assert.deepEqual(texts(lib.terminalToolHead("read", { path: "a.js", limit: 20 })), ["read a.js:1-20"]);
+    assert.deepEqual(texts(lib.terminalToolHead("read", { path: "a.js", offset: 7 })), ["read a.js:7"]);
+    assert.deepEqual(texts(lib.terminalToolHead("Edit", { file_path: "b.js" })), ["edit b.js"]);
+    assert.deepEqual(texts(lib.terminalToolHead("write", { path: "c.md" })), ["write c.md"]);
+    assert.deepEqual(texts(lib.terminalToolHead("grep", { pattern: "todo", path: "src", glob: "*.js" })), ["grep todo src *.js"]);
+    assert.deepEqual(texts(lib.terminalToolHead("ls", {})), ["ls"]);
+    assert.deepEqual(lib.terminalToolHead("Agent", { description: "x" }), [
+      { text: "Agent", cls: "cmd" }, { text: "{", cls: "args" }, { text: '  "description": "x"', cls: "args" }, { text: "}", cls: "args" },
+    ]);
+    assert.deepEqual(lib.terminalToolHead("", null), [{ text: "ferramenta", cls: "cmd" }]);
+  });
+
+  test("subagentStats mirrors the pi-subagents stats line", () => {
+    assert.deepEqual(lib.subagentStats(), []);
+    assert.deepEqual(lib.subagentStats({ modelName: "haiku", tags: ["thinking: high"], turnCount: 2, maxTurns: 30, toolUses: 1, tokens: "3k token", cost: 0.123 }),
+      ["haiku", "thinking: high", "↻ 2/30", "1 ferramenta", "3k token", "US$ 0.12"]);
+    assert.deepEqual(lib.subagentStats({ turnCount: 3, toolUses: 4, cost: 0, tags: "x" }), ["↻ 3", "4 ferramentas"]);
+  });
+
+  test("terminalToolBody: diffs, live subagent status, output, errors, cap", () => {
+    const edit = { name: "edit", status: "done", isError: false, args: { path: "a" }, result: { details: { diff: "-1 a\n+1 b" } } };
+    assert.deepEqual(lib.terminalToolBody(edit), { hidden: 0, lines: [{ text: "-1 a", cls: "del" }, { text: "+1 b", cls: "add" }] });
+    const write = { name: "write", status: "running", isError: false, args: { path: "a", content: "x\ny" }, result: null };
+    assert.deepEqual(lib.terminalToolBody(write, 1), { hidden: 1, lines: [{ text: "+ y", cls: "add" }] });
+    const agent = (activity) => ({ name: "Agent", status: "running", isError: false, result: { content: [{ type: "text", text: "2 tool uses..." }], details: { status: "running", toolUses: 2, activity } } });
+    assert.deepEqual(texts(lib.terminalToolBody(agent("reading…")).lines), ["2 ferramentas", "└ reading…"]);
+    assert.deepEqual(texts(lib.terminalToolBody(agent("")).lines), ["2 ferramentas", "└ pensando…"]);
+    const partial = { name: "bash", status: "running", isError: false, result: { content: [{ type: "text", text: "l1\nl2" }], details: {} } };
+    assert.deepEqual(lib.terminalToolBody(partial).lines, [{ text: "l1", cls: "out" }, { text: "l2", cls: "out" }]);
+    const failedEdit = { name: "edit", status: "error", isError: true, args: { path: "a" }, result: { content: [{ type: "text", text: "no match" }] } };
+    assert.deepEqual(lib.terminalToolBody(failedEdit).lines, [{ text: "no match", cls: "err" }]);
+    assert.deepEqual(lib.terminalToolBody({ name: "bash", status: "error", isError: true, result: null }).lines, [{ text: "✗ falhou", cls: "err" }]);
+    assert.deepEqual(lib.terminalToolBody({ name: "bash", status: "pending", isError: false, result: null }).lines, []);
+  });
+
+  test("buildTerminal flattens history + live runtime + notices in protocol order", () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "oi\nmais" }, { type: "image", data: "AA" }] },
+      null,
+      { role: "user", content: "" },
+      { role: "assistant", content: "string reply" },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "  " },
+          { type: "thinking", thinking: "plan" },
+          { type: "text", text: " " },
+          { type: "text", text: "vou rodar" },
+          { type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } },
+          { type: "toolCall", name: "read" },
+          { type: "toolCall", id: "c3", name: "bash", arguments: { command: "sleep 1" } },
+          { type: "toolCall", id: "c4", name: "bash", arguments: { command: "true" } },
+          null,
+        ],
+        stopReason: "error",
+        errorMessage: "boom",
+      },
+      { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "a.txt" }], isError: false },
+      { role: "toolResult", toolName: "grep", content: [{ type: "text", text: "nope" }], isError: true },
+      { role: "assistant", content: [], stopReason: "aborted" },
+      { role: "assistant", content: [], stopReason: "error" },
+      { role: "bashExecution", command: "git status", output: "clean", exitCode: 0 },
+      { role: "bashExecution", command: "false", exitCode: 1 },
+      { role: "bashExecution", command: "sleep", cancelled: true },
+      { role: "custom", display: false, content: "hidden" },
+      { role: "custom", customType: "subagent-notification", content: "<task/>" },
+      { role: "custom", content: [{ type: "text", text: "nota" }] },
+      { role: "compactionSummary", summary: "resumo" },
+      { role: "branchSummary" },
+      { role: "mystery" },
+      { role: "assistant" },
+    ];
+    const runtime = new Map([
+      ["c3", { name: "bash", status: "running", partial: { content: [{ type: "text", text: "tick" }] } }],
+      ["c4", { name: "bash", status: "done", result: null, partial: null }],
+      ["c1", { name: "bash", status: "error", result: { content: [] } }],
+      ["live", { name: "write", status: "running" }],
+    ]);
+    const notices = [{ id: 2, at: 99, level: "dim", text: "fim" }, { id: 1, at: 0, level: "warn", text: "início" }, { id: 3, at: 5, level: "err", text: "meio" }];
+    const blocks = lib.buildTerminal(messages, runtime, notices, 400);
+    const view = blocks.map((block) => [block.key, block.kind, block.status, [...block.head, ...block.lines].map((line) => `${line.cls}:${line.text}`).join("|")]);
+    assert.deepEqual(view, [
+      ["n:1", "notice", "", "warn:início"],
+      ["u:0", "user", "", "user:> oi|user:  mais|dim:  [1 imagem]"],
+      ["u:2", "user", "", "user:> "],
+      ["a:3.0", "assistant", "", ":string reply"],
+      ["k:4.1", "thinking", "", "think:plan"],
+      ["a:4.3", "assistant", "", ":vou rodar"],
+      ["t:4.4", "tool", "done", "cmd:$ ls|out:a.txt"],
+      ["t:4.5", "tool", "pending", "cmd:read "],
+      ["t:4.6", "tool", "running", "cmd:$ sleep 1|out:tick"],
+      ["t:4.7", "tool", "done", "cmd:$ true"],
+      ["e:4", "notice", "", "err:✗ boom"],
+      ["n:3", "notice", "", "err:meio"],
+      ["r:6", "tool", "error", "cmd:grep|err:nope"],
+      ["e:7", "notice", "", "warn:■ Interrompido"],
+      ["b:9", "tool", "done", "cmd:$ git status|out:clean"],
+      ["b:10", "tool", "error", "cmd:$ false|err:✗ falhou"],
+      ["b:11", "tool", "error", "cmd:$ sleep|err:✗ falhou"],
+      ["c:13", "custom", "", "dim:[subagent-notification]|out:<task/>"],
+      ["c:14", "custom", "", "dim:[extensão]|out:nota"],
+      ["d:15", "divider", "", "rule:Contexto compactado|dim:resumo"],
+      ["d:16", "divider", "", "rule:Resumo do ramo"],
+      ["l:live", "tool", "running", "cmd:write |add:+ "],
+      ["n:2", "notice", "", "dim:fim"],
+    ]);
+    // Signatures are stable for identical content and change when streamed output grows.
+    assert.deepEqual(lib.buildTerminal(messages, runtime, notices).map((block) => block.sig), blocks.map((block) => block.sig));
+    runtime.get("c3").partial = { content: [{ type: "text", text: "tick\ntock" }] };
+    const grown = lib.buildTerminal(messages, runtime, notices).find((block) => block.key === "t:4.6");
+    assert.notEqual(grown.sig, blocks.find((block) => block.key === "t:4.6").sig);
+    assert.match(blocks.find((block) => block.key === "t:4.6").sig, /^tool\|running\|0\|1\|1\|/);
+    assert.deepEqual(lib.buildTerminal(), []);
+    const capped = lib.buildTerminal([], new Map([["x", { name: "bash", status: "done", result: { content: [{ type: "text", text: "1\n2\n3" }] } }]]), [], 2);
+    assert.equal(capped[0].hidden, 1);
+  });
+
+  test("eventNotice turns live-only protocol events into terminal lines", () => {
+    assert.deepEqual(lib.eventNotice({ type: "compaction_start", reason: "manual" }), { level: "dim", text: "◌ Compactando contexto (manual)…" });
+    assert.equal(lib.eventNotice({ type: "compaction_start" }).text, "◌ Compactando contexto…");
+    assert.equal(lib.eventNotice({ type: "compaction_end", aborted: true }).level, "warn");
+    assert.deepEqual(lib.eventNotice({ type: "compaction_end", errorMessage: "quota" }), { level: "err", text: "✗ Falha ao compactar: quota" });
+    assert.equal(lib.eventNotice({ type: "compaction_end", result: { tokensBefore: 150000, estimatedTokensAfter: 32000 } }).text, "◆ Contexto compactado: 150k → ~32k tokens");
+    assert.equal(lib.eventNotice({ type: "compaction_end", result: { tokensBefore: 1500 } }).text, "◆ Contexto compactado: 1.5k tokens");
+    assert.equal(lib.eventNotice({ type: "compaction_end", result: null }).text, "◆ Contexto compactado");
+    assert.deepEqual(lib.eventNotice({ type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "529" }), { level: "warn", text: "↻ Nova tentativa 1/3 em 2 s · 529" });
+    assert.equal(lib.eventNotice({ type: "auto_retry_start", attempt: 2, maxAttempts: 3, delayMs: 0 }).text, "↻ Nova tentativa 2/3 em 0 s");
+    assert.deepEqual(lib.eventNotice({ type: "auto_retry_end", success: true, attempt: 2 }), { level: "dim", text: "↻ Tentativa 2 bem-sucedida" });
+    assert.equal(lib.eventNotice({ type: "auto_retry_end", success: false, attempt: 3, finalError: "x" }).text, "✗ Falhou após 3 tentativas: x");
+    assert.equal(lib.eventNotice({ type: "auto_retry_end", success: false, attempt: 3 }).text, "✗ Falhou após 3 tentativas: erro desconhecido");
+    assert.deepEqual(lib.eventNotice({ type: "extension_error", error: "bad" }), { level: "err", text: "✗ Erro de extensão: bad" });
+    assert.deepEqual(lib.eventNotice({ type: "extension_ui_request", method: "notify", message: "\x1b[31mok\x1b[0m" }), { level: "info", text: "• ok" });
+    assert.equal(lib.eventNotice({ type: "extension_ui_request", method: "notify", message: "w", notifyType: "warning" }).level, "warn");
+    assert.equal(lib.eventNotice({ type: "extension_ui_request", method: "notify", message: "e", notifyType: "error" }).level, "err");
+    assert.equal(lib.eventNotice({ type: "extension_ui_request", method: "setStatus" }), null);
+    assert.equal(lib.eventNotice({ type: "turn_start" }), null);
+    assert.equal(lib.eventNotice(null), null);
+  });
+});
+
+describe("subagents", () => {
+  const NOW = 1_000_000;
+  const call = (id, args, name = "Agent") => ({ type: "toolCall", id, name, arguments: args });
+  const result = (id, text, details, isError = false) => ({ role: "toolResult", toolCallId: id, toolName: "Agent", content: [{ type: "text", text }], details, isError });
+
+  test("subagentPhase / subagentRecords", () => {
+    assert.deepEqual(["running", "queued", "background", "completed", "steered", "error", "aborted", "stopped", undefined].map(lib.subagentPhase),
+      ["running", "running", "running", "done", "done", "error", "error", "error", "error"]);
+    assert.equal(lib.subagentRecords(null).size, 0);
+    const records = lib.subagentRecords([
+      null,
+      { type: "custom", customType: "subagents:record", data: { id: "a1", status: "completed" } },
+      { type: "custom", customType: "subagents:record", data: {} },
+      { type: "custom", customType: "other", data: { id: "x" } },
+      { type: "message", data: { id: "y" } },
+    ]);
+    assert.deepEqual([...records.keys()], ["a1"]);
+  });
+
+  test("foreground run: live partial (AgentDetails.activity) then final result", () => {
+    const fgArgs = { description: "Mapear rotas", subagent_type: "Explore", prompt: "liste rotas" };
+    const messages = [{ role: "assistant", timestamp: NOW - 9000, content: [{ type: "text", text: "x" }, call("fg", fgArgs)] }];
+    const partial = { content: [{ type: "text", text: "2 tool uses..." }], details: { displayName: "Explore", subagentType: "Explore", modelName: "haiku", toolUses: 2, tokens: "4k token", status: "running", activity: "reading…", durationMs: 800 } };
+    const running = lib.collectSubagents(messages, new Map([["fg", { name: "Agent", status: "running", partial, startedAt: NOW - 3000 }]]), new Map(), NOW);
+    assert.equal(running.length, 1);
+    assert.deepEqual({ ...running[0], sections: undefined }, {
+      key: "sa:0.1", agentId: "", name: "", title: "Explore", type: "Explore", description: "Mapear rotas", model: "haiku",
+      stats: ["haiku", "2 ferramentas", "4k token"], status: "running", phase: "running", background: false, elapsed: 3000,
+      tail: ["└ reading…"], sections: undefined, order: 0,
+    });
+    assert.deepEqual(running[0].sections, [{ label: "Tarefa", text: "liste rotas" }]);
+    const noActivity = lib.collectSubagents(messages, new Map([["fg", { name: "Agent", status: "running", partial: { details: { status: "running" } } }]]), new Map(), NOW);
+    assert.deepEqual(noActivity[0].tail, ["└ pensando…"]);
+    assert.equal(noActivity[0].elapsed, 9000, "falls back to the assistant message timestamp");
+
+    const finalDetails = { ...partial.details, status: "completed", agentId: "ag1", durationMs: 2700, activity: undefined };
+    const done = lib.collectSubagents([...messages, result("fg", "Agent completed.\n\nlinha 1\n\nlinha 2\nlinha 3\nlinha 4", finalDetails)],
+      new Map([["fg", { name: "Agent", status: "done", result: null, startedAt: NOW - 3000 }], ["other", { name: "bash", status: "running" }]]), new Map(), NOW);
+    assert.equal(done.length, 1);
+    assert.equal(done[0].phase, "done");
+    assert.equal(done[0].elapsed, 2700);
+    assert.deepEqual(done[0].tail, ["linha 2", "linha 3", "linha 4"]);
+    assert.equal(done[0].sections[1].label, "Resultado");
+
+    const endedLive = lib.collectSubagents(messages, new Map([["fg", { name: "Agent", status: "done", result: { content: [{ type: "text", text: "ok" }], details: finalDetails } }]]), new Map(), NOW);
+    assert.equal(endedLive[0].phase, "done");
+    assert.deepEqual(endedLive[0].tail, ["ok"]);
+  });
+
+  test("background run: launch result, steer/get_result, notification and record", () => {
+    const bgArgs = { description: "Auditar", subagent_type: "general-purpose", name: "deps-audit", prompt: "audite", model: "sonnet" };
+    const launch = result("bg", "Agent started in background.\nAgent ID: ag2", { displayName: "general-purpose", subagentType: "general-purpose", status: "background", agentId: "ag2", toolUses: 0, tokens: "", durationMs: 0 });
+    const messages = [
+      { role: "assistant", timestamp: "1970-01-01T00:16:30.000Z", content: [call("bg", bgArgs)] },
+      launch,
+      { role: "assistant", content: [call("st", { agent_id: "DEPS-AUDIT", message: "foque em CVEs" }, "steer_subagent"), call("gr", { agent_id: "ag2" }, "get_subagent_result"), call("gx", { agent_id: "ninguem" }, "get_subagent_result"), call("g0", {}, "get_subagent_result"), call("s0", { agent_id: "general-purpose" }, "steer_subagent")] },
+      { role: "toolResult", toolCallId: "st", content: [{ type: "text", text: "Steering sent" }] },
+      { role: "toolResult", toolCallId: "gr", content: [{ type: "text", text: "Agent is still running." }] },
+      { role: "assistant", content: "plain" },
+    ];
+    const running = lib.collectSubagents(messages, new Map(), new Map(), NOW);
+    assert.equal(running[0].phase, "running");
+    assert.equal(running[0].background, true);
+    assert.equal(running[0].elapsed, NOW - 990_000);
+    assert.deepEqual(running[0].tail, ["Em segundo plano · ag2"]);
+    assert.equal(running[0].title, "deps-audit");
+    assert.equal(running[0].model, "sonnet");
+    assert.deepEqual(running[0].sections.map((section) => `${section.label}=${section.text}`), [
+      "Tarefa=audite", "Início=Agent started in background.\nAgent ID: ag2", "Direcionamento=foque em CVEs", "Consulta de resultado=Agent is still running.", "Direcionamento=",
+    ]);
+
+    const note = { id: "ag2", description: "Auditar (nota)", status: "completed", toolUses: 7, turnCount: 4, totalTokens: 22800, totalCost: 0.04, durationMs: 3600, outputFile: "/tmp/ag2.jsonl", resultPreview: "2 desatualizadas", others: [{ id: "ag9", status: "error", error: "falhou" }, { status: "x" }] };
+    const notified = lib.collectSubagents([...messages, { role: "custom", customType: "subagent-notification", details: note }, { role: "custom", customType: "subagent-notification" }, { role: "custom", customType: "other", details: { id: "ag2" } }], new Map(), new Map(), NOW);
+    assert.equal(notified[0].phase, "done");
+    assert.equal(notified[0].elapsed, 3600);
+    assert.deepEqual(notified[0].stats, ["↻ 4", "7 ferramentas", "23k tokens", "US$ 0.04"]);
+    assert.deepEqual(notified[0].tail, ["2 desatualizadas"]);
+    assert.deepEqual(notified[0].sections.map((section) => section.label).slice(0, 4), ["Tarefa", "Início", "Resultado", "Transcrição completa"]);
+
+    const quiet = lib.collectSubagents([...messages, { role: "custom", customType: "subagent-notification", details: { id: "ag2", status: "stopped", others: "nope" } }], new Map(), new Map(), NOW);
+    assert.equal(quiet[0].phase, "error");
+    assert.equal(quiet[0].elapsed, 0);
+    assert.deepEqual(quiet[0].stats, []);
+    assert.deepEqual(quiet[0].tail, ["Agent started in background.", "Agent ID: ag2"]);
+
+    const records = new Map([["ag2", { id: "ag2", status: "error", error: "sem rede", result: "parcial", startedAt: NOW - 5000, completedAt: NOW - 1000 }]]);
+    const failed = lib.collectSubagents(messages, new Map(), records, NOW);
+    assert.equal(failed[0].phase, "error");
+    assert.equal(failed[0].elapsed, 4000);
+    assert.deepEqual(failed[0].tail, ["sem rede"]);
+    assert.deepEqual(failed[0].sections.map((section) => section.label).slice(0, 4), ["Tarefa", "Início", "Resultado", "Erro"]);
+    const openRecord = lib.collectSubagents(messages, new Map(), new Map([["ag2", { id: "ag2", status: "completed", completedAt: NOW }]]), NOW);
+    assert.equal(openRecord[0].elapsed, 0, "a record without startedAt does not invent a duration");
+  });
+
+  test("errors, refusals, waiting calls, orphans and ordering", () => {
+    const messages = [
+      { role: "assistant", timestamp: "not a date", content: [null, call("e1", { description: "quebrou", subagent_type: "Explore" }), { type: "toolCall", id: "w1", name: "Agent" }] },
+      result("e1", "Agent failed: timeout\npartial line", { status: "error", subagentType: "Explore", description: "det", durationMs: 50 }, false),
+      { role: "assistant", timestamp: NOW - 100, content: [call("r1", { subagent_type: "Nope" }), call("x1", {}), call("x2", { prompt: "" })] },
+      result("r1", 'Unknown agent type "Nope"'),
+      result("x1", "crash\n\nstack", undefined, true),
+      result("x2", "", { error: "det err" }, true),
+    ];
+    const runtime = new Map([["orphan", { name: "Agent", status: "running" }], ["e1", { name: "Agent", status: "done", startedAt: NOW - 70 }]]);
+    const runs = lib.collectSubagents(messages, runtime, new Map(), NOW);
+    const view = runs.map((run) => [run.key, run.phase, run.title, run.description, run.tail.join("/"), run.elapsed]);
+    assert.deepEqual(view, [
+      ["sa:live:orphan", "running", "Agente", "", "Aguardando início…", 0],
+      ["sa:0.2", "running", "Agente", "", "Aguardando início…", 0],
+      ["sa:2.2", "error", "Agente", "", "det err", 0],
+      ["sa:2.1", "error", "Agente", "", "crash/stack", 0],
+      ["sa:2.0", "error", "Nope", "", 'Unknown agent type "Nope"', 0],
+      ["sa:0.1", "error", "Explore", "quebrou", "Agent failed: timeout/partial line", 50],
+    ]);
+    assert.deepEqual(runs.find((run) => run.key === "sa:2.2").sections, [{ label: "Erro", text: "det err" }]);
+    assert.equal(lib.collectSubagents([{ role: "assistant", content: [call("d", {})] }], new Map(), new Map(), NOW)[0].description, "");
+    const described = lib.collectSubagents([{ role: "assistant", content: [call("d", {})] }, result("d", "ok", { status: "completed", description: "from details" })]);
+    assert.equal(described[0].description, "from details");
+    const fromNote = lib.collectSubagents([{ role: "assistant", content: [call("d", {})] }, result("d", "bg", { status: "background", agentId: "n1" }), { role: "custom", customType: "subagent-notification", details: { id: "n1", status: "completed", description: "da nota", totalTokens: 0, durationMs: 5 } }]);
+    assert.equal(fromNote[0].description, "da nota");
+    assert.deepEqual(fromNote[0].tail, []);
+    assert.deepEqual(lib.collectSubagents(), []);
+  });
+});
+
+describe("context breakdown", () => {
+  test("maps get_session_stats + get_state into the Contexto view", () => {
+    const stats = {
+      sessionFile: "/s.jsonl", userMessages: 5, assistantMessages: 5, toolCalls: 12, totalMessages: 22,
+      tokens: { input: 50000, output: 10000, cacheRead: 40000, cacheWrite: 0, total: 105000 }, cost: 0.45,
+      contextUsage: { tokens: 60000, contextWindow: 200000, percent: 30 },
+    };
+    const data = lib.contextBreakdown(stats, { model: { id: "m", name: "Model", provider: "p", reasoning: true }, thinkingLevel: "high", sessionFile: "/other" });
+    assert.deepEqual(data.usage, { percent: 30, tokens: 60000, contextWindow: 200000 });
+    assert.deepEqual(data.parts.map((part) => [part.label, part.value, part.share]), [["Entrada", 50000, 0.5], ["Saída", 10000, 0.1], ["Cache lido", 40000, 0.4], ["Cache gravado", 0, 0]]);
+    assert.equal(data.total, 105000);
+    assert.equal(data.cost, 0.45);
+    assert.deepEqual(data.counts.map((item) => item.value), [5, 5, 12, 22]);
+    assert.equal(data.model, "Model");
+    assert.equal(data.provider, "p");
+    assert.equal(data.thinking, "Alto");
+    assert.equal(data.sessionFile, "/s.jsonl");
+
+    const empty = lib.contextBreakdown(null, null);
+    assert.deepEqual(empty, { usage: null, parts: [], total: null, cost: null, counts: [], model: "", provider: "", thinking: "", sessionFile: "" });
+    const zero = lib.contextBreakdown({ tokens: { input: 0, output: Number.NaN } }, { model: { id: "m", reasoning: false }, thinkingLevel: "high", sessionFile: "/f" });
+    assert.deepEqual(zero.parts, [{ label: "Entrada", value: 0, share: 0 }]);
+    assert.equal(zero.thinking, "");
+    assert.equal(zero.provider, "");
+    assert.equal(zero.sessionFile, "/f");
+    assert.equal(lib.contextBreakdown({}, { model: { id: "m" } }).thinking, "");
   });
 });

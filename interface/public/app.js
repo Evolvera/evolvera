@@ -1,4 +1,12 @@
 import {
+  INSPECTOR_TABS,
+  buildTerminal,
+  clampPanelWidth,
+  collectSubagents,
+  contextBreakdown,
+  eventNotice,
+  subagentRecords,
+  tabKeyTarget,
   setSessionGate,
   waitSessionGate,
   stripAnsi,
@@ -45,8 +53,6 @@ const els = {
   menuBtn: $("#menuBtn"),
   toggleLeft: $("#toggleLeftBtn"),
   toggleRight: $("#toggleRightBtn"),
-  back: $("#backBtn"),
-  forward: $("#forwardBtn"),
   projectMenuBtn: $("#projectMenuBtn"),
   projectTitle: $("#projectTitle"),
   consoleBtn: $("#consoleBtn"),
@@ -90,10 +96,25 @@ const els = {
   closeDrawer: $("#closeDrawerBtn"),
   rawForm: $("#rawForm"),
   rawInput: $("#rawInput"),
+  panel: $("#panel"),
+  panelResizer: $("#panelResizer"),
+  tablist: $("#inspectorTabs"),
+  tabs: [...document.querySelectorAll("#inspectorTabs [role=tab]")],
+  views: [...document.querySelectorAll("#panel [role=tabpanel]")],
+  term: $("#term"),
+  termJump: $("#termJump"),
+  termWidgets: $("#termWidgets"),
+  termFoot: $("#termFoot"),
+  subList: $("#subList"),
+  subBadge: $("#subBadge"),
+  ctxView: $("#ctxView"),
+  filesView: $("#view-files"),
   envPath: $("#envPath"),
-  contextBody: $("#contextBody"),
   outputsList: $("#outputsList"),
-  outputsCard: $("#outputsCard"),
+  confirmDialog: $("#confirmDialog"),
+  confirmTitle: $("#confirmTitle"),
+  confirmMessage: $("#confirmMessage"),
+  confirmOk: $("#confirmOkBtn"),
   scrim: $("#scrim"),
   dialog: $("#uiDialog"),
   dialogTitle: $("#uiDialogTitle"),
@@ -158,11 +179,13 @@ const state = {
   expanded: new Set(),
   pending: new Map(),
   log: [],
-  nav: { stack: [], index: -1 },
   stick: true,
   filter: "",
   uiQueue: [],
   uiActive: null,
+  notices: [],
+  subagentRecords: new Map(),
+  compacting: false,
 };
 
 const nodeCache = new Map();
@@ -263,7 +286,24 @@ function applyLayout() {
   els.toggleLeft.setAttribute("aria-expanded", String(layout.left === "open"));
   els.toggleRight.setAttribute("aria-expanded", String(layout.right === "open"));
   els.scrim.hidden = !["left", "right"].some((side) => overlayQuery[side].matches && layout[side] === "open");
+  if (layout.right === "open") scheduleInspector(inspector.tab);
 }
+
+// Inspector (right panel): one persisted tab and width; views render lazily when visible.
+const INSPECTOR_TAB_KEY = "pi-studio:inspector-tab";
+const INSPECTOR_WIDTH_KEY = "pi-studio:inspector-width";
+const TERM_MAX_LINES = 400;
+const savedTab = localStorage.getItem(INSPECTOR_TAB_KEY);
+const inspector = {
+  tab: INSPECTOR_TABS.includes(savedTab) ? savedTab : "terminal",
+  width: clampPanelWidth(localStorage.getItem(INSPECTOR_WIDTH_KEY), window.innerWidth),
+  dirty: new Set(INSPECTOR_TABS),
+  queued: false,
+};
+const term = { cache: new Map(), stick: true, collapsed: new Set() };
+const subOpen = new Set();
+const subCache = new Map();
+let noticeSeq = 0;
 
 function setPanel(side, open) {
   layout[side] = open ? "open" : "closed";
@@ -479,8 +519,6 @@ function updateHeader() {
   els.projectTitle.textContent = project?.name || "PI Studio";
   document.title = project ? `${project.name} · PI Studio` : "PI Studio";
   els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
-  els.back.disabled = state.nav.index <= 0;
-  els.forward.disabled = state.nav.index >= state.nav.stack.length - 1;
   els.userName.textContent = prefs.userName || "Você";
   els.userAvatar.textContent = (prefs.userName || "?").trim().charAt(0).toUpperCase() || "?";
 }
@@ -493,23 +531,6 @@ function updateModelButton() {
   els.thinkingName.hidden = !els.thinkingName.textContent;
 }
 
-function navPush(entry) {
-  const { stack, index } = state.nav;
-  const current = stack[index];
-  if (current && current.projectId === entry.projectId && current.sessionPath === entry.sessionPath) return;
-  stack.splice(index + 1);
-  stack.push(entry);
-  state.nav.index = stack.length - 1;
-}
-
-async function navigate(step) {
-  const target = state.nav.stack[state.nav.index + step];
-  if (!target) return;
-  state.nav.index += step;
-  if (target.sessionPath) await openSession(target.projectId, target.sessionPath, { push: false });
-  else await openProject(target.projectId, { push: false });
-}
-
 // ---------------------------------------------------------------- projects
 
 function resetConversation() {
@@ -520,9 +541,18 @@ function resetConversation() {
   state.stats = null;
   state.queue = { steering: [], followUp: [] };
   state.liveThinking = "";
+  state.notices = [];
+  state.subagentRecords = new Map();
   nodeCache.clear();
   els.thread.replaceChildren();
   state.stick = true;
+  term.cache.clear();
+  term.collapsed.clear();
+  term.stick = true;
+  els.term.replaceChildren();
+  subOpen.clear();
+  subCache.clear();
+  scheduleInspector();
 }
 
 function setExited(exited) {
@@ -560,7 +590,7 @@ async function refreshProjects() {
   renderPanel();
 }
 
-async function openProject(projectId, { push = true } = {}) {
+async function openProject(projectId) {
   const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}" });
   setExited(false);
   state.currentProject = project;
@@ -577,7 +607,6 @@ async function openProject(projectId, { push = true } = {}) {
   const known = state.projects.find((item) => item.id === project.id);
   if (known) Object.assign(known, { activeSessionId: session?.id || known.activeSessionId });
   else state.projects.unshift(project);
-  if (push) navPush({ projectId: project.id, sessionPath: null });
   resetConversation();
   updateHeader();
   updateModelButton();
@@ -587,9 +616,8 @@ async function openProject(projectId, { push = true } = {}) {
   connectProjectEvents(project.id);
 }
 
-async function openSession(projectId, sessionPath, { push = true } = {}) {
-  if (state.currentProject?.id !== projectId) await openProject(projectId, { push: false });
-  if (push) navPush({ projectId, sessionPath });
+async function openSession(projectId, sessionPath) {
+  if (state.currentProject?.id !== projectId) await openProject(projectId);
   resetConversation();
   state.session = { ...(state.session || {}), sessionFile: sessionPath };
   updateHeader();
@@ -628,7 +656,6 @@ async function newSession() {
   }
   resetConversation();
   state.session = { ...(state.session || {}), sessionFile: null };
-  navPush({ projectId: state.currentProject.id, sessionPath: null });
   renderThread();
   renderPanel();
   setTimeout(() => refreshState().catch(() => {}), 300);
@@ -666,6 +693,7 @@ function connectProjectEvents(projectId) {
     state.processExited = true;
     setRunning(false);
     updateProcessExitUi(exit, { status: els.exitBanner, prompt: els.prompt, action: els.send, restart: els.newSessionLabel });
+    addNotice({ level: exit.code === 0 ? "dim" : "err", text: `■ ${els.exitBanner.textContent}` });
     source.close();
     state.source = null;
     for (const pending of state.pending.values()) {
@@ -726,6 +754,7 @@ function handleResponse(event) {
     case "get_entries":
       if (!Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
+      state.subagentRecords = subagentRecords(event.data.entries);
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
       for (const [id, tool] of state.runtime) if (tool.status !== "running") state.runtime.delete(id);
       scheduleRender();
@@ -800,7 +829,7 @@ function handleRpc(event) {
       } else upsertMessage(state.messages, event.message);
       break;
     case "tool_execution_start":
-      state.runtime.set(event.toolCallId, { name: event.toolName, args: event.args || {}, status: "running", partial: null, result: null });
+      state.runtime.set(event.toolCallId, { name: event.toolName, args: event.args || {}, status: "running", partial: null, result: null, startedAt: Date.now() });
       state.phase = "tool";
       break;
     case "tool_execution_update": {
@@ -820,22 +849,27 @@ function handleRpc(event) {
       return;
     case "compaction_start":
       state.phase = "compacting";
+      addNotice(eventNotice(event));
       break;
     case "compaction_end":
       if (event.errorMessage) toast(`Falha ao compactar: ${event.errorMessage}`, "error");
       state.phase = "thinking";
+      addNotice(eventNotice(event));
       refreshStats();
       break;
     case "auto_retry_start":
       state.phase = "retry";
       state.retry = `${event.attempt}/${event.maxAttempts}`;
+      addNotice(eventNotice(event));
       break;
     case "auto_retry_end":
       if (!event.success) toast(event.finalError || "Falha após novas tentativas", "error");
       state.phase = "thinking";
+      addNotice(eventNotice(event));
       break;
     case "extension_error":
       toast(`Erro de extensão: ${event.error}`, "error");
+      addNotice(eventNotice(event));
       return;
     case "extension_ui_request":
       handleExtensionUi(event);
@@ -902,7 +936,7 @@ function renderThread() {
   while (els.thread.children.length > nodes.length) els.thread.lastElementChild.remove();
   els.thread.classList.toggle("is-empty", !items.length && !state.isStreaming);
   updateRunStatus();
-  renderOutputs();
+  scheduleInspector("terminal", "subagents", "files");
   if (stick) scrollToBottom();
 }
 
@@ -1048,7 +1082,12 @@ function updateRunStatus() {
   if (!panel.hidden) panel.textContent = state.liveThinking.slice(-4000);
 }
 
-setInterval(updateRunStatus, 1000);
+setInterval(() => {
+  updateRunStatus();
+  if (layout.right !== "open") return;
+  if (inspector.tab === "terminal" && state.isStreaming) renderTermFoot();
+  else if (inspector.tab === "subagents" && !els.subBadge.hidden) scheduleInspector("subagents");
+}, 1000);
 
 function setRunning(running) {
   const was = state.isStreaming;
@@ -1059,7 +1098,10 @@ function setRunning(running) {
     state.liveThinkingOpen = false;
   }
   updateComposer();
-  if (was !== state.isStreaming) scheduleRender();
+  if (was !== state.isStreaming) {
+    scheduleRender();
+    scheduleInspector("context");
+  }
 }
 
 function scrollToBottom() {
@@ -1096,24 +1138,10 @@ els.thread.addEventListener("click", (event) => {
   }
 });
 
-// ------------------------------------------------------------------- panel
+// --------------------------------------------------------------- inspector
 
 function renderPanel() {
-  const project = state.currentProject;
-  els.envPath.innerHTML = project
-    ? `<div class="path-row"><code title="${esc(project.cwd)}">${esc(project.cwd)}</code><button type="button" class="icon-btn small" data-copy-path aria-label="Copiar caminho">${svg("i-copy")}</button></div>`
-    : `<p class="muted">Nenhum projeto aberto.</p>`;
-
   const usage = contextUsage(state.stats);
-  const model = state.session?.model;
-  if (usage) {
-    const tokens = usage.tokens !== null && usage.contextWindow ? `${formatTokens(usage.tokens)} / ${formatTokens(usage.contextWindow)} tokens` : "";
-    els.contextBody.innerHTML = `<div class="ctx-figure"><strong>${usage.percent}%</strong><span>da janela de contexto</span></div>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
-      <div class="ctx-meta">${esc(tokens)}${typeof state.stats?.cost === "number" ? `<span>US$ ${state.stats.cost.toFixed(2)}</span>` : ""}</div>`;
-  } else {
-    els.contextBody.innerHTML = `<p class="muted">${model ? `${esc(modelLabel(model))} · uso de contexto indisponível no momento.` : "Uso de contexto aparece após a primeira resposta."}</p>`;
-  }
   els.ctxRing.hidden = !usage;
   if (usage) {
     const circumference = 2 * Math.PI * 7.5;
@@ -1121,13 +1149,409 @@ function renderPanel() {
     els.ctxRing.title = `${usage.percent}% do contexto usado`;
     els.ctxRing.classList.toggle("warn", usage.percent >= 80);
   }
+  scheduleInspector("terminal", "context", "files");
+}
+
+function scheduleInspector(...tabs) {
+  for (const tab of tabs.length ? tabs : INSPECTOR_TABS) inspector.dirty.add(tab);
+  if (inspector.queued) return;
+  inspector.queued = true;
+  requestAnimationFrame(() => {
+    inspector.queued = false;
+    renderInspector();
+  });
+}
+
+const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles };
+
+function renderInspector() {
+  updateSubBadge();
+  if (layout.right !== "open" || !inspector.dirty.has(inspector.tab)) return;
+  inspector.dirty.delete(inspector.tab);
+  VIEW_RENDERERS[inspector.tab]();
+}
+
+function addNotice(notice) {
+  if (!notice) return;
+  state.notices.push({ id: ++noticeSeq, at: state.messages.length, ...notice });
+  if (state.notices.length > 300) state.notices.shift();
+  scheduleInspector("terminal");
+}
+
+function selectTab(tab, { focus = false } = {}) {
+  inspector.tab = tab;
+  localStorage.setItem(INSPECTOR_TAB_KEY, tab);
+  for (const button of els.tabs) {
+    const active = button.dataset.tab === tab;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && focus) button.focus();
+  }
+  for (const view of els.views) view.hidden = view.dataset.view !== tab;
+  els.panel.dataset.tab = tab;
+  if (tab === "context" && state.currentProject && !state.processExited) refreshStats();
+  scheduleInspector(tab);
+}
+
+els.tablist.addEventListener("click", (event) => {
+  const tab = event.target.closest("[role=tab]");
+  if (tab) selectTab(tab.dataset.tab);
+});
+els.tablist.addEventListener("keydown", (event) => {
+  const index = els.tabs.findIndex((button) => button.dataset.tab === inspector.tab);
+  const target = tabKeyTarget(event.key, index, els.tabs.length);
+  if (target === null) return;
+  event.preventDefault();
+  selectTab(els.tabs[target].dataset.tab, { focus: true });
+});
+
+// Width: dragged on the panel's left edge (or arrow keys on the separator); persisted per browser.
+function applyPanelWidth() {
+  els.app.style.setProperty("--iw", `${inspector.width}px`);
+  els.panelResizer.setAttribute("aria-valuenow", String(inspector.width));
+  els.panelResizer.setAttribute("aria-valuemax", String(Math.max(320, Math.floor(window.innerWidth * 0.6))));
+}
+
+function setPanelWidth(width, persist) {
+  inspector.width = clampPanelWidth(width, window.innerWidth);
+  applyPanelWidth();
+  if (persist) localStorage.setItem(INSPECTOR_WIDTH_KEY, String(inspector.width));
+}
+
+els.panelResizer.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || overlayQuery.right.matches) return;
+  event.preventDefault();
+  const handle = els.panelResizer;
+  handle.setPointerCapture(event.pointerId);
+  els.app.classList.add("resizing");
+  const move = (moveEvent) => setPanelWidth(window.innerWidth - moveEvent.clientX, false);
+  const end = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", end);
+    handle.removeEventListener("pointercancel", end);
+    els.app.classList.remove("resizing");
+    setPanelWidth(inspector.width, true);
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+});
+els.panelResizer.addEventListener("dblclick", () => setPanelWidth(460, true));
+els.panelResizer.addEventListener("keydown", (event) => {
+  const step = event.shiftKey ? 64 : 16;
+  const next = { ArrowLeft: inspector.width + step, ArrowRight: inspector.width - step, Home: 0.0001, End: window.innerWidth }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  setPanelWidth(next, true);
+});
+window.addEventListener("resize", () => setPanelWidth(localStorage.getItem(INSPECTOR_WIDTH_KEY) ?? inspector.width, false));
+
+// --- Terminal: read-only mirror of the session, rendered like PI's TUI.
+
+const TERM_STATUS = { running: "em execução", done: "concluído", error: "erro", pending: "aguardando" };
+const termEmpty = Object.assign(document.createElement("div"), { className: "term-empty" });
+termEmpty.innerHTML = `<span class="tl dim">pi · terminal somente leitura</span><span class="tl dim">Prompts, raciocínio, ferramentas e saídas desta conversa aparecem aqui, como no PI.</span>`;
+const termCursor = Object.assign(document.createElement("div"), { className: "term-cursor", ariaHidden: "true" });
+
+function termLineNode(item) {
+  const span = document.createElement("span");
+  span.className = item.cls ? `tl ${item.cls}` : "tl";
+  span.textContent = item.text;
+  return span;
+}
+
+function termBlockNode(block, open) {
+  const node = document.createElement("div");
+  node.className = `tb tb-${block.kind}${block.status ? ` is-${block.status}` : ""}`;
+  if (block.kind === "thinking") {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "tb-toggle";
+    toggle.dataset.key = block.key;
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.textContent = `${open ? "▾" : "▸"} Raciocínio${open ? "" : ` · ${plural(block.lines.length, "linha", "linhas")}`}`;
+    node.append(toggle);
+    if (!open) return node;
+  }
+  if (block.head.length) {
+    const head = document.createElement("div");
+    head.className = "tb-head";
+    const glyph = document.createElement("span");
+    glyph.className = "tb-glyph";
+    glyph.title = TERM_STATUS[block.status] || "";
+    const lines = document.createElement("div");
+    lines.className = "tb-call";
+    lines.append(...block.head.map(termLineNode));
+    head.append(glyph, lines);
+    node.append(head);
+  }
+  if (!block.lines.length && !block.hidden) return node;
+  const body = block.kind === "tool" ? document.createElement("div") : node;
+  if (body !== node) {
+    body.className = "tb-body";
+    node.append(body);
+  }
+  if (block.hidden) body.append(termLineNode({ text: `… ${plural(block.hidden, "linha oculta", "linhas ocultas")}`, cls: "meta" }));
+  body.append(...block.lines.map(termLineNode));
+  return node;
+}
+
+function renderTerminal() {
+  const blocks = buildTerminal(state.messages, state.runtime, state.notices, TERM_MAX_LINES);
+  const nodes = [];
+  const seen = new Set();
+  for (const block of blocks) {
+    const open = !term.collapsed.has(block.key);
+    const sig = `${block.sig}|${open ? 1 : 0}`;
+    seen.add(block.key);
+    const cached = term.cache.get(block.key);
+    if (cached?.sig === sig) {
+      nodes.push(cached.node);
+      continue;
+    }
+    const node = termBlockNode(block, open);
+    term.cache.set(block.key, { node, sig });
+    nodes.push(node);
+  }
+  for (const key of term.cache.keys()) if (!seen.has(key)) term.cache.delete(key);
+  if (!blocks.length) nodes.push(termEmpty);
+  if (state.isStreaming) nodes.push(termCursor);
+  nodes.forEach((node, index) => {
+    if (els.term.children[index] !== node) els.term.insertBefore(node, els.term.children[index] || null);
+  });
+  while (els.term.children.length > nodes.length) els.term.lastElementChild.remove();
+  renderTermFoot();
+  if (term.stick) els.term.scrollTop = els.term.scrollHeight;
+}
+
+function renderTermFoot() {
+  const widgets = [...state.widgets.values()].flat();
+  els.termWidgets.hidden = !widgets.length;
+  els.termWidgets.replaceChildren(...widgets.map((text) => termLineNode({ text, cls: "widget" })));
+  const usage = contextUsage(state.stats);
+  const model = state.session?.model;
+  const status = state.isStreaming
+    ? `<span class="tf-live"><i aria-hidden="true"></i>${esc(formatElapsed(Date.now() - (state.runStartedAt || Date.now())))} · ${esc(phaseLabel())}</span>`
+    : `<span class="tf-idle">${state.processExited ? "PI encerrado" : state.currentProject ? "pronto" : "sem projeto"}</span>`;
+  const statuses = [...state.statuses.values()].join(" · ");
+  const right = [model ? modelLabel(model) : "", usage ? `${usage.percent}% ctx` : ""].filter(Boolean).join(" · ");
+  els.termFoot.innerHTML = `${status}${statuses ? `<span class="tf-status" title="${esc(statuses)}">${esc(statuses)}</span>` : ""}<span class="meta-spacer"></span><span class="tf-model">${esc(right)}</span>`;
+}
+
+els.term.addEventListener("scroll", () => {
+  const distance = els.term.scrollHeight - els.term.scrollTop - els.term.clientHeight;
+  term.stick = distance < 24;
+  els.termJump.hidden = term.stick;
+}, { passive: true });
+els.termJump.addEventListener("click", () => {
+  term.stick = true;
+  els.termJump.hidden = true;
+  els.term.scrollTo({ top: els.term.scrollHeight, behavior: reduceMotion.matches ? "auto" : "smooth" });
+});
+els.term.addEventListener("click", (event) => {
+  const toggle = event.target.closest(".tb-toggle");
+  if (!toggle) return;
+  const key = toggle.dataset.key;
+  if (term.collapsed.has(key)) term.collapsed.delete(key);
+  else term.collapsed.add(key);
+  const stick = term.stick;
+  term.stick = false;
+  renderTerminal();
+  term.stick = stick;
+  term.cache.get(key)?.node.querySelector(".tb-toggle")?.focus({ preventScroll: true });
+});
+
+// --- Subagents: one card per Agent tool call (pi-subagents), live tail + expandable transcript.
+
+const SUB_PHASE = { running: "rodando", done: "concluído", error: "erro" };
+
+function currentSubagents() {
+  return collectSubagents(state.messages, state.runtime, state.subagentRecords, Date.now());
+}
+
+function updateSubBadge(runs) {
+  const running = (runs || currentSubagents()).filter((run) => run.phase === "running").length;
+  els.subBadge.hidden = !running;
+  els.subBadge.textContent = String(running);
+  els.subBadge.title = running ? `${plural(running, "subagente rodando", "subagentes rodando")}` : "";
+}
+
+function subCard(run, open) {
+  const node = document.createElement("article");
+  node.className = `sa-card is-${run.phase}${open ? " open" : ""}`;
+  node.dataset.key = run.key;
+  const subtitle = run.name && run.type ? run.type : "";
+  const meta = [run.model && !run.stats.includes(run.model) ? run.model : "", ...run.stats, run.background ? "segundo plano" : ""].filter(Boolean);
+  const sections = run.sections.map((section) => `<section class="sa-sec"><h4>${esc(section.label)}</h4><pre>${esc(truncate(section.text, 60000))}</pre></section>`).join("");
+  node.innerHTML = `
+    <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}">
+      <span class="sa-dot" aria-hidden="true"></span>
+      <span class="sa-title"><strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
+      <span class="sa-state"><span class="sa-phase">${esc(SUB_PHASE[run.phase])}</span><span class="sa-time">${esc(formatElapsed(run.elapsed))}</span></span>
+      ${svg("i-chevron-right", "sa-chev")}
+    </button>
+    ${run.description ? `<p class="sa-desc">${esc(run.description)}</p>` : ""}
+    ${meta.length ? `<p class="sa-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
+    ${run.tail.length ? `<div class="sa-tail">${run.tail.map((line) => `<span>${esc(truncate(line, 400))}</span>`).join("")}</div>` : ""}
+    ${open ? `<div class="sa-detail">${sections || `<p class="muted">Sem transcrição disponível.</p>`}</div>` : ""}`;
+  return node;
+}
+
+function renderSubagents() {
+  const runs = currentSubagents();
+  updateSubBadge(runs);
+  const counts = { running: 0, done: 0, error: 0 };
+  for (const run of runs) counts[run.phase]++;
+  const extension = [state.statuses.get("subagents"), ...[...state.widgets.values()].flat()].filter(Boolean);
+  const nodes = [];
+  const head = subCache.get("head") || { node: document.createElement("div"), sig: "" };
+  const headSig = JSON.stringify([counts, extension, runs.length]);
+  if (head.sig !== headSig) {
+    head.node.className = "sa-summary";
+    head.node.innerHTML = runs.length
+      ? `<p class="sa-counts"><span><b>${counts.running}</b> rodando</span><span><b>${counts.done}</b> ${counts.done === 1 ? "concluído" : "concluídos"}</span>${counts.error ? `<span class="bad"><b>${counts.error}</b> com erro</span>` : ""}</p>`
+      : "";
+    if (extension.length) head.node.innerHTML += `<div class="sa-ext" aria-label="Status da extensão">${extension.map((line) => `<span>${esc(line)}</span>`).join("")}</div>`;
+    head.sig = headSig;
+    subCache.set("head", head);
+  }
+  nodes.push(head.node);
+  if (!runs.length) {
+    const empty = subCache.get("empty")?.node || Object.assign(document.createElement("div"), {
+      className: "insp-empty",
+      innerHTML: `${svg("i-agents")}<strong>Nenhum subagente nesta conversa.</strong><span>Quando o PI delegar uma tarefa (ferramenta Agent), cada execução aparece aqui com o que está fazendo.</span>`,
+    });
+    subCache.set("empty", { node: empty, sig: "" });
+    nodes.push(empty);
+  }
+  const seen = new Set(["head", "empty"]);
+  for (const run of runs) {
+    const open = subOpen.has(run.key);
+    const sig = JSON.stringify([run, open, formatElapsed(run.elapsed)]);
+    seen.add(run.key);
+    const cached = subCache.get(run.key);
+    if (cached?.sig === sig) {
+      nodes.push(cached.node);
+      continue;
+    }
+    const node = subCard(run, open);
+    subCache.set(run.key, { node, sig });
+    nodes.push(node);
+  }
+  for (const key of subCache.keys()) if (!seen.has(key)) subCache.delete(key);
+  nodes.forEach((node, index) => {
+    if (els.subList.children[index] !== node) els.subList.insertBefore(node, els.subList.children[index] || null);
+  });
+  while (els.subList.children.length > nodes.length) els.subList.lastElementChild.remove();
+}
+
+els.subList.addEventListener("click", (event) => {
+  if (event.target.closest(".sa-detail")) return;
+  const card = event.target.closest(".sa-card");
+  if (!card) return;
+  const key = card.dataset.key;
+  if (subOpen.has(key)) subOpen.delete(key);
+  else subOpen.add(key);
+  renderSubagents();
+  subCache.get(key)?.node.querySelector(".sa-head")?.focus({ preventScroll: true });
+});
+
+// --- Context: usage, token breakdown, model and session; manual compaction.
+
+function renderContext() {
+  const data = contextBreakdown(state.stats, state.session);
+  const usage = data.usage;
+  const windowText = usage?.tokens !== null && usage?.contextWindow ? `${formatTokens(usage.tokens)} / ${formatTokens(usage.contextWindow)} tokens` : "";
+  const hero = usage
+    ? `<div class="ctx-big"><strong>${usage.percent}<small>%</small></strong><span>da janela de contexto</span></div>
+      <div class="progress ctx-progress${usage.percent >= 80 ? " warn" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
+      <div class="ctx-meta"><span>${esc(windowText)}</span>${data.cost !== null ? `<span>US$ ${data.cost.toFixed(2)}</span>` : ""}</div>`
+    : `<div class="ctx-big is-empty"><strong>—</strong><span>${state.currentProject ? "Uso de contexto aparece após a primeira resposta." : "Nenhum projeto aberto."}</span></div>`;
+  const row = (label, value, extra = "") => `<div class="kv-row"><dt>${extra}${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+  const tokens = data.parts.length
+    ? `<section class="insp-sec"><h3 class="sec-title">Tokens da sessão</h3>
+        <div class="stack-bar" aria-hidden="true">${data.parts.map((part, index) => `<span class="seg s${index}" style="flex-grow:${part.share}"></span>`).join("")}</div>
+        <dl class="kv">${data.parts.map((part, index) => row(part.label, `${formatTokens(part.value)} · ${Math.round(part.share * 100)}%`, `<i class="sw s${index}" aria-hidden="true"></i>`)).join("")}
+        ${data.total !== null ? row("Total", formatTokens(data.total)) : ""}</dl></section>`
+    : "";
+  const model = data.model
+    ? `<section class="insp-sec"><h3 class="sec-title">Modelo</h3><dl class="kv">${row("Modelo", data.model)}${data.provider ? row("Provedor", data.provider) : ""}${data.thinking ? row("Raciocínio", data.thinking) : ""}</dl></section>`
+    : "";
+  const counts = data.counts.length
+    ? `<section class="insp-sec"><h3 class="sec-title">Conversa</h3><dl class="kv">${data.counts.map((item) => row(item.label, String(item.value))).join("")}</dl></section>`
+    : "";
+  const file = data.sessionFile
+    ? `<section class="insp-sec"><h3 class="sec-title">Arquivo da sessão</h3><div class="path-row"><code title="${esc(data.sessionFile)}">&lrm;${esc(data.sessionFile)}&lrm;</code><button type="button" class="icon-btn small" data-copy-session aria-label="Copiar caminho da sessão">${svg("i-copy")}</button></div></section>`
+    : "";
+  const blocked = !state.currentProject || state.processExited || state.isStreaming || state.compacting;
+  const hint = state.compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
+  const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${state.compacting ? ' aria-busy="true"' : ""}>${state.compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
+  const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : "";
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${tokens}${model}${counts}${file}${compact}`;
+  if (focused) els.ctxView.querySelector(focused)?.focus();
+}
+
+function confirmDialog({ title, message, confirm }) {
+  els.confirmTitle.textContent = title;
+  els.confirmMessage.textContent = message;
+  els.confirmOk.textContent = confirm;
+  els.confirmDialog.returnValue = "";
+  els.confirmDialog.showModal();
+  return new Promise((resolve) => {
+    els.confirmDialog.addEventListener("close", () => resolve(els.confirmDialog.returnValue === "ok"), { once: true });
+  });
+}
+
+async function compactNow() {
+  if (state.compacting || !state.currentProject || state.isStreaming) return;
+  const ok = await confirmDialog({
+    title: "Compactar o contexto agora?",
+    message: "O PI resume o histórico desta conversa e passa a enviar o resumo ao modelo no lugar das mensagens antigas. As mensagens continuam salvas na sessão.",
+    confirm: "Compactar",
+  });
+  if (!ok) return;
+  state.compacting = true;
+  scheduleInspector("context");
+  try {
+    // Compaction calls the model and can take a while: no client-side timeout.
+    const res = await rpcRequest({ type: "compact" }, 0);
+    if (!res.success) throw new Error(res.error || "Não foi possível compactar o contexto.");
+    toast("Contexto compactado.");
+  } catch (error) {
+    report(error);
+  } finally {
+    state.compacting = false;
+    scheduleInspector("context");
+    if (!state.processExited) {
+      refreshStats();
+      sendRpc({ type: "get_entries" }).catch(() => {});
+    }
+  }
+}
+
+els.ctxView.addEventListener("click", (event) => {
+  if (event.target.closest("[data-compact]")) {
+    compactNow().catch(report);
+  } else if (event.target.closest("[data-copy-session]")) {
+    const file = contextBreakdown(state.stats, state.session).sessionFile;
+    navigator.clipboard?.writeText(file).then(() => toast("Caminho da sessão copiado.")).catch(() => toast("Não foi possível copiar.", "error"));
+  }
+});
+
+// --- Files: project path + files written/edited in this session.
+
+function renderFiles() {
+  const project = state.currentProject;
+  els.envPath.innerHTML = project
+    ? `<div class="path-row"><code title="${esc(project.cwd)}">&lrm;${esc(project.cwd)}&lrm;</code><button type="button" class="icon-btn small" data-copy-path aria-label="Copiar caminho do projeto">${svg("i-copy")}</button></div>`
+    : `<p class="muted">Nenhum projeto aberto.</p>`;
   renderOutputs();
 }
 
 function renderOutputs() {
   const outputs = state.outputs;
   if (!outputs.length) {
-    els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta sessão aparecem aqui.</p>`;
+    els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta conversa aparecem aqui.</p>`;
     return;
   }
   els.outputsList.innerHTML = outputs.map((item) => `<button type="button" class="output-item" data-tools="${esc(item.toolIds.join(","))}" title="${esc(item.path)}">
@@ -1328,6 +1752,7 @@ function renderWidgets() {
   els.widgetArea.textContent = lines.join("\n");
   els.widgetArea.classList.toggle("hidden", !lines.length);
   els.statusLine.textContent = [...state.statuses.values()].join(" · ");
+  scheduleInspector("terminal", "subagents");
 }
 
 // ------------------------------------------------------------- model menu
@@ -1390,6 +1815,7 @@ function handleExtensionUi(req) {
   switch (req.method) {
     case "notify":
       toast(stripAnsi(req.message) || "Notificação do PI", req.notifyType || "info");
+      addNotice(eventNotice(req));
       break;
     case "setStatus":
       if (req.statusText) state.statuses.set(req.statusKey || "default", stripAnsi(req.statusText));
@@ -1646,15 +2072,13 @@ els.menuBtn.addEventListener("click", () => openMenu(els.menuBtn, appMenuItems()
 els.toggleLeft.addEventListener("click", () => setPanel("left", layout.left !== "open"));
 els.toggleRight.addEventListener("click", () => setPanel("right", layout.right !== "open"));
 els.scrim.addEventListener("click", closeOverlays);
-els.back.addEventListener("click", () => navigate(-1).then(updateHeader).catch(report));
-els.forward.addEventListener("click", () => navigate(1).then(updateHeader).catch(report));
 els.consoleBtn.addEventListener("click", () => setDrawer(els.drawer.hidden));
 const showOutputs = () => {
   setPanel("right", true);
-  els.outputsCard.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
-  els.outputsCard.classList.remove("flash");
-  void els.outputsCard.offsetWidth;
-  els.outputsCard.classList.add("flash");
+  selectTab("files");
+  els.filesView.classList.remove("flash");
+  void els.filesView.offsetWidth;
+  els.filesView.classList.add("flash");
 };
 els.filesBtn.addEventListener("click", showOutputs);
 els.settingsBtn.addEventListener("click", openCustomize);
@@ -1697,4 +2121,6 @@ document.addEventListener("keydown", (event) => {
 
 updateComposer();
 renderAttachments();
+applyPanelWidth();
+selectTab(inspector.tab);
 bootstrap().catch(report);

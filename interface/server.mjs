@@ -443,7 +443,7 @@ async function ensureProject(projectId) {
   return project;
 }
 
-class PiRpcSession {
+export class PiRpcSession {
   constructor(options) {
     this.id = randomUUID();
     this.projectId = options.projectId;
@@ -477,6 +477,12 @@ class PiRpcSession {
     this.proc.stderr.setEncoding("utf8");
     this.proc.stdout.on("data", (chunk) => this.consumeStdout(chunk));
     this.proc.stderr.on("data", (chunk) => this.consumeStderr(chunk));
+    // A write racing PI's exit fails asynchronously (EPIPE/ECONNRESET on stdin). Without a
+    // listener that is an uncaught exception that would kill PI Studio; the exit handler
+    // already reports the process end, so only log it.
+    this.proc.stdin.on("error", (error) => {
+      recordLog("warn", `PI stdin closed for ${this.cwd}`, { error: error.message });
+    });
     this.proc.on("error", (error) => {
       recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
       this.broadcast("process_error", { type: "process_error", message: error.message });

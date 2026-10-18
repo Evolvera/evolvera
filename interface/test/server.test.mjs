@@ -42,7 +42,8 @@ Object.assign(process.env, {
 delete process.env.PI_WEB_HOST;
 const server = await import("../server.mjs");
 
-after(() => rm(tmp, { recursive: true, force: true }));
+// The fake PI may still be exiting with its cwd inside tmp; Windows reports EBUSY until it is gone.
+after(() => rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 async function waitFor(predicate, timeoutMs = 5000) {
   const start = Date.now();
@@ -73,6 +74,28 @@ describe("main mode", () => {
       for (const signal of ["SIGINT", "SIGTERM"]) {
         for (const listener of process.listeners(signal)) if (!before[signal === "SIGINT" ? "int" : "term"].includes(listener)) process.off(signal, listener);
       }
+    }
+  });
+});
+
+describe("PI stdin errors", () => {
+  test("a stdin error (write racing PI exit) is logged, not thrown as uncaught", async () => {
+    const session = new server.PiRpcSession({ projectId: "stdin-err", projectName: "stdin-err", cwd: tmp });
+    session.start();
+    const uncaught = [];
+    const onUncaught = (error) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const failure = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+      // emit() returns false when nobody listens, in which case Node would throw it.
+      assert.equal(session.proc.stdin.emit("error", failure), true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(uncaught, []);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+      const exited = new Promise((resolve) => session.proc.once("exit", resolve));
+      session.stop();
+      await exited;
     }
   });
 });

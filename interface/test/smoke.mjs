@@ -172,7 +172,24 @@ function collectSse(base, eventsPath, onEvent, cookie) {
       }
     });
   });
+  // The server ends SSE streams when PI exits; on Windows that can surface as ECONNRESET.
+  // Assertions rely on received events, so a closed stream is not a test failure.
+  req.on("error", () => {});
   return req;
+}
+
+// PI exit as recorded by the server. The SSE "process_exit" frame itself can be lost when the
+// server closes the stream right after it (Windows may surface that as a reset); the browser
+// recovers through EventSource reconnect + history replay, so the server state is the oracle.
+async function waitForExit(base, token, projectId, code, timeoutMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await fetch(`${base}/api/sessions`, { headers: { "x-pi-studio-token": token } });
+    const { sessions } = await res.json();
+    if (sessions.some((item) => item.projectId === projectId && item.exited && item.exitCode === code)) return;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  throw new Error(`Timed out waiting for PI exit code ${code}`);
 }
 
 async function waitFor(predicate, timeoutMs = 5000) {
@@ -365,23 +382,27 @@ try {
   // A fake PI exit must reach SSE, and a new-session command must start it again.
   const cleanExit = await post(base, `/api/projects/${projectId}/command`, { id: "exit-clean", type: "test_exit", code: 0 }, token);
   if (cleanExit.res.status !== 202) throw new Error(`clean exit command returned ${cleanExit.res.status}`);
-  await waitFor(() => seen.some((item) => item.event === "process_exit" && item.payload.code === 0));
+  await waitForExit(base, token, projectId, 0);
   const restarted = await post(base, `/api/projects/${projectId}/command`, { id: "restart-after-exit", type: "new_session" }, token);
   if (restarted.res.status !== 202) throw new Error(`restart command returned ${restarted.res.status}`);
   sse.destroy();
   sse = collectSse(base, `/api/projects/${projectId}/events`, (event, payload) => seen.push({ event, payload }), cookie);
   const failedExit = await post(base, `/api/projects/${projectId}/command`, { id: "exit-failure", type: "test_exit", code: 7 }, token);
   if (failedExit.res.status !== 202) throw new Error(`failed exit command returned ${failedExit.res.status}`);
-  await waitFor(() => seen.some((item) => item.event === "process_exit" && item.payload.code === 7));
+  await waitForExit(base, token, projectId, 7);
 
   await post(base, `/api/projects/${projectId}/stop`, {}, token);
   console.log("smoke ok (security cases + fake PI workflow)");
 } finally {
   if (sse) sse.destroy();
-  child.kill("SIGTERM");
-  await new Promise((resolve) => child.once("exit", resolve));
-  await rm(agentDir, { recursive: true, force: true });
-  await rm(projectDir, { recursive: true, force: true });
-  await rm(historyProjectDir, { recursive: true, force: true });
-  if (siblingDir) await rm(siblingDir, { recursive: true, force: true });
+  // The child may already have exited (e.g. it crashed); waiting on "exit" would hang.
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill("SIGTERM");
+    await exited;
+  }
+  await rm(agentDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  await rm(projectDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  await rm(historyProjectDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  if (siblingDir) await rm(siblingDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }

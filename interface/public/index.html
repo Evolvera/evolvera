@@ -14,8 +14,6 @@
         <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
         <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M9.5 4.5v15" /></symbol>
         <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M14.5 4.5v15" /></symbol>
-        <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6.5 9 12l5.5 5.5" /></symbol>
-        <symbol id="i-forward" viewBox="0 0 24 24"><path d="M9.5 6.5 15 12l-5.5 5.5" /></symbol>
         <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></symbol>
         <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5" /></symbol>
         <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4" /></symbol>
@@ -38,6 +36,7 @@
         <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a8 8 0 1 1 15 0" /><path d="m12 13.5 3.5-4" /></symbol>
         <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4.5a7.5 7.5 0 1 1-7.5 7.5" /></symbol>
         <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4.5M12 15.6v.1" /></symbol>
+        <symbol id="i-agents" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="5" rx="1.6" /><rect x="3.5" y="15.5" width="6" height="5" rx="1.6" /><rect x="14.5" y="15.5" width="6" height="5" rx="1.6" /><path d="M12 8.5v3.5M6.5 15.5V13.5a1.5 1.5 0 0 1 1.5-1.5h8a1.5 1.5 0 0 1 1.5 1.5v2" /></symbol>
       </defs>
     </svg>
 
@@ -46,14 +45,12 @@
         <div class="tb-group">
           <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu" aria-haspopup="menu"><svg><use href="#i-menu" /></svg></button>
           <button id="toggleLeftBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar barra lateral" aria-controls="sidebar" aria-expanded="true"><svg><use href="#i-sidebar" /></svg></button>
-          <button id="backBtn" class="icon-btn tb-nav" type="button" aria-label="Voltar" disabled><svg><use href="#i-back" /></svg></button>
-          <button id="forwardBtn" class="icon-btn tb-nav" type="button" aria-label="Avançar" disabled><svg><use href="#i-forward" /></svg></button>
           <button id="projectMenuBtn" class="title-btn" type="button" aria-haspopup="menu">
             <span id="projectTitle">PI Studio</span><svg><use href="#i-chevron-down" /></svg>
           </button>
         </div>
         <div class="tb-group">
-          <button id="toggleRightBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar painel" aria-controls="panel" aria-expanded="true"><svg><use href="#i-panel" /></svg></button>
+          <button id="toggleRightBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar inspetor" aria-controls="panel" aria-expanded="true"><svg><use href="#i-panel" /></svg></button>
           <button id="consoleBtn" class="icon-btn" type="button" aria-label="Console RPC" aria-controls="drawer" aria-expanded="false"><svg><use href="#i-terminal" /></svg></button>
           <button id="filesBtn" class="icon-btn" type="button" aria-label="Arquivos alterados"><svg><use href="#i-files" /></svg></button>
         </div>
@@ -137,18 +134,31 @@
         </section>
       </main>
 
-      <aside id="panel" class="panel" aria-label="Detalhes da sessão">
-        <section class="card">
-          <h2 class="card-title"><svg><use href="#i-folder-open" /></svg>Ambiente</h2>
-          <div id="envPath" class="env-path"></div>
+      <aside id="panel" class="panel inspector" aria-label="Inspetor da sessão" data-tab="terminal">
+        <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar inspetor" aria-controls="panel" aria-valuemin="320" aria-valuemax="900" aria-valuenow="460" tabindex="0" title="Arraste para redimensionar · duplo clique restaura"></div>
+        <div id="inspectorTabs" class="insp-tabs" role="tablist" aria-label="Visões do inspetor">
+          <button id="tab-terminal" class="insp-tab" type="button" role="tab" data-tab="terminal" aria-controls="view-terminal" aria-selected="true"><svg><use href="#i-terminal" /></svg><span class="insp-label">Terminal</span></button>
+          <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="insp-badge" hidden></span></button>
+          <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
+          <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span></button>
+        </div>
+        <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
+          <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
+          <button id="termJump" class="term-jump" type="button" hidden>Ir para o fim<svg><use href="#i-down" /></svg></button>
+          <div id="termWidgets" class="term-widgets" aria-label="Widgets de extensão" hidden></div>
+          <div id="termFoot" class="term-foot" role="status"></div>
         </section>
-        <section class="card" id="contextCard">
-          <h2 class="card-title"><svg><use href="#i-gauge" /></svg>Contexto</h2>
-          <div id="contextBody" class="context-body"></div>
+        <section id="view-subagents" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-subagents" data-view="subagents" tabindex="0" hidden>
+          <div id="subList" class="sa-list"></div>
         </section>
-        <section class="card" id="outputsCard">
-          <h2 class="card-title"><svg><use href="#i-files" /></svg>Saídas</h2>
-          <div id="outputsList" class="outputs"></div>
+        <section id="view-context" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-context" data-view="context" tabindex="0" hidden>
+          <div id="ctxView" class="ctx-view"></div>
+        </section>
+        <section id="view-files" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-files" data-view="files" tabindex="0" hidden>
+          <div class="files-view">
+            <section class="insp-sec"><h3 class="sec-title">Projeto</h3><div id="envPath" class="env-path"></div></section>
+            <section class="insp-sec"><h3 class="sec-title">Arquivos alterados</h3><div id="outputsList" class="outputs"></div></section>
+          </div>
         </section>
       </aside>
       <div id="scrim" class="scrim" hidden></div>
@@ -163,6 +173,17 @@
         <menu>
           <button id="uiCancelBtn" class="btn" value="cancel">Cancelar</button>
           <button id="uiOkBtn" class="btn btn-primary" value="ok">OK</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="confirmDialog" class="dialog">
+      <form method="dialog" class="dialog-form">
+        <h3 id="confirmTitle">Confirmar</h3>
+        <p id="confirmMessage"></p>
+        <menu>
+          <button class="btn" value="cancel">Cancelar</button>
+          <button id="confirmOkBtn" class="btn btn-primary" value="ok">Confirmar</button>
         </menu>
       </form>
     </dialog>

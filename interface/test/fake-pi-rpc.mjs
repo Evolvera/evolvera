@@ -103,6 +103,94 @@ function streamDemo(command) {
   });
 }
 
+// Visual QA of the inspector: a ~9 s run with the shapes real PI and @tintinweb/pi-subagents emit
+// (AgentDetails in tool partial/final results, "subagent-notification" custom message, "subagents" status).
+let inspectorRuns = 0;
+function streamInspector(command) {
+  const n = ++inspectorRuns;
+  const at = (ms, fn) => setTimeout(fn, ms);
+  const tool = (id, name, args, partials, result, isError = false, stepMs = 120) => (start) => {
+    emit({ type: "tool_execution_start", toolCallId: id, toolName: name, args });
+    partials.forEach((partial, index) => at(start + (index + 1) * stepMs, () => emit({ type: "tool_execution_update", toolCallId: id, toolName: name, args, partialResult: partial })));
+    const end = start + (partials.length + 1) * stepMs;
+    at(end, () => {
+      emit({ type: "tool_execution_end", toolCallId: id, toolName: name, result, isError });
+      const message = { role: "toolResult", toolCallId: id, toolName: name, content: result.content, details: result.details, isError, timestamp: Date.now() };
+      emit({ type: "message_start", message });
+      emit({ type: "message_end", message });
+      record(message);
+    });
+    return end;
+  };
+  const text = (value) => ({ content: [{ type: "text", text: value }] });
+  const testLines = Array.from({ length: 24 }, (_, i) => `  ✔ caso ${String(i + 1).padStart(2, "0")} · ${["lib", "server", "smoke"][i % 3]} (${(i * 7) % 40 + 2} ms)`);
+  const bashArgs = { command: "npm test -- --reporter=spec\necho fim" };
+  const editArgs = { path: "public/lib.js", edits: [{ oldText: "return a;", newText: "return a ?? b;\n// fallback" }] };
+  const failArgs = { command: "node scripts/check-types.mjs" };
+  const fgArgs = { description: "Mapear rotas da API", subagent_type: "Explore", prompt: "Liste todas as rotas HTTP em server.mjs e diga quais exigem token.", run_in_background: false };
+  const bgArgs = { description: "Auditar dependências", subagent_type: "general-purpose", name: "deps-audit", prompt: "Verifique dependências desatualizadas e riscos conhecidos." };
+  const base = { displayName: "Explore", description: fgArgs.description, subagentType: "Explore", modelName: "haiku 4.5", tags: ["thinking: low"] };
+  const activities = ["reading…", "searching…", "reading 2 files…", "running command…", "Encontrei 9 rotas; conferindo autenticação…"];
+  const fgPartials = activities.map((activity, i) => ({ content: [{ type: "text", text: `${i + 1} tool uses...` }], details: { ...base, toolUses: i + 1, tokens: `${(4.1 + i * 2.3).toFixed(1)}k token`, cost: 0, turnCount: i + 1, durationMs: (i + 1) * 450, status: "running", activity, spinnerFrame: i } }));
+  const fgResult = { content: [{ type: "text", text: "Agent completed in 2.7s (5 tool uses, 15.3k token).\n\n9 rotas encontradas:\n- GET /api/health (token)\n- GET /api/bootstrap (token)\n- POST /api/projects/:id/command (token)\n- GET /api/projects/:id/events (cookie)\nTodas exigem token, exceto os arquivos estáticos." }], details: { ...base, toolUses: 5, tokens: "15.3k token", cost: 0, turnCount: 5, durationMs: 2700, status: "completed", agentId: `ag-fg01-${n}` } };
+  const bgResult = { content: [{ type: "text", text: `Agent started in background.\nAgent ID: ag-bg02-${n}\nType: general-purpose\nDescription: Auditar dependências\n\nYou will be notified when this agent completes.` }], details: { displayName: "general-purpose", description: bgArgs.description, subagentType: "general-purpose", modelName: "sonnet 4.5", toolUses: 0, tokens: "", durationMs: 0, status: "background", agentId: `ag-bg02-${n}` } };
+
+  const first = assistant([
+    { type: "thinking", thinking: "Vou rodar os testes, corrigir o fallback em lib.js\ne delegar o mapeamento de rotas a um subagente." },
+    { type: "text", text: "Vou rodar os testes e ajustar o fallback." },
+    { type: "toolCall", id: `call_i_bash_${n}`, name: "bash", arguments: bashArgs },
+    { type: "toolCall", id: `call_i_edit_${n}`, name: "edit", arguments: editArgs },
+    { type: "toolCall", id: `call_i_fail_${n}`, name: "bash", arguments: failArgs },
+    { type: "toolCall", id: `call_i_fg_${n}`, name: "Agent", arguments: fgArgs },
+    { type: "toolCall", id: `call_i_bg_${n}`, name: "Agent", arguments: bgArgs },
+  ], "toolUse");
+  emit({ type: "message_start", message: { ...first, content: [] } });
+  const thought = first.content[0].thinking;
+  for (let index = 0; index < 4; index++) {
+    at(150 + index * 150, () => emit({ type: "message_update", message: { ...first, content: [] }, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: thought.slice(index * Math.ceil(thought.length / 4), (index + 1) * Math.ceil(thought.length / 4)) } }));
+  }
+  at(800, () => emit({ type: "message_update", message: { ...first, content: [] }, assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: first.content[1].text } }));
+  at(1000, () => {
+    emit({ type: "message_end", message: first });
+    record(first);
+    let t = tool(`call_i_bash_${n}`, "bash", bashArgs, testLines.map((_, i) => text(testLines.slice(0, i + 1).join("\n"))), text(`${testLines.join("\n")}\nℹ tests 24\nℹ pass 24\nfim`), false, 70)(0);
+    at(t + 100, () => {
+      let u = tool(`call_i_edit_${n}`, "edit", editArgs, [], { content: [{ type: "text", text: "Edited public/lib.js" }], details: { diff: " 41   const a = read();\n-42   return a;\n+42   return a ?? b;\n+43   // fallback\n 44 }" } })(0);
+      at(u + 100, () => {
+        u = tool(`call_i_fail_${n}`, "bash", failArgs, [], text("scripts/check-types.mjs:12\n  TypeError: Cannot read properties of undefined (reading 'kind')\n\nCommand exited with code 1"), true)(0);
+        at(u + 100, () => {
+          emit({ type: "extension_ui_request", id: "insp-status-1", method: "setStatus", statusKey: "subagents", statusText: "1 running agent" });
+          u = tool(`call_i_fg_${n}`, "Agent", fgArgs, fgPartials, fgResult, false, 650)(0);
+          at(u + 100, () => {
+            tool(`call_i_bg_${n}`, "Agent", bgArgs, [], bgResult)(0);
+            at(400, () => {
+              emit({ type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "529 overloaded_error" });
+              emit({ type: "auto_retry_end", success: true, attempt: 2 });
+              emit({ type: "extension_ui_request", id: "insp-notify", method: "notify", message: "Subagente deps-audit rodando em segundo plano", notifyType: "info" });
+              const final = assistant([{ type: "text", text: `Pronto: testes passaram, o fallback foi aplicado e as rotas foram mapeadas.\nO verificador de tipos falhou (scripts/check-types.mjs:12) — sigo nele. (${command.message})` }]);
+              emit({ type: "message_start", message: { ...final, content: [] } });
+              emit({ type: "message_update", message: { ...final, content: [] }, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: final.content[0].text } });
+              emit({ type: "message_end", message: final });
+              record(final);
+              emit({ type: "turn_end", message: final, toolResults: [] });
+              emit({ type: "agent_end", messages: [] });
+            });
+            at(3500, () => {
+              const details = { id: `ag-bg02-${n}`, description: bgArgs.description, status: "completed", toolUses: 7, turnCount: 4, totalTokens: 22800, totalCost: 0.04, durationMs: 3600, outputFile: `/tmp/pi-subagents/ag-bg02-${n}.jsonl`, resultPreview: "2 dependências desatualizadas (sem CVEs conhecidos).\nRecomendo atualizar croner e nanoid." };
+              const note = { role: "custom", customType: "subagent-notification", content: `<task-notification>\n<task-id>ag-bg02-${n}</task-id>\n<status>completed</status>\n<summary>Agent \"Auditar dependências\" completed</summary>\n</task-notification>`, display: true, details, timestamp: Date.now() };
+              emit({ type: "extension_ui_request", id: "insp-status-2", method: "setStatus", statusKey: "subagents" });
+              emit({ type: "message_start", message: note });
+              emit({ type: "message_end", message: note });
+              entries.push({ type: "custom_message", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, timestamp: new Date().toISOString(), customType: note.customType, content: note.content, display: true, details });
+              entries.push({ type: "custom", id: `e${entries.length + 1}`, parentId: entries.at(-1).id, timestamp: new Date().toISOString(), customType: "subagents:record", data: { id: `ag-bg02-${n}`, type: "general-purpose", description: bgArgs.description, status: "completed", result: "2 dependências desatualizadas (sem CVEs conhecidos).\n\n| pacote | atual | última |\n| croner | 10.0.1 | 10.1.0 |\n| nanoid | 5.1.16 | 5.2.0 |\n\nRecomendo atualizar croner e nanoid.", startedAt: Date.now() - 3600, completedAt: Date.now() } });
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
 function handle(command) {
   if (command.type === "test_exit") {
     process.exit(Number.isInteger(command.code) ? command.code : 0);
@@ -122,6 +210,10 @@ function handle(command) {
     }
     if (command.message === "demo") {
       streamDemo(command);
+      return;
+    }
+    if (command.message === "inspector") {
+      streamInspector(command);
       return;
     }
     if (command.message === "tools") {
@@ -163,7 +255,35 @@ function handle(command) {
   }
 
   if (command.type === "get_session_stats") {
-    respond(command, true, { sessionId: "fake-session", tokens: { total: 2 }, cost: 0, contextUsage: { tokens: 60000, contextWindow: 200000, percent: 30 } });
+    respond(command, true, {
+      sessionFile: "/tmp/fake-sessions/fake-session.jsonl",
+      sessionId: "fake-session",
+      userMessages: 2,
+      assistantMessages: 3,
+      toolCalls: 5,
+      toolResults: 5,
+      totalMessages: 10,
+      tokens: { input: 50000, output: 10000, cacheRead: 40000, cacheWrite: 5000, total: 105000 },
+      cost: 0.45,
+      contextUsage: { tokens: 60000, contextWindow: 200000, percent: 30 },
+    });
+    return;
+  }
+
+  if (command.type === "new_session") {
+    entries.length = 0;
+    respond(command, true, { cancelled: false });
+    return;
+  }
+
+  if (command.type === "compact") {
+    const result = { summary: "Resumo: testes, fallback em lib.js e rotas mapeadas.", firstKeptEntryId: entries.at(-1)?.id ?? null, tokensBefore: 60000, estimatedTokensAfter: 12000, details: {} };
+    emit({ type: "compaction_start", reason: "manual" });
+    setTimeout(() => {
+      entries.push({ type: "compaction", id: `e${entries.length + 1}`, parentId: entries.at(-1)?.id ?? null, timestamp: new Date().toISOString(), summary: result.summary, firstKeptEntryId: result.firstKeptEntryId, tokensBefore: result.tokensBefore });
+      emit({ type: "compaction_end", reason: "manual", result, aborted: false, willRetry: false });
+      respond(command, true, result);
+    }, 600);
     return;
   }
 

@@ -42,6 +42,20 @@ export async function waitSessionGate(holder) {
   while (holder.gate) await holder.gate;
 }
 
+const SUBAGENT_STATUS_LABELS = { completed: "concluído", error: "falhou", aborted: "interrompido", steered: "redirecionado", stopped: "parado" };
+
+// Chat line for an extension message. pi-subagents' "subagent-notification" carries raw
+// <task-notification> XML for the model; the chat shows a one-line summary instead (the
+// Subagentes tab has the full result). Fields: NotificationDetails in pi-subagents/src/types.ts.
+export function customNoteText(message) {
+  const details = message?.details;
+  if (message?.customType !== "subagent-notification" || !details?.description) return messageText(message);
+  const notes = [details, ...(Array.isArray(details.others) ? details.others : [])].filter((note) => note?.description);
+  const describe = (note) => `${note.description} · ${SUBAGENT_STATUS_LABELS[note.status] || note.status || "atualizado"}`;
+  if (notes.length === 1) return `Subagente: ${describe(details)}${details.error ? ` — ${details.error}` : ""}`;
+  return `Subagentes (${notes.length}): ${notes.map(describe).join("; ")}`;
+}
+
 export function countLines(text) {
   if (typeof text !== "string" || text === "") return 0;
   return text.replace(/\n$/, "").split("\n").length;
@@ -459,7 +473,9 @@ export function entriesToMessages(entries, leafId) {
   const out = [];
   for (const entry of activeBranch(entries, leafId)) {
     if (entry.type === "message" && entry.message) out.push(entry.message);
-    else if (entry.type === "custom_message") out.push({ role: "custom", content: entry.content, display: entry.display, timestamp: entry.timestamp });
+    else if (entry.type === "custom_message") {
+      out.push({ role: "custom", customType: entry.customType, content: entry.content, display: entry.display, details: entry.details, timestamp: entry.timestamp });
+    }
     else if (entry.type === "compaction") out.push({ role: "compactionSummary", summary: entry.summary, tokensBefore: entry.tokensBefore });
     else if (entry.type === "branch_summary") out.push({ role: "branchSummary", summary: entry.summary });
   }
@@ -620,7 +636,7 @@ export function buildTimeline(messages = [], runtime = new Map()) {
       case "custom":
         if (message.display === false) break;
         group = null;
-        items.push({ kind: "note", key: `c:${mi}`, text: messageText(message) });
+        items.push({ kind: "note", key: `c:${mi}`, text: customNoteText(message) });
         break;
       case "compactionSummary":
       case "branchSummary":
@@ -716,4 +732,404 @@ export function samePath(a, b) {
   if (!a || !b) return false;
   const norm = (value) => String(value).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   return norm(a) === norm(b);
+}
+
+// --------------------------------------------------------------- inspector
+
+export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files"];
+
+// Roving focus for role="tablist": returns the tab index to activate, or null for other keys.
+export function tabKeyTarget(key, index, count) {
+  if (!count) return null;
+  if (key === "ArrowRight" || key === "ArrowDown") return (index + 1) % count;
+  if (key === "ArrowLeft" || key === "ArrowUp") return (index - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
+export function clampPanelWidth(width, viewport, { min = 320, maxRatio = 0.6, fallback = 460 } = {}) {
+  const max = Math.max(min, Math.floor(viewport * maxRatio));
+  const value = Number(width);
+  const wanted = Number.isFinite(value) && value > 0 ? value : fallback;
+  return Math.round(Math.min(max, Math.max(min, wanted)));
+}
+
+export function splitLines(text) {
+  const value = String(text ?? "").replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  return value ? value.split("\n") : [];
+}
+
+// Keeps the DOM light: only the newest `max` lines of a long output are rendered.
+export function capTail(lines, max = 400) {
+  if (lines.length <= max) return { hidden: 0, lines };
+  return { hidden: lines.length - max, lines: lines.slice(lines.length - max) };
+}
+
+const termLine = (text, cls = "") => ({ text, cls });
+
+// The call line PI's TUI prints for a tool, with the complete arguments.
+export function terminalToolHead(name, args) {
+  const a = args && typeof args === "object" ? args : {};
+  const kind = toolKind(name);
+  const label = String(name || "ferramenta");
+  const target = toolPath(a);
+  if (kind === "command") {
+    const [first = "", ...rest] = splitLines(a.command);
+    return [termLine(`$ ${first}`, "cmd"), ...rest.map((text) => termLine(`  ${text}`, "cmd"))];
+  }
+  if (kind === "read") {
+    const start = Number(a.offset) || 1;
+    const end = a.limit ? `-${start + Number(a.limit) - 1}` : "";
+    return [termLine(`read ${target}${a.offset || a.limit ? `:${start}${end}` : ""}`, "cmd")];
+  }
+  if (kind === "edit" || kind === "write") return [termLine(`${kind} ${target}`, "cmd")];
+  if (kind === "search") return [termLine([label, a.pattern, target, a.glob].filter(Boolean).join(" "), "cmd")];
+  const json = Object.keys(a).length ? JSON.stringify(a, null, 2) : "";
+  return [termLine(label, "cmd"), ...splitLines(json).map((text) => termLine(text, "args"))];
+}
+
+// pi-subagents AgentDetails (src/ui/agent-widget.ts) -> the stats PI prints next to a subagent.
+export function subagentStats(details = {}) {
+  const parts = [];
+  if (details.modelName) parts.push(details.modelName);
+  if (Array.isArray(details.tags)) parts.push(...details.tags);
+  if (details.turnCount > 0) parts.push(`↻ ${details.turnCount}${details.maxTurns ? `/${details.maxTurns}` : ""}`);
+  if (details.toolUses > 0) parts.push(plural(details.toolUses, "ferramenta", "ferramentas"));
+  if (details.tokens) parts.push(details.tokens);
+  if (details.cost > 0) parts.push(`US$ ${details.cost.toFixed(2)}`);
+  return parts;
+}
+
+export function terminalToolBody(tool, max = 400) {
+  const kind = toolKind(tool.name);
+  const details = tool.result?.details;
+  let lines;
+  if ((kind === "edit" || kind === "write") && !tool.isError) {
+    lines = diffLines(tool).map((item) => termLine(item.text, item.type));
+  } else if (tool.status === "running" && details?.status === "running") {
+    lines = [termLine(subagentStats(details).join(" · "), "dim"), termLine(`└ ${details.activity || "pensando…"}`, "out")];
+  } else {
+    lines = splitLines(toolResultText(tool.result)).map((text) => termLine(text, tool.isError ? "err" : "out"));
+  }
+  if (tool.isError && !lines.length) lines.push(termLine("✗ falhou", "err"));
+  return capTail(lines, max);
+}
+
+function blockSignature(block) {
+  let chars = 0;
+  for (const item of [...block.head, ...block.lines]) chars += item.text.length;
+  return `${block.kind}|${block.status}|${block.hidden}|${block.head.length}|${block.lines.length}|${chars}`;
+}
+
+// The same conversation as the chat, flattened in protocol order the way PI's TUI prints it.
+// notices: [{ id, at, level, text }] are live-only lines, placed before messages[at].
+export function buildTerminal(messages = [], runtime = new Map(), notices = [], max = 400) {
+  const blocks = [];
+  const tools = new Map();
+  const queue = [...notices].sort((a, b) => a.at - b.at);
+  let next = 0;
+  const flush = (limit) => {
+    while (next < queue.length && queue[next].at <= limit) {
+      const notice = queue[next++];
+      blocks.push({ key: `n:${notice.id}`, kind: "notice", lines: [termLine(notice.text, notice.level)] });
+    }
+  };
+  const addTool = (key, tool) => {
+    tools.set(tool.id, tool);
+    blocks.push({ key, kind: "tool", tool });
+  };
+  const newTool = (id, name, args) => ({ id, name, args, status: "pending", result: null, isError: false });
+
+  messages.forEach((message, mi) => {
+    flush(mi);
+    switch (message?.role) {
+      case "user": {
+        const text = splitLines(messageText(message));
+        const images = messageImages(message).length;
+        const lines = (text.length ? text : [""]).map((value, index) => termLine(`${index ? "  " : "> "}${value}`, "user"));
+        if (images) lines.push(termLine(`  [${plural(images, "imagem", "imagens")}]`, "dim"));
+        blocks.push({ key: `u:${mi}`, kind: "user", lines });
+        break;
+      }
+      case "assistant": {
+        const parts = Array.isArray(message.content) ? message.content : [{ type: "text", text: String(message.content ?? "") }];
+        parts.forEach((part, pi) => {
+          if (part?.type === "thinking" && part.thinking?.trim()) {
+            blocks.push({ key: `k:${mi}.${pi}`, kind: "thinking", lines: splitLines(part.thinking).map((text) => termLine(text, "think")) });
+          } else if (part?.type === "text" && part.text?.trim()) {
+            blocks.push({ key: `a:${mi}.${pi}`, kind: "assistant", lines: splitLines(part.text).map((text) => termLine(text)) });
+          } else if (part?.type === "toolCall") {
+            addTool(`t:${mi}.${pi}`, newTool(part.id || `${mi}.${pi}`, part.name, part.arguments || {}));
+          }
+        });
+        if (message.stopReason === "error" && message.errorMessage) {
+          blocks.push({ key: `e:${mi}`, kind: "notice", lines: [termLine(`✗ ${message.errorMessage}`, "err")] });
+        } else if (message.stopReason === "aborted") {
+          blocks.push({ key: `e:${mi}`, kind: "notice", lines: [termLine("■ Interrompido", "warn")] });
+        }
+        break;
+      }
+      case "toolResult": {
+        let tool = tools.get(message.toolCallId);
+        if (!tool) addTool(`r:${mi}`, (tool = newTool(message.toolCallId || `r${mi}`, message.toolName, {})));
+        tool.result = { content: message.content, details: message.details };
+        tool.isError = Boolean(message.isError);
+        tool.status = tool.isError ? "error" : "done";
+        break;
+      }
+      case "bashExecution": {
+        const failed = Boolean(message.exitCode) || Boolean(message.cancelled);
+        const tool = newTool(`b:${mi}`, "bash", { command: message.command });
+        Object.assign(tool, { status: failed ? "error" : "done", isError: failed, result: { content: [{ type: "text", text: message.output || "" }] } });
+        addTool(`b:${mi}`, tool);
+        break;
+      }
+      case "custom":
+        if (message.display === false) break;
+        blocks.push({
+          key: `c:${mi}`,
+          kind: "custom",
+          lines: [termLine(`[${message.customType || "extensão"}]`, "dim"), ...splitLines(messageText(message)).map((text) => termLine(text, "out"))],
+        });
+        break;
+      case "compactionSummary":
+      case "branchSummary":
+        blocks.push({
+          key: `d:${mi}`,
+          kind: "divider",
+          lines: [termLine(message.role === "branchSummary" ? "Resumo do ramo" : "Contexto compactado", "rule"), ...splitLines(message.summary).map((text) => termLine(text, "dim"))],
+        });
+        break;
+    }
+  });
+
+  for (const [id, live] of runtime) {
+    let tool = tools.get(id);
+    if (!tool) addTool(`l:${id}`, (tool = newTool(id, live.name, live.args || {})));
+    if (tool.status === "pending" || tool.status === "running") {
+      tool.status = live.status;
+      tool.result = live.result ?? live.partial ?? tool.result;
+      tool.isError = live.status === "error";
+    }
+  }
+  flush(Infinity);
+
+  return blocks.map((block) => {
+    const out = block.kind === "tool"
+      ? { key: block.key, kind: "tool", status: block.tool.status, head: terminalToolHead(block.tool.name, block.tool.args), ...terminalToolBody(block.tool, max) }
+      : { key: block.key, kind: block.kind, status: "", head: [], lines: block.lines, hidden: 0 };
+    out.sig = blockSignature(out);
+    return out;
+  });
+}
+
+// Live-only terminal lines for protocol events that never become session entries.
+export function eventNotice(event) {
+  switch (event?.type) {
+    case "compaction_start":
+      return { level: "dim", text: `◌ Compactando contexto${event.reason ? ` (${event.reason})` : ""}…` };
+    case "compaction_end": {
+      if (event.aborted) return { level: "warn", text: "■ Compactação interrompida" };
+      if (event.errorMessage) return { level: "err", text: `✗ Falha ao compactar: ${event.errorMessage}` };
+      const result = event.result || {};
+      const after = typeof result.estimatedTokensAfter === "number" ? ` → ~${formatTokens(result.estimatedTokensAfter)}` : "";
+      return { level: "dim", text: `◆ Contexto compactado${typeof result.tokensBefore === "number" ? `: ${formatTokens(result.tokensBefore)}${after} tokens` : ""}` };
+    }
+    case "auto_retry_start":
+      return { level: "warn", text: `↻ Nova tentativa ${event.attempt}/${event.maxAttempts} em ${formatElapsed(event.delayMs)}${event.errorMessage ? ` · ${event.errorMessage}` : ""}` };
+    case "auto_retry_end":
+      return event.success
+        ? { level: "dim", text: `↻ Tentativa ${event.attempt} bem-sucedida` }
+        : { level: "err", text: `✗ Falhou após ${event.attempt} tentativas: ${event.finalError || "erro desconhecido"}` };
+    case "extension_error":
+      return { level: "err", text: `✗ Erro de extensão: ${event.error}` };
+    case "extension_ui_request":
+      if (event.method !== "notify") return null;
+      return { level: event.notifyType === "error" ? "err" : event.notifyType === "warning" ? "warn" : "info", text: `• ${stripAnsi(event.message)}` };
+    default:
+      return null;
+  }
+}
+
+// ------------------------------------------------------------- subagents
+
+// Tool names registered by @tintinweb/pi-subagents (src/agent-runner.ts SUBAGENT_TOOL_NAMES).
+export const SUBAGENT_TOOLS = { agent: "Agent", result: "get_subagent_result", steer: "steer_subagent" };
+
+export function subagentPhase(status) {
+  if (status === "running" || status === "queued" || status === "background") return "running";
+  if (status === "completed" || status === "steered") return "done";
+  return "error";
+}
+
+function stamp(value) {
+  const time = typeof value === "number" ? value : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+// Final records the extension appends as `subagents:record` custom entries (src/index.ts).
+export function subagentRecords(entries) {
+  const records = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry?.type === "custom" && entry.customType === "subagents:record" && entry.data?.id) records.set(entry.data.id, entry.data);
+  }
+  return records;
+}
+
+function lastLines(text, count) {
+  return splitLines(text).filter((value) => value.trim()).slice(-count);
+}
+
+// One entry per Agent tool call, merged with live partial results, completion notifications
+// (custom message "subagent-notification") and persisted records. Running runs first, newest first.
+export function collectSubagents(messages = [], runtime = new Map(), records = new Map(), now = Date.now()) {
+  const runs = [];
+  const byCall = new Map();
+  const notes = new Map();
+  const extras = [];
+  const extraByCall = new Map();
+
+  messages.forEach((message, mi) => {
+    if (message?.role === "assistant" && Array.isArray(message.content)) {
+      message.content.forEach((part, pi) => {
+        if (part?.type !== "toolCall") return;
+        const args = part.arguments || {};
+        if (part.name === SUBAGENT_TOOLS.agent) {
+          const run = { key: `sa:${mi}.${pi}`, args, startedAt: stamp(message.timestamp), result: null, isError: false, live: false };
+          runs.push(run);
+          byCall.set(part.id, run);
+        } else if (part.name === SUBAGENT_TOOLS.steer || part.name === SUBAGENT_TOOLS.result) {
+          const steer = part.name === SUBAGENT_TOOLS.steer;
+          const extra = { ref: String(args.agent_id ?? ""), label: steer ? "Direcionamento" : "Consulta de resultado", text: steer ? String(args.message ?? "") : "" };
+          extras.push(extra);
+          extraByCall.set(part.id, extra);
+        }
+      });
+    } else if (message?.role === "toolResult") {
+      const run = byCall.get(message.toolCallId);
+      if (run) {
+        run.result = { content: message.content, details: message.details };
+        run.isError = Boolean(message.isError);
+      }
+      const extra = extraByCall.get(message.toolCallId);
+      if (extra && !extra.text) extra.text = toolResultText(message);
+    } else if (message?.role === "custom" && message.customType === "subagent-notification" && message.details) {
+      for (const note of [message.details, ...(Array.isArray(message.details.others) ? message.details.others : [])]) {
+        if (note?.id) notes.set(note.id, note);
+      }
+    }
+  });
+
+  for (const [id, live] of runtime) {
+    if (live.name !== SUBAGENT_TOOLS.agent) continue;
+    let run = byCall.get(id);
+    if (!run) {
+      run = { key: `sa:live:${id}`, args: live.args || {}, startedAt: null, result: null, isError: false, live: false };
+      runs.push(run);
+      byCall.set(id, run);
+    }
+    if (live.startedAt) run.startedAt = live.startedAt;
+    if (run.result) continue;
+    run.result = live.result ?? live.partial ?? null;
+    run.isError = live.status === "error";
+    run.live = live.status === "running";
+  }
+
+  const out = runs.map((run, order) => {
+    const args = run.args;
+    const details = run.result?.details || {};
+    const agentId = details.agentId || "";
+    const note = notes.get(agentId);
+    const record = records.get(agentId);
+    const status = run.isError ? "error" : note?.status || record?.status || details.status || (run.result ? "error" : "running");
+    const phase = subagentPhase(status);
+    const output = toolResultText(run.result);
+    const inFlight = run.live || details.status === "running" || details.status === "background" || !run.result;
+    const resultText = record?.result || note?.resultPreview || (inFlight ? "" : output);
+    const errorText = note?.error || record?.error || details.error || "";
+    const startedAt = record?.startedAt ?? run.startedAt;
+
+    let elapsed;
+    if (note) elapsed = note.durationMs || 0;
+    else if (record?.completedAt && record.startedAt) elapsed = record.completedAt - record.startedAt;
+    else if (phase === "running" && startedAt) elapsed = Math.max(0, now - startedAt);
+    else elapsed = details.durationMs || 0;
+
+    let tail;
+    if (phase === "running") {
+      tail = [details.status === "running" ? `└ ${details.activity || "pensando…"}` : details.status === "background" ? `Em segundo plano · ${agentId}` : "Aguardando início…"];
+    } else if (phase === "error") {
+      tail = errorText ? [errorText] : lastLines(output, 3);
+    } else {
+      tail = lastLines(resultText, 3);
+    }
+
+    const sections = [];
+    if (args.prompt) sections.push({ label: "Tarefa", text: String(args.prompt) });
+    if (details.status === "background" && output) sections.push({ label: "Início", text: output });
+    if (resultText) sections.push({ label: "Resultado", text: resultText });
+    if (phase === "error" && errorText) sections.push({ label: "Erro", text: errorText });
+    if (note?.outputFile) sections.push({ label: "Transcrição completa", text: note.outputFile });
+
+    const stats = note
+      ? { ...details, toolUses: note.toolUses, turnCount: note.turnCount, maxTurns: note.maxTurns, cost: note.totalCost, tokens: note.totalTokens ? `${formatTokens(note.totalTokens)} tokens` : details.tokens }
+      : details;
+    return {
+      key: run.key,
+      agentId,
+      name: String(args.name || ""),
+      title: String(args.name || details.displayName || args.subagent_type || "Agente"),
+      type: String(details.subagentType || args.subagent_type || ""),
+      description: String(args.description || details.description || note?.description || ""),
+      model: String(details.modelName || args.model || ""),
+      stats: subagentStats(stats),
+      status,
+      phase,
+      background: details.status === "background",
+      elapsed,
+      tail,
+      sections,
+      order,
+    };
+  });
+
+  // steer_subagent / get_subagent_result address an agent by id, name or type (src/index.ts resolveAgentRef).
+  for (const extra of extras) {
+    const ref = extra.ref.toLowerCase();
+    const target = ref && out.findLast((run) => [run.agentId, run.name, run.type].some((value) => value && value.toLowerCase() === ref));
+    if (target) target.sections.push({ label: extra.label, text: extra.text });
+  }
+
+  return out.sort((a, b) => {
+    const running = Number(b.phase === "running") - Number(a.phase === "running");
+    return running || b.order - a.order;
+  });
+}
+
+// ---------------------------------------------------------------- context
+
+export function contextBreakdown(stats, session) {
+  const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  const tokens = stats?.tokens || {};
+  const parts = [["Entrada", tokens.input], ["Saída", tokens.output], ["Cache lido", tokens.cacheRead], ["Cache gravado", tokens.cacheWrite]]
+    .filter(([, value]) => num(value) !== null)
+    .map(([label, value]) => ({ label, value }));
+  const sum = parts.reduce((acc, part) => acc + part.value, 0);
+  for (const part of parts) part.share = sum ? part.value / sum : 0;
+  const counts = [["Mensagens suas", stats?.userMessages], ["Respostas do PI", stats?.assistantMessages], ["Chamadas de ferramenta", stats?.toolCalls], ["Total de mensagens", stats?.totalMessages]]
+    .filter(([, value]) => num(value) !== null)
+    .map(([label, value]) => ({ label, value }));
+  const model = session?.model;
+  return {
+    usage: contextUsage(stats),
+    parts,
+    total: num(tokens.total),
+    cost: num(stats?.cost),
+    counts,
+    model: model ? modelLabel(model) : "",
+    provider: model?.provider || "",
+    thinking: model && model.reasoning !== false && session.thinkingLevel ? thinkingLabel(session.thinkingLevel) : "",
+    sessionFile: stats?.sessionFile || session?.sessionFile || "",
+  };
 }
