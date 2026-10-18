@@ -74,7 +74,7 @@ function fileList(root) {
 try {
   fixtureSource(sourceRoot);
   const sourceSettings = JSON.parse(readFileSync(path.join(sourceRoot, "config/settings.json"), "utf8"));
-  assert.equal(sourceSettings.packages.some((value) => value.includes("observational-memory")), false);
+  assert.equal(sourceSettings.packages.some((value) => (typeof value === "string" ? value : value.source).includes("observational-memory")), false);
   assert.equal(sourceSettings["observational-memory"], undefined);
   assert.equal(sourceSettings["plastic-memory"], undefined, "installer settings must not activate plastic-memory");
 
