@@ -32,6 +32,8 @@ const tmpdirProprioPadrao = new Set([
   "midrun-compaction.smoke.mjs",
   // Faux provider + real bash tool (sleep/echo only) inside its owned mkdtemp root, removed in finally.
   "bash-timeout.smoke.mjs",
+  // Faux provider session in its owned mkdtemp root; Git Bash probe only echoes an env var.
+  "msys-slash-restore.smoke.mjs",
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
