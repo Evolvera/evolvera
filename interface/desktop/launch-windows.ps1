@@ -63,7 +63,7 @@ if ($Stop) {
 if (-not (Test-StudioHealth)) {
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $node) { $node = Get-Command node -ErrorAction SilentlyContinue }
-    if (-not $node) { throw 'Node.js não encontrado no PATH.' }
+    if (-not $node) { throw 'Node.js nao encontrado no PATH.' }
     $server = Join-Path $studioDir 'server.mjs'
     $oldPort = $env:PI_WEB_PORT
     $oldHost = $env:PI_WEB_HOST
@@ -81,6 +81,6 @@ if (-not (Test-StudioHealth)) {
         if (Test-StudioHealth) { break }
         Start-Sleep -Milliseconds 500
     }
-    if (-not (Test-StudioHealth)) { throw "PI Studio não respondeu em até 30 segundos. Consulte $logFile" }
+    if (-not (Test-StudioHealth)) { throw "PI Studio nao respondeu em ate 30 segundos. Consulte $logFile" }
 }
 Open-StudioWindow

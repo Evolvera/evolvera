@@ -17,4 +17,4 @@ foreach ($directory in @($DesktopDir, $StartMenuDir)) {
     $shortcut.IconLocation = "$icon,0"
     $shortcut.Save()
 }
-Write-Output 'PI Studio instalado: Área de Trabalho e Menu Iniciar'
+Write-Output 'PI Studio instalado: Area de Trabalho e Menu Iniciar'

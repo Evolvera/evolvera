@@ -150,13 +150,17 @@ async function sendLine(text) {
     await request(`/api/projects/${encodeURIComponent(project.id)}/command`, "POST", action.kind === "rpc" ? { id: randomUUID(), type: action.type, ...(action.type === "bash" ? { command: action.command } : { message: action.message }) } : { id: randomUUID(), type: action.type, message: action.message });
   } catch (error) { print(error.message); }
 }
-rl.on("line", (line) => {
+// Lines typed (or piped) before the project is open wait here instead of failing.
+let ready = false;
+const queuedLines = [];
+function handleLine(line) {
   if (line.endsWith("\\")) { inputBuffer += `${line.slice(0, -1)}\n`; rl.setPrompt("… "); rl.prompt(); return; }
   const text = inputBuffer + line;
   inputBuffer = ""; rl.setPrompt("› ");
   // A failed command (e.g. /export with PI down) is reported, never an unhandled rejection that kills the CLI.
-  sendLine(text).catch((error) => print(`Erro: ${error.message}`));
-});
+  return sendLine(text).catch((error) => print(`Erro: ${error.message}`));
+}
+rl.on("line", (line) => { if (ready) handleLine(line); else queuedLines.push(line); });
 rl.on("SIGINT", () => {
   const now = Date.now();
   if (!streaming || now - lastInterrupt < 1500) { closed = true; rl.close(); }
@@ -174,5 +178,7 @@ try {
   const opened = await request(`/api/projects/${encodeURIComponent(project.id)}/open`, "POST", {});
   print(`PI Studio · ${opened.project.name} · sessão ${opened.session.sessionId || opened.session.id}`);
   void consumeSse();
-  rl.prompt();
+  ready = true;
+  for (const line of queuedLines.splice(0)) await handleLine(line);
+  if (!closed) rl.prompt();
 } catch (error) { console.error(`Erro: ${error.message}`); rl.close(); process.exitCode = 1; }
