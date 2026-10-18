@@ -22,6 +22,14 @@ Ou múltiplas raízes:
 PI_PROJECT_ROOTS="/Users/j.henrique/EVOLVERA:/Users/j.henrique/AYA" npm start
 ```
 
+## Windows (app de janela própria)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File interfacestart-windows.ps1
+```
+
+Sobe o servidor oculto (se ainda não estiver na porta 4123) e abre o Edge/Chrome em modo `--app`. No Windows o servidor encontra o `cli.js` global do PI sozinho (ou use `PI_WEB_PI_BIN`) e lista os projetos que já têm sessões em `~/.pi/agent/sessions`, os mais recentes primeiro.
+
 ## Rodar no Docker
 
 ```bash
@@ -44,6 +52,7 @@ docker compose exec pi-studio pi update
 ## Experiência
 
 - Sem formulário de start: abrir projeto = start automático do `pi --mode rpc` dentro daquela pasta.
+- Visual estilo Claude Desktop: sidebar de projetos/sessões, chat em markdown, ferramentas recolhidas numa linha ("Executou 2 comandos · editou 1 arquivo"), cards de arquivo com +N −M, "Pensando" com timer, painel direito com Ambiente, Contexto e Saídas.
 - Sidebar de projetos.
 - Histórico por projeto lendo os JSONL de `~/.pi/agent/sessions`.
 - Seleção de agente/subagente antes de enviar prompt.

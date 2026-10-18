@@ -2,20 +2,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createUiResponder, updateProcessExitUi } from "../public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const fakePi = path.join(__dirname, "fake-pi-rpc.mjs");
 
 // A saída deve ficar visível, bloquear prompts e oferecer reinício.
-const exitAppSource = await readFile(path.join(root, "public/app.js"), "utf8");
-const exitUiSource = exitAppSource.match(/function updateProcessExitUi\([\s\S]*?\n}/)?.[0];
-assert.ok(exitUiSource, "app.js deve expor a atualização testável da UI de saída");
-const updateProcessExitUi = new Function(`${exitUiSource}; return updateProcessExitUi;`)();
 function makeExitUi() {
   return {
     status: { textContent: "", classList: { classes: new Set(["hidden"]), remove(name) { this.classes.delete(name); } } },
@@ -41,10 +38,6 @@ updateProcessExitUi({ code: null, signal: "SIGTERM" }, signalExitUi);
 assert.equal(signalExitUi.status.textContent, "PI encerrado (sinal SIGTERM)");
 
 // A resposta compartilhada deve tornar Esc e cliques rápidos idempotentes.
-const appSource = await readFile(path.join(root, "public/app.js"), "utf8");
-const responderSource = appSource.match(/function createUiResponder\([\s\S]*?\n}/)?.[0];
-assert.ok(responderSource, "app.js deve expor a lógica testável de resposta única");
-const createUiResponder = new Function(`${responderSource}; return createUiResponder;`)();
 const uiResponses = [];
 const responder = createUiResponder("ui-esc", async (id, payload) => {
   uiResponses.push({ id, ...payload });
@@ -194,6 +187,17 @@ async function waitFor(predicate, timeoutMs = 5000) {
 const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-agent-"));
 const projectDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-project-"));
 await writeFile(path.join(projectDir, "package.json"), "{}\n");
+// Projeto só conhecido pelo histórico de sessões (fora das raízes); um cwd removido não aparece.
+const historyProjectDir = await mkdtemp(path.join(os.tmpdir(), "pi-studio-test-history-"));
+const sessionsDir = path.join(agentDir, "sessions", "--history--");
+await mkdir(sessionsDir, { recursive: true });
+const historyFile = path.join(sessionsDir, "2024-01-01_a.jsonl");
+await writeFile(historyFile, [
+  JSON.stringify({ type: "session", version: 3, id: "hist-1", timestamp: "2024-01-01T00:00:00.000Z", cwd: historyProjectDir }),
+  JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2024-01-01T00:00:01.000Z", message: { role: "user", content: "Sessão antiga" } }),
+].join("\n"));
+await writeFile(path.join(sessionsDir, "2024-01-02_b.jsonl"), `${JSON.stringify({ type: "session", id: "gone", cwd: path.join(historyProjectDir, "removido") })}\n`);
+await writeFile(path.join(sessionsDir, "broken.jsonl"), "{not json");
 const child = spawn(process.execPath, [path.join(root, "server.mjs")], {
   cwd: root,
   env: {
@@ -303,16 +307,20 @@ try {
   if (!Array.isArray(agents.agents)) throw new Error("agents endpoint did not return an array");
 
   const bootstrap = await fetch(`${base}/api/bootstrap`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
-  if (!Array.isArray(bootstrap.projects) || bootstrap.projects.length !== 1 || bootstrap.projects[0].cwd !== projectDir) {
-    throw new Error("bootstrap read projects outside the temporary project directory");
-  }
+  // Raiz temporária + projeto do histórico (mais recente primeiro); nada de fora.
+  assert.deepEqual(bootstrap.projects.map((item) => item.cwd), [historyProjectDir, projectDir], "bootstrap must list only temp roots + temp history projects");
+  assert.ok(bootstrap.projects[0].lastUsedAt, "history project carries lastUsedAt");
+  const historyList = await fetch(`${base}/api/projects/${bootstrap.projects[0].id}/history`, { headers: { "x-pi-studio-token": token } }).then((res) => res.json());
+  assert.equal(historyList.history.length, 1);
+  assert.equal(historyList.history[0].title, "Sessão antiga");
+  assert.equal(historyList.history[0].path, historyFile);
   if (bootstrap.config.agentDir !== agentDir || bootstrap.config.agentDir === path.join(os.homedir(), ".pi", "agent")) {
     throw new Error("server did not use its temporary agent directory");
   }
   if (bootstrap.config.projectRoots.length !== 1 || bootstrap.config.projectRoots[0] !== projectDir) {
     throw new Error("server did not restrict project roots to the temporary project directory");
   }
-  const projectId = bootstrap.projects[0].id;
+  const projectId = bootstrap.projects[1].id;
   const opened = await post(base, `/api/projects/${projectId}/open`, {}, token);
   if (!opened.res.ok || !opened.data.session?.id) throw new Error("project open did not start a session");
 
@@ -328,6 +336,31 @@ try {
   await waitFor(() => seen.some((item) => item.payload?.type === "response" && item.payload.command === "get_state"));
   const uiResponse = await post(base, `/api/projects/${projectId}/ui-response`, { id: "ui-smoke", value: "ok" }, token);
   if (uiResponse.res.status !== 202) throw new Error(`dialog response returned ${uiResponse.res.status}`);
+  assert.ok(seen.some((item) => item.event === "replay_done"), "SSE marks the end of the history replay");
+
+  // Eventos de ferramenta chegam pelo SSE na ordem do protocolo.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-tools", type: "prompt", message: "tools" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.type === "tool_execution_end" && item.payload.toolCallId === "call_edit"));
+  const toolTypes = seen.filter((item) => item.payload?.toolCallId === "call_bash" && item.payload.type?.startsWith("tool_execution")).map((item) => item.payload.type);
+  assert.deepEqual(toolTypes, ["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
+  assert.ok(seen.some((item) => item.payload?.assistantMessageEvent?.type === "thinking_delta"));
+
+  // Diálogo de extensão: pedido -> resposta -> PI recebe o valor escolhido.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-ui", type: "prompt", message: "ui" }, token);
+  await waitFor(() => seen.some((item) => item.payload?.type === "extension_ui_request" && item.payload.id === "fake-ui-1"));
+  const answer = await post(base, `/api/projects/${projectId}/ui-response`, { id: "fake-ui-1", value: "Permitir" }, token);
+  assert.equal(answer.res.status, 202);
+  await waitFor(() => seen.some((item) => item.payload?.method === "notify" && item.payload.message === "Escolha: Permitir"));
+  const missingId = await post(base, `/api/projects/${projectId}/ui-response`, { value: "x" }, token);
+  assert.equal(missingId.res.status, 400);
+
+  // Reconectar não reabre o diálogo já respondido.
+  const replay = [];
+  const replaySse = collectSse(base, `/api/projects/${projectId}/events`, (event, payload) => replay.push({ event, payload }), cookie);
+  await waitFor(() => replay.some((item) => item.event === "replay_done"));
+  replaySse.destroy();
+  assert.equal(replay.some((item) => item.payload?.id === "fake-ui-1" && item.payload.type === "extension_ui_request"), false);
+  assert.ok(replay.some((item) => item.payload?.id === "fake-notify"), "other history is still replayed");
 
   // A fake PI exit must reach SSE, and a new-session command must start it again.
   const cleanExit = await post(base, `/api/projects/${projectId}/command`, { id: "exit-clean", type: "test_exit", code: 0 }, token);
@@ -349,5 +382,6 @@ try {
   await new Promise((resolve) => child.once("exit", resolve));
   await rm(agentDir, { recursive: true, force: true });
   await rm(projectDir, { recursive: true, force: true });
+  await rm(historyProjectDir, { recursive: true, force: true });
   if (siblingDir) await rm(siblingDir, { recursive: true, force: true });
 }

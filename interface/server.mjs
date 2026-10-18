@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import { access, open, readdir, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -90,8 +90,14 @@ function safeName(value) {
   return String(value || "").replace(/[\u0000-\u001f]/g, "").trim();
 }
 
+// Windows paths are case-insensitive (session dirs exist as both `C--` and `c--`).
+export function cwdKey(cwd, platform = process.platform) {
+  const resolved = path.resolve(cwd);
+  return platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 function projectIdFor(cwd) {
-  return createHash("sha1").update(path.resolve(cwd)).digest("hex").slice(0, 16);
+  return createHash("sha1").update(cwdKey(cwd)).digest("hex").slice(0, 16);
 }
 
 function parseStringArrayEnv(name) {
@@ -106,8 +112,8 @@ function parseStringArrayEnv(name) {
   return raw.split(path.delimiter).map((item) => item.trim()).filter(Boolean);
 }
 
-function parsePiPrefixArgs() {
-  const raw = process.env.PI_WEB_PI_BIN_ARGS;
+function parsePiPrefixArgs(env = process.env) {
+  const raw = env.PI_WEB_PI_BIN_ARGS;
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -117,6 +123,63 @@ function parsePiPrefixArgs() {
   }
   recordLog("warn", "Ignoring PI_WEB_PI_BIN_ARGS; expected JSON array of strings.");
   return [];
+}
+
+const PI_CLI_PARTS = ["@earendil-works", "pi-coding-agent", "dist", "cli.js"];
+
+// `npm root -g` without a shell: npm.cmd cannot be spawned directly on Windows,
+// so run npm's own JS entry point with the current node binary.
+export function runNpmRootGlobal({ nodeBin = process.execPath, npmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js") } = {}) {
+  if (!existsSync(npmCli)) return null;
+  try {
+    const output = execFileSync(nodeBin, [npmCli, "root", "-g"], { encoding: "utf8", timeout: 15000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    return output.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function npmGlobalRootCandidates({ env = process.env, execPath = process.execPath, runNpmRoot = runNpmRootGlobal } = {}) {
+  const roots = [runNpmRoot()];
+  if (env.APPDATA) roots.push(path.win32.join(env.APPDATA, "npm", "node_modules"));
+  roots.push(path.win32.join(path.win32.dirname(execPath), "node_modules"));
+  return [...new Set(roots.filter(Boolean))];
+}
+
+// On win32 `pi` is `pi.cmd`, which spawn() cannot run without `shell: true`.
+// Spawn node with the globally installed CLI script instead.
+export function resolvePiCommand({
+  platform = process.platform,
+  env = process.env,
+  execPath = process.execPath,
+  runNpmRoot = runNpmRootGlobal,
+  npmRoots = () => npmGlobalRootCandidates({ env, execPath, runNpmRoot }),
+  exists = existsSync,
+  log = recordLog,
+} = {}) {
+  const prefixArgs = parsePiPrefixArgs(env);
+  if (env.PI_WEB_PI_BIN) return { bin: env.PI_WEB_PI_BIN, prefixArgs, source: "env" };
+  if (platform !== "win32") return { bin: "pi", prefixArgs, source: "path" };
+  const roots = npmRoots();
+  for (const root of roots) {
+    const cli = path.win32.join(root, ...PI_CLI_PARTS);
+    if (exists(cli)) return { bin: execPath, prefixArgs: [cli, ...prefixArgs], source: "npm-global" };
+  }
+  log("error", "PI CLI not found in the global npm root; falling back to `pi` (set PI_WEB_PI_BIN to fix).", { searched: roots });
+  return { bin: "pi", prefixArgs, source: "fallback" };
+}
+
+export function buildPiArgs({ prefixArgs = [], name, cwd, env = process.env }) {
+  const args = [...prefixArgs, "--mode", "rpc", "--name", name || path.basename(cwd) || "pi-web"];
+  if (env.PI_WEB_PROVIDER) args.push("--provider", env.PI_WEB_PROVIDER);
+  if (env.PI_WEB_MODEL) args.push("--model", env.PI_WEB_MODEL);
+  return args;
+}
+
+let cachedPiCommand = null;
+export function piCommand() {
+  cachedPiCommand ??= resolvePiCommand();
+  return cachedPiCommand;
 }
 
 async function readJsonBody(req) {
@@ -218,6 +281,66 @@ async function listAgents(cwd = process.cwd()) {
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export async function readdirSafe(dir) {
+  try {
+    return await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+// Reads only the head of the file: session JSONL can be many MB, the header is one short line.
+export async function readFirstLine(filePath, maxBytes = 16 * 1024) {
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    const head = buffer.subarray(0, bytesRead).toString("utf8");
+    const newline = head.indexOf("\n");
+    return (newline === -1 ? head : head.slice(0, newline)).replace(/\r$/, "");
+  } finally {
+    await handle.close();
+  }
+}
+
+// Projects the user actually used with PI: cwd from each session header, newest first,
+// keeping only directories that still exist.
+export async function discoverHistoryProjects(sessionsDir) {
+  const byKey = new Map();
+  for (const dir of await readdirSafe(sessionsDir)) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsDir, dir.name);
+    for (const file of await readdirSafe(fullDir)) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const header = JSON.parse(await readFirstLine(filePath));
+        if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd) continue;
+        const { mtimeMs } = await stat(filePath);
+        const key = cwdKey(header.cwd);
+        const previous = byKey.get(key);
+        if (!previous || mtimeMs > previous.lastUsedMs) byKey.set(key, { cwd: path.resolve(header.cwd), lastUsedMs: mtimeMs });
+      } catch {
+        // Ignore malformed/partial session files.
+      }
+    }
+  }
+  const out = [];
+  for (const item of byKey.values()) {
+    if (await isDirectory(item.cwd)) out.push(item);
+  }
+  return out.sort((a, b) => b.lastUsedMs - a.lastUsedMs);
+}
+
+// Recently used projects first (newest first), then the rest alphabetically.
+export function sortProjects(list) {
+  return [...list].sort((a, b) => {
+    if (a.lastUsedAt && b.lastUsedAt) return b.lastUsedAt.localeCompare(a.lastUsedAt);
+    if (a.lastUsedAt || b.lastUsedAt) return a.lastUsedAt ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 async function getProjectRoots() {
   const explicit = parseStringArrayEnv("PI_PROJECT_ROOTS");
   if (explicit.length) return explicit.map((item) => path.resolve(item));
@@ -249,12 +372,18 @@ async function discoverProjects() {
       found.set(project.id, project);
     }
   }
+  for (const item of await discoverHistoryProjects(path.join(AGENT_DIR, "sessions"))) {
+    const lastUsedAt = new Date(item.lastUsedMs).toISOString();
+    const id = projectIdFor(item.cwd);
+    if (found.has(id)) found.get(id).lastUsedAt = lastUsedAt;
+    else if (found.size < PROJECT_LIMIT) found.set(id, { ...makeProject(item.cwd, path.dirname(item.cwd)), lastUsedAt });
+  }
   if (found.size === 0) {
     const fallback = makeProject(process.cwd(), path.dirname(process.cwd()));
     found.set(fallback.id, fallback);
   }
   projects.clear();
-  for (const project of [...found.values()].sort((a, b) => a.name.localeCompare(b.name))) projects.set(project.id, project);
+  for (const project of sortProjects([...found.values()])) projects.set(project.id, project);
   return [...projects.values()];
 }
 
@@ -268,6 +397,7 @@ function makeProject(cwd, root) {
     root,
     activeSessionId: active?.id || null,
     hasGit: false,
+    lastUsedAt: null,
   };
 }
 
@@ -299,13 +429,12 @@ class PiRpcSession {
     this.options = options;
     this.proc = null;
     this.lastState = null;
+    this.answeredUi = new Set();
   }
 
   start() {
-    const piBin = process.env.PI_WEB_PI_BIN || "pi";
-    const args = [...parsePiPrefixArgs(), "--mode", "rpc", "--name", this.projectName || path.basename(this.cwd) || "pi-web"];
-    if (process.env.PI_WEB_PROVIDER) args.push("--provider", process.env.PI_WEB_PROVIDER);
-    if (process.env.PI_WEB_MODEL) args.push("--model", process.env.PI_WEB_MODEL);
+    const { bin: piBin, prefixArgs } = piCommand();
+    const args = buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
 
     this.proc = spawn(piBin, args, {
       cwd: this.cwd,
@@ -406,7 +535,15 @@ class PiRpcSession {
       "x-accel-buffering": "no",
     });
     res.write(`: connected ${this.id}\n\n`);
-    for (const item of this.history) sendSse(res, item.event, item.payload);
+    let replayed = 0;
+    for (const item of this.history) {
+      // A dialog already answered must not pop up again on reconnect.
+      if (item.payload?.type === "extension_ui_request" && this.answeredUi.has(item.payload.id)) continue;
+      sendSse(res, item.event, item.payload);
+      replayed++;
+    }
+    // Lets the client tell buffered history from live events.
+    sendSse(res, "replay_done", { type: "replay_done", count: replayed });
     const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
     this.clients.add(res);
     res.on("close", () => {
@@ -419,6 +556,7 @@ class PiRpcSession {
     if (!isPlainObject(command)) throw new Error("RPC command must be a JSON object");
     if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
     this.proc.stdin.write(`${JSON.stringify(command)}\n`);
+    if (command.type === "extension_ui_response" && command.id) this.answeredUi.add(command.id);
   }
 
   stop() {
@@ -459,11 +597,6 @@ async function getOrStartProjectSession(project) {
   sessions.set(session.id, session);
   session.start();
   return session;
-}
-
-async function readFirstLine(filePath) {
-  const content = await readFile(filePath, "utf8");
-  return content.split(/\r?\n/, 1)[0];
 }
 
 function messageText(message) {
@@ -523,7 +656,7 @@ async function listProjectHistory(project) {
       try {
         const firstLine = await readFirstLine(filePath);
         const header = JSON.parse(firstLine);
-        if (path.resolve(header.cwd || "") !== project.cwd) continue;
+        if (cwdKey(header.cwd || "") !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
         out.push({
@@ -684,7 +817,7 @@ async function route(req, res) {
       return json(res, 200, {
         ok: true,
         host: DEFAULT_HOST,
-        piBin: process.env.PI_WEB_PI_BIN || "pi",
+        piBin: piCommand().bin,
         agentDir: AGENT_DIR,
         projectRoots: await getProjectRoots(),
         node: process.version,
@@ -821,17 +954,28 @@ const server = createServer((req, res) => {
   route(req, res).catch((error) => json(res, 500, { error: error.message || "Internal server error" }));
 });
 
-server.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : DEFAULT_PORT;
-  listeningPort = port;
-  const line = `PI Studio listening on http://${DEFAULT_HOST}:${port}`;
-  recordLog("info", line);
-  console.log(line);
-  if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(DEFAULT_HOST.toLowerCase())) {
-    console.warn("PI Studio is exposed beyond loopback; protect this server and its network access.");
-  }
-});
+export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
+  return new Promise((resolve) => {
+    server.listen(port, host, () => {
+      const address = server.address();
+      listeningPort = address.port;
+      const line = `PI Studio listening on http://${host}:${listeningPort}`;
+      recordLog("info", line);
+      console.log(line);
+      if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(host.toLowerCase())) {
+        console.warn("PI Studio is exposed beyond loopback; protect this server and its network access.");
+      }
+      resolve(server);
+    });
+  });
+}
+
+// Graceful stop for embedders/tests: stops PI children and closes the listener without exiting.
+export function stopServer() {
+  for (const session of sessions.values()) session.stop();
+  server.closeAllConnections();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
 
 function shutdown() {
   for (const session of sessions.values()) session.stop();
@@ -839,5 +983,11 @@ function shutdown() {
   setTimeout(() => process.exit(0), 1500).unref();
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+export const isMainModule = Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  await startServer();
+  // Resolve the PI binary up front (it may run `npm root -g` once) so the first project opens fast.
+  piCommand();
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
