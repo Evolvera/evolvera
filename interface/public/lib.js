@@ -18,6 +18,15 @@ export function stripAnsi(value) {
   return String(value ?? "").replace(ANSI_PATTERN, "");
 }
 
+// Extensions re-announce themselves on every PI start/reconnect; show one toast per
+// identical message within the window instead of stacking copies.
+export function shouldShowToast(seen, key, now, windowMs = 60_000) {
+  const last = seen.get(key);
+  if (last !== undefined && now - last < windowMs) return false;
+  seen.set(key, now);
+  return true;
+}
+
 export function countLines(text) {
   if (typeof text !== "string" || text === "") return 0;
   return text.replace(/\n$/, "").split("\n").length;

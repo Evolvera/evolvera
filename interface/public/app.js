@@ -1,5 +1,6 @@
 import {
   stripAnsi,
+  shouldShowToast,
   applyAssistantDelta,
   basename,
   buildTimeline,
@@ -176,7 +177,10 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 // ------------------------------------------------------------------ basics
 
+const toastSeen = new Map();
+
 function toast(message, type = "info") {
+  if (!shouldShowToast(toastSeen, `${type}:${message}`, Date.now())) return;
   const item = document.createElement("div");
   item.className = `toast ${type}`;
   item.setAttribute("role", type === "error" ? "alert" : "status");

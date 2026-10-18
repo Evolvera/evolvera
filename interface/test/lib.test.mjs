@@ -8,6 +8,15 @@ describe("text utils", () => {
     assert.equal(lib.escapeHtml(null), "");
   });
 
+  test("shouldShowToast", () => {
+    const seen = new Map();
+    assert.equal(lib.shouldShowToast(seen, "a", 1000), true);
+    assert.equal(lib.shouldShowToast(seen, "a", 30_000), false);
+    assert.equal(lib.shouldShowToast(seen, "b", 30_000), true);
+    assert.equal(lib.shouldShowToast(seen, "a", 61_000), true);
+    assert.equal(lib.shouldShowToast(seen, "a", 61_050, 100), false);
+  });
+
   test("stripAnsi", () => {
     assert.equal(lib.stripAnsi("\x1b[38;2;224;108;120mMCP\x1b[39m ok"), "MCP ok");
     assert.equal(lib.stripAnsi("\x1b]8;;https://x\x07link\x1b]8;;\x1b\\"), "link");
