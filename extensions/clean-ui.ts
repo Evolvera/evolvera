@@ -654,12 +654,23 @@ export function fastTag(status: string | undefined): Segment | undefined {
   return { text: icon + rest.join("·"), color };
 }
 
+/** Orchestration is a first-class tag: bold accent text only, so the raw key and music emoji never reach the HUD. */
+export function conductorTag(status: string | undefined): Segment | undefined {
+  if (status === undefined) return undefined;
+  const words = oneLine(status).replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+  if (!words.length || (words.length === 1 && /^(OFF|OFFLINE)$/i.test(words[0]!))) return undefined;
+  const extra = words.filter((word) => !/^CONDUCTOR$/i.test(word));
+  return { text: ["CONDUCTOR", ...extra].join("·"), color: "accent", bold: true };
+}
+
 /** Second footer line: context gauge plus only the active modes and identities (truncated, never wrapped). */
 function modeFooter(footerData: { getExtensionStatuses(): ReadonlyMap<string, string> }, theme: ThemeLike, width: number, context: Segment[]): string[] {
   const statuses = footerData.getExtensionStatuses();
   const segments: Segment[] = [...context];
   const window = oneLine(statuses.get("context-mode") ?? "");
   if (window) segments.push({ text: `◈${window}`, color: "warning" });
+  const conductor = conductorTag(statuses.get("orchestration-mode"));
+  if (conductor) segments.push(conductor);
   const fast = fastTag(statuses.get("codex-fast-mode"));
   if (fast) segments.push(fast);
   const maestro = oneLine(statuses.get("maestro") ?? "");
@@ -670,11 +681,16 @@ function modeFooter(footerData: { getExtensionStatuses(): ReadonlyMap<string, st
     const mode = match?.[1] ?? execution;
     const source = match?.[2];
     const color = /YOLO/.test(mode) ? "thinkingXhigh" : /SUPERVIS/.test(mode) ? "muted" : "warning";
-    segments.push({ text: source && source !== "GLOBAL" ? `${mode}·${source.toLowerCase()}` : mode, color, bold: color === "thinkingXhigh" });
+    const scope = source && source !== "GLOBAL" ? `·${source.toLowerCase()}` : "";
+    // The mode keeps its colour; the project/session scope is a muted qualifier (global stays hidden).
+    segments.push({
+      text: `${mode}${scope}`, color, bold: color === "thinkingXhigh",
+      parts: scope ? [{ text: mode, color }, { text: scope, color: "muted" }] : undefined,
+    });
   }
   const user = oneLine(statuses.get("usuario") ?? "");
   if (user) segments.push({ text: `@${user}`, color: "muted" });
-  const known = new Set(["codex-fast-mode", "maestro", "execution-mode", "usuario", "context-mode"]);
+  const known = new Set(["codex-fast-mode", "maestro", "execution-mode", "usuario", "context-mode", "orchestration-mode"]);
   for (const [key, value] of statuses) if (!known.has(key) && oneLine(value)) segments.push({ text: `${key} ${value}`, color: "dim" });
   return layoutHud(segments, theme, width, "accent", false);
 }
