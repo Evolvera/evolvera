@@ -287,6 +287,23 @@ if (-not $sameRoot) {
     Info "origem e destino iguais - settings.json preservado"
 }
 
+# -- PI Studio -------------------------------------------
+Step "Instalando PI Studio"
+$studioSource = Join-Path $SCRIPT_DIR "interface"
+$studioInstaller = Join-Path $studioSource "desktop\install-payload-cli.mjs"
+if (Test-Path -LiteralPath $studioInstaller) {
+    & node $studioInstaller $studioSource $PI_DIR
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar os arquivos do PI Studio." }
+    # bin\pi-studio.cmd only forwards to the installed client (cli.mjs needs its public/ lib next to it).
+    Set-Content -LiteralPath (Join-Path $PI_DIR "bin\pi-studio.cmd") -Value "@chcp 65001 >nul`r`n@node `"%~dp0..\studio\cli.mjs`" %*" -Encoding ASCII -NoNewline
+    foreach ($stale in @("cli.mjs", "cli-lib.mjs")) { Remove-Item -LiteralPath (Join-Path $PI_DIR "bin\$stale") -Force -ErrorAction SilentlyContinue }
+    $desktopDir = [Environment]::GetFolderPath('Desktop')
+    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $studioSource "desktop\install-app.ps1") -StudioDir (Join-Path $PI_DIR "studio") -DesktopDir $desktopDir -StartMenuDir (Join-Path $startMenuDir "PI Studio")
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao criar os atalhos do PI Studio." }
+    if (($env:PATH -split ';') -notcontains (Join-Path $PI_DIR "bin")) { Write-Host "  Dica: adicione $PI_DIR\bin ao PATH para usar pi-studio.cmd no terminal." }
+}
+
 # -- Done -------------------------------------------------
 Write-Host ""
 Write-Host "========================================" -ForegroundColor $CYAN
