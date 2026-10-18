@@ -465,7 +465,7 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
 // Report-back: full handoffs launch PI workers bound to the coordinator's Run.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --provider openai-codex --model gpt-6\.1-sol --thinking high`/, "worker launched with PI_REPORT_RUN and Sol/high");
-  has(path, /orca orchestration check --run <run-id> --json/, "coordinator reads the Run on wake");
+  has(path, /types one line `\[child <worktree>\] goal finished\|blocked/, "worker report is typed into the coordinator terminal");
 }
 // Proportion: reuse proven head evidence, ask gates up front, don't repair Orca bookkeeping.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
@@ -553,7 +553,6 @@ has(SKILL, /Sem sleep, loops de espera, polling ou leituras repetidas de termina
 lacks(SKILL, /Sem sleep, loops de espera, `check --wait` repetido/, "blanket repeated-wait ban is replaced by the conditional rolling fallback");
 // Lost-wake correction: queued != woken; conditional native rolling long-poll; unfiltered for untracked status/handoff.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /`ok: true`\) proves only that mail was queued, never that this coordinator resumed/, "queued mail is not a wake");
   lacks(path, /which wakes you/, "no unconditional wake promise");
 }
 has(SKILL, /recibo de envio `ok: true` prova só que a mensagem foi enfileirada, nunca que o coordenador retomou/, "skill: queued is not a wake");

@@ -121,13 +121,14 @@ export function createWorkerReportExtension(run: Runner = execFile) {
         } catch {
           // Branch information is optional; report even outside a Git worktree.
         }
-        const body = [`goal_id: ${report.goalId}`, `outcome: ${report.outcome}`, `cwd: ${report.cwd}`, ...(branch ? [`branch: ${branch}`] : []), report.body].join("\n").slice(0, 1500);
-        const result = await run("orca", [
-          "orchestration", "send", "--to", `run:${runId}`,
-          "--subject", `${report.outcome}: ${path.basename(report.cwd)}`,
-          "--body", body,
-          "--type", "status", "--json",
-        ], { timeout: 10_000, encoding: "utf8" });
+        // The Run records the conductor terminal that launched this worker; type the
+        // report there so the conductor wakes like on a user prompt (Orca's mailbox wake is unreliable).
+        const shown: unknown = JSON.parse((await run("orca", ["orchestration", "run-show", "--id", runId, "--json"], { timeout: 10_000, encoding: "utf8" })).stdout);
+        const handle = (shown as { result?: { run?: { coordinator_handle?: unknown } } })?.result?.run?.coordinator_handle;
+        if (typeof handle !== "string" || !handle.startsWith("term_")) return false;
+        const line = [`[child ${path.basename(report.cwd)}] goal ${report.outcome}`, `goal_id=${report.goalId}`, ...(branch ? [`branch=${branch}`] : []), report.body]
+          .join(" | ").replace(/\s+/g, " ").trim().slice(0, 1500);
+        const result = await run("orca", ["terminal", "send", "--terminal", handle, "--text", line, "--enter", "--json"], { timeout: 10_000, encoding: "utf8" });
         const receipt: unknown = JSON.parse(result.stdout);
         return Boolean(receipt && typeof receipt === "object" && !Array.isArray(receipt) && (receipt as { ok?: unknown }).ok === true);
       } catch {
