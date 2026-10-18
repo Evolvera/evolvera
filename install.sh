@@ -224,6 +224,18 @@ else
     info "origem e destino iguais - settings.json preservado"
 fi
 
+# ── PI Studio ─────────────────────────────────
+step "Instalando PI Studio"
+if [ -f "$SCRIPT_DIR/interface/desktop/install-payload-cli.mjs" ]; then
+    node "$SCRIPT_DIR/interface/desktop/install-payload-cli.mjs" "$SCRIPT_DIR/interface" "$PI_DIR"
+    if [ "$(uname -s)" = Darwin ]; then
+        bash "$PI_DIR/studio/desktop/install-app.sh" "$PI_DIR" "$HOME" darwin
+    else
+        bash "$PI_DIR/studio/desktop/install-app.sh" "$PI_DIR" "$HOME" linux
+    fi
+    case ":$PATH:" in *":$PI_DIR/bin:"*) : ;; *) echo "Dica: adicione $PI_DIR/bin ao PATH para usar pi-studio no terminal." ;; esac
+fi
+
 # ── Done ──────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

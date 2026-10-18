@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { foldText, rankFiles, searchSnippet } from "./public/lib.js";
+import { foldText, normalizeOrca, rankFiles, searchSnippet } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -57,6 +57,8 @@ const SKIP_DIRS = new Set([
 
 const sessions = new Map();
 const projects = new Map();
+// Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
+const addedProjects = new Map();
 const serverLogs = [];
 
 function recordLog(level, message, details = undefined) {
@@ -421,6 +423,9 @@ async function discoverProjects() {
     const fallback = makeProject(process.cwd(), path.dirname(process.cwd()));
     found.set(fallback.id, fallback);
   }
+  for (const added of addedProjects.values()) {
+    if (!found.has(added.id)) found.set(added.id, { ...makeProject(added.cwd, added.root), lastUsedAt: added.lastUsedAt });
+  }
   projects.clear();
   for (const project of sortProjects([...found.values()])) projects.set(project.id, project);
   return [...projects.values()];
@@ -469,6 +474,10 @@ export class PiRpcSession {
     this.proc = null;
     this.lastState = null;
     this.answeredUi = new Set();
+    // Live activity for /api/projects/status: a dialog stays pending until answered (or until its timeout passes).
+    this.streaming = false;
+    this.pendingUi = new Map();
+    this.lastEventAt = Date.now();
   }
 
   start() {
@@ -558,11 +567,32 @@ export class PiRpcSession {
     if (!line.trim()) return;
     try {
       const payload = JSON.parse(line);
+      this.track(payload);
       if (payload.type === "response" && payload.command === "get_state" && payload.success) this.lastState = payload.data;
       this.broadcast("rpc", payload);
     } catch (error) {
       this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
     }
+  }
+
+  track(payload, now = Date.now()) {
+    this.lastEventAt = now;
+    if (payload.type === "agent_start") this.streaming = true;
+    else if (payload.type === "agent_end") this.streaming = false;
+    else if (payload.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method) && payload.id) {
+      this.pendingUi.set(payload.id, payload.timeout > 0 ? now + payload.timeout : Infinity);
+    }
+  }
+
+  statusSummary(now = Date.now()) {
+    return {
+      projectId: this.projectId,
+      sessionId: this.id,
+      streaming: !this.exited && this.streaming,
+      waitingUi: !this.exited && [...this.pendingUi.values()].some((expiry) => expiry > now),
+      exited: this.exited,
+      lastEventAt: this.lastEventAt,
+    };
   }
 
   broadcast(event, payload) {
@@ -601,7 +631,10 @@ export class PiRpcSession {
     if (!isPlainObject(command)) throw new Error("RPC command must be a JSON object");
     if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
     this.proc.stdin.write(`${JSON.stringify(command)}\n`);
-    if (command.type === "extension_ui_response" && command.id) this.answeredUi.add(command.id);
+    if (command.type === "extension_ui_response" && command.id) {
+      this.answeredUi.add(command.id);
+      this.pendingUi.delete(command.id);
+    }
   }
 
   stop() {
@@ -631,8 +664,15 @@ export class PiRpcSession {
   }
 }
 
+const UI_DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
+
 function redactArgs(args) {
   return args.map((arg) => (/key|token|auth|secret/i.test(String(arg)) ? "[redacted]" : arg));
+}
+
+async function openProjectPayload(project) {
+  const session = await getOrStartProjectSession(project);
+  return { project, session: session.summary(), agents: await listAgents(project.cwd), history: await listProjectHistory(project) };
 }
 
 async function getOrStartProjectSession(project) {
@@ -873,6 +913,98 @@ async function listProjectHistory(project) {
   return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50);
 }
 
+// ---- Orca worktrees (read-only `orca worktree ps --json`; absent in Docker, so it degrades to available:false).
+const ORCA_TIMEOUT_MS = Number.parseInt(process.env.PI_STUDIO_ORCA_TIMEOUT_MS || "5000", 10);
+const ORCA_CACHE_MS = 2000;
+const ORCA_MAX_BUFFER = 8 * 1024 * 1024;
+const orcaCache = { at: 0, value: null, pending: null };
+
+function parseJsonStringArray(raw) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Fall through to no extra args.
+  }
+  return [];
+}
+
+// PI_STUDIO_ORCA_BIN (+ PI_STUDIO_ORCA_BIN_ARGS, a JSON array run before the orca arguments) wins; otherwise the Orca
+// desktop CLI on Windows, `orca` on PATH elsewhere. null = not installed.
+export function resolveOrcaCommand({ platform = process.platform, env = process.env, exists = existsSync } = {}) {
+  if (env.PI_STUDIO_ORCA_BIN) return { bin: env.PI_STUDIO_ORCA_BIN, prefixArgs: parseJsonStringArray(env.PI_STUDIO_ORCA_BIN_ARGS) };
+  if (platform !== "win32") return { bin: "orca", prefixArgs: [] };
+  const bin = env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, "Programs", "orca", "resources", "bin", "orca.exe") : "";
+  return bin && exists(bin) ? { bin, prefixArgs: [] } : null;
+}
+
+// Never rejects: every failure becomes { available: false, reason } (not-found | timeout | failed | invalid).
+export function fetchOrca(command = resolveOrcaCommand(), timeoutMs = ORCA_TIMEOUT_MS) {
+  if (!command) return Promise.resolve({ available: false, reason: "not-found" });
+  return new Promise((resolve) => {
+    const args = [...command.prefixArgs, "worktree", "ps", "--json"];
+    execFile(command.bin, args, { timeout: timeoutMs, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      if (error) return resolve({ available: false, reason: error.code === "ENOENT" ? "not-found" : error.killed ? "timeout" : "failed" });
+      let summary = { ok: false };
+      try {
+        summary = normalizeOrca(JSON.parse(stdout));
+      } catch {
+        // Malformed output keeps ok:false.
+      }
+      resolve(summary.ok ? { available: true, active: summary.active, worktrees: summary.worktrees } : { available: false, reason: "invalid" });
+    });
+  });
+}
+
+export function clearOrcaCache() {
+  orcaCache.at = 0;
+  orcaCache.value = null;
+}
+
+// Cached for 2 s; concurrent callers share one child process.
+export function getOrca({ now = Date.now, fetch = fetchOrca } = {}) {
+  if (orcaCache.value && now() - orcaCache.at < ORCA_CACHE_MS) return Promise.resolve(orcaCache.value);
+  orcaCache.pending ??= fetch()
+    .then((value) => {
+      orcaCache.value = value;
+      orcaCache.at = now();
+      return value;
+    })
+    .finally(() => {
+      orcaCache.pending = null;
+    });
+  return orcaCache.pending;
+}
+
+function httpError(statusCode, message) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+export function pathInside(root, target) {
+  const base = cwdKey(root);
+  const key = cwdKey(target);
+  return key === base || key.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+}
+
+// Trust boundary of open-path: an absolute directory that Orca lists as a worktree or that sits under a project root.
+async function projectForPath(raw) {
+  const cwd = safeName(raw);
+  if (!path.isAbsolute(cwd) || /(^|[\\/])\.\.([\\/]|$)/.test(cwd)) throw httpError(400, "Invalid path");
+  const resolved = path.resolve(cwd);
+  const orca = await getOrca();
+  const listed = orca.available && orca.worktrees.some((worktree) => cwdKey(worktree.path) === cwdKey(resolved));
+  if (!listed && !(await getProjectRoots()).some((root) => pathInside(root, resolved))) throw httpError(403, "Path not allowed");
+  if (!(await isDirectory(resolved))) throw httpError(404, "Directory not found");
+  await knownProjects(projects, discoverProjects);
+  let project = projects.get(projectIdFor(resolved));
+  if (!project) {
+    project = { ...makeProject(resolved, path.dirname(resolved)), lastUsedAt: new Date().toISOString() };
+    addedProjects.set(project.id, project);
+    projects.set(project.id, project);
+  }
+  return project;
+}
+
 // ---- @-mention file picker: relative POSIX paths of a project, ranked per query.
 const FILE_RESULT_LIMIT = 50;
 const FILE_CACHE_TTL_MS = 10_000;
@@ -1110,14 +1242,36 @@ async function route(req, res) {
       return json(res, 200, { sessions: [...sessions.values()].map((session) => session.summary()) });
     }
 
+    if (pathname === "/api/orca") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const orca = await getOrca();
+      if (!orca.available) return json(res, 200, { available: false, reason: orca.reason, active: null, worktrees: [] });
+      const byCwd = new Map((await knownProjects(projects, discoverProjects)).map((project) => [cwdKey(project.cwd), project.id]));
+      return json(res, 200, { ...orca, worktrees: orca.worktrees.map((worktree) => ({ ...worktree, projectId: byCwd.get(cwdKey(worktree.path)) ?? null })) });
+    }
+
+    if (pathname === "/api/projects/status") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const latest = new Map();
+      for (const session of sessions.values()) {
+        if (!latest.get(session.projectId) || latest.get(session.projectId).exited) latest.set(session.projectId, session);
+      }
+      return json(res, 200, { statuses: [...latest.values()].map((session) => session.statusSummary()) });
+    }
+
+    if (pathname === "/api/projects/open-path") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      return json(res, 201, await openProjectPayload(await projectForPath(body?.cwd)));
+    }
+
     const projectRoute = parseProjectRoute(pathname);
     if (projectRoute) {
       const project = await ensureProject(projectRoute.projectId);
       const { action } = projectRoute;
 
       if (req.method === "POST" && action === "open") {
-        const session = await getOrStartProjectSession(project);
-        return json(res, 201, { project, session: session.summary(), agents: await listAgents(project.cwd), history: await listProjectHistory(project) });
+        return json(res, 201, await openProjectPayload(project));
       }
 
       if (req.method === "GET" && action === "events") {

@@ -1204,3 +1204,17 @@ html[data-motion="reduce"] .project.attn-waiting .run-dot { animation: none !imp
 .palette-foot { display: flex; gap: 16px; padding: 8px 14px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
 .palette-foot kbd { margin-right: 4px; }
 @media (max-width: 520px) { .palette-foot { display: none; } }
+
+/* Orca integration: Worktrees tab rows reuse the Subagentes card styles; only what has no equivalent is defined here. */
+.wt-card { min-width: 0; }
+.wt-card.is-current { border-color: #3d3d3d; }
+.wt-card .sa-type { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-body { display: grid; gap: 2px; }
+.wt-msg { margin: 0 14px 0 32px; color: var(--faint); font-size: 12.5px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-unread { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--text-2); }
+.wt-flag { padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--muted); font-size: 11.5px; }
+.settings-sec { margin: 14px 0 0; }
+.switch:disabled { opacity: 0.4; cursor: not-allowed; }
+@container insp (max-width: 560px) {
+  .insp-tabs.has-worktrees .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
+}

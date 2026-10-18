@@ -22,6 +22,24 @@ Ou múltiplas raízes:
 PI_PROJECT_ROOTS="/Users/j.henrique/EVOLVERA:/Users/j.henrique/AYA" npm start
 ```
 
+## Instalar como app (Windows/Mac)
+
+Requer Node.js 22.19.0 ou superior e PI instalado pelo harness. O instalador configura o PI Studio nativo (sem Docker) junto dos demais componentes:
+
+Windows (PowerShell):
+```powershell
+git clone --branch MiguelNevesZane https://github.com/Evolvera/evolvera.git; cd evolvera; .\install.ps1
+```
+Abra **PI Studio** no Desktop ou Menu Iniciar. Para parar o servidor iniciado pelo app, execute `powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME/.pi/agent/studio/desktop/launch-windows.ps1" -Stop`. Os logs ficam em `%LOCALAPPDATA%\PI Studio\server.log` e `server-error.log`.
+
+macOS (Terminal):
+```bash
+git clone --branch MiguelNevesZane https://github.com/Evolvera/evolvera.git && cd evolvera && ./install.sh
+```
+Abra **PI Studio.app** em `~/Applications`. Para parar o servidor iniciado pelo app, execute `~/.pi/agent/studio/desktop/launch-macos.sh --stop`. O log fica em `~/Library/Logs/PI Studio/server.log`.
+
+A instalação também disponibiliza o cliente de terminal em `~/.pi/agent/bin` (adicione-o manualmente ao PATH, se desejar). O modo Docker abaixo continua opcional.
+
 ## Windows (Docker, janela própria)
 
 ```powershell
@@ -64,6 +82,14 @@ Ou use `pi-studio amphipod` se a pasta `interface` já estiver no PATH. Opcional
 - Atalhos: `Ctrl+/` lista todos, `Ctrl+K` paleta de comandos (ações, projetos, conversas e busca), `Ctrl+Shift+O` nova conversa, Esc interrompe, `↑` no campo vazio recupera a última mensagem, `Alt+T` tarefas.
 - Conversas: menu ⋯ (ou clique direito) na conversa ativa para **Renomear** (`set_session_name`; a barra lateral usa o nome salvo) e **Exportar** em HTML (`export_html`, com "Copiar caminho"). Busca por texto em todas as conversas pela lupa da barra lateral ou pelo `Ctrl+K` (`GET /api/search`, sem acento/maiúsculas). O índice incremental em memória limita o texto a 64 KiB por sessão (no máximo 64 KiB × número de sessões, além dos metadados); a indexação inicial ocorre em segundo plano.
 - Configurações (engrenagem): tamanho da fonte, largura do chat, notificações, reduzir animações e mostrar raciocínio por padrão; salvas no navegador e aplicadas antes da primeira pintura.
+
+## Worktrees e Orca
+
+- Cada worktree é um projeto com o próprio PI; várias rodam ao mesmo tempo e a barra lateral mostra o estado de cada uma (rodando, aguardando resposta, terminou sem você ver).
+- Configurações → Orca → **Integração com o Orca**: mostra a aba **Worktrees** no painel lateral com nome, branch, status, issue/PR, agentes e a última mensagem de cada worktree (como o resumo do Orca). Clicar abre a worktree.
+- **Seguir a worktree ativa do Orca** (desligado por padrão): ao trocar de worktree no Orca, o Studio troca junto; espera se houver texto não enviado ou um diálogo aberto.
+- Só usa o comando de leitura `orca worktree ps --json`. Funciona no app desktop (nativo); no Docker a aba mostra "Disponível no app desktop".
+- Variáveis: `PI_STUDIO_ORCA_BIN` (executável do orca), `PI_STUDIO_ORCA_BIN_ARGS` (JSON com argumentos antes dos do orca), `PI_STUDIO_ORCA_TIMEOUT_MS` (padrão 5000).
 
 ## Segurança
 

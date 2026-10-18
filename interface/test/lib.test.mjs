@@ -601,7 +601,7 @@ describe("inspector layout", () => {
     assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
     assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
     assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
-    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files"]);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "worktrees"]);
   });
 
   test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
@@ -1373,11 +1373,13 @@ describe("wave 3: search, palette, settings", () => {
   });
 
   test("parseSettings validates every field and falls back to defaults", () => {
-    assert.deepEqual(lib.DEFAULT_SETTINGS, { fontSize: "medium", chatWidth: "normal", reduceMotion: false });
+    assert.deepEqual(lib.DEFAULT_SETTINGS, { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: false, orcaFollow: false });
     for (const raw of [null, undefined, "", "{oops", "null", "5", '"x"', "[]", "{}"]) assert.deepEqual(lib.parseSettings(raw), lib.DEFAULT_SETTINGS, String(raw));
-    assert.deepEqual(lib.parseSettings('{"fontSize":"large","chatWidth":"wide","reduceMotion":true}'), { fontSize: "large", chatWidth: "wide", reduceMotion: true });
+    assert.deepEqual(lib.parseSettings('{"fontSize":"large","chatWidth":"wide","reduceMotion":true}'), { ...lib.DEFAULT_SETTINGS, fontSize: "large", chatWidth: "wide", reduceMotion: true });
+    assert.deepEqual(lib.parseSettings('{"orcaEnabled":true,"orcaFollow":true}'), { ...lib.DEFAULT_SETTINGS, orcaEnabled: true, orcaFollow: true });
+    assert.deepEqual(lib.parseSettings('{"orcaEnabled":"yes","orcaFollow":1}'), lib.DEFAULT_SETTINGS);
     assert.deepEqual(lib.parseSettings('{"fontSize":"huge","chatWidth":3,"reduceMotion":"yes"}'), lib.DEFAULT_SETTINGS);
-    assert.deepEqual(lib.parseSettings('{"fontSize":"small"}'), { fontSize: "small", chatWidth: "normal", reduceMotion: false });
+    assert.deepEqual(lib.parseSettings('{"fontSize":"small"}'), { ...lib.DEFAULT_SETTINGS, fontSize: "small" });
     assert.equal(lib.SETTINGS_KEY, "pi-studio:settings");
     assert.deepEqual(lib.settingsAttributes({ fontSize: "large", chatWidth: "wide", reduceMotion: true }), { font: "large", width: "wide", motion: "reduce" });
     assert.deepEqual(lib.settingsAttributes(lib.DEFAULT_SETTINGS), { font: "medium", width: "normal", motion: "normal" });

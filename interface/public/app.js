@@ -2,6 +2,13 @@ import {
   INSPECTOR_TABS,
   NOTIFY_KEY,
   SETTINGS_KEY,
+  followDecision,
+  orcaPollWanted,
+  resolveInspectorTab,
+  statusAttention,
+  visibleInspectorTabs,
+  sortWorktrees,
+  worktreeRow,
   paletteSections,
   parseSettings,
   settingsAttributes,
@@ -149,6 +156,7 @@ const els = {
   termWidgets: $("#termWidgets"),
   termFoot: $("#termFoot"),
   subList: $("#subList"),
+  wtList: $("#wtList"),
   subBadge: $("#subBadge"),
   ctxView: $("#ctxView"),
   filesView: $("#view-files"),
@@ -180,6 +188,9 @@ const els = {
   settingNotifyHint: $("#settingNotifyHint"),
   settingMotion: $("#settingMotion"),
   settingThinking: $("#settingThinking"),
+  settingOrca: $("#settingOrca"),
+  settingOrcaHint: $("#settingOrcaHint"),
+  settingOrcaFollow: $("#settingOrcaFollow"),
   renameDialog: $("#renameDialog"),
   renameInput: $("#renameInput"),
   paletteDialog: $("#paletteDialog"),
@@ -396,12 +407,14 @@ const INSPECTOR_WIDTH_KEY = "pi-studio:inspector-width";
 const TERM_MAX_LINES = 400;
 const savedTab = localStorage.getItem(INSPECTOR_TAB_KEY);
 const inspector = {
-  tab: INSPECTOR_TABS.includes(savedTab) ? savedTab : "terminal",
+  tab: resolveInspectorTab(savedTab, settings),
   width: clampPanelWidth(localStorage.getItem(INSPECTOR_WIDTH_KEY), window.innerWidth),
   dirty: new Set(INSPECTOR_TABS),
   queued: false,
 };
 const term = { cache: new Map(), stick: true, collapsed: new Set() };
+// Orca integration (off by default): latest /api/orca answer, the path follow mode last handled, and its poll timer.
+const orca = { data: null, lastFollowed: null, timer: null, inflight: false, renderSig: "" };
 const subOpen = new Set();
 const subCache = new Map();
 let noticeSeq = 0;
@@ -780,8 +793,11 @@ function openProject(projectId) {
   return runGated(state, () => loadProject(projectId));
 }
 
-async function loadProject(projectId) {
-  const { project, session, history } = await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
+// `cwd` opens a directory the Studio does not list yet (an Orca worktree); the server checks it.
+async function loadProject(projectId, { cwd } = {}) {
+  const { project, session, history } = cwd
+    ? await api("/api/projects/open-path", { method: "POST", body: JSON.stringify({ cwd }), timeoutMs: SESSION_SWITCH_TIMEOUT_MS })
+    : await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
   setExited(false);
   state.currentProject = project;
   state.session = session;
@@ -1604,7 +1620,7 @@ function renderPanel() {
     els.ctxRing.title = `${usage.percent}% do contexto usado`;
     els.ctxRing.classList.toggle("warn", usage.percent >= 80);
   }
-  scheduleInspector("terminal", "context", "files");
+  scheduleInspector("terminal", "context", "files", "worktrees");
 }
 
 function scheduleInspector(...tabs) {
@@ -1617,7 +1633,7 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles };
+const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, worktrees: renderWorktrees };
 
 function renderInspector() {
   updateSubBadge();
@@ -1646,6 +1662,7 @@ function selectTab(tab, { focus = false } = {}) {
   els.panel.dataset.tab = tab;
   if (tab === "context" && state.currentProject && !state.processExited) refreshStats();
   scheduleInspector(tab);
+  syncOrcaPolling();
 }
 
 els.tablist.addEventListener("click", (event) => {
@@ -1653,11 +1670,12 @@ els.tablist.addEventListener("click", (event) => {
   if (tab) selectTab(tab.dataset.tab);
 });
 els.tablist.addEventListener("keydown", (event) => {
-  const index = els.tabs.findIndex((button) => button.dataset.tab === inspector.tab);
-  const target = tabKeyTarget(event.key, index, els.tabs.length);
+  const tabs = els.tabs.filter((button) => !button.hidden);
+  const index = tabs.findIndex((button) => button.dataset.tab === inspector.tab);
+  const target = tabKeyTarget(event.key, index, tabs.length);
   if (target === null) return;
   event.preventDefault();
-  selectTab(els.tabs[target].dataset.tab, { focus: true });
+  selectTab(tabs[target].dataset.tab, { focus: true });
 });
 
 // Width: dragged on the panel's left edge (or arrow keys on the separator); persisted per browser.
@@ -2850,6 +2868,9 @@ function openSettings() {
     : "Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.";
   els.settingMotion.checked = settings.reduceMotion;
   els.settingThinking.checked = Boolean(prefs.showThinking);
+  els.settingOrca.checked = settings.orcaEnabled;
+  els.settingOrcaFollow.checked = settings.orcaFollow;
+  els.settingOrcaFollow.disabled = !settings.orcaEnabled;
   els.settingsDialog.showModal();
 }
 
@@ -2858,7 +2879,11 @@ els.settingsDialog.addEventListener("change", (event) => {
   if (target.name === "settingFont") settings.fontSize = target.value;
   else if (target.name === "settingWidth") settings.chatWidth = target.value;
   else if (target === els.settingMotion) settings.reduceMotion = target.checked;
-  else if (target === els.settingNotify) {
+  else if (target === els.settingOrca) settings.orcaEnabled = target.checked;
+  else if (target === els.settingOrcaFollow) {
+    settings.orcaFollow = target.checked;
+    orca.lastFollowed = null;
+  } else if (target === els.settingNotify) {
     localStorage.setItem(NOTIFY_KEY, target.checked ? "1" : "0");
     ensureNotifyPermission();
   } else if (target === els.settingThinking) {
@@ -2869,6 +2894,180 @@ els.settingsDialog.addEventListener("change", (event) => {
     return;
   }
   saveSettings();
+  if (target === els.settingOrca || target === els.settingOrcaFollow) {
+    els.settingOrcaFollow.disabled = !settings.orcaEnabled;
+    applyOrcaSettings();
+  }
+});
+
+// ----------------------------------------------- Orca worktrees + project status
+
+const POLL_MS = 3000;
+
+function applyOrcaSettings() {
+  els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !settings.orcaEnabled;
+  els.tablist.classList.toggle("has-worktrees", settings.orcaEnabled);
+  if (!settings.orcaEnabled) {
+    orca.data = null;
+    orca.lastFollowed = null;
+    if (inspector.tab === "worktrees") selectTab("terminal");
+  }
+  syncOrcaPolling();
+}
+
+// Orca is only asked while the Worktrees tab is on screen or follow mode is on, and never in a hidden page.
+function syncOrcaPolling() {
+  const wanted = orcaPollWanted({
+    enabled: settings.orcaEnabled,
+    follow: settings.orcaFollow,
+    tabVisible: inspector.tab === "worktrees" && layout.right === "open",
+    hidden: document.hidden,
+  });
+  if (wanted && !orca.timer) {
+    orca.timer = setInterval(pollOrca, POLL_MS);
+    pollOrca();
+  } else if (!wanted && orca.timer) {
+    clearInterval(orca.timer);
+    orca.timer = null;
+  }
+}
+
+async function pollOrca() {
+  if (orca.inflight) return;
+  orca.inflight = true;
+  let data;
+  try {
+    data = await api("/api/orca");
+  } catch {
+    data = { available: false, reason: "failed", active: null, worktrees: [] };
+  } finally {
+    orca.inflight = false;
+  }
+  if (!settings.orcaEnabled) return;
+  orca.data = data;
+  scheduleInspector("worktrees");
+  followOrca();
+}
+
+function openWorktree(worktree) {
+  if (samePath(state.currentProject?.cwd, worktree.path)) return Promise.resolve();
+  if (worktree.projectId) return openProject(worktree.projectId);
+  return runGated(state, () => loadProject(null, { cwd: worktree.path }));
+}
+
+// Follow mode: switch to the worktree focused in Orca, unless the user is mid-sentence or answering a dialog
+// (then it waits for the next poll). A manual project choice is kept until Orca's focus changes again.
+function followOrca() {
+  const active = orca.data?.active;
+  if (!state.currentProject) return;
+  const decision = followDecision({
+    enabled: settings.orcaFollow,
+    activePath: active?.path,
+    lastFollowed: orca.lastFollowed,
+    currentPath: state.currentProject.cwd,
+    composerText: Boolean(els.prompt.value.trim()) || state.attachments.length > 0,
+    dialogOpen: Boolean(document.querySelector("dialog[open]")) || Boolean(state.uiActive),
+  });
+  if (decision === "mark" || decision === "switch") orca.lastFollowed = active.path;
+  if (decision !== "switch") return;
+  const worktree = orca.data.worktrees.find((item) => samePath(item.path, active.path)) || { path: active.path, name: basename(active.path) };
+  openWorktree(worktree)
+    .then(() => toast(`Seguindo o Orca: ${worktree.name}`))
+    .catch(report);
+}
+
+function worktreeCard(worktree) {
+  const row = worktreeRow(worktree);
+  const current = samePath(state.currentProject?.cwd, worktree.path);
+  const node = document.createElement("article");
+  node.className = `sa-card wt-card${row.running ? " is-running" : ""}${current ? " is-current" : ""}`;
+  node.innerHTML = `
+    <button type="button" class="sa-head" data-wt="${esc(worktree.path)}" data-project="${esc(worktree.projectId || "")}"${current ? ' aria-current="true"' : ""}>
+      <span class="sa-dot" aria-hidden="true"></span>
+      <span class="sa-title"><strong>${esc(row.name)}</strong><span class="sa-type">${esc(row.sub)}</span></span>
+      <span class="sa-state">${row.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}${row.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}<span class="sa-phase">${esc(row.statusLabel)}</span></span>
+    </button>
+    <div class="wt-body">
+      ${row.agents ? `<p class="sa-desc">${esc(row.agents)}</p>` : ""}
+      ${row.message ? `<p class="wt-msg">${esc(row.message)}</p>` : ""}
+      ${row.meta.length ? `<p class="sa-meta">${row.meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
+    </div>`;
+  return node;
+}
+
+function renderWorktrees() {
+  const data = orca.data;
+  const sig = JSON.stringify([data, state.currentProject?.cwd]);
+  if (sig === orca.renderSig) return;
+  orca.renderSig = sig;
+  const focused = els.wtList.contains(document.activeElement) ? document.activeElement.dataset.wt : null;
+  let nodes;
+  if (!data || !data.available || !data.worktrees.length) {
+    const [title, hint] = !data
+      ? ["Carregando…", ""]
+      : !data.available
+        ? data.reason === "not-found"
+          ? ["Disponível no app desktop", "O Orca não foi encontrado neste ambiente (por exemplo, dentro do Docker)."]
+          : ["Não foi possível ler o Orca", "O Studio tenta de novo a cada poucos segundos."]
+        : ["Nenhuma worktree no Orca", "As worktrees abertas no Orca aparecem aqui."];
+    const empty = document.createElement("div");
+    empty.className = "insp-empty";
+    empty.innerHTML = `${svg("i-branch")}<strong>${esc(title)}</strong>${hint ? `<span>${esc(hint)}</span>` : ""}`;
+    nodes = [empty];
+  } else {
+    nodes = sortWorktrees(data.worktrees).map(worktreeCard);
+  }
+  els.wtList.replaceChildren(...nodes);
+  if (focused) [...els.wtList.querySelectorAll("[data-wt]")].find((button) => button.dataset.wt === focused)?.focus({ preventScroll: true });
+}
+
+els.wtList.addEventListener("click", (event) => {
+  const head = event.target.closest("[data-wt]");
+  if (!head) return;
+  openWorktree({ path: head.dataset.wt, projectId: head.dataset.project }).catch(report);
+});
+
+// Sidebar dots for every project with a live PI, not only the open one.
+const projectStatus = { last: new Map(), inflight: false };
+
+function applyProjectStatuses(statuses) {
+  const next = new Map(statuses.map((status) => [status.projectId, status]));
+  let changed = false;
+  for (const project of state.projects) {
+    const status = next.get(project.id);
+    const isCurrent = state.currentProject?.id === project.id;
+    const activeSessionId = status ? (status.exited ? null : status.sessionId) : isCurrent ? project.activeSessionId : null;
+    if (project.activeSessionId !== activeSessionId) {
+      project.activeSessionId = activeSessionId;
+      changed = true;
+    }
+    const patch = statusAttention(projectStatus.last.get(project.id), status, isCurrent);
+    const known = state.attention.get(project.id) || {};
+    if (patch && Object.keys(patch).some((key) => Boolean(known[key]) !== Boolean(patch[key]))) {
+      state.attention.set(project.id, { ...known, ...patch });
+      changed = true;
+    }
+  }
+  projectStatus.last = next;
+  if (changed) renderProjects();
+}
+
+async function pollProjectStatus() {
+  if (document.hidden || projectStatus.inflight) return;
+  projectStatus.inflight = true;
+  try {
+    applyProjectStatuses((await api("/api/projects/status")).statuses || []);
+  } catch {
+    // Transient: the next poll retries.
+  } finally {
+    projectStatus.inflight = false;
+  }
+}
+
+setInterval(pollProjectStatus, POLL_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) pollProjectStatus();
+  syncOrcaPolling();
 });
 
 // ------------------------------------------------------ command palette
@@ -2888,6 +3087,7 @@ function paletteActions() {
     { label: "Abrir aba Subagentes", icon: "i-agents", run: rightTab("subagents") },
     { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
     { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
+    ...(settings.orcaEnabled ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
     { label: "Exportar conversa", icon: "i-file", keywords: "html salvar", run: () => exportSession() },
     { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
     { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },
@@ -3192,5 +3392,6 @@ renderShortcuts();
 updateComposer();
 renderAttachments();
 applyPanelWidth();
+applyOrcaSettings();
 selectTab(inspector.tab);
 bootstrap().catch(report);

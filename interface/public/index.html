@@ -36,6 +36,7 @@
         <symbol id="i-retry" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5" /><path d="M19 4.5V8h-3.5" /></symbol>
         <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5.5v13M6.5 13 12 18.5l5.5-5.5" /></symbol>
         <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="M4 17V7.5A2.5 2.5 0 0 1 6.5 5H10l2 2.2h5a2.5 2.5 0 0 1 2.5 2.5v.8" /><path d="M4 17.2 6.4 11a2 2 0 0 1 1.9-1.3h12a1.2 1.2 0 0 1 1.1 1.6L19.2 17.4a2.3 2.3 0 0 1-2.2 1.6H5.8A1.8 1.8 0 0 1 4 17.2Z" /></symbol>
+        <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.2" /><circle cx="7" cy="18" r="2.2" /><circle cx="17" cy="9" r="2.2" /><path d="M7 8.2v7.6M17 11.2c0 3.3-3.4 3.6-8.1 5.2" /></symbol>
         <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a8 8 0 1 1 15 0" /><path d="m12 13.5 3.5-4" /></symbol>
         <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4.5a7.5 7.5 0 1 1-7.5 7.5" /></symbol>
         <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4.5M12 15.6v.1" /></symbol>
@@ -155,6 +156,7 @@
           <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="insp-badge" hidden></span></button>
           <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
           <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span></button>
+          <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
           <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
@@ -173,6 +175,9 @@
             <section class="insp-sec"><h3 class="sec-title">Projeto</h3><div id="envPath" class="env-path"></div></section>
             <section class="insp-sec"><h3 class="sec-title">Arquivos alterados</h3><div id="outputsList" class="outputs"></div></section>
           </div>
+        </section>
+        <section id="view-worktrees" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-worktrees" data-view="worktrees" tabindex="0" hidden>
+          <div id="wtList" class="sa-list"></div>
         </section>
       </aside>
       <div id="scrim" class="scrim" hidden></div>
@@ -256,6 +261,9 @@
         <label class="switch-row"><span><strong>Notificações</strong><small id="settingNotifyHint">Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.</small></span><input id="settingNotify" type="checkbox" class="switch" /></label>
         <label class="switch-row"><span><strong>Reduzir movimento</strong><small>Desliga animações e rolagem suave.</small></span><input id="settingMotion" type="checkbox" class="switch" /></label>
         <label class="switch-row"><span><strong>Mostrar raciocínio por padrão</strong><small>Expande o raciocínio do modelo nas respostas.</small></span><input id="settingThinking" type="checkbox" class="switch" /></label>
+        <p class="sec-title settings-sec">Orca</p>
+        <label class="switch-row"><span><strong>Integração com o Orca</strong><small id="settingOrcaHint">Mostra a aba Worktrees com as worktrees e agentes do Orca.</small></span><input id="settingOrca" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Seguir a worktree ativa do Orca</strong><small>Abre aqui a conversa da worktree em foco no Orca.</small></span><input id="settingOrcaFollow" type="checkbox" class="switch" /></label>
         <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
       </form>
     </dialog>

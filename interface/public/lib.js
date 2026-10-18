@@ -972,7 +972,7 @@ export function paletteSections(groups, query) {
 
 export const SETTINGS_KEY = "pi-studio:settings";
 export const SETTING_OPTIONS = { fontSize: ["small", "medium", "large"], chatWidth: ["normal", "wide"] };
-export const DEFAULT_SETTINGS = { fontSize: "medium", chatWidth: "normal", reduceMotion: false };
+export const DEFAULT_SETTINGS = { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: false, orcaFollow: false };
 
 // Stored JSON (or null) -> a complete, validated settings object; unknown or corrupt values fall back.
 export function parseSettings(raw) {
@@ -988,6 +988,8 @@ export function parseSettings(raw) {
     if (options.includes(stored[key])) settings[key] = stored[key];
   }
   settings.reduceMotion = stored.reduceMotion === true;
+  settings.orcaEnabled = stored.orcaEnabled === true;
+  settings.orcaFollow = stored.orcaFollow === true;
   return settings;
 }
 
@@ -1150,7 +1152,16 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files"];
+export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "worktrees"];
+
+// The Worktrees tab exists only while the Orca integration is on.
+export function visibleInspectorTabs(settings) {
+  return INSPECTOR_TABS.filter((tab) => tab !== "worktrees" || settings.orcaEnabled === true);
+}
+
+export function resolveInspectorTab(saved, settings) {
+  return visibleInspectorTabs(settings).includes(saved) ? saved : "terminal";
+}
 
 // Roving focus for role="tablist": returns the tab index to activate, or null for other keys.
 export function tabKeyTarget(key, index, count) {
@@ -1546,4 +1557,120 @@ export function contextBreakdown(stats, session) {
     thinking: model && model.reasoning !== false && session.thinkingLevel ? thinkingLabel(session.thinkingLevel) : "",
     sessionFile: stats?.sessionFile || session?.sessionFile || "",
   };
+}
+
+// ------------------------------------------------------ Orca worktrees
+
+const ORCA_STATUS_LABELS = { working: "trabalhando", active: "ativa", inactive: "inativa", done: "concluída" };
+const ORCA_LIST_MAX = 200;
+const ORCA_AGENTS_MAX = 20;
+const orcaText = (value, max) => truncate(squash(value), max);
+const isRecord = (value) => value !== null && typeof value === "object";
+
+export function orcaBranch(ref) {
+  return String(ref ?? "").replace(/^refs\/heads\//, "");
+}
+
+// Orca links an issue/PR as a bare number or as { number, state }.
+function orcaRef(value) {
+  const number = isRecord(value) ? value.number : value;
+  return Number.isInteger(number) ? { number, state: orcaText(value.state, 20) } : null;
+}
+
+function orcaAgent(agent) {
+  return {
+    state: orcaText(agent.state, 20),
+    type: orcaText(agent.agentType, 20),
+    title: orcaText(agent.taskTitle || agent.displayName || firstLine(agent.prompt), 80),
+    lastMessage: orcaText(agent.lastAssistantMessage, 200),
+  };
+}
+
+function orcaWorktree(worktree) {
+  return {
+    id: orcaText(worktree.worktreeId, 400),
+    name: orcaText(worktree.displayName, 120) || basename(worktree.path),
+    repo: orcaText(worktree.repo, 120),
+    path: worktree.path,
+    branch: orcaBranch(worktree.branch),
+    status: orcaText(worktree.status, 20),
+    active: worktree.isActive === true,
+    unread: worktree.unread === true,
+    linkedIssue: orcaRef(worktree.linkedIssue),
+    linkedPR: orcaRef(worktree.linkedPR),
+    comment: orcaText(worktree.comment, 200),
+    lastActivityAt: Number.isFinite(worktree.lastActivityAt) ? worktree.lastActivityAt : 0,
+    agents: (Array.isArray(worktree.agents) ? worktree.agents : []).filter(isRecord).slice(0, ORCA_AGENTS_MAX).map(orcaAgent),
+  };
+}
+
+// `orca worktree ps --json` -> the summary PI Studio serves; { ok: false } when the shape is unexpected.
+export function normalizeOrca(raw) {
+  const list = raw?.result?.worktrees;
+  if (raw?.ok !== true || !Array.isArray(list)) return { ok: false };
+  const worktrees = list
+    .filter((worktree) => isRecord(worktree) && typeof worktree.path === "string" && worktree.path)
+    .slice(0, ORCA_LIST_MAX)
+    .map(orcaWorktree);
+  const active = worktrees.find((worktree) => worktree.active);
+  return { ok: true, active: active ? { path: active.path } : null, worktrees };
+}
+
+// "2 agentes · trabalhando" plus the most relevant one-line message.
+export function agentsSummary(agents) {
+  if (!agents.length) return { line: "", message: "" };
+  const working = agents.filter((agent) => agent.state === "working").length;
+  let state = "em espera";
+  if (working) state = working === agents.length ? "trabalhando" : `${working} trabalhando`;
+  else if (agents.every((agent) => agent.state === "done")) state = "concluído";
+  const message = agents.findLast((agent) => agent.lastMessage)?.lastMessage || agents.find((agent) => agent.state === "working")?.title || "";
+  return { line: `${plural(agents.length, "agente", "agentes")} · ${state}`, message };
+}
+
+// The Orca-active worktree first, then the ones with a working agent, then the most recently active.
+export function sortWorktrees(list) {
+  const rank = (worktree) => (worktree.active ? 0 : worktree.status === "working" ? 1 : 2);
+  return [...list].sort((a, b) => rank(a) - rank(b) || b.lastActivityAt - a.lastActivityAt);
+}
+
+// Everything a Worktrees row shows.
+export function worktreeRow(worktree) {
+  const { line, message } = agentsSummary(worktree.agents);
+  const refs = [];
+  if (worktree.linkedIssue) refs.push(`#${worktree.linkedIssue.number}`);
+  if (worktree.linkedPR) refs.push(`PR #${worktree.linkedPR.number}${worktree.linkedPR.state ? ` · ${worktree.linkedPR.state}` : ""}`);
+  return {
+    name: worktree.name,
+    sub: worktree.branch || basename(worktree.path),
+    statusLabel: ORCA_STATUS_LABELS[worktree.status] || worktree.status || "—",
+    running: worktree.status === "working",
+    agents: line,
+    message,
+    meta: [worktree.repo, ...refs].filter(Boolean),
+    unread: worktree.unread,
+    active: worktree.active,
+  };
+}
+
+// Follow mode: "switch" opens the Orca-active worktree; "wait" defers while the user is typing or a dialog is open;
+// "mark" records that the current project already is that worktree; "none" does nothing. `lastFollowed` keeps a
+// manual project choice from being undone by the next poll.
+export function followDecision({ enabled, activePath, lastFollowed, currentPath, composerText, dialogOpen }) {
+  if (!enabled || !activePath || samePath(activePath, lastFollowed)) return "none";
+  if (samePath(activePath, currentPath)) return "mark";
+  return composerText || dialogOpen ? "wait" : "switch";
+}
+
+// Orca is polled only while something on screen needs it.
+export function orcaPollWanted({ enabled, follow, tabVisible, hidden }) {
+  return enabled === true && !hidden && (follow === true || tabVisible === true);
+}
+
+// Sidebar dot update for a project that is NOT open (the open one is driven by its own event stream).
+// `prev`/`next`: entries of /api/projects/status. Returns the attention patch or null.
+export function statusAttention(prev, next, isCurrent) {
+  if (!next || isCurrent) return null;
+  const waiting = next.waitingUi === true;
+  const finished = prev?.streaming === true && next.streaming !== true && !waiting && next.exited !== true;
+  return finished ? { waiting, unseen: true } : { waiting };
 }
