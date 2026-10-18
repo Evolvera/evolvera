@@ -48,10 +48,6 @@
           <button id="toggleLeftBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar barra lateral" aria-controls="sidebar" aria-expanded="true"><svg><use href="#i-sidebar" /></svg></button>
           <button id="backBtn" class="icon-btn tb-nav" type="button" aria-label="Voltar" disabled><svg><use href="#i-back" /></svg></button>
           <button id="forwardBtn" class="icon-btn tb-nav" type="button" aria-label="Avançar" disabled><svg><use href="#i-forward" /></svg></button>
-          <div class="seg" role="group" aria-label="Visualização">
-            <button id="viewChatBtn" type="button" class="seg-btn" aria-pressed="true">Chat</button>
-            <button id="viewCodeBtn" type="button" class="seg-btn" aria-pressed="false">Código</button>
-          </div>
           <button id="projectMenuBtn" class="title-btn" type="button" aria-haspopup="menu">
             <span id="projectTitle">PI Studio</span><svg><use href="#i-chevron-down" /></svg>
           </button>
@@ -65,10 +61,7 @@
 
       <aside id="sidebar" class="sidebar" aria-label="Projetos e conversas">
         <nav class="side-nav">
-          <button id="newSessionBtn" class="nav-item nav-new" type="button"><span class="nav-ico new-ico"><svg><use href="#i-plus" /></svg></span><span id="newSessionLabel">Novo</span></button>
-          <button id="artifactsBtn" class="nav-item" type="button"><span class="nav-ico"><svg><use href="#i-artifacts" /></svg></span><span>Artefatos</span></button>
-          <button id="customizeBtn" class="nav-item" type="button"><span class="nav-ico"><svg><use href="#i-brush" /></svg></span><span>Personalização</span></button>
-          <button id="moreBtn" class="nav-item" type="button" aria-haspopup="menu"><span class="nav-ico"><svg><use href="#i-more" /></svg></span><span>Mais</span></button>
+          <button id="newSessionBtn" class="nav-item nav-new" type="button"><span class="nav-ico"><svg><use href="#i-plus" /></svg></span><span id="newSessionLabel">Nova conversa</span></button>
         </nav>
         <div id="searchWrap" class="side-search" hidden>
           <svg><use href="#i-search" /></svg>
@@ -100,7 +93,7 @@
           <div id="queueArea" class="queue-area" hidden></div>
           <form id="composer" class="composer">
             <div id="attachments" class="attachments"></div>
-            <textarea id="promptInput" rows="1" placeholder="Enter para enviar, Ctrl+Enter para adicionar à fila" aria-label="Mensagem para o PI"></textarea>
+            <textarea id="promptInput" rows="1" placeholder="Mensagem" aria-label="Mensagem para o PI"></textarea>
             <div class="composer-row">
               <label class="icon-btn attach-btn" title="Anexar imagem">
                 <input id="imageInput" type="file" accept="image/*" multiple />

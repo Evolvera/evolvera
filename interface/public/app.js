@@ -44,17 +44,12 @@ const els = {
   toggleRight: $("#toggleRightBtn"),
   back: $("#backBtn"),
   forward: $("#forwardBtn"),
-  viewChat: $("#viewChatBtn"),
-  viewCode: $("#viewCodeBtn"),
   projectMenuBtn: $("#projectMenuBtn"),
   projectTitle: $("#projectTitle"),
   consoleBtn: $("#consoleBtn"),
   filesBtn: $("#filesBtn"),
   newSession: $("#newSessionBtn"),
   newSessionLabel: $("#newSessionLabel"),
-  artifacts: $("#artifactsBtn"),
-  customize: $("#customizeBtn"),
-  more: $("#moreBtn"),
   searchWrap: $("#searchWrap"),
   search: $("#searchInput"),
   searchBtn: $("#searchBtn"),
@@ -271,8 +266,6 @@ function setDrawer(open, full = false) {
   els.drawer.hidden = !open;
   els.drawer.classList.toggle("full", open && full);
   els.consoleBtn.setAttribute("aria-expanded", String(open));
-  els.viewChat.setAttribute("aria-pressed", String(!(open && full)));
-  els.viewCode.setAttribute("aria-pressed", String(open && full));
   if (open) renderLog(true);
 }
 
@@ -387,7 +380,6 @@ function renderProjects() {
     wrap.innerHTML = `
       <div class="project-row-wrap">
         <button type="button" class="project-row" data-action="open-project" data-project="${esc(project.id)}" title="${esc(project.cwd)}"${active ? ' aria-current="true"' : ""}>
-          <span class="project-ico" aria-hidden="true">&lt;/&gt;</span>
           <span class="project-name">${esc(project.name)}</span>
           <span class="run-dot" aria-hidden="true"></span>
         </button>
@@ -512,7 +504,7 @@ function setExited(exited) {
   state.processExited = exited;
   if (!exited) {
     els.prompt.disabled = false;
-    els.newSessionLabel.textContent = "Novo";
+    els.newSessionLabel.textContent = "Nova conversa";
     els.exitBanner.classList.add("hidden");
     updateComposer();
   }
@@ -832,9 +824,8 @@ function emptyState() {
   node.className = "empty";
   const project = state.currentProject;
   node.innerHTML = `
-    <div class="empty-mark" aria-hidden="true">π</div>
     <h1>${esc(greeting(new Date().getHours(), prefs.userName))}</h1>
-    <p>${project ? `O PI está pronto em <strong>${esc(project.name)}</strong>. Peça uma mudança, uma explicação ou uma revisão.` : "Escolha um projeto na barra lateral para começar."}</p>`;
+    <p>${project ? `${esc(project.name)}` : "Escolha um projeto na barra lateral para começar."}</p>`;
   return node;
 }
 
@@ -1075,7 +1066,7 @@ function renderPanel() {
     : `<p class="muted">Nenhum projeto aberto.</p>`;
   const others = state.projects.filter((item) => item.id !== project?.id).slice(0, 5);
   els.envOthers.innerHTML = others.length
-    ? `<div class="card-sub">Outros projetos</div>${others.map((item) => `<button type="button" class="env-item" data-project="${esc(item.id)}" title="${esc(item.cwd)}"><span class="project-ico" aria-hidden="true">&lt;/&gt;</span><span>${esc(item.name)}</span>${item.lastUsedAt ? `<small>${esc(relativeTime(item.lastUsedAt))}</small>` : ""}</button>`).join("")}`
+    ? `<div class="card-sub">Outros projetos</div>${others.map((item) => `<button type="button" class="env-item" data-project="${esc(item.id)}" title="${esc(item.cwd)}"><span>${esc(item.name)}</span>${item.lastUsedAt ? `<small>${esc(relativeTime(item.lastUsedAt))}</small>` : ""}</button>`).join("")}`
     : "";
 
   const usage = contextUsage(state.stats);
@@ -1609,14 +1600,11 @@ function appMenuItems() {
 }
 
 els.menuBtn.addEventListener("click", () => openMenu(els.menuBtn, appMenuItems()));
-els.more.addEventListener("click", () => openMenu(els.more, appMenuItems().slice(1)));
 els.toggleLeft.addEventListener("click", () => setPanel("left", layout.left !== "open"));
 els.toggleRight.addEventListener("click", () => setPanel("right", layout.right !== "open"));
 els.scrim.addEventListener("click", closeOverlays);
 els.back.addEventListener("click", () => navigate(-1).then(updateHeader).catch(report));
 els.forward.addEventListener("click", () => navigate(1).then(updateHeader).catch(report));
-els.viewChat.addEventListener("click", () => setDrawer(false));
-els.viewCode.addEventListener("click", () => setDrawer(true, true));
 els.consoleBtn.addEventListener("click", () => setDrawer(els.drawer.hidden));
 const showOutputs = () => {
   setPanel("right", true);
@@ -1626,8 +1614,6 @@ const showOutputs = () => {
   els.outputsCard.classList.add("flash");
 };
 els.filesBtn.addEventListener("click", showOutputs);
-els.artifacts.addEventListener("click", showOutputs);
-els.customize.addEventListener("click", openCustomize);
 els.settingsBtn.addEventListener("click", openCustomize);
 els.searchBtn.addEventListener("click", () => {
   els.searchWrap.hidden = !els.searchWrap.hidden;
