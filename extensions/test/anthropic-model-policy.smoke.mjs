@@ -24,6 +24,28 @@ assert.equal(mod.ANTHROPIC_NATIVE_CONTEXT_WINDOW, 1_000_000);
 assert.equal(mod.ANTHROPIC_APPLIED_CONTEXT_WINDOW, 450_000);
 assert.equal(mod.HIGH_CONTEXT_WINDOW, 800_000);
 
+// Conductor applies 70% after normal/default or High policy and never changes output limits.
+for (const [modelInput, mode, expected, normal] of [
+  [{ provider: "openai-codex", id: "gpt-6.1-sol", contextWindow: 300_000 }, "default", 210_000, 300_000],
+  [{ provider: "anthropic", id: "claude-opus-5", contextWindow: 1_000_000 }, "default", 315_000, 450_000],
+  [{ provider: "anthropic", id: "claude-opus-5", contextWindow: 450_000 }, "default", 315_000, 450_000],
+  [{ provider: "openai-codex", id: "gpt-6.1-sol", contextWindow: 300_000 }, "high", 560_000, 800_000],
+  [{ provider: "openai-codex", id: "gpt-5.6-sol", contextWindow: 300_000 }, "high", 210_000, 300_000],
+  [{ provider: "alibaba-plan", id: "qwen3.8-max-preview", contextWindow: 1_000_000 }, "default", 140_000, 200_000],
+]) {
+  const copy = { ...modelInput, maxTokens: 128_000 };
+  assert.equal(mod.applyContextMode(copy, mode, true), true);
+  assert.equal(copy.contextWindow, expected);
+  assert.equal(copy.maxTokens, 128_000);
+  assert.equal(mod.applyContextMode(copy, mode, true), false, "reapplication does not compound");
+  assert.equal(copy.contextWindow, expected);
+  assert.equal(mod.applyContextMode(copy, mode, false), true, "standard branch restores normal policy window");
+  assert.equal(copy.contextWindow, normal);
+  assert.equal(mod.applyContextMode(copy, mode, true), true);
+  assert.equal(copy.contextWindow, expected, "conductor reapplication after restore is stable");
+}
+
+
 // default mode: native 1M Anthropic windows are capped to 450K; nothing else changes.
 const native = {
   provider: "anthropic",
@@ -74,6 +96,16 @@ assert.equal(sol.maxTokens, 128_000, "maxTokens untouched");
 const reloaded = await createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: sdkAlias }).import(path.join(root, "extensions/context-mode.ts"));
 for (const model of [sol, opusNative, old]) reloaded.applyContextMode(model, "default");
 assert.deepEqual([sol.contextWindow, opusNative.contextWindow, old.contextWindow], [300_000, 450_000, 300_000]);
+const acrossReload = { provider: "openai-codex", id: "gpt-6.1-sol", contextWindow: 300_000 };
+mod.applyContextMode(acrossReload, "default", true);
+assert.equal(reloaded.applyContextMode(acrossReload, "default", true), false);
+assert.equal(acrossReload.contextWindow, 210_000, "reload preserves original window without compounding");
+const qwenMarkedOld = { provider: "alibaba-plan", id: "qwen3.8-max-preview", contextWindow: 200_000 };
+Object.defineProperty(qwenMarkedOld, Symbol.for("evolvera.context-mode.default-window"), { value: 1_000_000, configurable: true });
+assert.equal(mod.applyContextMode(qwenMarkedOld, "default", true), true);
+assert.equal(qwenMarkedOld.contextWindow, 140_000, "legacy Qwen marker cannot resurrect uncapped window");
+assert.equal(mod.applyContextMode(qwenMarkedOld, "default", false), true);
+assert.equal(qwenMarkedOld.contextWindow, 200_000);
 assert.deepEqual(Object.keys(sol), ["provider", "id", "contextWindow", "maxTokens"], "default marker is not enumerable");
 
 const anthropicCatalogPath = path.join(resolvePiSdkRoot(import.meta.url), "node_modules/@earendil-works/pi-ai/dist/providers/data/anthropic.json");
@@ -108,7 +140,8 @@ try {
 
   // Extension wiring with a fake PI: session start reads the mode, the command switches it live.
   const handlers = new Map(); const commands = new Map(); const statuses = new Map(); const notices = [];
-  mod.default({ on: (name, fn) => handlers.set(name, fn), registerCommand: (name, def) => commands.set(name, def) }, () => settingsPath);
+  const eventHandlers = new Map();
+  mod.default({ on: (name, fn) => handlers.set(name, fn), registerCommand: (name, def) => commands.set(name, def), events: { on: (name, fn) => { eventHandlers.set(name, fn); return () => eventHandlers.delete(name); } } }, () => settingsPath);
   const current = { provider: "openai-codex", id: "gpt-6.1-sol", contextWindow: 300_000 };
   let choice;
   const ctx = {
@@ -121,6 +154,10 @@ try {
   };
   await handlers.get("session_start")({}, ctx);
   assert.equal(current.contextWindow, 800_000);
+  const beforeMalformed = { window: current.contextWindow, statuses: new Map(statuses) };
+  for (const malformed of [undefined, null, "unexpected", 12]) eventHandlers.get("orchestration-mode:changed")(malformed);
+  assert.equal(current.contextWindow, beforeMalformed.window, "malformed mode notifications are ignored");
+  assert.deepEqual(statuses, beforeMalformed.statuses);
   assert.equal(statuses.get("context-mode"), "800K");
   await commands.get("context-mode").handler("default", ctx);
   assert.equal(current.contextWindow, 300_000);
