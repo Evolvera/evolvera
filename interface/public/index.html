@@ -31,6 +31,8 @@
         <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9" /></symbol>
         <symbol id="i-check" viewBox="0 0 24 24"><path d="m5.5 12.5 4 4 9-9.5" /></symbol>
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5v-3.2L15.8 5a1.8 1.8 0 0 1 2.5 0l.7.7a1.8 1.8 0 0 1 0 2.5L7.7 19.5z" /><path d="m14 6.8 3.2 3.2" /></symbol>
+        <symbol id="i-retry" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5" /><path d="M19 4.5V8h-3.5" /></symbol>
         <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5.5v13M6.5 13 12 18.5l5.5-5.5" /></symbol>
         <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="M4 17V7.5A2.5 2.5 0 0 1 6.5 5H10l2 2.2h5a2.5 2.5 0 0 1 2.5 2.5v.8" /><path d="M4 17.2 6.4 11a2 2 0 0 1 1.9-1.3h12a1.2 1.2 0 0 1 1.1 1.6L19.2 17.4a2.3 2.3 0 0 1-2.2 1.6H5.8A1.8 1.8 0 0 1 4 17.2Z" /></symbol>
         <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a8 8 0 1 1 15 0" /><path d="m12 13.5 3.5-4" /></symbol>
@@ -89,6 +91,15 @@
             <button id="restartBtn" class="restart-inline" type="button">Reiniciar PI</button>
           </div>
           <div id="queueArea" class="queue-area" hidden></div>
+          <section id="todoPanel" class="todo-panel" aria-label="Lista de tarefas" hidden>
+            <button id="todoToggle" class="todo-head" type="button" aria-expanded="true" aria-controls="todoList" title="Mostrar ou ocultar as tarefas (Alt+T)">
+              <svg class="chev" aria-hidden="true"><use href="#i-chevron-right" /></svg>
+              <span class="todo-title">Tarefas</span>
+              <span id="todoCount" class="todo-count"></span>
+              <span id="todoCurrent" class="todo-current"></span>
+            </button>
+            <ul id="todoList" class="todo-list"></ul>
+          </section>
           <form id="composer" class="composer">
             <div id="attachments" class="attachments"></div>
             <textarea id="promptInput" rows="1" placeholder="Mensagem · / comandos · @ arquivos · ! shell" aria-label="Mensagem para o PI" aria-autocomplete="list" aria-controls="menu"></textarea>

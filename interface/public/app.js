@@ -1,7 +1,18 @@
 import {
   INSPECTOR_TABS,
+  NOTIFY_KEY,
   SHORTCUT_GROUPS,
   appendBashOutput,
+  attentionState,
+  forkEntryIds,
+  messageActions,
+  messageText,
+  notificationContent,
+  notifyEnabled,
+  shouldNotify,
+  todoFromMessages,
+  todoSnapshot,
+  todoSummary,
   bashLabels,
   buildTerminal,
   capTail,
@@ -90,6 +101,12 @@ const els = {
   scroller: $("#scroller"),
   thread: $("#thread"),
   jump: $("#jumpBtn"),
+  dock: document.querySelector(".dock"),
+  todoPanel: $("#todoPanel"),
+  todoToggle: $("#todoToggle"),
+  todoCount: $("#todoCount"),
+  todoCurrent: $("#todoCurrent"),
+  todoList: $("#todoList"),
   widgetArea: $("#widgetArea"),
   exitBanner: $("#exitBanner"),
   restart: $("#restartBtn"),
@@ -214,6 +231,15 @@ const state = {
   lastSent: null,
   recalled: null,
   bash: null,
+  todo: null,
+  todoCollapsed: localStorage.getItem("pi-studio:todo-collapsed") === "1",
+  forkMessages: [],
+  forking: false,
+  timeline: new Map(),
+  retryTarget: null,
+  attention: new Map(),
+  settledSupported: false,
+  settleTimer: null,
 };
 
 const nodeCache = new Map();
@@ -499,7 +525,8 @@ function renderProjects() {
     if (!matchesFilter(project.name, project.cwd) && !sessions.length) continue;
     const expanded = active || state.expandedProjects.has(project.id) || Boolean(state.filter && sessions.length);
     const wrap = document.createElement("div");
-    wrap.className = `project${active ? " active" : ""}${project.activeSessionId ? " running" : ""}`;
+    const attention = attentionState(state.attention.get(project.id) || {});
+    wrap.className = `project${active ? " active" : ""}${project.activeSessionId ? " running" : ""}${attention ? ` attn-${attention}` : ""}`;
     wrap.setAttribute("role", "listitem");
     wrap.innerHTML = `
       <div class="project-row-wrap">
@@ -507,6 +534,7 @@ function renderProjects() {
           ${svg("i-code", "project-ico")}
           <span class="project-name">${esc(project.name)}</span>
           <span class="run-dot" aria-hidden="true"></span>
+          ${attention ? `<span class="sr-only">${attention === "waiting" ? "aguardando sua resposta" : "terminou enquanto você estava fora"}</span>` : ""}
         </button>
         <button type="button" class="project-chev${expanded ? " open" : ""}" data-action="expand-project" data-project="${esc(project.id)}" aria-label="${expanded ? "Recolher" : "Expandir"} conversas de ${esc(project.name)}" aria-expanded="${expanded}">${svg("i-chevron-right")}</button>
       </div>`;
@@ -607,6 +635,11 @@ function resetConversation() {
   state.lastSent = null;
   state.recalled = null;
   state.bash = null;
+  state.todo = null;
+  state.forkMessages = [];
+  state.retryTarget = null;
+  clearTimeout(state.settleTimer);
+  renderTodo();
   closeComposerMenu();
   nodeCache.clear();
   els.thread.replaceChildren();
@@ -675,6 +708,7 @@ async function loadProject(projectId) {
   renderWidgets();
   setRunning(Boolean(session?.isStreaming));
   localStorage.setItem("pi-studio:last-project", project.id);
+  markSeen(project.id);
   const known = state.projects.find((item) => item.id === project.id);
   if (known) Object.assign(known, { activeSessionId: session?.id || known.activeSessionId });
   else state.projects.unshift(project);
@@ -836,6 +870,8 @@ function handleResponse(event) {
       if (!Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       state.subagentRecords = subagentRecords(event.data.entries);
+      applyTodo(todoFromMessages(state.messages));
+      refreshForkMessages();
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
       for (const [id, tool] of state.runtime) if (tool.status !== "running") state.runtime.delete(id);
       scheduleRender();
@@ -869,6 +905,7 @@ function handleRpc(event) {
       handleResponse(event);
       return;
     case "agent_start":
+      clearTimeout(state.settleTimer);
       setRunning(true);
       state.runStartedAt = Date.now();
       state.phase = "thinking";
@@ -881,7 +918,14 @@ function handleRpc(event) {
       sendRpc({ type: "get_entries" }).catch(() => {});
       refreshStats();
       refreshHistory().catch(() => {});
+      // PI versions without agent_settled: treat a quiet period after agent_end as the end of the run.
+      if (!state.settledSupported) state.settleTimer = setTimeout(() => onSettled().catch(() => {}), SETTLE_FALLBACK_MS);
       break;
+    case "agent_settled":
+      state.settledSupported = true;
+      clearTimeout(state.settleTimer);
+      onSettled().catch(() => {});
+      return;
     case "message_start":
       if (event.message?.role === "assistant") {
         state.liveMessage = { ...event.message, content: Array.isArray(event.message.content) ? [...event.message.content] : [] };
@@ -921,6 +965,7 @@ function handleRpc(event) {
     case "tool_execution_end": {
       const tool = state.runtime.get(event.toolCallId) || { name: event.toolName, args: {} };
       state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result });
+      applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }));
       state.phase = "thinking";
       break;
     }
@@ -993,13 +1038,15 @@ function renderThread() {
   const tools = timelineTools(items);
   state.toolIndex = new Map(tools.map((tool) => [tool.id, tool]));
   state.outputs = collectOutputs(tools);
+  annotateActions(items);
 
   const nodes = [];
   if (!items.length && !state.isStreaming) nodes.push(nodeCache.get("empty")?.node || emptyState());
   if (!items.length && !state.isStreaming) nodeCache.set("empty", { node: nodes[0], sig: "" });
   const seen = new Set(["empty"]);
   for (const item of items) {
-    const sig = `${timelineSignature(item)}|${isExpanded(item.key) ? 1 : 0}${isExpanded(`think:${item.key}`) ? 1 : 0}`;
+    const actions = (item.actions || []).map((action) => `${action.id}${action.disabled ? 0 : 1}`).join();
+    const sig = `${timelineSignature(item)}|${isExpanded(item.key) ? 1 : 0}${isExpanded(`think:${item.key}`) ? 1 : 0}|${actions}`;
     const cached = nodeCache.get(item.key);
     seen.add(item.key);
     if (cached && cached.sig === sig) {
@@ -1024,6 +1071,32 @@ function renderThread() {
   updateRunStatus();
   scheduleInspector("terminal", "subagents", "files");
   if (stick) scrollToBottom();
+}
+
+// Message toolbars: copy everywhere; edit/retry only where get_fork_messages verifies the fork point.
+function annotateActions(items) {
+  const users = items.filter((item) => item.kind === "user");
+  const ids = forkEntryIds(users.map((item) => item.text), state.forkMessages);
+  users.forEach((item, index) => (item.entryId = ids[index]));
+  const lastUser = users.at(-1);
+  const lastUserIndex = lastUser ? items.indexOf(lastUser) : -1;
+  const lastAssistant = items.findLast((item) => item.kind === "assistant");
+  const forkable = lastUser && messageActions(lastUser).some((action) => action.id === "edit");
+  state.retryTarget = forkable && items.indexOf(lastAssistant) > lastUserIndex ? { entryId: lastUser.entryId, text: lastUser.text } : null;
+  const ctx = { streaming: state.isStreaming, busy: state.forking };
+  for (const item of items) {
+    if (item.kind === "user") item.actions = messageActions(item, ctx);
+    else if (item.kind === "assistant") item.actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
+  }
+  state.timeline = new Map(items.map((item) => [item.key, item]));
+}
+
+const ACTION_ICONS = { copy: "i-copy", edit: "i-edit", retry: "i-retry" };
+
+function actionsHtml(item) {
+  if (!item.actions?.length) return "";
+  const buttons = item.actions.map((action) => `<button type="button" class="act-btn" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(action.label)}" aria-label="${esc(action.label)}"${action.disabled ? " disabled" : ""}>${svg(ACTION_ICONS[action.id])}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`);
+  return `<div class="msg-actions" role="toolbar" aria-label="Ações da mensagem">${buttons.join("")}</div>`;
 }
 
 function isExpanded(key) {
@@ -1074,12 +1147,12 @@ function renderItem(item) {
       node.className = `msg msg-user${item.optimistic ? " pending" : ""}`;
       const images = item.images.map((image) => `<img src="data:${esc(image.mimeType)};base64,${esc(image.data)}" alt="Imagem anexada" loading="lazy">`).join("");
       node.innerHTML = `<div class="user-card${long && !open ? " collapsed" : ""}">${images ? `<div class="user-images">${images}</div>` : ""}<div class="user-text">${esc(item.text || (images ? "" : "…"))}</div></div>
-        ${long ? `<button type="button" class="more-btn" data-action="toggle" data-key="${esc(item.key)}">${open ? "Mostrar menos" : "Mostrar mais"}</button>` : ""}`;
+        ${long ? `<button type="button" class="more-btn" data-action="toggle" data-key="${esc(item.key)}">${open ? "Mostrar menos" : "Mostrar mais"}</button>` : ""}${actionsHtml(item)}`;
       break;
     }
     case "assistant":
       node.className = "msg msg-assistant";
-      node.innerHTML = `${item.thinking ? thinkingBlock(item.key, item.thinking) : ""}<div class="md">${renderMarkdown(item.text)}</div>`;
+      node.innerHTML = `${item.thinking ? thinkingBlock(item.key, item.thinking) : ""}<div class="md">${renderMarkdown(item.text)}</div>${actionsHtml(item)}`;
       break;
     case "thinking":
       node.className = "msg msg-thinking";
@@ -1211,6 +1284,9 @@ els.scroller.addEventListener("scroll", () => {
 }, { passive: true });
 
 els.jump.addEventListener("click", () => {
+  // Re-enable following right away: the smooth scroll takes a few frames to reach the bottom.
+  state.stick = true;
+  els.jump.hidden = true;
   els.scroller.scrollTo({ top: els.scroller.scrollHeight, behavior: reduceMotion.matches ? "auto" : "smooth" });
 });
 
@@ -1227,12 +1303,209 @@ els.thread.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   if (target.dataset.action === "toggle") toggleExpanded(target.dataset.key);
+  else if (target.dataset.action.startsWith("msg-")) messageAction(target.dataset.action.slice(4), target).catch(report);
   else if (target.dataset.action === "diff") openDiff([target.dataset.tool]);
   else if (target.dataset.action === "live-thinking" && state.liveThinking.trim()) {
     state.liveThinkingOpen = !state.liveThinkingOpen;
     updateRunStatus();
   }
 });
+
+// The jump button floats just above the dock, whatever its height (composer growth, task list).
+new ResizeObserver(() => {
+  els.jump.style.bottom = `${els.dock.offsetHeight + 14}px`;
+}).observe(els.dock);
+
+// ---------------------------------------------------------- message actions
+
+// Forks the session at a user message (RPC `fork`). Resolves with the message text, or null when
+// nothing happened (busy, streaming, or an extension vetoed the fork).
+function forkFrom(entryId) {
+  if (state.forking || state.isStreaming) return Promise.resolve(null);
+  state.forking = true;
+  scheduleRender();
+  return runGated(state, async () => {
+    const id = newId();
+    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+    try {
+      await sendRpc({ type: "fork", entryId, id });
+    } catch (error) {
+      failPending(id, error);
+      throw error;
+    }
+    const res = await applied;
+    if (!res.success) throw new Error(res.error || "Não foi possível bifurcar a conversa.");
+    if (res.data?.cancelled) {
+      toast("Uma extensão cancelou a bifurcação.", "warning");
+      return null;
+    }
+    resetConversation();
+    state.session = { ...(state.session || {}), sessionFile: null };
+    renderThread();
+    renderPanel();
+    sendRpc({ type: "get_state" }).catch(() => {});
+    sendRpc({ type: "get_entries" }).catch(() => {});
+    refreshStats();
+    refreshHistory().catch(() => {});
+    setTimeout(() => refreshHistory().catch(() => {}), 800);
+    return String(res.data?.text ?? "");
+  }).finally(() => {
+    state.forking = false;
+    scheduleRender();
+  });
+}
+
+// "Tentar de novo": after the fork the same text goes out as a new prompt in the new session.
+function sendRetry(message) {
+  state.lastSent = message;
+  const optimistic = { role: "user", content: [{ type: "text", text: message }], timestamp: Date.now(), _optimistic: true };
+  state.messages.push(optimistic);
+  state.stick = true;
+  scheduleRender();
+  const failed = (text) => {
+    const index = state.messages.indexOf(optimistic);
+    if (index !== -1) state.messages.splice(index, 1);
+    scheduleRender();
+    toast(text, "error");
+    if (!els.prompt.value) setComposerText(message);
+  };
+  rpcRequest({ type: "prompt", message }, 0).then((res) => {
+    if (!res.success) failed(res.error || "O PI recusou a mensagem.");
+  }, (error) => failed(error.message));
+}
+
+async function messageAction(action, button) {
+  const item = state.timeline.get(button.dataset.key);
+  if (!item) return;
+  if (action === "copy") {
+    if (!navigator.clipboard) throw new Error("A cópia não está disponível neste navegador.");
+    await navigator.clipboard.writeText(item.text);
+    button.classList.add("done");
+    setTimeout(() => button.classList.remove("done"), 1400);
+  } else if (action === "edit") {
+    const text = await forkFrom(item.entryId);
+    if (text === null) return;
+    setComposerText(text);
+    els.prompt.focus();
+  } else if (action === "retry" && state.retryTarget) {
+    const target = state.retryTarget;
+    const text = await forkFrom(target.entryId);
+    if (text !== null) sendRetry(text || target.text);
+  }
+}
+
+// Fork points PI offers (get_fork_messages); matched to thread messages by order in annotateActions.
+function refreshForkMessages() {
+  if (!state.messages.some((message) => message?.role === "user")) return;
+  rpcRequest({ type: "get_fork_messages" }, 8000)
+    .then((res) => {
+      state.forkMessages = res.success && Array.isArray(res.data?.messages) ? res.data.messages : [];
+      scheduleRender();
+    })
+    .catch(() => {});
+}
+
+// ------------------------------------------------------------------ tasks
+
+function applyTodo(tasks) {
+  if (!tasks) return;
+  state.todo = tasks;
+  renderTodo();
+}
+
+function renderTodo() {
+  const summary = todoSummary(state.todo);
+  els.todoPanel.hidden = !summary.total;
+  els.todoPanel.classList.toggle("collapsed", state.todoCollapsed);
+  els.todoToggle.setAttribute("aria-expanded", String(!state.todoCollapsed));
+  els.todoCount.textContent = summary.total ? `${summary.done}/${summary.total}` : "";
+  els.todoCurrent.textContent = summary.current;
+  const labels = { completed: "Concluída: ", in_progress: "Em andamento: ", pending: "Pendente: " };
+  els.todoList.replaceChildren(...summary.tasks.map((task) => {
+    const item = document.createElement("li");
+    item.className = `todo-item ${task.status}`;
+    if (task.status === "in_progress") item.setAttribute("aria-current", "step");
+    item.innerHTML = `<span class="todo-mark" aria-hidden="true"></span><span><span class="sr-only">${labels[task.status]}</span><span class="todo-subject">${esc(task.status === "in_progress" ? task.activeForm || task.subject : task.subject)}</span></span>`;
+    return item;
+  }));
+}
+
+function toggleTodo() {
+  if (els.todoPanel.hidden) return;
+  state.todoCollapsed = !state.todoCollapsed;
+  localStorage.setItem("pi-studio:todo-collapsed", state.todoCollapsed ? "1" : "0");
+  renderTodo();
+}
+
+els.todoToggle.addEventListener("click", toggleTodo);
+
+// ------------------------------------------- notifications + status dots
+
+const SETTLE_FALLBACK_MS = 2500;
+const canNotify = typeof Notification !== "undefined";
+const notifyOn = () => notifyEnabled(localStorage.getItem(NOTIFY_KEY));
+const pageUnseen = () => document.hidden || !document.hasFocus();
+
+// Asked lazily, from a user gesture (the first send), never on page load; a denial is respected.
+function ensureNotifyPermission() {
+  if (!canNotify || !notifyOn() || Notification.permission !== "default") return;
+  try {
+    Promise.resolve(Notification.requestPermission()).catch(() => {});
+  } catch {
+    // Old browsers throw on the promise form; notifications simply stay off.
+  }
+}
+
+function notifyAllowed() {
+  return canNotify && shouldNotify({ enabled: notifyOn(), permission: Notification.permission, hidden: document.hidden, focused: document.hasFocus() });
+}
+
+function notifyUser(kind, details) {
+  if (!notifyAllowed()) return;
+  const projectId = state.currentProject?.id || "";
+  const content = notificationContent(kind, { project: state.currentProject?.name, ...details });
+  try {
+    const note = new Notification(content.title, { body: content.body, tag: `pi-studio:${kind}:${projectId}` });
+    note.onclick = () => {
+      window.focus();
+      note.close();
+    };
+  } catch {
+    // Some browsers only allow notifications through a service worker.
+  }
+}
+
+function setAttention(projectId, patch) {
+  if (!projectId) return;
+  state.attention.set(projectId, { ...(state.attention.get(projectId) || {}), ...patch });
+  renderProjects();
+}
+
+function markSeen(projectId) {
+  if (state.attention.get(projectId)?.unseen && !pageUnseen()) setAttention(projectId, { unseen: false });
+}
+
+async function lastAssistantText() {
+  try {
+    const res = await rpcRequest({ type: "get_last_assistant_text" }, 4000);
+    if (res.success && typeof res.data?.text === "string") return res.data.text;
+  } catch {
+    // Fall back to what the thread already holds.
+  }
+  return messageText(state.messages.findLast((message) => message?.role === "assistant"));
+}
+
+// The run is fully over (agent_settled): flag the project when nobody was looking, and notify.
+async function onSettled() {
+  const project = state.currentProject;
+  if (!project || !pageUnseen()) return;
+  setAttention(project.id, { unseen: true });
+  if (!notifyAllowed()) return;
+  notifyUser("done", { text: await lastAssistantText().catch(() => "") });
+}
+
+window.addEventListener("focus", () => state.currentProject && markSeen(state.currentProject.id));
+document.addEventListener("visibilitychange", () => state.currentProject && markSeen(state.currentProject.id));
 
 // --------------------------------------------------------------- inspector
 
@@ -1776,6 +2049,7 @@ async function addImages(files) {
 
 async function submit(mode) {
   if (state.processExited || state.sending) return;
+  if (els.prompt.value.trim() || state.attachments.length) ensureNotifyPermission();
   if (state.gate) {
     // Hold the text in the composer until PI finishes switching sessions, then send it.
     state.sending = true;
@@ -2261,6 +2535,7 @@ function handleExtensionUi(req) {
     case "confirm":
     case "input":
     case "editor":
+      notifyUser("input", { title: req.title, text: req.message });
       state.uiQueue.push(req);
       if (!state.uiActive) nextUiDialog();
       break;
@@ -2270,6 +2545,7 @@ function handleExtensionUi(req) {
 function nextUiDialog() {
   const req = state.uiQueue.shift();
   state.uiActive = req || null;
+  setAttention(state.currentProject?.id, { waiting: Boolean(req) });
   if (req) openUiDialog(req);
 }
 
@@ -2544,6 +2820,9 @@ document.addEventListener("keydown", (event) => {
     if (modalOpen && !els.shortcutsDialog.open) return;
     event.preventDefault();
     toggleShortcuts();
+  } else if (action === "todos") {
+    event.preventDefault();
+    if (!modalOpen) toggleTodo();
   } else if (action === "new") {
     event.preventDefault();
     if (!modalOpen) newSession().catch(report);

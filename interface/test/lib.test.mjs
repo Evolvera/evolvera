@@ -1166,3 +1166,133 @@ describe("keyboard shortcuts", () => {
     for (const combo of ["Esc", "Ctrl+/", "Ctrl+Shift+O", "Ctrl+`", "↑", "Enter", "Ctrl+Enter", "Shift+Enter"]) assert.ok(all.includes(combo), combo);
   });
 });
+
+describe("wave 2: message actions, task list, notifications", () => {
+  const ev = (key, extra = {}) => ({ key, ...extra });
+
+  test("Alt+T toggles the task list; Ctrl+T (browser-reserved), Alt+Shift+T and plain t do not", () => {
+    assert.equal(lib.shortcutAction(ev("t", { altKey: true })), "todos");
+    assert.equal(lib.shortcutAction(ev("†", { altKey: true, code: "KeyT" }), { typing: true }), "todos");
+    assert.equal(lib.shortcutAction(ev("t", { altKey: true, shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("t", { altKey: true, ctrlKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("t", { altKey: true, metaKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("x", { altKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("t", { ctrlKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("t")), null);
+    assert.ok(lib.SHORTCUT_GROUPS.flatMap((group) => group.items).some((item) => item.keys.join("+") === "Alt+T"));
+  });
+
+  test("forkEntryIds pairs user messages with get_fork_messages by order", () => {
+    const forks = [{ entryId: "a", text: "primeira" }, { entryId: "b", text: "segunda  pergunta" }];
+    assert.deepEqual(lib.forkEntryIds(["primeira", "segunda pergunta"], forks), ["a", "b"]);
+    // a message not yet known to PI (just sent) is left without an id
+    assert.deepEqual(lib.forkEntryIds(["primeira", "segunda pergunta", "nova"], forks), ["a", "b", null]);
+    // the first mismatch hides itself and everything after it, even if a later text matches again
+    assert.deepEqual(lib.forkEntryIds(["outra", "segunda pergunta"], forks), [null, null]);
+    assert.deepEqual(lib.forkEntryIds(["primeira", "diferente", "x"], [...forks, { entryId: "c", text: "x" }]), ["a", null, null]);
+    // malformed entries and missing lists never guess
+    assert.deepEqual(lib.forkEntryIds(["primeira"], [{ text: "primeira" }]), [null]);
+    assert.deepEqual(lib.forkEntryIds(["primeira"], null), [null]);
+    assert.deepEqual(lib.forkEntryIds([], forks), []);
+    assert.deepEqual(lib.forkEntryIds(["x"], [{ entryId: "k", text: null }]), [null]);
+  });
+
+  test("messageActions: copy always; edit/retry need a verified fork point and an idle agent", () => {
+    const ids = (item, ctx) => lib.messageActions(item, ctx).map((action) => action.id);
+    const flags = (item, ctx) => lib.messageActions(item, ctx).map((action) => action.disabled);
+    const user = { kind: "user", entryId: "e1", images: [], optimistic: false };
+    assert.deepEqual(ids(user), ["copy", "edit"]);
+    assert.deepEqual(flags(user, {}), [false, false]);
+    assert.deepEqual(flags(user, { streaming: true }), [false, true]);
+    assert.deepEqual(flags(user, { busy: true }), [false, true]);
+    assert.deepEqual(ids({ ...user, entryId: null }), ["copy"]);
+    assert.deepEqual(ids({ ...user, images: [{ data: "x" }] }), ["copy"]);
+    assert.deepEqual(ids({ ...user, optimistic: true }), ["copy"]);
+    assert.deepEqual(ids({ kind: "user", entryId: "e1" }), ["copy", "edit"]);
+
+    const assistant = { kind: "assistant", text: "oi" };
+    assert.deepEqual(ids(assistant), ["copy"]);
+    assert.deepEqual(ids(assistant, { lastAssistant: true }), ["copy"]);
+    assert.deepEqual(ids(assistant, { retryId: "e1" }), ["copy"]);
+    assert.deepEqual(ids(assistant, { lastAssistant: true, retryId: "e1" }), ["copy", "retry"]);
+    assert.deepEqual(flags(assistant, { lastAssistant: true, retryId: "e1", streaming: true }), [false, true]);
+    assert.deepEqual(lib.messageActions(assistant, { lastAssistant: true, retryId: "e1" })[1].label, "Tentar de novo");
+  });
+
+  const tasks = [
+    { id: 1, subject: "Ler o código", status: "completed", activeForm: "lendo" },
+    { id: 2, subject: "Escrever testes", status: "in_progress", activeForm: "escrevendo testes" },
+    { id: 3, subject: "Remover", status: "deleted" },
+    { id: 4, subject: "Publicar", status: "pending", description: "ignorado" },
+  ];
+  const result = (details, extra = {}) => ({ role: "toolResult", toolName: "todo", isError: false, details, ...extra });
+
+  test("todoSnapshot accepts valid snapshots and ignores everything else", () => {
+    const snapshot = lib.todoSnapshot(result({ action: "list", tasks, nextId: 5 }));
+    assert.deepEqual(snapshot.map((task) => [task.id, task.status, task.activeForm]), [[1, "completed", "lendo"], [2, "in_progress", "escrevendo testes"], [3, "deleted", ""], [4, "pending", ""]]);
+    assert.deepEqual(Object.keys(snapshot[3]), ["id", "subject", "status", "activeForm"]);
+    assert.deepEqual(lib.todoSnapshot({ toolName: "todo", details: { tasks: [], nextId: 1 } }), []);
+    assert.equal(lib.todoSnapshot(result({ tasks, nextId: 5 }, { isError: true })), null);
+    assert.equal(lib.todoSnapshot(result({ tasks, nextId: 5 }, { toolName: "bash" })), null);
+    assert.equal(lib.todoSnapshot(result({ tasks })), null);
+    assert.equal(lib.todoSnapshot(result({ tasks: "x", nextId: 1 })), null);
+    assert.equal(lib.todoSnapshot(result({ tasks, nextId: "5" })), null);
+    assert.equal(lib.todoSnapshot(result(null)), null);
+    assert.equal(lib.todoSnapshot(result("texto")), null);
+    assert.equal(lib.todoSnapshot(null), null);
+    assert.equal(lib.isTodoDetails(undefined), false);
+    // junk inside a valid envelope is dropped task by task
+    const messy = lib.todoSnapshot(result({ nextId: 9, tasks: [null, 7, { id: "x", subject: "a", status: "pending" }, { id: 1, subject: 5, status: "pending" }, { id: 2, subject: "ok", status: "weird" }, { id: 3, subject: "bom", status: "pending", activeForm: 4 }] }));
+    assert.deepEqual(messy, [{ id: 3, subject: "bom", status: "pending", activeForm: "" }]);
+  });
+
+  test("todoFromMessages: the last valid todo result wins; errors and junk are skipped", () => {
+    const first = result({ tasks: [{ id: 1, subject: "a", status: "pending" }], nextId: 2 });
+    const second = result({ tasks, nextId: 5 });
+    const broken = result({ tasks: [{ id: 1, subject: "a", status: "completed" }], nextId: 2 }, { isError: true });
+    assert.equal(lib.todoFromMessages([first, second, broken, result({ nope: true }), { role: "assistant", toolName: "todo", details: { tasks: [], nextId: 1 } }, null]).length, 4);
+    assert.deepEqual(lib.todoFromMessages([first]).map((task) => task.subject), ["a"]);
+    assert.equal(lib.todoFromMessages([broken, { role: "user" }]), null);
+    assert.equal(lib.todoFromMessages([]), null);
+    assert.equal(lib.todoFromMessages(undefined), null);
+  });
+
+  test("todoSummary hides deleted tasks, counts done and names the current one", () => {
+    const summary = lib.todoSummary(lib.todoSnapshot(result({ tasks, nextId: 5 })));
+    assert.deepEqual([summary.done, summary.total, summary.current], [1, 3, "escrevendo testes"]);
+    assert.deepEqual(summary.tasks.map((task) => task.id), [1, 2, 4]);
+    const noForm = lib.todoSummary([{ id: 1, subject: "Sem forma", status: "in_progress", activeForm: "" }]);
+    assert.equal(noForm.current, "Sem forma");
+    assert.deepEqual(lib.todoSummary([{ id: 1, subject: "x", status: "pending", activeForm: "" }]), { tasks: [{ id: 1, subject: "x", status: "pending", activeForm: "" }], done: 0, total: 1, current: "" });
+    assert.deepEqual(lib.todoSummary(null), { tasks: [], done: 0, total: 0, current: "" });
+  });
+
+  test("notifications: preference, gating, text and dot priority", () => {
+    assert.equal(lib.NOTIFY_KEY, "pi-studio:notify");
+    assert.equal(lib.notifyEnabled(null), true);
+    assert.equal(lib.notifyEnabled("1"), true);
+    assert.equal(lib.notifyEnabled("lixo"), true);
+    assert.equal(lib.notifyEnabled("0"), false);
+
+    const base = { enabled: true, permission: "granted", hidden: true, focused: true };
+    assert.equal(lib.shouldNotify(base), true);
+    assert.equal(lib.shouldNotify({ ...base, hidden: false, focused: false }), true);
+    assert.equal(lib.shouldNotify({ ...base, hidden: false, focused: true }), false);
+    assert.equal(lib.shouldNotify({ ...base, enabled: false }), false);
+    assert.equal(lib.shouldNotify({ ...base, permission: "denied" }), false);
+    assert.equal(lib.shouldNotify({ ...base, permission: "default" }), false);
+    assert.equal(lib.shouldNotify({}), false);
+
+    assert.deepEqual(lib.notificationContent("done", { project: "amphipod", text: "\n  Tudo pronto.\r\nSegunda linha" }), { title: "PI terminou em amphipod", body: "Tudo pronto." });
+    assert.equal(lib.notificationContent("done", { project: "p", text: "x".repeat(200) }).body, `${"x".repeat(139)}…`);
+    assert.deepEqual(lib.notificationContent("done"), { title: "PI terminou em o projeto", body: "" });
+    assert.equal(lib.notificationContent("done", { text: null }).body, "");
+    assert.deepEqual(lib.notificationContent("input", { title: "Permitir?\ndetalhe", text: "ignorado" }), { title: "PI precisa da sua resposta", body: "Permitir?" });
+    assert.equal(lib.notificationContent("input", { text: "Mensagem do diálogo" }).body, "Mensagem do diálogo");
+    assert.deepEqual(lib.notificationContent("input"), { title: "PI precisa da sua resposta", body: "" });
+
+    assert.equal(lib.attentionState({ waiting: true, unseen: true }), "waiting");
+    assert.equal(lib.attentionState({ waiting: false, unseen: true }), "unseen");
+    assert.equal(lib.attentionState({ waiting: false, unseen: false }), "");
+  });
+});

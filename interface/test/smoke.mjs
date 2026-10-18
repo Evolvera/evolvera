@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createUiResponder, updateProcessExitUi } from "../public/lib.js";
+import { createUiResponder, entriesToMessages, forkEntryIds, messageText, todoFromMessages, todoSnapshot, updateProcessExitUi } from "../public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -399,6 +399,44 @@ try {
   assert.equal((await fetch(`${base}${filesUrl}`)).status, 401);
   const filesRes = await fetch(`${base}${filesUrl}`, { headers: { "x-pi-studio-token": token } });
   assert.deepEqual(await filesRes.json(), { files: ["package.json"] });
+
+  // Onda 2: lista de tarefas (`todo`), fork por mensagem e último texto do assistente.
+  const rpc = async (id, command) => {
+    await post(base, `/api/projects/${projectId}/command`, { id, ...command }, token);
+    await waitFor(() => seen.some((item) => item.payload?.id === id && item.payload.type === "response"));
+    return seen.find((item) => item.payload?.id === id && item.payload.type === "response").payload;
+  };
+  const settledBefore = seen.filter((item) => item.payload?.type === "agent_settled").length;
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-todo", type: "prompt", message: "todo-demo" }, token);
+  await waitFor(() => seen.filter((item) => item.payload?.type === "agent_settled").length > settledBefore);
+  const todoEnds = seen.filter((item) => item.payload?.type === "tool_execution_end" && item.payload.toolName === "todo").map((item) => item.payload);
+  assert.deepEqual(todoEnds.map((payload) => payload.isError), [false, false, true]);
+  const liveTodo = todoEnds.map((payload) => todoSnapshot({ toolName: payload.toolName, isError: payload.isError, details: payload.result.details })).filter(Boolean).at(-1);
+  assert.deepEqual(liveTodo.map((task) => [task.subject, task.status]), [["Ler o código", "completed"], ["Escrever testes", "in_progress"], ["Publicar", "pending"]]);
+  const entriesRes = await rpc("smoke-todo-entries", { type: "get_entries" });
+  const replayedTodo = todoFromMessages(entriesToMessages(entriesRes.data.entries, entriesRes.data.leafId));
+  assert.deepEqual(replayedTodo, liveTodo, "history replay yields the same task list as the live events");
+  assert.equal((await rpc("smoke-last-text", { type: "get_last_assistant_text" })).data.text.split("\n")[0], "Plano atualizado.");
+
+  const forkMessages = (await rpc("smoke-fork-list", { type: "get_fork_messages" })).data.messages;
+  assert.deepEqual(forkMessages.map((item) => item.text), ["hello", "tools", "todo-demo"]);
+  const userTexts = entriesToMessages(entriesRes.data.entries, entriesRes.data.leafId).filter((message) => message.role === "user").map(messageText);
+  assert.deepEqual(forkEntryIds(userTexts, forkMessages), forkMessages.map((item) => item.entryId), "thread user messages map to fork ids");
+  const missingFork = await rpc("smoke-fork-missing", { type: "fork", entryId: "nope" });
+  assert.equal(missingFork.success, false);
+  const forked = await rpc("smoke-fork", { type: "fork", entryId: forkMessages[1].entryId });
+  assert.deepEqual(forked.data, { text: "tools", cancelled: false });
+  const forkedState = await rpc("smoke-fork-state", { type: "get_state" });
+  assert.equal(forkedState.data.sessionId, "fake-session-fork-1", "fork switches to a new session");
+  const forkedEntries = (await rpc("smoke-fork-entries", { type: "get_entries" })).data.entries;
+  assert.deepEqual(forkedEntries.map((entry) => entry.message.role), ["user", "assistant"], "the fork keeps only the history before the chosen message");
+  assert.deepEqual((await rpc("smoke-fork-list-2", { type: "get_fork_messages" })).data.messages.map((item) => item.text), ["hello"]);
+  // A vetoed fork (session_before_fork) reports cancelled and changes nothing.
+  await post(base, `/api/projects/${projectId}/command`, { id: "smoke-veto", type: "prompt", message: "cancel-fork" }, token);
+  await waitFor(() => seen.filter((item) => item.payload?.type === "agent_settled").length > settledBefore + 1);
+  const vetoId = (await rpc("smoke-veto-list", { type: "get_fork_messages" })).data.messages.at(-1).entryId;
+  assert.deepEqual((await rpc("smoke-veto-fork", { type: "fork", entryId: vetoId })).data, { text: "cancel-fork", cancelled: true });
+  assert.equal((await rpc("smoke-veto-state", { type: "get_state" })).data.sessionId, "fake-session-fork-1");
 
   // Diálogo de extensão: pedido -> resposta -> PI recebe o valor escolhido.
   await post(base, `/api/projects/${projectId}/command`, { id: "smoke-ui", type: "prompt", message: "ui" }, token);

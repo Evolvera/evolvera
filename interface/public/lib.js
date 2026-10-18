@@ -870,9 +870,14 @@ export function recallAction(event, { empty, recalled }) {
 }
 
 // Global shortcuts. `typing`: focus is in a text field or a modal is open.
+// Alt+T, not Ctrl+T: browsers reserve Ctrl+T (new tab) and never deliver it to the page.
 export function shortcutAction(event, { typing = false } = {}) {
-  if (!event || event.isComposing || event.altKey) return null;
+  if (!event || event.isComposing) return null;
   const key = String(event.key);
+  if (event.altKey) {
+    const plainAlt = !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    return plainAlt && (key.toLowerCase() === "t" || event.code === "KeyT") ? "todos" : null;
+  }
   if (event.ctrlKey || event.metaKey) {
     if (key === "/") return "shortcuts";
     if (key === "`") return "console";
@@ -908,9 +913,112 @@ export const SHORTCUT_GROUPS = [
     items: [
       { keys: ["Ctrl", "/"], label: "Mostrar ou ocultar esta lista" },
       { keys: ["Ctrl", "`"], label: "Console RPC" },
+      { keys: ["Alt", "T"], label: "Mostrar ou ocultar a lista de tarefas" },
     ],
   },
 ];
+
+// ------------------------------------------------- message actions (fork)
+
+const squash = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
+
+// Pairs the thread's user messages with PI's get_fork_messages by order. The first user message whose
+// text differs from its fork counterpart (and everything after) gets no id: a wrong id would fork from
+// the wrong point, so the action is hidden instead.
+export function forkEntryIds(userTexts, forkMessages) {
+  const forks = Array.isArray(forkMessages) ? forkMessages : [];
+  const ids = [];
+  let aligned = true;
+  userTexts.forEach((text, index) => {
+    const fork = forks[index];
+    aligned = aligned && typeof fork?.entryId === "string" && squash(fork.text) === squash(text);
+    ids.push(aligned ? fork.entryId : null);
+  });
+  return ids;
+}
+
+// Toolbar buttons of a thread item. `ctx`: { streaming, busy, lastAssistant, retryId }.
+// Edit/retry need a verified fork point and no images (a fork returns text only).
+export function messageActions(item, ctx = {}) {
+  const off = Boolean(ctx.streaming || ctx.busy);
+  const plain = !item.images?.length;
+  if (item.kind === "user") {
+    const actions = [{ id: "copy", label: "Copiar", disabled: false }];
+    if (item.entryId && plain && !item.optimistic) actions.push({ id: "edit", label: "Editar", disabled: off });
+    return actions;
+  }
+  const actions = [{ id: "copy", label: "Copiar", disabled: false }];
+  if (ctx.lastAssistant && ctx.retryId) actions.push({ id: "retry", label: "Tentar de novo", disabled: off });
+  return actions;
+}
+
+// ------------------------------------------------------------- task list
+
+const TODO_STATUSES = ["pending", "in_progress", "completed", "deleted"];
+
+// Mirrors @juicesharp/rpiv-todo state/replay.ts isTaskDetails: a full snapshot has tasks[] and a numeric nextId.
+export function isTodoDetails(value) {
+  return Boolean(value) && typeof value === "object" && Array.isArray(value.tasks) && typeof value.nextId === "number";
+}
+
+function cleanTasks(tasks) {
+  return tasks
+    .filter((task) => task && typeof task === "object" && Number.isFinite(task.id) && typeof task.subject === "string" && TODO_STATUSES.includes(task.status))
+    .map((task) => ({ id: task.id, subject: task.subject, status: task.status, activeForm: typeof task.activeForm === "string" ? task.activeForm : "" }));
+}
+
+// Snapshot carried by one successful `todo` result (tool_execution_end event or toolResult message), else null.
+export function todoSnapshot(result) {
+  if (!result || result.toolName !== "todo" || result.isError || !isTodoDetails(result.details)) return null;
+  return cleanTasks(result.details.tasks);
+}
+
+// Last-write-wins over a message list, like replayFromBranch; null when the session never used `todo`.
+export function todoFromMessages(messages) {
+  let latest = null;
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const snapshot = message?.role === "toolResult" ? todoSnapshot(message) : null;
+    if (snapshot) latest = snapshot;
+  }
+  return latest;
+}
+
+// Checklist data for the pinned panel: deleted tasks are hidden, `current` is the first in-progress one.
+export function todoSummary(tasks) {
+  const visible = (Array.isArray(tasks) ? tasks : []).filter((task) => task.status !== "deleted");
+  const done = visible.filter((task) => task.status === "completed").length;
+  const current = visible.find((task) => task.status === "in_progress");
+  return { tasks: visible, done, total: visible.length, current: current ? current.activeForm || current.subject : "" };
+}
+
+// ------------------------------------------------- notifications + status
+
+export const NOTIFY_KEY = "pi-studio:notify";
+
+// Stored as "0"/"1"; anything else (unset, corrupt) means the default: on.
+export function notifyEnabled(stored) {
+  return stored !== "0";
+}
+
+// Only when the user cannot see the page, the preference is on and the browser allows it.
+export function shouldNotify({ enabled, permission, hidden, focused }) {
+  return Boolean(enabled) && permission === "granted" && (Boolean(hidden) || !focused);
+}
+
+function firstLine(text) {
+  return String(text ?? "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+}
+
+export function notificationContent(kind, { project = "", text = "", title = "" } = {}) {
+  if (kind === "input") return { title: "PI precisa da sua resposta", body: truncate(firstLine(title) || firstLine(text), 140) };
+  return { title: `PI terminou em ${project || "o projeto"}`, body: truncate(firstLine(text), 140) };
+}
+
+// Sidebar dot: waiting for an answer beats finished-unseen; "running" stays with the existing indicator.
+export function attentionState({ waiting, unseen }) {
+  if (waiting) return "waiting";
+  return unseen ? "unseen" : "";
+}
 
 // ------------------------------------------------------- extension dialogs
 

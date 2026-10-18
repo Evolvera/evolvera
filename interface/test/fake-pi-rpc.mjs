@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Deterministic stand-in for `pi --mode rpc` (never calls a model).
-// Prompt "tools" streams thinking + tool executions; prompt "ui" asks an extension dialog.
+// Prompt "tools" streams thinking + tool executions; prompt "ui" asks an extension dialog; a prompt containing
+// "todo-demo" streams `todo` tool results (full snapshots in details, plus one error result that must be ignored).
+// `fork` switches to a new fake session holding the history before the chosen user message.
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const entries = [];
@@ -81,6 +83,34 @@ const DEMO_MARKDOWN = [
   "",
   "Veja https://example.com para detalhes.",
 ].join("\n");
+
+// Shape of @juicesharp/rpiv-todo results: details carries the FULL snapshot {action, params, tasks, nextId}.
+function streamTodo(command) {
+  const snapshot = (statuses) => statuses.map(([subject, status, activeForm], index) => ({ id: index + 1, subject, status, ...(activeForm ? { activeForm } : {}) }));
+  const steps = [
+    { id: "call_todo_1", isError: false, tasks: snapshot([["Ler o código", "in_progress", "lendo o código"], ["Escrever testes", "pending"], ["Publicar", "pending"]]) },
+    { id: "call_todo_2", isError: false, tasks: snapshot([["Ler o código", "completed"], ["Escrever testes", "in_progress", "escrevendo testes"], ["Publicar", "pending"]]) },
+    // An error result keeps the previous state: the UI must not show it.
+    { id: "call_todo_3", isError: true, tasks: snapshot([["Lixo", "completed"]]) },
+  ];
+  const calls = assistant(steps.map((step) => ({ type: "toolCall", id: step.id, name: "todo", arguments: { action: "update" } })), "toolUse");
+  emit({ type: "message_start", message: { ...calls, content: [] } });
+  emit({ type: "message_end", message: calls });
+  record(calls);
+  for (const step of steps) {
+    const result = { content: [{ type: "text", text: step.isError ? "Error: invalid" : "Updated" }], details: { action: "update", params: {}, tasks: step.tasks, nextId: step.tasks.length + 1 } };
+    emit({ type: "tool_execution_start", toolCallId: step.id, toolName: "todo", args: { action: "update" } });
+    emit({ type: "tool_execution_end", toolCallId: step.id, toolName: "todo", result, isError: step.isError });
+    const message = { role: "toolResult", toolCallId: step.id, toolName: "todo", content: result.content, details: result.details, isError: step.isError, timestamp: Date.now() };
+    emit({ type: "message_start", message });
+    emit({ type: "message_end", message });
+    record(message);
+  }
+  const final = assistant([{ type: "text", text: `Plano atualizado.\nSegunda linha. (${command.message})` }]);
+  emit({ type: "message_start", message: { ...final, content: [] } });
+  emit({ type: "message_end", message: final });
+  record(final);
+}
 
 // Visual QA only: thinking, tools and markdown spread over ~4 s so the live state is observable.
 function streamDemo(command) {
@@ -195,6 +225,7 @@ function streamInspector(command) {
 // "nobytes" answers with an error response. Output streams as bash_execution_update chunks.
 let activeBash = null;
 let sessionName = "fake";
+let forks = 0;
 
 function finishBash(run, cancelled) {
   clearTimeout(run.timer);
@@ -248,6 +279,8 @@ function handle(command) {
     }
     if (command.message === "tools") {
       streamTools(command);
+    } else if (command.message.includes("todo-demo")) {
+      streamTodo(command);
     } else {
       emit({ type: "message_start", message: { role: "assistant", content: [], timestamp: Date.now() } });
       emit({
@@ -261,6 +294,36 @@ function handle(command) {
     }
     emit({ type: "turn_end", message: { role: "assistant", content: [] }, toolResults: [] });
     emit({ type: "agent_end", messages: [] });
+    emit({ type: "agent_settled" });
+    return;
+  }
+
+  if (command.type === "get_fork_messages") {
+    respond(command, true, { messages: entries.filter((entry) => entry.message?.role === "user").map((entry) => ({ entryId: entry.id, text: entry.message.content })) });
+    return;
+  }
+
+  if (command.type === "fork") {
+    const index = entries.findIndex((entry) => entry.id === command.entryId && entry.message?.role === "user");
+    if (index === -1) {
+      emit({ id: command.id, type: "response", command: "fork", success: false, error: `Entry ${command.entryId} not found` });
+      return;
+    }
+    const text = entries[index].message.content;
+    // An extension (session_before_fork) may veto: nothing changes.
+    if (text.includes("cancel-fork")) {
+      respond(command, true, { text, cancelled: true });
+      return;
+    }
+    entries.length = index;
+    forks += 1;
+    respond(command, true, { text, cancelled: false });
+    return;
+  }
+
+  if (command.type === "get_last_assistant_text") {
+    const last = entries.findLast((entry) => entry.message?.role === "assistant" && Array.isArray(entry.message.content) && entry.message.content.some((part) => part.type === "text"));
+    respond(command, true, { text: last ? last.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n") : null });
     return;
   }
 
@@ -305,7 +368,7 @@ function handle(command) {
       isStreaming: false,
       isCompacting: false,
       sessionFile: undefined,
-      sessionId: "fake-session",
+      sessionId: forks ? `fake-session-fork-${forks}` : "fake-session",
       sessionName,
       messageCount: entries.length,
       pendingMessageCount: 0,

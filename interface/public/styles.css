@@ -1091,3 +1091,48 @@ kbd { min-width: 22px; padding: 1px 7px; border: 1px solid var(--line-2); border
 @media (max-width: 860px) {
   .shortcut-row { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
+
+/* ------------------------------------------- wave 2: message actions, tasks, dots */
+.msg-actions { display: flex; gap: 2px; margin-top: 2px; opacity: 0; transition: opacity 140ms var(--ease); }
+.msg-user .msg-actions { justify-content: flex-end; }
+.msg:hover > .msg-actions, .msg:focus-within > .msg-actions, .msg-actions:focus-within { opacity: 1; }
+.act-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; min-width: 28px; padding: 0 6px; justify-content: center; border-radius: 8px; color: var(--faint); font-size: 12.5px; transition: background-color 140ms var(--ease), color 140ms var(--ease); }
+.act-btn svg { width: 16px; height: 16px; }
+.act-btn:hover:not(:disabled), .act-btn:focus-visible { background: var(--bg-hover); color: var(--text); }
+.act-btn:disabled { opacity: 0.35; }
+.act-flash { display: none; }
+.act-btn.done { color: var(--green); }
+.act-btn.done .act-flash { display: inline; }
+.msg-user.pending .msg-actions { display: none; }
+@media (hover: none) { .msg-actions { opacity: 1; } }
+
+.todo-panel { margin-bottom: 8px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--bg-card); overflow: hidden; }
+.todo-panel[hidden] { display: none; }
+.todo-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 6px 12px; text-align: left; color: var(--text-2); font-size: 13px; }
+.todo-head:hover { background: var(--bg-hover); }
+.todo-head .chev { width: 14px; height: 14px; color: var(--faint); transform: rotate(90deg); }
+.todo-panel.collapsed .todo-head .chev { transform: none; }
+.todo-title { font-weight: 600; color: var(--text); }
+.todo-count { color: var(--faint); font-variant-numeric: tabular-nums; }
+.todo-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.todo-panel:not(.collapsed) .todo-current { display: none; }
+.todo-list { display: grid; gap: 1px; margin: 0; padding: 2px 12px 10px 14px; max-height: min(188px, 22vh); overflow-y: auto; list-style: none; }
+.todo-panel.collapsed .todo-list { display: none; }
+.todo-item { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; color: var(--text-2); font-size: 13.5px; line-height: 1.45; }
+.todo-mark { flex: none; position: relative; top: 2px; width: 13px; height: 13px; border: 1.5px solid var(--faint); border-radius: 99px; }
+.todo-item.in_progress { color: var(--text); }
+.todo-item.in_progress .todo-mark { border-color: var(--text); background: radial-gradient(circle, var(--text) 0 3px, transparent 3.5px); }
+.todo-item.completed { color: var(--faint); }
+.todo-item.completed .todo-mark { border-color: var(--green); background: var(--green); }
+.todo-item.completed .todo-mark::after { content: ""; position: absolute; left: 3px; top: 0.5px; width: 3px; height: 6px; border: solid #0a0a0a; border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); }
+.todo-item.completed .todo-subject { text-decoration: line-through; text-decoration-color: var(--faint); }
+
+/* Sidebar status dots: running (existing), finished while unseen (outline), waiting for an answer. */
+.project.attn-unseen .run-dot, .project.attn-waiting .run-dot { display: block; }
+.project.attn-unseen .run-dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text); }
+.project.attn-waiting .run-dot { width: 8px; height: 8px; background: var(--amber); animation: attn-pulse 1.6s ease-in-out infinite; }
+.project.attn-unseen:not(.running) .project-chev:not(.open), .project.attn-waiting:not(.running) .project-chev:not(.open) { opacity: 0; }
+.project.attn-unseen .project-row-wrap:hover .project-chev, .project.attn-waiting .project-row-wrap:hover .project-chev { opacity: 1; }
+.project.attn-unseen .project-row-wrap:hover .run-dot, .project.attn-waiting .project-row-wrap:hover .run-dot { visibility: hidden; }
+@keyframes attn-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .project.attn-waiting .run-dot { animation: none !important; } }

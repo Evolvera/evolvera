@@ -46,6 +46,10 @@ Roda `docker compose` (Docker Desktop precisa estar instalado) e abre o Edge/Chr
 - Chat com streaming, anexos de imagem, prompt/steer/follow-up/abort.
 - Observabilidade: eventos RPC, tool calls, stderr, status, modelo/sessão.
 - Console RPC raw para qualquer comando do protocolo PI.
+- Ações por mensagem (ao passar o mouse ou focar): **Copiar** (resposta ou pergunta), **Editar** (RPC `fork` na mensagem: abre uma nova conversa até ali e devolve o texto ao campo de envio) e **Tentar de novo** (fork na última pergunta e reenvio). Editar e Tentar de novo só aparecem quando `get_fork_messages` confirma o ponto de fork, ficam desativados enquanto o PI responde e não se aplicam a mensagens com imagem (o fork devolve só texto).
+- Lista de tarefas fixa acima do campo de envio, montada a partir do último resultado válido da ferramenta `todo` (`details.tasks`); `Alt+T` recolhe/expande (o navegador reserva `Ctrl+T` para nova aba; o cabeçalho do painel também é clicável).
+- Avisos: ao fim de uma execução (`agent_settled`) ou quando uma extensão pede resposta, com a página oculta ou sem foco, mostra uma notificação do sistema (a permissão é pedida só no primeiro envio; preferência `pi-studio:notify`, padrão ligada, `0` desliga). A bolinha do projeto na barra lateral vira contorno ("terminou sem você ver", some ao voltar à página) ou âmbar pulsante ("aguardando resposta"). Só o projeto aberto emite eventos para o navegador, então os avisos valem para ele.
+- Botão ↓ para voltar ao fim da conversa quando você rola para cima durante a resposta.
 
 ## Segurança
 
