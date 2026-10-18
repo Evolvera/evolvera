@@ -174,6 +174,58 @@ test("HUD footer shows only active modes, translates emoji statuses, and stays w
   assert.equal(harness.renderRequests, 3);
 });
 
+test("HUD footer renders conductor as a native tag with truthful effective capacity and preserved modes", async () => {
+  const tokenTheme = { fg: (color, text) => `⟦${color}:${text}⟧`, bold: (text) => `*${text}*` };
+  const ansiTheme = { fg: (_color, text) => `\u001b[31m${text}\u001b[39m`, bold: (text) => `\u001b[1m${text}\u001b[22m` };
+  const harness = extensionHarness();
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  const mode = (footerTheme) => harness.footerFactory({ requestRender() {} }, footerTheme, {
+    getGitBranch: () => "main", getExtensionStatuses: () => harness.statuses, onBranchChange: () => () => {},
+  });
+  const plain = mode(theme);
+  const second = (footer, width = 160) => footer.render(width)[1];
+  const set = (entries) => { harness.statuses.clear(); for (const [key, value] of entries) harness.statuses.set(key, value); };
+
+  set([["context-mode", "560K"], ["orchestration-mode", "🎼 CONDUCTOR"], ["codex-fast-mode", "⚡ECO"], ["execution-mode", "MODE  YOLO · PROJECT"], ["usuario", "EVOLVERA"], ["external", "ready"]]);
+  const high = second(plain);
+  assert.match(high, /\d+%  ◈560K  CONDUCTOR  ⚡ECO  YOLO·project  @EVOLVERA  external ready$/);
+  assert.equal(high.match(/CONDUCTOR/g).length, 1, "conductor appears once");
+  assert.doesNotMatch(high, /orchestration-mode|🎼|800K/);
+
+  set([["context-mode", "315K"], ["orchestration-mode", "🎼 CONDUCTOR"], ["execution-mode", "MODE  SUPERVISIONADO · GLOBAL"]]);
+  const normal = second(plain);
+  assert.match(normal, /◈315K  CONDUCTOR  SUPERVISIONADO$/, "effective capacity is displayed as supplied; global source stays hidden");
+  assert.doesNotMatch(normal, /orchestration-mode|🎼|GLOBAL|global/);
+
+  for (const entries of [[["usuario", "EVOLVERA"]], [["orchestration-mode", "OFF"]], [["orchestration-mode", ""]], [["orchestration-mode", "🎼"]]]) {
+    set(entries);
+    assert.doesNotMatch(second(plain), /CONDUCTOR|orchestration-mode|🎼/, "standard or inactive orchestration is absent");
+  }
+  set([["orchestration-mode", "🎼 CONDUCTOR"]]);
+  assert.doesNotMatch(second(plain), /◈/, "conductor without a capacity status invents no capacity");
+  set([["orchestration-mode", "🎼 CONDUCTOR"], ["execution-mode", "MODE  AUTÔNOMO · SESSION"], ["codex-fast-mode", "🚀🟢"], ["maestro", "ON"]]);
+  assert.match(second(plain), /CONDUCTOR  🚀  MAESTRO  AUTÔNOMO·session$/);
+
+  // Only existing theme tokens are used: conductor is bold accent, scope is a muted qualifier.
+  set([["context-mode", "560K"], ["orchestration-mode", "🎼 CONDUCTOR"], ["execution-mode", "MODE  YOLO · SESSION"]]);
+  const tokens = second(mode(tokenTheme));
+  assert.match(tokens, /⟦warning:◈560K⟧  \*⟦accent:CONDUCTOR⟧\*  \*⟦thinkingXhigh:YOLO⟧⟦muted:·session⟧\*$/);
+  const ansi = mode(ansiTheme);
+  assert.match(second(ansi), /\u001b\[1m\u001b\[31mCONDUCTOR\u001b\[39m\u001b\[22m/);
+  for (const footerTheme of [theme, ansiTheme]) {
+    const footer = mode(footerTheme);
+    for (const width of [6, 20, 40, 80, 160]) {
+      const rendered = footer.render(width);
+      assert.equal(rendered.length, 2, `two lines at ${width}`);
+      assert.ok(rendered.every((line) => ui.cellWidth(ui.stripControl(line)) <= width), `bounded at ${width}`);
+    }
+  }
+  assert.deepEqual(ui.conductorTag("🎼 CONDUCTOR"), { text: "CONDUCTOR", color: "accent", bold: true });
+  assert.equal(ui.conductorTag(undefined), undefined);
+  assert.equal(ui.conductorTag("off"), undefined);
+  assert.equal(ui.conductorTag("🎼 CONDUCTOR · paused").text, "CONDUCTOR·paused", "unknown qualifiers are retained");
+});
+
 test("SDK without tool-renderer middleware retains native cards and the account footer", async () => {
   const h = extensionHarness({ toolRenderer: false });
   assert.equal(h.resolver, undefined, "native tool rendering remains untouched");

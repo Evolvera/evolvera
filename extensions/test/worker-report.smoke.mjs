@@ -11,12 +11,16 @@ const { createJiti } = require(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cj
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
 const { createWorkerReportExtension } = await jiti.import(path.join(root, "extensions/worker-report.ts"));
 
-function setup(env, runner = async () => ({ stdout: "" }), entries = []) {
+const goalState = (id, status = "active") => ({ type: "custom", customType: "goal-state", data: { goal: { id, status } } });
+
+function setup(env, runner = async () => ({ stdout: '{"ok":true}' }), entries = []) {
   if (env === undefined) delete process.env.PI_REPORT_RUN;
   else process.env.PI_REPORT_RUN = env;
   const handlers = new Map();
   const notices = [];
-  createWorkerReportExtension(runner)({
+  const coordinator = JSON.stringify({ ok: true, result: { run: { coordinator_handle: "term_conductor" } } });
+  const withRun = async (file, args, options) => file === "orca" && args[1] === "run-show" ? { stdout: coordinator } : runner(file, args, options);
+  createWorkerReportExtension(withRun)({
     on: (name, handler) => handlers.set(name, handler),
     appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
   });
@@ -25,7 +29,14 @@ function setup(env, runner = async () => ({ stdout: "" }), entries = []) {
     sessionManager: { getBranch: () => entries },
     ui: { notify: (message, type) => notices.push({ message, type }) },
   };
-  return { handlers, notices, ctx, entries };
+  const callArgs = new Map();
+  const originalToolCall = handlers.get("tool_call");
+  if (originalToolCall) handlers.set("tool_call", (event, callCtx) => { if (event.toolName === "goal_complete" || event.toolName === "goal_blocked") callArgs.set(event.toolCallId, event.input); return originalToolCall(event, callCtx ?? ctx); });
+  const finishGoal = async (event, status) => {
+    entries.push({ type: "custom", customType: "goal-state", data: { goal: { id: callArgs.get(event.toolCallId)?.goal_id, status } } });
+    await handlers.get("tool_execution_end")(event, ctx);
+  };
+  return { handlers, notices, ctx, entries, finishGoal };
 }
 
 for (const env of [undefined, "bad/run-id"]) {
@@ -40,14 +51,13 @@ const active = setup("run_3419a9bd44e8", async (file, args, options) => {
 });
 active.handlers.get("tool_call")({ toolCallId: "c1", toolName: "goal_complete", input: { goal_id: "goal-1", summary: "Implemented and tested." } });
 const complete = { toolCallId: "c1", toolName: "goal_complete", isError: false };
-await active.handlers.get("tool_execution_end")(complete, active.ctx);
+await active.finishGoal(complete, "complete");
 await active.handlers.get("tool_execution_end")(complete, active.ctx);
 assert.equal(calls.filter(({ file }) => file === "orca").length, 1, "duplicate completion does not resend");
 assert.deepEqual(calls.find(({ file }) => file === "orca").args, [
-  "orchestration", "send", "--to", "run:run_3419a9bd44e8",
-  "--subject", "finished: worker-project",
-  "--body", "cwd: /tmp/worker-project\nbranch: feature/worker\nSummary: Implemented and tested.",
-  "--type", "status", "--json",
+  "terminal", "send", "--terminal", "term_conductor",
+  "--text", "[child worker-project] goal finished | goal_id=goal-1 | branch=feature/worker | Summary: Implemented and tested.",
+  "--enter", "--json",
 ]);
 assert.equal(calls.every(({ options }) => options.timeout === 10_000), true);
 
@@ -57,10 +67,10 @@ const blocked = setup("run_3419a9bd44e8", async (file, args) => {
   return { stdout: file === "git" ? "main" : "" };
 });
 blocked.handlers.get("tool_call")({ toolCallId: "b1", toolName: "goal_blocked", input: { goal_id: "goal-2", reason: "Needs access", evidence: "Access denied three times" } });
-await blocked.handlers.get("tool_execution_end")({ toolCallId: "b1", toolName: "goal_blocked", isError: false }, blocked.ctx);
+await blocked.finishGoal({ toolCallId: "b1", toolName: "goal_blocked", isError: false }, "blocked");
 const blockedMessage = blockedCalls.find(({ file }) => file === "orca").args;
-assert.equal(blockedMessage[5], "blocked: worker-project");
-assert.match(blockedMessage[7], /Reason: Needs access\nEvidence: Access denied three times/);
+assert.match(blockedMessage[5], /^\[child worker-project\] goal blocked \| goal_id=goal-2/);
+assert.match(blockedMessage[5], /Reason: Needs access Evidence: Access denied three times/);
 
 // pi-goal returns rejections (stale goal_id, empty summary…) as normal results: never report them.
 let rejectedSends = 0;
@@ -71,7 +81,46 @@ rejected.handlers.get("tool_call")({ toolCallId: "r2", toolName: "goal_blocked",
 await rejected.handlers.get("tool_execution_end")({ toolCallId: "r2", toolName: "goal_blocked", isError: false, result: { content: [{ type: "text", text: "goal_blocked rejected: evidence is empty." }] } }, rejected.ctx);
 assert.equal(rejectedSends, 0, "rejected goal calls are not reported");
 
-const goalState = (id) => ({ type: "custom", customType: "goal-state", data: { goal: { id, status: "active" } } });
+for (const receipt of ["", "not-json", '{"ok":false}']) {
+  let sends = 0;
+  const candidate = setup("run_3419a9bd44e8", async (file) => {
+    if (file === "orca") { sends++; return { stdout: receipt }; }
+    return { stdout: "" };
+  });
+  candidate.handlers.get("tool_call")({ toolCallId: `receipt-${sends}`, toolName: "goal_complete", input: { goal_id: "receipt-goal", summary: "done" } });
+  await candidate.finishGoal({ toolCallId: `receipt-${sends}`, toolName: "goal_complete", isError: false }, "complete");
+  await candidate.handlers.get("agent_end")({}, candidate.ctx);
+  assert.equal(sends, 2, `receipt ${JSON.stringify(receipt)} is not positive acknowledgment and gets one retry`);
+}
+
+let mismatchedSends = 0;
+const mismatched = setup("run_3419a9bd44e8", async (file) => { if (file === "orca") mismatchedSends++; return { stdout: '{"ok":true}' }; });
+mismatched.handlers.get("tool_call")({ toolCallId: "mismatch", toolName: "goal_complete", input: { goal_id: "goal-mismatch", summary: "done" } });
+mismatched.entries.push(goalState("different-goal", "complete"));
+await mismatched.handlers.get("tool_execution_end")({ toolCallId: "mismatch", toolName: "goal_complete", isError: false }, mismatched.ctx);
+assert.equal(mismatchedSends, 0, "terminal state for a different canonical Goal is not accepted evidence");
+
+for (const latestState of [
+  { type: "custom", customType: "goal-state", data: { goal: null } },
+  { type: "custom", customType: "goal-state", data: { malformed: true } },
+  { type: "custom", customType: "goal-state", data: { goal: { id: "another-goal", status: "complete" } } },
+]) {
+  let sends = 0;
+  const candidate = setup("run_3419a9bd44e8", async (file) => { if (file === "orca") sends++; return { stdout: '{"ok":true}' }; }, [goalState("older-complete", "complete"), latestState]);
+  candidate.handlers.get("tool_call")({ toolCallId: "cleared-old", toolName: "goal_complete", input: { goal_id: "older-complete", summary: "done" } });
+  await candidate.handlers.get("tool_execution_end")({ toolCallId: "cleared-old", toolName: "goal_complete", isError: false }, candidate.ctx);
+  assert.equal(sends, 0, "cleared, malformed, or nonmatching latest canonical state cannot fall back to an older terminal Goal");
+}
+
+{
+  let sends = 0;
+  const lifecycle = setup("run_3419a9bd44e8", async (file) => { if (file === "orca") sends++; return { stdout: '{"ok":true}' }; }, [goalState("goal-lifecycle")]);
+  lifecycle.handlers.get("tool_call")({ toolCallId: "lifecycle", toolName: "goal_complete", input: { goal_id: "goal-lifecycle", summary: "done" } });
+  lifecycle.entries.push(goalState("goal-lifecycle", "complete"), { type: "custom", customType: "goal-state", data: { goal: null } });
+  await lifecycle.handlers.get("tool_execution_end")({ toolCallId: "lifecycle", toolName: "goal_complete", isError: false }, lifecycle.ctx);
+  assert.equal(sends, 1, "native terminal-then-cleared state persisted during this call is accepted");
+}
+
 const nativeEntries = [goalState("goal-native")];
 const native = setup("run_3419a9bd44e8", async () => ({ stdout: "" }), nativeEntries);
 const canonicalCommand = "orca orchestration send --to run:run_123 --subject done --body complete --type worker_done";
@@ -85,6 +134,7 @@ await native.handlers.get("tool_execution_end")(doneEvent, native.ctx);
 assert.equal(nativeEntries.filter((entry) => entry.customType === "worker-report-native-done").length, 1, "duplicate native receipt does not append another entry");
 const reloaded = setup("run_3419a9bd44e8", async (file, args) => { if (file === "orca") throw new Error("must suppress duplicate"); return { stdout: "" }; }, nativeEntries);
 reloaded.handlers.get("tool_call")({ toolCallId: "native-goal", toolName: "goal_complete", input: { goal_id: "goal-native", summary: "done" } });
+reloaded.entries.push(goalState("goal-native", "complete"));
 await reloaded.handlers.get("tool_execution_end")({ toolCallId: "native-goal", toolName: "goal_complete", isError: false }, reloaded.ctx);
 assert.equal(reloaded.notices.length, 0, "native worker_done suppresses fallback after extension reload");
 
@@ -119,6 +169,7 @@ await noGoal.handlers.get("tool_execution_end")(doneEvent, noGoal.ctx);
 noGoalEntries.push(goalState("goal-later"));
 const later = setup("run_3419a9bd44e8", async (file) => ({ stdout: file === "orca" ? "sent" : "" }), noGoalEntries);
 later.handlers.get("tool_call")({ toolCallId: "later", toolName: "goal_complete", input: { goal_id: "goal-later", summary: "done" } });
+later.entries.push(goalState("goal-later", "complete"));
 await later.handlers.get("tool_execution_end")({ toolCallId: "later", toolName: "goal_complete", isError: false }, later.ctx);
 assert.equal(noGoalEntries.some((entry) => entry.customType === "worker-report-native-done"), false, "native done without active goal cannot suppress a future goal");
 assert.equal(later.notices.length, 0, "new goal still uses normal reporting fallback");
@@ -126,6 +177,7 @@ const newerEntries = [...nativeEntries, goalState("goal-new")];
 let newerSends = 0;
 const newer = setup("run_3419a9bd44e8", async (file) => { if (file === "orca") newerSends++; return { stdout: "" }; }, newerEntries);
 newer.handlers.get("tool_call")({ toolCallId: "new-goal", toolName: "goal_complete", input: { goal_id: "goal-new", summary: "done" } });
+newer.entries.push(goalState("goal-new", "complete"));
 await newer.handlers.get("tool_execution_end")({ toolCallId: "new-goal", toolName: "goal_complete", isError: false }, newer.ctx);
 assert.equal(newerSends, 1, "receipt for an earlier goal does not suppress a new goal ID");
 const clearedEntries = [goalState("goal-cleared"), { type: "custom", customType: "goal-state", data: { goal: null } }];
@@ -154,11 +206,24 @@ await failed.handlers.get("tool_execution_end")({ toolCallId: "e1", toolName: "g
 assert.equal(failed.notices.length, 0, "tool execution errors are not reported");
 assert.equal(failedSendAttempts, 0, "tool execution errors do not send");
 failed.handlers.get("tool_call")({ toolCallId: "f1", toolName: "goal_complete", input: { goal_id: "goal-4", summary: "done" } });
-await failed.handlers.get("tool_execution_end")({ toolCallId: "f1", toolName: "goal_complete", isError: false }, failed.ctx);
-failed.handlers.get("tool_call")({ toolCallId: "f2", toolName: "goal_blocked", input: { goal_id: "goal-5", reason: "blocked", evidence: "proof" } });
-await failed.handlers.get("tool_execution_end")({ toolCallId: "f2", toolName: "goal_blocked", isError: false }, failed.ctx);
-assert.equal(failed.notices.length, 1, "runner failures warn once");
+await failed.finishGoal({ toolCallId: "f1", toolName: "goal_complete", isError: false }, "complete");
+await failed.handlers.get("agent_end")({}, failed.ctx);
+assert.equal(failedSendAttempts, 2, "failed immediate send gets exactly one lifecycle retry");
+assert.equal(failed.notices.length, 1, "persistent failure warns once after the bounded retry");
 assert.equal(failed.notices[0].type, "warning");
+await failed.handlers.get("agent_end")({}, failed.ctx);
+assert.equal(failedSendAttempts, 2, "no retry loop after the lifecycle checkpoint");
+
+let recoveryAttempts = 0;
+const recovered = setup("run_3419a9bd44e8", async (file) => {
+  if (file === "orca") { recoveryAttempts++; if (recoveryAttempts === 1) throw new Error("temporary failure"); return { stdout: '{"ok":true}' }; }
+  return { stdout: "" };
+});
+recovered.handlers.get("tool_call")({ toolCallId: "recover", toolName: "goal_complete", input: { goal_id: "goal-recover", summary: "done" } });
+await recovered.finishGoal({ toolCallId: "recover", toolName: "goal_complete", isError: false }, "complete");
+await recovered.handlers.get("agent_end")({}, recovered.ctx);
+await recovered.handlers.get("tool_execution_end")({ toolCallId: "recover", toolName: "goal_complete", isError: false }, recovered.ctx);
+assert.equal(recoveryAttempts, 2, "positive retry acknowledgment marks the goal/outcome reported and prevents later duplicates");
 
 delete process.env.PI_REPORT_RUN;
 console.log("worker-report smoke: PASS");
