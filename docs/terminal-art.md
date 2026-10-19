@@ -60,8 +60,10 @@ linha; `color: false` conserva uma cena monocromática sem escapes.
 
 O seletor tem um orçamento único para cena, moldura, ajuda e até cinco opções
 visíveis, com rolagem. Com dois perfis e a opção de criar conta, a cena recebe
-**17 de 24 linhas** ou **29 de 36 linhas**. A moldura é centralizada, o perfil
-selecionado tem preenchimento destacado e um contador mostra a posição na lista.
+**17 de 24 linhas** ou **29 de 36 linhas**. Uma linha de respiro separa a cena do
+cabeçalho do login, sem reduzir a arte nem ultrapassar o viewport. A moldura é
+centralizada, o perfil selecionado tem preenchimento destacado e um contador
+mostra a posição na lista.
 ID e nome não são repetidos quando são equivalentes sem distinguir caixa. Em
 janelas pequenas, a moldura/paisagem cedem espaço à lista e aos controles.
 
