@@ -1741,6 +1741,24 @@ export function followDecision({ enabled, activePath, lastFollowed, currentPath,
   return composerText || dialogOpen ? "wait" : "switch";
 }
 
+export function followedPath(lastFollowed, activePath, succeeded) {
+  return succeeded ? activePath : lastFollowed;
+}
+
+export function detachProjectRequests(pending, projectId, clear = clearTimeout) {
+  let detached = 0;
+  for (const [id, request] of pending) {
+    if (request.projectId !== projectId) continue;
+    clear(request.timer);
+    pending.delete(id);
+    const error = new Error("Request detached after switching projects");
+    error.detached = true;
+    request.reject(error);
+    detached++;
+  }
+  return detached;
+}
+
 // Orca is polled only while something on screen needs it.
 export function orcaPollWanted({ enabled, follow, tabVisible, hidden }) {
   return enabled === true && !hidden && (follow === true || tabVisible === true);
