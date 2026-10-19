@@ -2487,11 +2487,19 @@ export function stampTaskChanges(prev, tasks, now = Date.now()) {
   return next;
 }
 
+// Runs are the Subagentes model (subagentRuns): agentId, title, type, description, phase, elapsed/startedAt/endedAt,
+// and the prompt inside sections ("Tarefa"). Plain { id, prompt, status } objects are accepted too.
+const runAgentId = (run) => run.agentId ?? run.id ?? null;
+const runPrompt = (run) => run.prompt ?? run.sections?.find((section) => section.label === "Tarefa")?.text ?? "";
+const runActive = (run) => run.phase === "running" || run.status === "running";
+
 function taskRun(task, runs) {
   const metadataAgent = task.metadata?.agent ?? task.metadata?.agentId;
-  return (Array.isArray(runs) ? runs : []).find((run) => {
-    if (metadataAgent != null && String(metadataAgent) === String(run.id)) return true;
-    const search = foldText(`${run.description || ""} ${run.prompt || ""}`);
+  const list = Array.isArray(runs) ? runs : [];
+  // Newest first: a task re-run in parallel links to its latest run.
+  return [...list].reverse().find((run) => {
+    if (metadataAgent != null && String(metadataAgent) === String(runAgentId(run))) return true;
+    const search = foldText(`${run.description || ""} ${runPrompt(run)}`);
     return (task.subject && search.includes(foldText(task.subject))) || search.includes(`#${task.id}`);
   }) || null;
 }
@@ -2501,17 +2509,18 @@ export function taskRows({ tasks = [], stamps = {}, runs = [], links = [], orcaA
   return (Array.isArray(tasks) ? tasks : []).filter((task) => task && task.status !== "deleted").map((task) => {
     const link = (Array.isArray(links) ? links : []).find((item) => item.taskId === task.id) || null;
     const run = taskRun(task, runs);
-    const isRunning = task.status === "in_progress" || run?.status === "running" || run?.phase === "running" || Boolean(link && !link.endedAt);
+    const isRunning = task.status === "in_progress" || Boolean(run && runActive(run)) || Boolean(link && !link.endedAt);
     let owner = { kind: "none", label: "—" };
     if (link) owner = { kind: "worktree", label: link.worktreeName || link.worktreePath || "Worktree", worktreePath: link.worktreePath };
-    else if (run) owner = { kind: "subagent", label: run.name || run.description || run.id || "Subagente", ...(run.id != null ? { runId: run.id } : {}) };
+    else if (run) owner = { kind: "subagent", label: run.title || run.name || run.type || run.description || runAgentId(run) || "Subagente", ...(runAgentId(run) != null ? { runId: runAgentId(run) } : {}) };
     else if (task.owner) owner = { kind: "named", label: String(task.owner) };
     else if (task.status === "in_progress") owner = { kind: "main", label: "PI principal" };
     const blocked = (task.blockedBy || []).some((id) => {
       const blocker = byId.get(id);
       return blocker && blocker.status !== "completed" && blocker.status !== "deleted";
     });
-    const stampValue = stamps?.[task.id] || {};
+    // Stamps are this page's observations; a linked run's own start/end times fill in after a reload.
+    const stampValue = { startedAt: run?.startedAt, endedAt: run && !runActive(run) ? run.endedAt : undefined, ...stamps?.[task.id] };
     let timing;
     if (blocked) timing = { text: "bloqueada" };
     else if (isRunning) {
@@ -2521,11 +2530,18 @@ export function taskRows({ tasks = [], stamps = {}, runs = [], links = [], orcaA
     } else if (stampValue.endedAt != null && stampValue.startedAt != null) {
       const tookMs = Math.max(0, stampValue.endedAt - stampValue.startedAt);
       timing = { text: `levou ${Math.max(1, Math.floor(tookMs / 60_000))} min`, tookMs };
-    } else timing = { text: "aguardando" };
+    } else if (task.status === "completed") timing = { text: "concluída" };
+    else timing = { text: "aguardando" };
     const agent = link && (Array.isArray(orcaAgents) ? orcaAgents : []).find((item) => item.worktreePath === link.worktreePath || item.path === link.worktreePath);
     return {
       id: task.id, subject: task.subject, status: task.status, blocked, owner, timing, running: isRunning,
-      actions: { parallel: task.status === "pending" && !blocked, worktree: task.status !== "deleted", open: Boolean(run || link), message: Boolean(isRunning && (run || link)) },
+      // Offloading (subagent or worktree) is for work not yet handed to anyone: pending or main-PI in-progress, unblocked.
+      actions: {
+        parallel: task.status === "pending" && !blocked && !run && !link,
+        worktree: (task.status === "pending" || task.status === "in_progress") && !blocked && !run && !link,
+        open: Boolean(run || link),
+        message: Boolean(isRunning && (run || link)),
+      },
       ...(agent ? { orcaAgent: agent } : {}),
     };
   });

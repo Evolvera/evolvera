@@ -2464,7 +2464,7 @@ describe("task board model", () => {
     assert.equal(rows[3].orcaAgent.state, "running");
     assert.equal(rows[4].timing.text, "levou 5 min");
     assert.equal(rows[0].actions.parallel, true);
-    assert.equal(rows[1].actions.worktree, true);
+    assert.equal(rows[1].actions.worktree, false, "a finished task is not handed off");
     assert.equal(rows[3].actions.open, true);
     assert.equal(rows[3].actions.message, true);
     assert.equal(lib.tasksBadgeCount(rows), 2);
@@ -2493,6 +2493,37 @@ describe("task board model", () => {
     const linkMatch = lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1, worktreePath: "/tree" }], orcaAgents: [{ worktreePath: "/tree" }] })[0];
     assert.ok(linkMatch.orcaAgent);
     assert.deepEqual(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], stamps: { 1: { startedAt: 100 } }, now: 50 })[0].timing, { text: "aguardando" });
+  });
+
+  test("real Subagentes runs (agentId/title/phase/sections), completed text, run times after a reload, hand-off rules", () => {
+    const studioRun = { agentId: "ab12", title: "builder", type: "builder", description: "Rodar benchmark", phase: "running", startedAt: 1_000, sections: [{ label: "Tarefa", text: "faça a tarefa #3 do quadro" }] };
+    // Linked by description (accents/case), owner shows the agent title and the agentId to steer.
+    const byDescription = lib.taskRows({ tasks: [{ id: 1, subject: "rodar BENCHMARK", status: "in_progress" }], runs: [studioRun], now: 61_000 })[0];
+    assert.deepEqual(byDescription.owner, { kind: "subagent", label: "builder", runId: "ab12" });
+    assert.equal(byDescription.running, true);
+    assert.equal(byDescription.timing.text, "rodando há 1 min", "no stamp yet: the run's own start time");
+    assert.deepEqual(byDescription.actions, { parallel: false, worktree: false, open: true, message: true });
+    // Linked by "#id" inside the prompt section.
+    assert.equal(lib.taskRows({ tasks: [{ id: 3, subject: "outra coisa", status: "pending" }], runs: [studioRun] })[0].owner.runId, "ab12");
+    // Linked by metadata agentId against agentId.
+    assert.equal(lib.taskRows({ tasks: [{ id: 9, subject: "zzz", status: "pending", metadata: { agentId: "ab12" } }], runs: [studioRun] })[0].owner.runId, "ab12");
+    // A finished run fills "levou" after a reload (no stamps), owner falls back to type, then id.
+    const finished = { agentId: "cd34", type: "scout", description: "medir", phase: "done", startedAt: 0, endedAt: 125_000 };
+    const done = lib.taskRows({ tasks: [{ id: 2, subject: "medir", status: "completed" }], runs: [finished] })[0];
+    assert.deepEqual([done.owner.label, done.timing.text, done.running], ["scout", "levou 2 min", false]);
+    assert.equal(lib.taskRows({ tasks: [{ id: 2, subject: "medir", status: "completed" }], runs: [{ agentId: "cd34", description: "medir", phase: "done" }] })[0].owner.label, "medir");
+    assert.equal(lib.taskRows({ tasks: [{ id: 2, subject: "#2", status: "completed" }], runs: [{ agentId: "cd34", prompt: "#2", phase: "done" }] })[0].owner.label, "cd34");
+    // A completed task without known times says so instead of "aguardando".
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 4, subject: "x", status: "completed" }] })[0].timing, { text: "concluída" });
+    // The newest matching run wins (a task re-run in parallel).
+    const older = { agentId: "old", description: "repetir", phase: "error" };
+    const newer = { agentId: "new", description: "repetir", phase: "running" };
+    assert.equal(lib.taskRows({ tasks: [{ id: 5, subject: "repetir", status: "pending" }], runs: [older, newer] })[0].owner.runId, "new");
+    // Hand-off: pending or main-PI in-progress tasks, unblocked and not already given to a run or worktree.
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending" }] })[0].actions, { parallel: true, worktree: true, open: false, message: false });
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "in_progress" }] })[0].actions, { parallel: false, worktree: true, open: false, message: false });
+    assert.equal(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending" }], links: [{ taskId: 6, worktreePath: "/w" }] })[0].actions.worktree, false);
+    assert.equal(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending", blockedBy: [7] }, { id: 7, subject: "b", status: "pending" }] })[0].actions.worktree, false);
   });
 
   test("steer command and deterministic parallel prompt", () => {
