@@ -13,6 +13,8 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import path from "node:path";
 // FAKE_PI_PID_FILE: this process id is appended there, so a test can describe the process tree the Studio spawned.
 if (process.env.FAKE_PI_PID_FILE) appendFileSync(process.env.FAKE_PI_PID_FILE, `${process.pid}\n`);
+// FAKE_PI_ARGV_FILE: one JSON line per started process with the argv it received, so a test can assert how the Studio spawned it.
+if (process.env.FAKE_PI_ARGV_FILE) appendFileSync(process.env.FAKE_PI_ARGV_FILE, `${JSON.stringify({ pid: process.pid, argv: process.argv.slice(2) })}\n`);
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const entries = [];
