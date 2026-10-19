@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Load test for the endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
 // (incl. per-project running counts), GET /api/projects/:id/history, GET /api/activity (full 300-item ring) and GET /api/usage/today
-// (cost/tokens of today's sessions) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
+// (cost/tokens of today's sessions) and GET /api/projects/:id/file (small text and a 5 MB file) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
 // p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
@@ -26,6 +26,9 @@ const rootsDir = path.join(tmp, "roots");
 const projects = ["alpha", "beta"].map((name) => path.join(rootsDir, name));
 for (const dir of [...projects, path.join(tmp, "agent")]) await mkdir(dir, { recursive: true });
 for (const dir of projects) await writeFile(path.join(dir, "package.json"), "{}");
+// Files for GET /api/projects/:id/file: a small text and a 5 MB one (the mix of previews and big downloads).
+await writeFile(path.join(projects[0], "small.txt"), "linha de texto\n".repeat(40));
+await writeFile(path.join(projects[0], "big.txt"), ("x".repeat(1023) + "\n").repeat(5 * 1024));
 const stateFile = path.join(tmp, "orca-state.json");
 const countFile = path.join(tmp, "orca-count.txt");
 const worktrees = Array.from({ length: 22 }, (_, i) => ({
@@ -88,7 +91,11 @@ const request = (method, pathname, { token, body } = {}) => new Promise((resolve
   const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}) } }, (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
-    res.on("end", () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString("utf8") }));
+    res.on("end", () => {
+      const bytes = Buffer.concat(chunks);
+      // Big file bodies are only measured, not decoded.
+      resolve({ status: res.statusCode, bytes: bytes.length, text: bytes.length > 262_144 ? "" : bytes.toString("utf8") });
+    });
   });
   req.on("error", reject);
   req.end(body);
@@ -104,7 +111,10 @@ const rssMb = (pid) => {
 const orcaSpawns = async () => (await readFile(countFile, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
+// `pathname` may be a list: each request takes the next one, round robin.
 async function hammer(label, pathname, token, runSeconds = DURATION) {
+  const paths = [pathname].flat();
+  let turn = 0;
   const latencies = [];
   let errors = 0;
   const statuses = {};
@@ -114,7 +124,7 @@ async function hammer(label, pathname, token, runSeconds = DURATION) {
     while (performance.now() < deadline) {
       const t0 = performance.now();
       try {
-        const res = await request("GET", pathname, { token });
+        const res = await request("GET", paths[turn++ % paths.length], { token });
         statuses[res.status] = (statuses[res.status] || 0) + 1;
         if (res.status !== 200) errors++;
         latencies.push(performance.now() - t0);
@@ -165,13 +175,18 @@ try {
   const seenStates = [...new Set(sample.map((item) => item.state))].sort();
   console.log(`history sample: ${sample.length} items, states ${seenStates.join("/")}, ${sample.filter((item) => item.isSubagent).length} sub-PI`);
   if (!sample.length || sample.some((item) => !item.state)) throw new Error("history items must carry a state");
-  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today"]) await hammer("warm-up", pathname, token, WARMUP);
+  const fileUrl = (name) => `/api/projects/${openedIds[0]}/file?path=${name}`;
+  const small = await request("GET", fileUrl("small.txt"), { token });
+  const big = await request("GET", fileUrl("big.txt"), { token });
+  console.log(`file sample: small.txt ${small.bytes} B, big.txt ${big.bytes} B`);
+  if (small.status !== 200 || big.status !== 200 || big.bytes !== 5 * 1024 * 1024) throw new Error("file route must serve both files whole");
+  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const rssBefore = rssMb(server.pid);
   const spawnsBefore = await orcaSpawns();
   const results = [];
-  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"]]) {
+  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]]) {
     results.push(await hammer(label, pathname, token));
   }
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
