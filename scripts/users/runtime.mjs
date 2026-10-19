@@ -15,6 +15,7 @@ import { UsersError, canonicalize, isWithin, requireContext, listUsers, register
 import { registerUserSwitchParticipant, lookupUserSwitchParticipants, acquireUserSwitchReadiness } from "./switch-readiness.mjs";
 import { buildAdmittedLoaderOptions, validateAdmittedResourceInventory } from "./resources.mjs";
 import { createAdmittedSettingsManager } from "./settings.mjs";
+import { createStartupArtFactory } from "./startup-art.mjs";
 
 const CORE = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 const RECEIPT = Symbol.for("pi.users.context");
@@ -804,7 +805,8 @@ export function createUserRuntime(registryPath, { pickAccount, createStore = cre
             }
             return "USUARIO_OPERATION_UNSUPPORTED";
           },
-        })) }, { name: "session-usage-managed", builtin: true, factory: createManagedSessionUsageFactory(boundQuotaRead, account.id) }],
+        })) }, { name: "session-usage-managed", builtin: true, factory: createManagedSessionUsageFactory(boundQuotaRead, account.id) },
+        { name: "startup-art-managed", builtin: true, factory: createStartupArtFactory({ label: account.label, sessionManager: request.sessionManager }) }],
         extensionsOverride(loaded) {
           const original = loaded;
           return { ...original, extensions: original.extensions.filter((extension) => {
