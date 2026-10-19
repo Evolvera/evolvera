@@ -666,8 +666,17 @@ export class PiRpcSession {
     res.write(`: connected ${this.id}\n\n`);
     let replayed = 0;
     for (const item of this.history) {
-      // A dialog already answered must not pop up again on reconnect.
-      if (item.payload?.type === "extension_ui_request" && this.answeredUi.has(item.payload.id)) continue;
+      // A dialog already answered or timed out must not pop up again on reconnect.
+      if (item.payload?.type === "extension_ui_request" && UI_DIALOG_METHODS.has(item.payload.method)) {
+        if (this.answeredUi.has(item.payload.id)) continue;
+        const expiry = this.pendingUi.get(item.payload.id);
+        if (expiry !== undefined && expiry <= Date.now()) continue;
+        if (Number.isFinite(expiry)) {
+          sendSse(res, item.event, { ...item.payload, timeout: Math.max(1, expiry - Date.now()) });
+          replayed++;
+          continue;
+        }
+      }
       sendSse(res, item.event, item.payload);
       replayed++;
     }
@@ -686,9 +695,11 @@ export class PiRpcSession {
     if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
     this.proc.stdin.write(`${JSON.stringify(command)}\n`);
     if (command.type === "extension_ui_response" && command.id) {
+      const wasPending = this.pendingUi.has(command.id);
       this.answeredUi.add(command.id);
       this.pendingUi.delete(command.id);
       this.note(command);
+      if (wasPending) this.broadcast("ui_resolved", { type: "ui_resolved", id: command.id });
     }
   }
 

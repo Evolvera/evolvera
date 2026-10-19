@@ -268,8 +268,15 @@ function handle(command) {
     emit({ type: "message_start", message: user });
     emit({ type: "message_end", message: user });
     record(user);
+    if (command.message === "ui-timeout") {
+      emit({ type: "extension_ui_request", id: "fake-ui-timeout", method: "select", timeout: 30, options: ["Sim"] });
+      return;
+    }
     if (command.message === "ui") {
-      emit({ type: "extension_ui_request", id: "fake-ui-1", method: "select", title: "Permitir?", options: ["Permitir", "Bloquear"] });
+      emit({ type: "extension_ui_request", id: "fake-status-old", method: "setStatus", statusKey: "test", statusText: "old" });
+      emit({ type: "extension_ui_request", id: "fake-widget", method: "setWidget", widgetKey: "test", widgetLines: ["widget"] });
+      emit({ type: "extension_ui_request", id: "fake-status-new", method: "setStatus", statusKey: "test", statusText: "latest" });
+      emit({ type: "extension_ui_request", id: "fake-ui-1", method: "select", timeout: 5000, title: "Permitir?", options: ["Permitir", "Bloquear"] });
       return;
     }
     if (command.message === "demo") {

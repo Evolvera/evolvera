@@ -416,15 +416,21 @@ describe("history discovery + routes", () => {
     await waitFor(() => live.some((item) => item.event === "replay_done"));
     await postJson(`/api/projects/${id}/command`, { id: "p-ui", type: "prompt", message: "ui" });
     await waitFor(() => live.some((item) => item.payload.id === "fake-ui-1"));
-    first.destroy();
+    assert.ok(live.some((item) => item.payload.statusText === "latest"));
 
     const pending = [];
     const second = sse(`/api/projects/${id}/events`, pending);
     await waitFor(() => pending.some((item) => item.event === "replay_done"));
-    second.destroy();
     assert.ok(pending.some((item) => item.payload.id === "fake-ui-1"), "an unanswered dialog is replayed");
+    assert.ok(pending.find((item) => item.payload.id === "fake-ui-1").payload.timeout < 5000, "replay keeps only the remaining timeout");
+    assert.ok(pending.some((item) => item.payload.statusText === "latest"), "latest status is replayed");
+    assert.ok(pending.some((item) => item.payload.widgetKey === "test"), "widget is replayed");
 
     assert.equal((await postJson(`/api/projects/${id}/ui-response`, { id: "fake-ui-1", value: "Bloquear" })).status, 202);
+    await waitFor(() => live.some((item) => item.event === "ui_resolved" && item.payload.id === "fake-ui-1"));
+    await waitFor(() => pending.some((item) => item.event === "ui_resolved" && item.payload.id === "fake-ui-1"));
+    first.destroy();
+    second.destroy();
     const replay = [];
     const third = sse(`/api/projects/${id}/events`, replay);
     await waitFor(() => replay.some((item) => item.payload.message === "Escolha: Bloquear"));
@@ -433,6 +439,20 @@ describe("history discovery + routes", () => {
     const done = replay.find((item) => item.event === "replay_done");
     assert.ok(Number.isInteger(done.payload.count) && done.payload.count > 0);
     assert.equal(replay.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-1"), false);
+
+    const timeoutLive = [];
+    const fourth = sse(`/api/projects/${id}/events`, timeoutLive);
+    await waitFor(() => timeoutLive.some((item) => item.event === "replay_done"));
+    await postJson(`/api/projects/${id}/command`, { id: "p-ui-timeout", type: "prompt", message: "ui-timeout" });
+    await waitFor(() => timeoutLive.some((item) => item.payload.id === "fake-ui-timeout"));
+    fourth.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const expired = [];
+    const fifth = sse(`/api/projects/${id}/events`, expired);
+    await waitFor(() => expired.some((item) => item.event === "replay_done"));
+    fifth.destroy();
+    assert.equal(expired.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-timeout"), false, "expired dialogs are not replayed");
+    assert.equal((await postJson(`/api/projects/${id}/ui-response`, { id: "not-pending", value: "ignored" })).status, 202);
   });
   describe("session titles + conversation search", () => {
     const user = (text) => ({ type: "message", message: { role: "user", content: text } });

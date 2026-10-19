@@ -294,6 +294,7 @@ const state = {
   filter: "",
   uiQueue: [],
   uiActive: null,
+  uiRequestIds: new Set(),
   notices: [],
   problems: [],
   subagentRecords: new Map(),
@@ -973,7 +974,9 @@ function connectProjectEvents(projectId) {
     // A command sent right after opening the project (e.g. new_session) can be answered
     // before this stream connects; its response then only arrives in the replay.
     else if (isAwaitedResponse(payload, state.pending)) handleResponse(payload);
+    else if (payload.type === "extension_ui_request" && ["select", "confirm", "input", "editor", "setStatus", "setWidget"].includes(payload.method)) handleExtensionUi(payload);
   });
+  on("ui_resolved", ({ id }) => resolveUiDialog(id));
   on("replay_done", () => {
     state.replaying = false;
     refreshState().catch(report);
@@ -2810,6 +2813,8 @@ function handleExtensionUi(req) {
     case "confirm":
     case "input":
     case "editor":
+      if (!req.id || state.uiRequestIds.has(req.id)) break;
+      state.uiRequestIds.add(req.id);
       notifyUser("input", { title: req.title, text: req.message });
       state.uiQueue.push(req);
       if (!state.uiActive) nextUiDialog();
@@ -2828,9 +2833,20 @@ let dialogTimer = null;
 
 function closeUiDialog() {
   clearTimeout(dialogTimer);
+  if (state.uiActive?.id) state.uiRequestIds.delete(state.uiActive.id);
   if (els.dialog.open) els.dialog.close();
   state.uiActive = null;
   setTimeout(nextUiDialog, 120);
+}
+
+function resolveUiDialog(id) {
+  if (!id) return;
+  if (state.uiActive?.id === id) {
+    closeUiDialog();
+    return;
+  }
+  state.uiQueue = state.uiQueue.filter((req) => req.id !== id);
+  state.uiRequestIds.delete(id);
 }
 
 function openUiDialog(req) {
