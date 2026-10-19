@@ -51,7 +51,7 @@ describe("task stamps", () => {
     assert.deepEqual(Object.keys(JSON.parse(lib.saveTaskStamps(JSON.stringify({ bad: 3, ok: { at: 1, stamps: {} } }), "a", {}, 2))).sort(), ["a", "ok"]);
     // Missing stamps / missing times still store (sorted last).
     assert.deepEqual(lib.loadTaskStamps(lib.saveTaskStamps(null, "n", null, 1), "n"), {});
-    assert.deepEqual(Object.keys(lib.loadTaskStamps(lib.saveTaskStamps(null, "n", { 1: { status: "pending" }, 2: { status: "pending", since: 4 } }, 1), "n")).sort(), ["1", "2"]);
+    assert.deepEqual(Object.keys(lib.loadTaskStamps(lib.saveTaskStamps(null, "n", { 1: { status: "pending" }, 2: { status: "pending", since: 4 }, 3: { status: "pending" }, 4: { status: "pending", since: 2 } }, 1), "n")).sort(), ["1", "2", "3", "4"]);
     // One session never stores more than the newest 200 tasks.
     const many = Object.fromEntries(Array.from({ length: 250 }, (_, index) => [index + 1, { status: "pending", since: index }]));
     assert.equal(Object.keys(lib.loadTaskStamps(lib.saveTaskStamps(null, "big", many, 1), "big")).length, 200);
@@ -155,10 +155,15 @@ describe("opening a subagent and acting on a task", () => {
     // History items without a timestamp fall back to lastActivity, then to nothing.
     const stamped = [item({ path: "/s/a.jsonl", timestamp: undefined, lastActivity: "2026-02-01T00:00:00Z" }), item({ path: "/s/b.jsonl", timestamp: undefined, lastActivity: undefined }), item({ path: "/s/c.jsonl", timestamp: undefined, lastActivity: "2026-01-01T00:00:00Z" })];
     assert.equal(lib.subagentSession({ run, history: stamped, parentFile: null }).path, "/s/a.jsonl");
+    // The session name "<agent>#<id8>" wins over any title match, whichever parent the history says.
+    const named = [item({ path: "/s/untitled.jsonl", title: undefined }), item({ path: "/s/titled.jsonl" }), item({ path: "/s/named.jsonl", title: "Explore#AB12CD34", parentSession: "/x.jsonl", timestamp: "2020-01-01T00:00:00Z" }), item({ path: "/s/main-named.jsonl", title: "Explore#ab12cd34", isSubagent: false })];
+    assert.equal(lib.subagentSession({ run: { ...run, agentId: "ab12cd34-9999" }, history: named, parentFile: "c:/p/parent.jsonl" }).path, "/s/named.jsonl");
+    assert.equal(lib.subagentSession({ run: { ...run, agentId: "zzzzzzzz" }, history: named, parentFile: "c:/p/parent.jsonl" }).path, "/s/titled.jsonl", "no session carries that id: fall back to the text");
     assert.equal(lib.subagentSession({ run, history: [], parentFile: "/p/parent.jsonl" }), null);
     assert.equal(lib.subagentSession({ run, history: [old], parentFile: "/nope.jsonl" }), null);
     assert.equal(lib.subagentSession({ run: {}, history, parentFile: null }), null);
     assert.equal(lib.subagentSession({ run: null, history: null }), null);
+    assert.equal(lib.subagentSession({ run: { agentId: "abcd1234" }, history: null }), null);
     assert.equal(lib.subagentSession(), null);
   });
 

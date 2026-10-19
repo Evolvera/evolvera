@@ -2641,9 +2641,13 @@ export function taskDotState(row) {
   return row?.status === "completed" ? "done" : "idle";
 }
 
-// The sub-PI conversation (history item) of a subagent run: a sub-PI of this parent conversation whose title matches
-// the run's task text or description; the newest one when a task was re-run.
+// The sub-PI conversation (history item) of a subagent run: the one named after its agent id; else a sub-PI of this parent
+// conversation whose title matches the run's task text or description (the newest one when a task was re-run).
 export function subagentSession({ run, history, parentFile } = {}) {
+  // The reliable link: pi-subagents names the child session "<agent>#<first 8 chars of the agent id>".
+  const suffix = run?.agentId ? `#${String(run.agentId).slice(0, 8)}`.toLowerCase() : "";
+  const byId = suffix && Array.isArray(history) ? history.find((item) => item?.isSubagent && String(item.title ?? "").toLowerCase().endsWith(suffix)) : null;
+  if (byId) return byId;
   const texts = run ? [runPrompt(run), run.description].map((text) => String(text ?? "")).filter(Boolean) : [];
   if (!texts.length || !Array.isArray(history)) return null;
   const newest = (item) => String(item.timestamp ?? item.lastActivity ?? "");
