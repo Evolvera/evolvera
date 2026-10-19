@@ -18,6 +18,7 @@ const MONO = { night: " ", dusk: ".", violet: ":", lilac: "=", coral: "+", far: 
 const FAR = [.50,.48,.46,.43,.40,.43,.46,.48,.50,.48,.46,.44,.47,.49,.48,.46,.43,.41,.44,.47,.49,.50,.48,.46];
 const MID = [.59,.61,.62,.60,.57,.53,.49,.52,.56,.59,.61,.62,.61,.59,.56,.54,.57,.60,.62,.63,.61,.58,.56,.58];
 const NEAR = [.65,.68,.71,.73,.74,.71,.66,.61,.59,.62,.67,.71,.73,.74,.73,.70,.66,.64,.67,.71,.73,.71,.68,.65];
+const PROFILES = [[FAR, "far", .30, .47], [MID, "mid", .40, .58], [NEAR, "near", .50, .68]];
 const dimension = (value, maximum) => typeof value === "number" && Number.isFinite(value)
   ? Math.min(maximum, Math.max(0, Math.floor(value))) : 0;
 const clamp = (value) => Math.max(0, Math.min(1, value));
@@ -52,6 +53,10 @@ export function renderTerminalArt({ width = 80, height = 24, label = "", color =
   const sunY = Math.floor(pixelsHigh * .32);
   const radius = Math.max(1, Math.min(columns * .13, pixelsHigh * .22));
   const chunk = Math.max(1, Math.round(columns / 64));
+  const haloWidth = chunk * (2.5 + .5 * Math.sin(phase * 2));
+  const cloudDrift = Math.round(Math.sin(phase) * columns * .045);
+  const lowCloudDrift = Math.round(Math.sin(phase) * columns * .025);
+  const profiles = PROFILES.map(([profile, ink, start, end]) => [profile, ink, stage(p, start, end)]);
   const pixel = Array.from({ length: pixelsHigh }, () => Array(columns).fill("night"));
   const textures = new Map();
   const setTexture = (x, y, glyph, ink) => textures.set(`${x},${Math.floor(y / 2)}`, { glyph, ink });
@@ -64,22 +69,19 @@ export function renderTerminalArt({ width = 80, height = 24, label = "", color =
         : bandY < .32 ? "dusk" : bandY < .45 ? "violet" : bandY < .56 ? "lilac" : "coral";
       if (light > 0 && x <= Math.ceil(light * columns)) {
         const distance = Math.hypot(x - sunX, y - sunY);
-        const haloWidth = chunk * (2.5 + .5 * Math.sin(phase * 2));
         if (distance < radius + haloWidth && distance > radius && x % 2 === 0 && y % 2 === 0) {
           pixel[y][x] = Math.sin(x * .7 + y * .3 - phase * 4) > -.35 ? "yellow" : "coral";
         }
         if (distance <= radius && x <= sunX - radius + light * radius * 2) pixel[y][x] = "coral";
         // Deliberate broad halftone cloud ribbons, with open sky between them.
-        const cloudDrift = Math.round(Math.sin(phase) * columns * .045);
         const cloudX = x - cloudDrift;
         if (y >= pixelsHigh * .14 && y < pixelsHigh * .19 && cloudX > columns * .49
           && cloudX < columns * .95 && cloudX % 3 !== 0 && y % 2 === 0) pixel[y][x] = "lilac";
-        const lowCloudX = x + Math.round(Math.sin(phase) * columns * .025);
+        const lowCloudX = x + lowCloudDrift;
         if (y >= pixelsHigh * .38 && y < pixelsHigh * .41 && lowCloudX >= 0 && lowCloudX < columns * .19
           && (lowCloudX + y) % 2 === 0) pixel[y][x] = "lilac";
       }
-      for (const [profile, ink, start, end] of [[FAR, "far", .30, .47], [MID, "mid", .40, .58], [NEAR, "near", .50, .68]]) {
-        const reveal = stage(p, start, end);
+      for (const [profile, ink, reveal] of profiles) {
         const ridge = Math.floor(profile[Math.min(profile.length - 1, Math.floor(x / columns * profile.length))] * pixelsHigh);
         if (reveal > 0 && x < Math.ceil(reveal * columns) && y >= ridge && y < horizon + 2) {
           pixel[y][x] = y === ridge && ink !== "far" ? "coral" : ink;
@@ -111,7 +113,8 @@ export function renderTerminalArt({ width = 80, height = 24, label = "", color =
 
   return Array.from({ length: rows }, (_, y) => {
     let line = "";
-    let previous = "";
+    let previousForeground = "";
+    let previousBackground = "";
     for (let x = 0; x < columns; x++) {
       const upper = pixel[y * 2][x];
       const lower = pixel[y * 2 + 1][x];
@@ -124,10 +127,13 @@ export function renderTerminalArt({ width = 80, height = 24, label = "", color =
         continue;
       }
       const glyph = texture?.glyph ?? (upper === lower ? " " : "▀");
-      const style = `38;2;${COLORS[texture?.ink ?? upper]};48;2;${COLORS[lower]}`;
-      if (style !== previous) line += `${ESC}${style}m`;
+      const foreground = COLORS[texture?.ink ?? upper];
+      const background = COLORS[lower];
+      if (foreground !== previousForeground) line += `${ESC}38;2;${foreground}m`;
+      if (background !== previousBackground) line += `${ESC}48;2;${background}m`;
       line += glyph;
-      previous = style;
+      previousForeground = foreground;
+      previousBackground = background;
     }
     return color ? `${line}${ESC}0m` : line;
   });
