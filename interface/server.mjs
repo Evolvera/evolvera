@@ -1517,7 +1517,12 @@ async function route(req, res) {
       }
 
       if (req.method === "GET" && action === "events") {
-        const session = await getOrStartProjectSession(project);
+        const session = [...sessions.values()].find((item) => item.projectId === project.id);
+        if (!session || session.exited) {
+          res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
+          sendSse(res, "session_stopped", { type: "session_stopped", message: "PI encerrado; abra o projeto para iniciar uma nova sessão." });
+          return res.end();
+        }
         return session.addClient(res);
       }
 

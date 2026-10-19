@@ -365,6 +365,19 @@ describe("history discovery + routes", () => {
     assert.equal(history.history.find((item) => item.path === historyFileB).title, "Olá beta");
   });
 
+  test("S5: subscribing after explicit stop reports stopped without spawning another PI", async () => {
+    const { projects } = await getJson("/api/projects");
+    const id = projects.find((item) => item.cwd === projC).id;
+    await postJson(`/api/projects/${id}/open`, {});
+    await postJson(`/api/projects/${id}/stop`, {});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const events = [];
+    const client = sse(`/api/projects/${id}/events`, events);
+    await waitFor(() => events.some((item) => item.event === "session_stopped"));
+    assert.equal(events.some((item) => item.event === "session_ready"), false);
+    client.destroy();
+  });
+
   test("SSE replay ends with replay_done and skips answered dialogs", async () => {
     const { projects } = await getJson("/api/projects");
     const id = projects.find((item) => item.cwd === projA).id;

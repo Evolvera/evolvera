@@ -21,8 +21,18 @@ const pending = new Map();
 const uiPending = new Map();
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY), prompt: "› " });
 
+async function discoverToken() {
+  const page = await fetch(options.url);
+  if (!page.ok) throw new Error("Servidor indisponível");
+  const html = await page.text();
+  const discovered = html.match(/<meta name="pi-studio-token" content="([a-f0-9]+)">/)?.[1];
+  if (!discovered) throw new Error("Token do PI Studio não encontrado.");
+  token = discovered;
+}
 async function request(path, method = "GET", body) {
-  const response = await fetch(`${options.url}${path}`, { method, headers: { "x-pi-studio-token": token, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const send = () => fetch(`${options.url}${path}`, { method, headers: { "x-pi-studio-token": token, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  let response = await send();
+  if (response.status === 401) { await discoverToken(); response = await send(); }
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
 }
@@ -106,6 +116,7 @@ async function consumeSse() {
     try {
       sseController = new AbortController();
       const response = await fetch(`${options.url}/api/projects/${encodeURIComponent(project.id)}/events`, { headers: { "x-pi-studio-token": token, cookie: `pi-studio-token=${token}` }, signal: sseController.signal });
+      if (response.status === 401) await discoverToken();
       if (!response.ok || !response.body) throw new Error(`SSE indisponível (${response.status})`);
       connectedAt = Date.now();
       const reader = response.body.getReader();
@@ -169,11 +180,7 @@ rl.on("SIGINT", () => {
 rl.on("close", () => { closed = true; sseController?.abort(); process.stdin.pause(); });
 
 try {
-  const page = await fetch(options.url);
-  if (!page.ok) throw new Error("Servidor indisponível");
-  const html = await page.text();
-  token = html.match(/<meta name="pi-studio-token" content="([a-f0-9]+)">/)?.[1];
-  if (!token) throw new Error("Token do PI Studio não encontrado.");
+  await discoverToken();
   project = await chooseProject();
   const opened = await request(`/api/projects/${encodeURIComponent(project.id)}/open`, "POST", {});
   print(`PI Studio · ${opened.project.name} · sessão ${opened.session.sessionId || opened.session.id}`);
