@@ -457,7 +457,7 @@ try {
     const savedEnv = process.env[mod.FAST_MODE_ENV];
     const inheritedKey = Symbol.for("evolvera.codex-fast-mode.inherited");
     const savedShared = globalThis[sharedStateKey];
-    const startRoot = async ({ flag, inherited, sessionId }) => {
+    const startRoot = async ({ flag, inherited, sessionId, mode = "tui" }) => {
       delete globalThis[inheritedKey];
       delete globalThis[sharedStateKey];
       if (inherited === undefined) delete process.env[mod.FAST_MODE_ENV]; else process.env[mod.FAST_MODE_ENV] = inherited;
@@ -471,7 +471,7 @@ try {
       });
       assert.equal(flags.get("fast")?.type, "string", "--fast is registered as a CLI flag");
       const notices = []; const statuses = [];
-      const rootCtx = { mode: "tui", model: gpt56, sessionManager: { getSessionId: () => sessionId }, ui: { notify: (message) => notices.push(message), setStatus: (_key, text) => statuses.push(text) } };
+      const rootCtx = { mode, model: gpt56, sessionManager: { getSessionId: () => sessionId }, ui: { notify: (message) => notices.push(message), setStatus: (_key, text) => statuses.push(text) } };
       await handlers.get("session_start")({ reason: "startup" }, rootCtx);
       return { handlers, rootCtx, notices, statuses };
     };
@@ -499,6 +499,20 @@ try {
     assert.match(plainRoot.notices.at(-1), /\(padrão\)/);
     assert.doesNotMatch(plainRoot.notices.at(-1), /--fast ou herdado/);
     assert.equal(process.env[mod.FAST_MODE_ENV], "on");
+
+    // PI Studio drives its main session in RPC mode (in-process subagents bind as "print"). Before, a fresh Studio
+    // root kept the ECO default, so a compatible main model never used Fast. Expected: same default as a TUI root.
+    const studioRoot = await startRoot({ sessionId: "studio-pi", mode: "rpc" });
+    assert.equal(studioRoot.statuses.at(-1), "⚡🟡", "a Studio (rpc) root starts with /fast on");
+    const studioPayload = await studioRoot.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, studioRoot.rootCtx);
+    assert.equal(studioPayload.service_tier, "priority", "the Studio root's own requests use Fast");
+    // A print-mode session (in-process subagent) still never takes ownership of the mode.
+    const printStatuses = [];
+    const printCtx = { mode: "print", model: gpt56, sessionManager: { getSessionId: () => "sub-pi" }, ui: { notify() {}, setStatus: (_key, text) => printStatuses.push(text) } };
+    await studioRoot.handlers.get("session_start")({ reason: "startup" }, printCtx);
+    assert.equal(printStatuses.at(-1), undefined, "a print subagent shows no owner status");
+    const studioAgain = await studioRoot.handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, studioRoot.rootCtx);
+    assert.equal(studioAgain.service_tier, "priority", "the subagent start does not reset the Studio root");
 
     // The bash hook only rewrites orca launches, using the live mode.
     const bashInput = { command: launch };

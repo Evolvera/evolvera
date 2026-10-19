@@ -285,10 +285,12 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   pi.on("session_start", (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sharedState = getSharedFastState();
-    // Only TUI roots default to all; non-TUI owners retain their existing reset/eligibility behavior.
-    if (event.reason === "new" && ctx.mode === "tui") {
+    // Only roots default to all: the TUI and PI Studio's RPC session. In-process subagents bind as "print" (pi
+    // AgentSession default) and keep their existing reset/eligibility behavior.
+    const isRoot = ctx.mode === "tui" || ctx.mode === "rpc";
+    if (event.reason === "new" && isRoot) {
       continueFastStateForNewOwner(sessionId);
-    } else if (ctx.mode === "tui") {
+    } else if (isRoot) {
       const flag = pi.getFlag?.("fast");
       const mode = startupFastMode(flag, inherited);
       setFastMode(sharedState, mode, sessionId);
