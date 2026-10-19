@@ -36,6 +36,11 @@ await writeFile(path.join(projects[0], "small.txt"), "linha de texto\n".repeat(4
 await writeFile(path.join(projects[0], "big.txt"), ("x".repeat(1023) + "\n").repeat(5 * 1024));
 const stateFile = path.join(tmp, "orca-state.json");
 const countFile = path.join(tmp, "orca-count.txt");
+// RAM/CPU routes: the process table comes from fake-ps (rows written once the fake PIs are up); spawns are counted.
+const psStateFile = path.join(tmp, "ps-state.json");
+const psCountFile = path.join(tmp, "ps-count.txt");
+const piPidFile = path.join(tmp, "pi-pids.txt");
+await writeFile(psStateFile, JSON.stringify({ mode: "normal", rows: [] }));
 const worktrees = Array.from({ length: 22 }, (_, i) => ({
   path: i < 2 ? projects[i].replace(/\\/g, "/") : `${tmp.replace(/\\/g, "/")}/wt/${i}`,
   displayName: `worktree-${i}`,
@@ -82,6 +87,12 @@ const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
     PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.join(here, "fake-orca.mjs")]),
     FAKE_ORCA_STATE: stateFile,
     FAKE_ORCA_COUNT_FILE: countFile,
+    PI_STUDIO_PS_BIN: process.execPath,
+    PI_STUDIO_PS_BIN_ARGS: JSON.stringify([path.join(here, "fake-ps.mjs")]),
+    FAKE_PS_STATE: psStateFile,
+    FAKE_PS_COUNT_FILE: psCountFile,
+    FAKE_PI_PID_FILE: piPidFile,
+    GIT_AUTHOR_NAME: "Carga", GIT_AUTHOR_EMAIL: "carga@example.invalid", GIT_COMMITTER_NAME: "Carga", GIT_COMMITTER_EMAIL: "carga@example.invalid",
   },
 });
 let output = "";
@@ -118,6 +129,7 @@ const rssMb = (pid) => {
   }
   return Number(execFileSync("ps", ["-o", "rss=", "-p", String(pid)], { encoding: "utf8" }).trim()) / 1024;
 };
+const psSpawns = async () => (await readFile(psCountFile, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
 const orcaSpawns = async () => (await readFile(countFile, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
@@ -198,6 +210,7 @@ async function hammerWatch(label, token, runSeconds = DURATION, appendEvery = 40
 
 let failed = false;
 const openedIds = [];
+const sessionIds = [];
 try {
   const page = await request("GET", "/");
   const token = page.text.match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
@@ -205,9 +218,27 @@ try {
   for (const [index, dir] of projects.entries()) {
     const opened = JSON.parse((await request("POST", "/api/projects/open-path", { token, body: JSON.stringify({ cwd: dir }) })).text);
     openedIds.push(opened.project.id);
+    sessionIds.push(opened.session.id);
     if (index === 0) await request("POST", `/api/projects/${opened.project.id}/command`, { token, body: JSON.stringify({ id: "load", type: "prompt", message: "demo" }) });
   }
   await request("GET", "/api/orca", { token });
+  // beta is a real git repository (one commit, one untracked file) for GET /api/sessions/:id/git-files.
+  const git = (...args) => execFileSync("git", ["-c", "commit.gpgsign=false", "-C", projects[1], ...args], { stdio: "ignore" });
+  git("init", "-q");
+  git("add", "package.json");
+  git("commit", "-q", "-m", "carga");
+  await writeFile(path.join(projects[1], "novo.txt"), "novo");
+  // Process table: each fake PI with a bash child; pids come from the PI pid file.
+  const piPids = (await readFile(piPidFile, "utf8")).split("\n").filter(Boolean).map(Number);
+  await writeFile(psStateFile, JSON.stringify({ mode: "normal", rows: [[1, 0, 100, 1], ...piPids.flatMap((pid, i) => [[pid, 1, 40000, 3 + i], [pid + 500000, pid, 8000, 1]])] }));
+  const resourcesPath = `/api/sessions/${sessionIds[0]}/resources`;
+  const gitFilesPath = `/api/sessions/${sessionIds[1]}/git-files?path=package.json&path=novo.txt`;
+  const resourcesSample = await request("GET", resourcesPath, { token });
+  const gitSample = await request("GET", gitFilesPath, { token });
+  console.log(`resources sample: ${resourcesSample.text}`);
+  console.log(`git-files sample: ${gitSample.text}`);
+  if (resourcesSample.status !== 200 || JSON.parse(resourcesSample.text).children !== 1) throw new Error("resources route must sum the PI process tree");
+  if (gitSample.status !== 200 || JSON.parse(gitSample.text).requested["novo.txt"].state !== "untracked") throw new Error("git-files route must report the untracked file");
   // Fill the activity ring (300 items): each fake turn adds one "Terminou a resposta" per project.
   for (const id of openedIds) for (let turn = 0; turn < 170; turn++) await request("POST", `/api/projects/${id}/command`, { token, body: JSON.stringify({ id: `t${turn}`, type: "prompt", message: "oi" }) });
   const waitUntil = async (what, check, seconds = 40) => {
@@ -244,13 +275,13 @@ try {
   const big = await request("GET", fileUrl("big.txt"), { token });
   console.log(`file sample: small.txt ${small.bytes} B, big.txt ${big.bytes} B`);
   if (small.status !== 200 || big.status !== 200 || big.bytes !== 5 * 1024 * 1024) throw new Error("file route must serve both files whole");
-  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", "/api/tasks/links?conversation=load-conversation", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
+  for (const pathname of ["/api/resources", resourcesPath, gitFilesPath, "/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", "/api/tasks/links?conversation=load-conversation", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
   await hammer("warm-up", "/api/orca/terminal-send", token, WARMUP, "POST", { handle: "load-terminal", text: "load message" });
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   // Leak check: one full settling pass first (V8 keeps heap it grew to, and a GC right before the
   // baseline made "before" swing 35-250 MB), then the measured pass must not grow past that plateau.
-  const ENDPOINTS = [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/tasks/links", "/api/tasks/links?conversation=load-conversation"], ["POST /api/orca/terminal-send", "/api/orca/terminal-send", "POST", { handle: "load-terminal", text: "load message" }], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]];
+  const ENDPOINTS = [["GET /api/resources (cached 5 s)", "/api/resources"], ["GET /api/sessions/:id/resources", resourcesPath], ["GET /api/sessions/:id/git-files (2 paths)", gitFilesPath], ["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/tasks/links", "/api/tasks/links?conversation=load-conversation"], ["POST /api/orca/terminal-send", "/api/orca/terminal-send", "POST", { handle: "load-terminal", text: "load message" }], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]];
   // The watch check appends to its session file and counts lines from a fresh start, so it runs once (measured pass).
   const runPass = async (withWatch) => {
     const out = [];
@@ -270,10 +301,12 @@ try {
   // Baseline = the plateau the settling pass reached (largest RSS seen in it): a leak keeps climbing past it, GC noise does not.
   const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
   const spawnsBefore = await orcaSpawns();
+  const psBefore = await psSpawns();
   const results = await runPass(true);
   if (settling.some((item) => item.errors)) results.push({ ...settling.find((item) => item.errors), label: "settling pass (errors)" });
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
   const spawns = (await orcaSpawns()) - spawnsBefore;
+  const psRuns = (await psSpawns()) - psBefore;
   await new Promise((resolve) => setTimeout(resolve, 1000));
   const rssAfter = rssMb(server.pid);
 
@@ -284,10 +317,13 @@ try {
   }
   const bound = Math.ceil(elapsed / 2) + 2;
   console.log(`\norca child processes during the run: ${spawns} (bound for ${fmt(elapsed)}s with a 2 s cache: ${bound})`);
+  const psBound = Math.ceil(elapsed / 5) + 2;
+  console.log(`process-table sampler runs during the run: ${psRuns} (bound for ${fmt(elapsed)}s with a 5 s cache: ${psBound})`);
   console.log(`server RSS: after the settling pass ${fmt(rssBefore)} MB, after ${fmt(rssAfter)} MB (Δ ${fmt(rssAfter - rssBefore)} MB, limit ${RSS_GROWTH_LIMIT_MB} MB)`);
   const problems = [];
   if (results.some((item) => item.errors)) problems.push("request errors");
   if (spawns > bound) problems.push("orca spawns exceed the cache bound");
+  if (psRuns > psBound) problems.push("sampler spawns exceed the cache bound");
   if (rssAfter - rssBefore > RSS_GROWTH_LIMIT_MB) problems.push("RSS growth");
   failed = problems.length > 0;
   console.log(failed ? `FAIL: ${problems.join(", ")}` : "PASS");

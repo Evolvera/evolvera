@@ -8,9 +8,11 @@
 // extension veto it.
 // FAKE_PI_MODEL="provider/id": the model get_state reports. FAKE_PI_FAST=1: get_commands lists a `fast` extension command
 // and the prompt "/fast on|eco|ultra|ultra-eco|off" answers like extensions/codex-fast-mode.ts (setStatus + notify);
-// FAKE_PI_FAST_STUCK=1 makes it only warn (no status change).
+// FAKE_PI_FAST_STUCK=1 makes it only warn (no status change). FAKE_PI_CONTEXT_PERCENT: context usage get_session_stats reports (default 30).
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+// FAKE_PI_PID_FILE: this process id is appended there, so a test can describe the process tree the Studio spawned.
+if (process.env.FAKE_PI_PID_FILE) appendFileSync(process.env.FAKE_PI_PID_FILE, `${process.pid}\n`);
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const entries = [];
@@ -486,7 +488,7 @@ function handle(command) {
       totalMessages: 10,
       tokens: { input: 50000, output: 10000, cacheRead: 40000, cacheWrite: 5000, total: 105000 },
       cost: 0.45,
-      contextUsage: { tokens: 60000, contextWindow: 200000, percent: 30 },
+      contextUsage: { tokens: Number(process.env.FAKE_PI_CONTEXT_PERCENT || 30) * 2000, contextWindow: 200000, percent: Number(process.env.FAKE_PI_CONTEXT_PERCENT || 30) },
     });
     return;
   }
