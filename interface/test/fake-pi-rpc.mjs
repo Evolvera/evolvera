@@ -4,7 +4,13 @@
 // "todo-demo" streams `todo` tool results (full snapshots in details, plus one error result that must be ignored).
 // `fork` switches to a new fake session holding the history before the chosen user message.
 // FAKE_PI_SESSION_FILE: path reported as sessionFile; set_session_name then appends a session_info line to it.
-import { appendFileSync } from "node:fs";
+// `clone` copies that file next to itself (new header id) and switches to the copy; a user message "cancel-clone" makes an
+// extension veto it.
+// FAKE_PI_MODEL="provider/id": the model get_state reports. FAKE_PI_FAST=1: get_commands lists a `fast` extension command
+// and the prompt "/fast on|eco|ultra|ultra-eco|off" answers like extensions/codex-fast-mode.ts (setStatus + notify);
+// FAKE_PI_FAST_STUCK=1 makes it only warn (no status change).
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 process.stdin.setEncoding("utf8");
 let buffer = "";
 const entries = [];
@@ -229,6 +235,52 @@ let activeBash = null;
 let sessionName = "fake";
 let sessionFile = process.env.FAKE_PI_SESSION_FILE || undefined;
 let forks = 0;
+const [modelProvider = "fake", ...modelRest] = (process.env.FAKE_PI_MODEL || "fake/fake-model").split("/");
+const fakeModel = { provider: modelProvider, id: modelRest.join("/") || "fake-model", name: "Fake Model", reasoning: true, contextWindow: 200000 };
+let fastMode = "off";
+let fastAccepted = false;
+const FAST_MODES = { on: "all", eco: "subagents", ultra: "ultra", "ultra-eco": "ultra-subagents", off: "off" };
+
+// Same status strings as the extension: ECO for eco modes, 🟡/🟢 on an eligible model, SUB otherwise.
+function fastStatus() {
+  const ultra = fastMode === "ultra" || fastMode === "ultra-subagents";
+  if (fastMode === "off") return undefined;
+  if (fastMode === "subagents") return "⚡ECO";
+  if (fastMode === "ultra-subagents") return "🚀ECO";
+  if (fakeModel.provider !== "openai-codex") return `${ultra ? "🚀" : "⚡"}SUB`;
+  return `${ultra && fakeModel.id === "gpt-6-astra" ? "🚀" : "⚡"}${fastAccepted ? "🟢" : "🟡"}`;
+}
+
+function emitFastStatus() {
+  emit({ type: "extension_ui_request", id: `fast-status-${Date.now()}`, method: "setStatus", statusKey: "codex-fast-mode", statusText: fastStatus() });
+}
+
+function fastCommand(argument) {
+  const mode = FAST_MODES[argument];
+  if (!mode) {
+    emit({ type: "extension_ui_request", id: `fast-usage-${Date.now()}`, method: "notify", message: "Uso: /fast on | /fast eco | /fast ultra | /fast ultra-eco | /fast off", notifyType: "warning" });
+    return;
+  }
+  if (process.env.FAKE_PI_FAST_STUCK === "1") {
+    emit({ type: "extension_ui_request", id: `fast-stuck-${Date.now()}`, method: "notify", message: "Fast Mode indisponível nesta conta.", notifyType: "warning" });
+    return;
+  }
+  fastMode = mode;
+  fastAccepted = false;
+  emitFastStatus();
+  emit({ type: "extension_ui_request", id: `fast-notify-${Date.now()}`, method: "notify", message: mode === "off" ? "Fast Mode desativado." : `Fast Mode ${argument} ativado.`, notifyType: mode === "off" ? "info" : "warning" });
+}
+
+// Duplicates the session file under a new id and switches to the copy (RPC clone).
+function cloneSessionFile() {
+  forks += 1;
+  if (!sessionFile || !existsSync(sessionFile)) return;
+  const [header, ...rest] = readFileSync(sessionFile, "utf8").split("\n");
+  const copy = path.join(path.dirname(sessionFile), `clone-${forks}-${path.basename(sessionFile)}`);
+  const parsed = JSON.parse(header);
+  writeFileSync(copy, [JSON.stringify({ ...parsed, id: `${parsed.id}-clone-${forks}`, timestamp: new Date().toISOString() }), ...rest].join("\n"));
+  sessionFile = copy;
+}
 
 function finishBash(run, cancelled) {
   clearTimeout(run.timer);
@@ -258,6 +310,12 @@ function startBash(command) {
 function handle(command) {
   if (command.type === "test_exit") {
     process.exit(Number.isInteger(command.code) ? command.code : 0);
+  }
+
+  if (command.type === "prompt" && process.env.FAKE_PI_FAST === "1" && /^\/fast(\s|$)/.test(command.message)) {
+    respond(command);
+    fastCommand(command.message.slice(5).trim());
+    return;
   }
 
   if (command.type === "prompt") {
@@ -307,6 +365,21 @@ function handle(command) {
     emit({ type: "turn_end", message: { role: "assistant", content: [] }, toolResults: [] });
     emit({ type: "agent_end", messages: [] });
     emit({ type: "agent_settled" });
+    // A provider answer confirms Fast (🟡 -> 🟢) once a request went out.
+    if (!fastAccepted && fastStatus()?.endsWith("🟡")) {
+      fastAccepted = true;
+      emitFastStatus();
+    }
+    return;
+  }
+
+  if (command.type === "clone") {
+    if (entries.some((entry) => entry.message?.content === "cancel-clone")) {
+      respond(command, true, { cancelled: true });
+      return;
+    }
+    cloneSessionFile();
+    respond(command, true, { cancelled: false });
     return;
   }
 
@@ -346,6 +419,7 @@ function handle(command) {
         { name: "skill:brave-search", description: "Web search via Brave API", source: "skill", location: "user" },
         { name: "session-info", source: "extension" },
         { name: "compact", description: "Colide com o built-in do Studio", source: "extension" },
+        ...(process.env.FAKE_PI_FAST === "1" ? [{ name: "fast", description: "Toggle OpenAI Codex Fast mode", source: "extension" }] : []),
       ],
     });
     return;
@@ -376,7 +450,7 @@ function handle(command) {
 
   if (command.type === "get_state") {
     respond(command, true, {
-      model: { provider: "fake", id: "fake-model", name: "Fake Model", reasoning: true, contextWindow: 200000 },
+      model: fakeModel,
       thinkingLevel: "off",
       isStreaming: false,
       isCompacting: false,

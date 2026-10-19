@@ -1912,3 +1912,142 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: true, serverCount: 5 }), 1, "the open project trusts its own history");
   });
 });
+
+describe("conversation ⋯ menu", () => {
+  const closed = { path: "/s/a.jsonl", sessionId: "abc", state: "pronto" };
+  const byId = (entries, id) => entries.find((entry) => entry.id === id);
+  const ids = (entries) => entries.map((entry) => entry.id ?? "|");
+  const menu = (item, overrides = {}) => lib.sessionMenuItems({ item, isOpen: false, processExited: false, streaming: false, parentKnown: false, ...overrides });
+  const real = (entries) => entries.filter((entry) => !entry.separator);
+
+  test("a closed idle conversation offers every action, enabled (they open it first)", () => {
+    const entries = menu(closed);
+    assert.deepEqual(ids(entries), ["open", "rename", "export", "fork", "clone", "|", "copy-path", "copy-id"]);
+    assert.ok(real(entries).every((entry) => entry.disabled === false && entry.sub === undefined));
+  });
+
+  test("the open conversation has no Abrir; streaming blocks fork/duplicate but not rename", () => {
+    const idle = menu(closed, { isOpen: true });
+    assert.equal(byId(idle, "open"), undefined);
+    assert.ok(real(idle).every((entry) => !entry.disabled));
+    const streaming = menu(closed, { isOpen: true, streaming: true });
+    assert.equal(byId(streaming, "rename").disabled, false);
+    assert.equal(byId(streaming, "export").disabled, false);
+    for (const id of ["fork", "clone"]) assert.deepEqual([byId(streaming, id).disabled, byId(streaming, id).sub], [true, "Aguarde a resposta terminar"]);
+    // Streaming of the Studio's PI says nothing about a row that is not open.
+    assert.equal(byId(menu(closed, { streaming: true }), "fork").disabled, false);
+  });
+
+  test("an exited PI disables what needs it on the open conversation only", () => {
+    const open = menu(closed, { isOpen: true, processExited: true });
+    for (const id of ["rename", "export", "fork", "clone"]) assert.deepEqual([byId(open, id).disabled, byId(open, id).sub], [true, "PI encerrado"]);
+    assert.equal(byId(open, "copy-path").disabled, false);
+    assert.equal(byId(menu(closed, { processExited: true }), "clone").disabled, false);
+  });
+
+  test("a conversation another PI is writing keeps only the read-only entries", () => {
+    for (const state of ["fazendo", "aguardando"]) {
+      const entries = menu({ ...closed, state });
+      for (const id of ["rename", "fork", "clone"]) assert.deepEqual([byId(entries, id).disabled, byId(entries, id).sub], [true, "Em execução em outro PI"]);
+      assert.equal(byId(entries, "export").disabled, false);
+      assert.equal(byId(entries, "open").disabled, false);
+    }
+    // The Studio's own live conversation is "fazendo" too, but it is open here.
+    assert.equal(byId(menu({ ...closed, state: "fazendo" }, { isOpen: true }), "rename").disabled, false);
+  });
+
+  test("copy entries need a path / an id", () => {
+    const entries = menu({ state: "nova" });
+    assert.deepEqual([byId(entries, "copy-path").disabled, byId(entries, "copy-path").sub], [true, "Sem arquivo de sessão"]);
+    assert.deepEqual([byId(entries, "copy-id").disabled, byId(entries, "copy-id").sub], [true, "Sem ID"]);
+  });
+
+  test("sub-PI rows add 'Ir para a conversa pai', disabled when the parent is not loaded", () => {
+    const sub = { ...closed, isSubagent: true, parentSession: "/s/parent.jsonl" };
+    const known = menu(sub, { parentKnown: true });
+    assert.deepEqual(ids(known).slice(-2), ["|", "parent"]);
+    assert.equal(byId(known, "parent").disabled, false);
+    assert.deepEqual([byId(menu(sub), "parent").disabled, byId(menu(sub), "parent").sub], [true, "Conversa pai não encontrada"]);
+    assert.equal(byId(menu({ ...closed, isSubagent: true }, { parentKnown: true }), "parent").disabled, true);
+    assert.equal(byId(menu(closed, { parentKnown: true }), "parent"), undefined);
+  });
+});
+
+describe("Fast mode", () => {
+  const astra = { provider: "openai-codex", id: "gpt-6-astra" };
+  const sol = { provider: "openai-codex", id: "gpt-6-sol" };
+
+  test("fastFromStatus maps every status string the extension sets", () => {
+    const cases = [
+      ["⚡🟢", "all", "active"], ["⚡🟡", "all", "pending"], ["🚀🟢", "ultra", "active"], ["🚀🟡", "ultra", "pending"],
+      ["⚡ECO", "subagents", "subagents"], ["🚀ECO", "ultra-subagents", "subagents"], ["⚡SUB", "all", "subagents"], ["🚀SUB", "ultra", "subagents"],
+    ];
+    for (const [text, mode, live] of cases) assert.deepEqual(lib.fastFromStatus(text), { mode, live }, text);
+    // Tolerates variation selectors, spaces and case.
+    assert.deepEqual(lib.fastFromStatus(" ⚡\uFE0Feco "), { mode: "subagents", live: "subagents" });
+    for (const text of [undefined, null, "", "outra coisa", 7]) assert.deepEqual(lib.fastFromStatus(text), { mode: "off", live: "off" });
+  });
+
+  test("model eligibility mirrors the extension", () => {
+    const codex = (id) => ({ provider: "openai-codex", id });
+    for (const id of ["gpt-5.6-sol", "gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"]) assert.equal(lib.fastModelEligible(codex(id)), true, id);
+    assert.equal(lib.fastModelEligible(codex("gpt-4o")), false);
+    assert.equal(lib.fastModelEligible({ provider: "anthropic", id: "gpt-6-astra" }), false);
+    assert.equal(lib.fastModelEligible({ provider: "openai-codex" }), false);
+    assert.equal(lib.fastModelEligible(undefined), false);
+    assert.equal(lib.ultraModelEligible(astra), true);
+    assert.equal(lib.ultraModelEligible(sol), false);
+    assert.equal(lib.ultraModelEligible({ provider: "x", id: "gpt-6-astra" }), false);
+    assert.equal(lib.ultraModelEligible(undefined), false);
+  });
+
+  test("fastPanel: segmented options, live state, explanation and chip per mode", () => {
+    assert.deepEqual(lib.FAST_OPTIONS.map((option) => option.label), ["Desligado", "Eco", "Fast", "Ultra", "Ultra-eco"]);
+    const off = lib.fastPanel({ statusText: undefined, model: astra });
+    assert.deepEqual([off.mode, off.liveLabel, off.chip, off.notes], ["off", "desligado", null, []]);
+    assert.deepEqual(off.options.filter((option) => option.selected).map((option) => option.flag), ["off"]);
+    assert.ok(off.options.every((option) => !option.disabled));
+    const expected = {
+      "⚡🟢": ["all", "ativo (aceito pelo provedor)", "⚡ Fast"],
+      "⚡🟡": ["all", "aguardando confirmação", "⚡ Fast"],
+      "⚡ECO": ["subagents", "só subagentes", "⚡ Eco"],
+      "🚀🟢": ["ultra", "ativo (aceito pelo provedor)", "🚀 Ultra"],
+      "🚀ECO": ["ultra-subagents", "só subagentes", "🚀 Ultra-eco"],
+    };
+    for (const [status, [mode, label, chip]] of Object.entries(expected)) {
+      const panel = lib.fastPanel({ statusText: status, model: astra });
+      assert.deepEqual([panel.mode, panel.liveLabel, panel.chip.label], [mode, label, chip], status);
+      assert.ok(panel.chip.title.includes(panel.description));
+      assert.ok(panel.description.length > 20);
+    }
+    assert.match(lib.fastPanel({ statusText: "⚡🟢", model: astra }).description, /1,5–2×.*2,5×/);
+    assert.match(lib.fastPanel({ statusText: "⚡ECO", model: astra }).description, /só subagentes/);
+  });
+
+  test("fastPanel: Ultra needs GPT-6 Astra; a model without Fast gets a note but stays selectable", () => {
+    const panel = lib.fastPanel({ statusText: undefined, model: sol });
+    const option = (flag) => panel.options.find((candidate) => candidate.flag === flag);
+    for (const flag of ["ultra", "ultra-eco"]) assert.deepEqual([option(flag).disabled, option(flag).reason], [true, "Ultra só no GPT-6 Astra"]);
+    for (const flag of ["off", "eco", "on"]) assert.equal(option(flag).disabled, false);
+    assert.deepEqual(panel.notes, ["Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra."]);
+    const claude = lib.fastPanel({ statusText: "⚡SUB", model: { provider: "anthropic", id: "claude" } });
+    assert.equal(claude.mode, "all");
+    assert.equal(claude.liveLabel, "só subagentes");
+    assert.deepEqual(claude.notes, ["Este modelo não tem Fast — vale para subagentes elegíveis.", "Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra."]);
+    assert.equal(claude.options.find((candidate) => candidate.flag === "on").disabled, false);
+    // A selected option never becomes unselectable; no model known means no restriction.
+    assert.equal(lib.fastPanel({ statusText: "🚀ECO", model: sol }).options.find((candidate) => candidate.flag === "ultra-eco").disabled, false);
+    assert.ok(lib.fastPanel({ statusText: undefined, model: undefined }).options.every((candidate) => !candidate.disabled));
+  });
+
+  test("fastPanel: an optimistic choice overrides the status and reads as pending; no PI disables the rest", () => {
+    const pending = lib.fastPanel({ statusText: undefined, model: astra, selected: "all" });
+    assert.deepEqual([pending.mode, pending.live, pending.liveLabel, pending.chip.label], ["all", "pending", "aguardando confirmação", "⚡ Fast"]);
+    // Choosing what is already reported is not a change.
+    assert.equal(lib.fastPanel({ statusText: "⚡🟢", model: astra, selected: "all" }).live, "active");
+    const gone = lib.fastPanel({ statusText: "⚡ECO", model: astra, disabledReason: "PI indisponível." });
+    assert.deepEqual(gone.notes, ["PI indisponível."]);
+    assert.deepEqual(gone.options.map((option) => option.disabled), [true, false, true, true, true]);
+    assert.equal(gone.options[1].selected, true);
+  });
+});
