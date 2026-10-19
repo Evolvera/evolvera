@@ -10,6 +10,9 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { createProcessLister, parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+import { createTitleIndex } from "./lib-server/session-titles.mjs";
+import { createTreeService } from "./lib-server/tree.mjs";
 import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -495,6 +498,7 @@ export class PiRpcSession {
     this.projectName = options.projectName;
     this.cwd = path.resolve(options.cwd || process.cwd());
     this.createdAt = new Date().toISOString();
+    this.lastViewedAt = Date.now();
     this.clients = new Set();
     this.clientHeartbeats = new Map();
     this.history = [];
@@ -707,7 +711,9 @@ export class PiRpcSession {
     const heartbeat = setInterval(() => this.writeClient(res, ": ping\n\n"), 15000);
     this.clientHeartbeats.set(res, heartbeat);
     this.clients.add(res);
+    this.lastViewedAt = Date.now();
     res.on("close", () => {
+      this.lastViewedAt = Date.now();
       clearInterval(heartbeat);
       this.clientHeartbeats.delete(res);
       this.clients.delete(res);
@@ -1493,6 +1499,68 @@ export function getOrca({ now = Date.now, fetch = fetchOrca } = {}) {
   return orcaCache.pending;
 }
 
+const treePs = createProcessLister({ cacheMs: 5000 });
+let treeLastPollAt = 0;
+const treeTitles = createTitleIndex({
+  async *readLines(file) { const input = createInterface({ input: createReadStream(file), crlfDelay: Infinity }); for await (const line of input) yield line; },
+  statFile: async (file) => { const info = await stat(file); return { mtimeMs: info.mtimeMs, size: info.size }; },
+});
+let treeRecordsCache = [];
+let treeRecordsAt = 0;
+let treeRecordsPending = null;
+async function treeSessionRecords() {
+  if (treeRecordsAt && Date.now() - treeRecordsAt < 1000) return treeRecordsCache;
+  if (treeRecordsPending) return treeRecordsPending;
+  treeRecordsPending = (async () => {
+  const root = path.join(AGENT_DIR, "sessions");
+  const records = [];
+  for (const directory of await readdirSafe(root)) {
+    if (!directory.isDirectory()) continue;
+    const dir = path.join(root, directory.name);
+    let files;
+    try { files = await readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of files) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const file = path.join(dir, entry.name);
+      try {
+        const info = await stat(file);
+        const header = await sessionHeader(file, { directoryMtimeMs: (await stat(dir)).mtimeMs });
+        if (header?.type !== "session" || typeof header.cwd !== "string") continue;
+        const last = await sessionStates.lastMessage(file, info);
+        const classified = classifySessionState(last, info.mtimeMs);
+        const title = header.parentSession ? await treeTitles.subagentTitle(file, header, await sessionName(file)) : (await scanSession(file)).title;
+        records.push({ path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null });
+      } catch { /* malformed or disappearing session records are skipped */ }
+    }
+  }
+  treeRecordsCache = records;
+  treeRecordsAt = Date.now();
+  return records;
+  })();
+  try { return await treeRecordsPending; } finally { treeRecordsPending = null; }
+}
+async function sessionName(file) {
+  try { for await (const line of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) { const entry = JSON.parse(line); if (entry?.type === "session_info") return entry.name ?? ""; } } catch { /* malformed session name */ }
+  return "";
+}
+const treeService = createTreeService({
+  getProjects: async () => knownProjects(projects, discoverProjects), getOrca,
+  getSessions: treeSessionRecords,
+  async getLive() {
+    if (Date.now() - treeLastPollAt > 30_000) return [];
+    const headers = await treeSessionRecords();
+    const procs = parsePiProcesses(await treePs.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
+    const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs }))).filter((item) => item.sessionPath);
+    for (const session of sessions.values()) {
+      const file = session.lastState?.sessionFile;
+      if (!file || session.exited) continue;
+      resolved.push({ pid: session.proc?.pid ?? null, owner: "studio", startedAt: Date.parse(session.createdAt), sessionPath: file, streaming: session.streaming, waitingUi: session.statusSummary().waitingUi });
+    }
+    return resolved;
+  },
+  onPoll(at) { treeLastPollAt = at; },
+});
+
 function httpError(statusCode, message) {
   return Object.assign(new Error(message), { statusCode });
 }
@@ -1808,6 +1876,14 @@ async function route(req, res) {
     if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
     // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
     if (rawMatch) return await serveRaw(req, res, rawMatch);
+    if (req.method === "GET" && pathname === "/api/tree") {
+      const tree = await treeService.get(req.headers["if-none-match"] ?? null);
+      if (tree.notModified) { res.writeHead(304, { etag: tree.version, "cache-control": "no-store" }); return res.end(); }
+      const { notModified, ...body } = tree;
+      const encoded = JSON.stringify(body);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(encoded), "cache-control": "no-store", etag: tree.version });
+      return res.end(encoded);
+    }
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -2084,9 +2160,24 @@ const server = createServer((req, res) => {
   route(req, res).catch((error) => json(res, 500, { error: error.message || "Internal server error" }));
 });
 
+let idleReaper = null;
+function idleReapMinutes() {
+  const value = Number(process.env.PI_STUDIO_IDLE_PI_MINUTES ?? 15);
+  return Number.isFinite(value) ? Math.min(240, Math.max(5, value)) : 15;
+}
+function reapIdleStudioPIs(now = Date.now()) {
+  const threshold = idleReapMinutes() * 60_000;
+  for (const session of sessions.values()) {
+    if (session.exited || session.streaming || session.clients.size || session.statusSummary(now).waitingUi || now - session.lastViewedAt < threshold) continue;
+    recordLog("info", `Reaping idle Studio PI for ${session.cwd}`, { sessionId: session.id, idleMs: now - session.lastViewedAt });
+    session.stop();
+  }
+}
+
 export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
   return new Promise((resolve) => {
     server.listen(port, host, () => {
+      if (!idleReaper) { idleReaper = setInterval(reapIdleStudioPIs, 60_000); idleReaper.unref(); }
       const address = server.address();
       listeningPort = address.port;
       const line = `PI Studio listening on http://${host}:${listeningPort}`;
@@ -2103,6 +2194,8 @@ export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
 
 // Graceful stop for embedders/tests: stops PI children and closes the listener without exiting.
 export function stopServer() {
+  if (idleReaper) clearInterval(idleReaper);
+  idleReaper = null;
   for (const session of sessions.values()) session.stop();
   server.closeAllConnections();
   return new Promise((resolve) => server.close(() => resolve()));

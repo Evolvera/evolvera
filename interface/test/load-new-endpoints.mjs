@@ -36,6 +36,9 @@ await writeFile(path.join(projects[0], "small.txt"), "linha de texto\n".repeat(4
 await writeFile(path.join(projects[0], "big.txt"), ("x".repeat(1023) + "\n").repeat(5 * 1024));
 const stateFile = path.join(tmp, "orca-state.json");
 const countFile = path.join(tmp, "orca-count.txt");
+const psRows = path.join(tmp, "ps-rows.json");
+const psCount = path.join(tmp, "ps-count.txt");
+await writeFile(psRows, "[]");
 const worktrees = Array.from({ length: 22 }, (_, i) => ({
   path: i < 2 ? projects[i].replace(/\\/g, "/") : `${tmp.replace(/\\/g, "/")}/wt/${i}`,
   displayName: `worktree-${i}`,
@@ -82,6 +85,10 @@ const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
     PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.join(here, "fake-orca.mjs")]),
     FAKE_ORCA_STATE: stateFile,
     FAKE_ORCA_COUNT_FILE: countFile,
+    PI_STUDIO_PS_BIN: process.execPath,
+    PI_STUDIO_PS_BIN_ARGS: JSON.stringify([path.join(here, "fake-ps.mjs")]),
+    FAKE_PS_ROWS: psRows,
+    FAKE_PS_COUNT: psCount,
   },
 });
 let output = "";
@@ -97,8 +104,8 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const agent = new http.Agent({ keepAlive: true, maxSockets: CONCURRENCY + 4 });
-const request = (method, pathname, { token, body, decode = true } = {}) => new Promise((resolve, reject) => {
-  const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}) } }, (res) => {
+const request = (method, pathname, { token, body, decode = true, etag } = {}) => new Promise((resolve, reject) => {
+  const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}), ...(etag ? { "if-none-match": etag } : {}) } }, (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
     res.on("end", () => {
@@ -122,7 +129,7 @@ const orcaSpawns = async () => (await readFile(countFile, "utf8").catch(() => ""
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
 // `pathname` may be a list: each request takes the next one, round robin.
-async function hammer(label, pathname, token, runSeconds = DURATION, method = "GET", body) {
+async function hammer(label, pathname, token, runSeconds = DURATION, method = "GET", body, etag = null, allow304 = false) {
   const paths = [pathname].flat();
   let turn = 0;
   const latencies = [];
@@ -134,9 +141,9 @@ async function hammer(label, pathname, token, runSeconds = DURATION, method = "G
     while (performance.now() < deadline) {
       const t0 = performance.now();
       try {
-        const res = await request(method, paths[turn++ % paths.length], { token, body: body === undefined ? undefined : JSON.stringify(body), decode: false });
+        const res = await request(method, paths[turn++ % paths.length], { token, body: body === undefined ? undefined : JSON.stringify(body), decode: false, etag });
         statuses[res.status] = (statuses[res.status] || 0) + 1;
-        if (res.status !== 200) errors++;
+        if (res.status !== 200 && !(allow304 && res.status === 304)) errors++;
         latencies.push(performance.now() - t0);
       } catch {
         errors++;
@@ -208,6 +215,9 @@ try {
     if (index === 0) await request("POST", `/api/projects/${opened.project.id}/command`, { token, body: JSON.stringify({ id: "load", type: "prompt", message: "demo" }) });
   }
   await request("GET", "/api/orca", { token });
+  const treeFirst = await request("GET", "/api/tree", { token });
+  let treeEtag = treeFirst.text ? JSON.parse(treeFirst.text).version : null;
+  if (treeFirst.status !== 200 || !treeEtag || (await request("GET", "/api/tree", { token, etag: treeEtag })).status !== 304) throw new Error("/api/tree must return a body then 304 for the same ETag");
   // Fill the activity ring (300 items): each fake turn adds one "Terminou a resposta" per project.
   for (const id of openedIds) for (let turn = 0; turn < 170; turn++) await request("POST", `/api/projects/${id}/command`, { token, body: JSON.stringify({ id: `t${turn}`, type: "prompt", message: "oi" }) });
   const waitUntil = async (what, check, seconds = 40) => {
@@ -247,6 +257,9 @@ try {
   for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", "/api/tasks/links?conversation=load-conversation", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
   await hammer("warm-up", "/api/orca/terminal-send", token, WARMUP, "POST", { handle: "load-terminal", text: "load message" });
   await new Promise((resolve) => setTimeout(resolve, 1500));
+  const warmTree = await request("GET", "/api/tree", { token });
+  treeEtag = JSON.parse(warmTree.text).version;
+  if ((await request("GET", "/api/tree", { token, etag: treeEtag })).status !== 304) throw new Error("warm /api/tree ETag must yield 304");
 
   // Leak check: one full settling pass first (V8 keeps heap it grew to, and a GC right before the
   // baseline made "before" swing 35-250 MB), then the measured pass must not grow past that plateau.
@@ -270,7 +283,12 @@ try {
   // Baseline = the plateau the settling pass reached (largest RSS seen in it): a leak keeps climbing past it, GC noise does not.
   const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
   const spawnsBefore = await orcaSpawns();
+  const psBefore = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
   const results = await runPass(true);
+  const treeLoad = await hammer("GET /api/tree (conditional)", "/api/tree", token, DURATION, "GET", undefined, treeEtag, true);
+  treeLoad.rss = rssMb(server.pid);
+  results.push(treeLoad);
+  const psSpawns = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length - psBefore;
   if (settling.some((item) => item.errors)) results.push({ ...settling.find((item) => item.errors), label: "settling pass (errors)" });
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
   const spawns = (await orcaSpawns()) - spawnsBefore;
@@ -284,10 +302,13 @@ try {
   }
   const bound = Math.ceil(elapsed / 2) + 2;
   console.log(`\norca child processes during the run: ${spawns} (bound for ${fmt(elapsed)}s with a 2 s cache: ${bound})`);
+  console.log(`process-list child processes during /api/tree load: ${psSpawns} (5 s cache; expected bounded)`);
   console.log(`server RSS: after the settling pass ${fmt(rssBefore)} MB, after ${fmt(rssAfter)} MB (Δ ${fmt(rssAfter - rssBefore)} MB, limit ${RSS_GROWTH_LIMIT_MB} MB)`);
   const problems = [];
   if (results.some((item) => item.errors)) problems.push("request errors");
   if (spawns > bound) problems.push("orca spawns exceed the cache bound");
+  if (psSpawns > Math.ceil(DURATION / 5) + 2) problems.push("process-list spawns exceed the 5 s cache bound");
+  if (treeLoad.statuses[304] < 1) problems.push("/api/tree did not return unchanged 304 responses");
   if (rssAfter - rssBefore > RSS_GROWTH_LIMIT_MB) problems.push("RSS growth");
   failed = problems.length > 0;
   console.log(failed ? `FAIL: ${problems.join(", ")}` : "PASS");
