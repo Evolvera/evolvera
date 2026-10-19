@@ -1146,10 +1146,10 @@ export function isTodoDetails(value) {
   return Boolean(value) && typeof value === "object" && Array.isArray(value.tasks) && typeof value.nextId === "number";
 }
 
-function cleanTasks(tasks) {
+function cleanTasks(tasks, preserveDetails = false) {
   return tasks
     .filter((task) => task && typeof task === "object" && Number.isFinite(task.id) && typeof task.subject === "string" && TODO_STATUSES.includes(task.status))
-    .map((task) => ({ id: task.id, subject: task.subject, status: task.status, activeForm: typeof task.activeForm === "string" ? task.activeForm : "" }));
+    .map((task) => ({ ...(preserveDetails ? task : {}), id: task.id, subject: task.subject, status: task.status, activeForm: typeof task.activeForm === "string" ? task.activeForm : "" }));
 }
 
 // Snapshot carried by one successful `todo` result (tool_execution_end event or toolResult message), else null.
@@ -1163,7 +1163,7 @@ export function todoFromMessages(messages) {
   let latest = null;
   for (const message of Array.isArray(messages) ? messages : []) {
     const snapshot = message?.role === "toolResult" ? todoSnapshot(message) : null;
-    if (snapshot) latest = snapshot;
+    if (snapshot) latest = cleanTasks(message.details.tasks, true);
   }
   return latest;
 }
@@ -2459,4 +2459,87 @@ export function mergeWatchEntries(current, incoming, { reset = false, max = WATC
 // Thread messages of a watched file: the branch ending at its last entry, like get_entries does for the open session.
 export function watchMessages(entries) {
   return entriesToMessages(entries, entries.findLast((entry) => typeof entry.id === "string")?.id);
+}
+
+// ------------------------------------------------------------- task board
+
+export function stampTaskChanges(prev, tasks, now = Date.now()) {
+  const previous = prev instanceof Map ? Object.fromEntries(prev) : (prev || {});
+  const next = {};
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (!task || task.id == null) continue;
+    const old = previous[task.id];
+    if (!old) {
+      next[task.id] = { status: task.status, since: now, ...(task.status === "in_progress" ? { startedAt: now } : {}), ...(task.status === "completed" ? { endedAt: now } : {}) };
+      continue;
+    }
+    if (old.status === task.status) {
+      next[task.id] = { ...old };
+      continue;
+    }
+    next[task.id] = {
+      status: task.status,
+      since: now,
+      ...(old.startedAt !== undefined || task.status === "in_progress" ? { startedAt: old.startedAt ?? now } : {}),
+      ...(task.status === "completed" ? { endedAt: now } : {}),
+    };
+  }
+  return next;
+}
+
+function taskRun(task, runs) {
+  const metadataAgent = task.metadata?.agent ?? task.metadata?.agentId;
+  return (Array.isArray(runs) ? runs : []).find((run) => {
+    if (metadataAgent != null && String(metadataAgent) === String(run.id)) return true;
+    const search = foldText(`${run.description || ""} ${run.prompt || ""}`);
+    return (task.subject && search.includes(foldText(task.subject))) || search.includes(`#${task.id}`);
+  }) || null;
+}
+
+export function taskRows({ tasks = [], stamps = {}, runs = [], links = [], orcaAgents = [], now = Date.now() } = {}) {
+  const byId = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [task.id, task]));
+  return (Array.isArray(tasks) ? tasks : []).filter((task) => task && task.status !== "deleted").map((task) => {
+    const link = (Array.isArray(links) ? links : []).find((item) => item.taskId === task.id) || null;
+    const run = taskRun(task, runs);
+    const isRunning = task.status === "in_progress" || run?.status === "running" || run?.phase === "running" || Boolean(link && !link.endedAt);
+    let owner = { kind: "none", label: "—" };
+    if (link) owner = { kind: "worktree", label: link.worktreeName || link.worktreePath || "Worktree", worktreePath: link.worktreePath };
+    else if (run) owner = { kind: "subagent", label: run.name || run.description || run.id || "Subagente", ...(run.id != null ? { runId: run.id } : {}) };
+    else if (task.owner) owner = { kind: "named", label: String(task.owner) };
+    else if (task.status === "in_progress") owner = { kind: "main", label: "PI principal" };
+    const blocked = (task.blockedBy || []).some((id) => {
+      const blocker = byId.get(id);
+      return blocker && blocker.status !== "completed" && blocker.status !== "deleted";
+    });
+    const stampValue = stamps?.[task.id] || {};
+    let timing;
+    if (blocked) timing = { text: "bloqueada" };
+    else if (isRunning) {
+      const elapsed = stampValue.startedAt == null ? null : Math.max(0, now - stampValue.startedAt);
+      const minutes = elapsed === null ? 0 : Math.floor(elapsed / 60_000);
+      timing = { text: `rodando há ${minutes} min`, ...(elapsed !== null ? { runningMs: elapsed } : {}) };
+    } else if (stampValue.endedAt != null && stampValue.startedAt != null) {
+      const tookMs = Math.max(0, stampValue.endedAt - stampValue.startedAt);
+      timing = { text: `levou ${Math.max(1, Math.floor(tookMs / 60_000))} min`, tookMs };
+    } else timing = { text: "aguardando" };
+    const agent = link && (Array.isArray(orcaAgents) ? orcaAgents : []).find((item) => item.worktreePath === link.worktreePath || item.path === link.worktreePath);
+    return {
+      id: task.id, subject: task.subject, status: task.status, blocked, owner, timing, running: isRunning,
+      actions: { parallel: task.status === "pending" && !blocked, worktree: task.status !== "deleted", open: Boolean(run || link), message: Boolean(isRunning && (run || link)) },
+      ...(agent ? { orcaAgent: agent } : {}),
+    };
+  });
+}
+
+export function tasksBadgeCount(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => row?.running).length;
+}
+
+export function steerCommand(agentId, text) {
+  const message = String(text ?? "").replace(/\s+/g, " ").trim();
+  return message ? `/steer ${agentId} ${message}` : null;
+}
+
+export function parallelPrompt(task) {
+  return `Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #${task.id}: ${task.subject}${task.description ? `\nDescrição: ${task.description}` : ""}`;
 }
