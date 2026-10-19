@@ -1116,6 +1116,21 @@ describe("conversation states", () => {
     assert.equal((await server.listProjectHistory({ id: "none", cwd: path.join(tmp, "states-nobody") })).length, 0);
   });
 
+  test("history: sub-PIs never crowd main conversations out (separate caps of 50 each, newest first)", async () => {
+    const busy = path.join(tmp, "states-busy-project");
+    const at = (index) => new Date(1_800_000_000_000 + index * 1000).toISOString();
+    // Two old main conversations, then 60 newer sub-PIs (their parent is the second main one).
+    for (let index = 0; index < 2; index++) await sessionFile("--busy--", `main-${index}.jsonl`, header(busy, { id: `main-${index}`, timestamp: at(index) }), 1_900_000_000 + index, [msg("assistant", { stopReason: "stop" })]);
+    for (let index = 0; index < 60; index++) await sessionFile("--busy--", `sub-${index}.jsonl`, header(busy, { id: `sub-${index}`, parentSession: "main-1.jsonl", timestamp: at(100 + index) }), 1_900_000_100 + index, [msg("assistant", { stopReason: "stop" })]);
+    const listed = await server.listProjectHistory({ id: "busy", cwd: busy });
+    assert.deepEqual(listed.filter((item) => !item.isSubagent).map((item) => item.sessionId), ["main-1", "main-0"]);
+    const subs = listed.filter((item) => item.isSubagent);
+    assert.equal(subs.length, 50);
+    assert.equal(subs[0].sessionId, "sub-59");
+    assert.equal(listed.length, 52);
+    assert.ok(listed.every((item, index) => index === 0 || String(listed[index - 1].timestamp) >= String(item.timestamp)), "newest first");
+  });
+
   describe("live PI of the open project", () => {
     let listening;
     let base;

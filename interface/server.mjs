@@ -1178,7 +1178,13 @@ export async function listProjectHistory(project, { states = sessionStates, now 
       }
     }
   }
-  const top = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, HISTORY_LIMIT_ITEMS);
+  // Main conversations and sub-PIs are capped separately: a busy project spawns dozens of sub-PIs, and one shared cap
+  // let them push every main conversation out of the list (nothing left to open for a worktree).
+  const sorted = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const top = [
+    ...sorted.filter((item) => !item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+    ...sorted.filter((item) => item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+  ].sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
   const live = liveSessionFor(project.id);
   const liveFile = live?.lastState?.sessionFile ? cwdKey(live.lastState.sessionFile) : null;
   return Promise.all(top.map(async ({ fileStat, ...item }) => {
