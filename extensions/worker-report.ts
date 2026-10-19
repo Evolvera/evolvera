@@ -109,11 +109,12 @@ export function createWorkerReportExtension(run: Runner = execFile) {
 
     const pending = new Map<string, { toolName: string; args: GoalArgs; statesBeforeCall: number }>();
     const pendingBash = new Map<string, string | undefined>();
-    const retryAtAgentEnd = new Map<string, { goalId: string; outcome: "finished" | "blocked"; body: string; cwd: string }>();
+    const retryAtAgentEnd = new Map<string, { goalId: string; outcome: string; body: string; cwd: string }>();
     const reported = new Set<string>();
     const warned = new Set<string>();
+    const inFlight = new Set<string>();
 
-    const send = async (report: { goalId: string; outcome: "finished" | "blocked"; body: string; cwd: string }) => {
+    const send = async (report: { goalId: string; outcome: string; body: string; cwd: string }) => {
       try {
         let branch = "";
         try {
@@ -191,12 +192,38 @@ export function createWorkerReportExtension(run: Runner = execFile) {
       }
     });
 
-    pi.on("agent_end", async (_event, ctx) => {
+    /**
+     * pi-goal can also stop a Goal on its own (agent error after retries, provider failure,
+     * ENOSPC, usage limit) without any goal tool call. Report that stop once per Goal/status so
+     * the conductor learns the worker went idle. Deferred so pi-goal's own agent_end persists first.
+     */
+    const reportSelfStoppedGoal = async (event: { messages?: unknown[] }, ctx: { cwd: string; sessionManager?: SessionContext["sessionManager"]; ui?: { notify?: (message: string, type: string) => void } }) => {
+      const latest = goalStates(ctx)?.at(-1)?.data as { goal?: { id?: unknown; status?: unknown; updatedAt?: unknown } | null } | undefined;
+      const goal = latest?.goal;
+      if (!goal || typeof goal.id !== "string" || typeof goal.status !== "string") return;
+      if (!["blocked", "paused", "usage_limited"].includes(goal.status)) return;
+      const outcome = goal.status === "blocked" ? "blocked" : goal.status;
+      // updatedAt distinguishes a later stop after `/goal resume` of the same Goal.
+      const key = `${goal.id}\0${outcome}\0${String(goal.updatedAt ?? "")}`;
+      if (reported.has(key) || reported.has(`${goal.id}\0${outcome}`) || inFlight.has(key)) return;
+      inFlight.add(key);
+      const errorMessage = [...(event.messages ?? [])].reverse()
+        .map((message) => (message as { role?: unknown; errorMessage?: unknown }))
+        .find((message) => message.role === "assistant" && typeof message.errorMessage === "string")?.errorMessage as string | undefined;
+      const report = { goalId: goal.id, outcome, cwd: ctx.cwd, body: `Reason: Goal stopped by the runtime without goal_complete/goal_blocked${errorMessage ? ` (${errorMessage})` : ""}. Worker is idle.` };
+      try {
+        if (await send(report)) reported.add(key);
+        else warn(ctx, key, goal.id);
+      } finally { inFlight.delete(key); }
+    };
+
+    pi.on("agent_end", async (event, ctx) => {
       for (const [key, report] of retryAtAgentEnd) {
         retryAtAgentEnd.delete(key);
         if (await send(report)) reported.add(key);
         else warn(ctx, key, report.goalId);
       }
+      setTimeout(() => { void reportSelfStoppedGoal(event as { messages?: unknown[] }, ctx).catch(() => {}); }, 1_000);
     });
   };
 }
