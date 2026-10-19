@@ -44,9 +44,9 @@ export function planHeavyTimeoutMs(): number {
 }
 
 export function subagentTimeoutMs(value: string | undefined = process.env.PI_SUBAGENT_MAX_MINUTES): number {
-  if (!value || !/^\d+$/.test(value)) return 60 * 60_000;
+  if (!value || !/^\d+$/.test(value)) return 120 * 60_000;
   const minutes = Number(value);
-  return Number.isSafeInteger(minutes) && minutes >= 5 && minutes <= 360 ? minutes * 60_000 : 60 * 60_000;
+  return Number.isSafeInteger(minutes) && minutes >= 5 && minutes <= 360 ? minutes * 60_000 : 120 * 60_000;
 }
 
 function formatMinutes(ms: number): string {
