@@ -33,7 +33,7 @@ function state(): SwarmState {
   const global = globalThis as typeof globalThis & { [key: symbol]: unknown };
   const existing = global[STATE_KEY] as SwarmState | undefined;
   if (existing) return existing;
-  const created: SwarmState = { enabled: false };
+  const created: SwarmState = { enabled: true };
   global[STATE_KEY] = created;
   return created;
 }
