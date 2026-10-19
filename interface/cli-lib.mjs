@@ -1,5 +1,11 @@
 import { stripAnsi, customNoteText, eventNotice, shortArgs } from "./public/lib.js";
 
+export function clearPendingState(pending, timers) {
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
+  pending.clear();
+}
+
 export function parseArgs(argv = []) {
   const args = [...argv];
   let url = "http://127.0.0.1:4123";
@@ -101,7 +107,7 @@ export function formatEvent(event, payload) {
     case "tool_execution_start": return `• ${e.toolName || "ferramenta"}  ${shortArgs(e.toolName, e.args || {})}  …`;
     case "tool_execution_end": return `• ${e.toolName || "ferramenta"}  ${shortArgs(e.toolName, e.args || {})}  ${e.isError ? "✗" : "✓"}`;
     case "extension_ui_request": {
-      if (e.method === "notify") return eventNotice(e)?.text || null;
+      if (e.method === "notify") return eventNotice(e).text;
       return null;
     }
     case "compaction_start": case "compaction_end": case "auto_retry_start": case "auto_retry_end": case "extension_error": return eventNotice(e)?.text || null;
