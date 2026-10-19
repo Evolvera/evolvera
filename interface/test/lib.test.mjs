@@ -2412,3 +2412,125 @@ describe("following a conversation owned elsewhere", () => {
     assert.deepEqual(lib.watchMessages([]), []);
   });
 });
+
+describe("task board model", () => {
+  test("todo snapshots preserve metadata and optional fields", () => {
+    const task = { id: 1, subject: "A", status: "pending", activeForm: "fazendo", description: "detalhe", blockedBy: [2], owner: "Ana", metadata: { agent: "x" } };
+    const result = lib.todoFromMessages([{ role: "toolResult", toolName: "todo", details: { nextId: 3, tasks: [task] } }]);
+    assert.deepEqual(result, [{ ...task }]);
+    assert.equal(lib.todoFromMessages([{ role: "toolResult", toolName: "todo", details: { nextId: 0, tasks: [task] }, isError: true }]), null);
+  });
+
+  test("stamp transitions, preserves first start, and removes missing tasks", () => {
+    let stamps = lib.stampTaskChanges({}, [{ id: 1, status: "pending" }, { id: 2, status: "in_progress" }, { id: 3, status: "completed" }], 100);
+    assert.deepEqual(stamps, { 1: { status: "pending", since: 100 }, 2: { status: "in_progress", since: 100, startedAt: 100 }, 3: { status: "completed", since: 100, endedAt: 100 } });
+    stamps = lib.stampTaskChanges(stamps, [{ id: 1, status: "in_progress" }, { id: 2, status: "completed" }, { id: 3, status: "pending" }], 200);
+    assert.deepEqual(stamps, { 1: { status: "in_progress", since: 200, startedAt: 200 }, 2: { status: "completed", since: 200, startedAt: 100, endedAt: 200 }, 3: { status: "pending", since: 200 } });
+    assert.deepEqual(lib.stampTaskChanges(stamps, [{ id: 2, status: "completed" }], 300), { 2: { ...stamps[2] } });
+    assert.deepEqual(lib.stampTaskChanges(null, null, 1), {});
+    assert.deepEqual(lib.stampTaskChanges({}, [null, { id: null, status: "pending" }], 1), {});
+    assert.deepEqual(lib.stampTaskChanges({ 1: { status: "pending", since: 1 } }, [{ id: 1, status: "completed" }], 4), { 1: { status: "completed", since: 4, endedAt: 4 } });
+    assert.deepEqual(lib.stampTaskChanges(new Map([["4", { status: "pending", since: 4 }]]), [{ id: 4, status: "pending" }], 9), { 4: { status: "pending", since: 4 } });
+  });
+
+  test("owner precedence and run matching are accent/case, id, metadata aware", () => {
+    const base = { status: "in_progress", subject: "Revisão crítica", id: 5 };
+    const run = { id: "agent-1", status: "running", description: "REVISÃO CRITICA urgente" };
+    assert.equal(lib.taskRows({ tasks: [base], runs: [run], links: [{ taskId: 5, worktreeName: "tree", worktreePath: "/tree" }] })[0].owner.kind, "worktree");
+    assert.equal(lib.taskRows({ tasks: [base], runs: [run] })[0].owner.kind, "subagent");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, subject: "diferente", metadata: { agent: "agent-1" } }], runs: [run] })[0].owner.kind, "subagent");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, subject: "diferente", id: 8, metadata: { agentId: "agent-1" } }], runs: [run] })[0].owner.runId, "agent-1");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, id: 8, subject: "outra" }], runs: [{ id: "x", prompt: "faça #8 agora" }] })[0].owner.kind, "subagent");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, subject: "" }], runs: [{ id: "x" }] })[0].owner.kind, "main");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, id: 8, subject: "different" }], runs: [{ id: "x", description: "other" }] })[0].owner.kind, "main");
+    assert.equal(lib.taskRows({ tasks: [{ ...base, id: 8, subject: "different" }], runs: null })[0].owner.kind, "main");
+    assert.deepEqual(lib.taskRows({ tasks: [{ ...base, owner: "Miguel" }] })[0].owner, { kind: "named", label: "Miguel" });
+    assert.deepEqual(lib.taskRows({ tasks: [base] })[0].owner, { kind: "main", label: "PI principal" });
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 6, subject: "x", status: "pending" }] })[0].owner, { kind: "none", label: "—" });
+  });
+
+  test("blocking, timing boundaries, actions, Orca state and badge count", () => {
+    const tasks = [
+      { id: 1, subject: "blocked", status: "pending", blockedBy: [2, 3, 99] },
+      { id: 2, subject: "done", status: "completed" }, { id: 3, subject: "gone", status: "deleted" },
+      { id: 4, subject: "run", status: "in_progress" }, { id: 5, subject: "wait", status: "pending" },
+      { id: 6, subject: "ended", status: "completed" }, { id: 7, subject: "gone row", status: "deleted" },
+    ];
+    const rows = lib.taskRows({ tasks, stamps: { 4: { startedAt: 100 }, 6: { startedAt: 0, endedAt: 300000 } }, now: 180100, links: [{ taskId: 5, worktreePath: "/tree" }], orcaAgents: [{ path: "/tree", state: "running" }] });
+    assert.deepEqual(rows.map((r) => r.id), [1, 2, 4, 5, 6]);
+    assert.equal(rows[0].blocked, false);
+    assert.equal(rows[2].timing.text, "rodando há 3 min");
+    assert.equal(rows[3].timing.text, "rodando há 0 min");
+    assert.equal(rows[3].orcaAgent.state, "running");
+    assert.equal(rows[4].timing.text, "levou 5 min");
+    assert.equal(rows[0].actions.parallel, true);
+    assert.equal(rows[1].actions.worktree, false, "a finished task is not handed off");
+    assert.equal(rows[3].actions.open, true);
+    assert.equal(rows[3].actions.message, true);
+    assert.equal(lib.tasksBadgeCount(rows), 2);
+    assert.equal(lib.tasksBadgeCount(null), 0);
+    const blocked = lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending", blockedBy: [2] }, { id: 2, subject: "b", status: "pending" }] });
+    assert.equal(blocked[0].blocked, true);
+    assert.deepEqual(blocked[0].timing, { text: "bloqueada" });
+    assert.equal(blocked[0].actions.parallel, false);
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }] })[0].timing, { text: "aguardando" });
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }] })[0].actions.message, false);
+    assert.deepEqual(lib.taskRows()[0], undefined);
+    assert.deepEqual(lib.taskRows({ tasks: "invalid", links: "invalid", orcaAgents: "invalid" }), []);
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: "invalid", orcaAgents: "invalid" })[0].owner.kind, "none");
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1 }], orcaAgents: "invalid" })[0].orcaAgent, undefined);
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1 }] })[0].owner.label, "Worktree");
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1, worktreePath: "/x" }] })[0].owner.label, "/x");
+    const runOwner = lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], runs: [{ id: "r", description: "a", status: "stopped" }] })[0];
+    assert.deepEqual(runOwner.owner, { kind: "subagent", label: "a", runId: "r" });
+    assert.equal(runOwner.running, false);
+    const fallbackOwner = lib.taskRows({ tasks: [{ id: 1, subject: "subject", status: "pending" }], runs: [{ prompt: "task #1" }] })[0];
+    assert.deepEqual(fallbackOwner.owner, { kind: "subagent", label: "Subagente" });
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], runs: [{ id: "r", description: "a", phase: "running" }] })[0].running, true);
+    assert.equal(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1, endedAt: 1 }] })[0].running, false);
+    const linkMiss = lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1, worktreePath: "/tree" }], orcaAgents: [{ path: "/other" }] })[0];
+    assert.equal(linkMiss.orcaAgent, undefined);
+    const linkMatch = lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], links: [{ taskId: 1, worktreePath: "/tree" }], orcaAgents: [{ worktreePath: "/tree" }] })[0];
+    assert.ok(linkMatch.orcaAgent);
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 1, subject: "a", status: "pending" }], stamps: { 1: { startedAt: 100 } }, now: 50 })[0].timing, { text: "aguardando" });
+  });
+
+  test("real Subagentes runs (agentId/title/phase/sections), completed text, run times after a reload, hand-off rules", () => {
+    const studioRun = { agentId: "ab12", title: "builder", type: "builder", description: "Rodar benchmark", phase: "running", startedAt: 1_000, sections: [{ label: "Tarefa", text: "faça a tarefa #3 do quadro" }] };
+    // Linked by description (accents/case), owner shows the agent title and the agentId to steer.
+    const byDescription = lib.taskRows({ tasks: [{ id: 1, subject: "rodar BENCHMARK", status: "in_progress" }], runs: [studioRun], now: 61_000 })[0];
+    assert.deepEqual(byDescription.owner, { kind: "subagent", label: "builder", runId: "ab12" });
+    assert.equal(byDescription.running, true);
+    assert.equal(byDescription.timing.text, "rodando há 1 min", "no stamp yet: the run's own start time");
+    assert.deepEqual(byDescription.actions, { parallel: false, worktree: false, open: true, message: true });
+    // Linked by "#id" inside the prompt section.
+    assert.equal(lib.taskRows({ tasks: [{ id: 3, subject: "outra coisa", status: "pending" }], runs: [studioRun] })[0].owner.runId, "ab12");
+    // Linked by metadata agentId against agentId.
+    assert.equal(lib.taskRows({ tasks: [{ id: 9, subject: "zzz", status: "pending", metadata: { agentId: "ab12" } }], runs: [studioRun] })[0].owner.runId, "ab12");
+    // A finished run fills "levou" after a reload (no stamps), owner falls back to type, then id.
+    const finished = { agentId: "cd34", type: "scout", description: "medir", phase: "done", startedAt: 0, endedAt: 125_000 };
+    const done = lib.taskRows({ tasks: [{ id: 2, subject: "medir", status: "completed" }], runs: [finished] })[0];
+    assert.deepEqual([done.owner.label, done.timing.text, done.running], ["scout", "levou 2 min", false]);
+    assert.equal(lib.taskRows({ tasks: [{ id: 2, subject: "medir", status: "completed" }], runs: [{ agentId: "cd34", description: "medir", phase: "done" }] })[0].owner.label, "medir");
+    assert.equal(lib.taskRows({ tasks: [{ id: 2, subject: "#2", status: "completed" }], runs: [{ agentId: "cd34", prompt: "#2", phase: "done" }] })[0].owner.label, "cd34");
+    // A completed task without known times says so instead of "aguardando".
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 4, subject: "x", status: "completed" }] })[0].timing, { text: "concluída" });
+    // The newest matching run wins (a task re-run in parallel).
+    const older = { agentId: "old", description: "repetir", phase: "error" };
+    const newer = { agentId: "new", description: "repetir", phase: "running" };
+    assert.equal(lib.taskRows({ tasks: [{ id: 5, subject: "repetir", status: "pending" }], runs: [older, newer] })[0].owner.runId, "new");
+    // Hand-off: pending or main-PI in-progress tasks, unblocked and not already given to a run or worktree.
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending" }] })[0].actions, { parallel: true, worktree: true, open: false, message: false });
+    assert.deepEqual(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "in_progress" }] })[0].actions, { parallel: false, worktree: true, open: false, message: false });
+    assert.equal(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending" }], links: [{ taskId: 6, worktreePath: "/w" }] })[0].actions.worktree, false);
+    assert.equal(lib.taskRows({ tasks: [{ id: 6, subject: "a", status: "pending", blockedBy: [7] }, { id: 7, subject: "b", status: "pending" }] })[0].actions.worktree, false);
+  });
+
+  test("steer command and deterministic parallel prompt", () => {
+    assert.equal(lib.steerCommand("a1", " oi\n tudo  "), "/steer a1 oi tudo");
+    assert.equal(lib.steerCommand(3, "\n  "), null);
+    assert.equal(lib.steerCommand("x", null), null);
+    assert.equal(lib.parallelPrompt({ id: 7, subject: "Teste", description: "detalhe" }), "Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #7: Teste\nDescrição: detalhe");
+    assert.equal(lib.parallelPrompt({ id: 2, subject: "X" }), "Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #2: X");
+  });
+});
