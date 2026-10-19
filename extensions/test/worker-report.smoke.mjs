@@ -225,5 +225,22 @@ await recovered.handlers.get("agent_end")({}, recovered.ctx);
 await recovered.handlers.get("tool_execution_end")({ toolCallId: "recover", toolName: "goal_complete", isError: false }, recovered.ctx);
 assert.equal(recoveryAttempts, 2, "positive retry acknowledgment marks the goal/outcome reported and prevents later duplicates");
 
+{
+  // pi-goal stopping a Goal by itself (agent error) is reported once, deferred after agent_end.
+  const sends = [];
+  const stopped = setup("run_3419a9bd44e8", async (file, args) => { if (file === "orca") sends.push(args); return { stdout: '{"ok":true}' }; },
+    [{ type: "custom", customType: "goal-state", data: { goal: { id: "goal-self", status: "blocked", updatedAt: 1 } } }]);
+  const end = { messages: [{ role: "assistant", errorMessage: "ENOSPC: no space left on device" }] };
+  await stopped.handlers.get("agent_end")(end, stopped.ctx);
+  await stopped.handlers.get("agent_end")(end, stopped.ctx);
+  await new Promise((resolve) => setTimeout(resolve, 1_300));
+  assert.equal(sends.length, 1, "self-stopped goal is reported exactly once");
+  assert.match(sends[0][5], /goal blocked \| goal_id=goal-self .*ENOSPC/);
+  const active = setup("run_3419a9bd44e8", async (file) => { if (file === "orca") throw new Error("must not send"); return { stdout: "" }; }, [goalState("goal-running")]);
+  await active.handlers.get("agent_end")({ messages: [] }, active.ctx);
+  await new Promise((resolve) => setTimeout(resolve, 1_300));
+  assert.equal(active.notices.length, 0, "active goal is not reported");
+}
+
 delete process.env.PI_REPORT_RUN;
 console.log("worker-report smoke: PASS");
