@@ -100,7 +100,6 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   let escapeTimer;
   const decoder = new StringDecoder("utf8");
   const height = () => safeDimension(output.rows, 24, 80);
-  const rowCount = () => layout(output.columns, height(), items.length).visible;
   let progress = 1;
   let elapsedMs = 0;
   let stopAnimation;
@@ -119,12 +118,14 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   };
   const redraw = () => {
     if (settled) return;
-    const rows = rowCount();
-    if (selected < offset) offset = selected;
-    if (selected >= offset + rows) offset = selected - rows + 1;
-    terminalOutput.render(({ width, height: viewportHeight }) => renderAccountMenu(users, {
-      width, height: Math.min(height(), viewportHeight), selected, offset, color, progress, timeMs: elapsedMs,
-    }).split("\n"));
+    terminalOutput.render(({ width, height: viewportHeight }) => {
+      const rows = layout(width, viewportHeight, items.length).visible;
+      if (selected < offset) offset = selected;
+      if (selected >= offset + rows) offset = selected - rows + 1;
+      return renderAccountMenu(users, {
+        width, height: viewportHeight, selected, offset, color, progress, timeMs: elapsedMs,
+      }).split("\n");
+    });
   };
   const move = (delta) => {
     selected = (selected + delta + items.length) % items.length;
