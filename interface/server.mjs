@@ -874,7 +874,112 @@ export async function knownProjects(known, discover) {
 const sessionIndex = new SessionIndex(path.join(AGENT_DIR, "sessions"));
 export function refreshSessionIndex() { return sessionIndex.refresh(); }
 
-async function listProjectHistory(project) {
+// ---- Conversation state (pronto | fazendo | parado | erro | aguardando | nova), from the tail of the session file.
+const STATE_TAIL_BYTES = 64 * 1024;
+const STATE_TAIL_MAX_BYTES = 512 * 1024;
+const STATE_FRESH_MS = 90_000;
+const STATE_CACHE_MAX = 2000;
+const HISTORY_LIMIT_ITEMS = 50;
+
+// The last `message` entry decides; trailing `custom`/`session_info` entries and a line still being written are skipped.
+function lastMessageIn(lines) {
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry?.type === "message" && isPlainObject(entry.message)) return entry.message;
+    } catch {
+      // Partial or malformed line: keep looking further back.
+    }
+  }
+  return null;
+}
+
+// Reads only the tail of a session file: 64 KiB, widened to 512 KiB when no message line shows up.
+// null = no message at all; { role: "unknown" } = content exists but a single line overflows the window.
+export async function readLastMessage(filePath, size, { openFile = open } = {}) {
+  if (!size) return null;
+  const handle = await openFile(filePath, "r");
+  try {
+    for (const window of [STATE_TAIL_BYTES, STATE_TAIL_MAX_BYTES]) {
+      const length = Math.min(window, size);
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+      const lines = buffer.toString("utf8", 0, bytesRead).split(/\n/);
+      if (length < size) lines.shift();
+      const message = lastMessageIn(lines);
+      if (message) return message;
+      if (length >= size) return null;
+    }
+    return { role: "unknown" };
+  } finally {
+    await handle.close();
+  }
+}
+
+// A turn that ended decides by its stopReason; one still in flight (tool call, tool result, prompt) is "fazendo"
+// only while the file keeps changing, otherwise the run was interrupted ("parado").
+export function classifySessionState(message, mtimeMs, now = Date.now()) {
+  if (!message) return "nova";
+  if (message.role === "assistant") {
+    if (message.stopReason === "stop" || message.stopReason === "length") return "pronto";
+    if (message.stopReason === "aborted") return "parado";
+    if (message.stopReason === "error") return "erro";
+  }
+  return now - mtimeMs <= STATE_FRESH_MS ? "fazendo" : "parado";
+}
+
+// The live PI of the open project knows better than its file: a pending dialog is "aguardando", a streaming
+// turn "fazendo"; an exited PI cannot be running, so a run the file still shows in flight is "parado".
+export function applyLiveState(fileState, live) {
+  if (!live) return fileState;
+  if (live.exited) return fileState === "fazendo" ? "parado" : fileState;
+  if (live.waitingUi) return "aguardando";
+  return live.streaming ? "fazendo" : fileState;
+}
+
+// Last message per file, reused while (mtime, size) are unchanged.
+export class SessionStateReader {
+  constructor({ read = readLastMessage, maxEntries = STATE_CACHE_MAX } = {}) {
+    this.read = read;
+    this.maxEntries = maxEntries;
+    this.cache = new Map();
+  }
+
+  async lastMessage(filePath, fileStat) {
+    const cached = this.cache.get(filePath);
+    if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) return cached.message;
+    const message = await this.read(filePath, fileStat.size);
+    if (this.cache.size >= this.maxEntries) this.cache.clear();
+    this.cache.set(filePath, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, message });
+    return message;
+  }
+}
+
+const sessionStates = new SessionStateReader();
+
+// The project PI that is still alive, else the last one that ran (exited), else null.
+function liveSessionFor(projectId) {
+  const mine = [...sessions.values()].filter((session) => session.projectId === projectId);
+  return mine.find((session) => !session.exited) ?? mine.at(-1) ?? null;
+}
+
+// A session header (first line: id, cwd, timestamp, parentSession) never changes once written, so
+// history listings read it once per file instead of opening every session file on every call.
+const sessionHeaders = new Map();
+const SESSION_HEADER_CACHE_MAX = 20_000;
+
+export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX } = {}) {
+  const cached = cache.get(filePath);
+  if (cached) return cached;
+  const header = JSON.parse(await read(filePath));
+  if (cache.size >= max) cache.clear();
+  cache.set(filePath, header);
+  return header;
+}
+
+export async function listProjectHistory(project, { states = sessionStates, now = Date.now() } = {}) {
   const sessionsRoot = path.join(AGENT_DIR, "sessions");
   if (!(await isDirectory(sessionsRoot))) return [];
   const out = [];
@@ -892,8 +997,7 @@ async function listProjectHistory(project) {
       if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
       const filePath = path.join(fullDir, file.name);
       try {
-        const firstLine = await readFirstLine(filePath);
-        const header = JSON.parse(firstLine);
+        const header = await sessionHeader(filePath);
         if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
@@ -904,13 +1008,28 @@ async function listProjectHistory(project) {
           timestamp,
           bytes: fileStat.size,
           sessionId: header.id,
+          isSubagent: Boolean(header.parentSession),
+          parentSession: header.parentSession || null,
+          lastActivity: fileStat.mtime.toISOString(),
+          fileStat,
         });
       } catch {
         // Ignore malformed/partial session files.
       }
     }
   }
-  return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50);
+  const top = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, HISTORY_LIMIT_ITEMS);
+  const live = liveSessionFor(project.id);
+  const liveFile = live?.lastState?.sessionFile ? cwdKey(live.lastState.sessionFile) : null;
+  return Promise.all(top.map(async ({ fileStat, ...item }) => {
+    let fileState = "nova";
+    try {
+      fileState = classifySessionState(await states.lastMessage(item.path, fileStat), fileStat.mtimeMs, now);
+    } catch {
+      // Vanished or unreadable between listing and reading: no state rather than a failed list.
+    }
+    return { ...item, state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
+  }));
 }
 
 // ---- Orca worktrees (read-only `orca worktree ps --json`; absent in Docker, so it degrades to available:false).

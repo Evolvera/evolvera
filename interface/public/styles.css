@@ -678,7 +678,10 @@ code { font-family: var(--mono); }
 .insp-tab::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); transform: scaleX(0); transition: transform 200ms var(--ease); }
 .insp-tab[aria-selected="true"]::after { transform: scaleX(1); }
 .insp-tab:focus-visible { outline-offset: -6px; }
-.insp-badge { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 99px; background: var(--text); color: #0a0a0a; font: 600 10.5px/1 var(--mono); font-variant-numeric: tabular-nums; }
+/* Count badge: transparent pill, 1px gray border; one digit is a circle, more digits a pill. */
+.count-badge { flex: none; display: inline-grid; place-items: center; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 99px; background: transparent; color: #fff; font: 600 10px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.count-badge.muted { color: var(--muted); }
+.icon-btn:has(.count-badge:not([hidden])) { width: auto; padding: 0 7px; gap: 5px; grid-auto-flow: column; }
 @container insp (max-width: 430px) {
   .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
 }
@@ -1218,3 +1221,35 @@ html[data-motion="reduce"] .project.attn-waiting .run-dot { animation: none !imp
 @container insp (max-width: 560px) {
   .insp-tabs.has-worktrees .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
 }
+
+/* ------------------------------------------ conversation states + worktrees overview */
+.session-state { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--faint); }
+.session-state.st-pronto { background: var(--muted); }
+.session-state.st-fazendo { background: var(--text); animation: term-pulse 1.4s ease-in-out infinite; }
+.session-state.st-aguardando { background: var(--amber); animation: attn-pulse 1.6s ease-in-out infinite; }
+.session-state.st-parado { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.session-state.st-erro { background: var(--red); }
+@media (prefers-reduced-motion: reduce) { .session-state { animation: none !important; } }
+html[data-motion="reduce"] .session-state { animation: none !important; }
+
+.dialog-worktrees { width: min(900px, calc(100vw - 24px)); margin: 8vh auto auto; }
+.dialog-worktrees .palette { max-height: min(84vh, 780px); }
+.wtv-list { padding: 6px 8px 10px; }
+.wtv-item { display: grid; gap: 4px; padding: 10px 12px 11px; border: 1px solid transparent; border-radius: 12px; color: var(--text-2); cursor: pointer; }
+.wtv-item + .wtv-item { margin-top: 2px; }
+.wtv-item:hover { background: var(--bg-hover); }
+.wtv-item.active { background: var(--bg-active); border-color: var(--line-2); color: var(--text); }
+.wtv-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wtv-head .sa-title strong { font-size: 14px; }
+.wtv-head .sa-type { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtv-head .sa-state { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.wtv-item .sa-meta, .wtv-comment { margin: 0 0 0 18px; }
+.wtv-comment { color: var(--text-2); font-size: 13px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtv-chip { display: inline-flex; align-items: center; gap: 6px; }
+.wtv-agents { display: grid; gap: 6px; margin: 4px 0 0 18px; padding: 8px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.wtv-agent { display: grid; gap: 2px; min-width: 0; }
+.wtv-agent-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.wtv-agent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.wtv-msg { margin-left: 14px; color: var(--faint); font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wtv-agent .sa-phase { color: var(--muted); background: transparent; border-color: var(--line-2); font-weight: 400; }
+.act-time { align-self: center; margin-left: 6px; color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: default; }

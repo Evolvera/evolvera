@@ -34,6 +34,7 @@ else {
     linkedIssue: worktree.linkedIssue ?? null,
     linkedPR: worktree.linkedPR ?? null,
     comment: worktree.comment ?? "",
+    liveTerminalCount: worktree.liveTerminalCount ?? 0,
     lastActivityAt: 1_700_000_000_000 + index,
     agents: worktree.agents ?? [],
   }));

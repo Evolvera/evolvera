@@ -48,8 +48,8 @@ describe("Orca worktrees (lib)", () => {
     assert.equal(result.worktrees.length, 2);
     assert.deepEqual(result.worktrees[0], {
       id: "r::/a", name: "Nome", repo: "Repo", path: "C:/a/b", branch: "feat/x", status: "working", active: true, unread: true,
-      linkedIssue: { number: 321, state: "" }, linkedPR: { number: 9, state: "draft" }, comment: "nota com quebra", lastActivityAt: 5,
-      agents: [{ state: "working", type: "pi", title: "Tarefa", lastMessage: "feito ok" }],
+      linkedIssue: { number: 321, state: "" }, linkedPR: { number: 9, state: "draft" }, comment: "nota com quebra", terminals: 0, lastActivityAt: 5,
+      agents: [{ state: "working", type: "pi", title: "Tarefa", lastMessage: "feito ok", interrupted: false }],
     });
     assert.equal(result.worktrees[1].name, "c");
     assert.equal(result.worktrees[1].branch, "");
@@ -62,9 +62,9 @@ describe("Orca worktrees (lib)", () => {
     const agents = norm({ agents: [null, 5, { displayName: "Nome do agente", prompt: "x" }, { prompt: "primeira linha\nsegunda" }, {}, ...Array.from({ length: 30 }, () => ({ state: "done" }))] }).agents;
     assert.equal(agents.length, 20);
     assert.deepEqual(agents.slice(0, 3), [
-      { state: "", type: "", title: "Nome do agente", lastMessage: "" },
-      { state: "", type: "", title: "primeira linha", lastMessage: "" },
-      { state: "", type: "", title: "", lastMessage: "" },
+      { state: "", type: "", title: "Nome do agente", lastMessage: "", interrupted: false },
+      { state: "", type: "", title: "primeira linha", lastMessage: "", interrupted: false },
+      { state: "", type: "", title: "", lastMessage: "", interrupted: false },
     ]);
     assert.equal(norm({ agents: [{ lastAssistantMessage: "m".repeat(500), taskTitle: "t".repeat(500) }] }).agents[0].lastMessage.length, 200);
     assert.equal(lib.normalizeOrca(raw(Array.from({ length: 250 }, (_, i) => wt({ path: `C:/w${i}` })))).worktrees.length, 200);
@@ -151,7 +151,7 @@ const fwd = (value) => value.replace(/\\/g, "/");
 const setOrca = (state) => writeFile(stateFile, JSON.stringify(state));
 const orcaCalls = async () => (await readFile(countFile, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
 const WORKTREES = [
-  { path: fwd(wtListed), displayName: "Feature A", branch: "refs/heads/feat/a", status: "working", unread: true, linkedIssue: 12, agents: [{ state: "working", agentType: "pi", taskTitle: "Escrever testes", lastAssistantMessage: "quase lá" }] },
+  { path: fwd(wtListed), displayName: "Feature A", branch: "refs/heads/feat/a", status: "working", unread: true, linkedIssue: 12, liveTerminalCount: 2, agents: [{ state: "working", agentType: "pi", taskTitle: "Escrever testes", lastAssistantMessage: "quase lá" }] },
   { path: fwd(wtSecond), displayName: "Feature B", linkedPR: { number: 5, state: "open" } },
   { path: fwd(wtGhost), displayName: "Removida" },
 ];
@@ -346,8 +346,8 @@ describe("orca + status + open-path routes", () => {
     const first = data.worktrees[0];
     assert.deepEqual({ ...first, projectId: undefined }, {
       id: `fake-repo::${fwd(wtListed)}`, name: "Feature A", repo: "fake-repo", path: fwd(wtListed), branch: "feat/a", status: "working", active: true, unread: true,
-      linkedIssue: { number: 12, state: "" }, linkedPR: null, comment: "", lastActivityAt: 1_700_000_000_000, projectId: undefined,
-      agents: [{ state: "working", type: "pi", title: "Escrever testes", lastMessage: "quase lá" }],
+      linkedIssue: { number: 12, state: "" }, linkedPR: null, comment: "", terminals: 2, lastActivityAt: 1_700_000_000_000, projectId: undefined,
+      agents: [{ state: "working", type: "pi", title: "Escrever testes", lastMessage: "quase lá", interrupted: false }],
     });
   });
 

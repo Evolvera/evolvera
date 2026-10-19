@@ -724,3 +724,261 @@ describe("history discovery + routes", () => {
     });
   });
 });
+
+describe("conversation states", () => {
+  const ghost = path.join(tmp, "states-ghost-project");
+  const msg = (role, extra = {}) => ({ type: "message", id: `m-${Math.random()}`, message: { role, content: [{ type: "text", text: "x" }], ...extra } });
+  const custom = (name = "loop-state") => ({ type: "custom", customType: name, data: {} });
+  const header = (cwd, extra = {}) => ({ type: "session", id: "s", timestamp: "2025-01-01T00:00:00.000Z", cwd, ...extra });
+  let seq = 0;
+  const stateFile = (lines, { ghostCwd = ghost, extraHeader = {}, mtime = 1_900_000_000 } = {}) =>
+    sessionFile("--states--", `st-${seq++}.jsonl`, header(ghostCwd, extraHeader), mtime, lines);
+
+  test("classifySessionState: every rule of the table", () => {
+    const now = 10_000_000;
+    const old = now - 91_000;
+    const fresh = now - 90_000;
+    const assistant = (stopReason) => ({ role: "assistant", stopReason });
+    assert.equal(server.classifySessionState(null, now, now), "nova");
+    assert.equal(server.classifySessionState(assistant("stop"), old, now), "pronto");
+    assert.equal(server.classifySessionState(assistant("length"), old, now), "pronto");
+    assert.equal(server.classifySessionState(assistant("aborted"), fresh, now), "parado");
+    assert.equal(server.classifySessionState(assistant("error"), fresh, now), "erro");
+    assert.equal(server.classifySessionState(assistant("toolUse"), fresh, now), "fazendo");
+    assert.equal(server.classifySessionState(assistant("toolUse"), old, now), "parado");
+    assert.equal(server.classifySessionState(assistant(undefined), fresh, now), "fazendo");
+    for (const role of ["toolResult", "user", "unknown", "bashExecution"]) {
+      assert.equal(server.classifySessionState({ role }, fresh, now), "fazendo", `${role} recent`);
+      assert.equal(server.classifySessionState({ role }, old, now), "parado", `${role} old`);
+    }
+    assert.equal(server.classifySessionState({ role: "user" }, Date.now()), "fazendo", "default now");
+  });
+
+  test("readLastMessage: last message wins; trailing custom entries, a partial last line and empty files are handled", async () => {
+    const read = async (file) => server.readLastMessage(file, (await stat(file)).size);
+    const done = await stateFile([msg("user"), msg("assistant", { stopReason: "stop" }), custom(), { type: "session_info", name: "x" }, custom("loop-state")]);
+    assert.equal((await read(done)).stopReason, "stop");
+    const tool = await stateFile([msg("assistant", { stopReason: "stop" }), msg("user"), msg("assistant", { stopReason: "toolUse" }), custom()]);
+    assert.equal((await read(tool)).stopReason, "toolUse");
+    // The last line is cut mid-write (no newline, invalid JSON): the previous message decides.
+    const partial = path.join(sessionsRoot, "--states--", "partial.jsonl");
+    await writeFile(partial, `${JSON.stringify(header(ghost))}\n${JSON.stringify(msg("user"))}\n{"type":"message","message":{"role":"assis`);
+    assert.equal((await read(partial)).role, "user");
+    // Blank lines and CRLF are tolerated.
+    const crlf = path.join(sessionsRoot, "--states--", "crlf.jsonl");
+    await writeFile(crlf, `${JSON.stringify(header(ghost))}\r\n${JSON.stringify(msg("assistant", { stopReason: "error" }))}\r\n\r\n`);
+    assert.equal((await read(crlf)).stopReason, "error");
+    // No message at all (header only, or an empty file): null.
+    assert.equal(await read(await stateFile([custom()])), null);
+    const empty = path.join(sessionsRoot, "--states--", "empty.jsonl");
+    await writeFile(empty, "");
+    assert.equal(await server.readLastMessage(empty, 0), null);
+    // A message entry whose payload is not an object is not a message.
+    assert.equal(await read(await stateFile([{ type: "message", message: "text" }])), null);
+  });
+
+  test("readLastMessage: huge files read only the tail window, widening once before giving up", async () => {
+    const filler = (count) => Array.from({ length: count }, () => ({ type: "custom", customType: "pad", data: "p".repeat(900) }));
+    const read = async (file) => server.readLastMessage(file, (await stat(file)).size);
+    // ~3 MB: the message sits ~100 KB from the end (outside 64 KiB, inside 512 KiB), the window starts mid-line.
+    const widened = await stateFile([...filler(2500), msg("assistant", { stopReason: "stop" }), ...filler(110)]);
+    assert.ok((await stat(widened)).size > 2_000_000);
+    assert.equal((await read(widened)).stopReason, "stop");
+    // Message within the first window of a huge file.
+    const near = await stateFile([...filler(2500), msg("assistant", { stopReason: "aborted" }), ...filler(5)]);
+    assert.equal((await read(near)).stopReason, "aborted");
+    // Only padding in the last 512 KiB: content exists, so the state is unknown rather than "nova".
+    const buried = await stateFile([msg("user"), ...filler(700)]);
+    assert.ok((await stat(buried)).size > 600_000);
+    assert.deepEqual(await read(buried), { role: "unknown" });
+    // One giant final line (bigger than the widest window), e.g. a huge tool result.
+    const giant = await stateFile([msg("user"), { type: "message", message: { role: "toolResult", content: "z".repeat(700_000) } }]);
+    assert.deepEqual(await read(giant), { role: "unknown" });
+    // Medium file (> 64 KiB, < 512 KiB) without any message: whole file read, then null.
+    const mediumPad = await stateFile(filler(150));
+    assert.ok((await stat(mediumPad)).size > 100_000 && (await stat(mediumPad)).size < 500_000);
+    assert.equal(await read(mediumPad), null);
+  });
+
+  test("sessionHeader reads each file's first line once, retries unparsable ones and stays bounded", async () => {
+    const cache = new Map();
+    const reads = [];
+    const read = async (file) => { reads.push(file); return file === "partial" ? "{\"type\":\"sess" : JSON.stringify({ type: "session", id: file }); };
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
+    assert.deepEqual(reads, ["a"]);
+    // A file still being written (partial first line) is not cached, so the next call retries it.
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
+    assert.equal(reads.filter((file) => file === "partial").length, 2);
+    await server.sessionHeader("b", { read, cache, max: 2 });
+    assert.equal(cache.size, 2);
+    // At the bound the cache restarts instead of growing without limit.
+    await server.sessionHeader("c", { read, cache, max: 2 });
+    assert.deepEqual([...cache.keys()], ["c"]);
+  });
+
+  test("readLastMessage closes the file handle even when reading fails", async () => {
+    let closed = 0;
+    const openFile = async () => ({ read: async () => { throw new Error("EIO"); }, close: async () => { closed++; } });
+    await assert.rejects(server.readLastMessage("whatever", 10, { openFile }), /EIO/);
+    assert.equal(closed, 1);
+  });
+
+  test("SessionStateReader: cached per (path, mtime, size), bounded", async () => {
+    let reads = 0;
+    const reader = new server.SessionStateReader({ read: async (file, size) => { reads++; return { role: "user", size }; }, maxEntries: 2 });
+    const info = { mtimeMs: 1, size: 10 };
+    assert.deepEqual(await reader.lastMessage("a", info), { role: "user", size: 10 });
+    await reader.lastMessage("a", info);
+    assert.equal(reads, 1, "cache hit");
+    await reader.lastMessage("a", { mtimeMs: 2, size: 10 });
+    assert.equal(reads, 2, "mtime changed");
+    await reader.lastMessage("a", { mtimeMs: 2, size: 11 });
+    assert.equal(reads, 3, "size changed");
+    await reader.lastMessage("b", info);
+    assert.equal(reader.cache.size, 2);
+    await reader.lastMessage("c", info);
+    assert.equal(reader.cache.size, 1, "full cache is dropped, never grows past its bound");
+    const defaults = new server.SessionStateReader();
+    assert.equal(defaults.maxEntries, 2000);
+    assert.equal(typeof defaults.read, "function");
+  });
+
+  test("applyLiveState: the live PI overrides the file only where it knows better", () => {
+    assert.equal(server.applyLiveState("pronto", null), "pronto");
+    assert.equal(server.applyLiveState("parado", undefined), "parado");
+    assert.equal(server.applyLiveState("pronto", { streaming: true }), "fazendo");
+    assert.equal(server.applyLiveState("pronto", { waitingUi: true, streaming: true }), "aguardando");
+    assert.equal(server.applyLiveState("fazendo", { streaming: false }), "fazendo");
+    assert.equal(server.applyLiveState("pronto", { streaming: false }), "pronto");
+    assert.equal(server.applyLiveState("fazendo", { exited: true, streaming: false }), "parado");
+    assert.equal(server.applyLiveState("pronto", { exited: true }), "pronto");
+    assert.equal(server.applyLiveState("erro", { exited: true, waitingUi: true }), "erro");
+  });
+
+  test("history items carry state, isSubagent, parentSession and lastActivity; the file tail is read once per change", async () => {
+    const parent = path.join(sessionsRoot, "--states--", "parent.jsonl");
+    const doneFile = await stateFile([msg("user"), msg("assistant", { stopReason: "stop" })], { mtime: 1_900_000_100 });
+    const subFile = await stateFile([msg("user"), msg("assistant", { stopReason: "toolUse" })], { extraHeader: { id: "sub", timestamp: "2025-01-02T00:00:00.000Z", parentSession: parent }, mtime: 1_900_000_200 });
+    const errFile = await stateFile([msg("assistant", { stopReason: "error" })], { extraHeader: { timestamp: "2025-01-03T00:00:00.000Z" }, mtime: 1_900_000_300 });
+    const newFile = await stateFile([custom()], { extraHeader: { timestamp: "2025-01-04T00:00:00.000Z" } });
+    const reads = [];
+    const states = new server.SessionStateReader({ read: async (file, size) => { reads.push(file); return server.readLastMessage(file, size); } });
+    const project = { id: "ghost", cwd: ghost };
+    // "now" 10 s after the sub-PI's last write: still running.
+    const items = await server.listProjectHistory(project, { states, now: 1_900_000_210_000 });
+    const byPath = new Map(items.map((item) => [item.path, item]));
+    assert.equal(byPath.get(doneFile).state, "pronto");
+    assert.equal(byPath.get(subFile).state, "fazendo");
+    assert.equal(byPath.get(errFile).state, "erro");
+    assert.equal(byPath.get(newFile).state, "nova");
+    assert.deepEqual([byPath.get(doneFile).isSubagent, byPath.get(doneFile).parentSession], [false, null]);
+    assert.deepEqual([byPath.get(subFile).isSubagent, byPath.get(subFile).parentSession], [true, parent]);
+    assert.equal(byPath.get(subFile).lastActivity, new Date(1_900_000_200_000).toISOString());
+    assert.equal(byPath.get(subFile).fileStat, undefined, "internal stat is not leaked");
+    const firstReads = reads.length;
+    assert.ok(firstReads >= 4);
+    await server.listProjectHistory(project, { states, now: 1_900_000_210_000 });
+    assert.equal(reads.length, firstReads, "second listing is served from the cache");
+    // Same file, 10 minutes later: an in-flight run is now an interrupted one.
+    const later = await server.listProjectHistory(project, { states, now: 1_900_000_800_000 });
+    assert.equal(later.find((item) => item.path === subFile).state, "parado");
+    assert.equal(reads.length, firstReads);
+    // A write invalidates the cache entry.
+    await writeFile(doneFile, `${JSON.stringify(header(ghost))}\n${JSON.stringify(msg("user"))}\n`);
+    const changed = await server.listProjectHistory(project, { states, now: Date.now() });
+    assert.equal(changed.find((item) => item.path === doneFile).state, "fazendo");
+    assert.equal(reads.length, firstReads + 1);
+  });
+
+  test("history: an unreadable tail yields state nova instead of failing the list; only the newest 50 are read", async () => {
+    const failing = new server.SessionStateReader({ read: async () => { throw new Error("EACCES"); } });
+    const items = await server.listProjectHistory({ id: "ghost", cwd: ghost }, { states: failing });
+    assert.ok(items.length > 0 && items.every((item) => item.state === "nova"));
+    const crowded = path.join(tmp, "states-crowded-project");
+    for (let index = 0; index < 55; index++) await sessionFile("--crowded--", `c-${index}.jsonl`, header(crowded, { timestamp: new Date(1_800_000_000_000 + index * 1000).toISOString() }), 1_900_000_000 + index, [msg("assistant", { stopReason: "stop" })]);
+    let reads = 0;
+    const counting = new server.SessionStateReader({ read: async (file, size) => { reads++; return server.readLastMessage(file, size); } });
+    const listed = await server.listProjectHistory({ id: "crowded", cwd: crowded }, { states: counting });
+    assert.equal(listed.length, 50);
+    assert.equal(reads, 50);
+    assert.ok(listed.every((item) => item.state === "pronto"));
+    assert.equal((await server.listProjectHistory({ id: "none", cwd: path.join(tmp, "states-nobody") })).length, 0);
+  });
+
+  describe("live PI of the open project", () => {
+    let listening;
+    let base;
+    let token;
+    let projectId;
+    let liveFile;
+    const headers = (extra = {}) => ({ "x-pi-studio-token": token, ...extra });
+    const get = async (pathname) => (await fetch(`${base}${pathname}`, { headers: headers() })).json();
+    const post = async (pathname, body) => {
+      const res = await fetch(`${base}${pathname}`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify(body) });
+      return { status: res.status, data: await res.json() };
+    };
+    const liveState = async () => (await get(`/api/projects/${projectId}/history`)).history.find((item) => item.path === liveFile)?.state;
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    before(async () => {
+      liveFile = await stateFile([msg("user"), msg("assistant", { stopReason: "stop" })], { ghostCwd: projC });
+      listening = await server.startServer(0);
+      base = `http://127.0.0.1:${listening.address().port}`;
+      const page = await fetch(`${base}/`);
+      token = (await page.text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
+      projectId = (await get("/api/projects")).projects.find((item) => item.cwd === projC).id;
+    });
+
+    after(async () => {
+      await server.stopServer();
+    });
+
+    test("open returns history with states; the switched-to file takes the live PI's state", async () => {
+      const opened = await post(`/api/projects/${projectId}/open`, {});
+      assert.equal(opened.status, 201);
+      const entry = opened.data.history.find((item) => item.path === liveFile);
+      assert.deepEqual([entry.state, entry.isSubagent], ["pronto", false]);
+      // Point the fake PI at the file and let the server learn it through get_state.
+      await post(`/api/projects/${projectId}/command`, { id: "sw", type: "switch_session", sessionPath: liveFile });
+      await post(`/api/projects/${projectId}/command`, { id: "gs", type: "get_state" });
+      await sleep(300);
+      assert.equal(await liveState(), "pronto", "idle live PI keeps the file state");
+    });
+
+    test("streaming -> fazendo, pending dialog -> aguardando, settled -> pronto, exited mid-run -> parado", async () => {
+      await post(`/api/projects/${projectId}/command`, { id: "p-ui", type: "prompt", message: "ui" });
+      let waiting = "";
+      for (let attempt = 0; attempt < 100 && waiting !== "aguardando"; attempt++) {
+        waiting = await liveState();
+        if (waiting !== "aguardando") await sleep(50);
+      }
+      assert.equal(waiting, "aguardando");
+      await post(`/api/projects/${projectId}/ui-response`, { id: "fake-ui-1", value: "Permitir" });
+      let settled = "";
+      for (let attempt = 0; attempt < 200 && settled !== "pronto"; attempt++) {
+        settled = await liveState();
+        if (settled !== "pronto") await sleep(50);
+      }
+      assert.equal(settled, "pronto");
+
+      await post(`/api/projects/${projectId}/command`, { id: "p-run", type: "prompt", message: "demo" });
+      let running = "";
+      for (let attempt = 0; attempt < 100 && running !== "fazendo"; attempt++) {
+        running = await liveState();
+        if (running !== "fazendo") await sleep(30);
+      }
+      assert.equal(running, "fazendo");
+      // The file also says the run is in flight; the PI dies: interrupted.
+      await writeFile(liveFile, `${JSON.stringify(header(projC))}\n${JSON.stringify(msg("user"))}\n`);
+      await post(`/api/projects/${projectId}/command`, { id: "x1", type: "test_exit", code: 0 });
+      let exited = "";
+      for (let attempt = 0; attempt < 100 && exited !== "parado"; attempt++) {
+        exited = await liveState();
+        if (exited !== "parado") await sleep(50);
+      }
+      assert.equal(exited, "parado");
+    });
+  });
+});

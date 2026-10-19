@@ -3,6 +3,22 @@ import {
   NOTIFY_KEY,
   SETTINGS_KEY,
   followDecision,
+  applyTurnFinish,
+  countBadge,
+  projectRunningCount,
+  runningSubagentCount,
+  runningWorktreeCount,
+  studioPiState,
+  finishedLabel,
+  stampTurnEnd,
+  filterWorktrees,
+  groupWorktrees,
+  historyPollWanted,
+  orcaEnabledNow,
+  sessionStateBadge,
+  sessionTooltip,
+  stepIndex,
+  worktreeDetail,
   orcaPollWanted,
   resolveInspectorTab,
   statusAttention,
@@ -99,6 +115,10 @@ const els = {
   projectTitle: $("#projectTitle"),
   consoleBtn: $("#consoleBtn"),
   filesBtn: $("#filesBtn"),
+  worktreesBtn: $("#worktreesBtn"),
+  worktreesDialog: $("#worktreesDialog"),
+  worktreesInput: $("#worktreesInput"),
+  worktreesList: $("#worktreesList"),
   newSession: $("#newSessionBtn"),
   newSessionLabel: $("#newSessionLabel"),
   searchWrap: $("#searchWrap"),
@@ -158,6 +178,9 @@ const els = {
   subList: $("#subList"),
   wtList: $("#wtList"),
   subBadge: $("#subBadge"),
+  filesBadge: $("#filesBadge"),
+  wtTabBadge: $("#wtTabBadge"),
+  worktreesBadge: $("#worktreesBadge"),
   ctxView: $("#ctxView"),
   filesView: $("#view-files"),
   envPath: $("#envPath"),
@@ -414,7 +437,7 @@ const inspector = {
 };
 const term = { cache: new Map(), stick: true, collapsed: new Set() };
 // Orca integration (off by default): latest /api/orca answer, the path follow mode last handled, and its poll timer.
-const orca = { data: null, lastFollowed: null, timer: null, inflight: false, renderSig: "" };
+const orca = { data: null, lastFollowed: null, timer: null, inflight: false, renderSig: "", uiKey: "" };
 const subOpen = new Set();
 const subCache = new Map();
 let noticeSeq = 0;
@@ -559,8 +582,10 @@ function sessionButton(project, item, active) {
   button.dataset.project = project.id;
   button.dataset.path = item.path;
   if (active) button.setAttribute("aria-current", "true");
-  button.innerHTML = `<span class="session-title">${esc(item.title || "Nova conversa")}</span><span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
-  button.title = item.title || "Nova conversa";
+  const badge = sessionStateBadge(item);
+  const dot = badge ? `<span class="session-state st-${badge.state}" role="img" aria-label="${esc(badge.aria)}"></span>` : "";
+  button.innerHTML = `<span class="session-title">${esc(item.title || "Nova conversa")}</span>${dot}<span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
+  button.title = sessionTooltip(item);
   const menu = document.createElement("button");
   menu.type = "button";
   menu.className = "session-menu-btn";
@@ -623,6 +648,9 @@ function renderProjects() {
     const expanded = active || state.expandedProjects.has(project.id) || Boolean(state.filter && sessions.length);
     const wrap = document.createElement("div");
     const attention = attentionState(state.attention.get(project.id) || {});
+    const running = projectRunningCount(history, projectStatus.last.get(project.id));
+    const badge = countBadge(running);
+    const badgeLabel = plural(running, "conversa em andamento", "conversas em andamento");
     wrap.className = `project${active ? " active" : ""}${project.activeSessionId ? " running" : ""}${attention ? ` attn-${attention}` : ""}`;
     wrap.setAttribute("role", "listitem");
     wrap.innerHTML = `
@@ -630,6 +658,7 @@ function renderProjects() {
         <button type="button" class="project-row" data-action="open-project" data-project="${esc(project.id)}" title="${esc(project.cwd)}"${active ? ' aria-current="true"' : ""}>
           ${svg("i-code", "project-ico")}
           <span class="project-name">${esc(project.name)}</span>
+          ${badge ? `<span class="count-badge" role="img" aria-label="${esc(badgeLabel)}" title="${esc(badgeLabel)}">${badge}</span>` : ""}
           <span class="run-dot" aria-hidden="true"></span>
           ${attention ? `<span class="sr-only">${attention === "waiting" ? "aguardando sua resposta" : "terminou enquanto você estava fora"}</span>` : ""}
         </button>
@@ -666,6 +695,7 @@ function renderProjects() {
     fragment.append(empty);
   }
   els.projects.replaceChildren(fragment);
+  syncHistoryPolling();
 }
 
 async function loadOtherHistory(projectId) {
@@ -725,6 +755,7 @@ function resetConversation() {
   state.runtime.clear();
   state.liveMessage = null;
   state.outputs = [];
+  updateFilesBadge();
   state.stats = null;
   state.queue = { steering: [], followUp: [] };
   state.liveThinking = "";
@@ -843,11 +874,26 @@ function openSession(projectId, sessionPath) {
   });
 }
 
-async function refreshHistory() {
-  if (!state.currentProject) return;
-  const { history } = await api(`/api/projects/${encodeURIComponent(state.currentProject.id)}/history`);
-  state.history = history || [];
+async function refreshHistory({ onlyIfChanged = false } = {}) {
+  const project = state.currentProject;
+  if (!project) return;
+  const { history } = await api(`/api/projects/${encodeURIComponent(project.id)}/history`);
+  const next = history || [];
+  if (state.currentProject?.id !== project.id || (onlyIfChanged && JSON.stringify(next) === JSON.stringify(state.history))) return;
+  state.history = next;
   renderProjects();
+}
+
+// While a conversation of the open project is running its state is re-read every few seconds.
+const HISTORY_POLL_MS = 5000;
+let historyTimer = null;
+function syncHistoryPolling() {
+  const wanted = historyPollWanted(state.history, document.hidden);
+  if (wanted && !historyTimer) historyTimer = setInterval(() => refreshHistory({ onlyIfChanged: true }).catch(() => {}), HISTORY_POLL_MS);
+  else if (!wanted && historyTimer) {
+    clearInterval(historyTimer);
+    historyTimer = null;
+  }
 }
 
 function newSession() {
@@ -1017,6 +1063,7 @@ function handleRpc(event) {
       if (event.willRetry) break;
       setRunning(false);
       state.liveMessage = null;
+      stampTurnEnd(state.messages);
       sendRpc({ type: "get_entries" }).catch(() => {});
       refreshStats();
       refreshHistory().catch(() => {});
@@ -1026,6 +1073,7 @@ function handleRpc(event) {
     case "agent_settled":
       state.settledSupported = true;
       clearTimeout(state.settleTimer);
+      stampTurnEnd(state.messages);
       onSettled().catch(() => {});
       return;
     case "message_start":
@@ -1140,6 +1188,7 @@ function renderThread() {
   const tools = timelineTools(items);
   state.toolIndex = new Map(tools.map((tool) => [tool.id, tool]));
   state.outputs = collectOutputs(tools);
+  updateFilesBadge();
   annotateActions(items);
 
   const nodes = [];
@@ -1148,7 +1197,7 @@ function renderThread() {
   const seen = new Set(["empty"]);
   for (const item of items) {
     const actions = (item.actions || []).map((action) => `${action.id}${action.disabled ? 0 : 1}`).join();
-    const sig = `${timelineSignature(item)}|${isExpanded(item.key) ? 1 : 0}${isExpanded(`think:${item.key}`) ? 1 : 0}|${actions}`;
+    const sig = `${timelineSignature(item)}|${isExpanded(item.key) ? 1 : 0}${isExpanded(`think:${item.key}`) ? 1 : 0}|${actions}|${item.finishAt ?? ""}`;
     const cached = nodeCache.get(item.key);
     seen.add(item.key);
     if (cached && cached.sig === sig) {
@@ -1186,6 +1235,7 @@ function annotateActions(items) {
   const forkable = lastUser && messageActions(lastUser).some((action) => action.id === "edit");
   state.retryTarget = forkable && items.indexOf(lastAssistant) > lastUserIndex ? { entryId: lastUser.entryId, text: lastUser.text } : null;
   const ctx = { streaming: state.isStreaming, busy: state.forking };
+  applyTurnFinish(items, state.isStreaming);
   for (const item of items) {
     if (item.kind === "user") item.actions = messageActions(item, ctx);
     else if (item.kind === "assistant") item.actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
@@ -1198,8 +1248,19 @@ const ACTION_ICONS = { copy: "i-copy", edit: "i-edit", retry: "i-retry" };
 function actionsHtml(item) {
   if (!item.actions?.length) return "";
   const buttons = item.actions.map((action) => `<button type="button" class="act-btn" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(action.label)}" aria-label="${esc(action.label)}"${action.disabled ? " disabled" : ""}>${svg(ACTION_ICONS[action.id])}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`);
-  return `<div class="msg-actions" role="toolbar" aria-label="Ações da mensagem">${buttons.join("")}</div>`;
+  const finished = item.finishAt === undefined ? null : finishedLabel(item.finishAt, item.finishTook);
+  const time = finished ? `<span class="act-time" data-finished="${item.finishAt}" title="${esc(finished.title)}">${esc(finished.text)}</span>` : "";
+  return `<div class="msg-actions" role="toolbar" aria-label="Ações da mensagem">${buttons.join("")}${time}</div>`;
 }
+
+// "terminou há N min" texts age in place: only their text is rewritten, the thread is not re-rendered.
+setInterval(() => {
+  if (document.hidden) return;
+  for (const node of els.thread.querySelectorAll(".act-time[data-finished]")) {
+    const label = finishedLabel(Number(node.dataset.finished));
+    if (label && node.textContent !== label.text) node.textContent = label.text;
+  }
+}, 30_000);
 
 function isExpanded(key) {
   if (state.expanded.has(`!${key}`)) return false;
@@ -1842,11 +1903,30 @@ function currentSubagents() {
   return collectSubagents(state.messages, state.runtime, state.subagentRecords, Date.now());
 }
 
+// Count badges (pure counting lives in lib.js): hidden at 0, otherwise the number with a tooltip/aria label.
+function setBadge(node, count, label) {
+  const text = countBadge(count);
+  node.hidden = text === null;
+  node.textContent = text ?? "";
+  node.title = text === null ? "" : label;
+  if (text === null) node.removeAttribute("aria-label");
+  else node.setAttribute("aria-label", label);
+}
+
 function updateSubBadge(runs) {
-  const running = (runs || currentSubagents()).filter((run) => run.phase === "running").length;
-  els.subBadge.hidden = !running;
-  els.subBadge.textContent = String(running);
-  els.subBadge.title = running ? `${plural(running, "subagente rodando", "subagentes rodando")}` : "";
+  const running = runningSubagentCount(runs || currentSubagents());
+  setBadge(els.subBadge, running, plural(running, "subagente rodando", "subagentes rodando"));
+}
+
+function updateFilesBadge() {
+  setBadge(els.filesBadge, state.outputs.length, plural(state.outputs.length, "arquivo alterado", "arquivos alterados"));
+}
+
+function updateWorktreeBadges() {
+  const running = orca.data?.available ? runningWorktreeCount(orca.data.worktrees, (worktree) => (worktree.projectId ? projectStatus.last.get(worktree.projectId) : null)) : 0;
+  const label = plural(running, "worktree trabalhando", "worktrees trabalhando");
+  setBadge(els.wtTabBadge, running, label);
+  setBadge(els.worktreesBadge, running, label);
 }
 
 function subCard(run, open) {
@@ -2868,9 +2948,9 @@ function openSettings() {
     : "Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.";
   els.settingMotion.checked = settings.reduceMotion;
   els.settingThinking.checked = Boolean(prefs.showThinking);
-  els.settingOrca.checked = settings.orcaEnabled;
+  els.settingOrca.checked = orcaOn();
   els.settingOrcaFollow.checked = settings.orcaFollow;
-  els.settingOrcaFollow.disabled = !settings.orcaEnabled;
+  els.settingOrcaFollow.disabled = !orcaOn();
   els.settingsDialog.showModal();
 }
 
@@ -2879,7 +2959,7 @@ els.settingsDialog.addEventListener("change", (event) => {
   if (target.name === "settingFont") settings.fontSize = target.value;
   else if (target.name === "settingWidth") settings.chatWidth = target.value;
   else if (target === els.settingMotion) settings.reduceMotion = target.checked;
-  else if (target === els.settingOrca) settings.orcaEnabled = target.checked;
+  else if (target === els.settingOrca) Object.assign(settings, { orcaEnabled: target.checked, orcaChosen: true });
   else if (target === els.settingOrcaFollow) {
     settings.orcaFollow = target.checked;
     orca.lastFollowed = null;
@@ -2895,7 +2975,7 @@ els.settingsDialog.addEventListener("change", (event) => {
   }
   saveSettings();
   if (target === els.settingOrca || target === els.settingOrcaFollow) {
-    els.settingOrcaFollow.disabled = !settings.orcaEnabled;
+    els.settingOrcaFollow.disabled = !orcaOn();
     applyOrcaSettings();
   }
 });
@@ -2904,23 +2984,33 @@ els.settingsDialog.addEventListener("change", (event) => {
 
 const POLL_MS = 3000;
 
+// The integration is on when the user said so; until then it follows whether Orca answered (see orcaEnabledNow).
+const orcaOn = () => orcaEnabledNow(settings, orca.data?.available);
+
 function applyOrcaSettings() {
-  els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !settings.orcaEnabled;
-  els.tablist.classList.toggle("has-worktrees", settings.orcaEnabled);
-  if (!settings.orcaEnabled) {
+  if (settings.orcaEnabled === false) {
     orca.data = null;
     orca.lastFollowed = null;
-    if (inspector.tab === "worktrees") selectTab("terminal");
+    closeWorktrees();
   }
+  const on = orcaOn();
+  els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !on;
+  els.tablist.classList.toggle("has-worktrees", on);
+  els.worktreesBtn.hidden = !(on && orca.data?.available);
+  updateWorktreeBadges();
+  orca.uiKey = `${on}/${Boolean(orca.data?.available)}`;
+  if (!on && inspector.tab === "worktrees") selectTab("terminal");
   syncOrcaPolling();
+  if (on && !orca.data) pollOrca();
 }
 
 // Orca is only asked while the Worktrees tab is on screen or follow mode is on, and never in a hidden page.
 function syncOrcaPolling() {
   const wanted = orcaPollWanted({
-    enabled: settings.orcaEnabled,
+    enabled: orcaOn(),
     follow: settings.orcaFollow,
-    tabVisible: inspector.tab === "worktrees" && layout.right === "open",
+    // The top-bar button's running count keeps Orca polled while the button is shown.
+    tabVisible: (inspector.tab === "worktrees" && layout.right === "open") || els.worktreesDialog.open || !els.worktreesBtn.hidden,
     hidden: document.hidden,
   });
   if (wanted && !orca.timer) {
@@ -2943,9 +3033,12 @@ async function pollOrca() {
   } finally {
     orca.inflight = false;
   }
-  if (!settings.orcaEnabled) return;
+  if (settings.orcaEnabled === false) return;
   orca.data = data;
+  updateWorktreeBadges();
+  if (orca.uiKey !== `${orcaOn()}/${Boolean(data.available)}`) applyOrcaSettings();
   scheduleInspector("worktrees");
+  renderWorktreesOverlay();
   followOrca();
 }
 
@@ -3035,6 +3128,7 @@ function applyProjectStatuses(statuses) {
   let changed = false;
   for (const project of state.projects) {
     const status = next.get(project.id);
+    if (studioPiState(projectStatus.last.get(project.id)) !== studioPiState(status)) changed = true;
     const isCurrent = state.currentProject?.id === project.id;
     const activeSessionId = status ? (status.exited ? null : status.sessionId) : isCurrent ? project.activeSessionId : null;
     if (project.activeSessionId !== activeSessionId) {
@@ -3049,7 +3143,9 @@ function applyProjectStatuses(statuses) {
     }
   }
   projectStatus.last = next;
+  updateWorktreeBadges();
   if (changed) renderProjects();
+  renderWorktreesOverlay();
 }
 
 async function pollProjectStatus() {
@@ -3066,9 +3162,141 @@ async function pollProjectStatus() {
 
 setInterval(pollProjectStatus, POLL_MS);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) pollProjectStatus();
+  if (!document.hidden) {
+    pollProjectStatus();
+    // Orca may have started since the last probe.
+    if (settings.orcaEnabled !== false && orca.data?.available !== true) pollOrca();
+  }
   syncOrcaPolling();
+  syncHistoryPolling();
 });
+
+// ------------------------------------------------------ worktrees overview (top bar)
+
+const wtv = { query: "", selected: null, entries: [], sig: "" };
+
+function worktreeEmptyText() {
+  if (!orca.data) return "Carregando…";
+  if (!orca.data.available) return orca.data.reason === "not-found" ? "O Orca não foi encontrado neste ambiente." : "Não foi possível ler o Orca.";
+  return wtv.query.trim() ? "Nada encontrado." : "Nenhuma worktree no Orca.";
+}
+
+function worktreeOverviewItem(worktree, detail, index) {
+  const selected = worktree.path === wtv.selected;
+  const current = samePath(state.currentProject?.cwd, worktree.path);
+  const node = document.createElement("div");
+  node.id = `wtv-opt-${index}`;
+  node.className = `wtv-item${selected ? " active" : ""}${detail.running ? " is-running" : ""}`;
+  node.setAttribute("role", "option");
+  node.setAttribute("aria-selected", String(selected));
+  node.dataset.index = String(index);
+  if (current) node.setAttribute("aria-current", "true");
+  const meta = [worktree.repo, detail.issue, detail.pr, detail.terminals, detail.lastActivity && `atividade ${detail.lastActivity}`].filter(Boolean);
+  node.innerHTML = `
+    <div class="wtv-head">
+      <span class="sa-dot" aria-hidden="true"></span>
+      <span class="sa-title"><strong>${esc(detail.name)}</strong><span class="sa-type">${esc(detail.sub)}</span></span>
+      <span class="sa-state">
+        ${detail.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}
+        ${current ? '<span class="wt-flag">Aberta</span>' : ""}
+        ${detail.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}
+        ${detail.studio ? `<span class="wt-flag wtv-chip"><span class="session-state st-${esc(detail.studio.key)}" aria-hidden="true"></span>${esc(detail.studio.label)}</span>` : ""}
+        <span class="sa-phase">${esc(detail.statusLabel)}</span>
+      </span>
+    </div>
+    ${meta.length ? `<p class="sa-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
+    ${detail.comment ? `<p class="wtv-comment">${esc(detail.comment)}</p>` : ""}
+    ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent) => `
+      <li class="wtv-agent">
+        <span class="wtv-agent-head"><span class="session-state${agent.key ? ` st-${esc(agent.key)}` : ""}" aria-hidden="true"></span><span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
+        ${agent.message ? `<span class="wtv-msg">${esc(agent.message)}</span>` : ""}
+      </li>`).join("")}</ul>` : ""}`;
+  return node;
+}
+
+// Re-rendered by every Orca / project-status poll while open; skipped when nothing visible changed.
+function renderWorktreesOverlay() {
+  if (!els.worktreesDialog.open) return;
+  const now = Date.now();
+  const data = orca.data;
+  const groups = groupWorktrees(data?.available ? filterWorktrees(data.worktrees, wtv.query) : []);
+  wtv.entries = groups.flatMap((group) => group.worktrees);
+  if (!wtv.entries.some((item) => item.path === wtv.selected)) wtv.selected = wtv.entries[0]?.path ?? null;
+  const details = new Map(wtv.entries.map((worktree) => [worktree, worktreeDetail(worktree, worktree.projectId ? projectStatus.last.get(worktree.projectId) : null, now)]));
+  const sig = JSON.stringify([[...details.values()], groups.map((group) => group.repo), wtv.selected, worktreeEmptyText(), state.currentProject?.cwd]);
+  if (sig === wtv.sig) return;
+  wtv.sig = sig;
+  const scrollTop = els.worktreesList.scrollTop;
+  const nodes = [];
+  let position = 0;
+  for (const group of groups) {
+    nodes.push(el("div", "palette-section", group.repo));
+    for (const worktree of group.worktrees) nodes.push(worktreeOverviewItem(worktree, details.get(worktree), position++));
+  }
+  if (!nodes.length) nodes.push(el("div", "palette-empty", worktreeEmptyText()));
+  els.worktreesList.replaceChildren(...nodes);
+  els.worktreesList.scrollTop = scrollTop;
+  const activeIndex = wtv.entries.findIndex((item) => item.path === wtv.selected);
+  els.worktreesInput.setAttribute("aria-activedescendant", activeIndex >= 0 ? `wtv-opt-${activeIndex}` : "");
+}
+
+function openWorktrees() {
+  closeMenu();
+  Object.assign(wtv, { query: "", selected: null, sig: "" });
+  els.worktreesInput.value = "";
+  els.worktreesDialog.showModal();
+  renderWorktreesOverlay();
+  els.worktreesInput.focus();
+  pollOrca();
+  pollProjectStatus();
+  syncOrcaPolling();
+}
+
+function closeWorktrees() {
+  if (els.worktreesDialog.open) els.worktreesDialog.close();
+}
+
+els.worktreesDialog.addEventListener("close", syncOrcaPolling);
+
+function chooseWorktree(index) {
+  const worktree = wtv.entries[index];
+  if (!worktree) return;
+  closeWorktrees();
+  openWorktree(worktree)
+    .then(() => toast(`Worktree: ${worktree.name}`))
+    .catch(report);
+}
+
+els.worktreesInput.addEventListener("input", () => {
+  wtv.query = els.worktreesInput.value;
+  wtv.selected = null;
+  renderWorktreesOverlay();
+});
+
+els.worktreesInput.addEventListener("keydown", (event) => {
+  const index = Math.max(0, wtv.entries.findIndex((item) => item.path === wtv.selected));
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    wtv.selected = wtv.entries[stepIndex(index, event.key === "ArrowDown" ? 1 : -1, wtv.entries.length)]?.path ?? null;
+    renderWorktreesOverlay();
+    els.worktreesList.querySelector(".wtv-item.active")?.scrollIntoView({ block: "nearest" });
+  } else if (event.key === "Enter" && !event.isComposing) {
+    event.preventDefault();
+    chooseWorktree(index);
+  }
+});
+
+// Keep focus in the filter while the pointer picks a row; clicking the backdrop closes.
+els.worktreesList.addEventListener("mousedown", (event) => event.preventDefault());
+els.worktreesList.addEventListener("click", (event) => {
+  const option = event.target.closest(".wtv-item");
+  if (option) chooseWorktree(Number(option.dataset.index));
+});
+els.worktreesDialog.addEventListener("click", (event) => {
+  if (event.target === els.worktreesDialog) closeWorktrees();
+});
+els.worktreesBtn.addEventListener("click", openWorktrees);
+
 
 // ------------------------------------------------------ command palette
 
@@ -3087,7 +3315,8 @@ function paletteActions() {
     { label: "Abrir aba Subagentes", icon: "i-agents", run: rightTab("subagents") },
     { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
     { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
-    ...(settings.orcaEnabled ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
+    ...(orcaOn() ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
+    ...(!els.worktreesBtn.hidden ? [{ label: "Ver worktrees", icon: "i-branch", keywords: "orca visão geral alt+w", run: openWorktrees }] : []),
     { label: "Exportar conversa", icon: "i-file", keywords: "html salvar", run: () => exportSession() },
     { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
     { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },
@@ -3373,6 +3602,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (els.paletteDialog.open) closePalette();
     else if (!modalOpen) openPalette();
+  } else if (action === "worktrees") {
+    event.preventDefault();
+    if (els.worktreesDialog.open) closeWorktrees();
+    else if (!modalOpen && !els.worktreesBtn.hidden) openWorktrees();
   } else if (action === "todos") {
     event.preventDefault();
     if (!modalOpen) toggleTodo();
@@ -3393,5 +3626,6 @@ updateComposer();
 renderAttachments();
 applyPanelWidth();
 applyOrcaSettings();
+if (settings.orcaEnabled !== false) pollOrca();
 selectTab(inspector.tab);
 bootstrap().catch(report);

@@ -488,10 +488,20 @@ export function activeBranch(entries = [], leafId) {
   return chain.reverse();
 }
 
+// Epoch milliseconds from a number or an ISO string; null for anything else.
+function toMs(value) {
+  const ms = typeof value === "string" ? Date.parse(value) : value;
+  return typeof ms === "number" && Number.isFinite(ms) ? ms : null;
+}
+
+// An assistant message's own `timestamp` is when it started; its entry's timestamp is when it was written (finished).
 export function entriesToMessages(entries, leafId) {
   const out = [];
   for (const entry of activeBranch(entries, leafId)) {
-    if (entry.type === "message" && entry.message) out.push(entry.message);
+    if (entry.type === "message" && entry.message) {
+      const endedAt = entry.message.role === "assistant" ? toMs(entry.timestamp) : null;
+      out.push(endedAt === null ? entry.message : { ...entry.message, _endedAt: endedAt });
+    }
     else if (entry.type === "custom_message") {
       out.push({ role: "custom", customType: entry.customType, content: entry.content, display: entry.display, details: entry.details, timestamp: entry.timestamp });
     }
@@ -599,14 +609,30 @@ export function buildTimeline(messages = [], runtime = new Map()) {
     thinking = "";
   };
 
+  // A turn runs from a user message to the next one; its last assistant text carries when the turn ended and how long it took.
+  let turnStart = null;
+  let turnText = null;
+  let turnEnd = null;
+  const closeTurn = () => {
+    if (turnText && turnEnd !== null) {
+      turnText.endedAt = turnEnd;
+      if (turnStart !== null && turnEnd - turnStart >= 1000) turnText.tookMs = turnEnd - turnStart;
+    }
+    turnText = null;
+    turnEnd = null;
+  };
+
   messages.forEach((message, mi) => {
     if (!message) return;
     switch (message.role) {
       case "user":
+        closeTurn();
+        turnStart = toMs(message.timestamp);
         group = null;
         items.push({ kind: "user", key: `u:${mi}`, text: messageText(message), images: messageImages(message), optimistic: Boolean(message._optimistic) });
         break;
       case "assistant": {
+        turnEnd = toMs(message._endedAt) ?? toMs(message.timestamp);
         const parts = Array.isArray(message.content) ? message.content : [{ type: "text", text: String(message.content ?? "") }];
         parts.forEach((part, pi) => {
           if (part?.type === "thinking" && part.thinking?.trim()) thinking += `${thinking ? "\n\n" : ""}${part.thinking}`;
@@ -615,6 +641,7 @@ export function buildTimeline(messages = [], runtime = new Map()) {
             const item = { kind: "assistant", key: `a:${mi}.${pi}`, text: part.text };
             attachThinking(item);
             items.push(item);
+            turnText = item;
           } else if (part?.type === "toolCall") {
             const target = ensureGroup(`${mi}:${part.id || pi}`);
             attachThinking(target);
@@ -671,6 +698,8 @@ export function buildTimeline(messages = [], runtime = new Map()) {
     }
   });
 
+  closeTurn();
+
   for (const [id, live] of runtime) {
     let tool = tools.get(id);
     if (!tool) {
@@ -687,6 +716,35 @@ export function buildTimeline(messages = [], runtime = new Map()) {
     }
   }
   return items;
+}
+
+// Live run: the last assistant message is stamped when the run ends, until PI's entries give the written time.
+export function stampTurnEnd(messages, now = Date.now()) {
+  const last = messages.findLast((message) => message?.role === "assistant");
+  if (!last || last._endedAt !== undefined) return false;
+  last._endedAt = now;
+  return true;
+}
+
+// Shows the end of a turn on its last assistant item, except for the turn still being streamed.
+export function applyTurnFinish(items, streaming) {
+  const lastUser = items.findLastIndex((item) => item.kind === "user");
+  items.forEach((item, index) => {
+    if (item.kind !== "assistant" || item.endedAt === undefined || (streaming && index > lastUser)) return;
+    item.finishAt = item.endedAt;
+    if (item.tookMs !== undefined) item.finishTook = item.tookMs;
+  });
+}
+
+// "terminou há 10 min" (agora under a minute) plus a tooltip with the absolute time and how long the turn took.
+export function finishedLabel(endedAt, tookMs, now = Date.now()) {
+  const at = toMs(endedAt);
+  if (at === null) return null;
+  const relative = relativeTime(at, now);
+  const text = relative === "agora" ? "terminou agora" : /^\d+ (min|h|d)$/.test(relative) ? `terminou há ${relative}` : `terminou em ${relative}`;
+  const title = [`terminou em ${new Date(at).toLocaleString("pt-BR")}`];
+  if (Number.isFinite(tookMs) && tookMs >= 1000) title.push(`levou ${formatElapsed(tookMs)}`);
+  return { text, title: title.join(" · ") };
 }
 
 export function timelineTools(items) {
@@ -870,13 +928,15 @@ export function recallAction(event, { empty, recalled }) {
 }
 
 // Global shortcuts. `typing`: focus is in a text field or a modal is open.
-// Alt+T, not Ctrl+T: browsers reserve Ctrl+T (new tab) and never deliver it to the page.
+// Alt+T / Alt+W, not Ctrl+T / Ctrl+Shift+W: browsers reserve those (new tab, close window) and never deliver them to the page.
 export function shortcutAction(event, { typing = false } = {}) {
   if (!event || event.isComposing) return null;
   const key = String(event.key);
   if (event.altKey) {
     const plainAlt = !event.ctrlKey && !event.metaKey && !event.shiftKey;
-    return plainAlt && (key.toLowerCase() === "t" || event.code === "KeyT") ? "todos" : null;
+    if (!plainAlt) return null;
+    if (key.toLowerCase() === "t" || event.code === "KeyT") return "todos";
+    return key.toLowerCase() === "w" || event.code === "KeyW" ? "worktrees" : null;
   }
   if (event.ctrlKey || event.metaKey) {
     if (key === "/") return "shortcuts";
@@ -916,6 +976,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ["Ctrl", "/"], label: "Mostrar ou ocultar esta lista" },
       { keys: ["Ctrl", "`"], label: "Console RPC" },
       { keys: ["Alt", "T"], label: "Mostrar ou ocultar a lista de tarefas" },
+      { keys: ["Alt", "W"], label: "Visão geral das worktrees (Orca)" },
     ],
   },
 ];
@@ -972,7 +1033,12 @@ export function paletteSections(groups, query) {
 
 export const SETTINGS_KEY = "pi-studio:settings";
 export const SETTING_OPTIONS = { fontSize: ["small", "medium", "large"], chatWidth: ["normal", "wide"] };
-export const DEFAULT_SETTINGS = { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: false, orcaFollow: false };
+export const DEFAULT_SETTINGS = { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: null, orcaChosen: false, orcaFollow: false };
+
+// `orcaEnabled` is null until the user chooses: the integration then follows whether Orca is available.
+export function orcaEnabledNow(settings, available) {
+  return settings.orcaEnabled ?? available === true;
+}
 
 // Stored JSON (or null) -> a complete, validated settings object; unknown or corrupt values fall back.
 export function parseSettings(raw) {
@@ -988,7 +1054,10 @@ export function parseSettings(raw) {
     if (options.includes(stored[key])) settings[key] = stored[key];
   }
   settings.reduceMotion = stored.reduceMotion === true;
-  settings.orcaEnabled = stored.orcaEnabled === true;
+  // Settings saved before the toggle existed carry orcaEnabled:false by default; only a choice made
+  // with the toggle (orcaChosen) counts, so the integration still turns on by itself for them.
+  settings.orcaChosen = stored.orcaChosen === true && typeof stored.orcaEnabled === "boolean";
+  settings.orcaEnabled = settings.orcaChosen ? stored.orcaEnabled : null;
   settings.orcaFollow = stored.orcaFollow === true;
   return settings;
 }
@@ -1583,6 +1652,7 @@ function orcaAgent(agent) {
     type: orcaText(agent.agentType, 20),
     title: orcaText(agent.taskTitle || agent.displayName || firstLine(agent.prompt), 80),
     lastMessage: orcaText(agent.lastAssistantMessage, 200),
+    interrupted: agent.interrupted === true,
   };
 }
 
@@ -1599,6 +1669,7 @@ function orcaWorktree(worktree) {
     linkedIssue: orcaRef(worktree.linkedIssue),
     linkedPR: orcaRef(worktree.linkedPR),
     comment: orcaText(worktree.comment, 200),
+    terminals: Number.isInteger(worktree.liveTerminalCount) && worktree.liveTerminalCount > 0 ? worktree.liveTerminalCount : 0,
     lastActivityAt: Number.isFinite(worktree.lastActivityAt) ? worktree.lastActivityAt : 0,
     agents: (Array.isArray(worktree.agents) ? worktree.agents : []).filter(isRecord).slice(0, ORCA_AGENTS_MAX).map(orcaAgent),
   };
@@ -1673,4 +1744,108 @@ export function statusAttention(prev, next, isCurrent) {
   const waiting = next.waitingUi === true;
   const finished = prev?.streaming === true && next.streaming !== true && !waiting && next.exited !== true;
   return finished ? { waiting, unseen: true } : { waiting };
+}
+
+// ------------------------------------------- conversation + worktree states
+
+const STATE_LABELS = { pronto: "pronto", fazendo: "fazendo", parado: "parado", erro: "erro", aguardando: "aguardando" };
+
+// Sidebar indicator of a conversation; "nova" (or an unknown state) shows nothing.
+export function sessionStateBadge(item) {
+  const label = STATE_LABELS[item?.state];
+  if (!label) return null;
+  return { state: item.state, label, aria: `Estado: ${label}` };
+}
+
+export function sessionTooltip(item) {
+  const badge = sessionStateBadge(item);
+  return [item.title || "Nova conversa", item.isSubagent ? "sub-PI" : "", badge?.label].filter(Boolean).join(" · ");
+}
+
+// The open project's history is re-read while a conversation is running or waiting for an answer, and only in a visible page.
+export function historyPollWanted(history, hidden) {
+  return !hidden && history.some((item) => item.state === "fazendo" || item.state === "aguardando");
+}
+
+// Orca agent -> the shared state vocabulary (key styles the dot, label is shown). Unknown states keep their own text.
+export function orcaAgentState(agent) {
+  if (agent.interrupted) return { key: "parado", label: "parado" };
+  const key = { working: "fazendo", done: "pronto", blocked: "aguardando", waiting: "aguardando", error: "erro", failed: "erro", idle: "parado" }[agent.state];
+  if (!key) return { key: "", label: agent.state || "—" };
+  return { key, label: key === "fazendo" ? "trabalhando" : key };
+}
+
+// PI Studio's own PI for a worktree (an entry of /api/projects/status), or null when none runs.
+export function studioPiState(status) {
+  if (!status) return null;
+  if (status.exited) return "parado";
+  if (status.waitingUi) return "aguardando";
+  return status.streaming ? "fazendo" : "pronto";
+}
+
+// Case- and accent-insensitive filter over name, branch and repo.
+export function filterWorktrees(list, query) {
+  const needle = foldText(query).trim();
+  if (!needle) return list;
+  return list.filter((worktree) => foldText([worktree.name, worktree.branch, worktree.repo].join(" ")).includes(needle));
+}
+
+// Groups by repository; the repository of the best-ranked worktree (see sortWorktrees) comes first.
+export function groupWorktrees(list) {
+  const groups = new Map();
+  for (const worktree of sortWorktrees(list)) {
+    const repo = worktree.repo || "Sem repositório";
+    if (!groups.has(repo)) groups.set(repo, []);
+    groups.get(repo).push(worktree);
+  }
+  return [...groups].map(([repo, worktrees]) => ({ repo, worktrees }));
+}
+
+// Everything a row of the Worktrees overview shows; `status` is the worktree's project status, if it has one.
+export function worktreeDetail(worktree, status, now = Date.now()) {
+  const row = worktreeRow(worktree);
+  const studio = studioPiState(status);
+  return {
+    name: row.name,
+    sub: row.sub,
+    statusLabel: row.statusLabel,
+    running: row.running,
+    active: row.active,
+    unread: row.unread,
+    issue: worktree.linkedIssue ? `#${worktree.linkedIssue.number}` : "",
+    pr: worktree.linkedPR ? `PR #${worktree.linkedPR.number}${worktree.linkedPR.state ? ` · ${worktree.linkedPR.state}` : ""}` : "",
+    comment: worktree.comment,
+    terminals: worktree.terminals ? plural(worktree.terminals, "terminal", "terminais") : "",
+    lastActivity: worktree.lastActivityAt ? relativeTime(worktree.lastActivityAt, now) : "",
+    studio: studio ? { key: studio, label: `PI do Studio: ${studio}` } : null,
+    agents: worktree.agents.map((agent) => ({ ...orcaAgentState(agent), title: agent.title || agent.type || "agente", message: agent.lastMessage })),
+  };
+}
+
+// Arrow-key step with wrap-around over `count` items.
+export function stepIndex(index, delta, count) {
+  return count ? (index + delta + count) % count : 0;
+}
+
+// ------------------------------------------------------------ count badges
+
+// Text of a count badge: nothing for 0 (or a non-count), "99+" past two digits.
+export function countBadge(count) {
+  if (!Number.isInteger(count) || count < 1) return null;
+  return count > 99 ? "99+" : String(count);
+}
+
+export function runningSubagentCount(runs) {
+  return runs.filter((run) => run.phase === "running").length;
+}
+
+// Worktrees with an Orca agent working, or with a Studio PI mid-run. `statusOf(worktree)`: its project status entry or null.
+export function runningWorktreeCount(worktrees, statusOf) {
+  return worktrees.filter((worktree) => worktree.agents.some((agent) => agent.state === "working" && !agent.interrupted) || studioPiState(statusOf(worktree)) === "fazendo").length;
+}
+
+// Conversations (sub-PIs included) of a project that are running: the listed ones, or the project's live PI when the list is not loaded.
+export function projectRunningCount(history, status) {
+  const listed = (history || []).filter((item) => item.state === "fazendo").length;
+  return Math.max(listed, studioPiState(status) === "fazendo" ? 1 : 0);
 }

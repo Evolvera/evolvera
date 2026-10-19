@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Load test for the endpoints behind worktrees/Orca: GET /api/orca and GET /api/projects/status.
+// Load test for the endpoints behind worktrees/Orca and conversation states: GET /api/orca, GET /api/projects/status and
+// GET /api/projects/:id/history over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
 // p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
@@ -34,6 +35,23 @@ const worktrees = Array.from({ length: 22 }, (_, i) => ({
   agents: i % 3 === 0 ? [{ state: "working", agentType: "pi", taskTitle: `tarefa ${i}`, lastAssistantMessage: "x".repeat(150) }] : [],
 }));
 await writeFile(stateFile, JSON.stringify({ mode: "normal", active: worktrees[0].path, worktrees }));
+
+// ~700 session files: 60 belong to the project under test (alpha, 12 of them multi-MB), the rest to other cwds.
+const SESSION_FILES = 700;
+const sessionsDir = path.join(tmp, "agent", "sessions", "--load--");
+await mkdir(sessionsDir, { recursive: true });
+const pad = JSON.stringify({ type: "custom", customType: "pad", data: "p".repeat(900) });
+const line = (value) => `${JSON.stringify(value)}\n`;
+const stops = ["stop", "toolUse", "aborted", "error", "length"];
+for (let index = 0; index < SESSION_FILES; index++) {
+  const mine = index % 12 === 0;
+  const big = mine && index % 24 === 0;
+  const header = { type: "session", id: `s${index}`, timestamp: new Date(1_700_000_000_000 + index * 60_000).toISOString(), cwd: mine ? projects[0] : path.join(tmp, `other-${index % 40}`), ...(index % 5 === 0 ? { parentSession: "parent.jsonl" } : {}) };
+  const body = [line(header), line({ type: "message", id: "u", message: { role: "user", content: `pergunta ${index}` } })];
+  if (big) body.push(`${pad}\n`.repeat(2500 + (index % 7) * 500));
+  body.push(line({ type: "message", id: "a", message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: stops[index % stops.length] } }), line({ type: "custom", customType: "loop-state" }));
+  await writeFile(path.join(sessionsDir, `s-${index}.jsonl`), body.join(""));
+}
 
 const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
   cwd: root,
@@ -122,13 +140,18 @@ try {
   }
   await request("GET", "/api/orca", { token });
   // Warm-up (JIT, sockets, caches) so the RSS baseline is the steady state, not a cold process.
-  for (const pathname of ["/api/orca", "/api/projects/status"]) await hammer("warm-up", pathname, token, WARMUP);
+  const historyPath = `/api/projects/${openedIds[0]}/history`;
+  const sample = JSON.parse((await request("GET", historyPath, { token })).text).history;
+  const seenStates = [...new Set(sample.map((item) => item.state))].sort();
+  console.log(`history sample: ${sample.length} items, states ${seenStates.join("/")}, ${sample.filter((item) => item.isSubagent).length} sub-PI`);
+  if (!sample.length || sample.some((item) => !item.state)) throw new Error("history items must carry a state");
+  for (const pathname of ["/api/orca", "/api/projects/status", historyPath]) await hammer("warm-up", pathname, token, WARMUP);
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const rssBefore = rssMb(server.pid);
   const spawnsBefore = await orcaSpawns();
   const results = [];
-  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status", "/api/projects/status"]]) {
+  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath]]) {
     results.push(await hammer(label, pathname, token));
   }
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);

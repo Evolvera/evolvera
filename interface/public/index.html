@@ -57,6 +57,7 @@
           <button id="toggleRightBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar inspetor" aria-controls="panel" aria-expanded="true"><svg><use href="#i-panel" /></svg></button>
           <button id="consoleBtn" class="icon-btn" type="button" aria-label="Console RPC" aria-controls="drawer" aria-expanded="false"><svg><use href="#i-terminal" /></svg></button>
           <button id="filesBtn" class="icon-btn" type="button" aria-label="Arquivos alterados"><svg><use href="#i-files" /></svg></button>
+          <button id="worktreesBtn" class="icon-btn" type="button" aria-label="Worktrees (Alt+W)" title="Worktrees (Alt+W)" aria-haspopup="dialog" hidden><svg><use href="#i-branch" /></svg><span id="worktreesBadge" class="count-badge" hidden></span></button>
         </div>
       </header>
 
@@ -153,10 +154,10 @@
         <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar inspetor" aria-controls="panel" aria-valuemin="320" aria-valuemax="900" aria-valuenow="460" tabindex="0" title="Arraste para redimensionar · duplo clique restaura"></div>
         <div id="inspectorTabs" class="insp-tabs" role="tablist" aria-label="Visões do inspetor">
           <button id="tab-terminal" class="insp-tab" type="button" role="tab" data-tab="terminal" aria-controls="view-terminal" aria-selected="true"><svg><use href="#i-terminal" /></svg><span class="insp-label">Terminal</span></button>
-          <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="insp-badge" hidden></span></button>
+          <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="count-badge" hidden></span></button>
           <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
-          <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span></button>
-          <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span></button>
+          <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
+          <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span><span id="wtTabBadge" class="count-badge" hidden></span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
           <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
@@ -286,6 +287,17 @@
           <input id="paletteInput" type="text" role="combobox" aria-expanded="true" aria-controls="paletteList" aria-autocomplete="list" placeholder="Digite um comando ou busque nas conversas…" aria-label="Paleta de comandos" autocomplete="off" spellcheck="false" />
         </div>
         <div id="paletteList" class="palette-list" role="listbox" aria-label="Resultados"></div>
+        <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></div>
+      </div>
+    </dialog>
+
+    <dialog id="worktreesDialog" class="dialog dialog-palette dialog-worktrees" aria-label="Worktrees">
+      <div class="palette">
+        <div class="palette-input">
+          <svg><use href="#i-branch" /></svg>
+          <input id="worktreesInput" type="text" role="combobox" aria-expanded="true" aria-controls="worktreesList" aria-autocomplete="list" placeholder="Filtrar worktrees por nome, branch ou repositório…" aria-label="Filtrar worktrees" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="worktreesList" class="palette-list wtv-list" role="listbox" aria-label="Worktrees"></div>
         <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></div>
       </div>
     </dialog>

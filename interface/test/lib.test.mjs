@@ -1373,10 +1373,14 @@ describe("wave 3: search, palette, settings", () => {
   });
 
   test("parseSettings validates every field and falls back to defaults", () => {
-    assert.deepEqual(lib.DEFAULT_SETTINGS, { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: false, orcaFollow: false });
+    assert.deepEqual(lib.DEFAULT_SETTINGS, { fontSize: "medium", chatWidth: "normal", reduceMotion: false, orcaEnabled: null, orcaChosen: false, orcaFollow: false });
     for (const raw of [null, undefined, "", "{oops", "null", "5", '"x"', "[]", "{}"]) assert.deepEqual(lib.parseSettings(raw), lib.DEFAULT_SETTINGS, String(raw));
     assert.deepEqual(lib.parseSettings('{"fontSize":"large","chatWidth":"wide","reduceMotion":true}'), { ...lib.DEFAULT_SETTINGS, fontSize: "large", chatWidth: "wide", reduceMotion: true });
-    assert.deepEqual(lib.parseSettings('{"orcaEnabled":true,"orcaFollow":true}'), { ...lib.DEFAULT_SETTINGS, orcaEnabled: true, orcaFollow: true });
+    assert.deepEqual(lib.parseSettings('{"orcaEnabled":true,"orcaChosen":true,"orcaFollow":true}'), { ...lib.DEFAULT_SETTINGS, orcaEnabled: true, orcaChosen: true, orcaFollow: true });
+    assert.deepEqual(lib.parseSettings('{"orcaEnabled":false,"orcaChosen":true}'), { ...lib.DEFAULT_SETTINGS, orcaEnabled: false, orcaChosen: true });
+    // Legacy saves (no orcaChosen) and a chosen flag without a boolean stay undecided.
+    assert.deepEqual(lib.parseSettings('{"orcaEnabled":false}'), lib.DEFAULT_SETTINGS);
+    assert.deepEqual(lib.parseSettings('{"orcaChosen":true}'), lib.DEFAULT_SETTINGS);
     assert.deepEqual(lib.parseSettings('{"orcaEnabled":"yes","orcaFollow":1}'), lib.DEFAULT_SETTINGS);
     assert.deepEqual(lib.parseSettings('{"fontSize":"huge","chatWidth":3,"reduceMotion":"yes"}'), lib.DEFAULT_SETTINGS);
     assert.deepEqual(lib.parseSettings('{"fontSize":"small"}'), { ...lib.DEFAULT_SETTINGS, fontSize: "small" });
@@ -1396,5 +1400,288 @@ describe("wave 3: search, palette, settings", () => {
       assert.deepEqual(boot(() => raw), lib.settingsAttributes(lib.parseSettings(raw)), String(raw));
     }
     assert.deepEqual(boot(() => { throw new Error("storage blocked"); }), lib.settingsAttributes(lib.DEFAULT_SETTINGS));
+  });
+});
+
+describe("conversation states + worktrees overview", () => {
+  const norm = (over = {}) => lib.normalizeOrca({ ok: true, result: { worktrees: [{ worktreeId: "r::/a", repo: "Repo", path: "C:/a/b", branch: "refs/heads/feat/x", displayName: "Nome", isActive: false, status: "inactive", unread: false, linkedIssue: null, linkedPR: null, comment: "", lastActivityAt: 5, agents: [], ...over }] } }).worktrees[0];
+
+  test("orcaEnabledNow: an explicit choice wins, otherwise Orca's availability decides", () => {
+    assert.equal(lib.orcaEnabledNow({ orcaEnabled: null }, true), true);
+    assert.equal(lib.orcaEnabledNow({ orcaEnabled: null }, false), false);
+    assert.equal(lib.orcaEnabledNow({ orcaEnabled: null }, undefined), false);
+    assert.equal(lib.orcaEnabledNow({ orcaEnabled: false }, true), false);
+    assert.equal(lib.orcaEnabledNow({ orcaEnabled: true }, false), true);
+    assert.equal(lib.orcaEnabledNow(lib.parseSettings(null), true), true);
+    // A legacy save (orcaEnabled:false written before the toggle existed) does not block the default.
+    assert.equal(lib.orcaEnabledNow(lib.parseSettings('{"orcaEnabled":false,"fontSize":"large"}'), true), true);
+    assert.equal(lib.orcaEnabledNow(lib.parseSettings('{"orcaEnabled":false,"orcaChosen":true}'), true), false);
+  });
+
+  test("sessionStateBadge maps each state to a label; nova and unknown states show nothing", () => {
+    for (const state of ["pronto", "fazendo", "parado", "erro", "aguardando"]) {
+      assert.deepEqual(lib.sessionStateBadge({ state }), { state, label: state, aria: `Estado: ${state}` });
+    }
+    for (const item of [{ state: "nova" }, { state: "xyz" }, {}, null, undefined]) assert.equal(lib.sessionStateBadge(item), null);
+  });
+
+  test("sessionTooltip: title, sub-PI marker and state label", () => {
+    assert.equal(lib.sessionTooltip({ title: "scout#8f244a40", isSubagent: true, state: "fazendo" }), "scout#8f244a40 · sub-PI · fazendo");
+    assert.equal(lib.sessionTooltip({ title: "Plano", state: "pronto" }), "Plano · pronto");
+    assert.equal(lib.sessionTooltip({ state: "nova" }), "Nova conversa");
+  });
+
+  test("historyPollWanted: only while something runs or waits, and never in a hidden page", () => {
+    assert.equal(lib.historyPollWanted([{ state: "pronto" }, { state: "fazendo" }], false), true);
+    assert.equal(lib.historyPollWanted([{ state: "aguardando" }], false), true);
+    assert.equal(lib.historyPollWanted([{ state: "pronto" }, { state: "parado" }, { state: "erro" }, { state: "nova" }], false), false);
+    assert.equal(lib.historyPollWanted([{ state: "fazendo" }], true), false);
+    assert.equal(lib.historyPollWanted([], false), false);
+  });
+
+  test("orcaAgentState: Orca states share the conversation vocabulary", () => {
+    assert.deepEqual(lib.orcaAgentState({ state: "working" }), { key: "fazendo", label: "trabalhando" });
+    assert.deepEqual(lib.orcaAgentState({ state: "done" }), { key: "pronto", label: "pronto" });
+    assert.deepEqual(lib.orcaAgentState({ state: "blocked" }), { key: "aguardando", label: "aguardando" });
+    assert.deepEqual(lib.orcaAgentState({ state: "waiting" }), { key: "aguardando", label: "aguardando" });
+    assert.deepEqual(lib.orcaAgentState({ state: "error" }), { key: "erro", label: "erro" });
+    assert.deepEqual(lib.orcaAgentState({ state: "failed" }), { key: "erro", label: "erro" });
+    assert.deepEqual(lib.orcaAgentState({ state: "idle" }), { key: "parado", label: "parado" });
+    assert.deepEqual(lib.orcaAgentState({ state: "working", interrupted: true }), { key: "parado", label: "parado" });
+    assert.deepEqual(lib.orcaAgentState({ state: "novel" }), { key: "", label: "novel" });
+    assert.deepEqual(lib.orcaAgentState({ state: "" }), { key: "", label: "—" });
+  });
+
+  test("studioPiState: the Studio's own PI for a worktree", () => {
+    assert.equal(lib.studioPiState(null), null);
+    assert.equal(lib.studioPiState(undefined), null);
+    assert.equal(lib.studioPiState({ exited: true, streaming: true }), "parado");
+    assert.equal(lib.studioPiState({ waitingUi: true, streaming: true }), "aguardando");
+    assert.equal(lib.studioPiState({ streaming: true }), "fazendo");
+    assert.equal(lib.studioPiState({ streaming: false }), "pronto");
+  });
+
+  test("filterWorktrees: name, branch and repo, ignoring case and accents", () => {
+    const list = [
+      { name: "Feature A", branch: "feat/açaí", repo: "Sanvera" },
+      { name: "Outra", branch: "main", repo: "Evolvera" },
+      { name: "Sem repo", branch: "", repo: "" },
+    ];
+    assert.equal(lib.filterWorktrees(list, ""), list);
+    assert.equal(lib.filterWorktrees(list, "   "), list);
+    assert.deepEqual(lib.filterWorktrees(list, "FEATURE").map((item) => item.name), ["Feature A"]);
+    assert.deepEqual(lib.filterWorktrees(list, "acai").map((item) => item.name), ["Feature A"]);
+    assert.deepEqual(lib.filterWorktrees(list, "evolv").map((item) => item.name), ["Outra"]);
+    assert.deepEqual(lib.filterWorktrees(list, "main").map((item) => item.name), ["Outra"]);
+    assert.deepEqual(lib.filterWorktrees(list, "zzz"), []);
+  });
+
+  test("groupWorktrees: by repository, best-ranked repository first, sorted inside, input untouched", () => {
+    const list = [
+      { name: "a-old", repo: "A", status: "inactive", active: false, lastActivityAt: 1 },
+      { name: "b-busy", repo: "B", status: "working", active: false, lastActivityAt: 2 },
+      { name: "a-new", repo: "A", status: "inactive", active: false, lastActivityAt: 9 },
+      { name: "none", repo: "", status: "inactive", active: false, lastActivityAt: 0 },
+    ];
+    const groups = lib.groupWorktrees(list);
+    assert.deepEqual(groups.map((group) => [group.repo, group.worktrees.map((item) => item.name)]), [["B", ["b-busy"]], ["A", ["a-new", "a-old"]], ["Sem repositório", ["none"]]]);
+    assert.deepEqual(list.map((item) => item.name), ["a-old", "b-busy", "a-new", "none"]);
+    assert.deepEqual(lib.groupWorktrees([]), []);
+  });
+
+  test("worktreeDetail: every field of an overview row, with Studio PI state and agents", () => {
+    const now = 1_000_000_000_000;
+    const full = norm({
+      status: "working", unread: true, isActive: true, linkedIssue: 321, linkedPR: { number: 9, state: "draft" }, comment: "nota", liveTerminalCount: 3, lastActivityAt: now - 5 * 60_000,
+      agents: [
+        { state: "working", agentType: "pi", taskTitle: "Tarefa", lastAssistantMessage: "quase" },
+        { state: "done", agentType: "claude", lastAssistantMessage: "" },
+        { state: "done", interrupted: true },
+        { state: "novel" },
+      ],
+    });
+    assert.deepEqual(lib.worktreeDetail(full, { streaming: true }, now), {
+      name: "Nome", sub: "feat/x", statusLabel: "trabalhando", running: true, active: true, unread: true,
+      issue: "#321", pr: "PR #9 · draft", comment: "nota", terminals: "3 terminais", lastActivity: "5 min",
+      studio: { key: "fazendo", label: "PI do Studio: fazendo" },
+      agents: [
+        { key: "fazendo", label: "trabalhando", title: "Tarefa", message: "quase" },
+        { key: "pronto", label: "pronto", title: "claude", message: "" },
+        { key: "parado", label: "parado", title: "agente", message: "" },
+        { key: "", label: "novel", title: "agente", message: "" },
+      ],
+    });
+    const bare = lib.worktreeDetail(norm({ lastActivityAt: 0, linkedPR: 7, liveTerminalCount: 1 }), null);
+    assert.deepEqual([bare.issue, bare.pr, bare.terminals, bare.lastActivity, bare.studio, bare.agents], ["", "PR #7", "1 terminal", "", null, []]);
+    assert.equal(lib.worktreeDetail(norm({ linkedIssue: 1 }), undefined, 5).issue, "#1");
+    assert.equal(lib.worktreeDetail(norm({ liveTerminalCount: -2 }), null).terminals, "");
+    assert.equal(typeof lib.worktreeDetail(norm(), null).lastActivity, "string");
+  });
+
+  test("stepIndex wraps in both directions and survives an empty list", () => {
+    assert.equal(lib.stepIndex(0, 1, 3), 1);
+    assert.equal(lib.stepIndex(2, 1, 3), 0);
+    assert.equal(lib.stepIndex(0, -1, 3), 2);
+    assert.equal(lib.stepIndex(0, 1, 0), 0);
+  });
+
+  test("Alt+W opens the worktrees overview; Ctrl+Shift+W, Alt+Shift+W and plain w do not", () => {
+    const ev = (key, extra = {}) => ({ key, ...extra });
+    assert.equal(lib.shortcutAction(ev("w", { altKey: true })), "worktrees");
+    assert.equal(lib.shortcutAction(ev("∑", { altKey: true, code: "KeyW" }), { typing: true }), "worktrees");
+    assert.equal(lib.shortcutAction(ev("W", { altKey: true, shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("w", { altKey: true, ctrlKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("w", { ctrlKey: true, shiftKey: true })), null);
+    assert.equal(lib.shortcutAction(ev("w")), null);
+    assert.equal(lib.shortcutAction(ev("x", { altKey: true })), null);
+    assert.ok(lib.SHORTCUT_GROUPS.flatMap((group) => group.items).some((item) => item.keys.join("+") === "Alt+W"));
+  });
+});
+
+describe("turn finish time", () => {
+  const T0 = 1_700_000_000_000;
+  const user = (offset, text = "pergunta") => ({ role: "user", content: text, timestamp: T0 + offset });
+  const assistant = (offset, text = "resposta", extra = {}) => ({ role: "assistant", content: [{ type: "text", text }], timestamp: T0 + offset, ...extra });
+
+  test("entriesToMessages stamps assistant messages with the time their entry was written", () => {
+    const iso = new Date(T0 + 5000).toISOString();
+    const entries = [
+      { type: "message", id: "1", parentId: null, timestamp: new Date(T0).toISOString(), message: { role: "user", content: "q", timestamp: T0 } },
+      { type: "message", id: "2", parentId: "1", timestamp: iso, message: { role: "assistant", content: [], timestamp: T0 + 1000 } },
+      { type: "message", id: "3", parentId: "2", timestamp: "not a date", message: { role: "assistant", content: [] } },
+      { type: "message", id: "4", parentId: "3", message: { role: "assistant", content: [] } },
+    ];
+    const messages = lib.entriesToMessages(entries);
+    assert.equal(messages[0], entries[0].message, "user messages are passed through untouched");
+    assert.deepEqual(messages[1], { role: "assistant", content: [], timestamp: T0 + 1000, _endedAt: T0 + 5000 });
+    assert.equal(entries[1].message._endedAt, undefined, "the stored message is not mutated");
+    assert.equal(messages[2], entries[2].message);
+    assert.equal(messages[3], entries[3].message);
+  });
+
+  test("buildTimeline: the last assistant text of each turn gets endedAt and tookMs", () => {
+    const items = lib.buildTimeline([
+      user(0, "um"), assistant(2000, "parcial"), { role: "toolResult", toolCallId: "x", content: [], timestamp: T0 + 3000 }, assistant(4000, "fim um", { _endedAt: T0 + 134_000 }),
+      user(200_000, "dois"), assistant(201_000, "fim dois"),
+      user(300_000, "tres"), assistant(300_200, "rapido"),
+    ]);
+    const texts = items.filter((item) => item.kind === "assistant");
+    assert.deepEqual(texts.map((item) => [item.text, item.endedAt, item.tookMs]), [
+      ["parcial", undefined, undefined],
+      ["fim um", T0 + 134_000, 134_000],
+      ["fim dois", T0 + 201_000, 1000],
+      ["rapido", T0 + 300_200, undefined],
+    ]);
+  });
+
+  test("buildTimeline: no timestamps, a turn without text, or a leading assistant add nothing", () => {
+    const plain = lib.buildTimeline([{ role: "user", content: "a" }, { role: "assistant", content: [{ type: "text", text: "b" }] }]);
+    assert.equal("endedAt" in plain[1], false);
+    const toolsOnly = lib.buildTimeline([user(0), { role: "assistant", content: [{ type: "toolCall", id: "t", name: "bash", arguments: {} }], timestamp: T0 + 5000 }]);
+    assert.deepEqual(toolsOnly.map((item) => item.kind), ["user", "tools"]);
+    const leading = lib.buildTimeline([assistant(5000, "sem pergunta")]);
+    assert.deepEqual([leading[0].endedAt, leading[0].tookMs], [T0 + 5000, undefined]);
+    const isoStamps = lib.buildTimeline([{ role: "user", content: "a", timestamp: new Date(T0).toISOString() }, assistant(9000)]);
+    assert.equal(isoStamps[1].tookMs, 9000);
+    const junk = lib.buildTimeline([{ role: "user", content: "a", timestamp: "oops" }, { role: "assistant", content: "texto", timestamp: Infinity }]);
+    assert.equal("endedAt" in junk[1], false);
+  });
+
+  test("stampTurnEnd marks the last assistant message once", () => {
+    assert.equal(lib.stampTurnEnd([]), false);
+    assert.equal(lib.stampTurnEnd([null, { role: "user" }]), false);
+    const messages = [{ role: "assistant" }, { role: "user" }, { role: "assistant" }];
+    assert.equal(lib.stampTurnEnd(messages, 42), true);
+    assert.deepEqual(messages.map((message) => message._endedAt), [undefined, undefined, 42]);
+    assert.equal(lib.stampTurnEnd(messages, 99), false);
+    assert.equal(messages[2]._endedAt, 42);
+    const defaulted = [{ role: "assistant" }];
+    lib.stampTurnEnd(defaulted);
+    assert.equal(typeof defaulted[0]._endedAt, "number");
+  });
+
+  test("applyTurnFinish: finished turns show the time; the turn being streamed does not", () => {
+    const make = () => [
+      { kind: "user" },
+      { kind: "assistant", endedAt: 10, tookMs: 5000 },
+      { kind: "assistant", endedAt: 20 },
+      { kind: "tools" },
+      { kind: "user" },
+      { kind: "assistant", endedAt: 30, tookMs: 7000 },
+      { kind: "assistant" },
+    ];
+    const idle = make();
+    lib.applyTurnFinish(idle, false);
+    assert.deepEqual(idle.map((item) => [item.finishAt, item.finishTook]), [[undefined, undefined], [10, 5000], [20, undefined], [undefined, undefined], [undefined, undefined], [30, 7000], [undefined, undefined]]);
+    const streaming = make();
+    lib.applyTurnFinish(streaming, true);
+    assert.deepEqual(streaming.map((item) => item.finishAt), [undefined, 10, 20, undefined, undefined, undefined, undefined], "only the earlier turn keeps its time");
+    const noUser = [{ kind: "assistant", endedAt: 1 }];
+    lib.applyTurnFinish(noUser, true);
+    assert.equal(noUser[0].finishAt, undefined, "a lone streaming turn shows nothing");
+    lib.applyTurnFinish(noUser, false);
+    assert.equal(noUser[0].finishAt, 1);
+  });
+
+  test("finishedLabel: relative text, absolute time and duration in the tooltip", () => {
+    const now = T0 + 10 * 60_000;
+    const absolute = new Date(T0).toLocaleString("pt-BR");
+    assert.deepEqual(lib.finishedLabel(T0, 134_000, now), { text: "terminou h\u00e1 10 min", title: `terminou em ${absolute} \u00b7 levou 2 min 14 s` });
+    assert.deepEqual(lib.finishedLabel(T0, undefined, T0 + 59_000), { text: "terminou agora", title: `terminou em ${absolute}` });
+    assert.equal(lib.finishedLabel(T0, 999, T0).title, `terminou em ${absolute}`, "under a second is not worth a duration");
+    assert.equal(lib.finishedLabel(T0, Infinity, T0).title, `terminou em ${absolute}`);
+    assert.equal(lib.finishedLabel(T0, 1000, T0).title, `terminou em ${absolute} \u00b7 levou 1 s`);
+    assert.equal(lib.finishedLabel(new Date(T0).toISOString(), null, T0 + 3 * 3_600_000).text, "terminou h\u00e1 3 h");
+    assert.equal(lib.finishedLabel(T0, null, T0 + 2 * 86_400_000).text, "terminou h\u00e1 2 d");
+    const old = lib.finishedLabel(T0, null, T0 + 30 * 86_400_000).text;
+    assert.ok(old.startsWith("terminou em ") && !old.includes("h\u00e1"), old);
+    assert.equal(lib.finishedLabel(T0, null, T0 - 5000).text, "terminou agora", "clock skew never shows the future");
+    assert.equal(lib.finishedLabel(undefined, 5000, T0), null);
+    assert.equal(lib.finishedLabel("oops", 5000, T0), null);
+    assert.equal(lib.finishedLabel(NaN, 5000, T0), null);
+    assert.equal(typeof lib.finishedLabel(T0, 5000).text, "string");
+  });
+});
+
+describe("count badges", () => {
+  test("countBadge: hidden for zero and non-counts, capped at 99+", () => {
+    for (const value of [0, -1, 1.5, NaN, "3", null, undefined]) assert.equal(lib.countBadge(value), null, String(value));
+    assert.equal(lib.countBadge(1), "1");
+    assert.equal(lib.countBadge(12), "12");
+    assert.equal(lib.countBadge(99), "99");
+    assert.equal(lib.countBadge(100), "99+");
+  });
+
+  test("runningSubagentCount counts only running runs", () => {
+    assert.equal(lib.runningSubagentCount([]), 0);
+    assert.equal(lib.runningSubagentCount([{ phase: "running" }, { phase: "done" }, { phase: "error" }, { phase: "running" }]), 2);
+  });
+
+  test("runningWorktreeCount: a working Orca agent or a streaming Studio PI, each worktree once", () => {
+    const wt = (name, agents = [], projectId = null) => ({ name, agents, projectId });
+    const status = { p2: { streaming: true }, p3: { streaming: true, waitingUi: true }, p4: { streaming: true, exited: true }, p5: { streaming: false } };
+    const list = [
+      wt("working", [{ state: "done" }, { state: "working" }]),
+      wt("interrupted", [{ state: "working", interrupted: true }]),
+      wt("idle", [{ state: "done" }]),
+      wt("none"),
+      wt("studio", [], "p2"),
+      wt("both", [{ state: "working" }], "p2"),
+      wt("waiting", [], "p3"),
+      wt("exited", [], "p4"),
+      wt("quiet", [], "p5"),
+      wt("unknown project", [], "p9"),
+    ];
+    assert.equal(lib.runningWorktreeCount(list, (worktree) => (worktree.projectId ? status[worktree.projectId] : null)), 3);
+    assert.equal(lib.runningWorktreeCount([], () => null), 0);
+  });
+
+  test("projectRunningCount: running conversations of a project, or its live PI when the list is unknown", () => {
+    assert.equal(lib.projectRunningCount([{ state: "fazendo" }, { state: "pronto" }, { state: "fazendo" }], null), 2);
+    assert.equal(lib.projectRunningCount([], { streaming: true }), 1);
+    assert.equal(lib.projectRunningCount(undefined, { streaming: true }), 1);
+    assert.equal(lib.projectRunningCount([{ state: "fazendo" }, { state: "fazendo" }], { streaming: true }), 2);
+    assert.equal(lib.projectRunningCount([{ state: "pronto" }], { streaming: true, waitingUi: true }), 0);
+    assert.equal(lib.projectRunningCount(null, undefined), 0);
   });
 });
