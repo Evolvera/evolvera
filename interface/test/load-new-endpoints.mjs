@@ -145,8 +145,10 @@ async function hammer(label, pathname, token, runSeconds = DURATION, method = "G
         statuses[res.status] = (statuses[res.status] || 0) + 1;
         if (res.status !== 200 && !(allow304 && res.status === 304)) errors++;
         latencies.push(performance.now() - t0);
-      } catch {
+      } catch (error) {
         errors++;
+        // Thrown errors (no status) are counted by code so a report can tell a socket reset from a server failure.
+        statuses[error.code || "thrown"] = (statuses[error.code || "thrown"] || 0) + 1;
       }
     }
   }));
@@ -360,7 +362,8 @@ try {
   const problems = [];
   if (results.some((item) => item.errors)) problems.push("request errors");
   if (spawns > bound) problems.push("orca spawns exceed the cache bound");
-  if (psSpawns > Math.ceil(DURATION / 5) + 2) problems.push("process-list spawns exceed the 5 s cache bound");
+  // Window = the /api/tree segment plus the 5-minute soak (both poll the process list through its 5 s cache).
+  if (psSpawns > Math.ceil((DURATION + 300) / 5) + 2) problems.push("process-list spawns exceed the 5 s cache bound");
   if (treeLoad.statuses[304] < 1) problems.push("/api/tree did not return unchanged 304 responses");
   if (treeSoak.errors || treeSoak.statuses[304] < treeSoak.requests * 0.9) problems.push("/api/tree soak did not sustain unchanged 304 polls");
   if (treeSoak.rssDelta > RSS_GROWTH_LIMIT_MB) problems.push("/api/tree soak RSS growth");
