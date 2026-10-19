@@ -1,13 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import readline from "node:readline";
 import { CREATE_ACCOUNT, renderAccountMenu, selectAccountMenu as openAccountMenu } from "../users/account-selector.mjs";
 // Most lifecycle tests exercise static rendering without waiting for wall time.
 const selectAccountMenu = (options) => openAccountMenu({ animate: false, ...options });
 const plain = (text) => text.replace(/\u001b\[[0-9;]*m/gu, "");
-const unpaint = (text) => text.replaceAll("\u001b[2K", "");
+const screenRows = (text) => {
+  const cells = new Map();
+  let row = 0;
+  let column = 0;
+  for (let i = 0; i < text.length;) {
+    if (text[i] === "\u001b" && text[i + 1] === "[") {
+      const end = text.indexOf("H", i);
+      if (end >= 0 && /^[0-9;]*$/u.test(text.slice(i + 2, end))) {
+        const [r = 1, c = 1] = text.slice(i + 2, end).split(";").map(Number);
+        row = r - 1; column = c - 1; i = end + 1; continue;
+      }
+      const final = text.slice(i + 2).search(/[ -/]*[@-~]/u);
+      if (final >= 0) { i += final + 3; continue; }
+    }
+    if (text[i] === "\r") { column = 0; i++; continue; }
+    if (text[i] === "\n") { row++; column = 0; i++; continue; }
+    const point = String.fromCodePoint(text.codePointAt(i));
+    const line = cells.get(row) ?? [];
+    for (const [offset, char] of [...point].entries()) line[column + offset] = char;
+    cells.set(row, line); column += [...point].length; i += point.length;
+  }
+  return [...cells.values()].map((line) => line?.join("") ?? "");
+};
+const includesRows = (actual, expected) => expected.every((line, index) => actual[index]?.startsWith(plain(line)));
 import { renderTerminalArt } from "../ui/terminal-art.mjs";
 
 class FakeInput extends PassThrough {
@@ -148,15 +171,15 @@ test("account picker redraws label-responsive art, resizes, and preserves tiny v
   const output = new FakeOutput();
   const input = new FakeInput();
   const pending = selectAccountMenu({ users, input, output, color: false });
-  const firstArt = renderTerminalArt({ width: 80, height: 17, label: "Alpha", color: false }).join("\n");
-  assert.ok(unpaint(output.text).includes(firstArt));
+  const firstArt = renderTerminalArt({ width: 79, height: 17, label: "Alpha", color: false }).join("\n");
+  assert.ok(includesRows(screenRows(output.text), firstArt.split("\n")));
   data(input, "\u001b[B");
-  const secondArt = renderTerminalArt({ width: 80, height: 17, label: "Beta", color: false }).join("\n");
-  assert.ok(unpaint(output.text).includes(secondArt), "highlight changes the art label");
+  const secondArt = renderTerminalArt({ width: 79, height: 17, label: "Beta", color: false }).join("\n");
+  assert.ok(includesRows(screenRows(output.text), secondArt.split("\n")), "highlight changes the art label");
   const listenersBeforeResize = output.listenerCount("resize");
   output.rows = 14;
   output.emit("resize");
-  assert.ok(unpaint(output.text).includes(renderTerminalArt({ width: 80, height: 7, label: "Beta", color: false }).join("\n")));
+  assert.ok(includesRows(screenRows(output.text), renderTerminalArt({ width: 79, height: 7, label: "Beta", color: false })));
   data(input, "\r");
   assert.equal(await pending, "beta");
   assert.equal(output.listenerCount("resize"), listenersBeforeResize - 1, "owned resize listener is removed");
@@ -169,6 +192,48 @@ test("account picker redraws label-responsive art, resizes, and preserves tiny v
   }
 });
 
+test("slow output coalesces animation while keyboard selection remains immediate and latest at drain", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  output.writes = [];
+  output.blocked = false;
+  output.write = function (text, callback) { this.writes.push({ text, callback }); return !this.blocked; };
+  output.drain = function () { this.blocked = false; this.emit("drain"); };
+  const clock = new FakeClock();
+  output.blocked = true;
+  const pending = openAccountMenu({ users, input, output, color: false, animationClock: clock });
+  assert.equal(output.writes.length, 1);
+  clock.advance(1000);
+  data(input, "\u001b[B");
+  clock.advance(1084);
+  data(input, "\u001b[B");
+  assert.equal(output.writes.length, 1, "animation ticks and arrows do not enqueue frames while blocked");
+  output.drain();
+  assert.equal(output.writes.length, 2, "drain emits one current row diff");
+  assert.match(output.writes[1].text, /> Create new account/u, "drain renders the latest selected profile");
+  data(input, "\r");
+  assert.equal(await pending, CREATE_ACCOUNT, "selection resolves without waiting for another drain");
+  assert.equal(clock.timers.size, 0);
+  assert.equal(output.listenerCount("drain"), 0);
+});
+
+test("real Writable EPIPE is handled without uncaught error after picker cleanup", async () => {
+  const input = new FakeInput();
+  const failure = Object.assign(new Error("synthetic picker EPIPE"), { code: "EPIPE" });
+  const output = new Writable({ write(_chunk, _encoding, callback) { queueMicrotask(() => callback(failure)); } });
+  Object.assign(output, { isTTY: true, columns: 80, rows: 24 });
+  const seen = [];
+  const otherErrorListener = (error) => seen.push(error);
+  output.on("error", otherErrorListener);
+  const clock = new FakeClock();
+  await assert.rejects(openAccountMenu({ users, input, output, animationClock: clock }), (error) => error === failure);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(seen, [failure], "Writable emitted one handled error event");
+  assert.deepEqual(output.listeners("error"), [otherErrorListener]);
+  assert.equal(input.isRaw, false);
+  assert.equal(clock.timers.size, 0);
+});
+
 test("resize write failures reject and clean up the picker lifecycle", async () => {
   const input = new FakeInput();
   const output = new FakeOutput();
@@ -177,6 +242,7 @@ test("resize write failures reject and clean up the picker lifecycle", async () 
   const failure = new Error("synthetic resize write failure");
   const pending = selectAccountMenu({ users, input, output, color: false });
   output.write = () => { throw failure; };
+  output.columns = 60;
   output.emit("resize");
   await assert.rejects(pending, (error) => error === failure);
   assert.equal(input.isRaw, false);
@@ -195,7 +261,7 @@ test("empty NO_COLOR suppresses picker colors and restores the environment", asy
     const input = new FakeInput();
     const output = new FakeOutput();
     const pending = selectAccountMenu({ users, input, output });
-    assert.doesNotMatch(output.text, /\u001b\[[0-9;]*m/u);
+    assert.doesNotMatch(output.text, /\u001b\[(?!0m)[0-9;]*m/u);
     data(input, "\r");
     assert.equal(await pending, "alpha");
   } finally {
@@ -280,7 +346,7 @@ test("one layered animation accepts immediate input, branding follows current pr
   clock.advance(1350);
   let from = output.text.length;
   data(input, "\u001b[B");
-  assert.ok(unpaint(output.text.slice(from)).includes(renderTerminalArt({ width: 80, height: 17, label: "Evolvera", color: true, progress: .9, timeMs: 1350 }).join("\n")));
+  assert.ok(includesRows(screenRows(output.text), renderTerminalArt({ width: 79, height: 17, label: "Evolvera", color: true, progress: .9, timeMs: 1350 })));
   assert.match(output.text.slice(from), /172;119;125/u, "the revealed ship body uses timber coloring");
   assert.doesNotMatch(output.text.slice(from), /33;148;208/u, "the flag has not yet been revealed at intro progress .9");
   from = output.text.length;
@@ -290,7 +356,7 @@ test("one layered animation accepts immediate input, branding follows current pr
   output.rows = 36;
   output.columns = 120;
   output.emit("resize");
-  assert.equal(output.text.match(/\u001b\[2J/gu).length, 2, "resize may clear once");
+  assert.equal(output.text.match(/\u001b\[2J/gu).length, 1, "resize redraws owned coordinates without clearing the alternate screen");
   assert.equal(clock.starts, 1);
   clock.advance(1500);
   assert.equal(clock.timers.size, 1, "ambient animation continues after the intro");
@@ -300,7 +366,7 @@ test("one layered animation accepts immediate input, branding follows current pr
   clock.advance(3350);
   from = output.text.length;
   data(input, "\u001b[B");
-  assert.ok(unpaint(output.text.slice(from)).includes(renderTerminalArt({ width: 120, height: 29, label: "Evolvera", color: true, progress: 1, timeMs: 3350 }).join("\n")), "continuous elapsed time reaches the rendered ambient frame");
+  assert.ok(includesRows(screenRows(output.text), renderTerminalArt({ width: 119, height: 29, label: "Evolvera", color: true, progress: 1, timeMs: 3350 })), "continuous elapsed time reaches the rendered ambient frame");
   assert.match(output.text.slice(from), /33;148;208/u, "the fully revealed Evolvera flag is blue");
   data(input, "\u001b[A");
   data(input, "\r");
@@ -358,7 +424,7 @@ test("animate false and dumb terminals render final art without allocating an in
       const output = new FakeOutput();
       const pending = openAccountMenu({ users, input, output, animate: dumb, animationClock: clock, color: false });
       assert.equal(clock.starts, 0);
-      assert.ok(unpaint(output.text).includes(renderTerminalArt({ width: 80, height: 17, color: false }).join("\n")));
+      assert.ok(includesRows(screenRows(output.text), renderTerminalArt({ width: 79, height: 17, color: false })));
       data(input, "\r");
       assert.equal(await pending, "alpha");
     }
