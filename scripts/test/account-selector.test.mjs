@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import readline from "node:readline";
-import { CREATE_ACCOUNT, renderAccountMenu, selectAccountMenu } from "../users/account-selector.mjs";
+import { CREATE_ACCOUNT, renderAccountMenu, selectAccountMenu as openAccountMenu } from "../users/account-selector.mjs";
+// Most lifecycle tests exercise static rendering without waiting for wall time.
+const selectAccountMenu = (options) => openAccountMenu({ animate: false, ...options });
+const plain = (text) => text.replace(/\u001b\[[0-9;]*m/gu, "");
+const unpaint = (text) => text.replaceAll("\u001b[2K", "");
 import { renderTerminalArt } from "../ui/terminal-art.mjs";
 
 class FakeInput extends PassThrough {
@@ -51,7 +55,7 @@ async function choose(chunks, { users: choices = users, input = new FakeInput(),
 test("Buffer input selects saved accounts; default Enter chooses the first", async () => {
   const { selected, output } = await choose(["\r"]);
   assert.equal(selected, "alpha");
-  assert.match(output.text, /Select an account/u);
+  assert.match(output.text, /SELECT YOUR PROFILE/u);
 });
 
 test("split ANSI/SS3 arrows and batched input navigate with wrapping", async () => {
@@ -144,15 +148,15 @@ test("account picker redraws label-responsive art, resizes, and preserves tiny v
   const output = new FakeOutput();
   const input = new FakeInput();
   const pending = selectAccountMenu({ users, input, output, color: false });
-  const firstArt = renderTerminalArt({ width: 80, height: 12, label: "Alpha", color: false }).join("\n");
-  assert.ok(output.text.includes(firstArt));
+  const firstArt = renderTerminalArt({ width: 80, height: 17, label: "Alpha", color: false }).join("\n");
+  assert.ok(unpaint(output.text).includes(firstArt));
   data(input, "\u001b[B");
-  const secondArt = renderTerminalArt({ width: 80, height: 12, label: "Beta", color: false }).join("\n");
-  assert.ok(output.text.includes(secondArt), "highlight changes the art label");
+  const secondArt = renderTerminalArt({ width: 80, height: 17, label: "Beta", color: false }).join("\n");
+  assert.ok(unpaint(output.text).includes(secondArt), "highlight changes the art label");
   const listenersBeforeResize = output.listenerCount("resize");
   output.rows = 14;
   output.emit("resize");
-  assert.ok(output.text.includes(renderTerminalArt({ width: 80, height: 9, label: "Beta", color: false }).join("\n")));
+  assert.ok(unpaint(output.text).includes(renderTerminalArt({ width: 80, height: 7, label: "Beta", color: false }).join("\n")));
   data(input, "\r");
   assert.equal(await pending, "beta");
   assert.equal(output.listenerCount("resize"), listenersBeforeResize - 1, "owned resize listener is removed");
@@ -160,7 +164,7 @@ test("account picker redraws label-responsive art, resizes, and preserves tiny v
   for (const height of [1, 2, 3, 4, 9]) {
     const rendered = renderAccountMenu(users, { width: 80, height, selected: 0, color: false });
     assert.ok(rendered.split("\n").length <= height);
-    assert.match(rendered, /Select an account|alpha/u);
+    assert.match(rendered, /SELECT YOUR PROFILE|Alpha/u);
     assert.doesNotMatch(rendered, /Acid Shellscape/u, "small viewports omit art");
   }
 });
@@ -214,7 +218,7 @@ test("renderer handles display-cell widths, viewport scrolling, and tiny heights
   const widthOf = (line) => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(line)]
     .reduce((width, part) => width + (/\p{Extended_Pictographic}|[\u{1f1e6}-\u{1f1ff}]/u.test(part.segment) || /[\u1100-\u115f\u2329\u232a\u2e80-\u303e\u3040-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(part.segment) ? 2 : 1), 0);
   assert.ok(narrow.split("\n").every((line) => widthOf(line) <= 12));
-  assert.match(narrow, /> gamma/u, "selected row remains in viewport");
+  assert.match(narrow, /> e\u0301 account/u, "selected friendly label remains in viewport");
   assert.match(narrow, /👩‍💻/u, "emoji joiner stays within one measured grapheme");
   assert.match(narrow, /中/u);
   assert.equal(narrow.includes("\u001b[31m"), false);
@@ -224,6 +228,132 @@ test("renderer handles display-cell widths, viewport scrolling, and tiny heights
   assert.equal(renderAccountMenu(labels, { width: 12, height: 0, selected: 2 }).split("\n").length, 1);
   const twoRows = renderAccountMenu(labels, { width: 12, height: 2, selected: 2 }).split("\n");
   assert.equal(twoRows.length, 2);
-  assert.match(twoRows[1], /> gamma/u);
+  assert.match(twoRows[1], /> e\u0301 account/u);
   assert.equal(renderAccountMenu(labels, { width: 12, height: 3, selected: 3 }).split("\n").length, 3);
+});
+
+class FakeClock {
+  value = 0;
+  timers = new Map();
+  starts = 0;
+  now = () => this.value;
+  setInterval = (fn) => { const handle = ++this.starts; this.timers.set(handle, fn); return handle; };
+  clearInterval = (handle) => { this.timers.delete(handle); };
+  advance(value) { this.value = value; for (const fn of [...this.timers.values()]) fn(); }
+}
+
+test("profile HUD is centered, highlighted, deduplicated, and budgets all remaining scene rows", () => {
+  const choices = [{ id: "evolvera", label: "Evolvera" }, { id: "personal", label: "Personal" }];
+  for (const [height, sceneRows] of [[24, 17], [36, 29]]) {
+    const frame = renderAccountMenu(choices, { width: 120, height, color: true });
+    const lines = plain(frame).split("\n");
+    assert.equal(lines.length, height);
+    assert.deepEqual(lines.slice(0, sceneRows), renderTerminalArt({ width: 120, height: sceneRows, label: "Evolvera" }).map(plain));
+    assert.ok(lines[sceneRows].startsWith(" ".repeat(32) + "+- SELECT YOUR PROFILE"));
+    assert.match(frame, /48;2;233;196;255m> Evolvera/u, "active profile has a filled highlight");
+    assert.doesNotMatch(frame, /evolvera \(Evolvera\)|Evolvera \/ evolvera/u);
+    assert.match(frame, /Create new account/u);
+    assert.match(frame, /↑\/↓ select · ENTER start · ESC back/u);
+    assert.ok(lines.every((line) => [...line].length <= 120));
+  }
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: `profile${i}`, label: `Profile ${i}` }));
+  for (let selected = 0; selected <= many.length; selected++) {
+    const frame = renderAccountMenu(many, { width: 80, height: 36, selected });
+    assert.equal(frame.split("\n").length, 36);
+    assert.match(frame, new RegExp(`> ${selected === 20 ? "Create new account" : `Profile ${selected} / profile${selected}`}`, "u"));
+  }
+  for (const [width, height] of [[1, 1], [20, 3], [40, 8], [44, 12], [240, 80], [1e10, 1e10]]) {
+    const frame = plain(renderAccountMenu(choices, { width, height, selected: NaN, offset: Infinity }));
+    assert.ok(frame.split("\n").length <= Math.min(height, 80));
+    assert.ok(frame.split("\n").every((line) => [...line].length <= Math.min(width, 240)));
+  }
+});
+
+test("one layered animation accepts immediate input, branding follows current progress, resize never restarts", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const clock = new FakeClock();
+  const choices = [{ id: "personal", label: "Personal" }, { id: "evolvera", label: "Evolvera" }];
+  const pending = openAccountMenu({ users: choices, input, output, color: true, animationClock: clock });
+  assert.equal(clock.starts, 1);
+  assert.equal(clock.timers.size, 1);
+  clock.advance(1350);
+  let from = output.text.length;
+  data(input, "\u001b[B");
+  assert.match(output.text.slice(from), /33;148;208/u, "new Evolvera highlight appears without restarting animation");
+  assert.ok(unpaint(output.text.slice(from)).includes(renderTerminalArt({ width: 80, height: 17, label: "Evolvera", color: true, progress: .9 }).join("\n")));
+  from = output.text.length;
+  data(input, "\u001b[A");
+  assert.doesNotMatch(output.text.slice(from), /33;148;208|18;75;133/u);
+  assert.equal(output.text.match(/\u001b\[2J/gu).length, 1, "ticks and input redraw owned lines without full clear");
+  output.rows = 36;
+  output.columns = 120;
+  output.emit("resize");
+  assert.equal(output.text.match(/\u001b\[2J/gu).length, 2, "resize may clear once");
+  assert.equal(clock.starts, 1);
+  clock.advance(1500);
+  assert.equal(clock.timers.size, 0, "final frame stops the animation");
+  data(input, "\r");
+  assert.equal(await pending, "personal");
+  assert.equal(output.listenerCount("resize"), 0);
+});
+
+test("animation timers and all owned listeners stop on early selection, cancellation, end, close and errors", async () => {
+  for (const action of ["enter", "ctrl-c", "escape", "end", "close", "output-close", "input-error", "output-error"]) {
+    const input = new FakeInput();
+    const output = new FakeOutput();
+    const clock = new FakeClock();
+    const inputBefore = baseline(input);
+    const outputBefore = baseline(output);
+    const pending = openAccountMenu({ users, input, output, animationClock: clock });
+    const error = new Error(`synthetic ${action}`);
+    if (action === "enter") data(input, "\r");
+    if (action === "ctrl-c") data(input, "\u0003");
+    if (action === "escape") data(input, "\u001b");
+    if (action === "end") input.emit("end");
+    if (action === "close") input.emit("close");
+    if (action === "output-close") output.emit("close");
+    if (action === "input-error") input.emit("error", error);
+    if (action === "output-error") output.emit("error", error);
+    if (action.endsWith("error")) await assert.rejects(pending, (actual) => actual === error);
+    else assert.equal(await pending, action === "enter" ? "alpha" : null);
+    assert.equal(clock.timers.size, 0, action);
+    assert.equal(input.isRaw, false);
+    assertListeners(input, inputBefore);
+    assertListeners(output, outputBefore);
+  }
+});
+
+test("animation write callback failures reject rather than throwing from the timer", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const clock = new FakeClock();
+  const error = new Error("synthetic asynchronous write failure");
+  const pending = openAccountMenu({ users, input, output, animationClock: clock });
+  output.write = (text, callback) => { queueMicrotask(() => callback?.(error)); return false; };
+  assert.doesNotThrow(() => clock.advance(200));
+  await assert.rejects(pending, (actual) => actual === error);
+  assert.equal(clock.timers.size, 0);
+  assert.equal(input.isRaw, false);
+  assert.equal(output.listenerCount("resize"), 0);
+});
+
+test("animate false and dumb terminals render final art without allocating an interval", async () => {
+  const previous = process.env.TERM;
+  try {
+    for (const dumb of [false, true]) {
+      process.env.TERM = dumb ? "dumb" : "xterm-256color";
+      const clock = new FakeClock();
+      const input = new FakeInput();
+      const output = new FakeOutput();
+      const pending = openAccountMenu({ users, input, output, animate: dumb, animationClock: clock, color: false });
+      assert.equal(clock.starts, 0);
+      assert.ok(unpaint(output.text).includes(renderTerminalArt({ width: 80, height: 17, color: false }).join("\n")));
+      data(input, "\r");
+      assert.equal(await pending, "alpha");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.TERM;
+    else process.env.TERM = previous;
+  }
 });
