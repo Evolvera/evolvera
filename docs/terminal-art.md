@@ -150,7 +150,7 @@ uma sessão PI. “Create new account” é apenas uma opção visual nesse prev
 node --test --test-concurrency=5 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs scripts/test/terminal-art-animation.test.mjs scripts/test/terminal-art-output.test.mjs
 ```
 
-Os **51 testes focados** passaram em aproximadamente **1,90 s**, com cinco workers
+Os **52 testes focados** passaram em aproximadamente **2,01 s**, com cinco workers
 e isolamento de processo por arquivo numa máquina com 12 CPUs lógicas. Usam
 streams/relógios em memória e leitura do fonte: `NO_STATEFUL_RESOURCES`. Cobrem
 geometria, identidade, movimento contínuo, Unicode, navegação, backpressure,
