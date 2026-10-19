@@ -13,6 +13,15 @@
         "vision,devtools",
         "--snapshot-boxes"
       ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--isolated",
+        "--headless"
+      ]
     }
   }
 }
