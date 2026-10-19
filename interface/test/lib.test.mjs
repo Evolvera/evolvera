@@ -46,7 +46,10 @@ describe("text utils", () => {
 
   test("session switches defer conversation reset until acknowledged and clear stale queue on reconnect", async () => {
     const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
-    for (const name of ["openSession", "newSession"]) {
+    // openSession routes to switchSession (or read-only following); the switch itself holds the rollback.
+    const openStart = app.indexOf("function openSession(");
+    assert.match(app.slice(openStart, app.indexOf("\n}", openStart)), /showConversation\(/);
+    for (const name of ["switchSession", "newSession"]) {
       const start = app.indexOf(`function ${name}(`);
       const end = app.indexOf("\n}", start) + 2;
       const body = app.slice(start, end);
