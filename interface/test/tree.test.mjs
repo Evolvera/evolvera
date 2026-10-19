@@ -59,6 +59,26 @@ test("tree excludes ancestor worktrees and nests live subagents by parent sessio
   service.close();
 });
 
+// A subagent of a subagent (grandchild) must lose the private _parent/_env links too: before, only depth 1 was
+// stripped, so the grandchild's _env pointed back at its environment and the real tree failed with
+// "Converting circular structure to JSON" (500 on /api/tree). Expected: serializable, nested, no private keys.
+test("tree strips private links at every subagent depth", async () => {
+  const session = (id, parent, mtimeMs) => ({ path: `C:/sessions/${id}.jsonl`, header: { id, cwd: "C:/repo/project", timestamp: 1000, ...(parent ? { parentSession: `C:/sessions/${parent}.jsonl` } : {}) }, stat: { mtimeMs }, title: id, state: "pronto" });
+  const service = createTreeService({
+    now: () => 2000,
+    getProjects: async () => [{ id: "p", name: "proj", cwd: "C:/repo/project" }],
+    getOrca: async () => ({ available: false, worktrees: [] }),
+    getSessions: async () => [session("root", null, 1900), session("child", "root", 1950), session("grandchild", "child", 1960), session("great", "grandchild", 1970)],
+    getLive: async () => [],
+  });
+  const tree = await service.get();
+  const text = JSON.stringify(tree);
+  assert.doesNotMatch(text, /"_(env|parent)"/);
+  const root = tree.projects[0].envs[0].pis[0];
+  assert.equal(root.children[0].children[0].children[0].title, "great");
+  service.close();
+});
+
 // Empty, unavailable, and over-limit inputs produce stable public records without leaking private linkage fields.
 test("tree handles unavailable providers, local-only projects, and PI limits", async () => {
   const sessions = Array.from({ length: 17 }, (_, index) => ({

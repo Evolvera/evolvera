@@ -53,7 +53,9 @@ export function createTreeService({ getProjects, getOrca, getSessions, getLive, 
       }
       for (const env of envs) {
         const candidates = rootItems.filter((item) => item._env === env).sort((a, b) => Number(Boolean(b.live)) - Number(Boolean(a.live)) || latest(a, b));
-        env.pis = candidates.slice(0, 15).map(({ _parent, _env, ...item }) => { item.children = item.children.map(({ _parent: ignored, _env: ignoredEnv, ...child }) => child); return item; });
+        // Recursive: subagents nest at any depth. Terminates because each item has one parent and roots have none.
+        const publicItem = ({ _parent, _env, ...item }) => ({ ...item, children: item.children.map(publicItem) });
+        env.pis = candidates.slice(0, 15).map(publicItem);
         env.morePis = Math.max(0, candidates.length - env.pis.length);
         delete env._agents;
       }
