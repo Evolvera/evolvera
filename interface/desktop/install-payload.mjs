@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const interfaceDir = path.resolve(desktopDir, '..');
-const allowed = ['server.mjs', 'cli.mjs', 'cli-lib.mjs', 'package.json', 'public', 'desktop', 'pi-studio.cmd'];
+// Runtime files only: server.mjs imports lib-server/ and spawns voice/transcribe_worker.py (cwd = studio dir).
+const allowed = ['server.mjs', 'cli.mjs', 'cli-lib.mjs', 'package.json', 'public', 'desktop', 'pi-studio.cmd', 'lib-server', 'voice'];
 
 export async function installPayload(sourceDir, piDir) {
   const source = path.resolve(sourceDir);

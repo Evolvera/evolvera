@@ -24,7 +24,24 @@ test('payload installer replaces only studio and copies runtime allowlist', asyn
   await writeFile(path.join(destination, 'stale.txt'), 'old');
   await writeFile(path.join(piDir, 'preserve.txt'), 'keep');
   await installPayload(root, piDir);
-  assert.deepEqual(await names(destination), ['cli-lib.mjs', 'cli.mjs', 'desktop', 'package.json', 'pi-studio.cmd', 'public', 'server.mjs']);
+  assert.deepEqual(await names(destination), ['cli-lib.mjs', 'cli.mjs', 'desktop', 'lib-server', 'package.json', 'pi-studio.cmd', 'public', 'server.mjs', 'voice']);
+  // Every relative import reachable from the installed server must exist in the installed copy. Before, lib-server/
+  // was missing from the allowlist and the installed Studio died at boot with ERR_MODULE_NOT_FOUND.
+  const pending = ['server.mjs'];
+  const seen = new Set();
+  while (pending.length) {
+    const file = pending.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const text = await readFile(path.join(destination, file), 'utf8');
+    for (const [, spec] of text.matchAll(/(?:from\s+|import\()\s*["'](\.{1,2}\/[^"']+)["']/g)) {
+      const target = path.relative(destination, path.resolve(path.dirname(path.join(destination, file)), spec));
+      await stat(path.join(destination, target));
+      if (target.endsWith('.mjs') || target.endsWith('.js')) pending.push(target);
+    }
+  }
+  assert.ok(seen.has(path.join('lib-server', 'tree.mjs')), 'server imports were walked');
+  await stat(path.join(destination, 'voice', 'transcribe_worker.py'));
   assert.deepEqual(await names(path.join(destination, 'desktop')), (await names(desktop)).sort());
   for (const excluded of ['test', 'docker', 'Dockerfile', 'Dockerfile.dockerignore', 'docker-compose.yml', '.pi']) {
     await assert.rejects(stat(path.join(destination, excluded)));
