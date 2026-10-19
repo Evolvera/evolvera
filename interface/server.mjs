@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { access, open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { access, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -1374,6 +1374,105 @@ export function fetchOrca(command = resolveOrcaCommand(), timeoutMs = ORCA_TIMEO
   });
 }
 
+const TASK_LINKS_FILE = path.join(AGENT_DIR, "pi-studio-data", "task-links.json");
+
+async function readTaskLinks() {
+  try {
+    const parsed = JSON.parse(await readFile(TASK_LINKS_FILE, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.conversationId === "string" && Number.isInteger(item.taskId)).slice(-1000) : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    try {
+      await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+      await rename(TASK_LINKS_FILE, `${TASK_LINKS_FILE}.bak`);
+    } catch {
+      // Keep serving with an empty link set if recovery storage is unavailable.
+    }
+    return [];
+  }
+}
+
+// One writer at a time: concurrent creates must not drop each other's links (read-modify-write).
+let taskLinkWrites = Promise.resolve();
+function saveTaskLink(link) {
+  const write = taskLinkWrites.then(() => writeTaskLink(link));
+  taskLinkWrites = write.catch(() => {});
+  return write;
+}
+
+async function writeTaskLink(link) {
+  const links = (await readTaskLinks()).filter((item) => !(item.conversationId === link.conversationId && item.taskId === link.taskId));
+  links.push(link);
+  const temp = `${TASK_LINKS_FILE}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+  try {
+    await writeFile(temp, JSON.stringify(links.slice(-1000)), { encoding: "utf8", flag: "wx" });
+    await rename(temp, TASK_LINKS_FILE);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+// At most ORCA_TASK_SLOTS task CLI processes at once; the rest wait their turn (a busy client cannot fork-bomb the host).
+const ORCA_TASK_SLOTS = 4;
+let orcaTaskRunning = 0;
+const orcaTaskQueue = [];
+async function runOrcaJson(command, args) {
+  // A finishing call hands its slot straight to the next waiter, so the count never exceeds the cap.
+  if (orcaTaskRunning >= ORCA_TASK_SLOTS) await new Promise((resolve) => orcaTaskQueue.push(resolve));
+  else orcaTaskRunning += 1;
+  try {
+    return await execOrcaJson(command, args);
+  } finally {
+    const next = orcaTaskQueue.shift();
+    if (next) next();
+    else orcaTaskRunning -= 1;
+  }
+}
+
+function execOrcaJson(command, args) {
+  return new Promise((resolve, reject) => {
+    execFile(command.bin, args, { timeout: ORCA_TIMEOUT_MS, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch { reject(Object.assign(new Error("Invalid Orca JSON"), { code: "INVALID_JSON" })); }
+    });
+  });
+}
+
+function taskLinkFromOrca(value, body) {
+  const outer = value?.result ?? value;
+  const worktree = outer?.worktree ?? outer;
+  const worktreePath = worktree?.path ?? worktree?.worktreePath;
+  const terminalHandle = outer?.agentTerminalHandle ?? outer?.startupTerminal?.handle ?? outer?.terminalHandle ?? worktree?.agentTerminalHandle ?? worktree?.startupTerminal?.handle;
+  if (typeof worktreePath !== "string" || !worktreePath || typeof terminalHandle !== "string" || !terminalHandle) return null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+function orcaWorktreeList(value) {
+  const outer = value?.result ?? value;
+  return [outer?.worktrees, outer?.result?.worktrees].flatMap((items) => Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
+}
+
+// After a create timeout: the worktree carries our comment (unique per conversation/task) in the same repo.
+// `worktree ps` reports no terminal handle, so a recovered link may have none (messaging then stays off).
+function findTaskWorktree(value, body, repoId) {
+  const match = orcaWorktreeList(value).find((item) => item.repoId === repoId && item.comment === taskComment(body));
+  if (!match || typeof match.path !== "string" || !match.path) return null;
+  const terminalHandle = match.agentTerminalHandle ?? match.terminalHandle ?? match.agents?.find((agent) => agent?.terminalHandle)?.terminalHandle ?? null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath: match.path, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+const taskComment = (body) => `pi-studio task ${body.conversationId}#${body.taskId}`;
+
+// The conversation's project must be a checkout Orca knows: it names the repo (--repo) and the parent worktree,
+// instead of letting Orca infer them from the server's own cwd or from whatever worktree is active in the app.
+function orcaWorktreeForProject(value, cwd) {
+  const key = cwdKey(cwd);
+  return orcaWorktreeList(value).find((item) => typeof item.path === "string" && item.path && cwdKey(item.path) === key &&
+    typeof item.repoId === "string" && item.repoId && typeof item.worktreeId === "string" && item.worktreeId) || null;
+}
+
 export function clearOrcaCache() {
   orcaCache.at = 0;
   orcaCache.value = null;
@@ -1755,6 +1854,75 @@ async function route(req, res) {
 
     if (req.method === "GET" && pathname === "/api/sessions") {
       return json(res, 200, { sessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())) });
+    }
+
+    if (pathname === "/api/tasks/links") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const conversation = url.searchParams.get("conversation");
+      const links = await readTaskLinks();
+      return json(res, 200, { links: conversation === null ? links : links.filter((link) => link.conversationId === conversation) });
+    }
+
+    if (pathname === "/api/orca/worktrees") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.projectId !== "string" || !body.projectId || typeof body.conversationId !== "string" || !body.conversationId ||
+          !Number.isInteger(body.taskId) || typeof body.name !== "string" || !/^[\p{L}\p{N} ._-]{1,60}$/u.test(body.name) ||
+          typeof body.prompt !== "string" || body.prompt.length < 1 || body.prompt.length > 8000) return json(res, 400, { error: "invalid-request" });
+      let project = projects.get(body.projectId);
+      if (!project) {
+        await discoverProjects();
+        project = projects.get(body.projectId);
+      }
+      if (!project) return json(res, 400, { error: "invalid-project" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      let listing;
+      try {
+        listing = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]);
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+      const parent = orcaWorktreeForProject(listing, project.cwd);
+      if (!parent) return json(res, 409, { error: "project-not-in-orca" });
+      // Orca's parser reads a space-separated value that starts with "--" as a new flag; --flag=value is verbatim.
+      const args = [...orca.prefixArgs, "worktree", "create", `--name=${body.name}`, `--repo=id:${parent.repoId}`, "--agent", "pi",
+        `--prompt=${body.prompt}`, `--parent-worktree=worktree:${parent.worktreeId}`, `--comment=${taskComment(body)}`, "--json"];
+      try {
+        const result = await runOrcaJson(orca, args);
+        const link = taskLinkFromOrca(result, body);
+        if (!link) return json(res, 502, { error: "orca-invalid-response" });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (!error.killed && error.code !== "ETIMEDOUT") throw error;
+        const listed = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]).catch(() => null);
+        const link = findTaskWorktree(listed, body, parent.repoId);
+        if (!link) return json(res, 202, { ok: false, unknown: true });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      }
+    }
+
+    if (pathname === "/api/orca/terminal-send") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.handle !== "string" || !body.handle || typeof body.text !== "string" || body.text.length < 1 || body.text.length > 8000) return json(res, 400, { error: "invalid-request" });
+      const links = await readTaskLinks();
+      if (!links.some((link) => link.terminalHandle === body.handle)) return json(res, 403, { error: "terminal-not-linked" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      try {
+        await runOrcaJson(orca, [...orca.prefixArgs, "terminal", "send", `--terminal=${body.handle}`, `--text=${body.text}`, "--enter", "--json"]);
+        return json(res, 200, { ok: true });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
     }
 
     if (pathname === "/api/orca") {

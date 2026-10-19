@@ -7,7 +7,7 @@
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
 // p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
-// Env: LOAD_SECONDS (default 10), LOAD_CONCURRENCY (default 50), LOAD_WARMUP_SECONDS (default 4). Exit 1 on any error, unbounded orca spawns or RSS growth > 64 MB.
+// Env: LOAD_SECONDS (default 10), LOAD_CONCURRENCY (default 50), LOAD_WARMUP_SECONDS (default 4). Exit 1 on any error, unbounded orca spawns or RSS growth > 64 MB over a settling pass (the endpoints run twice; the second pass is reported).
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -27,6 +27,9 @@ const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-load-"));
 const rootsDir = path.join(tmp, "roots");
 const projects = ["alpha", "beta"].map((name) => path.join(rootsDir, name));
 for (const dir of [...projects, path.join(tmp, "agent")]) await mkdir(dir, { recursive: true });
+const taskLinksDir = path.join(tmp, "agent", "pi-studio-data");
+await mkdir(taskLinksDir, { recursive: true });
+await writeFile(path.join(taskLinksDir, "task-links.json"), JSON.stringify([{ conversationId: "load-conversation", taskId: 1, worktreePath: `${tmp}/wt/task`, worktreeName: "task", terminalHandle: "load-terminal", createdAt: new Date().toISOString() }]));
 for (const dir of projects) await writeFile(path.join(dir, "package.json"), "{}");
 // Files for GET /api/projects/:id/file: a small text and a 5 MB one (the mix of previews and big downloads).
 await writeFile(path.join(projects[0], "small.txt"), "linha de texto\n".repeat(40));
@@ -119,7 +122,7 @@ const orcaSpawns = async () => (await readFile(countFile, "utf8").catch(() => ""
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
 // `pathname` may be a list: each request takes the next one, round robin.
-async function hammer(label, pathname, token, runSeconds = DURATION) {
+async function hammer(label, pathname, token, runSeconds = DURATION, method = "GET", body) {
   const paths = [pathname].flat();
   let turn = 0;
   const latencies = [];
@@ -131,7 +134,7 @@ async function hammer(label, pathname, token, runSeconds = DURATION) {
     while (performance.now() < deadline) {
       const t0 = performance.now();
       try {
-        const res = await request("GET", paths[turn++ % paths.length], { token, decode: false });
+        const res = await request(method, paths[turn++ % paths.length], { token, body: body === undefined ? undefined : JSON.stringify(body), decode: false });
         statuses[res.status] = (statuses[res.status] || 0) + 1;
         if (res.status !== 200) errors++;
         latencies.push(performance.now() - t0);
@@ -152,8 +155,12 @@ async function hammerWatch(label, token, runSeconds = DURATION, appendEvery = 40
   let appended = 0;
   const statuses = {};
   const seen = [];
+  // Appends are chained: two overlapping appendFile calls can land out of order on Windows, which made
+  // the "in order" check fail intermittently for a reason that is not the server's.
+  let appending = Promise.resolve();
   const writer = setInterval(() => {
-    appendFile(watchFile, line({ type: "message", id: `live-${appended}`, parentId: appended ? `live-${appended - 1}` : "u", message: { role: "assistant", content: [{ type: "text", text: `linha ${appended}` }], stopReason: "toolUse" } }), "utf8").catch(() => { errors++; });
+    const index = appended;
+    appending = appending.then(() => appendFile(watchFile, line({ type: "message", id: `live-${index}`, parentId: index ? `live-${index - 1}` : "u", message: { role: "assistant", content: [{ type: "text", text: `linha ${index}` }], stopReason: "toolUse" } }), "utf8")).catch(() => { errors++; });
     appended++;
   }, appendEvery);
   const deadline = performance.now() + runSeconds * 1000;
@@ -179,6 +186,7 @@ async function hammerWatch(label, token, runSeconds = DURATION, appendEvery = 40
     }
   }));
   clearInterval(writer);
+  await appending;
   const seconds = (performance.now() - started) / 1000;
   await new Promise((resolve) => setTimeout(resolve, 200));
   // Client 0 saw every appended line once, in order (no gaps, no repeats).
@@ -236,18 +244,34 @@ try {
   const big = await request("GET", fileUrl("big.txt"), { token });
   console.log(`file sample: small.txt ${small.bytes} B, big.txt ${big.bytes} B`);
   if (small.status !== 200 || big.status !== 200 || big.bytes !== 5 * 1024 * 1024) throw new Error("file route must serve both files whole");
-  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
+  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", "/api/tasks/links?conversation=load-conversation", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
+  await hammer("warm-up", "/api/orca/terminal-send", token, WARMUP, "POST", { handle: "load-terminal", text: "load message" });
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
-  const rssBefore = rssMb(server.pid);
+  // Leak check: one full settling pass first (V8 keeps heap it grew to, and a GC right before the
+  // baseline made "before" swing 35-250 MB), then the measured pass must not grow past that plateau.
+  const ENDPOINTS = [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/tasks/links", "/api/tasks/links?conversation=load-conversation"], ["POST /api/orca/terminal-send", "/api/orca/terminal-send", "POST", { handle: "load-terminal", text: "load message" }], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]];
+  // The watch check appends to its session file and counts lines from a fresh start, so it runs once (measured pass).
+  const runPass = async (withWatch) => {
+    const out = [];
+    for (const [label, pathname, method, body] of ENDPOINTS) {
+      out.push(await hammer(label, pathname, token, DURATION, method || "GET", body));
+      out.at(-1).rss = rssMb(server.pid);
+    }
+    if (withWatch) {
+      out.push(await hammerWatch("GET /api/sessions/watch", token));
+      out.at(-1).rss = rssMb(server.pid);
+    }
+    return out;
+  };
+  const settling = await runPass(false);
+  if (settling.some((item) => item.errors)) console.log("settling pass had request errors");
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Baseline = the plateau the settling pass reached (largest RSS seen in it): a leak keeps climbing past it, GC noise does not.
+  const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
   const spawnsBefore = await orcaSpawns();
-  const results = [];
-  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]]) {
-    results.push(await hammer(label, pathname, token));
-    results.at(-1).rss = rssMb(server.pid);
-  }
-  results.push(await hammerWatch("GET /api/sessions/watch", token));
-  results.at(-1).rss = rssMb(server.pid);
+  const results = await runPass(true);
+  if (settling.some((item) => item.errors)) results.push({ ...settling.find((item) => item.errors), label: "settling pass (errors)" });
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
   const spawns = (await orcaSpawns()) - spawnsBefore;
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -260,7 +284,7 @@ try {
   }
   const bound = Math.ceil(elapsed / 2) + 2;
   console.log(`\norca child processes during the run: ${spawns} (bound for ${fmt(elapsed)}s with a 2 s cache: ${bound})`);
-  console.log(`server RSS: before ${fmt(rssBefore)} MB, after ${fmt(rssAfter)} MB (Δ ${fmt(rssAfter - rssBefore)} MB, limit ${RSS_GROWTH_LIMIT_MB} MB)`);
+  console.log(`server RSS: after the settling pass ${fmt(rssBefore)} MB, after ${fmt(rssAfter)} MB (Δ ${fmt(rssAfter - rssBefore)} MB, limit ${RSS_GROWTH_LIMIT_MB} MB)`);
   const problems = [];
   if (results.some((item) => item.errors)) problems.push("request errors");
   if (spawns > bound) problems.push("orca spawns exceed the cache bound");
