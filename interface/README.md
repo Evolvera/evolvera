@@ -125,3 +125,13 @@ npm test
 ```
 
 O smoke usa `test/fake-pi-rpc.mjs` para validar servidor, discovery, SSE e fluxo RPC sem chamar modelo real.
+
+## Tarefas
+
+A aba **Tarefas** do inspetor mostra a lista de tarefas (`todo`) da conversa aberta: ícone de estado, responsável (subagente, worktree do Orca, nome informado pelo PI ou "PI principal"), tempo ("rodando há 3 min", "levou 5 min", "aguardando", "bloqueada") e o selo com o número de tarefas executando agora. Os horários são carimbados pelo Studio e guardados por conversa no navegador (limitados); ao recarregar, são refeitos a partir das mensagens.
+
+- **Responsável**: clicar num subagente abre a conversa dele em modo de acompanhamento (o vínculo vem do nome da sessão `<agente>#<id>`); enquanto roda, a caixa de mensagem vira "Mensagem para <agente>" e envia `/steer` ao PI principal (extensão `extensions/studio-steer.ts`). Clicar numa worktree abre a conversa dela; em "PI principal", rola a conversa até o fim.
+- **Rodar em paralelo**: pede ao PI, como mensagem normal (fila de follow-up se ele estiver respondendo), um subagente em segundo plano para aquela tarefa.
+- **Rodar numa worktree** (só com o Orca disponível): diálogo com nome e prompt preenchidos; cria a worktree pelo `POST /api/orca/worktrees`. "Esta pasta não está no Orca" desabilita o botão; se o resultado não puder ser confirmado, o Studio avisa para conferir no Orca.
+- **Mensagem**: campo de uma linha sob a tarefa (Enter envia, Esc fecha) para o subagente em execução (`/steer`) ou para o terminal da worktree (`POST /api/orca/terminal-send`); sem terminal identificado o botão fica desabilitado.
+- As abas do inspetor mostram ícone + texto se couberem; senão só a aba selecionada mantém o texto; senão só ícones. Nomes de agentes aparecem sem emoji, com um ícone de linha por família; os pontos de estado levam `data-state`.
