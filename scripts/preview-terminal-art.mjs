@@ -68,6 +68,8 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
       settled = true;
       process.removeListener("SIGINT", onInterrupt);
       process.removeListener("SIGTERM", onTerminate);
+      output.off?.("error", onOutputError);
+      output.off?.("close", onOutputClose);
       try { stop?.(); } catch (stopError) { error ??= stopError; }
       if (signal) { resolve(signal === "SIGINT" ? 130 : 143); return; }
       if (error) reject(error);
@@ -76,19 +78,28 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
     const writeFrame = (progress) => {
       const lines = drawFrame(progress);
       if (paintedRows) output.write(`\u001b[${paintedRows}A\r`);
-      for (const line of lines) output.write(`\u001b[2K${line}\r\n`);
+      for (const line of lines) {
+        if (settled) break;
+        output.write(`\u001b[2K${line}\r\n`);
+      }
       paintedRows = lines.length;
     };
     const onInterrupt = () => finish(undefined, "SIGINT");
     const onTerminate = () => finish(undefined, "SIGTERM");
+    const onOutputError = (error) => finish(error);
+    const onOutputClose = () => finish(new Error("Preview output closed during animation"));
     process.once("SIGINT", onInterrupt);
     process.once("SIGTERM", onTerminate);
+    output.once?.("error", onOutputError);
+    output.once?.("close", onOutputClose);
     try {
       stop = startArtAnimation({
         onFrame(progress) { writeFrame(progress); if (progress >= 1) finish(); },
         onError(error) { finish(error); },
         clock: animationClock,
       });
+      // A stream may emit an error synchronously while writing the initial frame.
+      if (settled) stop();
     } catch (error) { finish(error); }
   });
   return animationResult;

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import { createStartupArtFactory } from "../users/startup-art.mjs";
 import { isEvolveraLabel, renderTerminalArt } from "../ui/terminal-art.mjs";
 import { main as previewMain } from "../preview-terminal-art.mjs";
@@ -215,6 +216,43 @@ test("preview output failure on the deadline frame also settles and removes owne
   assert.equal(fake.active, false);
   assert.equal(process.listenerCount("SIGINT"), baseline.int);
   assert.equal(process.listenerCount("SIGTERM"), baseline.term);
+});
+
+test("preview stream errors and close cancel animation and remove only owned listeners", async () => {
+  const previousTerm = process.env.TERM;
+  process.env.TERM = "xterm-256color";
+  try {
+    for (const event of ["error", "close", "initial-error"]) {
+      const fake = fakeClock();
+      const output = new EventEmitter();
+      Object.assign(output, { isTTY: true, rows: 24, columns: 80 });
+      const failure = Object.assign(new Error("synthetic broken output"), { code: "EPIPE" });
+      const other = () => {};
+      output.on("error", other);
+      output.on("close", other);
+      output.write = () => {
+        if (event === "initial-error") output.emit("error", failure);
+        return true;
+      };
+      const beforeInterrupt = process.listeners("SIGINT");
+      const beforeTerminate = process.listeners("SIGTERM");
+      const pending = previewMain(["--label", "Evolvera"], { output, animationClock: fake.clock });
+      const rejected = assert.rejects(pending, event === "close" ? /output closed/u : (error) => error === failure);
+      if (event !== "initial-error") {
+        assert.equal(fake.active, true);
+        output.emit(event, failure);
+      }
+      await rejected;
+      assert.equal(fake.active, false, event);
+      assert.deepEqual(output.listeners("error"), [other]);
+      assert.deepEqual(output.listeners("close"), [other]);
+      assert.deepEqual(process.listeners("SIGINT"), beforeInterrupt);
+      assert.deepEqual(process.listeners("SIGTERM"), beforeTerminate);
+    }
+  } finally {
+    if (previousTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = previousTerm;
+  }
 });
 
 test("preview CLI is import-safe and validates bounded options without account access", async () => {
