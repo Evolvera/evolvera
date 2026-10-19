@@ -972,6 +972,7 @@ export function shortcutAction(event, { typing = false } = {}) {
     const plainAlt = !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (!plainAlt) return null;
     if (key.toLowerCase() === "t" || event.code === "KeyT") return "todos";
+    if (key.toLowerCase() === "d" || event.code === "KeyD") return "doubts";
     return key.toLowerCase() === "w" || event.code === "KeyW" ? "worktrees" : null;
   }
   if (event.ctrlKey || event.metaKey) {
@@ -1013,6 +1014,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ["Ctrl", "`"], label: "Console RPC" },
       { keys: ["Alt", "T"], label: "Mostrar ou ocultar a lista de tarefas" },
       { keys: ["Alt", "W"], label: "Visão geral das worktrees (Orca)" },
+      { keys: ["Alt", "D"], label: "Dúvidas: perguntar sobre o que acontece, sem interferir" },
     ],
   },
 ];
@@ -1146,16 +1148,16 @@ export function isTodoDetails(value) {
   return Boolean(value) && typeof value === "object" && Array.isArray(value.tasks) && typeof value.nextId === "number";
 }
 
-function cleanTasks(tasks) {
+function cleanTasks(tasks, preserveDetails = false) {
   return tasks
     .filter((task) => task && typeof task === "object" && Number.isFinite(task.id) && typeof task.subject === "string" && TODO_STATUSES.includes(task.status))
-    .map((task) => ({ id: task.id, subject: task.subject, status: task.status, activeForm: typeof task.activeForm === "string" ? task.activeForm : "" }));
+    .map((task) => ({ ...(preserveDetails ? task : {}), id: task.id, subject: task.subject, status: task.status, activeForm: typeof task.activeForm === "string" ? task.activeForm : "" }));
 }
 
 // Snapshot carried by one successful `todo` result (tool_execution_end event or toolResult message), else null.
-export function todoSnapshot(result) {
+export function todoSnapshot(result, preserveDetails = false) {
   if (!result || result.toolName !== "todo" || result.isError || !isTodoDetails(result.details)) return null;
-  return cleanTasks(result.details.tasks);
+  return cleanTasks(result.details.tasks, preserveDetails);
 }
 
 // Last-write-wins over a message list, like replayFromBranch; null when the session never used `todo`.
@@ -1163,7 +1165,7 @@ export function todoFromMessages(messages) {
   let latest = null;
   for (const message of Array.isArray(messages) ? messages : []) {
     const snapshot = message?.role === "toolResult" ? todoSnapshot(message) : null;
-    if (snapshot) latest = snapshot;
+    if (snapshot) latest = cleanTasks(message.details.tasks, true);
   }
   return latest;
 }
@@ -1257,7 +1259,7 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "browser", "worktrees"];
+export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "sidechat"];
 
 // The Worktrees tab exists only while the Orca integration is on.
 export function visibleInspectorTabs(settings) {
@@ -1615,7 +1617,7 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
       key: run.key,
       agentId,
       name: String(args.name || ""),
-      title: String(args.name || details.displayName || args.subagent_type || "Agente"),
+      title: [args.name, details.displayName, args.subagent_type].map(stripEmoji).find(Boolean) || "Agente",
       type: String(details.subagentType || args.subagent_type || ""),
       description: String(args.description || details.description || note?.description || ""),
       model: String(details.modelName || args.model || ""),
@@ -1651,9 +1653,9 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
 export function contextBreakdown(stats, session) {
   const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
   const tokens = stats?.tokens || {};
-  const parts = [["Entrada", tokens.input], ["Saída", tokens.output], ["Cache lido", tokens.cacheRead], ["Cache gravado", tokens.cacheWrite]]
+  const parts = [["Entrada", tokens.input, "input"], ["Saída", tokens.output, "output"], ["Cache lido", tokens.cacheRead, "cacheRead"], ["Cache gravado", tokens.cacheWrite, "cacheWrite"]]
     .filter(([, value]) => num(value) !== null)
-    .map(([label, value]) => ({ label, value }));
+    .map(([label, value, key]) => ({ label, value, key }));
   const sum = parts.reduce((acc, part) => acc + part.value, 0);
   for (const part of parts) part.share = sum ? part.value / sum : 0;
   const counts = [["Mensagens suas", stats?.userMessages], ["Respostas do PI", stats?.assistantMessages], ["Chamadas de ferramenta", stats?.toolCalls], ["Total de mensagens", stats?.totalMessages]]
@@ -1671,6 +1673,97 @@ export function contextBreakdown(stats, session) {
     thinking: model && model.reasoning !== false && session.thinkingLevel ? thinkingLabel(session.thinkingLevel) : "",
     sessionFile: stats?.sessionFile || session?.sessionFile || "",
   };
+}
+
+// Context gauge color: calm below 60 %, warning up to 85 %, alarm above.
+export function contextTone(percent) {
+  return percent > 85 ? "red" : percent >= 60 ? "amber" : "green";
+}
+
+// ------------------------------------------------------ PI resources (RAM / CPU)
+
+const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+export function formatMb(mb) {
+  if (!finiteNonNegative(mb)) return "—";
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
+
+export function formatCpu(pct) {
+  if (!finiteNonNegative(pct)) return "—";
+  return pct > 0 && pct < 0.5 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+// "RAM 312 MB · CPU 4%" for a worktree card; empty when there is nothing measured.
+export function resourceLine(resource) {
+  if (!finiteNonNegative(resource?.rssMb)) return "";
+  return `RAM ${formatMb(resource.rssMb)} · CPU ${formatCpu(resource.cpuRecentPct ?? resource.cpuAvgPct)}`;
+}
+
+export function resourceRows(resource) {
+  if (!resource) return [];
+  return [["Memória (RAM)", formatMb(resource.rssMb)], ["CPU média", formatCpu(resource.cpuAvgPct)], ["CPU (10 s)", formatCpu(resource.cpuRecentPct)], ["Processos filhos", String(resource.children ?? 0)]];
+}
+
+export function resourceForPath(resources, cwd) {
+  if (!Array.isArray(resources) || !cwd) return null;
+  return resources.find((item) => samePath(item.cwd, cwd)) ?? null;
+}
+
+// ------------------------------------------------------ git state of files
+
+const GIT_STATE_INFO = {
+  pushed: { group: "pushed", label: "enviado", tone: "green" },
+  committed: { group: "committed", label: "commitado", tone: "blue" },
+  modified: { group: "changed", label: "alterado", tone: "amber" },
+  staged: { group: "changed", label: "alterado", tone: "amber" },
+  untracked: { group: "untracked", label: "novo", tone: "teal" },
+  deleted: { group: "deleted", label: "apagado", tone: "red" },
+};
+const GIT_GROUP_ORDER = ["changed", "untracked", "deleted", "committed", "pushed"];
+const GIT_URL_PATHS = 60;
+const GIT_URL_PATH_CHARS = 400;
+
+// null for states that get no color (ignored, outside the repository, unknown).
+export function gitStateInfo(state) {
+  return Object.hasOwn(GIT_STATE_INFO, state) ? GIT_STATE_INFO[state] : null;
+}
+
+export function gitLegend() {
+  return ["pushed", "committed", "modified", "untracked", "deleted"].map((state) => ({ label: GIT_STATE_INFO[state].label, tone: GIT_STATE_INFO[state].tone }));
+}
+
+// The conversation's files travel in the query so the server can say if a clean file is committed or pushed.
+export function gitFilesUrl(sessionId, paths = []) {
+  const query = paths
+    .filter((item) => typeof item === "string" && item && item.length <= GIT_URL_PATH_CHARS)
+    .slice(0, GIT_URL_PATHS)
+    .map((item) => `path=${encodeURIComponent(item)}`);
+  return `/api/sessions/${encodeURIComponent(sessionId)}/git-files${query.length ? `?${query.join("&")}` : ""}`;
+}
+
+// One list grouped by state: the conversation's files first (with their diff counts), then the other files
+// the repository reports. Without usable git data everything lands in "other" (the plain list).
+export function groupGitFiles(outputs = [], data = null, { limit = 200 } = {}) {
+  const ok = data?.git === true;
+  const requested = ok && isRecord(data.requested) ? data.requested : {};
+  const root = ok && typeof data.root === "string" ? data.root.replace(/\/+$/, "") : "";
+  const buckets = new Map([...GIT_GROUP_ORDER, "other"].map((key) => [key, []]));
+  const seen = new Set();
+  for (const output of outputs ?? []) {
+    const hit = requested[output.path];
+    if (typeof hit?.path === "string") seen.add(hit.path);
+    buckets.get(gitStateInfo(hit?.state)?.group ?? "other").push({ path: output.path, name: output.name, output });
+  }
+  for (const file of ok && Array.isArray(data.files) ? data.files : []) {
+    const info = typeof file?.path === "string" ? gitStateInfo(file.state) : null;
+    if (!info || seen.has(file.path)) continue;
+    buckets.get(info.group).push({ path: root ? `${root}/${file.path}` : file.path, name: basename(file.path), rel: file.path, output: null });
+  }
+  const meta = (key) => (key === "other" ? { label: "outros", tone: "" } : Object.values(GIT_STATE_INFO).find((info) => info.group === key));
+  return [...buckets]
+    .filter(([, items]) => items.length)
+    .map(([key, items]) => ({ key, label: meta(key).label, tone: meta(key).tone, count: items.length, more: Math.max(0, items.length - limit), items: items.slice(0, limit) }));
 }
 
 // ------------------------------------------------------ Orca worktrees
@@ -2382,7 +2475,6 @@ export function fastPanel({ statusText, model, selected, disabledReason }) {
   const notes = disabledReason ? [disabledReason] : [];
   if (noFast) notes.push("Este modelo não tem Fast — vale para subagentes elegíveis.");
   if (ultraBlocked) notes.push("Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra.");
-  const chipIcon = mode === "ultra" || mode === "ultra-subagents" ? "🚀" : "⚡";
   const chipWord = { all: "Fast", subagents: "Eco", ultra: "Ultra", "ultra-subagents": "Ultra-eco" }[mode];
   return {
     mode,
@@ -2391,7 +2483,7 @@ export function fastPanel({ statusText, model, selected, disabledReason }) {
     description: FAST_DESCRIPTIONS[mode],
     options,
     notes,
-    chip: chipWord ? { label: `${chipIcon} ${chipWord}`, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
+    chip: chipWord ? { label: chipWord, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
   };
 }
 
@@ -2459,4 +2551,867 @@ export function mergeWatchEntries(current, incoming, { reset = false, max = WATC
 // Thread messages of a watched file: the branch ending at its last entry, like get_entries does for the open session.
 export function watchMessages(entries) {
   return entriesToMessages(entries, entries.findLast((entry) => typeof entry.id === "string")?.id);
+}
+
+// ------------------------------------------------------------- task board
+
+export function stampTaskChanges(prev, tasks, now = Date.now()) {
+  const previous = prev instanceof Map ? Object.fromEntries(prev) : (prev || {});
+  const next = {};
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (!task || task.id == null) continue;
+    const old = previous[task.id];
+    if (!old) {
+      next[task.id] = { status: task.status, since: now, ...(task.status === "in_progress" ? { startedAt: now } : {}), ...(task.status === "completed" ? { endedAt: now } : {}) };
+      continue;
+    }
+    if (old.status === task.status) {
+      next[task.id] = { ...old };
+      continue;
+    }
+    next[task.id] = {
+      status: task.status,
+      since: now,
+      ...(old.startedAt !== undefined || task.status === "in_progress" ? { startedAt: old.startedAt ?? now } : {}),
+      ...(task.status === "completed" ? { endedAt: now } : {}),
+    };
+  }
+  return next;
+}
+
+// Runs are the Subagentes model (subagentRuns): agentId, title, type, description, phase, elapsed/startedAt/endedAt,
+// and the prompt inside sections ("Tarefa"). Plain { id, prompt, status } objects are accepted too.
+const runAgentId = (run) => run.agentId ?? run.id ?? null;
+const runPrompt = (run) => run.prompt ?? run.sections?.find((section) => section.label === "Tarefa")?.text ?? "";
+const runActive = (run) => run.phase === "running" || run.status === "running";
+
+function taskRun(task, runs) {
+  const metadataAgent = task.metadata?.agent ?? task.metadata?.agentId;
+  const list = Array.isArray(runs) ? runs : [];
+  // Newest first: a task re-run in parallel links to its latest run.
+  return [...list].reverse().find((run) => {
+    if (metadataAgent != null && String(metadataAgent) === String(runAgentId(run))) return true;
+    const search = foldText(`${run.description || ""} ${runPrompt(run)}`);
+    return (task.subject && search.includes(foldText(task.subject))) || search.includes(`#${task.id}`);
+  }) || null;
+}
+
+export function taskRows({ tasks = [], stamps = {}, runs = [], links = [], orcaAgents = [], now = Date.now() } = {}) {
+  const byId = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [task.id, task]));
+  return (Array.isArray(tasks) ? tasks : []).filter((task) => task && task.status !== "deleted").map((task) => {
+    const link = (Array.isArray(links) ? links : []).find((item) => item.taskId === task.id) || null;
+    const run = taskRun(task, runs);
+    const isRunning = task.status === "in_progress" || Boolean(run && runActive(run)) || Boolean(link && !link.endedAt);
+    let owner = { kind: "none", label: "—" };
+    if (link) owner = { kind: "worktree", label: link.worktreeName || link.worktreePath || "Worktree", worktreePath: link.worktreePath };
+    else if (run) owner = { kind: "subagent", label: run.title || run.name || run.type || run.description || runAgentId(run) || "Subagente", ...(runAgentId(run) != null ? { runId: runAgentId(run) } : {}) };
+    else if (task.owner) owner = { kind: "named", label: String(task.owner) };
+    else if (task.status === "in_progress") owner = { kind: "main", label: "PI principal" };
+    const blocked = (task.blockedBy || []).some((id) => {
+      const blocker = byId.get(id);
+      return blocker && blocker.status !== "completed" && blocker.status !== "deleted";
+    });
+    // Stamps are this page's observations; a linked run's own start/end times fill in after a reload.
+    const stampValue = { startedAt: run?.startedAt, endedAt: run && !runActive(run) ? run.endedAt : undefined, ...stamps?.[task.id] };
+    let timing;
+    if (blocked) timing = { text: "bloqueada" };
+    else if (isRunning) {
+      const elapsed = stampValue.startedAt == null ? null : Math.max(0, now - stampValue.startedAt);
+      const minutes = elapsed === null ? 0 : Math.floor(elapsed / 60_000);
+      timing = { text: `rodando há ${minutes} min`, ...(elapsed !== null ? { runningMs: elapsed } : {}) };
+    } else if (stampValue.endedAt != null && stampValue.startedAt != null) {
+      const tookMs = Math.max(0, stampValue.endedAt - stampValue.startedAt);
+      timing = { text: `levou ${Math.max(1, Math.floor(tookMs / 60_000))} min`, tookMs };
+    } else if (task.status === "completed") timing = { text: "concluída" };
+    else timing = { text: "aguardando" };
+    const agent = link && (Array.isArray(orcaAgents) ? orcaAgents : []).find((item) => item.worktreePath === link.worktreePath || item.path === link.worktreePath);
+    return {
+      id: task.id, subject: task.subject, status: task.status, blocked, owner, timing, running: isRunning,
+      // Offloading (subagent or worktree) is for work not yet handed to anyone: pending or main-PI in-progress, unblocked.
+      actions: {
+        parallel: task.status === "pending" && !blocked && !run && !link,
+        worktree: (task.status === "pending" || task.status === "in_progress") && !blocked && !run && !link,
+        open: Boolean(run || link),
+        message: Boolean(isRunning && (run || link)),
+      },
+      ...(agent ? { orcaAgent: agent } : {}),
+    };
+  });
+}
+
+export function tasksBadgeCount(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => row?.running).length;
+}
+
+export function steerCommand(agentId, text) {
+  const message = String(text ?? "").replace(/\s+/g, " ").trim();
+  return message ? `/steer ${agentId} ${message}` : null;
+}
+
+export function parallelPrompt(task) {
+  return `Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #${task.id}: ${task.subject}${task.description ? `\nDescrição: ${task.description}` : ""}`;
+}
+
+// ------------------------------------------------- Tarefas tab: stamps, labels, actions
+
+// Stamps of a conversation, rebuilt from every successful `todo` result in its messages (each with its own time),
+// so a reload keeps real start/end times. `base` (saved stamps) only fills tasks the messages no longer show.
+export function taskStampsFromMessages(messages, base = {}) {
+  let stamps = {};
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const tasks = todoSnapshot(message);
+    if (tasks && Number.isFinite(message.timestamp)) stamps = stampTaskChanges(stamps, tasks, message.timestamp);
+  }
+  return { ...base, ...stamps };
+}
+
+const STAMP_SESSIONS = 30;
+const STAMP_TASKS = 200;
+
+function parseStampStore(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Stamps persisted per session path in one localStorage value: { [sessionPath]: { at, stamps } }.
+export function loadTaskStamps(raw, key) {
+  const stamps = parseStampStore(raw)[key]?.stamps;
+  return stamps && typeof stamps === "object" && !Array.isArray(stamps) ? stamps : {};
+}
+
+// The new storage value: this session's stamps (newest STAMP_TASKS tasks) next to the STAMP_SESSIONS most recently updated sessions.
+export function saveTaskStamps(raw, key, stamps, now = Date.now(), limit = STAMP_SESSIONS) {
+  const kept = Object.entries(parseStampStore(raw)).filter(([name, entry]) => name !== key && entry && typeof entry === "object" && Number.isFinite(entry.at));
+  const newest = Object.entries(stamps || {}).sort((a, b) => (b[1].since ?? 0) - (a[1].since ?? 0)).slice(0, STAMP_TASKS);
+  kept.push([key, { at: now, stamps: Object.fromEntries(newest) }]);
+  return JSON.stringify(Object.fromEntries(kept.sort((a, b) => b[1].at - a[1].at).slice(0, limit)));
+}
+
+// Inspector tab labels: "full" (icon + text on every tab) when it fits; else "selected" (text only on the selected tab);
+// else "icons". `withText[i]` / `iconOnly[i]`: width of tab i with / without its text; `available`: width of the tab list.
+export function tabFitMode({ withText = [], iconOnly = [], available = 0, selected = -1 } = {}) {
+  const sum = (widths) => widths.reduce((total, width) => total + width, 0);
+  if (sum(withText) <= available) return "full";
+  if (selected < 0 || selected >= withText.length) return "icons";
+  return sum(iconOnly) - (iconOnly[selected] ?? 0) + withText[selected] <= available ? "selected" : "icons";
+}
+
+// Display names carry emoji from the agent definitions ("🧪 QA"); the Studio shows none of them.
+const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0E\uFE0F]/gu;
+export function stripEmoji(text) {
+  return squash(String(text ?? "").replace(EMOJI, ""));
+}
+
+// Family of a subagent (one line icon each): decided from its type, name and title, in this order.
+const FAMILIES = [
+  ["validator", /validator/],
+  ["qa", /(^|[^a-z])qa([^a-z]|$)/],
+  ["bug-hunt", /bug/],
+  ["research", /research/],
+  ["planner", /(^|[^a-z])plan/],
+  ["builder", /(^|[^a-z])build/],
+  ["scout", /scout|(^|[^a-z])explor/],
+];
+export function subagentFamily({ title, name, type } = {}) {
+  const text = foldText(stripEmoji(`${type ?? ""} ${name ?? ""} ${title ?? ""}`));
+  return FAMILIES.find(([, pattern]) => pattern.test(text))?.[0] ?? "general";
+}
+
+// data-state of the status dots (styled globally): working = running, done = finished, attention = running but quiet,
+// urgent = error, idle = everything else.
+export function subagentDotState(run, stalled = false) {
+  if (run?.phase === "running") return stalled ? "attention" : "working";
+  if (run?.phase === "done") return "done";
+  return run?.phase === "error" ? "urgent" : "idle";
+}
+
+export function taskDotState(row) {
+  if (row?.running) return "working";
+  return row?.status === "completed" ? "done" : "idle";
+}
+
+// The sub-PI conversation (history item) of a subagent run: the one named after its agent id; else a sub-PI of this parent
+// conversation whose title matches the run's task text or description (the newest one when a task was re-run).
+export function subagentSession({ run, history, parentFile } = {}) {
+  // The reliable link: pi-subagents names the child session "<agent>#<first 8 chars of the agent id>".
+  const suffix = run?.agentId ? `#${String(run.agentId).slice(0, 8)}`.toLowerCase() : "";
+  const byId = suffix && Array.isArray(history) ? history.find((item) => item?.isSubagent && String(item.title ?? "").toLowerCase().endsWith(suffix)) : null;
+  if (byId) return byId;
+  const texts = run ? [runPrompt(run), run.description].map((text) => String(text ?? "")).filter(Boolean) : [];
+  if (!texts.length || !Array.isArray(history)) return null;
+  const newest = (item) => String(item.timestamp ?? item.lastActivity ?? "");
+  return history
+    .filter((item) => item?.isSubagent && (!parentFile || samePath(item.parentSession, parentFile)) && texts.some((text) => titleMatches(item.title, text)))
+    .sort((a, b) => newest(b).localeCompare(newest(a)))[0] ?? null;
+}
+
+const WORKTREE_PROMPT_MAX = 8000;
+
+// Orca worktree name (the server accepts 1-60 letters, digits, space . _ -): the subject as a slug.
+export function taskWorktreeName(subject, id) {
+  const slug = foldText(subject ?? "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
+  return slug || `tarefa-${id}`;
+}
+
+// What the new worktree's PI is asked: the task, then where it came from. The description gives way to stay under the server's limit.
+export function taskWorktreePrompt(task, title) {
+  const subject = String(task.subject ?? "").slice(0, 500);
+  const context = `Contexto: conversa ${String(title || "(sem título)").slice(0, 200)}`;
+  const room = WORKTREE_PROMPT_MAX - subject.length - context.length - 4;
+  const description = String(task.description ?? "");
+  const shown = description.length > room ? `${description.slice(0, room - 1)}…` : description;
+  return [subject, shown, context].filter(Boolean).join("\n\n");
+}
+
+const WORKTREE_ERRORS = {
+  "project-not-in-orca": { kind: "not-in-orca", level: "warning", text: "Esta pasta não está no Orca." },
+  "orca-unavailable": { kind: "unavailable", level: "error", text: "Orca indisponível — abra o Orca e tente de novo." },
+  "orca-timeout": { kind: "timeout", level: "error", text: "O Orca demorou para responder — confira no Orca antes de tentar de novo." },
+  "orca-failed": { kind: "failed", level: "error", text: "O Orca falhou ao criar a worktree." },
+  "orca-invalid-response": { kind: "failed", level: "error", text: "O Orca falhou ao criar a worktree." },
+  "invalid-request": { kind: "invalid", level: "error", text: "Dados inválidos para criar a worktree." },
+  "invalid-project": { kind: "invalid", level: "error", text: "Dados inválidos para criar a worktree." },
+};
+
+// One message for every answer of POST /api/orca/worktrees: `data` (2xx body) or `error` (the server's error code).
+export function worktreeCreateFeedback({ data, error } = {}) {
+  if (data?.ok && data.link) return { kind: "created", level: "info", text: data.link.worktreeName ? `Worktree “${data.link.worktreeName}” criada no Orca.` : "Worktree criada no Orca." };
+  if (data?.unknown) return { kind: "unknown", level: "warning", text: "Não deu para confirmar — confira no Orca." };
+  const code = error?.message ?? error;
+  return WORKTREE_ERRORS[code] ?? { kind: "error", level: "error", text: `Não foi possível criar a worktree: ${code ?? "resposta inesperada"}.` };
+}
+
+function handoffReason(row, parallel) {
+  if (row.status === "completed") return "Tarefa concluída";
+  if (row.blocked) return "Tarefa bloqueada";
+  return parallel && row.status === "in_progress" ? "Já está em andamento" : "Já tem responsável";
+}
+
+// Availability of the three row buttons. `piBlocked`: why the open PI cannot take a message right now ("" when it can);
+// `link`: the row's worktree link (its terminal handle is what "Mensagem" needs).
+export function taskActionStates(row, { orcaAvailable = false, projectInOrca = true, piBlocked = "", link = null } = {}) {
+  const parallel = { enabled: row.actions.parallel && !piBlocked, reason: row.actions.parallel ? piBlocked : handoffReason(row, true) };
+  const worktree = {
+    visible: orcaAvailable,
+    enabled: row.actions.worktree && projectInOrca,
+    reason: row.actions.worktree ? (projectInOrca ? "" : "Esta pasta não está no Orca") : handoffReason(row, false),
+  };
+  const none = (reason) => ({ enabled: false, reason, target: null });
+  let message = none("Sem responsável em execução");
+  if (row.actions.message && row.owner.kind === "worktree") {
+    message = link?.terminalHandle ? { enabled: true, reason: "", target: { kind: "worktree", handle: link.terminalHandle } } : none("Terminal não identificado");
+  } else if (row.actions.message && row.owner.kind === "subagent") {
+    if (row.owner.runId == null) message = none("Subagente sem identificador");
+    else message = piBlocked ? none(piBlocked) : { enabled: true, reason: "", target: { kind: "steer", agentId: row.owner.runId } };
+  }
+  return { parallel, worktree, message };
+}
+
+const TERMINAL_SEND_ERRORS = {
+  "terminal-not-linked": "Este terminal não pertence a uma tarefa do Studio.",
+  "orca-unavailable": "Orca indisponível — abra o Orca e tente de novo.",
+  "orca-timeout": "O Orca demorou para responder — a mensagem pode não ter chegado.",
+  "orca-failed": "O Orca falhou ao enviar a mensagem.",
+  "invalid-request": "Mensagem inválida (de 1 a 8000 caracteres).",
+};
+
+// pt-BR text for an error of POST /api/orca/terminal-send (the server's error code is the Error's message).
+export function terminalSendFeedback(error) {
+  const code = error?.message ?? error ?? "erro desconhecido";
+  return TERMINAL_SEND_ERRORS[code] ?? `Não foi possível enviar a mensagem: ${code}.`;
+}
+
+// ------------------------------------------------ conversation state + sidebar tree
+
+// Emoji and other pictographs never show in names: ZWJ/variation selectors/keycap/skin-tone/flag pieces go too.
+// (c) (R) TM are text and stay.
+const PICTOGRAPHS = /(?![\u00a9\u00ae\u2122])[\p{Extended_Pictographic}\p{Regional_Indicator}\u200d\ufe0f\u20e3\u{1f3fb}-\u{1f3ff}]/gu;
+export function stripPictographs(text) {
+  return String(text ?? "").replace(PICTOGRAPHS, "").replace(/\s+/g, " ").trim();
+}
+
+// One vocabulary for every status dot: precedence urgent > attention > working > done > idle.
+const STATE_RANK = { idle: 0, done: 1, working: 2, attention: 3, urgent: 4 };
+const STATE_LABEL = { working: "trabalhando", done: "terminou", attention: "precisa de resposta (continua trabalhando)", urgent: "precisa de você", idle: "parado" };
+export const STATE_STALL_URGENT_MS = 10 * 60_000;
+
+export function stateLabel(state) {
+  return STATE_LABEL[state] ?? STATE_LABEL.idle;
+}
+
+export function worstState(states) {
+  let worst = "idle";
+  for (const state of states) if ((STATE_RANK[state] ?? -1) > STATE_RANK[worst]) worst = state;
+  return worst;
+}
+
+// Blocking questions may arrive as a count or as a boolean ("all of them blocking").
+function blockingCount(questions) {
+  const total = Number(questions?.total) || 0;
+  const blocking = questions?.blocking;
+  return typeof blocking === "boolean" ? (blocking ? total : 0) : Number(blocking) || 0;
+}
+
+// State of one PI from the server's raw flags. `lastSeenAt`: when the user last saw its newest turn (ms; undefined = never).
+export function conversationState(item, lastSeenAt, now = Date.now()) {
+  const raw = item?.raw ?? {};
+  const orca = raw.orcaState;
+  const producing = raw.streaming === true || raw.busy === true || orca === "working";
+  if (raw.waitingUi === true || blockingCount(item?.pendingQuestions) > 0) return "urgent";
+  if (orca === "blocked" || orca === "waiting" || orca === "error") return "urgent";
+  if (raw.error === true && !producing) return "urgent";
+  if (item?.live && Number(raw.stalledMs) > STATE_STALL_URGENT_MS) return "urgent";
+  if ((Number(item?.pendingQuestions?.total) || 0) > 0) return "attention";
+  if (producing) return "working";
+  return Number(item?.lastAssistantAt) > (Number.isFinite(lastSeenAt) ? lastSeenAt : -1) ? "done" : "idle";
+}
+
+// The older Portuguese keys (history items, Studio PI, Orca agents) mapped onto the shared states.
+export function legacyState(key) {
+  return { fazendo: "working", aguardando: "urgent", erro: "urgent" }[key] ?? "idle";
+}
+
+// Orca worktree: working spins; blocked/waiting/error need the user; finished is blue only while unread.
+export function worktreeIndicator(worktree) {
+  const status = worktree?.status;
+  if (status === "working") return "working";
+  if (status === "blocked" || status === "waiting" || status === "error") return "urgent";
+  return status === "done" && worktree.unread ? "done" : "idle";
+}
+
+export function subagentIndicator(phase) {
+  return { running: "working", error: "urgent" }[phase] ?? "idle";
+}
+
+// -------------------------------------- "seen" store (client side, bounded, LRU by time)
+
+export const SEEN_MAX = 2000;
+const plainObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : null);
+
+// `baseline`: what counts as seen for conversations never opened here (the first load), so old ones do not all turn blue.
+export function seenLoad(rawText, now = Date.now()) {
+  let data = null;
+  try {
+    data = plainObject(JSON.parse(rawText));
+  } catch {
+    // Missing or corrupt: start fresh.
+  }
+  const seen = {};
+  for (const [path, at] of Object.entries(plainObject(data?.seen) ?? {})) if (Number.isFinite(at)) seen[path] = at;
+  return { baseline: Number.isFinite(data?.baseline) ? data.baseline : now, seen };
+}
+
+export const seenSerialize = (store) => JSON.stringify({ baseline: store.baseline, seen: store.seen });
+export const seenAt = (store, path) => store.seen[path] ?? store.baseline;
+
+export function seenMark(store, path, at, max = SEEN_MAX) {
+  if ((store.seen[path] ?? -Infinity) >= at) return store;
+  const seen = { ...store.seen, [path]: at };
+  const paths = Object.keys(seen);
+  if (paths.length > max) {
+    paths.sort((a, b) => seen[a] - seen[b]);
+    for (const old of paths.slice(0, paths.length - max)) delete seen[old];
+  }
+  return { baseline: store.baseline, seen };
+}
+
+export const shouldMarkSeen = ({ open, visible, atBottom }) => open === true && visible === true && atBottom === true;
+
+// -------------------------------------- expanded / collapsed overrides (key -> boolean)
+
+export const EXPANDED_MAX = 1000;
+
+export function expandedLoad(rawText) {
+  const map = new Map();
+  try {
+    for (const [key, value] of Object.entries(plainObject(JSON.parse(rawText)) ?? {})) if (typeof value === "boolean") map.set(key, value);
+  } catch {
+    // Missing or corrupt: every node uses its default.
+  }
+  return map;
+}
+
+export const isExpanded = (map, key, fallback) => (map.has(key) ? map.get(key) : fallback);
+export const expandedSerialize = (map) => JSON.stringify(Object.fromEntries(map));
+
+export function toggleExpanded(map, key, fallback) {
+  const next = new Map(map);
+  next.delete(key);
+  next.set(key, !isExpanded(map, key, fallback));
+  while (next.size > EXPANDED_MAX) next.delete(next.keys().next().value);
+  return next;
+}
+
+// -------------------------------------- /api/tree payload
+
+export const TREE_TITLE_MAX = 160;
+export const TREE_MAX_DEPTH = 8;
+export const TREE_MAX_NODES = 3000;
+
+function treeTitle(title, agentType) {
+  const clean = stripPictographs(title) || stripPictographs(agentType) || "Nova conversa";
+  const letters = [...clean];
+  return letters.length > TREE_TITLE_MAX ? `${letters.slice(0, TREE_TITLE_MAX - 1).join("")}…` : clean;
+}
+
+const timeOrNull = (value) => (Number.isFinite(value) ? value : null);
+const countOf = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+
+function normalizePi(item, budget, depth, maxDepth) {
+  if (!plainObject(item) || typeof item.sessionPath !== "string" || !item.sessionPath || budget.left <= 0) return null;
+  budget.left--;
+  const raw = plainObject(item.raw) ?? {};
+  const questions = plainObject(item.pendingQuestions) ?? {};
+  const live = plainObject(item.live);
+  const children = [];
+  if (depth < maxDepth && Array.isArray(item.children)) {
+    for (const child of item.children) {
+      const normal = normalizePi(child, budget, depth + 1, maxDepth);
+      if (normal) children.push(normal);
+    }
+  }
+  return {
+    sessionPath: item.sessionPath,
+    sessionId: String(item.sessionId ?? ""),
+    title: treeTitle(item.title, item.agentType),
+    agentType: item.agentType ? String(item.agentType) : null,
+    isSubagent: item.isSubagent === true,
+    live: live ? { pid: live.pid ?? null, owner: String(live.owner ?? ""), startedAt: timeOrNull(live.startedAt) } : null,
+    raw: {
+      busy: raw.busy === true, streaming: raw.streaming === true, waitingUi: raw.waitingUi === true, error: raw.error === true,
+      stalledMs: timeOrNull(raw.stalledMs), orcaState: raw.orcaState ? String(raw.orcaState) : null,
+    },
+    pendingQuestions: { total: countOf(questions.total), blocking: typeof questions.blocking === "boolean" ? questions.blocking : countOf(questions.blocking) },
+    lastAssistantAt: timeOrNull(item.lastAssistantAt),
+    updatedAt: timeOrNull(item.updatedAt) ?? 0,
+    startedAt: timeOrNull(item.startedAt) ?? 0,
+    children,
+  };
+}
+
+// Cleans a /api/tree body for rendering: malformed items are skipped, depth and node count are bounded. null = not a tree.
+export function normalizeTree(data, { maxDepth = TREE_MAX_DEPTH, maxNodes = TREE_MAX_NODES } = {}) {
+  if (!plainObject(data) || !Array.isArray(data.projects)) return null;
+  const budget = { left: maxNodes };
+  const projects = [];
+  for (const project of data.projects) {
+    if (!plainObject(project) || typeof project.id !== "string") continue;
+    const envs = [];
+    for (const env of Array.isArray(project.envs) ? project.envs : []) {
+      if (!plainObject(env) || typeof env.key !== "string") continue;
+      const pis = [];
+      for (const item of Array.isArray(env.pis) ? env.pis : []) {
+        const normal = normalizePi(item, budget, 1, maxDepth);
+        if (normal) pis.push(normal);
+      }
+      envs.push({
+        key: env.key, name: String(env.name ?? env.branch ?? env.key), branch: env.branch ? String(env.branch) : "",
+        primary: env.primary === true, path: String(env.path ?? ""), orca: env.orca === true,
+        orcaStatus: env.orcaStatus ? String(env.orcaStatus) : null, issue: env.issue ? String(env.issue) : null,
+        pis, morePis: countOf(env.morePis),
+      });
+    }
+    projects.push({ id: project.id, name: String(project.name ?? ""), cwd: String(project.cwd ?? ""), envs });
+  }
+  return { version: String(data.version ?? ""), projects };
+}
+
+// -------------------------------------- tree view model
+
+// This PI's own state, with its sub-PIs folded in so a collapsed parent still shows a working or blocked child.
+function piState(item, store, now, ignoreDone) {
+  let own = conversationState(item, seenAt(store, item.sessionPath), now);
+  if (ignoreDone && own === "done") own = "idle";
+  return worstState([own, ...item.children.map((child) => piState(child, store, now, true))]);
+}
+
+// For folders and environments: a sub-PI finishing is not news, so its "done" does not count.
+export const aggregateState = (item, store, now) => piState(item, store, now, item.isSubagent);
+
+const OWNER_TEXT = { orca: "no Orca", terminal: "no terminal", studio: "no Studio" };
+
+export function treePiRow(item, store, now = Date.now()) {
+  const state = piState(item, store, now, false);
+  const tooltip = [
+    item.title,
+    item.isSubagent ? `sub-PI${item.agentType ? ` ${item.agentType}` : ""}` : "",
+    stateLabel(state),
+    item.live ? OWNER_TEXT[item.live.owner] ?? "" : "",
+  ].filter(Boolean).join(" · ");
+  return {
+    key: item.sessionPath, title: item.title, state, label: stateLabel(state), tooltip,
+    time: item.updatedAt ? relativeTime(item.updatedAt, now) : "",
+    chip: item.isSubagent && item.agentType ? item.agentType : "",
+    childCount: item.children.length,
+  };
+}
+
+export function treeEnvRow(env, store, now = Date.now()) {
+  const count = env.pis.length;
+  const state = worstState(env.pis.map((item) => aggregateState(item, store, now)));
+  return {
+    key: env.key, name: env.name, primary: env.primary, state, label: stateLabel(state), count,
+    branch: env.branch && env.branch !== env.name ? env.branch : "",
+    countLabel: count ? plural(count, "agente", "agentes") : "sem agentes",
+    more: env.morePis ?? 0,
+    issue: env.issue ?? "",
+  };
+}
+
+export function treeProjectRow(project, store, now = Date.now()) {
+  const state = worstState(project.envs.map((env) => treeEnvRow(env, store, now).state));
+  return { key: project.id, name: project.name || basename(project.cwd), state, label: stateLabel(state), envCount: project.envs.length };
+}
+
+// The history entry showConversation needs. A PI some other process holds open must be followed read-only,
+// so it is reported as running even when its history entry says otherwise.
+export function treeHistoryItem(entry, item) {
+  const elsewhere = Boolean(item.live) && item.live.owner !== "studio";
+  if (entry) return elsewhere && entry.state !== "fazendo" && entry.state !== "aguardando" ? { ...entry, state: "fazendo" } : entry;
+  let state = "parado";
+  if (item.live && item.raw.waitingUi) state = "aguardando";
+  else if (elsewhere || item.raw.streaming || item.raw.busy) state = "fazendo";
+  return { path: item.sessionPath, title: item.title, state, studioOwned: item.live?.owner === "studio", lastActivity: item.updatedAt };
+}
+
+// Conversations of a project's history the tree did not show ("Mostrar mais"), newest first, as tree-shaped items.
+export function extraHistoryPis(history, shown, limit = 50) {
+  const at = (entry) => toMs(entry.lastActivity) ?? toMs(entry.timestamp) ?? 0;
+  return (Array.isArray(history) ? history : [])
+    .filter((entry) => !entry.isSubagent && !shown.has(entry.path))
+    .sort((a, b) => at(b) - at(a))
+    .slice(0, limit)
+    .map((entry) => ({
+      sessionPath: entry.path, sessionId: String(entry.sessionId ?? ""), title: treeTitle(entry.title, null), agentType: null, isSubagent: false, live: null,
+      raw: { busy: entry.state === "fazendo", streaming: false, waitingUi: entry.state === "aguardando", error: false, stalledMs: null, orcaState: null },
+      pendingQuestions: { total: 0, blocking: 0 }, lastAssistantAt: null, updatedAt: at(entry), startedAt: 0, children: [],
+    }));
+}
+
+// The tree is re-read every 2 s while visible, 15 s hidden; failures back off up to 30 s.
+export function treePollDelay({ hidden, failures = 0 }) {
+  return Math.min((hidden ? 15_000 : 2000) * 2 ** failures, 30_000);
+}
+
+// Sidebar search over the tree: a PI matches by title/type, an environment by name/branch, a project by name.
+// A match on a parent keeps its whole subtree; a match deeper down keeps the ancestors. Blank query: same object.
+export function filterTree(data, query) {
+  const needle = foldText(query).trim();
+  if (!needle) return data;
+  const has = (...values) => foldText(values.join(" ")).includes(needle);
+  const keepPi = (item) => {
+    if (has(item.title, item.agentType ?? "")) return item;
+    const children = item.children.map(keepPi).filter(Boolean);
+    return children.length ? { ...item, children } : null;
+  };
+  const projects = [];
+  for (const project of data.projects) {
+    if (has(project.name)) {
+      projects.push(project);
+      continue;
+    }
+    const envs = [];
+    for (const env of project.envs) {
+      if (has(env.name, env.branch)) {
+        envs.push(env);
+        continue;
+      }
+      const pis = env.pis.map(keepPi).filter(Boolean);
+      if (pis.length) envs.push({ ...env, pis, morePis: 0 });
+    }
+    if (envs.length) projects.push({ ...project, envs });
+  }
+  return { ...data, projects };
+}
+
+// ------------------------------------------------------------------ voice
+
+export const VOICE_READ_KEY = "pi-studio:voice-read";
+// The server rejects audio longer than 120 s; stop a little earlier. Shorter takes carry no speech.
+export const REC_MAX_MS = 115000;
+export const REC_MIN_MS = 500;
+
+export const VOICE_SHORTCUTS = { title: "Voz", items: [{ keys: ["Ctrl", "Shift", "M"], label: "Gravar voz · parar e transcrever" }] };
+
+export function voiceReadEnabled(raw) {
+  return raw === "1";
+}
+
+export function micShortcut(event) {
+  if (!event || event.isComposing || event.repeat || event.altKey) return false;
+  if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return false;
+  return String(event.key).toLowerCase() === "m" || event.code === "KeyM";
+}
+
+// First container the browser really records; "" lets it choose.
+export function recorderMime(isSupported) {
+  for (const type of ["audio/webm;codecs=opus", "audio/webm"]) {
+    try {
+      if (isSupported?.(type)) return type;
+    } catch {
+      // A throwing probe means unsupported.
+    }
+  }
+  return "";
+}
+
+// The server accepts audio/webm, audio/ogg and audio/wav; codec parameters are dropped.
+export function uploadMime(type) {
+  const base = String(type ?? "").split(";")[0].trim().toLowerCase();
+  return ["audio/webm", "audio/ogg", "audio/wav"].includes(base) ? base : "audio/webm";
+}
+
+export function formatRecTimer(ms) {
+  const seconds = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// RMS of an AnalyserNode time-domain buffer (bytes centred on 128), boosted so ordinary speech fills the meter.
+export function levelFromSamples(samples) {
+  if (!samples?.length) return 0;
+  let sum = 0;
+  for (const value of samples) sum += ((value - 128) / 128) ** 2;
+  return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+}
+
+const MIC_TRANSITIONS = {
+  idle: { toggle: "starting" },
+  starting: { ready: "recording", fail: "idle" },
+  recording: { toggle: "transcribing", abort: "idle", fail: "idle" },
+  transcribing: { done: "idle", fail: "idle" },
+};
+
+// Events that do not apply to a phase keep it (a click while transcribing is ignored); unknown phases reset to idle.
+export function nextMicPhase(phase, event) {
+  const table = MIC_TRANSITIONS[phase];
+  return table ? table[event] ?? phase : "idle";
+}
+
+// Mic button state from the server status (null = not known yet) and the recording phase.
+export function micView(status, phase) {
+  if (phase === "starting") return { disabled: true, pressed: false, title: "Aguardando o microfone…", live: "aguardando o microfone…" };
+  if (phase === "recording") return { disabled: false, pressed: true, title: "Parar e transcrever (Ctrl+Shift+M)", live: "gravando" };
+  if (phase === "transcribing") return { disabled: true, pressed: false, title: "Transcrevendo…", live: "transcrevendo…" };
+  if (status && status.available === false) {
+    const reason = [status.reason, status.message].find((value) => typeof value === "string" && value.trim());
+    return { disabled: true, pressed: false, title: reason ? reason.trim() : "Voz indisponível neste computador.", live: "" };
+  }
+  return { disabled: false, pressed: false, title: "Gravar voz (Ctrl+Shift+M)", live: "" };
+}
+
+// Puts `text` at the caret (a selection is replaced), adding a space only where words would glue together.
+// `cursor` lands after the inserted text and its padding.
+export function insertAtCursor(value, start, end, text) {
+  const base = String(value ?? "");
+  const piece = String(text ?? "").trim();
+  const clamp = (position) => Math.min(Math.max(position, 0), base.length);
+  const from = Number.isInteger(start) ? clamp(start) : base.length;
+  const to = Math.max(from, Number.isInteger(end) ? clamp(end) : from);
+  if (!piece) return { value: base, cursor: from };
+  const before = base.slice(0, from);
+  const after = base.slice(to);
+  const left = before && !/\s$/.test(before) ? " " : "";
+  const right = after && !/^\s/.test(after) ? " " : "";
+  return { value: `${before}${left}${piece}${right}${after}`, cursor: before.length + left.length + piece.length + right.length };
+}
+
+export function micErrorMessage(error) {
+  switch (error?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Permissão do microfone negada.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Nenhum microfone encontrado.";
+    case "NotReadableError":
+      return "O microfone está em uso por outro aplicativo.";
+    default:
+      return "Não foi possível acessar o microfone.";
+  }
+}
+
+// The server's own pt-BR message wins; else the status picks the text (400/401/403/413/429/503).
+export function transcribeErrorMessage(status, body) {
+  const message = body?.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  switch (status) {
+    case 400: return "Áudio inválido.";
+    case 401:
+    case 403: return "Sessão expirada. Recarregue o Studio.";
+    case 413: return "Gravação longa demais (máx. 2 min).";
+    case 429: return "Transcrição ocupada. Tente de novo em instantes.";
+    case 503: return "Transcrição indisponível agora.";
+    default: return "Falha ao transcrever o áudio.";
+  }
+}
+
+// Best speech voice for `lang`: the exact locale beats other regions of the language (an accent mismatch is worse
+// than a plain voice); inside a locale Natural/Online neural voices beat the robotic Desktop ones. null = none.
+export function pickVoice(voices, lang = "pt-BR") {
+  const normalise = (value) => String(value ?? "").toLowerCase().replace("_", "-");
+  const wanted = normalise(lang);
+  const family = wanted.split("-")[0];
+  let best = null;
+  let bestScore = -Infinity;
+  for (const voice of Array.isArray(voices) ? voices : []) {
+    const voiceLang = normalise(voice?.lang);
+    let score;
+    if (voiceLang === wanted) score = 1000;
+    else if (voiceLang.split("-")[0] === family) score = 300;
+    else continue;
+    const name = String(voice.name ?? "");
+    if (/natural/i.test(name)) score += 300;
+    if (/online/i.test(name)) score += 200;
+    if (/google/i.test(name)) score += 100;
+    if (/desktop/i.test(name)) score -= 100;
+    if (score > bestScore) {
+      best = voice;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+// Markdown reply to plain prose for speech: code blocks, urls, tags and syntax marks are dropped; every
+// remaining line ends in punctuation so the voice pauses between list items and headings.
+export function speakableText(markdown) {
+  let fence = null;
+  const prose = [];
+  for (const line of String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length) fence = null;
+    } else if (mark) fence = mark;
+    else prose.push(line);
+  }
+  const out = [];
+  for (const raw of prose) {
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw) || /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(raw)) continue;
+    let line = raw.replace(/^\s*(?:>\s*)+/, "").replace(/^\s*#{1,6}\s+/, "").replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "");
+    if (/^\s*\|/.test(line)) line = line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").replace(/\s*\|\s*/g, ", ");
+    line = line
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/<?https?:\/\/[^\s>]+>?/g, "")
+      .replace(/<\/?[a-z][^>]*>/gi, "")
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/(\*\*|__)(.+?)\1/g, "$2")
+      .replace(/~~(.+?)~~/g, "$1")
+      .replace(/\*(\S(?:.*?\S)?)\*/g, "$1")
+      .replace(/(^|\W)_(\S(?:.*?\S)?)_(?=\W|$)/g, "$1$2")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (line) out.push(/[.!?:;…,)]$/.test(line) ? line : `${line}.`);
+  }
+  return out.join("\n");
+}
+
+// Short pieces for the speech engine (long utterances stall or cut off on some voices): sentences packed up to
+// `max` characters; a longer sentence is cut at a space, or hard when it has none.
+export function speechChunks(text, max = 200) {
+  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return [];
+  const pieces = [];
+  for (let sentence of flat.split(/(?<=[.!?…])\s+/)) {
+    while (sentence.length > max) {
+      let cut = sentence.lastIndexOf(" ", max);
+      if (cut <= 0) cut = max;
+      pieces.push(sentence.slice(0, cut));
+      sentence = sentence.slice(cut).trimStart();
+    }
+    pieces.push(sentence);
+  }
+  const chunks = [];
+  let current = "";
+  for (const piece of pieces) {
+    if (current && current.length + 1 + piece.length > max) {
+      chunks.push(current);
+      current = piece;
+    } else current = current ? `${current} ${piece}` : piece;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+// The newest assistant reply as { key, text } to read aloud, or null when it has nothing speakable or was already read.
+export function lastReplyToSpeak(messages, spokenKey) {
+  const list = Array.isArray(messages) ? messages : [];
+  const index = list.findLastIndex((message) => message?.role === "assistant");
+  if (index < 0) return null;
+  const text = speakableText(messageText(list[index]));
+  const key = String(list[index].timestamp ?? index);
+  return !text || key === spokenKey ? null : { key, text };
+}
+
+// Adds "Ouvir" right after "Copiar" when the browser can speak and the reply has speakable text.
+export function withSpeakAction(actions, { supported, text }) {
+  if (!supported || !speakableText(text)) return actions;
+  const at = actions.findIndex((action) => action.id === "copy") + 1;
+  return [...actions.slice(0, at), { id: "speak", label: "Ouvir", disabled: false }, ...actions.slice(at)];
+}
+
+// --------------------------------------------------------------- "Dúvidas" (read-only side chat)
+
+export const SIDE_CHAT_MAX_ITEMS = 200;
+
+export const sideChatInitial = () => ({ items: [], live: "", busy: false, ended: false });
+
+// The conversation the side chat is about: the followed one, else the file the Studio's own PI has open.
+export function sideChatPath({ watch, session } = {}) {
+  const file = watch?.path ?? session?.sessionFile;
+  return typeof file === "string" && file ? file : null;
+}
+
+export function sideChatText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n");
+}
+
+export function sideChatStatusText(chat) {
+  if (chat.busy) return "Consultando a conversa…";
+  return chat.ended ? "Sessão de dúvidas encerrada por inatividade. A próxima pergunta abre uma nova." : "";
+}
+
+const sideChatPush = (chat, item) => ({ ...chat, items: [...chat.items, item].slice(-SIDE_CHAT_MAX_ITEMS) });
+
+// The question shows at once (unconfirmed) and is confirmed when the PI echoes it as a user message.
+export function sideChatAsk(chat, text) {
+  const question = typeof text === "string" ? text.trim() : "";
+  return question ? { ...sideChatPush(chat, { role: "user", text: question, confirmed: false }), busy: true } : chat;
+}
+
+export function sideChatFail(chat, message) {
+  return { ...sideChatPush(chat, { role: "error", text: message || "Não foi possível consultar agora." }), busy: false, live: "" };
+}
+
+function sideChatUser(chat, text) {
+  if (!text) return chat;
+  const at = chat.items.findIndex((item) => item.role === "user" && !item.confirmed && item.text === text);
+  if (at === -1) return sideChatPush(chat, { role: "user", text, confirmed: true });
+  return { ...chat, items: chat.items.map((item, index) => (index === at ? { ...item, confirmed: true } : item)) };
+}
+
+// Folds one RPC event of the side PI into the chat. Rebuilding from a replayed history gives the same result.
+export function sideChatApply(chat, payload) {
+  if (!payload || typeof payload !== "object") return chat;
+  if (payload.type === "agent_start") return { ...chat, busy: true };
+  if (payload.type === "agent_end") return { ...chat, busy: false, live: "" };
+  if (payload.type === "process_exit" || payload.type === "process_error") return { ...chat, busy: false, live: "", ended: true };
+  if (payload.type === "message_update") {
+    const event = payload.assistantMessageEvent;
+    return event?.type === "text_delta" && typeof event.delta === "string" ? { ...chat, live: chat.live + event.delta } : chat;
+  }
+  if (payload.type !== "message_end") return chat;
+  const message = payload.message;
+  if (message?.role === "user") return sideChatUser(chat, sideChatText(message.content));
+  if (message?.role !== "assistant") return chat;
+  const text = sideChatText(message.content);
+  if (text) return { ...sideChatPush(chat, { role: "assistant", text }), live: "" };
+  if (message.stopReason === "error") return { ...sideChatPush(chat, { role: "error", text: message.errorMessage || "O assistente não conseguiu responder." }), live: "" };
+  return { ...chat, live: "" };
 }

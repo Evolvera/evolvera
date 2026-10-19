@@ -1,5 +1,12 @@
 import {
   FAST_OPTIONS,
+  contextTone,
+  gitFilesUrl,
+  gitLegend,
+  groupGitFiles,
+  resourceForPath,
+  resourceLine,
+  resourceRows,
   FAST_STATUS_KEY,
   INSPECTOR_TABS,
   fastFromStatus,
@@ -116,9 +123,18 @@ import {
   withSessionRollback,
 } from "./lib.js";
 
+import { createTasksPanel } from "./tasks-panel.js";
+import { createSideChat } from "./side-chat.js";
+import { steerCommand, subagentDotState, subagentFamily, subagentSession, tabFitMode } from "./lib.js";
+import { legacyState, shouldMarkSeen, stripPictographs, subagentIndicator, treeHistoryItem, worktreeIndicator } from "./lib.js";
+import { applyState, stateHtml } from "./state-indicator.js";
+import { createTreeController } from "./tree-controller.js";
 import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
 
 import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
+
+import { VOICE_READ_KEY, VOICE_SHORTCUTS, sideChatPath, voiceReadEnabled, withSpeakAction } from "./lib.js";
+import { createVoice } from "./voice.js";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -129,6 +145,7 @@ const els = {
   toggleRight: $("#toggleRightBtn"),
   projectMenuBtn: $("#projectMenuBtn"),
   projectTitle: $("#projectTitle"),
+  headerState: $("#headerState"),
   consoleBtn: $("#consoleBtn"),
   filesBtn: $("#filesBtn"),
   worktreesBtn: $("#worktreesBtn"),
@@ -171,6 +188,12 @@ const els = {
   hint: $("#composerHint"),
   shellChip: $("#shellChip"),
   stop: $("#stopBtn"),
+  micBtn: $("#micBtn"),
+  micLive: $("#micLive"),
+  micLabel: $("#micLabel"),
+  micTimer: $("#micTimer"),
+  micLevel: $("#micLevel"),
+  speakStop: $("#speakStop"),
   send: $("#sendBtn"),
   modeLabel: $("#modeLabel"),
   statusLine: $("#statusLine"),
@@ -200,6 +223,12 @@ const els = {
   subList: $("#subList"),
   wtList: $("#wtList"),
   subBadge: $("#subBadge"),
+  tasksBadge: $("#tasksBadge"),
+  tasksList: $("#tasksList"),
+  taskWorktreeDialog: $("#taskWorktreeDialog"),
+  taskWorktreeName: $("#taskWorktreeName"),
+  taskWorktreePrompt: $("#taskWorktreePrompt"),
+  watchBack: $("#watchBack"),
   filesBadge: $("#filesBadge"),
   wtTabBadge: $("#wtTabBadge"),
   worktreesBadge: $("#worktreesBadge"),
@@ -207,6 +236,7 @@ const els = {
   filesView: $("#view-files"),
   envPath: $("#envPath"),
   outputsList: $("#outputsList"),
+  gitLegend: $("#gitLegend"),
   confirmDialog: $("#confirmDialog"),
   confirmTitle: $("#confirmTitle"),
   confirmMessage: $("#confirmMessage"),
@@ -229,6 +259,7 @@ const els = {
   settingsDialog: $("#settingsDialog"),
   settingFont: [...document.querySelectorAll('input[name="settingFont"]')],
   settingWidth: [...document.querySelectorAll('input[name="settingWidth"]')],
+  settingVoiceRead: $("#settingVoiceRead"),
   settingNotify: $("#settingNotify"),
   settingNotifyHint: $("#settingNotifyHint"),
   settingMotion: $("#settingMotion"),
@@ -387,6 +418,92 @@ async function api(path, { timeoutMs, ...options } = {}) {
 
 const report = (error) => { if (!error?.detached) toast(error?.message || String(error), "error"); };
 
+// ---------------------------------------------------- sidebar tree (/api/tree)
+
+const projectIdForPath = (path) => state.projects.find((project) => samePath(project.cwd, path))?.id ?? null;
+
+// 200 = a (new) tree; 304 = unchanged. Anything else throws, and the poller backs off.
+async function fetchTree({ etag, signal }) {
+  const response = await fetch("/api/tree", { cache: "no-store", signal, headers: { "x-pi-studio-token": apiToken, ...(etag ? { "if-none-match": etag } : {}) } });
+  if (response.status === 304) return { status: 304 };
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return { status: 200, data: await response.json() };
+}
+
+const tree = createTreeController({
+  root: els.projects,
+  doc: document,
+  icon: (name, cls = "") => svg(name, cls),
+  storage: localStorage,
+  fetchTree,
+  isHidden: () => document.hidden,
+  getView: () => ({
+    currentPath: state.session?.sessionFile ?? null,
+    filter: state.filter,
+    projectsKey: state.projects.map((project) => `${project.id}|${project.cwd}`).join("\n"),
+    projectIdFor: (path, treeProjectId) => projectIdForPath(path) ?? treeProjectId,
+  }),
+  beforeRender: () => markOpenSeen({ render: false }),
+  onChange: () => {
+    updateHeaderState();
+    if (!tree.active()) renderProjects();
+  },
+});
+globalThis.__piTree = tree; // read by the browser checks: render counters
+
+// The conversation on screen has been read once the page is visible and scrolled to the bottom.
+function markOpenSeen({ render = true } = {}) {
+  const path = state.session?.sessionFile;
+  if (!path || !shouldMarkSeen({ open: true, visible: document.visibilityState === "visible", atBottom: state.stick })) return;
+  tree.markSeen(path, { render });
+}
+
+// Dot next to the title of the open conversation: local facts first (they are instant), the tree's state otherwise.
+function updateHeaderState() {
+  const path = state.session?.sessionFile;
+  applyState(els.headerState, state.uiActive ? "urgent" : state.isStreaming ? "working" : (path && tree.stateOf(path)) || "idle");
+}
+
+// "Mostrar mais (N)": the older conversations of one environment, from its project history.
+async function showMoreSessions({ extra, path }) {
+  const known = projectIdForPath(path);
+  let history;
+  if (state.currentProject && samePath(state.currentProject.cwd, path)) history = state.history;
+  else if (known) history = (await api(`/api/projects/${encodeURIComponent(known)}/history`)).history || [];
+  else {
+    await openWorktree({ path, name: basename(path) });
+    history = state.history;
+  }
+  tree.expandEnv(extra, history);
+}
+
+// Voice (public/voice.js): mic in the composer and replies read aloud. Hooks below: message actions, agent_end, submit, settings.
+function updateSpeakButtons(key) {
+  for (const button of els.thread.querySelectorAll('[data-action="msg-speak"]')) {
+    const on = key !== null && button.dataset.key === key;
+    const label = on ? "Parar" : "Ouvir";
+    button.classList.toggle("speaking", on);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+}
+
+const voice = createVoice({
+  els,
+  token: apiToken,
+  toast,
+  composer: {
+    read: () => ({ value: els.prompt.value, start: els.prompt.selectionStart, end: els.prompt.selectionEnd }),
+    write: (value, cursor) => {
+      setComposerText(value, cursor);
+      els.prompt.focus();
+    },
+  },
+  isReadEnabled: () => voiceReadEnabled(localStorage.getItem(VOICE_READ_KEY)),
+  onSpeakingChange: updateSpeakButtons,
+  env: window,
+});
+
 async function sendRpc(command) {
   if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
   const payload = { id: newId(), ...command };
@@ -456,6 +573,7 @@ function applyLayout() {
   els.toggleRight.setAttribute("aria-expanded", String(layout.right === "open"));
   els.scrim.hidden = !["left", "right"].some((side) => overlayQuery[side].matches && layout[side] === "open");
   if (layout.right === "open") scheduleInspector(inspector.tab);
+  syncLivePolling();
 }
 
 // Inspector (right panel): one persisted tab and width; views render lazily when visible.
@@ -472,9 +590,182 @@ const inspector = {
 const term = { cache: new Map(), stick: true, collapsed: new Set() };
 // Orca integration (off by default): latest /api/orca answer, the path follow mode last handled, and its poll timer.
 const orca = { data: null, lastFollowed: null, timer: null, inflight: false, renderSig: "", uiKey: "" };
+// Live data of the visible tab: RAM/CPU of this conversation's PI (Contexto), of every Studio PI (Worktrees) and the git
+// state of the files (Arquivos). Each poller runs only while its tab is on screen in a visible page, one request at a time.
+const LIVE_POLL_MS = 5000;
+const LIVE_KICK_MS = 1000;
+const tabShown = (tab) => layout.right === "open" && inspector.tab === tab && !document.hidden;
+// A PI whose RAM/CPU can be read: the Studio's own, still running (not a followed conversation of another PI).
+const livePiSessionId = () => (state.processExited || state.watch ? null : currentSessionId());
+// The Studio session summary the project was opened with (still readable by id after the PI exits).
+const currentSessionId = () => state.session?.id ?? null;
+
+// run(): one load at a time (a request asked meanwhile runs once more after it); sync(): start/stop the interval;
+// kick(): run soon, debounced.
+function makePoller(wanted, load) {
+  const poller = { timer: null, busy: false, again: false, kickTimer: null };
+  poller.run = async () => {
+    if (!wanted()) return;
+    if (poller.busy) {
+      poller.again = true;
+      return;
+    }
+    poller.busy = true;
+    try {
+      await load();
+    } finally {
+      poller.busy = false;
+    }
+    if (poller.again) {
+      poller.again = false;
+      poller.run();
+    }
+  };
+  poller.sync = () => {
+    if (wanted() && !poller.timer) {
+      poller.timer = setInterval(poller.run, LIVE_POLL_MS);
+      poller.run();
+    } else if (!wanted() && poller.timer) {
+      clearInterval(poller.timer);
+      poller.timer = null;
+    }
+  };
+  poller.kick = () => {
+    clearTimeout(poller.kickTimer);
+    poller.kickTimer = setTimeout(poller.run, LIVE_KICK_MS);
+  };
+  return poller;
+}
+
+const piResources = { data: null, error: false, sig: "" };
+const allResources = { list: null, sig: "" };
+const gitFiles = { data: null, sig: "", asked: null };
+
+async function loadPiResources() {
+  const id = livePiSessionId();
+  if (!id) return;
+  let data = null;
+  try {
+    data = await api(`/api/sessions/${encodeURIComponent(id)}/resources`);
+  } catch {
+    // Shown as "Indisponível"; the next tick retries.
+  }
+  if (livePiSessionId() !== id) return;
+  const sig = JSON.stringify(resourceRows(data));
+  if (sig === piResources.sig && Boolean(data) !== piResources.error) return;
+  Object.assign(piResources, { data, error: !data, sig });
+  scheduleInspector("context");
+}
+
+async function loadAllResources() {
+  let list = null;
+  try {
+    list = (await api("/api/resources")).resources;
+  } catch {
+    // No line is better than a stale one.
+  }
+  const sig = JSON.stringify((list ?? []).map((item) => [item.cwd, resourceLine(item)]));
+  if (sig === allResources.sig) return;
+  Object.assign(allResources, { list, sig });
+  scheduleInspector("worktrees");
+}
+
+async function loadGitFiles() {
+  const id = currentSessionId();
+  const paths = state.outputs.map((item) => item.path);
+  gitFiles.asked = paths.join("\0");
+  if (!id) return;
+  let data;
+  try {
+    data = await api(gitFilesUrl(id, paths));
+  } catch {
+    return; // Keeps the last good colors.
+  }
+  if (currentSessionId() !== id) return;
+  const sig = JSON.stringify(data);
+  if (sig === gitFiles.sig) return;
+  Object.assign(gitFiles, { data, sig });
+  scheduleInspector("files");
+}
+
+const resourcesPoller = makePoller(() => tabShown("context") && Boolean(livePiSessionId()), loadPiResources);
+const worktreeResourcesPoller = makePoller(() => tabShown("worktrees"), loadAllResources);
+const gitPoller = makePoller(() => tabShown("files") && Boolean(currentSessionId()), loadGitFiles);
+function syncLivePolling() {
+  for (const poller of [resourcesPoller, worktreeResourcesPoller, gitPoller]) poller.sync();
+}
+// A new conversation starts without the previous one's numbers and colors.
+function resetLiveData() {
+  Object.assign(piResources, { data: null, error: false, sig: "" });
+  Object.assign(gitFiles, { data: null, sig: "", asked: null });
+  resourcesPoller.kick();
+  gitPoller.kick();
+}
+
 const subOpen = new Set();
 const subCache = new Map();
 let noticeSeq = 0;
+
+// Tarefas tab (see tasks-panel.js). Everything it needs from the app goes through these callbacks.
+function tasksContext(runs = currentSubagents()) {
+  const orcaAvailable = Boolean(orcaOn() && orca.data?.available);
+  const worktrees = orcaAvailable ? orca.data.worktrees : [];
+  const file = state.session?.sessionFile ?? null;
+  let piBlocked = "";
+  if (state.processExited) piBlocked = "PI encerrado";
+  else if (state.watch) piBlocked = "Conversa em modo de acompanhamento (somente leitura)";
+  else if (!state.currentProject) piBlocked = "Nenhum projeto aberto";
+  return {
+    tasks: state.todo || [],
+    runs,
+    sessionKey: file,
+    conversationId: state.watch ? state.watch.sessionId || null : state.session?.sessionId || null,
+    title: state.watch ? state.watch.title : state.history.find((item) => samePath(item.path, file))?.title || state.session?.sessionName || "",
+    projectId: state.currentProject?.id ?? null,
+    orcaAvailable,
+    projectInOrca: Boolean(orcaWorktreeOfProject()),
+    orcaAgents: worktrees.flatMap((worktree) => (worktree.agents || []).map((agent) => ({ ...agent, worktreePath: worktree.path }))),
+    piBlocked,
+  };
+}
+
+const tasksPanel = createTasksPanel({
+  els: { list: els.tasksList, dialog: els.taskWorktreeDialog, name: els.taskWorktreeName, prompt: els.taskWorktreePrompt },
+  svg,
+  esc,
+  toast,
+  api,
+  setBadge: (count) => setBadge(els.tasksBadge, count, plural(count, "tarefa executando agora", "tarefas executando agora")),
+  context: tasksContext,
+  sendParallel: (text) => sendProgrammatic(text, "prompt").catch(report),
+  sendSteer: (agentId, text) => steerSubagent(agentId, text),
+  openSubagent: (run) => openSubagent(run).catch(report),
+  openWorktree: (worktreePath) => openTaskWorktree(worktreePath),
+  scrollToEnd: () => {
+    state.stick = true;
+    scrollToBottom();
+  },
+  refreshOrca: () => pollOrca(),
+  invalidate: () => scheduleInspector("tasks"),
+});
+
+// Dúvidas tab (see side-chat.js): a read-only side PI per open conversation.
+const sideChat = createSideChat({
+  els: { list: $("#scList"), status: $("#scStatus"), form: $("#scForm"), input: $("#scInput"), send: $("#scSend"), stop: $("#scStop") },
+  api,
+  renderMarkdown,
+  esc,
+  svg,
+  path: () => sideChatPath({ watch: state.watch, session: state.session }),
+  report,
+});
+
+function openDoubts() {
+  setPanel("right", true);
+  selectTab("sidechat");
+  sideChat.render();
+  requestAnimationFrame(() => sideChat.focus());
+}
 
 function setPanel(side, open) {
   layout[side] = open ? "open" : "closed";
@@ -617,8 +908,8 @@ function sessionButton(project, item, active) {
   button.dataset.path = item.path;
   if (active) button.setAttribute("aria-current", "true");
   const badge = sessionStateBadge(item);
-  const dot = badge ? `<span class="session-state st-${badge.state}" role="img" aria-label="${esc(badge.aria)}"></span>` : "";
-  button.innerHTML = `<span class="session-title">${esc(item.title || "Nova conversa")}</span>${dot}<span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
+  const dot = badge ? stateHtml(legacyState(badge.state)) : "";
+  button.innerHTML = `<span class="session-title">${esc(stripPictographs(item.title) || "Nova conversa")}</span>${dot}<span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
   button.title = sessionTooltip(item);
   const menu = document.createElement("button");
   menu.type = "button";
@@ -657,15 +948,16 @@ function copyText(text, done) {
 }
 
 function openSessionMenu(anchor) {
-  const { project: projectId, path: sessionPath, title } = anchor.dataset;
-  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title };
+  const { project: projectId, path: sessionPath, title, env } = anchor.dataset;
+  const cwd = env || undefined;
+  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title, sessionId: tree.findPi(sessionPath)?.sessionId };
   const isOpen = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile);
   const parent = findParentRow(item);
   const openFirst = async () => {
-    if (!isOpen) await openSession(projectId, sessionPath);
+    if (!isOpen) await openSession(projectId, sessionPath, { cwd });
   };
   const actions = {
-    open: () => openSession(projectId, sessionPath),
+    open: () => openSession(projectId, sessionPath, { cwd }),
     rename: async () => {
       await openFirst();
       promptRename(item.title ?? title);
@@ -729,6 +1021,12 @@ els.projects.addEventListener("contextmenu", (event) => {
 });
 
 function renderProjects() {
+  if (tree.active()) {
+    tree.render();
+    updateHeaderState();
+    syncHistoryPolling();
+    return;
+  }
   const fragment = document.createDocumentFragment();
   for (const project of state.projects) {
     const active = state.currentProject?.id === project.id;
@@ -748,7 +1046,7 @@ function renderProjects() {
       <div class="project-row-wrap">
         <button type="button" class="project-row" data-action="open-project" data-project="${esc(project.id)}" title="${esc(project.cwd)}"${active ? ' aria-current="true"' : ""}>
           ${svg("i-code", "project-ico")}
-          <span class="project-name">${esc(project.name)}</span>
+          <span class="project-name">${esc(stripPictographs(project.name) || project.name)}</span>
           ${badge ? `<span class="count-badge" role="img" aria-label="${esc(badgeLabel)}" title="${esc(badgeLabel)}">${badge}</span>` : ""}
           <span class="run-dot" aria-hidden="true"></span>
           ${attention ? `<span class="sr-only">${attention === "waiting" ? "aguardando sua resposta" : "terminou enquanto você estava fora"}</span>` : ""}
@@ -801,6 +1099,10 @@ els.projects.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const { action, project: projectId, path } = target.dataset;
+  if (action === "tree-toggle") {
+    tree.toggle(target.dataset.toggle, target.dataset.default === "1");
+    return;
+  }
   if (action === "open-project") {
     if (state.currentProject?.id !== projectId) openProject(projectId).catch(report);
   } else if (action === "expand-project") {
@@ -814,18 +1116,23 @@ els.projects.addEventListener("click", (event) => {
     state.showAllSessions = true;
     renderProjects();
   } else if (action === "open-session") {
-    openSession(projectId, path).catch(report);
+    openSession(projectId, path, { cwd: target.dataset.env || undefined }).catch(report);
+  } else if (action === "tree-env") {
+    openWorktree({ path: target.dataset.path, name: target.dataset.name, projectId: projectIdForPath(target.dataset.path) }).catch(report);
+  } else if (action === "tree-more") {
+    showMoreSessions(target.dataset).catch(report);
   } else if (action === "session-menu") {
     openSessionMenu(target);
   }
-  if (action !== "expand-project" && action !== "more-sessions" && action !== "session-menu") closeOverlays();
+  if (action !== "expand-project" && action !== "more-sessions" && action !== "session-menu" && action !== "tree-more") closeOverlays();
 });
 
 // ------------------------------------------------------------------ header
 
 function updateHeader() {
   const project = state.currentProject;
-  els.projectTitle.textContent = project?.name || "PI Studio";
+  els.projectTitle.textContent = stripPictographs(project?.name) || project?.name || "PI Studio";
+  updateHeaderState();
   els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
   els.userName.textContent = prefs.userName || "Você";
   els.userAvatar.textContent = (prefs.userName || "?").trim().charAt(0).toUpperCase() || "?";
@@ -844,6 +1151,8 @@ function updateModelButton() {
 
 function resetConversation() {
   stopWatch();
+  resetLiveData();
+  voice.stopSpeaking();
   state.messages = [];
   state.runtime.clear();
   state.liveMessage = null;
@@ -875,6 +1184,7 @@ function resetConversation() {
   els.term.replaceChildren();
   subOpen.clear();
   subCache.clear();
+  tasksPanel.reset();
   scheduleInspector();
 }
 
@@ -896,6 +1206,8 @@ async function bootstrap() {
   state.projects = data.projects || [];
   renderProjects();
   renderPanel();
+  tree.start();
+  setInterval(() => !document.hidden && tree.render(), 20_000);
   if (!state.projects.length) {
     renderThread();
     return;
@@ -911,6 +1223,7 @@ async function refreshProjects() {
   state.otherHistory.clear();
   renderProjects();
   renderPanel();
+  tree.poke();
 }
 
 // Opening a project starts PI for it (seconds on a cold start). The session gate makes a
@@ -958,11 +1271,16 @@ async function loadProject(projectId, { cwd } = {}) {
 
 // A conversation another process is writing (an Orca agent's terminal, another PI) is only followed, read-only:
 // the Studio's PI never switches into a file with two writers.
-function openSession(projectId, sessionPath) {
+function openSession(projectId, sessionPath, { cwd } = {}) {
   return runGated(state, async () => {
-    if (state.currentProject?.id !== projectId) await loadProject(projectId);
+    if (cwd ? !samePath(state.currentProject?.cwd, cwd) : state.currentProject?.id !== projectId) {
+      const known = cwd ? projectIdForPath(cwd) : projectId;
+      await (known ? loadProject(known) : loadProject(null, { cwd }));
+    }
     await refreshHistory().catch(() => {});
-    await showConversation(state.history.find((item) => samePath(item.path, sessionPath)), sessionPath);
+    const entry = state.history.find((item) => samePath(item.path, sessionPath));
+    const live = tree.findPi(sessionPath);
+    await showConversation(live ? treeHistoryItem(entry ?? null, live) : entry, sessionPath);
   });
 }
 
@@ -1011,7 +1329,7 @@ const currentStudioFile = () => (state.watch ? state.studioFile : state.session?
 const orcaWorktreeOfProject = () => (orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, state.currentProject?.cwd)) : null);
 const worktreeAgents = () => orcaWorktreeOfProject()?.agents ?? [];
 
-function startWatch(item, { fallback }) {
+function startWatch(item, { fallback, steer = null }) {
   resetConversation();
   state.studioFile = state.session?.sessionFile ?? null;
   state.session = { ...(state.session || {}), sessionFile: item.path };
@@ -1019,6 +1337,8 @@ function startWatch(item, { fallback }) {
   const watch = {
     path: item.path,
     title: item.title,
+    sessionId: item.sessionId ?? null,
+    steer,
     fallback,
     entries: [],
     offset: 0,
@@ -1057,6 +1377,7 @@ function updateWatchUi() {
     els.watchText.textContent = status.text;
     els.watchContinue.disabled = !status.canContinue;
   }
+  els.watchBack.hidden = !watch?.steer;
   applyPlaceholder();
   updateComposer();
 }
@@ -1079,7 +1400,7 @@ async function watchTick() {
       watch.entries = entries;
       state.messages = watchMessages(entries);
       state.subagentRecords = subagentRecords(entries);
-      applyTodo(todoFromMessages(state.messages));
+      applyTodo(todoFromMessages(state.messages), state.messages);
       scheduleRender();
     }
     updateWatchUi();
@@ -1095,6 +1416,35 @@ async function watchTick() {
   } finally {
     watch.inflight = false;
   }
+}
+
+// Back from a followed subagent to the Studio PI's own conversation (its parent).
+els.watchBack.addEventListener("click", () => {
+  if (!state.watch) return;
+  resetConversation();
+  renderThread();
+  refreshState().catch(report);
+});
+
+// Opens a subagent's own conversation, read-only and live, with its message box (see steerableWatch).
+// The child session is named "<agent>#<id8>" by pi-subagents; the run's task text is only a fallback.
+async function openSubagent(run) {
+  if (!run) throw new Error("Subagente não encontrado nesta conversa.");
+  await refreshHistory().catch(() => {});
+  const item = subagentSession({ run, history: state.history, parentFile: currentStudioFile() });
+  if (!item) throw new Error("A conversa deste subagente ainda não está disponível.");
+  await runGated(state, () => startWatch(item, { fallback: false, steer: { agentId: run.agentId, label: run.title } }));
+}
+
+function openTaskWorktree(worktreePath) {
+  const worktree = orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, worktreePath)) : null;
+  if (!worktree) return toast("Esta worktree não aparece no Orca.", "warning");
+  return openWorktree(worktree).catch(report);
+}
+
+// A followed subagent takes messages while its file is still being written (the Studio PI forwards them with /steer).
+function steerableWatch() {
+  return Boolean(state.watch?.steer && state.watch.elsewhere);
 }
 
 els.watchContinue.addEventListener("click", () => {
@@ -1293,7 +1643,7 @@ function handleResponse(event) {
       if (state.watch || !Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       state.subagentRecords = subagentRecords(event.data.entries);
-      applyTodo(todoFromMessages(state.messages));
+      applyTodo(todoFromMessages(state.messages), state.messages);
       refreshForkMessages();
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
       // Finished Agent runs stay: their end time is the only source of "terminou há N min" once the result is in the entries.
@@ -1350,6 +1700,7 @@ function handleRpc(event) {
       setRunning(false);
       state.liveMessage = null;
       stampTurnEnd(state.messages);
+      voice.autoRead(state.messages);
       sendRpc({ type: "get_entries" }).catch(() => {});
       refreshStats();
       refreshHistory().catch(() => {});
@@ -1404,8 +1755,9 @@ function handleRpc(event) {
     case "tool_execution_end": {
       const tool = state.runtime.get(event.toolCallId) || { name: event.toolName, args: {} };
       state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result, endedAt: Date.now() });
-      applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }));
+      applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }, true));
       state.phase = "thinking";
+      gitPoller.kick();
       break;
     }
     case "bash_execution_update": {
@@ -1510,7 +1862,7 @@ function renderThread() {
   while (els.thread.children.length > nodes.length) els.thread.lastElementChild.remove();
   els.thread.classList.toggle("is-empty", !items.length && !state.isStreaming);
   updateRunStatus();
-  scheduleInspector("terminal", "subagents", "files");
+  scheduleInspector("terminal", "subagents", "files", "tasks");
   if (stick) scrollToBottom();
 }
 
@@ -1528,7 +1880,10 @@ function annotateActions(items) {
   applyTurnFinish(items, state.isStreaming);
   for (const item of items) {
     if (item.kind === "user") item.actions = messageActions(item, ctx);
-    else if (item.kind === "assistant") item.actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
+    else if (item.kind === "assistant") {
+      const actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
+      item.actions = withSpeakAction(actions, { supported: voice.speechSupported, text: item.text });
+    }
   }
   state.timeline = new Map(items.map((item) => [item.key, item]));
 }
@@ -1537,7 +1892,12 @@ const ACTION_ICONS = { copy: "i-copy", edit: "i-edit", retry: "i-retry" };
 
 function actionsHtml(item) {
   if (!item.actions?.length) return "";
-  const buttons = item.actions.map((action) => `<button type="button" class="act-btn" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(action.label)}" aria-label="${esc(action.label)}"${action.disabled ? " disabled" : ""}>${svg(ACTION_ICONS[action.id])}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`);
+  const buttons = item.actions.map((action) => {
+    const speaking = action.id === "speak" && voice.speakingKey() === item.key;
+    const label = speaking ? "Parar" : action.label;
+    const icon = action.id === "speak" ? svg("i-speaker", "act-speaker") + svg("i-stop", "act-stop") : svg(ACTION_ICONS[action.id]);
+    return `<button type="button" class="act-btn${speaking ? " speaking" : ""}" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(label)}" aria-label="${esc(label)}"${action.disabled ? " disabled" : ""}>${icon}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`;
+  });
   const finished = item.finishAt === undefined ? null : finishedLabel(item.finishAt, item.finishTook);
   const time = finished ? `<span class="act-time" data-finished="${item.finishAt}" title="${esc(finished.title)}">${esc(finished.text)}</span>` : "";
   return `<div class="msg-actions" role="toolbar" aria-label="Ações da mensagem">${buttons.join("")}${time}</div>`;
@@ -1713,6 +2073,10 @@ setInterval(() => {
   // Finished runs only age by the minute ("terminou há N min"): refresh them every 15 s.
   else if (inspector.tab === "subagents" && (!els.subBadge.hidden || tick % 15 === 0)) scheduleInspector("subagents");
   else if (inspector.tab === "context" && state.problems.length && tick % 15 === 0) scheduleInspector("context");
+  else if (inspector.tab === "tasks" && tick % 30 === 0) {
+    scheduleInspector("tasks");
+    tasksPanel.refreshLinks();
+  }
 }, 1000);
 
 function setRunning(running) {
@@ -1724,6 +2088,7 @@ function setRunning(running) {
     state.liveThinkingOpen = false;
   }
   updateComposer();
+  updateHeaderState();
   if (was !== state.isStreaming) {
     scheduleRender();
     scheduleInspector("context");
@@ -1738,6 +2103,7 @@ els.scroller.addEventListener("scroll", () => {
   const distance = els.scroller.scrollHeight - els.scroller.scrollTop - els.scroller.clientHeight;
   state.stick = distance < 64;
   els.jump.hidden = state.stick;
+  if (state.stick) markOpenSeen();
 }, { passive: true });
 
 els.jump.addEventListener("click", () => {
@@ -1839,6 +2205,9 @@ async function messageAction(action, button) {
     await navigator.clipboard.writeText(item.text);
     button.classList.add("done");
     setTimeout(() => button.classList.remove("done"), 1400);
+  } else if (action === "speak") {
+    if (voice.speakingKey() === item.key) voice.stopSpeaking();
+    else voice.speak(item.key, item.text);
   } else if (action === "edit") {
     const text = await forkFrom(item.entryId);
     if (text === null) return;
@@ -1911,10 +2280,12 @@ async function cloneSession() {
 
 // ------------------------------------------------------------------ tasks
 
-function applyTodo(tasks) {
+function applyTodo(tasks, messages = null) {
   if (!tasks) return;
   state.todo = tasks;
+  tasksPanel.observe(tasks, messages);
   renderTodo();
+  scheduleInspector("tasks");
 }
 
 function renderTodo() {
@@ -1929,7 +2300,7 @@ function renderTodo() {
     const item = document.createElement("li");
     item.className = `todo-item ${task.status}`;
     if (task.status === "in_progress") item.setAttribute("aria-current", "step");
-    item.innerHTML = `<span class="todo-mark" aria-hidden="true"></span><span><span class="sr-only">${labels[task.status]}</span><span class="todo-subject">${esc(task.status === "in_progress" ? task.activeForm || task.subject : task.subject)}</span></span>`;
+    item.innerHTML = `${task.status === "in_progress" ? stateHtml("working", "todo-state") : '<span class="todo-mark" aria-hidden="true"></span>'}<span><span class="sr-only">${labels[task.status]}</span><span class="todo-subject">${esc(task.status === "in_progress" ? task.activeForm || task.subject : task.subject)}</span></span>`;
     return item;
   }));
 }
@@ -2010,6 +2381,11 @@ async function onSettled() {
 
 window.addEventListener("focus", () => state.currentProject && markSeen(state.currentProject.id));
 document.addEventListener("visibilitychange", () => state.currentProject && markSeen(state.currentProject.id));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) tree.poke();
+  markOpenSeen();
+});
+window.addEventListener("pagehide", () => tree.stop());
 
 // --------------------------------------------------------------- inspector
 
@@ -2022,7 +2398,7 @@ function renderPanel() {
     els.ctxRing.title = `${usage.percent}% do contexto usado`;
     els.ctxRing.classList.toggle("warn", usage.percent >= 80);
   }
-  scheduleInspector("terminal", "context", "files", "worktrees");
+  scheduleInspector("terminal", "context", "files", "worktrees", "sidechat");
 }
 
 function scheduleInspector(...tabs) {
@@ -2035,10 +2411,12 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
+const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees, sidechat: () => sideChat.render() };
 
 function renderInspector() {
-  updateSubBadge();
+  const runs = currentSubagents();
+  updateSubBadge(runs);
+  tasksPanel.updateBadge(runs);
   if (layout.right !== "open" || !inspector.dirty.has(inspector.tab)) return;
   inspector.dirty.delete(inspector.tab);
   VIEW_RENDERERS[inspector.tab]();
@@ -2063,8 +2441,10 @@ function selectTab(tab, { focus = false } = {}) {
   for (const view of els.views) view.hidden = view.dataset.view !== tab;
   els.panel.dataset.tab = tab;
   if (tab === "context" && state.currentProject && !state.processExited) refreshStats();
+  if (tab === "tasks") tasksPanel.refreshLinks();
   scheduleInspector(tab);
   syncOrcaPolling();
+  syncLivePolling();
 }
 
 els.tablist.addEventListener("click", (event) => {
@@ -2080,11 +2460,11 @@ els.tablist.addEventListener("keydown", (event) => {
   selectTab(tabs[target].dataset.tab, { focus: true });
 });
 
-// Every tab keeps its label and count badge as long as they fit. Measured (so it holds for any number of tabs and any panel
-// width), the tabs give up first the icons of the unselected ones ("tight"), and only if the labels still overflow their
-// labels ("compact"). Name and count stay in title/aria-label either way.
+// Every tab shows icon + label while they fit. Measured (any number of tabs, any panel width), the tabs give up first the
+// labels of the unselected ones ("fit-selected"), and only if that still overflows all labels ("fit-icons").
+// Name and count stay in title/aria-label either way.
 function fitInspectorTabs() {
-  els.tablist.classList.remove("tight", "compact");
+  els.tablist.classList.remove("fit-selected", "fit-icons");
   for (const tab of els.tabs) {
     const badge = tab.querySelector(".count-badge:not([hidden])");
     const name = tab.querySelector(".insp-label").textContent;
@@ -2092,11 +2472,17 @@ function fitInspectorTabs() {
     tab.title = label;
     tab.setAttribute("aria-label", label);
   }
-  const overflows = () => els.tablist.scrollWidth > els.tablist.clientWidth;
-  if (!overflows()) return;
-  els.tablist.classList.add("tight");
-  if (!overflows()) return;
-  els.tablist.classList.replace("tight", "compact");
+  // Measured once with text and once icon-only (two layouts per pass, no writes in between); tabFitMode (lib.js) decides.
+  const tabs = els.tabs.filter((tab) => !tab.hidden);
+  const withText = tabs.map((tab) => tab.offsetWidth);
+  els.tablist.classList.add("fit-icons");
+  const iconOnly = tabs.map((tab) => tab.offsetWidth);
+  els.tablist.classList.remove("fit-icons");
+  const style = getComputedStyle(els.tablist);
+  const available = els.tablist.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const selected = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const mode = tabFitMode({ withText, iconOnly, available, selected });
+  if (mode !== "full") els.tablist.classList.add(`fit-${mode}`);
 }
 let fitTabsQueued = false;
 function scheduleFitTabs() {
@@ -2300,6 +2686,11 @@ function updateWorktreeBadges() {
   setBadge(els.worktreesBadge, running, label);
 }
 
+function subagentFamilyIcon(run) {
+  const family = subagentFamily(run);
+  return family === "general" ? "i-agents" : `i-ag-${family}`;
+}
+
 function subCard(run, open) {
   const node = document.createElement("article");
   const timing = subagentTiming(run);
@@ -2310,8 +2701,8 @@ function subCard(run, open) {
   const sections = run.sections.map((section) => `<section class="sa-sec"><h4>${esc(section.label)}</h4><pre>${esc(truncate(section.text, 60000))}</pre></section>`).join("");
   node.innerHTML = `
     <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}">
-      <span class="sa-dot" aria-hidden="true"></span>
-      <span class="sa-title"><strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
+      ${stateHtml(timing.stalled ? "attention" : subagentIndicator(run.phase))}
+      <span class="sa-title">${svg(subagentFamilyIcon(run), "sa-ico")}<strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
       <span class="sa-state"><span class="sa-phase">${esc(SUB_PHASE[run.phase])}</span><span class="sa-time">${esc(formatElapsed(run.elapsed))}</span></span>
       ${svg("i-chevron-right", "sa-chev")}
     </button>
@@ -2390,15 +2781,21 @@ function renderContext() {
   const windowText = usage?.tokens !== null && usage?.contextWindow ? `${formatTokens(usage.tokens)} / ${formatTokens(usage.contextWindow)} tokens` : "";
   const hero = usage
     ? `<div class="ctx-big"><strong>${usage.percent}<small>%</small></strong><span>da janela de contexto</span></div>
-      <div class="progress ctx-progress${usage.percent >= 80 ? " warn" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
+      <div class="progress ctx-progress tone-${contextTone(usage.percent)}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
       <div class="ctx-meta"><span>${esc(windowText)}</span>${data.cost !== null ? `<span>US$ ${data.cost.toFixed(2)}</span>` : ""}</div>`
     : `<div class="ctx-big is-empty"><strong>—</strong><span>${state.currentProject ? "Uso de contexto aparece após a primeira resposta." : "Nenhum projeto aberto."}</span></div>`;
   const row = (label, value, extra = "") => `<div class="kv-row"><dt>${extra}${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
   const tokens = data.parts.length
     ? `<section class="insp-sec"><h3 class="sec-title">Tokens da sessão</h3>
-        <div class="stack-bar" aria-hidden="true">${data.parts.map((part, index) => `<span class="seg s${index}" style="flex-grow:${part.share}"></span>`).join("")}</div>
-        <dl class="kv">${data.parts.map((part, index) => row(part.label, `${formatTokens(part.value)} · ${Math.round(part.share * 100)}%`, `<i class="sw s${index}" aria-hidden="true"></i>`)).join("")}
+        <div class="stack-bar" aria-hidden="true">${data.parts.map((part) => `<span class="seg k-${part.key}" style="flex-grow:${part.share}"></span>`).join("")}</div>
+        <dl class="kv">${data.parts.map((part) => row(part.label, `${formatTokens(part.value)} · ${Math.round(part.share * 100)}%`, `<i class="sw k-${part.key}" aria-hidden="true"></i>`)).join("")}
         ${data.total !== null ? row("Total", formatTokens(data.total)) : ""}</dl></section>`
+    : "";
+  const resourceRowsList = resourceRows(piResources.data);
+  const resources = livePiSessionId()
+    ? `<section class="insp-sec"><h3 class="sec-title">Recursos</h3>${resourceRowsList.length
+      ? `<dl class="kv">${resourceRowsList.map(([label, value]) => row(label, value)).join("")}</dl>`
+      : `<p class="sec-hint">${piResources.error ? "Indisponível no momento." : "Medindo…"}</p>`}</section>`
     : "";
   const model = data.model
     ? `<section class="insp-sec"><h3 class="sec-title">Modelo</h3><dl class="kv">${row("Modelo", data.model)}${data.provider ? row("Provedor", data.provider) : ""}${data.thinking ? row("Raciocínio", data.thinking) : ""}</dl></section>`
@@ -2412,7 +2809,7 @@ function renderContext() {
   const today = todayUsageRows(usageToday.data);
   const todaySection = today.length ? `<section class="insp-sec"><h3 class="sec-title">Hoje</h3><dl class="kv">${today.map(([label, value]) => row(label, value)).join("")}</dl></section>` : "";
   const now = Date.now();
-  const problemRow = (item) => `<li><span class="session-state st-${item.kind === "error" ? "erro" : "aguardando"}" aria-hidden="true"></span><span class="prob-text">${esc(item.text)}</span>${item.at ? `<span class="prob-time">${esc(agoLabel(item.at, now))}</span>` : ""}</li>`;
+  const problemRow = (item) => `<li>${stateHtml(item.kind === "error" ? "urgent" : "attention")}<span class="prob-text">${esc(item.text)}</span>${item.at ? `<span class="prob-time">${esc(agoLabel(item.at, now))}</span>` : ""}</li>`;
   const problems = `<section class="insp-sec"><h3 class="sec-title">Erros e tentativas</h3>${state.problems.length
     ? `<ul class="prob-list">${[...state.problems].reverse().map(problemRow).join("")}</ul>`
     : `<p class="sec-hint">Nenhum erro nesta conversa.</p>`}</section>`;
@@ -2421,7 +2818,7 @@ function renderContext() {
   const hint = compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
   const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${compacting ? ' aria-busy="true"' : ""}>${compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
   const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : document.activeElement?.closest?.(".fast-seg") ? ".fast-seg input:checked" : "";
-  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${resources}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
 }
 
@@ -2596,16 +2993,40 @@ function renderFiles() {
   renderOutputs();
 }
 
+const gitTag = (info) => `<span class="git-tag tone-${info.tone}"><i class="git-dot" aria-hidden="true"></i>${esc(info.label)}</span>`;
+
+function outputRowHtml(item, tag = "") {
+  return `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
+      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>${tag}
+      <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
+    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`;
+}
+
+// A file the repository reports as changed that this conversation did not touch: no diff counts, same click-to-open.
+function repoFileRowHtml(item, tag) {
+  return `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
+      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.rel)}</small></span>${tag}
+    </button></div>`;
+}
+
+function gitGroupHtml(group) {
+  const head = `<h4 class="git-group${group.tone ? ` tone-${group.tone}` : ""}"><i class="git-dot" aria-hidden="true"></i>${esc(group.label)}<b>${group.count}</b></h4>`;
+  const tag = group.tone ? gitTag(group) : "";
+  const rows = group.items.map((item) => (item.output ? outputRowHtml(item.output, tag) : repoFileRowHtml(item, tag))).join("");
+  return `<section class="git-section">${head}${rows}${group.more ? `<p class="muted git-more">+${group.more} arquivos não listados</p>` : ""}</section>`;
+}
+
 function renderOutputs() {
-  const outputs = state.outputs;
-  if (!outputs.length) {
+  const groups = groupGitFiles(state.outputs, gitFiles.data);
+  const colored = groups.some((group) => group.tone);
+  els.gitLegend.hidden = !colored;
+  if (colored) els.gitLegend.innerHTML = gitLegend().map(gitTag).join("");
+  if (state.outputs.map((item) => item.path).join("\0") !== gitFiles.asked) gitPoller.kick();
+  if (!groups.length) {
     els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta conversa aparecem aqui.</p>`;
     return;
   }
-  els.outputsList.innerHTML = outputs.map((item) => `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
-      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>
-      <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
-    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`).join("");
+  els.outputsList.innerHTML = colored ? groups.map(gitGroupHtml).join("") : groups[0].items.map((item) => outputRowHtml(item.output)).join("");
 }
 
 els.envPath.addEventListener("click", (event) => {
@@ -2661,7 +3082,7 @@ function updateComposer() {
   // A shell command needs an idle agent and a command; nothing is sent while one is running.
   const blocked = Boolean(state.bash) || (shell && (state.isStreaming || !shellCommand(value)));
   // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
-  els.send.disabled = state.processExited || state.sending || Boolean(state.watch) || !hasContent || blocked || (!state.currentProject && !state.gate);
+  els.send.disabled = state.processExited || state.sending || (Boolean(state.watch) && !steerableWatch()) || !hasContent || blocked || (!state.currentProject && !state.gate);
   els.composer.classList.toggle("is-shell", shell);
   els.shellChip.hidden = !shell;
   els.stop.hidden = !(state.isStreaming || state.bash);
@@ -2669,14 +3090,14 @@ function updateComposer() {
   els.send.setAttribute("aria-label", shell ? "Executar" : state.isStreaming ? "Direcionar (steer)" : "Enviar");
   els.hint.textContent = composerHint(shell);
   els.hint.title = els.hint.textContent;
-  els.prompt.disabled = state.processExited || Boolean(state.watch);
+  els.prompt.disabled = state.processExited || (Boolean(state.watch) && !steerableWatch());
 }
 
 // The long placeholder (/ commands, @ files, ! shell) does not fit a phone-width composer.
 const narrowComposer = window.matchMedia("(max-width: 560px)");
 const PLACEHOLDER_LONG = els.prompt.placeholder;
 const applyPlaceholder = () => {
-  els.prompt.placeholder = state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
+  els.prompt.placeholder = steerableWatch() ? `Mensagem para ${state.watch.steer.label} (via PI principal)` : state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
 };
 narrowComposer.addEventListener("change", applyPlaceholder);
 applyPlaceholder();
@@ -2722,7 +3143,58 @@ async function addImages(files) {
   renderAttachments();
 }
 
+// A message to a running subagent: the Studio PI runs /steer (extensions/studio-steer.ts); its notify comes back as a toast.
+async function steerSubagent(agentId, text) {
+  const message = steerCommand(agentId, text);
+  if (!message) throw new Error("Escreva uma mensagem.");
+  if (!state.commands) await loadCommands();
+  if (state.commands && !state.commands.some((command) => command.name === "steer")) throw new Error("O comando /steer não está instalado no PI — reinstale as extensões do Studio.");
+  await sendProgrammatic(message, "command");
+}
+
+// A message the app writes for the user (not the composer): "prompt" is a normal user message (queued as a follow-up while
+// the PI answers); "command" is an extension slash command, which the PI runs at once and which leaves no user message.
+async function sendProgrammatic(message, kind) {
+  if (state.processExited || (state.watch && kind !== "command")) throw new Error("O PI não pode receber mensagens agora.");
+  if (state.gate) await waitSessionGate(state);
+  if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
+  const type = kind === "command" ? "prompt" : state.isStreaming ? "follow_up" : "prompt";
+  const optimistic = type === "prompt" && kind !== "command" ? { role: "user", content: [{ type: "text", text: message }], timestamp: Date.now(), _optimistic: true } : null;
+  if (optimistic) {
+    state.messages.push(optimistic);
+    state.stick = true;
+    scheduleRender();
+  }
+  const drop = () => {
+    const index = state.messages.indexOf(optimistic);
+    if (index !== -1) state.messages.splice(index, 1);
+    scheduleRender();
+  };
+  let res;
+  try {
+    res = await rpcRequest({ type, message }, 0);
+  } catch (error) {
+    drop();
+    throw error;
+  }
+  if (!res.success) {
+    drop();
+    throw new Error(res.error || "O PI recusou a mensagem.");
+  }
+  if (type === "follow_up") toast("Tarefa adicionada à fila.");
+}
+
 async function submit(mode) {
+  if (state.watch?.steer && steerableWatch()) {
+    const text = els.prompt.value.trim();
+    if (!text || state.sending) return;
+    clearComposer();
+    steerSubagent(state.watch.steer.agentId, text).catch((error) => {
+      if (!els.prompt.value) setComposerText(text);
+      report(error);
+    });
+    return;
+  }
   if (state.processExited || state.sending || state.watch) return;
   if (els.prompt.value.trim() || state.attachments.length) ensureNotifyPermission();
   if (state.gate) {
@@ -2741,6 +3213,7 @@ async function submit(mode) {
   const message = els.prompt.value.trim();
   if (!message && !state.attachments.length) return;
   if (state.bash) return;
+  voice.stopSpeaking();
   closeComposerMenu();
   const builtin = parseBuiltin(message);
   if (builtin) return runBuiltin(builtin, message);
@@ -2796,6 +3269,12 @@ els.composer.addEventListener("submit", (event) => {
   submit(state.isStreaming ? "steer" : "prompt");
 });
 els.prompt.addEventListener("keydown", (event) => {
+  // While recording, Enter stops the take and transcribes instead of sending.
+  if (voice.isRecording() && event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    voice.toggle();
+    return;
+  }
   if (composerMenu.kind && handleComposerMenuKey(event)) return;
   const recalled = state.recalled !== null && els.prompt.value === state.recalled;
   const recall = recallAction(event, { empty: !els.prompt.value.trim(), recalled });
@@ -2952,7 +3431,7 @@ async function runShell(text) {
 // ---------------------------------------------------- shortcuts overlay
 
 function renderShortcuts() {
-  els.shortcutsBody.replaceChildren(...SHORTCUT_GROUPS.map((group) => {
+  els.shortcutsBody.replaceChildren(...[...SHORTCUT_GROUPS, VOICE_SHORTCUTS].map((group) => {
     const section = document.createElement("section");
     const rows = group.items.map((item) => `<div class="shortcut-row"><span>${esc(item.label)}</span><span class="shortcut-keys">${item.keys.map((key) => `<kbd>${esc(key)}</kbd>`).join("")}</span></div>`);
     section.innerHTML = `<h4>${esc(group.title)}</h4>${rows.join("")}`;
@@ -3149,7 +3628,7 @@ function renderWidgets() {
   els.widgetArea.textContent = lines.join("\n");
   els.widgetArea.classList.toggle("hidden", !lines.length);
   els.statusLine.textContent = [...state.statuses.values()].join(" · ");
-  scheduleInspector("terminal", "subagents");
+  scheduleInspector("terminal", "subagents", "tasks");
 }
 
 // ------------------------------------------------------------- model menu
@@ -3475,6 +3954,8 @@ function openSettings() {
   const denied = canNotify && Notification.permission === "denied";
   for (const input of els.settingFont) input.checked = input.value === settings.fontSize;
   for (const input of els.settingWidth) input.checked = input.value === settings.chatWidth;
+  els.settingVoiceRead.checked = voice.speechSupported && voiceReadEnabled(localStorage.getItem(VOICE_READ_KEY));
+  els.settingVoiceRead.disabled = !voice.speechSupported;
   els.settingNotify.checked = notifyOn() && !denied;
   els.settingNotifyHint.textContent = denied
     ? "Bloqueadas pelo navegador: libere nas permissões do site."
@@ -3496,6 +3977,9 @@ els.settingsDialog.addEventListener("change", (event) => {
   else if (target === els.settingOrcaFollow) {
     settings.orcaFollow = target.checked;
     orca.lastFollowed = null;
+  } else if (target === els.settingVoiceRead) {
+    localStorage.setItem(VOICE_READ_KEY, target.checked ? "1" : "0");
+    if (!target.checked) voice.stopSpeaking();
   } else if (target === els.settingNotify) {
     localStorage.setItem(NOTIFY_KEY, target.checked ? "1" : "0");
     ensureNotifyPermission();
@@ -3569,7 +4053,7 @@ async function pollOrca() {
   orca.data = data;
   updateWorktreeBadges();
   if (orca.uiKey !== `${orcaOn()}/${Boolean(data.available)}`) applyOrcaSettings();
-  scheduleInspector("worktrees");
+  scheduleInspector("worktrees", "tasks");
   renderWorktreesOverlay();
   followOrca();
 }
@@ -3615,18 +4099,20 @@ function followOrca() {
 
 function worktreeCard(worktree) {
   const row = worktreeRow(worktree);
+  const resources = resourceLine(resourceForPath(allResources.list, worktree.path));
   const current = samePath(state.currentProject?.cwd, worktree.path);
   const node = document.createElement("article");
   node.className = `sa-card wt-card${row.running ? " is-running" : ""}${current ? " is-current" : ""}`;
   node.innerHTML = `
     <button type="button" class="sa-head" data-wt="${esc(worktree.path)}" data-project="${esc(worktree.projectId || "")}"${current ? ' aria-current="true"' : ""}>
-      <span class="sa-dot" aria-hidden="true"></span>
+      ${stateHtml(worktreeIndicator(worktree))}
       <span class="sa-title"><strong>${esc(row.name)}</strong><span class="sa-type">${esc(row.sub)}</span></span>
       <span class="sa-state">${row.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}${row.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}<span class="sa-phase">${esc(row.statusLabel)}</span></span>
     </button>
     <div class="wt-body">
       ${row.agents ? `<p class="sa-desc">${esc(row.agents)}</p>` : ""}
       ${row.message ? `<p class="wt-msg">${esc(row.message)}</p>` : ""}
+      ${resources ? `<p class="wt-res">${esc(resources)}</p>` : ""}
       ${row.meta.length ? `<p class="sa-meta">${row.meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
     </div>`;
   return node;
@@ -3634,7 +4120,7 @@ function worktreeCard(worktree) {
 
 function renderWorktrees() {
   const data = orca.data;
-  const sig = JSON.stringify([data, state.currentProject?.cwd]);
+  const sig = JSON.stringify([data, state.currentProject?.cwd, allResources.sig]);
   if (sig === orca.renderSig) return;
   orca.renderSig = sig;
   const focused = els.wtList.contains(document.activeElement) ? document.activeElement.dataset.wt : null;
@@ -3762,6 +4248,7 @@ document.addEventListener("visibilitychange", () => {
   }
   syncOrcaPolling();
   syncHistoryPolling();
+  syncLivePolling();
 });
 
 // ------------------------------------------------------ worktrees overview (top bar)
@@ -3789,13 +4276,13 @@ function worktreeOverviewItem(worktree, detail, index) {
   const meta = [worktree.repo, detail.issue, detail.pr, detail.terminals, detail.lastActivity && `atividade ${detail.lastActivity}`].filter(Boolean);
   node.innerHTML = `
     <div class="wtv-head">
-      <span class="sa-dot" aria-hidden="true"></span>
+      ${stateHtml(worktreeIndicator(worktree))}
       <span class="sa-title"><strong>${esc(detail.name)}</strong><span class="sa-type">${esc(detail.sub)}</span></span>
       <span class="sa-state">
         ${detail.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}
         ${current ? '<span class="wt-flag">Aberta</span>' : ""}
         ${detail.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}
-        ${detail.studio ? `<span class="wt-flag wtv-chip"><span class="session-state st-${esc(detail.studio.key)}" aria-hidden="true"></span>${esc(detail.studio.label)}</span>` : ""}
+        ${detail.studio ? `<span class="wt-flag wtv-chip">${stateHtml(legacyState(detail.studio.key))}${esc(detail.studio.label)}</span>` : ""}
         ${detail.stalled ? `<span class="wt-flag wtv-chip"><i class="stall-dot" aria-hidden="true"></i>${esc(detail.stalled)}</span>` : ""}
         <span class="sa-phase">${esc(detail.statusLabel)}</span>
       </span>
@@ -3804,7 +4291,7 @@ function worktreeOverviewItem(worktree, detail, index) {
     ${detail.comment ? `<p class="wtv-comment">${esc(detail.comment)}</p>` : ""}
     ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent, index) => `
       <li class="wtv-agent" data-agent="${index}">
-        <span class="wtv-agent-head"><span class="session-state${agent.key ? ` st-${esc(agent.key)}` : ""}" aria-hidden="true"></span><span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
+        <span class="wtv-agent-head">${stateHtml(legacyState(agent.key))}<span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
         ${agent.message ? `<span class="wtv-msg">${esc(agent.message)}</span>` : ""}
       </li>`).join("")}</ul>` : ""}`;
   return node;
@@ -3820,7 +4307,7 @@ function activityItem(row, index) {
   node.dataset.index = String(index);
   node.innerHTML = `
     <div class="wtv-head">
-      <span class="session-state${row.dot ? ` st-${esc(row.dot)}` : ""}" aria-hidden="true"></span>
+      ${stateHtml(legacyState(row.dot))}
       <span class="sa-title"><strong>${esc(row.project)}</strong></span>
       <span class="sa-state"><span class="sa-phase">${esc(row.ago)}</span></span>
     </div>
@@ -4560,6 +5047,9 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (els.worktreesDialog.open) closeWorktrees();
     else if (!modalOpen && !els.worktreesBtn.hidden) openWorktrees();
+  } else if (action === "doubts") {
+    event.preventDefault();
+    if (!modalOpen) openDoubts();
   } else if (action === "todos") {
     event.preventDefault();
     if (!modalOpen) toggleTodo();
@@ -4576,6 +5066,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderShortcuts();
+voice.init().catch(() => {});
 updateComposer();
 renderAttachments();
 applyPanelWidth();

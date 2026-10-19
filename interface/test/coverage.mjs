@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Coverage gate: runs the suites under V8 coverage, then reports line + branch coverage for
-// (a) server.mjs lines changed vs a git base (read-only `git diff`, default HEAD), (b) public/lib.js, and (c) all of cli-lib.mjs.
+// (a) server.mjs lines changed vs a git base (read-only `git diff`, default 414d9dd), (b) public/lib.js, and (c) all of cli-lib.mjs.
 // Usage: node test/coverage.mjs [git-base]. Exits 1 below 100%.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
@@ -9,13 +9,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const base = process.argv[2] || "HEAD";
+const base = process.argv[2] || "414d9dd";
 const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs"];
+const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/tasks-ui.test.mjs", "test/tasks-fake-pi.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs", "test/sidebar-tree.test.mjs", "test/sidebar-tree-dom.test.mjs", "test/live-pis.test.mjs", "test/session-titles.test.mjs", "test/ctx-lib.test.mjs", "test/resources.test.mjs", "test/git-files.test.mjs", "test/voice.test.mjs", "test/tree.test.mjs", "test/idle-reaper.test.mjs", "test/process-table.test.mjs", "test/side-chat.test.mjs", "test/side-chat-ui.test.mjs"];
 
 const run = spawnSync(process.execPath, [
   "--test", "--experimental-test-coverage",
-  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs",
+  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs", "--test-coverage-include=lib-server/live-pis.mjs", "--test-coverage-include=lib-server/process-table.mjs", "--test-coverage-include=lib-server/session-titles.mjs", "--test-coverage-include=lib-server/voice.mjs", "--test-coverage-include=lib-server/tree.mjs", "--test-coverage-include=lib-server/idle-reaper.mjs", "--test-coverage-include=lib-server/side-chat.mjs",
   "--test-reporter=dot", "--test-reporter-destination=stdout",
   "--test-reporter=lcov", `--test-reporter-destination=${lcovPath}`,
   ...suites,
@@ -82,7 +82,14 @@ function report(label, data, only) {
 
 const changed = changedLines("server.mjs");
 let missed = report(`server.mjs changed vs ${base} (${changed.size} changed lines)`, files.get("server.mjs"), changed);
+missed += report("lib-server/voice.mjs (whole file)", files.get("lib-server/voice.mjs"));
 missed += report("public/lib.js (whole file)", files.get("public/lib.js"));
 missed += report("cli-lib.mjs (whole file)", files.get("cli-lib.mjs"));
+missed += report("lib-server/live-pis.mjs (whole file)", files.get("lib-server/live-pis.mjs"));
+missed += report("lib-server/process-table.mjs (whole file)", files.get("lib-server/process-table.mjs"));
+missed += report("lib-server/session-titles.mjs (whole file)", files.get("lib-server/session-titles.mjs"));
+missed += report("lib-server/tree.mjs (whole file)", files.get("lib-server/tree.mjs"));
+missed += report("lib-server/idle-reaper.mjs (whole file)", files.get("lib-server/idle-reaper.mjs"));
+missed += report("lib-server/side-chat.mjs (whole file)", files.get("lib-server/side-chat.mjs"));
 report("server.mjs (whole file, informational)", files.get("server.mjs"));
 process.exit(missed ? 1 : 0);

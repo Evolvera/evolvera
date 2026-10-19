@@ -19,6 +19,7 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 const tmpdirProprioPadrao = new Set([
   "ask-user.smoke.mjs", "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
+  "studio-steer.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
   "plastic-memory-host.smoke.mjs", "plastic-memory-install.smoke.mjs",
   "plastic-memory-context-injection.smoke.mjs", // writes only to its owned mkdtemp sandbox and removes it in finally

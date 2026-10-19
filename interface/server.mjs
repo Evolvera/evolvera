@@ -3,14 +3,21 @@ import { createServer } from "node:http";
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { access, open, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { access, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { homedir } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { hasRecentChildActivity, idleThresholdMs, reapIdle } from "./lib-server/idle-reaper.mjs";
+import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
+import { buildSidePrompt, createSideRegistry, sideArgs, sideCommand } from "./lib-server/side-chat.mjs";
+import { createTitleIndex } from "./lib-server/session-titles.mjs";
+import { createTreeService } from "./lib-server/tree.mjs";
 import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { voice } from "./lib-server/voice.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -495,6 +502,7 @@ export class PiRpcSession {
     this.projectName = options.projectName;
     this.cwd = path.resolve(options.cwd || process.cwd());
     this.createdAt = new Date().toISOString();
+    this.lastViewedAt = Date.now();
     this.clients = new Set();
     this.clientHeartbeats = new Map();
     this.history = [];
@@ -521,9 +529,13 @@ export class PiRpcSession {
     }
   }
 
+  piArgs(prefixArgs) {
+    return buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+  }
+
   start() {
     const { bin: piBin, prefixArgs } = piCommand();
-    const args = buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+    const args = this.piArgs(prefixArgs);
 
     this.proc = spawn(piBin, args, {
       cwd: this.cwd,
@@ -592,9 +604,7 @@ export class PiRpcSession {
       this.broadcast("process_exit", payload);
     }
     const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
-    sessions.delete(this.id);
-    retiredSessions.set(this.id, retired);
-    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
+    this.retire(retired);
     for (const client of this.clients) {
       const heartbeat = this.clientHeartbeats.get(client);
       if (heartbeat) clearInterval(heartbeat);
@@ -602,6 +612,13 @@ export class PiRpcSession {
       client.end();
     }
     this.clients.clear();
+  }
+
+  retire(retired) {
+    sessions.delete(this.id);
+    resourceHistory.delete(this.id);
+    retiredSessions.set(this.id, retired);
+    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
   }
 
   consumeStdout(chunk) {
@@ -707,7 +724,9 @@ export class PiRpcSession {
     const heartbeat = setInterval(() => this.writeClient(res, ": ping\n\n"), 15000);
     this.clientHeartbeats.set(res, heartbeat);
     this.clients.add(res);
+    this.lastViewedAt = Date.now();
     res.on("close", () => {
+      this.lastViewedAt = Date.now();
       clearInterval(heartbeat);
       this.clientHeartbeats.delete(res);
       this.clients.delete(res);
@@ -769,6 +788,47 @@ export class PiRpcSession {
       isStreaming: this.lastState?.isStreaming ?? false,
     };
   }
+}
+
+// "Dúvidas": the same RPC session, but ephemeral and read-only (args), kept out of every Studio listing (never in `sessions`,
+// `retiredSessions` or the activity feed). Only the HTTP command route filters commands (sideCommand); internal sends stay as is.
+class SidePiSession extends PiRpcSession {
+  side = true;
+  piArgs(prefixArgs) {
+    return [...super.piArgs(prefixArgs), ...sideArgs(this.options.prompt)];
+  }
+  note() {}
+  retire() {
+    sideChats.remove(this);
+  }
+  summary() {
+    return { ...super.summary(), side: true };
+  }
+}
+
+const sideChats = createSideRegistry();
+export const reapSideChatsNow = (now = Date.now()) => sideChats.reap(now);
+
+// The conversation's project folder, from its JSONL header; 409 when the log cannot say where the project is.
+async function conversationCwd(file) {
+  let cwd;
+  try {
+    cwd = JSON.parse(await readFirstLine(file)).cwd;
+    if (typeof cwd !== "string" || !(await stat(cwd)).isDirectory()) throw new Error("no project folder");
+  } catch {
+    throw httpError(409, "A conversa não informa uma pasta de projeto válida");
+  }
+  return cwd;
+}
+
+async function openSideChat(rawPath) {
+  const file = await resolveWatchPath(rawPath);
+  const cwd = await conversationCwd(file);
+  return sideChats.acquire(cwdKey(file), () => {
+    const session = new SidePiSession({ projectName: "Dúvidas", cwd, prompt: buildSidePrompt({ sessionPath: file, cwd }) });
+    session.start();
+    return session;
+  });
 }
 
 function redactArgs(args) {
@@ -1374,6 +1434,105 @@ export function fetchOrca(command = resolveOrcaCommand(), timeoutMs = ORCA_TIMEO
   });
 }
 
+const TASK_LINKS_FILE = path.join(AGENT_DIR, "pi-studio-data", "task-links.json");
+
+async function readTaskLinks() {
+  try {
+    const parsed = JSON.parse(await readFile(TASK_LINKS_FILE, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.conversationId === "string" && Number.isInteger(item.taskId)).slice(-1000) : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    try {
+      await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+      await rename(TASK_LINKS_FILE, `${TASK_LINKS_FILE}.bak`);
+    } catch {
+      // Keep serving with an empty link set if recovery storage is unavailable.
+    }
+    return [];
+  }
+}
+
+// One writer at a time: concurrent creates must not drop each other's links (read-modify-write).
+let taskLinkWrites = Promise.resolve();
+function saveTaskLink(link) {
+  const write = taskLinkWrites.then(() => writeTaskLink(link));
+  taskLinkWrites = write.catch(() => {});
+  return write;
+}
+
+async function writeTaskLink(link) {
+  const links = (await readTaskLinks()).filter((item) => !(item.conversationId === link.conversationId && item.taskId === link.taskId));
+  links.push(link);
+  const temp = `${TASK_LINKS_FILE}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+  try {
+    await writeFile(temp, JSON.stringify(links.slice(-1000)), { encoding: "utf8", flag: "wx" });
+    await rename(temp, TASK_LINKS_FILE);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+// At most ORCA_TASK_SLOTS task CLI processes at once; the rest wait their turn (a busy client cannot fork-bomb the host).
+const ORCA_TASK_SLOTS = 4;
+let orcaTaskRunning = 0;
+const orcaTaskQueue = [];
+async function runOrcaJson(command, args) {
+  // A finishing call hands its slot straight to the next waiter, so the count never exceeds the cap.
+  if (orcaTaskRunning >= ORCA_TASK_SLOTS) await new Promise((resolve) => orcaTaskQueue.push(resolve));
+  else orcaTaskRunning += 1;
+  try {
+    return await execOrcaJson(command, args);
+  } finally {
+    const next = orcaTaskQueue.shift();
+    if (next) next();
+    else orcaTaskRunning -= 1;
+  }
+}
+
+function execOrcaJson(command, args) {
+  return new Promise((resolve, reject) => {
+    execFile(command.bin, args, { timeout: ORCA_TIMEOUT_MS, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch { reject(Object.assign(new Error("Invalid Orca JSON"), { code: "INVALID_JSON" })); }
+    });
+  });
+}
+
+function taskLinkFromOrca(value, body) {
+  const outer = value?.result ?? value;
+  const worktree = outer?.worktree ?? outer;
+  const worktreePath = worktree?.path ?? worktree?.worktreePath;
+  const terminalHandle = outer?.agentTerminalHandle ?? outer?.startupTerminal?.handle ?? outer?.terminalHandle ?? worktree?.agentTerminalHandle ?? worktree?.startupTerminal?.handle;
+  if (typeof worktreePath !== "string" || !worktreePath || typeof terminalHandle !== "string" || !terminalHandle) return null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+function orcaWorktreeList(value) {
+  const outer = value?.result ?? value;
+  return [outer?.worktrees, outer?.result?.worktrees].flatMap((items) => Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
+}
+
+// After a create timeout: the worktree carries our comment (unique per conversation/task) in the same repo.
+// `worktree ps` reports no terminal handle, so a recovered link may have none (messaging then stays off).
+function findTaskWorktree(value, body, repoId) {
+  const match = orcaWorktreeList(value).find((item) => item.repoId === repoId && item.comment === taskComment(body));
+  if (!match || typeof match.path !== "string" || !match.path) return null;
+  const terminalHandle = match.agentTerminalHandle ?? match.terminalHandle ?? match.agents?.find((agent) => agent?.terminalHandle)?.terminalHandle ?? null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath: match.path, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+const taskComment = (body) => `pi-studio task ${body.conversationId}#${body.taskId}`;
+
+// The conversation's project must be a checkout Orca knows: it names the repo (--repo) and the parent worktree,
+// instead of letting Orca infer them from the server's own cwd or from whatever worktree is active in the app.
+function orcaWorktreeForProject(value, cwd) {
+  const key = cwdKey(cwd);
+  return orcaWorktreeList(value).find((item) => typeof item.path === "string" && item.path && cwdKey(item.path) === key &&
+    typeof item.repoId === "string" && item.repoId && typeof item.worktreeId === "string" && item.worktreeId) || null;
+}
+
 export function clearOrcaCache() {
   orcaCache.at = 0;
   orcaCache.value = null;
@@ -1393,6 +1552,60 @@ export function getOrca({ now = Date.now, fetch = fetchOrca } = {}) {
     });
   return orcaCache.pending;
 }
+
+let treeLastPollAt = 0;
+const treeTitles = createTitleIndex({
+  async *readLines(file) { const input = createInterface({ input: createReadStream(file), crlfDelay: Infinity }); for await (const line of input) yield line; },
+  statFile: async (file) => { const info = await stat(file); return { mtimeMs: info.mtimeMs, size: info.size }; },
+});
+let treeRecordsPending = null;
+async function treeSessionRecords() {
+  if (treeRecordsPending) return treeRecordsPending;
+  treeRecordsPending = (async () => {
+  const root = path.join(AGENT_DIR, "sessions");
+  const records = [];
+  for (const directory of await readdirSafe(root)) {
+    if (!directory.isDirectory()) continue;
+    const dir = path.join(root, directory.name);
+    for (const entry of await readdirSafe(dir)) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const file = path.join(dir, entry.name);
+      try {
+        const info = await stat(file);
+        const header = await sessionHeader(file, { directoryMtimeMs: (await stat(dir)).mtimeMs });
+        if (header?.type !== "session" || typeof header.cwd !== "string") continue;
+        const last = await sessionStates.lastMessage(file, info);
+        const classified = classifySessionState(last, info.mtimeMs);
+        const title = header.parentSession ? await treeTitles.subagentTitle(file, header, await sessionName(file)) : (await scanSession(file)).title;
+        records.push({ path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null });
+      } catch { /* malformed or disappearing session records are skipped */ }
+    }
+  }
+  return records;
+  })();
+  try { return await treeRecordsPending; } finally { treeRecordsPending = null; }
+}
+async function sessionName(file) {
+  try { for await (const line of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) { const entry = JSON.parse(line); if (entry?.type === "session_info") return entry.name ?? ""; } } catch { /* malformed session name */ }
+  return "";
+}
+const treeService = createTreeService({
+  getProjects: async () => knownProjects(projects, discoverProjects), getOrca,
+  getSessions: treeSessionRecords,
+  async getLive() {
+    const headers = await treeSessionRecords();
+    const sidePids = new Set(sideChats.pids());
+    const procs = parsePiProcesses(await processTable.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) }).filter((proc) => !sidePids.has(proc.pid));
+    const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs })));
+    // Exited sessions leave this map in the same tick (see the exit handler); a just-started one may not know its file yet.
+    for (const session of sessions.values()) {
+      const file = session.lastState?.sessionFile;
+      resolved.push({ pid: session.proc.pid, owner: "studio", startedAt: Date.parse(session.createdAt), sessionPath: file, streaming: session.streaming, waitingUi: session.statusSummary().waitingUi });
+    }
+    return resolved.filter((item) => item.sessionPath);
+  },
+  onPoll(at) { treeLastPollAt = at; },
+});
 
 function httpError(statusCode, message) {
   return Object.assign(new Error(message), { statusCode });
@@ -1421,6 +1634,277 @@ async function projectForPath(raw) {
     projects.set(project.id, project);
   }
   return project;
+}
+
+// Per-session process-tree totals remain local; acquisition, parsing, bounds, and cache are shared with live PIs.
+const RESOURCE_RECENT_MAX_MS = 30_000;
+const resourceHistory = new Map();
+
+export function clearResourceCache() { processTable.clear(); testProcessTable?.clear(); testProcessTable = null; }
+
+function resourceMap(rows) {
+  if (!rows?.length) return null;
+  const table = new Map();
+  for (const row of rows) table.set(row.pid, { ppid: row.ppid, rssKb: row.rssBytes / 1024, cpuSeconds: row.cpuSeconds });
+  return table;
+}
+
+// Compatibility helpers expose the shared command/parser for focused resource math tests.
+export function resolveSamplerCommand(options) {
+  const { timeoutMs, ...command } = resolveProcessTableCommand(options);
+  return command;
+}
+export function parseProcessTable(output) { return resourceMap(parseUnifiedProcessTable(output)); }
+export async function sampleProcesses(command = resolveProcessTableCommand(), timeoutMs = command.timeoutMs ?? 4000) {
+  return resourceMap(await sampleProcessTable({ ...command, timeoutMs }));
+}
+
+let testProcessTable = null;
+let mappedSnapshot = null;
+let mappedResourceSnapshot = null;
+function mapSnapshot(snapshot) {
+  if (snapshot === mappedSnapshot) return mappedResourceSnapshot;
+  mappedSnapshot = snapshot;
+  mappedResourceSnapshot = snapshot ? { at: snapshot.at, table: resourceMap(snapshot.rows) } : null;
+  return mappedResourceSnapshot;
+}
+export async function getProcessTable(options) {
+  if (options?.sample) {
+    testProcessTable ??= createProcessTable({ now: options.now, sample: async () => {
+      const value = await options.sample();
+      return value instanceof Map ? [...value].map(([pid, row]) => ({ pid, ppid: row.ppid, name: "", startedAt: null, commandLine: "", rssBytes: row.rssKb * 1024, cpuSeconds: row.cpuSeconds })) : value;
+    } });
+    const snapshot = await testProcessTable.snapshot();
+    return mapSnapshot(snapshot);
+  }
+  const snapshot = await processTable.snapshot();
+  return mapSnapshot(snapshot);
+}
+
+// The pid and all its descendants. null when the pid is not in the table. Cycles in a corrupt table end at the visited set.
+export function treeTotals(table, rootPid) {
+  if (!table.has(rootPid)) return null;
+  const childrenOf = new Map();
+  for (const [pid, row] of table) childrenOf.set(row.ppid, [...(childrenOf.get(row.ppid) ?? []), pid]);
+  const seen = new Set([rootPid]);
+  const queue = [rootPid];
+  const totals = { rssKb: 0, cpuSeconds: 0, children: -1 };
+  for (const pid of queue) {
+    const row = table.get(pid);
+    totals.rssKb += row.rssKb;
+    totals.cpuSeconds += row.cpuSeconds;
+    totals.children += 1;
+    for (const child of childrenOf.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return totals;
+}
+
+const oneDecimal = (value) => Math.round(value * 10) / 10;
+
+// cpuAvgPct: cpu seconds / wall seconds since the PI started / logical CPUs. cpuRecentPct: the same over the last two
+// samples (null on the first one, on a clock that did not advance, or when the previous sample is older than 30 s).
+export function sessionResources({ id, pid, startedAt, table, at, cpus = availableParallelism(), history = resourceHistory }) {
+  const totals = treeTotals(table, pid);
+  if (!totals) return null;
+  let entry = history.get(id);
+  if (entry?.last.at !== at) {
+    entry = { prev: entry?.last ?? null, last: { at, cpuSeconds: totals.cpuSeconds } };
+    history.set(id, entry);
+  }
+  const wall = (at - startedAt) / 1000;
+  const gap = entry.prev ? at - entry.prev.at : 0;
+  const recent = gap > 0 && gap <= RESOURCE_RECENT_MAX_MS ? (Math.max(0, totals.cpuSeconds - entry.prev.cpuSeconds) / (gap / 1000) / cpus) * 100 : null;
+  return {
+    pid,
+    rssMb: oneDecimal(totals.rssKb / 1024),
+    cpuAvgPct: wall > 0 ? oneDecimal((totals.cpuSeconds / wall / cpus) * 100) : null,
+    cpuRecentPct: recent === null ? null : oneDecimal(recent),
+    sampledAt: at,
+    children: totals.children,
+  };
+}
+
+// `sessions` only holds PIs that have not exited; start() ran in the same tick that added them, so `proc` is set.
+const measureSession = (session, snapshot) => sessionResources({ id: session.id, pid: session.proc.pid, startedAt: Date.parse(session.createdAt), table: snapshot.table, at: snapshot.at });
+
+async function sendSessionResources(res, id) {
+  const session = sessions.get(id);
+  if (!session) return retiredSessions.has(id) ? json(res, 409, { error: "no-live-process" }) : json(res, 404, { error: "Unknown session" });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = measureSession(session, snapshot);
+  return resources ? json(res, 200, resources) : json(res, 409, { error: "no-live-process" });
+}
+
+async function sendAllResources(res) {
+  const live = [...sessions.values()];
+  if (!live.length) return json(res, 200, { resources: [] });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = live.flatMap((session) => {
+    const measured = measureSession(session, snapshot);
+    return measured ? [{ sessionId: session.id, projectId: session.projectId, cwd: session.cwd, ...measured }] : [];
+  });
+  return json(res, 200, { resources });
+}
+
+// ---- Git state of the files of a conversation (GET /api/sessions/:id/git-files): colors of the Arquivos tab.
+// Read-only git (argv arrays, literal pathspecs, no optional locks so it never fights the user's own git), at most 4 git
+// processes at once, answers cached 2 s per directory and path set, output bounded.
+const GIT_CACHE_MS = 2000;
+const GIT_CACHE_MAX = 200;
+const GIT_MAX_ENTRIES = 2000;
+const GIT_MAX_BUFFER = 8 * 1024 * 1024;
+const GIT_SLOTS = 4;
+const GIT_REQUEST_PATHS = 100;
+const GIT_REQUEST_PATH_CHARS = 1024;
+const gitFilesCache = new Map();
+
+// Runs tasks with at most `slots` in flight; the rest wait their turn. A failing task still frees its slot.
+export function createLimiter(slots) {
+  let active = 0;
+  const waiting = [];
+  return async (task) => {
+    if (active >= slots) await new Promise((resolve) => waiting.push(resolve));
+    else active += 1;
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
+}
+
+const gitSlots = createLimiter(GIT_SLOTS);
+
+// { ok, stdout, truncated? } | { timedOut } | { ok: false, code }. Never rejects. Output past the buffer keeps what was read.
+export function runGit(cwd, args, { bin = "git", timeoutMs = Number.parseInt(process.env.PI_STUDIO_GIT_TIMEOUT_MS || "5000", 10), maxBuffer = GIT_MAX_BUFFER } = {}) {
+  return gitSlots(() => new Promise((resolve) => {
+    execFile(bin, ["--no-optional-locks", "--literal-pathspecs", "-C", cwd, ...args], { timeout: timeoutMs, maxBuffer, windowsHide: true, encoding: "utf8" }, (error, stdout) => {
+      if (!error) return resolve({ ok: true, stdout });
+      if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve({ ok: true, stdout, truncated: true });
+      resolve(error.killed ? { timedOut: true } : { ok: false, code: error.code });
+    });
+  }));
+}
+
+// NUL-separated output without its terminator; a cut output also loses its last (possibly half) field.
+function gitFields(stdout, truncated) {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (truncated) fields.pop();
+  return fields;
+}
+
+// Porcelain v1 XY code -> state. A change in the work tree wins over a staged one; D on either side is a deletion.
+function gitFileState(code) {
+  const [index, tree] = code;
+  if (code === "??") return "untracked";
+  if (code === "!!") return null;
+  if (index === "U" || tree === "U" || code === "AA" || code === "DD") return "modified";
+  if (index === "D" || tree === "D") return "deleted";
+  return tree === " " ? "staged" : "modified";
+}
+
+// `git status --porcelain=v1 -z`: "XY path" fields; a rename/copy is followed by its origin path in a field of its own.
+export function parseGitStatus(stdout, { truncated = false } = {}) {
+  const fields = gitFields(stdout, truncated);
+  const entries = [];
+  for (let index = 0; index < fields.length; index++) {
+    const field = fields[index];
+    if (field.length < 4 || field[2] !== " ") continue;
+    if (/[RC]/.test(field.slice(0, 2))) index += 1;
+    const state = gitFileState(field.slice(0, 2));
+    if (state) entries.push({ path: field.slice(3), state });
+  }
+  return entries;
+}
+
+export function parseGitNames(stdout, { truncated = false } = {}) {
+  return [...new Set(gitFields(stdout, truncated).filter(Boolean))];
+}
+
+const gitPathKey = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
+const validRequestPath = (value) => typeof value === "string" && value.length > 0 && value.length <= GIT_REQUEST_PATH_CHARS && !value.includes("\0");
+
+// A requested path as the repository names it (relative to the root, "/"); null when it is the directory itself or outside the repo.
+function repoPathOf(cwd, prefix, input) {
+  const relative = path.relative(cwd, path.resolve(cwd, input));
+  if (relative === "" || path.isAbsolute(relative)) return null;
+  const combined = path.posix.normalize(`${prefix}${relative.split(path.sep).join("/")}`);
+  return combined === "." || combined === ".." || combined.startsWith("../") ? null : combined;
+}
+
+// null = git did not answer in time (or failed oddly); { git: false } = not a repository or no git.
+export async function readGitFiles(cwd, paths = [], { run = (args, dir) => runGit(dir, args) } = {}) {
+  const top = await run(["rev-parse", "--show-toplevel", "--show-prefix"], cwd);
+  if (top.timedOut) return null;
+  const [root, prefix = ""] = top.ok ? top.stdout.split(/\r?\n/) : [];
+  if (!root) return { git: false };
+  const mapped = new Map([...new Set(paths.filter(validRequestPath))].slice(0, GIT_REQUEST_PATHS).map((input) => [input, repoPathOf(cwd, prefix, input)]));
+  const inside = [...new Set([...mapped.values()].filter(Boolean))];
+  const [status, log, tracked] = await Promise.all([
+    run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], root),
+    run(["log", "-z", "--name-only", "--format=", "@{u}..HEAD"], root),
+    inside.length ? run(["ls-files", "-z", "--full-name", "--", ...inside], root) : { ok: true, stdout: "" },
+  ]);
+  if (!status.ok || log.timedOut || tracked.timedOut) return null;
+  const entries = parseGitStatus(status.stdout, status);
+  const stateByPath = new Map(entries.map((entry) => [gitPathKey(entry.path), entry.state]));
+  const upstream = log.ok === true;
+  const unpushed = upstream ? parseGitNames(log.stdout, log) : [];
+  const unpushedKeys = new Set(unpushed.map(gitPathKey));
+  const trackedKeys = new Set(tracked.ok ? parseGitNames(tracked.stdout).map(gitPathKey) : []);
+  const stateOf = (repoPath) => {
+    const key = gitPathKey(repoPath);
+    if (stateByPath.has(key)) return stateByPath.get(key);
+    if (unpushedKeys.has(key)) return "committed";
+    return trackedKeys.has(key) ? (upstream ? "pushed" : "committed") : "ignored";
+  };
+  const files = entries.concat(unpushed.filter((name) => !stateByPath.has(gitPathKey(name))).map((name) => ({ path: name, state: "committed" })));
+  const requested = Object.create(null);
+  for (const [input, repoPath] of mapped) requested[input] = repoPath === null ? { state: "outside", path: null } : { state: stateOf(repoPath), path: repoPath };
+  return { git: true, root, upstream, truncated: Boolean(status.truncated || log.truncated || files.length > GIT_MAX_ENTRIES), files: files.slice(0, GIT_MAX_ENTRIES), requested };
+}
+
+export function clearGitFilesCache() {
+  gitFilesCache.clear();
+}
+
+export function gitFilesCacheSize() {
+  return gitFilesCache.size;
+}
+
+// Same-key callers share one read (also while it runs) and its result for 2 s; the cache holds at most 200 keys.
+export function gitFilesCached(cwd, paths, { run, now = Date.now } = {}) {
+  const key = `${cwdKey(cwd)}\0${[...new Set(paths)].sort().join("\0")}`;
+  const hit = gitFilesCache.get(key);
+  if (hit?.pending) return hit.pending;
+  if (hit && now() - hit.at < GIT_CACHE_MS) return Promise.resolve(hit.value);
+  gitFilesCache.delete(key);
+  const entry = { at: 0, value: null, pending: null };
+  entry.pending = readGitFiles(cwd, paths, { run })
+    .catch(() => null)
+    .then((value) => {
+      Object.assign(entry, { at: now(), value, pending: null });
+      return value;
+    });
+  gitFilesCache.set(key, entry);
+  while (gitFilesCache.size > GIT_CACHE_MAX) gitFilesCache.delete(gitFilesCache.keys().next().value);
+  return entry.pending;
+}
+
+async function sendSessionGitFiles(res, id, paths) {
+  const cwd = sessions.get(id)?.cwd ?? retiredSessions.get(id)?.summary.cwd;
+  if (!cwd) return json(res, 404, { error: "Unknown session" });
+  const data = await gitFilesCached(cwd, paths);
+  return data ? json(res, 200, data) : json(res, 503, { error: "git-unavailable" });
 }
 
 // ---- Navegador: project files for the Inspector viewer.
@@ -1706,9 +2190,44 @@ async function route(req, res) {
   try {
     const rawMatch = RAW_ROUTE.exec(req.url);
     const authorizationStatus = authorizeApiRequest(req, pathname, Boolean(rawMatch));
-    if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
+    if (authorizationStatus) return json(res, authorizationStatus, { error: pathname.startsWith("/api/voice/") ? authorizationStatus === 401 ? "Autenticação necessária." : "Origem não permitida." : authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
     // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
     if (rawMatch) return await serveRaw(req, res, rawMatch);
+    if (req.method === "GET" && pathname === "/api/voice/status") return json(res, 200, voice.status());
+    if (req.method === "POST" && pathname === "/api/voice/transcribe") {
+      const drainRequest = (request) => new Promise((resolve) => { request.on("end", resolve); request.on("error", resolve); request.resume(); });
+      const type = String(req.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+      // Answer only after the body is consumed: replying mid-upload makes the client see "other side closed" instead of the status.
+      if (!["audio/webm", "audio/ogg", "audio/wav"].includes(type)) { await drainRequest(req); return json(res, 400, { error: "Formato de áudio inválido." }); }
+      const chunks = [];
+      let size = 0;
+      const body = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(Object.assign(new Error("Envio de áudio expirou."), { statusCode: 413 })), 120000);
+        req.on("data", (chunk) => {
+          size += chunk.length;
+          if (size <= 10 * 1024 * 1024) chunks.push(chunk);
+          // Past the limit keep reading (not storing) so the 413 reaches the client; a runaway upload is cut at 4x the limit.
+          else if (size > 40 * 1024 * 1024) { clearTimeout(timer); req.destroy(); reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 })); }
+        });
+        req.on("end", () => {
+          clearTimeout(timer);
+          if (size > 10 * 1024 * 1024) reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 }));
+          else resolve(Buffer.concat(chunks));
+        });
+        req.on("error", (error) => { clearTimeout(timer); reject(error); });
+      });
+      if (!body.length) return json(res, 400, { error: "O áudio está vazio." });
+      try { return json(res, 200, { text: (await voice.transcribeBuffer(body)).text }); }
+      catch (error) { return json(res, error.status || 503, { error: error.status === 429 ? "O serviço de transcrição está ocupado. Tente novamente." : error.message?.includes("Tempo limite") ? "A transcrição excedeu o tempo limite." : "Transcrição local indisponível. Verifique o Python e o modelo local." }); }
+    }
+    if (req.method === "GET" && pathname === "/api/tree") {
+      const tree = await treeService.get(req.headers["if-none-match"] ?? null);
+      if (tree.notModified) { res.writeHead(304, { etag: tree.version, "cache-control": "no-store" }); return res.end(); }
+      const { notModified, ...body } = tree;
+      const encoded = JSON.stringify(body);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(encoded), "cache-control": "no-store", etag: tree.version });
+      return res.end(encoded);
+    }
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -1757,6 +2276,75 @@ async function route(req, res) {
       return json(res, 200, { sessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())) });
     }
 
+    if (pathname === "/api/tasks/links") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const conversation = url.searchParams.get("conversation");
+      const links = await readTaskLinks();
+      return json(res, 200, { links: conversation === null ? links : links.filter((link) => link.conversationId === conversation) });
+    }
+
+    if (pathname === "/api/orca/worktrees") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.projectId !== "string" || !body.projectId || typeof body.conversationId !== "string" || !body.conversationId ||
+          !Number.isInteger(body.taskId) || typeof body.name !== "string" || !/^[\p{L}\p{N} ._-]{1,60}$/u.test(body.name) ||
+          typeof body.prompt !== "string" || body.prompt.length < 1 || body.prompt.length > 8000) return json(res, 400, { error: "invalid-request" });
+      let project = projects.get(body.projectId);
+      if (!project) {
+        await discoverProjects();
+        project = projects.get(body.projectId);
+      }
+      if (!project) return json(res, 400, { error: "invalid-project" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      let listing;
+      try {
+        listing = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]);
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+      const parent = orcaWorktreeForProject(listing, project.cwd);
+      if (!parent) return json(res, 409, { error: "project-not-in-orca" });
+      // Orca's parser reads a space-separated value that starts with "--" as a new flag; --flag=value is verbatim.
+      const args = [...orca.prefixArgs, "worktree", "create", `--name=${body.name}`, `--repo=id:${parent.repoId}`, "--agent", "pi",
+        `--prompt=${body.prompt}`, `--parent-worktree=worktree:${parent.worktreeId}`, `--comment=${taskComment(body)}`, "--json"];
+      try {
+        const result = await runOrcaJson(orca, args);
+        const link = taskLinkFromOrca(result, body);
+        if (!link) return json(res, 502, { error: "orca-invalid-response" });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (!error.killed && error.code !== "ETIMEDOUT") throw error;
+        const listed = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]).catch(() => null);
+        const link = findTaskWorktree(listed, body, parent.repoId);
+        if (!link) return json(res, 202, { ok: false, unknown: true });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      }
+    }
+
+    if (pathname === "/api/orca/terminal-send") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.handle !== "string" || !body.handle || typeof body.text !== "string" || body.text.length < 1 || body.text.length > 8000) return json(res, 400, { error: "invalid-request" });
+      const links = await readTaskLinks();
+      if (!links.some((link) => link.terminalHandle === body.handle)) return json(res, 403, { error: "terminal-not-linked" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      try {
+        await runOrcaJson(orca, [...orca.prefixArgs, "terminal", "send", `--terminal=${body.handle}`, `--text=${body.text}`, "--enter", "--json"]);
+        return json(res, 200, { ok: true });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+    }
+
     if (pathname === "/api/orca") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       const orca = await getOrca();
@@ -1793,6 +2381,18 @@ async function route(req, res) {
       if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
       const file = await resolveWatchPath(url.searchParams.get("path"));
       return json(res, 200, await withWatchSlot(() => readSessionWatch(file, Number(since))));
+    }
+
+    if (pathname === "/api/resources") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return await sendAllResources(res);
+    }
+
+    const sessionRoute = pathname.match(/^\/api\/sessions\/([^/]+)\/(resources|git-files)$/);
+    if (sessionRoute) {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      if (sessionRoute[2] === "resources") return await sendSessionResources(res, sessionRoute[1]);
+      return await sendSessionGitFiles(res, sessionRoute[1], url.searchParams.getAll("path"));
     }
 
     if (pathname === "/api/projects/open-path") {
@@ -1873,14 +2473,22 @@ async function route(req, res) {
     }
 
     // Backward-compatible direct session endpoint used by smoke tests/tools.
+    if (pathname === "/api/side-chat") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      return json(res, 200, { session: (await openSideChat(body?.sessionPath)).summary() });
+    }
+
     const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|command|ui-response|stop))?$/);
     if (sessionMatch) {
       const [, id, action] = sessionMatch;
-      const session = sessions.get(id);
+      const session = sessions.get(id) ?? sideChats.find(id);
       if (!session) return json(res, 404, { error: "Unknown session" });
       if (req.method === "GET" && action === "events") return session.addClient(res);
       if (req.method === "POST" && action === "command") {
-        session.send(await readJsonBody(req));
+        const body = await readJsonBody(req);
+        if (session.side) sideChats.touch(id);
+        session.send(session.side ? sideCommand(body) : body);
         return json(res, 202, { ok: true });
       }
       if (req.method === "POST" && action === "stop") {
@@ -1916,9 +2524,25 @@ const server = createServer((req, res) => {
   route(req, res).catch((error) => json(res, 500, { error: error.message || "Internal server error" }));
 });
 
+let idleReaper = null;
+// Rules live in lib-server/idle-reaper.mjs; here only the live session data is adapted to them.
+export function reapIdleStudioPIsNow(now = Date.now()) {
+  const thresholdMs = idleThresholdMs();
+  const live = [...sessions.values()].map((session) => ({
+    id: session.id,
+    cwd: session.cwd,
+    sessionFile: session.lastState?.sessionFile || null,
+    snapshot: () => ({ exited: session.exited, streaming: session.streaming, clientCount: session.clients.size, waitingUi: session.statusSummary(now).waitingUi, lastViewedAt: session.lastViewedAt, lastEventAt: session.lastEventAt }),
+    stop: () => session.stop(),
+  }));
+  return reapIdle(live, { now, thresholdMs, childActive: (file) => hasRecentChildActivity(file, { now, thresholdMs }), log: (line) => recordLog("info", line) });
+}
+const reapIdleStudioPIs = () => { reapSideChatsNow(); reapIdleStudioPIsNow().catch((error) => recordLog("warn", "Idle PI check failed", { error: error.message })); };
+
 export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
   return new Promise((resolve) => {
     server.listen(port, host, () => {
+      if (!idleReaper) { idleReaper = setInterval(reapIdleStudioPIs, 60_000); idleReaper.unref(); }
       const address = server.address();
       listeningPort = address.port;
       const line = `PI Studio listening on http://${host}:${listeningPort}`;
@@ -1935,13 +2559,19 @@ export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
 
 // Graceful stop for embedders/tests: stops PI children and closes the listener without exiting.
 export function stopServer() {
+  if (idleReaper) clearInterval(idleReaper);
+  idleReaper = null;
   for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
+  void voice.stop();
   server.closeAllConnections();
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
-function shutdown() {
+export function shutdown() {
   for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
+  void voice.stop().catch(() => {});
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }
