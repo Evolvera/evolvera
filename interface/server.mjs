@@ -769,6 +769,29 @@ function compactTitle(text, fallback) {
   return cleaned.length > 72 ? `${cleaned.slice(0, 69)}…` : cleaned;
 }
 
+async function latestSessionInfoNameInTail(filePath, size, maxBytes, currentName) {
+  if (size <= maxBytes) return currentName;
+  const handle = await open(filePath, "r");
+  try {
+    const length = Math.min(512 * 1024, size);
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8", 0, bytesRead).split(/\n/);
+    if (length < size) lines.shift();
+    for (let index = lines.length - 1; index >= 0; index--) {
+      try {
+        const entry = JSON.parse(lines[index]);
+        if (entry && entry.type === "session_info") return typeof entry.name === "string" ? entry.name.trim() : "";
+      } catch {
+        // A truncated tail line is not a session entry.
+      }
+    }
+    return currentName;
+  } finally {
+    await handle.close();
+  }
+}
+
 // One bounded pass over a session file: its title (the latest `session_info` name, else the first
 // user prompt, else `fallback`) and, for a folded query, a snippet of the first matching user/assistant
 // message. Streams at most `maxBytes`, so a huge session is never loaded whole; a line cut by the cap
@@ -793,6 +816,8 @@ export async function scanSession(filePath, { foldedQuery = "", maxBytes = SESSI
       if (!snippet) snippet = searchSnippet(body, foldedQuery);
     }
   }
+  const fileStat = await stat(filePath);
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
   return { title: compactTitle(name || firstPrompt, fallback), snippet };
 }
 
@@ -830,6 +855,7 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
     }
   }
   if (!header || typeof header.cwd !== "string" || !header.cwd) return null;
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
   const entry = {
     filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size,
     cwd: header.cwd,
@@ -1044,12 +1070,22 @@ function liveSessionFor(projectId) {
 const sessionHeaders = new Map();
 const SESSION_HEADER_CACHE_MAX = 20_000;
 
-export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX } = {}) {
+export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX, statFile = stat, directoryMtimeMs } = {}) {
   const cached = cache.get(filePath);
-  if (cached) return cached;
+  if (cached && directoryMtimeMs !== undefined && cached.directoryMtimeMs === directoryMtimeMs) return cached.header;
+  const fileStat = await statFile(filePath);
+  if (cached) {
+    const sameFile = cached.ino && fileStat.ino
+      ? cached.ino === fileStat.ino && cached.birthtimeMs === fileStat.birthtimeMs
+      : fileStat.size >= cached.size;
+    if (sameFile) {
+      cache.set(filePath, { ...cached, directoryMtimeMs });
+      return cached.header;
+    }
+  }
   const header = JSON.parse(await read(filePath));
   if (cache.size >= max) cache.clear();
-  cache.set(filePath, header);
+  cache.set(filePath, { header, ino: fileStat.ino, birthtimeMs: fileStat.birthtimeMs, size: fileStat.size, directoryMtimeMs });
   return header;
 }
 
@@ -1062,8 +1098,12 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     if (!dir.isDirectory()) continue;
     const fullDir = path.join(sessionsRoot, dir.name);
     let files = [];
+    let directoryMtimeMs;
     try {
-      files = await readdir(fullDir, { withFileTypes: true });
+      [files, directoryMtimeMs] = await Promise.all([
+        readdir(fullDir, { withFileTypes: true }),
+        stat(fullDir).then((info) => info.mtimeMs),
+      ]);
     } catch {
       continue;
     }
@@ -1071,7 +1111,7 @@ export async function listProjectHistory(project, { states = sessionStates, now 
       if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
       const filePath = path.join(fullDir, file.name);
       try {
-        const header = await sessionHeader(filePath);
+        const header = await sessionHeader(filePath, { directoryMtimeMs });
         if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
