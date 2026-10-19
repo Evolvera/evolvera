@@ -17,7 +17,7 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // limpeza explícita; in-memory não cria arquivo/serviço persistente. Revisado
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
-  "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
+  "ask-user.smoke.mjs", "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
   "plastic-memory-host.smoke.mjs", "plastic-memory-install.smoke.mjs",
