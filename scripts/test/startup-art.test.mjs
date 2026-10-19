@@ -70,6 +70,9 @@ test("startup animation redraws via TUI, stops on input/dispose, and never sched
   assert.equal(fake.active, true);
   fake.tick(750);
   assert.equal(requests.count, 2, "initial and timed frames request TUI redraws");
+  fake.tick(1000);
+  assert.equal(fake.active, true, "ambient animation continues beyond the intro");
+  assert.equal(requests.count, 3);
   component.render(80);
   handlers.get("input")({}, root.ctx);
   assert.equal(fake.active, false);
@@ -167,7 +170,7 @@ test("empty NO_COLOR disables startup and standalone preview color and restores 
   }
 });
 
-test("preview animates only on TTY and prints one clean final frame otherwise or when opted out", async () => {
+test("preview animates continuously on TTY and prints one clean final frame otherwise or when opted out", async () => {
   const nonTty = { text: "", isTTY: false, write(value) { this.text += value; } };
   assert.equal(await previewMain(["--label", "Evolvera"], { output: nonTty }), 0);
   assert.equal(nonTty.text.trimEnd().split("\n").length, 16);
@@ -185,7 +188,16 @@ test("preview animates only on TTY and prints one clean final frame otherwise or
   const pending = previewMain(["--label", "Evolvera", "--no-color"], { output: tty, animationClock: fake.clock });
   assert.doesNotMatch(tty.text, /\u001b\[(?:H|s|u|2J)/u);
   fake.tick(1500);
-  assert.equal(await pending, 0);
+  const afterIntro = tty.text.length;
+  fake.tick(500);
+  assert.ok(tty.text.length > afterIntro, "ambient frame is written after intro completion");
+  assert.equal(fake.active, true);
+  let settled = false;
+  pending.then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false, "preview remains alive until an owner exit event");
+  process.emit("SIGTERM");
+  assert.equal(await pending, 143);
   assert.equal(fake.active, false);
   assert.match(tty.text, /\u001b\[16A\r/u);
   assert.doesNotMatch(tty.text, /\u001b\[(?:H|s|u|2J)/u);

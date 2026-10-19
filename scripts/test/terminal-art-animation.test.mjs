@@ -18,27 +18,31 @@ function fakeClock() {
   };
 }
 
-test("animation emits bounded monotonic progress and a final frame before clearing its timer", () => {
+test("animation emits bounded intro progress then continuous ambient frames until explicit stop", () => {
   const fake = fakeClock();
   const frames = [];
   const stop = startArtAnimation({ clock: fake.clock, durationMs: 1000, intervalMs: 50, onFrame: (p) => frames.push(p) });
   assert.deepEqual(frames, [0]);
   fake.tick(400);
   fake.tick(800);
-  assert.deepEqual(frames, [0, 0.4, 1]);
-  assert.equal(fake.timers.size, 0);
+  fake.tick(250);
+  assert.deepEqual(frames, [0, 0.4, 1, 1]);
+  assert.equal(fake.timers.size, 1);
   stop();
-  assert.deepEqual(frames, [0, 0.4, 1]);
+  assert.equal(fake.timers.size, 0);
+  assert.deepEqual(frames, [0, 0.4, 1, 1]);
 });
 
 test("clock regressions cannot make progress decrease", () => {
   const fake = fakeClock();
   const frames = [];
-  startArtAnimation({ clock: fake.clock, durationMs: 1000, onFrame: (p) => frames.push(p) });
+  const stop = startArtAnimation({ clock: fake.clock, durationMs: 1000, onFrame: (p, elapsed) => frames.push([p, elapsed]) });
   fake.set(400);
   fake.set(200);
   fake.set(1000);
-  assert.deepEqual(frames, [0, 0.4, 0.4, 1]);
+  fake.set(1400);
+  assert.deepEqual(frames, [[0, 0], [0.4, 400], [0.4, 400], [1, 1000], [1, 1400]]);
+  stop();
 });
 
 test("early stop is idempotent and callback errors cancel before reporting", () => {
@@ -54,6 +58,16 @@ test("early stop is idempotent and callback errors cancel before reporting", () 
   fake.tick(100);
   assert.deepEqual(errors, ["frame"]);
   assert.equal(fake.timers.size, 0);
+});
+
+test("queued callback after cancellation cannot write another frame", () => {
+  const fake = fakeClock();
+  const frames = [];
+  const stop = startArtAnimation({ clock: fake.clock, onFrame: (p, elapsed) => frames.push([p, elapsed]) });
+  const queued = [...fake.timers.values()][0].fn;
+  stop();
+  queued();
+  assert.deepEqual(frames, [[0, 0]]);
 });
 
 test("initial callback failure never schedules and invalid durations are rejected", () => {

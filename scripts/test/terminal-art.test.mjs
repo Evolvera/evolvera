@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isEvolveraLabel, renderTerminalArt } from "../ui/terminal-art.mjs";
 import { EVOLVERA_MASK } from "../ui/terminal-art-masks.mjs";
+import { paintTerminalShip } from "../ui/terminal-art-ship.mjs";
 
 const SGR = /\u001b\[[0-9;]*m/gu;
 const plain = (lines) => lines.map((line) => line.replace(SGR, ""));
@@ -98,17 +99,110 @@ test("monochrome is meaningful and escape-free with near, mid and water layers",
   }
 });
 
-test("SVG-derived 40-pixel folded silhouette preserves the broken left shoulder and open center", () => {
+test("official SVG-derived mask keeps its broken shoulder and open center", () => {
   assert.equal(EVOLVERA_MASK.length, 34);
   assert.ok(EVOLVERA_MASK.every((line) => line.length === 40));
   assert.equal(EVOLVERA_MASK[10], "              B   DDDDBBBB              ");
   assert.match(EVOLVERA_MASK[22], /DDD {10}D/u);
-  const branded = renderTerminalArt({ width: 120, height: 28, label: "evolvera", color: false });
-  const unbranded = renderTerminalArt({ width: 120, height: 28, color: false });
-  assert.doesNotMatch(unbranded.join(""), /[█▀▄]/u);
-  const markRows = branded.filter((line) => /[█▀▄]/u.test(line));
-  assert.ok(markRows.length >= 14, "large 32-40 pixel mark, not old 18x16 motif");
-  assert.ok(markRows.at(-1).match(/█/gu).length >= 32);
-  assert.match(markRows[Math.floor(markRows.length / 2)], /█[^█]+█/u, "open center");
   assert.deepEqual(renderTerminalArt({ width: 20, height: 5, label: "evolvera" }), renderTerminalArt({ width: 20, height: 5 }));
+});
+
+const shipPixels = (width, height, timeMs = 0) => {
+  const pixels = new Map();
+  paintTerminalShip({ columns: width, pixelsHigh: height * 2,
+    phase: (timeMs % 24000) / 24000 * Math.PI * 2,
+    paint: (x, y, ink) => pixels.set(`${x},${y}`, { x, y, ink }) });
+  return [...pixels.values()];
+};
+const extent = (pixels) => ({
+  left: Math.min(...pixels.map(({ x }) => x)), right: Math.max(...pixels.map(({ x }) => x)),
+  top: Math.min(...pixels.map(({ y }) => y)), bottom: Math.max(...pixels.map(({ y }) => y)),
+});
+
+test("broad reference ship has three enclosed galleries, raised roof, blunt hull and many golden oars", () => {
+  for (const [width, height] of [[120, 28], [120, 20], [80, 17]]) {
+    const pixels = shipPixels(width, height);
+    const byInk = (ink) => pixels.filter((pixel) => pixel.ink === ink);
+    const hull = extent(byInk("hull"));
+    const body = extent(pixels.filter(({ ink }) => ["hull", "rail", "gallery", "timber"].includes(ink)));
+    assert.ok(body.right - body.left >= width * .45 && body.right - body.left <= width * .65);
+    assert.ok(hull.bottom >= height * 2 * .8, "long hull rests on the water");
+    const rails = byInk("rail");
+    const railRows = [...new Set(rails.map(({ y }) => y))];
+    const longRails = railRows.filter((y) => rails.filter((pixel) => pixel.y === y).length > width * .14);
+    assert.ok(longRails.length >= 3, "multiple continuous gallery/deck rails");
+    assert.ok(byInk("gallery").length >= width * .3, "dark enclosed window bays");
+    assert.ok(byInk("timber").length > 15, "wooden gallery ribs and platform ends");
+    assert.ok(extent(byInk("roof")).top < extent(rails).top - 1, "raised pagoda roof, not a sail");
+    assert.ok(new Set(byInk("oar").filter(({ y }) => y >= hull.bottom).map(({ x }) => x)).size >= 8, "many separate long oars");
+    for (const pixel of pixels) assert.ok(pixel.x >= 0 && pixel.x < width && pixel.y >= 0 && pixel.y < height * 2);
+  }
+});
+
+test("official blue emblem stays inside the small fluttering light-field mast flag, never a detached billboard", () => {
+  for (const [width, height] of [[120, 28], [120, 20], [80, 17]]) {
+    for (const timeMs of [0, 500, 1500, 3000]) {
+      const pixels = shipPixels(width, height, timeMs);
+      const cloth = pixels.filter(({ ink }) => ["flag", "flagShade", "blue", "fold"].includes(ink));
+      const logo = cloth.filter(({ ink }) => ink === "blue" || ink === "fold");
+      const field = extent(cloth);
+      const mark = extent(logo);
+      assert.ok(logo.length >= 20 && cloth.length > logo.length * 1.3, "real mark and visible light cloth");
+      assert.ok(field.right - field.left <= 24 && field.bottom - field.top <= 23);
+      assert.ok(mark.left > field.left && mark.right < field.right, "emblem inset from cloth edge");
+      assert.ok(mark.top > field.top && mark.bottom <= field.bottom);
+      assert.ok(field.left > width * .65, "upper-right mast, away from main sun");
+      assert.ok(pixels.some(({ x, y, ink }) => x === field.left - 1 && y === field.top && ink === "mast"), "flag attached to mast");
+      const middle = logo.filter(({ y }) => y === Math.floor((mark.top + mark.bottom) / 2));
+      assert.ok(middle.some(({ x }) => x < (mark.left + mark.right) / 2) && middle.some(({ x }) => x > (mark.left + mark.right) / 2), "both actual triangle arms");
+      const unbranded = renderTerminalArt({ width, height, timeMs, label: "Evolvera Labs" }).join("");
+      assert.doesNotMatch(unbranded, BLUE);
+      for (const rgb of ["172;119;125", "204;170;96", "245;230;250"]) assert.ok(!unbranded.includes(rgb), "no ship or flag for other accounts");
+      const branded = renderTerminalArt({ width, height, timeMs, label: " EVOLVERA " }).join("");
+      assert.match(branded, BLUE);
+      assert.ok(branded.includes("204;170;96"), "ship and mark composed together");
+    }
+  }
+});
+
+test("ambient motion is apparent, coherent and periodic without replaying the intro", () => {
+  for (const label of ["", "evolvera"]) {
+    for (const [width, height] of [[80, 17], [120, 20], [120, 28]]) {
+      const frames = [0, 500, 1500, 3000].map((timeMs) => renderTerminalArt({ width, height, label, timeMs }));
+      assert.equal(new Set(frames.map((frame) => frame.join(""))).size, 4);
+      for (const color of [true, false]) {
+        for (const timeMs of [0, 500, 1500, 3000, 11999, 23999, 24000, Number.MAX_VALUE]) {
+          for (const progress of [0, .3, .6, .9, 1]) {
+            const options = { width, height, label, color, timeMs, progress };
+            const frame = assertBounds(options, width, height);
+            assert.deepEqual(frame, renderTerminalArt(options));
+            if (color) for (const line of frame) assert.ok(!line.replace(SGR, "").includes("\u001b"));
+          }
+        }
+      }
+      assert.deepEqual(frames[1], renderTerminalArt({ width, height, label, timeMs: 24500 }));
+      assert.deepEqual(renderTerminalArt({ width, height, label, progress: .6, timeMs: 3000 }),
+        renderTerminalArt({ width, height, label, progress: .6, timeMs: 0 }));
+    }
+  }
+  const a = renderTerminalArt({ width: 120, height: 28, timeMs: 0 });
+  const b = renderTerminalArt({ width: 120, height: 28, timeMs: 3000 });
+  assert.notDeepEqual(a.slice(3, 6), b.slice(3, 6), "cloud ribbons drift");
+  assert.deepEqual(a.slice(15, 19), b.slice(15, 19), "mountains and camera stay fixed");
+  assert.notDeepEqual(a.slice(21), b.slice(21), "travelling waves and specular reflection");
+  assert.notDeepEqual(shipPixels(120, 28, 0), shipPixels(120, 28, 1500), "vessel, oars and cloth move");
+});
+
+test("invalid ambient times are zero, finite extremes are safe, aliases switch branding immediately", () => {
+  for (const timeMs of [-1, -Infinity, Infinity, NaN, undefined, null, "500", {}]) {
+    assert.deepEqual(renderTerminalArt({ timeMs }), renderTerminalArt({ timeMs: 0 }));
+  }
+  const original = Math.random;
+  Math.random = () => { throw new Error("ambient RNG"); };
+  try {
+    for (const timeMs of [500, 1500, 3000, Number.MAX_VALUE]) {
+      assert.deepEqual(renderTerminalArt({ label: "Evolvera", timeMs }), renderTerminalArt({ label: " evolvera ", timeMs }));
+      assert.deepEqual(renderTerminalArt({ label: "Other", timeMs }), renderTerminalArt({ label: "", timeMs }));
+    }
+  } finally { Math.random = original; }
 });
