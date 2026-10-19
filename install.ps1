@@ -32,6 +32,16 @@ $MIN_NODE_VERSION = [version]"22.19.0"
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
 function Step($name) { Write-Host "`n--- $name ---" -ForegroundColor $CYAN }
 
+# Windows PowerShell 5.1 turns any stderr line of a native command into a terminating
+# NativeCommandError under $ErrorActionPreference = "Stop", even with 2>$null. `pi install`
+# prints extension load warnings on stderr, so run it with a local "Continue" preference and
+# judge success only by its exit code.
+function Invoke-PiInstall($package) {
+    $ErrorActionPreference = "Continue"
+    & pi install $package 2>$null | Out-Host
+    # $LASTEXITCODE stays global, so callers keep checking it as before.
+}
+
 # True when $target matches (ignoring line endings) a version of config/rpiv-todo/config.json in this checkout's history.
 function Test-TodoCfgPreviouslyShipped($target) {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
@@ -244,10 +254,10 @@ Step "Instalando packages"
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if ($piCmd) {
     Info "pi-mcp-adapter..."
-    & pi install npm:pi-mcp-adapter 2>$null
+    Invoke-PiInstall npm:pi-mcp-adapter
 
     Info "pi-subagents..."
-    & pi install npm:@tintinweb/pi-subagents@0.18.2 2>$null
+    Invoke-PiInstall npm:@tintinweb/pi-subagents@0.18.2
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-subagents." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-ultra-thinking.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de thinking ultra." }
@@ -260,13 +270,13 @@ if ($piCmd) {
     Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."
-    & pi install npm:pi-alibaba-models@1.0.14 2>$null
+    Invoke-PiInstall npm:pi-alibaba-models@1.0.14
 
     Info "pi-goal..."
-    & pi install npm:@narumitw/pi-goal@0.43.0 2>$null
+    Invoke-PiInstall npm:@narumitw/pi-goal@0.43.0
 
     Info "rpiv-todo..."
-    & pi install npm:@juicesharp/rpiv-todo@2.11.0 2>$null
+    Invoke-PiInstall npm:@juicesharp/rpiv-todo@2.11.0
     if ($LASTEXITCODE -eq 0) {
         & node (Join-Path $SCRIPT_DIR "scripts\patch-rpiv-todo-hud.mjs")
         if ($LASTEXITCODE -ne 0) { throw "rpiv-todo recusou o patch visual HUD." }
@@ -292,24 +302,24 @@ if ($piCmd) {
     }
 
     Info "pi-provider-kimi-code..."
-    & pi install npm:pi-provider-kimi-code 2>$null
+    Invoke-PiInstall npm:pi-provider-kimi-code
 
     Info "pi-anthropic-auth..."
-    & pi install npm:@gotgenes/pi-anthropic-auth@2.0.6 2>$null
+    Invoke-PiInstall npm:@gotgenes/pi-anthropic-auth@2.0.6
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a compatibilidade OAuth Anthropic." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-anthropic-client-version.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A compatibilidade OAuth Anthropic recusou o patch de versao do cliente." }
     Info "Compatibilidade OAuth Anthropic verificada"
 
     Info "pi-cursor..."
-    & pi install npm:@rahularya01/pi-cursor@1.4.39 2>$null
+    Invoke-PiInstall npm:@rahularya01/pi-cursor@1.4.39
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-cursor." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-cursor-reasoning-effort.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A compatibilidade de reasoning effort do Cursor recusou o patch." }
     Info "Compatibilidade de reasoning effort do Cursor verificada"
 
     Info "pi-antigravity..."
-    & pi install npm:pi-antigravity@0.10.0 2>$null
+    Invoke-PiInstall npm:pi-antigravity@0.10.0
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-antigravity." }
 
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")

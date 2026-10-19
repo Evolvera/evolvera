@@ -263,13 +263,13 @@ assert.deepEqual(antigravityEntries[0].extensions, ['-src/features/google-search
   'google_search stays unregistered: research uses jina_read/MCP, not Antigravity credentials');
 assert.ok(shellText.includes(`install_pi_package "${antigravityPackage}" "pi-antigravity"`),
   'install.sh must install pinned pi-antigravity');
-assert.ok(powershellText.includes(`& pi install ${antigravityPackage} 2>$null`),
+assert.ok(powershellText.includes(`Invoke-PiInstall ${antigravityPackage}`),
   'install.ps1 must install pinned pi-antigravity');
 const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
 const cursorPatcher = 'patch-pi-cursor-reasoning-effort.mjs';
 const shellCursorInstall = shellText.indexOf(`if install_pi_package "${cursorPackage}"`);
 const shellCursorPatch = shellText.indexOf(cursorPatcher);
-const powershellCursorInstall = powershellText.indexOf(`& pi install ${cursorPackage}`);
+const powershellCursorInstall = powershellText.indexOf(`Invoke-PiInstall ${cursorPackage}`);
 const powershellCursorPatch = powershellText.indexOf(cursorPatcher);
 assert.ok(shellCursorInstall >= 0 && shellCursorPatch > shellCursorInstall, 'install.sh must patch Cursor after pinned install');
 assert.match(shellText.slice(shellCursorInstall, shellCursorPatch), /then\s*$/m);
