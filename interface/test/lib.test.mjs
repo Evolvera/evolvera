@@ -4,6 +4,32 @@ import { describe, test } from "node:test";
 import vm from "node:vm";
 import * as lib from "../public/lib.js";
 
+describe("composer send safeguards", () => {
+  test("rejects oversized encoded RPC payloads and reports captured images without replacing a newer draft", () => {
+    const command = { id: "request-1", type: "prompt", message: "", images: [{ type: "image", mimeType: "image/png", data: "abc" }] };
+    assert.equal(lib.requestBodyBytes(command), Buffer.byteLength(JSON.stringify(command)));
+    assert.equal(lib.requestExceedsLimit(command, Buffer.byteLength(JSON.stringify(command))), false);
+    assert.equal(lib.requestExceedsLimit(command, Buffer.byteLength(JSON.stringify(command)) - 1), true);
+    const captured = [{ data: "old" }];
+    assert.deepEqual(lib.restoreFailedDraft("", [], "", captured), { message: "", attachments: captured });
+    const newer = [{ data: "new" }];
+    assert.deepEqual(lib.restoreFailedDraft("new draft", newer, "sent", captured), { message: "new draft", attachments: newer });
+  });
+
+  test("extension slash commands always use prompt while built-ins and ordinary text keep their mode", () => {
+    const commands = [{ name: "deploy", source: "extension" }, { name: "template", source: "prompt" }];
+    assert.equal(lib.composerSendType("/deploy staging", "steer", commands), "prompt");
+    assert.equal(lib.composerSendType("/deploy staging", "follow_up", commands), "prompt");
+    assert.equal(lib.composerSendType("/new", "steer", commands), "steer");
+    assert.equal(lib.composerSendType("/template", "steer", commands), "steer");
+    assert.equal(lib.composerSendType("hello", "follow_up", commands), "follow_up");
+    assert.equal(lib.composerSendType("hello", "prompt", commands), "prompt");
+    assert.equal(lib.composerSendType("/unknown", "steer", commands), "steer");
+    assert.equal(lib.composerSendType(null, "prompt", commands), "prompt");
+    assert.equal(lib.composerSendType("/deploy args", "steer", null), "steer");
+  });
+});
+
 describe("text utils", () => {
   test("reconcileEntries keeps prompts submitted after a stale entries snapshot", () => {
     const pending = { role: "user", content: [{ type: "text", text: "run this" }], _optimistic: true };
