@@ -108,7 +108,16 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const agent = new http.Agent({ keepAlive: true, maxSockets: CONCURRENCY + 4 });
-const request = (method, pathname, { token, body, decode = true, etag } = {}) => new Promise((resolve, reject) => {
+// Keep-alive race (Node docs, `request.reusedSocket`): the server may close an idle socket (keepAliveTimeout 5 s) just as
+// the client reuses it, e.g. after a slow `tasklist` between segments. Such a request never reached the server, so it
+// is retried once on a fresh socket and counted in staleSocketRetries; a failure on a fresh socket is still an error.
+let staleSocketRetries = 0;
+const request = (method, pathname, options = {}) => sendOnce(method, pathname, options).catch((error) => {
+  if (!error.reusedSocket || error.code !== "ECONNRESET") throw error;
+  staleSocketRetries++;
+  return sendOnce(method, pathname, options);
+});
+const sendOnce = (method, pathname, { token, body, decode = true, etag } = {}) => new Promise((resolve, reject) => {
   const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}), ...(etag ? { "if-none-match": etag } : {}) } }, (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
@@ -118,7 +127,7 @@ const request = (method, pathname, { token, body, decode = true, etag } = {}) =>
       resolve({ status: res.statusCode, bytes: bytes.length, text: decode ? bytes.toString("utf8") : "" });
     });
   });
-  req.on("error", reject);
+  req.on("error", (error) => reject(Object.assign(error, { reusedSocket: req.reusedSocket })));
   req.end(body);
 });
 
@@ -367,6 +376,9 @@ try {
   const psBefore = await psSpawns();
   const psListBefore = await psSpawns();
   const results = await runPass(true);
+  // The pass above outlives the 90 s "fazendo" window of the fixture, so the tree version moved on: poll with the
+  // current ETag, otherwise every conditional request is a full 200 and the 304 path is never measured.
+  treeEtag = JSON.parse((await request("GET", "/api/tree", { token })).text).version;
   const treeLoad = await hammer("GET /api/tree (conditional)", "/api/tree", token, DURATION, "GET", undefined, treeEtag, true);
   treeLoad.rss = rssMb(server.pid);
   results.push(treeLoad);
@@ -397,7 +409,14 @@ try {
   if (psRuns > psBound) problems.push("sampler spawns exceed the cache bound");
   // Window = the /api/tree segment plus the 5-minute soak (both poll the process list through its 5 s cache).
   if (psListRuns > Math.ceil((DURATION + 300) / 5) + 2) problems.push("process-list spawns exceed the 5 s cache bound");
-  if (treeLoad.statuses[304] < 1) problems.push("/api/tree did not return unchanged 304 responses");
+  console.log(`stale keep-alive sockets retried once: ${staleSocketRetries}`);
+  // `>= 1` (not `< 1`): a segment with no 304 at all leaves statuses[304] undefined, and `undefined < 1` is false.
+  if (!(treeLoad.statuses[304] >= 1)) problems.push("/api/tree did not return unchanged 304 responses");
+  // Baseline regressions measured at multi-second p50; unchanged refreshes should stay below the 500 ms p95 budget.
+  if (treeLoad.p95 >= 500) problems.push("/api/tree conditional p95 exceeded 500 ms");
+  const historyLoad = results.find((item) => item.label.startsWith("GET /api/projects/:id/history"));
+  // Baseline served 100-200 req/s; 50 req/s leaves margin while rejecting the prior 25 req/s regression.
+  if (!historyLoad || historyLoad.requests < 50 * DURATION) problems.push("history throughput below 50 requests per second");
   if (treeSoak.errors || treeSoak.statuses[304] < treeSoak.requests * 0.9) problems.push("/api/tree soak did not sustain unchanged 304 polls");
   if (treeSoak.rssDelta > RSS_GROWTH_LIMIT_MB) problems.push("/api/tree soak RSS growth");
   if (rssAfter - rssBefore > RSS_GROWTH_LIMIT_MB) problems.push("RSS growth");

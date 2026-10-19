@@ -1078,7 +1078,7 @@ export function refreshSessionIndex() { return sessionIndex.refresh(); }
 const STATE_TAIL_BYTES = 64 * 1024;
 const STATE_TAIL_MAX_BYTES = 512 * 1024;
 const STATE_FRESH_MS = 90_000;
-const STATE_CACHE_MAX = 2000;
+const STATE_CACHE_MAX = 20_000;
 const HISTORY_LIMIT_ITEMS = 50;
 
 // The last `message` entry decides; trailing `custom`/`session_info` entries and a line still being written are skipped.
@@ -1145,15 +1145,24 @@ export class SessionStateReader {
     this.read = read;
     this.maxEntries = maxEntries;
     this.cache = new Map();
+    this.pending = new Map();
   }
 
   async lastMessage(filePath, fileStat) {
     const cached = this.cache.get(filePath);
     if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) return cached.message;
-    const message = await this.read(filePath, fileStat.size);
-    if (this.cache.size >= this.maxEntries) this.cache.clear();
-    this.cache.set(filePath, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, message });
-    return message;
+    const pending = this.pending.get(filePath);
+    if (pending?.mtimeMs === fileStat.mtimeMs && pending.size === fileStat.size) return pending.promise;
+    const promise = (async () => {
+      const readMessage = await this.read(filePath, fileStat.size);
+      const message = readMessage && { role: readMessage.role, timestamp: readMessage.timestamp, stopReason: readMessage.stopReason };
+      if (this.cache.size >= this.maxEntries) this.cache.delete(this.cache.keys().next().value);
+      this.cache.set(filePath, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, message });
+      return message;
+    })();
+    const entry = { mtimeMs: fileStat.mtimeMs, size: fileStat.size, promise };
+    this.pending.set(filePath, entry);
+    try { return await promise; } finally { if (this.pending.get(filePath) === entry) this.pending.delete(filePath); }
   }
 }
 
@@ -1195,7 +1204,9 @@ export async function sessionHeader(filePath, { read = readFirstLine, cache = se
   return header;
 }
 
-export async function listProjectHistory(project, { states = sessionStates, now = Date.now() } = {}) {
+const historyTitleCache = new Map();
+const historyScanPending = new Map();
+async function scanProjectHistoryRecords(project) {
   const sessionsRoot = path.join(AGENT_DIR, "sessions");
   if (!(await isDirectory(sessionsRoot))) return [];
   const out = [];
@@ -1220,8 +1231,9 @@ export async function listProjectHistory(project, { states = sessionStates, now 
         const header = await sessionHeader(filePath, { directoryMtimeMs });
         if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
+        const title = await memoizedTreeTitle(historyTitleCache, filePath, fileStat, null, async () =>
+          indexedTitle(sessionIndex.entries.get(filePath), fileStat) ?? (await scanSession(filePath)).title);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
-        const title = indexedTitle(sessionIndex.entries.get(filePath), fileStat) ?? (await scanSession(filePath)).title;
         out.push({
           path: filePath,
           title,
@@ -1241,10 +1253,23 @@ export async function listProjectHistory(project, { states = sessionStates, now 
   // Main conversations and sub-PIs are capped separately: a busy project spawns dozens of sub-PIs, and one shared cap
   // let them push every main conversation out of the list (nothing left to open for a worktree).
   const sorted = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-  const top = [
+  return [
     ...sorted.filter((item) => !item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
     ...sorted.filter((item) => item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
   ].sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+}
+
+// Concurrent history requests for one project share a single directory scan instead of each repeating it.
+async function projectHistoryRecords(project) {
+  const key = cwdKey(project.cwd);
+  if (historyScanPending.has(key)) return historyScanPending.get(key);
+  const pending = scanProjectHistoryRecords(project);
+  historyScanPending.set(key, pending);
+  try { return await pending; } finally { if (historyScanPending.get(key) === pending) historyScanPending.delete(key); }
+}
+
+export async function listProjectHistory(project, { states = sessionStates, now = Date.now() } = {}) {
+  const top = await projectHistoryRecords(project);
   const live = liveSessionFor(project.id);
   const liveFile = live?.lastState?.sessionFile ? cwdKey(live.lastState.sessionFile) : null;
   return Promise.all(top.map(async ({ fileStat, ...item }) => {
@@ -1559,6 +1584,40 @@ const treeTitles = createTitleIndex({
   statFile: async (file) => { const info = await stat(file); return { mtimeMs: info.mtimeMs, size: info.size }; },
 });
 let treeRecordsPending = null;
+const TREE_TITLE_CACHE_MAX = SESSION_HEADER_CACHE_MAX;
+const treeTitleCache = new Map();
+const treeSessionNameCache = new Map();
+function touchBoundedCache(cache, key, value) {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > TREE_TITLE_CACHE_MAX) cache.delete(cache.keys().next().value);
+}
+function sameFileVersion(cached, info) {
+  return cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size && cached.ino === info.ino;
+}
+export async function statTreeFile(file, statFile = stat) {
+  try { return await statFile(file); } catch { return null; }
+}
+export async function memoizedTreeTitle(cache, file, info, parentInfo, compute) {
+  const key = `${info.ino ?? "?"}:${info.mtimeMs}:${info.size}|${parentInfo ? `${parentInfo.ino ?? "?"}:${parentInfo.mtimeMs}:${parentInfo.size}` : "missing"}`;
+  const cached = cache.get(file);
+  if (cached?.key === key) {
+    touchBoundedCache(cache, file, cached);
+    return cached.title;
+  }
+  const title = await compute();
+  touchBoundedCache(cache, file, { key, title });
+  return title;
+}
+async function cachedSessionName(file, info) {
+  const cached = treeSessionNameCache.get(file);
+  if (sameFileVersion(cached, info)) return cached.name;
+  const name = await sessionName(file);
+  touchBoundedCache(treeSessionNameCache, file, { mtimeMs: info.mtimeMs, size: info.size, ino: info.ino, name });
+  return name;
+}
+// Titles are recomputed only when the session file (or, for a sub-PI, its parent) changed: rescanning multi-MB
+// files on every 1 s tree refresh made even unchanged 304 polls wait seconds.
 async function treeSessionRecords() {
   if (treeRecordsPending) return treeRecordsPending;
   treeRecordsPending = (async () => {
@@ -1567,16 +1626,21 @@ async function treeSessionRecords() {
   for (const directory of await readdirSafe(root)) {
     if (!directory.isDirectory()) continue;
     const dir = path.join(root, directory.name);
+    const directoryInfo = await statTreeFile(dir);
     for (const entry of await readdirSafe(dir)) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
       const file = path.join(dir, entry.name);
       try {
         const info = await stat(file);
-        const header = await sessionHeader(file, { directoryMtimeMs: (await stat(dir)).mtimeMs });
+        const header = await sessionHeader(file, { directoryMtimeMs: directoryInfo?.mtimeMs });
         if (header?.type !== "session" || typeof header.cwd !== "string") continue;
         const last = await sessionStates.lastMessage(file, info);
         const classified = classifySessionState(last, info.mtimeMs);
-        const title = header.parentSession ? await treeTitles.subagentTitle(file, header, await sessionName(file)) : (await scanSession(file)).title;
+        let parentInfo = null;
+        if (header.parentSession) parentInfo = await statTreeFile(header.parentSession);
+        const title = await memoizedTreeTitle(treeTitleCache, file, info, parentInfo, async () => header.parentSession
+          ? treeTitles.subagentTitle(file, header, await cachedSessionName(file, info))
+          : (await scanSession(file)).title);
         records.push({ path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null });
       } catch { /* malformed or disappearing session records are skipped */ }
     }

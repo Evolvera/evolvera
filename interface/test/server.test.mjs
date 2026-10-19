@@ -80,6 +80,33 @@ describe("main mode", () => {
   });
 });
 
+describe("tree title memo", () => {
+  // Unchanged child/parent stats reuse titles; either file changing recomputes, so tree polls do not rescan sessions.
+  // Lives here (not tree.test.mjs) so server.mjs is imported only after the isolated env is set.
+  test("tree title memo reuses unchanged files and invalidates child or parent changes", async () => {
+    const cache = new Map();
+    let computes = 0;
+    const child = { ino: 1, mtimeMs: 10, size: 20 };
+    const parent = { ino: 2, mtimeMs: 30, size: 40 };
+    const title = () => `title-${++computes}`;
+    assert.equal(await server.memoizedTreeTitle(cache, "child", child, parent, title), "title-1");
+    assert.equal(await server.memoizedTreeTitle(cache, "child", child, parent, title), "title-1");
+    assert.equal(computes, 1);
+    assert.equal(await server.memoizedTreeTitle(cache, "child", { ...child, size: 21 }, parent, title), "title-2");
+    assert.equal(await server.memoizedTreeTitle(cache, "child", child, { ...parent, mtimeMs: 31 }, title), "title-3");
+    assert.equal(await server.memoizedTreeTitle(cache, "child", child, null, title), "title-4");
+    const noIdentity = { mtimeMs: 10, size: 20 };
+    assert.equal(await server.memoizedTreeTitle(cache, "other", noIdentity, { mtimeMs: 30, size: 40 }, title), "title-5");
+    assert.equal(computes, 5);
+    const full = new Map(Array.from({ length: 20000 }, (_, index) => [`file-${index}`, {}]));
+    await server.memoizedTreeTitle(full, "new-file", child, null, title);
+    assert.equal(full.size, 20000);
+    assert.equal(full.has("file-0"), false);
+    assert.equal(await server.statTreeFile("ok", async () => ({ size: 1 })).then((info) => info.size), 1);
+    assert.equal(await server.statTreeFile("missing", async () => { throw new Error("ENOENT"); }), null);
+  });
+});
+
 describe("session header cache", () => {
   test("reads a replaced session file header again", async () => {
     const file = path.join(tmp, "replaceable-session.jsonl");
@@ -1034,11 +1061,32 @@ describe("conversation states", () => {
     assert.equal(closed, 1);
   });
 
+  // Concurrent identical history requests share the expensive file scan and state tail read.
+  test("history coalesces simultaneous reads for the same project", async () => {
+    const isolatedProject = path.join(tmp, "parallel-history-project");
+    const file = await stateFile([msg("assistant", { stopReason: "stop" })], { ghostCwd: isolatedProject });
+    let reads = 0;
+    const states = new server.SessionStateReader({ read: async (filePath, size) => {
+      reads++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return server.readLastMessage(filePath, size);
+    } });
+    const project = { id: "parallel-history", cwd: isolatedProject };
+    const [first, second] = await Promise.all([
+      server.listProjectHistory(project, { states }),
+      server.listProjectHistory(project, { states }),
+    ]);
+    assert.deepEqual(first, second);
+    assert.equal(reads, 1, "concurrent callers must not repeat the state-tail read");
+  });
+
+  // Cache hit while (mtime, size) are unchanged, slim record (role/timestamp/stopReason) and only the oldest entry evicted
+  // at the bound: clearing it all at 2000 entries made every pass over 2000+ sessions re-read every tail.
   test("SessionStateReader: cached per (path, mtime, size), bounded", async () => {
     let reads = 0;
-    const reader = new server.SessionStateReader({ read: async (file, size) => { reads++; return { role: "user", size }; }, maxEntries: 2 });
+    const reader = new server.SessionStateReader({ read: async (file, size) => { reads++; return { role: "assistant", timestamp: "now", stopReason: "stop", content: "unused", size }; }, maxEntries: 2 });
     const info = { mtimeMs: 1, size: 10 };
-    assert.deepEqual(await reader.lastMessage("a", info), { role: "user", size: 10 });
+    assert.deepEqual(await reader.lastMessage("a", info), { role: "assistant", timestamp: "now", stopReason: "stop" });
     await reader.lastMessage("a", info);
     assert.equal(reads, 1, "cache hit");
     await reader.lastMessage("a", { mtimeMs: 2, size: 10 });
@@ -1048,9 +1096,10 @@ describe("conversation states", () => {
     await reader.lastMessage("b", info);
     assert.equal(reader.cache.size, 2);
     await reader.lastMessage("c", info);
-    assert.equal(reader.cache.size, 1, "full cache is dropped, never grows past its bound");
+    assert.equal(reader.cache.size, 2, "only the oldest entry is evicted, never exceeding the bound");
+    assert.deepEqual([...reader.cache.keys()], ["b", "c"]);
     const defaults = new server.SessionStateReader();
-    assert.equal(defaults.maxEntries, 2000);
+    assert.equal(defaults.maxEntries, 20000);
     assert.equal(typeof defaults.read, "function");
   });
 
