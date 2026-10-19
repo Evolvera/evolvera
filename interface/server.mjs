@@ -604,7 +604,10 @@ export class PiRpcSession {
     try {
       const payload = JSON.parse(line);
       this.track(payload);
-      if (payload.type === "response" && payload.command === "get_state" && payload.success) this.lastState = payload.data;
+      if (payload.type === "response" && payload.command === "get_state" && payload.success) {
+        this.lastState = payload.data;
+        if (payload.data?.sessionFile) studioFiles.add(cwdKey(payload.data.sessionFile)); // this PI has this file open (now or soon switched away from)
+      }
       this.broadcast("rpc", payload);
     } catch (error) {
       this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
@@ -1003,6 +1006,10 @@ export class SessionStateReader {
 
 const sessionStates = new SessionStateReader();
 
+// Session files the Studio's own PIs had open during this server's lifetime. A recent write to one of them came from the
+// Studio, not from another PI, so the page must not treat it as "owned elsewhere" (history items carry studioOwned).
+const studioFiles = new Set();
+
 // The project PI that is still alive, else the last one that ran (exited), else null.
 function liveSessionFor(projectId) {
   const mine = [...sessions.values()].filter((session) => session.projectId === projectId);
@@ -1072,7 +1079,7 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     } catch {
       // Vanished or unreadable between listing and reading: no state rather than a failed list.
     }
-    return { ...item, state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
+    return { ...item, studioOwned: studioFiles.has(cwdKey(item.path)), state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
   }));
 }
 
@@ -1084,7 +1091,7 @@ const WATCH_CONCURRENCY = 4;
 let watchActive = 0;
 const watchWaiters = [];
 
-async function withWatchSlot(task) {
+export async function withWatchSlot(task) {
   if (watchActive >= WATCH_CONCURRENCY) await new Promise((resolve) => watchWaiters.push(resolve));
   watchActive++;
   try {

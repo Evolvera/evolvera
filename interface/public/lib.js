@@ -2099,11 +2099,12 @@ export function pickConversation({ history = [], agents = [], liveBusy = false }
   return main.length ? { kind: "latest", item: main[0] } : { kind: "none", item: null };
 }
 
-// Is `item` (a history entry: path, title, state, lastActivity) being written by someone other than the Studio's PI?
+// Is `item` (a history entry: path, title, state, lastActivity, studioOwned) being written by someone other than the Studio's PIs?
+// A file one of the Studio's own PIs had open (`studioOwned`, set by the server) is never "elsewhere", however recently it was written.
 // `why`: "orca" (a working agent: the one titled like it, or any when `fallback` says the title could not be matched),
 // "state" (fazendo/aguardando) or "recent" (modified under OWNED_RECENT_MS ago).
 export function conversationOwner({ item, agents = [], fallback = false, studioFile = null, now = Date.now() }) {
-  if (!item || samePath(item.path, studioFile)) return { elsewhere: false, why: "" };
+  if (!item || item.studioOwned || samePath(item.path, studioFile)) return { elsewhere: false, why: "" };
   if (agents.some((agent) => agentWorking(agent) && (fallback || titleMatches(item.title, agent.title)))) return { elsewhere: true, why: "orca" };
   if (item.state === "fazendo" || item.state === "aguardando") return { elsewhere: true, why: "state" };
   const touched = toMs(item.lastActivity);

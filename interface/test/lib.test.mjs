@@ -1966,6 +1966,10 @@ describe("following a conversation owned elsewhere", () => {
     // The Studio's own file is never "elsewhere", however fresh.
     assert.deepEqual(own(row("Tarefa parada", 0, { state: "fazendo" }), { studioFile: "/S/Tarefa parada.jsonl" }), { elsewhere: false, why: "" });
     assert.deepEqual(own(row("Tarefa parada", 0), { studioFile: "/other.jsonl" }), { elsewhere: true, why: "recent" });
+    // A file one of the Studio's PIs had open (server flag) is not "elsewhere" either: fresh, running or matched by a working agent.
+    for (const extra of [{}, { state: "fazendo" }]) assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: true, ...extra })), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: true }), { agents: [{ state: "working", title: "tarefa parada" }], fallback: true }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: false })), { elsewhere: true, why: "recent" });
     // A working Orca agent titled like it (not interrupted, not another title).
     assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "tarefa parada" }] }), { elsewhere: true, why: "orca" });
     assert.deepEqual(own(quiet, { agents: [{ state: "working", interrupted: true, title: "tarefa parada" }] }), { elsewhere: false, why: "" });

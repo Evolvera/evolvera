@@ -198,7 +198,13 @@ try {
   };
   const getJson = async (pathname) => JSON.parse((await request("GET", pathname, { token })).text);
   await waitUntil("a full activity ring", async () => (await getJson("/api/activity")).items.length >= 300);
-  const activity = await getJson("/api/activity");
+  // The fake turns queued above may still be finishing: sample once the feed has been quiet for a moment.
+  let activity = await getJson("/api/activity");
+  for (let quiet = 0; quiet < 4; await new Promise((resolve) => setTimeout(resolve, 250))) {
+    const next = await getJson("/api/activity");
+    quiet = next.seq === activity.seq ? quiet + 1 : 0;
+    activity = next;
+  }
   const tail = await getJson(`/api/activity?since=${activity.seq - 5}`);
   console.log(`activity sample: ${activity.items.length} items (seq ${activity.seq}), since=seq-5 -> ${tail.items.length} items`);
   if (tail.items.length !== 5) throw new Error("since cursor must return exactly the newer items");

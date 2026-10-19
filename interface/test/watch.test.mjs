@@ -198,6 +198,56 @@ describe("readSessionWatch", () => {
   });
 });
 
+describe("withWatchSlot", () => {
+  const gate = () => {
+    let open;
+    const promise = new Promise((resolve) => (open = resolve));
+    return { promise, open };
+  };
+
+  test("runs at most 4 reads at once, queues the rest in order, and a failing read frees its slot", async () => {
+    let running = 0;
+    let peak = 0;
+    const started = [];
+    const gates = Array.from({ length: 10 }, gate);
+    const calls = gates.map((one, index) => server.withWatchSlot(async () => {
+      started.push(index);
+      peak = Math.max(peak, ++running);
+      try {
+        await one.promise;
+        if (index === 1) throw new Error("boom");
+        return index;
+      } finally {
+        running--;
+      }
+    }).then((value) => value, (error) => error.message));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, [0, 1, 2, 3], "only the first 4 started");
+    gates[0].open();
+    gates[1].open(); // fails
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, [0, 1, 2, 3, 4, 5], "each finished read lets the next queued one in, in arrival order");
+    for (const one of gates) one.open();
+    assert.deepEqual(await Promise.all(calls), [0, "boom", 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert.equal(peak, 4);
+    assert.equal(await server.withWatchSlot(async () => "idle again"), "idle again");
+  });
+
+  test("parallel requests over HTTP all succeed with correct data", async () => {
+    const listening = await server.startServer(0);
+    try {
+      const base = `http://127.0.0.1:${listening.address().port}`;
+      const token = (await (await fetch(`${base}/`)).text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
+      const target = await file(Array.from({ length: 200 }, (_, index) => line(user(`p${index}`, "x".repeat(2000)))).join(""));
+      const responses = await Promise.all(Array.from({ length: 24 }, () => fetch(`${base}/api/sessions/watch?path=${encodeURIComponent(target)}`, { headers: { "x-pi-studio-token": token } })));
+      assert.deepEqual(responses.map((response) => response.status), Array(24).fill(200));
+      for (const response of responses) assert.equal((await response.json()).entries.length, 200);
+    } finally {
+      await server.stopServer();
+    }
+  });
+});
+
 describe("GET /api/sessions/watch", () => {
   let listening;
   let base;
