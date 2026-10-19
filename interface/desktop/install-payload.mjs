@@ -1,4 +1,6 @@
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { access, cp, mkdir, rename, rm } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,12 +14,40 @@ export async function installPayload(sourceDir, piDir) {
   if (source === destination || destination.startsWith(`${source}${path.sep}`)) {
     throw new Error('PI Studio destination cannot be inside its source tree.');
   }
-  await rm(destination, { recursive: true, force: true });
-  await mkdir(destination, { recursive: true });
-  for (const item of allowed) {
-    await cp(path.join(source, item), path.join(destination, item), { recursive: true });
+  await mkdir(path.dirname(destination), { recursive: true });
+  const staged = `${destination}.stage-${randomUUID()}`;
+  const backup = `${destination}.backup-${randomUUID()}`;
+  await mkdir(staged);
+  let movedOld = false;
+  try {
+    for (const item of allowed) {
+      const sourceItem = path.join(source, item);
+      await access(sourceItem, fsConstants.F_OK);
+      await cp(sourceItem, path.join(staged, item), { recursive: true });
+    }
+    try {
+      await access(destination, fsConstants.F_OK);
+      await rename(destination, backup);
+      movedOld = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    try {
+      await rename(staged, destination);
+    } catch (error) {
+      if (movedOld) await rename(backup, destination);
+      movedOld = false;
+      throw error;
+    }
+    if (movedOld) {
+      movedOld = false;
+      await rm(backup, { recursive: true, force: true }).catch(() => {});
+    }
+    return destination;
+  } finally {
+    await rm(staged, { recursive: true, force: true });
+    if (movedOld) await rename(backup, destination);
   }
-  return destination;
 }
 
 export async function installPayloadCommand(args, output = console) {

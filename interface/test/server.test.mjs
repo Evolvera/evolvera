@@ -1,8 +1,9 @@
 // In-process tests for server.mjs helpers and routes (fake PI only; owned temp dirs only).
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open as openFile, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -79,7 +80,103 @@ describe("main mode", () => {
   });
 });
 
+describe("session header cache", () => {
+  test("reads a replaced session file header again", async () => {
+    const file = path.join(tmp, "replaceable-session.jsonl");
+    const cache = new Map();
+    await writeFile(file, JSON.stringify({ type: "session", id: "old", cwd: projA }));
+    assert.equal((await server.sessionHeader(file, { cache })).id, "old");
+    await rm(file);
+    await writeFile(file, JSON.stringify({ type: "session", id: "new", cwd: projC }));
+    assert.equal((await server.sessionHeader(file, { cache })).id, "new");
+  });
+
+  test("uses non-shrinking size when file identity metadata is unavailable", async () => {
+    const cache = new Map();
+    let size = 10;
+    let id = "same";
+    let reads = 0;
+    const read = async () => { reads++; return JSON.stringify({ type: "session", id }); };
+    const statFile = async () => ({ size });
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "same");
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "same");
+    size = 9;
+    id = "replaced";
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "replaced");
+    assert.equal(reads, 2);
+  });
+});
+
+describe("SSE client backpressure", () => {
+  test("disconnects clients that exceed the cap during replay", () => {
+    const makeClient = (bufferedBytes) => {
+      const client = new EventEmitter();
+      client.writableLength = bufferedBytes;
+      client.writeHead = () => {};
+      client.write = (chunk) => { client.writableLength += Buffer.byteLength(chunk); return false; };
+      client.end = () => { client.ended = true; client.emit("close"); };
+      return client;
+    };
+    const connecting = new server.PiRpcSession({ projectId: "sse-connect-cap", projectName: "sse", cwd: tmp });
+    const alreadyFull = makeClient(8 * 1024 * 1024 + 1);
+    try {
+      connecting.addClient(alreadyFull);
+      assert.equal(alreadyFull.ended, true, "initial connection frame is subject to the limit");
+    } finally {
+      alreadyFull.emit("close");
+    }
+
+    const replaying = new server.PiRpcSession({ projectId: "sse-replay-cap", projectName: "sse", cwd: tmp });
+    replaying.history.push({ event: "rpc", payload: { type: "message_update", content: "payload" } });
+    const duringReplay = makeClient(8 * 1024 * 1024 - 64);
+    try {
+      replaying.addClient(duringReplay);
+      assert.equal(duringReplay.ended, true, "replay frame must not exceed the per-client limit");
+    } finally {
+      duringReplay.emit("close");
+    }
+  });
+
+  test("drops a client above the buffered-byte cap but keeps healthy clients", () => {
+    const session = new server.PiRpcSession({ projectId: "sse-cap", projectName: "sse-cap", cwd: tmp });
+    const makeClient = () => {
+      const client = new EventEmitter();
+      client.writes = [];
+      client.writeHead = () => {};
+      client.write = (chunk) => { client.writes.push(chunk); return true; };
+      client.end = () => { client.ended = true; client.emit("close"); };
+      client.writableLength = 0;
+      return client;
+    };
+    const slow = makeClient();
+    const healthy = makeClient();
+    session.addClient(slow);
+    session.addClient(healthy);
+    try {
+      slow.writableLength = 8 * 1024 * 1024 + 1;
+      session.broadcast("rpc", { type: "message_update", content: "next" });
+      assert.equal(slow.ended, true, "slow client should be disconnected to replay on reconnect");
+      assert.equal(session.clients.has(slow), false);
+      assert.equal(session.clientHeartbeats.has(slow), false);
+      assert.equal(session.clients.has(healthy), true);
+      assert.ok(healthy.writes.some((chunk) => chunk.includes("message_update")));
+      session.finalizeTerminal("exit", null, 0, null);
+      assert.equal(session.clientHeartbeats.size, 0);
+    } finally {
+      for (const client of [slow, healthy]) client.emit("close");
+    }
+  });
+});
+
 describe("PI stdin errors", () => {
+  test("a spawn error marks the wrapper exited so a later open can replace it", async () => {
+    const session = new server.PiRpcSession({ projectId: "spawn-error", projectName: "spawn-error", cwd: path.join(tmp, "missing-cwd") });
+    session.start();
+    await waitFor(() => session.exited);
+    assert.equal(session.summary().exited, true);
+    assert.throws(() => session.send({ type: "get_state" }), /not running/);
+  });
+
   test("a stdin error (write racing PI exit) is logged, not thrown as uncaught", async () => {
     const session = new server.PiRpcSession({ projectId: "stdin-err", projectName: "stdin-err", cwd: tmp });
     session.start();
@@ -98,6 +195,25 @@ describe("PI stdin errors", () => {
       session.stop();
       await exited;
     }
+  });
+});
+
+describe("activity restart cursor", () => {
+  test("a cursor from another server epoch resets to the complete feed", () => {
+    const activity = new server.ActivityLog(10);
+    activity.push({ message: "current" });
+    const previousEpoch = "previous-server";
+    const response = activity.since(1, previousEpoch);
+    assert.equal(typeof response.epoch, "string");
+    assert.notEqual(response.epoch, previousEpoch);
+    assert.equal(response.reset, true);
+    assert.deepEqual(response.items.map((item) => item.message), ["current"]);
+  });
+
+  test("legacy sequence-only cursor keeps its existing behavior", () => {
+    const activity = new server.ActivityLog(10);
+    activity.push({ message: "current" });
+    assert.deepEqual(activity.since(0).items.map((item) => item.message), ["current"]);
   });
 });
 
@@ -316,6 +432,16 @@ describe("history discovery + routes", () => {
     cookie = page.headers.get("set-cookie").match(/pi-studio-token=([^;]+)/)[1];
   });
 
+  test("activity response carries epoch and resets a mismatched cursor", async () => {
+    const initial = await getJson("/api/activity?since=0");
+    assert.equal(typeof initial.epoch, "string");
+    const restarted = await getJson("/api/activity?since=1&epoch=old-instance");
+    assert.equal(restarted.reset, true);
+    assert.equal(restarted.epoch, initial.epoch);
+    const legacy = await getJson("/api/activity?since=0");
+    assert.equal(legacy.epoch, initial.epoch);
+  });
+
   after(async () => {
     await server.stopServer();
     assert.equal(listening.listening, false);
@@ -357,6 +483,33 @@ describe("history discovery + routes", () => {
     assert.equal(history.history.find((item) => item.path === historyFileB).title, "Olá beta");
   });
 
+  test("S5: subscribing after explicit stop reports stopped without spawning another PI", async () => {
+    const { projects } = await getJson("/api/projects");
+    const id = projects.find((item) => item.cwd === projC).id;
+    await postJson(`/api/projects/${id}/open`, {});
+    await postJson(`/api/projects/${id}/stop`, {});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const events = [];
+    const client = sse(`/api/projects/${id}/events`, events);
+    await waitFor(() => events.some((item) => item.event === "session_stopped"));
+    assert.equal(events.some((item) => item.event === "session_ready"), false);
+    client.destroy();
+  });
+
+  test("retired session wrappers are replaced by a bounded summary window", async () => {
+    let latestId;
+    for (let index = 0; index < 205; index++) {
+      const session = new server.PiRpcSession({ projectId: `retired-${index}`, projectName: "retired", cwd: projA });
+      latestId = session.id;
+      session.finalizeTerminal("exit", null, 0, null);
+    }
+    const response = await getJson("/api/sessions");
+    assert.ok(response.sessions.length <= 200);
+    assert.equal(response.sessions.at(-1).id, latestId);
+    const status = await getJson("/api/projects/status");
+    assert.ok(status.statuses.some((item) => item.sessionId === latestId && item.exited));
+  });
+
   test("SSE replay ends with replay_done and skips answered dialogs", async () => {
     const { projects } = await getJson("/api/projects");
     const id = projects.find((item) => item.cwd === projA).id;
@@ -366,15 +519,21 @@ describe("history discovery + routes", () => {
     await waitFor(() => live.some((item) => item.event === "replay_done"));
     await postJson(`/api/projects/${id}/command`, { id: "p-ui", type: "prompt", message: "ui" });
     await waitFor(() => live.some((item) => item.payload.id === "fake-ui-1"));
-    first.destroy();
+    assert.ok(live.some((item) => item.payload.statusText === "latest"));
 
     const pending = [];
     const second = sse(`/api/projects/${id}/events`, pending);
     await waitFor(() => pending.some((item) => item.event === "replay_done"));
-    second.destroy();
     assert.ok(pending.some((item) => item.payload.id === "fake-ui-1"), "an unanswered dialog is replayed");
+    assert.ok(pending.find((item) => item.payload.id === "fake-ui-1").payload.timeout < 5000, "replay keeps only the remaining timeout");
+    assert.ok(pending.some((item) => item.payload.statusText === "latest"), "latest status is replayed");
+    assert.ok(pending.some((item) => item.payload.widgetKey === "test"), "widget is replayed");
 
     assert.equal((await postJson(`/api/projects/${id}/ui-response`, { id: "fake-ui-1", value: "Bloquear" })).status, 202);
+    await waitFor(() => live.some((item) => item.event === "ui_resolved" && item.payload.id === "fake-ui-1"));
+    await waitFor(() => pending.some((item) => item.event === "ui_resolved" && item.payload.id === "fake-ui-1"));
+    first.destroy();
+    second.destroy();
     const replay = [];
     const third = sse(`/api/projects/${id}/events`, replay);
     await waitFor(() => replay.some((item) => item.payload.message === "Escolha: Bloquear"));
@@ -383,6 +542,20 @@ describe("history discovery + routes", () => {
     const done = replay.find((item) => item.event === "replay_done");
     assert.ok(Number.isInteger(done.payload.count) && done.payload.count > 0);
     assert.equal(replay.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-1"), false);
+
+    const timeoutLive = [];
+    const fourth = sse(`/api/projects/${id}/events`, timeoutLive);
+    await waitFor(() => timeoutLive.some((item) => item.event === "replay_done"));
+    await postJson(`/api/projects/${id}/command`, { id: "p-ui-timeout", type: "prompt", message: "ui-timeout" });
+    await waitFor(() => timeoutLive.some((item) => item.payload.id === "fake-ui-timeout"));
+    fourth.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const expired = [];
+    const fifth = sse(`/api/projects/${id}/events`, expired);
+    await waitFor(() => expired.some((item) => item.event === "replay_done"));
+    fifth.destroy();
+    assert.equal(expired.some((item) => item.payload.type === "extension_ui_request" && item.payload.id === "fake-ui-timeout"), false, "expired dialogs are not replayed");
+    assert.equal((await postJson(`/api/projects/${id}/ui-response`, { id: "not-pending", value: "ignored" })).status, 202);
   });
   describe("session titles + conversation search", () => {
     const user = (text) => ({ type: "message", message: { role: "user", content: text } });
@@ -433,6 +606,18 @@ describe("history discovery + routes", () => {
         // Links need privileges on some Windows setups; the path comes from readdir either way.
       }
       await server.refreshSessionIndex();
+    });
+
+    test("finds the latest session name in the bounded tail beyond the title scan prefix", async () => {
+      const large = path.join(tmp, "large-title-session.jsonl");
+      await writeFile(large, `${JSON.stringify({ type: "session", id: "large", cwd: projA })}\n${JSON.stringify(user("inicio"))}\n`);
+      const padding = "x".repeat(5 * 1024 * 1024);
+      await writeFile(large, (await readFile(large, "utf8")) + `${JSON.stringify(user(padding))}\n${JSON.stringify({ type: "session_info", name: "Título do tail" })}\n${JSON.stringify({ type: "custom" })}\nnull\n`);
+      assert.equal((await server.scanSession(large)).title, "Título do tail");
+      assert.equal((await server.scanSessionIndexEntry(large)).title, "Título do tail");
+      const unnamed = path.join(tmp, "large-unnamed-session.jsonl");
+      await writeFile(unnamed, `${JSON.stringify({ type: "session", id: "unnamed", cwd: projA })}\n${"x".repeat(5 * 1024 * 1024)}\n${JSON.stringify({ type: "session_info", name: 42 })}\n`);
+      assert.equal((await server.scanSession(unnamed)).title, "Nova conversa");
     });
 
     test("titles prefer the latest session name over the first prompt, falling back to the prompt", async () => {
@@ -489,6 +674,12 @@ describe("history discovery + routes", () => {
       await put("third.jsonl", [header(projA), user("zebra terceira")], 1_000_000_001);
       const names = async (options) => (await server.searchSessions(dir, "zebra", { projectsByCwd: known, ...options })).map((hit) => path.basename(hit.sessionPath));
       assert.deepEqual(await names({}), ["early.jsonl", "late.jsonl", "third.jsonl"]);
+      const remappedCwd = path.join(tmp, "remapped-project");
+      const mappedHeader = { ...header("Z:\\Host\\remote-project"), cwd: "Z:\\Host\\remote-project" };
+      await put("mapped.jsonl", [mappedHeader, user("zebra mapped")], 1_000_000_003);
+      const mappedProjects = new Map([[server.cwdKey(remappedCwd), { id: "mapped-project" }]]);
+      const mapped = await server.searchSessions(dir, "zebra", { projectsByCwd: mappedProjects, pathMap: [["Z:\\Host\\remote-project", remappedCwd]] });
+      assert.equal(mapped.some((hit) => path.basename(hit.sessionPath) === "mapped.jsonl"), true);
       assert.deepEqual(await names({ maxFileBytes: 1000 }), ["early.jsonl", "third.jsonl"]);
       assert.deepEqual(await names({ limit: 1 }), ["early.jsonl"]);
       const capped = await server.scanSessionIndexEntry(path.join(dir, "d", "late.jsonl"), { textCap: 8 });
@@ -734,6 +925,23 @@ describe("conversation states", () => {
   const stateFile = (lines, { ghostCwd = ghost, extraHeader = {}, mtime = 1_900_000_000 } = {}) =>
     sessionFile("--states--", `st-${seq++}.jsonl`, header(ghostCwd, extraHeader), mtime, lines);
 
+  test("history items flag the files the Studio's own PIs had open (live now or switched away from), and only those", async () => {
+    const mine = path.join(tmp, "studio-owned-project");
+    const own = (text) => stateFile([msg("user"), msg("assistant", { stopReason: "stop" })], { ghostCwd: mine, extraHeader: { timestamp: text } });
+    const [current, before, foreign, lonely] = await Promise.all([own("2025-02-04T00:00:00.000Z"), own("2025-02-03T00:00:00.000Z"), own("2025-02-02T00:00:00.000Z"), own("2025-02-01T00:00:00.000Z")]);
+    const pi = new server.PiRpcSession({ projectId: "owned", projectName: "owned", cwd: mine });
+    const getState = (sessionFile, extra = {}) => pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true, data: { sessionFile }, ...extra }));
+    const flags = async () => Object.fromEntries((await server.listProjectHistory({ id: "owned", cwd: mine }, { now: 1_900_000_010_000 })).map((item) => [path.basename(item.path), item.studioOwned]));
+    const names = [current, before, foreign, lonely].map((file) => path.basename(file));
+    assert.deepEqual(Object.values(await flags()), [false, false, false, false]);
+    getState(before);
+    getState(current); // switched away from `before`: it stays flagged
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: false, data: { sessionFile: foreign } }));
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true, data: {} }));
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true }));
+    assert.deepEqual(await flags(), { [names[0]]: true, [names[1]]: true, [names[2]]: false, [names[3]]: false });
+  });
+
   test("classifySessionState: every rule of the table", () => {
     const now = 10_000_000;
     const old = now - 91_000;
@@ -804,17 +1012,18 @@ describe("conversation states", () => {
     const cache = new Map();
     const reads = [];
     const read = async (file) => { reads.push(file); return file === "partial" ? "{\"type\":\"sess" : JSON.stringify({ type: "session", id: file }); };
-    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
-    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
+    const statFile = async () => ({ ino: 1, birthtimeMs: 1, size: 100 });
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2, statFile })).id, "a");
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2, statFile })).id, "a");
     assert.deepEqual(reads, ["a"]);
     // A file still being written (partial first line) is not cached, so the next call retries it.
-    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
-    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2, statFile }));
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2, statFile }));
     assert.equal(reads.filter((file) => file === "partial").length, 2);
-    await server.sessionHeader("b", { read, cache, max: 2 });
+    await server.sessionHeader("b", { read, cache, max: 2, statFile });
     assert.equal(cache.size, 2);
     // At the bound the cache restarts instead of growing without limit.
-    await server.sessionHeader("c", { read, cache, max: 2 });
+    await server.sessionHeader("c", { read, cache, max: 2, statFile });
     assert.deepEqual([...cache.keys()], ["c"]);
   });
 
@@ -907,6 +1116,21 @@ describe("conversation states", () => {
     assert.equal((await server.listProjectHistory({ id: "none", cwd: path.join(tmp, "states-nobody") })).length, 0);
   });
 
+  test("history: sub-PIs never crowd main conversations out (separate caps of 50 each, newest first)", async () => {
+    const busy = path.join(tmp, "states-busy-project");
+    const at = (index) => new Date(1_800_000_000_000 + index * 1000).toISOString();
+    // Two old main conversations, then 60 newer sub-PIs (their parent is the second main one).
+    for (let index = 0; index < 2; index++) await sessionFile("--busy--", `main-${index}.jsonl`, header(busy, { id: `main-${index}`, timestamp: at(index) }), 1_900_000_000 + index, [msg("assistant", { stopReason: "stop" })]);
+    for (let index = 0; index < 60; index++) await sessionFile("--busy--", `sub-${index}.jsonl`, header(busy, { id: `sub-${index}`, parentSession: "main-1.jsonl", timestamp: at(100 + index) }), 1_900_000_100 + index, [msg("assistant", { stopReason: "stop" })]);
+    const listed = await server.listProjectHistory({ id: "busy", cwd: busy });
+    assert.deepEqual(listed.filter((item) => !item.isSubagent).map((item) => item.sessionId), ["main-1", "main-0"]);
+    const subs = listed.filter((item) => item.isSubagent);
+    assert.equal(subs.length, 50);
+    assert.equal(subs[0].sessionId, "sub-59");
+    assert.equal(listed.length, 52);
+    assert.ok(listed.every((item, index) => index === 0 || String(listed[index - 1].timestamp) >= String(item.timestamp)), "newest first");
+  });
+
   describe("live PI of the open project", () => {
     let listening;
     let base;
@@ -980,5 +1204,235 @@ describe("conversation states", () => {
       }
       assert.equal(exited, "parado");
     });
+  });
+});
+
+describe("navegador: project files and the capability route", () => {
+  const siteDir = path.join(rootsDir, "sitebrowser");
+  const outsideDir = path.join(rootsDir, "sitebrowser-outside");
+  const linkedRoot = path.join(rootsDir, "sitebrowser-link");
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  let listening;
+  let base;
+  let port;
+  let token;
+  let project;
+  let linked;
+  let escapeLink;
+  let raw;
+  const headers = (extra = {}) => ({ "x-pi-studio-token": token, ...extra });
+  const api = (pathname, extra = {}) => fetch(`${base}${pathname}`, { headers: headers(extra) });
+  const file = (query, extra) => api(`/api/projects/${project.id}/file?${query}`, extra);
+  // fetch() would normalise "/../"; this sends the request line exactly as given.
+  const exact = (pathname, { method = "GET", extra = {} } = {}) => new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, path: pathname, method, headers: extra }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+
+  before(async () => {
+    for (const dir of [path.join(siteDir, "sub"), outsideDir]) await mkdir(dir, { recursive: true });
+    await writeFile(path.join(siteDir, "package.json"), "{}");
+    await writeFile(path.join(siteDir, "index.html"), '<link rel="stylesheet" href="style.css"><script src="sub/app.js"></script><h1>oi</h1>');
+    await writeFile(path.join(siteDir, "style.css"), "h1{color:red}");
+    await writeFile(path.join(siteDir, "sub", "app.js"), "document.title='x'");
+    await writeFile(path.join(siteDir, "sub", "ola mundo.txt"), "com espaço");
+    await writeFile(path.join(siteDir, "pic.png"), PNG);
+    await writeFile(path.join(siteDir, "notes.md"), "# Notas");
+    await writeFile(path.join(siteDir, "doc.pdf"), "%PDF-1.4\n");
+    await writeFile(path.join(siteDir, "data.bin"), "0123456789");
+    await writeFile(path.join(siteDir, "empty.txt"), "");
+    await writeFile(path.join(siteDir, "~tilde.txt"), "til");
+    const big = await openFile(path.join(siteDir, "big.bin"), "w");
+    await big.truncate(21 * 1024 * 1024);
+    await big.close();
+    await writeFile(path.join(outsideDir, "secret.txt"), "TOP-SECRET");
+    // Junctions need no privilege on Windows (a plain symlink on POSIX): a link inside the project that leads out of it.
+    await symlink(outsideDir, path.join(siteDir, "escape"), "junction");
+    await symlink(siteDir, linkedRoot, "junction");
+    try {
+      await symlink(path.join(outsideDir, "secret.txt"), path.join(siteDir, "secret-link.txt"), "file");
+      escapeLink = true;
+    } catch {
+      escapeLink = false; // creating file symlinks needs a privilege on Windows
+    }
+    listening = await server.startServer(0);
+    port = listening.address().port;
+    base = `http://127.0.0.1:${port}`;
+    const page = await fetch(`${base}/`);
+    token = (await page.text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
+    const openProject = async (cwd) => (await (await fetch(`${base}/api/projects/open-path`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify({ cwd }) })).json()).project;
+    project = await openProject(siteDir);
+    linked = await openProject(linkedRoot);
+    raw = (await (await file("path=index.html&info=1")).json()).raw.replace(/index\.html$/, "");
+  });
+
+  after(async () => {
+    await server.stopServer();
+  });
+
+  test("auth: token, Host and Origin are enforced like the other routes", async () => {
+    const url = `${base}/api/projects/${project.id}/file?path=notes.md`;
+    assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(url, { headers: { "x-pi-studio-token": "0".repeat(64) } })).status, 401);
+    assert.equal((await fetch(url, { headers: headers({ origin: "https://evil.example" }) })).status, 403);
+    assert.equal((await fetch(url, { headers: headers({ origin: "null" }) })).status, 403);
+    assert.equal((await fetch(url, { headers: headers({ origin: base }) })).status, 200);
+    assert.equal((await exact(`/api/projects/${project.id}/file?path=notes.md`, { extra: { ...headers(), host: "evil.example" } })).status, 403);
+    assert.equal((await fetch(url, { method: "POST", headers: headers() })).status, 405);
+  });
+
+  test("info describes the file and hands out a capability URL; bad input fails cleanly", async () => {
+    const info = await (await file("path=sub%2Fapp.js&info=1")).json();
+    assert.deepEqual({ ...info, mtimeMs: typeof info.mtimeMs, raw: undefined }, { path: "sub/app.js", name: "app.js", size: 18, mtimeMs: "number", kind: "text", mime: "text/javascript; charset=utf-8", raw: undefined });
+    assert.match(info.raw, new RegExp(`^/api/projects/${project.id}/raw/[0-9a-f]{32}/sub/app\\.js$`));
+    const spaced = await (await file(`path=${encodeURIComponent("sub/ola mundo.txt")}&info=1`)).json();
+    assert.ok(spaced.raw.endsWith("/sub/ola%20mundo.txt"));
+    assert.equal((await file("info=1")).status, 400);
+    assert.equal((await file("path=")).status, 400);
+    assert.equal((await file("path=a%00b")).status, 400);
+    assert.equal((await api("/api/projects/nope/file?path=a")).status, 404);
+  });
+
+  test("the file route streams bytes with the right type and the hardening headers", async () => {
+    const png = await file("path=pic.png");
+    assert.equal(png.status, 200);
+    assert.equal(png.headers.get("content-type"), "image/png");
+    assert.equal(png.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(png.headers.get("content-security-policy"), "sandbox");
+    assert.equal(png.headers.get("referrer-policy"), "no-referrer");
+    assert.deepEqual(Buffer.from(await png.arrayBuffer()), PNG);
+    const html = await file("path=index.html");
+    assert.equal(html.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(html.headers.get("content-security-policy"), "sandbox", "only the capability route lets a page run scripts");
+    assert.equal(await (await file("path=notes.md")).text(), "# Notas");
+    assert.equal(await (await file("path=~tilde.txt")).text(), "til", "only ~ and ~/ expand to the home folder");
+    assert.equal((await file("path=data.bin")).headers.get("content-type"), "application/octet-stream");
+    assert.equal((await file("path=doc.pdf")).headers.get("content-type"), "application/pdf");
+    const empty = await file("path=empty.txt");
+    assert.deepEqual([empty.status, empty.headers.get("content-length"), await empty.text()], [200, "0", ""]);
+  });
+
+  test("absolute paths inside the project (also through a linked project root) and ./relative paths resolve", async () => {
+    assert.equal(await (await file(`path=${encodeURIComponent(path.join(siteDir, "notes.md"))}`)).text(), "# Notas");
+    assert.equal(await (await file("path=.%2Fsub%2F..%2Fnotes.md")).text(), "# Notas");
+    assert.equal((await file("path=notes.md%3A12")).status, 404, "the :line suffix is the client's business");
+    const viaLink = await api(`/api/projects/${linked.id}/file?path=${encodeURIComponent(path.join(linkedRoot, "notes.md"))}`);
+    assert.equal(await viaLink.text(), "# Notas");
+    const info = await (await api(`/api/projects/${linked.id}/file?path=notes.md&info=1`)).json();
+    assert.equal(info.path, "notes.md");
+  });
+
+  test("anything outside the project root is 403: .., encoded dots, absolute paths, ~, junctions and file symlinks", async () => {
+    const outside = encodeURIComponent(path.join(outsideDir, "secret.txt"));
+    const wanted = ["../sitebrowser-outside/secret.txt", "..%2Fsitebrowser-outside%2Fsecret.txt", "%2e%2e/sitebrowser-outside/secret.txt", "sub/../../sitebrowser-outside/secret.txt", "..%5Csitebrowser-outside%5Csecret.txt", outside, "~", "~%2Fsecret.txt", "~%5Csecret.txt", "escape%2Fsecret.txt", "escape%5Csecret.txt", "escape", "%2F", "Z%3A%5Celsewhere%5Cx.txt"];
+    for (const query of wanted) {
+      for (const suffix of ["", "&info=1"]) {
+        const res = await file(`path=${query}${suffix}`);
+        assert.equal(res.status, 403, query);
+        assert.doesNotMatch(await res.text(), /TOP-SECRET/);
+      }
+    }
+    if (escapeLink) assert.equal((await file("path=secret-link.txt")).status, 403);
+  });
+
+  test("missing, directory and oversized targets", async () => {
+    assert.equal((await file("path=nope.txt")).status, 404);
+    assert.equal((await file("path=sub")).status, 404);
+    const big = await file("path=big.bin");
+    assert.equal(big.status, 413);
+    assert.match((await big.json()).error, /too large \(21\.0 MB; limit 20\.0 MB\)/);
+    assert.equal((await file("path=big.bin&info=1")).status, 413);
+    assert.equal((await exact(`${raw}big.bin`)).status, 413);
+  });
+
+  test("Range requests: partial, open-ended, suffix, unsatisfiable, malformed and multi", async () => {
+    const ranged = async (value) => {
+      const res = await file("path=data.bin", { range: value });
+      return { status: res.status, range: res.headers.get("content-range"), length: res.headers.get("content-length"), body: await res.text() };
+    };
+    assert.deepEqual(await ranged("bytes=2-4"), { status: 206, range: "bytes 2-4/10", length: "3", body: "234" });
+    assert.deepEqual(await ranged("bytes=7-"), { status: 206, range: "bytes 7-9/10", length: "3", body: "789" });
+    assert.deepEqual(await ranged("bytes=-3"), { status: 206, range: "bytes 7-9/10", length: "3", body: "789" });
+    assert.deepEqual(await ranged("bytes=5-999"), { status: 206, range: "bytes 5-9/10", length: "5", body: "56789" });
+    assert.deepEqual(await ranged("bytes=-99"), { status: 206, range: "bytes 0-9/10", length: "10", body: "0123456789" });
+    assert.deepEqual(await ranged("bytes=10-"), { status: 416, range: "bytes */10", length: "0", body: "" });
+    assert.equal((await ranged("bytes=-0")).status, 416);
+    assert.equal((await ranged("bytes=5-2")).status, 416);
+    for (const ignored of ["bytes=-", "items=1-2", "bytes=1-2,4-5", "garbage"]) {
+      const result = await ranged(ignored);
+      assert.deepEqual([result.status, result.body], [200, "0123456789"], ignored);
+    }
+    assert.equal((await file("path=empty.txt", { range: "bytes=0-" })).status, 200);
+    assert.deepEqual([server.parseByteRange(undefined, 5), server.parseByteRange("bytes=9-", 5), server.parseByteRange("bytes=1-2", 5)], [null, "unsatisfiable", { start: 1, end: 2 }]);
+  });
+
+  test("capability route: no token needed, relative assets resolve, HTML may run scripts only here (sandboxed)", async () => {
+    const page = await exact(`${raw}index.html`);
+    assert.equal(page.status, 200);
+    assert.equal(page.headers["content-type"], "text/html; charset=utf-8");
+    assert.equal(page.headers["content-security-policy"], "sandbox allow-scripts allow-forms");
+    assert.equal(page.headers["x-content-type-options"], "nosniff");
+    assert.equal(page.headers["referrer-policy"], "no-referrer");
+    assert.match(page.body.toString(), /<h1>oi<\/h1>/);
+    // What the browser does with the page's relative URLs:
+    const pageUrl = new URL(`${raw}index.html`, base);
+    const css = await exact(new URL("style.css", pageUrl).pathname);
+    assert.deepEqual([css.status, css.headers["content-type"], css.headers["content-security-policy"], css.body.toString()], [200, "text/css; charset=utf-8", "sandbox", "h1{color:red}"]);
+    const script = await exact(new URL("sub/app.js", pageUrl).pathname);
+    assert.deepEqual([script.status, script.headers["content-type"]], [200, "text/javascript; charset=utf-8"]);
+    assert.equal((await exact(`${raw}sub/ola%20mundo.txt`)).body.toString(), "com espaço");
+    assert.equal((await exact(`${raw}~tilde.txt`)).body.toString(), "til");
+    const partial = await exact(`${raw}data.bin`, { extra: { range: "bytes=1-2" } });
+    assert.deepEqual([partial.status, partial.body.toString()], [206, "12"]);
+    // Subresources of an opaque-origin page may carry `Origin: null`; real foreign origins stay out.
+    assert.equal((await exact(`${raw}style.css`, { extra: { origin: "null" } })).status, 200);
+    assert.equal((await exact(`${raw}style.css`, { extra: { origin: "https://evil.example" } })).status, 403);
+    assert.equal((await exact(`${raw}style.css`, { extra: { host: "evil.example" } })).status, 403);
+  });
+
+  test("capability route: wrong or foreign capabilities, bad encodings, methods and traversal", async () => {
+    const forged = raw.replace(/\/raw\/[0-9a-f]{32}\//, `/raw/${"0".repeat(32)}/`);
+    assert.equal((await exact(`${forged}style.css`)).status, 403);
+    const otherProject = (await (await api(`/api/projects/${linked.id}/file?path=notes.md&info=1`)).json()).raw;
+    assert.equal((await exact(otherProject.replace(linked.id, project.id))).status, 403, "a capability is bound to its project");
+    assert.equal((await exact(`/api/projects/${project.id}/raw/short/style.css`)).status, 401, "not a capability URL: the normal token rule applies");
+    assert.equal((await exact(`${raw}%zz`)).status, 400);
+    assert.equal((await exact(`${raw.replace(project.id, "%zz")}style.css`)).status, 400);
+    assert.equal((await exact(`${raw}style.css`, { method: "POST" })).status, 405);
+    assert.equal((await exact(raw)).status, 404, "the project folder itself is not a file");
+    assert.equal((await exact(raw.slice(0, -1))).status, 404);
+    assert.equal((await exact(`${raw}sub/`)).status, 404);
+    assert.equal((await exact(`${raw}nope.css`)).status, 404);
+    assert.equal((await exact(`${raw}a%00b`)).status, 400);
+    const secretPaths = ["../../sitebrowser-outside/secret.txt", "%2e%2e/%2e%2e/sitebrowser-outside/secret.txt", "..%2F..%2Fsitebrowser-outside%2Fsecret.txt", "sub/../../../sitebrowser-outside/secret.txt", "escape/secret.txt"];
+    for (const wanted of secretPaths) {
+      const res = await exact(`${raw}${wanted}`);
+      assert.equal(res.status, 403, wanted);
+      assert.doesNotMatch(res.body.toString(), /TOP-SECRET/);
+    }
+    // Backslash forms: 403 on Windows, a plain (missing) file name elsewhere; never the secret.
+    const backslash = await exact(`${raw}..%5C..%5Csitebrowser-outside%5Csecret.txt`);
+    assert.ok([403, 404].includes(backslash.status));
+    assert.doesNotMatch(backslash.body.toString(), /TOP-SECRET/);
+    // The token check is skipped for capability URLs, so a "../" tail must never reach another route.
+    const sneaky = await exact(`${raw}../../../../health`);
+    assert.equal(sneaky.status, 403);
+    assert.doesNotMatch(sneaky.body.toString(), /"ok"/);
+    assert.equal((await exact("/api/health")).status, 401);
+  });
+
+  test("a project whose folder vanished answers 404", async () => {
+    const gone = path.join(rootsDir, "sitebrowser-gone");
+    await mkdir(gone, { recursive: true });
+    const opened = (await (await fetch(`${base}/api/projects/open-path`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify({ cwd: gone }) })).json()).project;
+    await fetch(`${base}/api/projects/${opened.id}/stop`, { method: "POST", headers: headers() });
+    // Windows keeps the folder busy until the fake PI is gone.
+    await rm(gone, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
+    assert.equal((await api(`/api/projects/${opened.id}/file?path=a.txt`)).status, 404);
   });
 });

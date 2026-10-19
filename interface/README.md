@@ -104,6 +104,13 @@ Ou use `pi-studio amphipod` se a pasta `interface` já estiver no PATH. Opcional
 - **Contagem na barra lateral**: `GET /api/projects/status` também devolve `runningCounts` (`{ projectId: n }`): conversas de cada projeto, sub-PIs incluídos, cujo arquivo mudou nos últimos 30 min e termina em execução ("fazendo"). Só esses arquivos têm o final lido; o resultado é cacheado por 2 s. É o que mantém o selo de projetos que não estão abertos. A mesma resposta traz `now` (relógio do servidor) e `stall` (limites).
 - Fora de escopo: parar um único subagente (o RPC só tem `abort` global), status de PR/CI e estado git sujo.
 
+## Navegador (aba do Inspetor)
+
+- Abre ao lado da conversa: arquivos do projeto (imagem, PDF, HTML, Markdown, texto/código, áudio/vídeo; outros mostram tamanho e "Abrir fora"), `http://localhost:*` e páginas `https` (se o site não permitir ser emoldurado, aparece um cartão com "Abrir fora"; nada passa por proxy). Entradas: clique em um arquivo em Arquivos, caminhos e `http://localhost…` nas mensagens (Ctrl/Cmd+clique abre fora), `@` + Alt+Enter, Ctrl+K "Abrir no navegador…". Últimos 20 destinos por projeto (voltar/avançar) no `localStorage`.
+- `GET /api/projects/:id/file?path=…` (token + Origin como as demais rotas) resolve o caminho real e recusa o que sai da raiz do projeto (`..`, outra unidade, link simbólico ou junção que escapa): 403; 404 se não existe; 413 acima de 20 MB. `?info=1` devolve o descritor (tipo, tamanho e a URL de leitura).
+- **Página isolada do Studio**: o HTML aberto roda em `<iframe sandbox="allow-scripts allow-forms">` (sem `allow-same-origin`, origem opaca: sem `localStorage`, cookie, token nem acesso ao Studio) e todo arquivo sai com `Content-Security-Policy: sandbox` e `X-Content-Type-Options: nosniff`. Como esse frame não leva o token, ele lê por `/api/projects/:id/raw/<cap>/<caminho>`, em que `<cap>` é um HMAC (derivado do token da execução) só de leitura e só deste projeto; assim `style.css` e `app.js` relativos funcionam. Essa é a única rota que aceita `Origin: null`; o caminho passa pela mesma resolução e pelas mesmas recusas.
+- `localhost` de outra porta carrega em frame com `allow-same-origin` (é outra origem); o endereço do próprio Studio nunca abre aqui.
+
 ## Segurança
 
 Mantenha local. O PI pode executar shell, editar arquivos e acessar credenciais disponíveis ao processo. No Docker, monte só os diretórios de projeto que você quer expor.

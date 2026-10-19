@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { access, open, readdir, readFile, stat } from "node:fs/promises";
+import { access, open, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -20,6 +21,9 @@ const apiToken = randomBytes(32).toString("hex");
 const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
+const SSE_BUFFER_LIMIT = 8 * 1024 * 1024;
+const RETIRED_SESSION_LIMIT = 200;
+const UI_BOOKKEEPING_LIMIT = 1000;
 const SESSION_SCAN_MAX_BYTES = 5 * 1024 * 1024;
 const SEARCH_LIMIT = 30;
 const SEARCH_MIN_CHARS = 2;
@@ -56,6 +60,7 @@ const SKIP_DIRS = new Set([
 ]);
 
 const sessions = new Map();
+const retiredSessions = new Map();
 const projects = new Map();
 // Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
 const addedProjects = new Map();
@@ -67,6 +72,7 @@ const STALL = stallThresholds(process.env);
 export class ActivityLog {
   constructor(limit = ACTIVITY_LIMIT) {
     this.limit = limit;
+    this.epoch = randomUUID();
     this.items = [];
     this.seq = 0;
   }
@@ -78,10 +84,10 @@ export class ActivityLog {
     return item;
   }
 
-  since(cursor) {
-    const reset = cursor > this.seq;
+  since(cursor, epoch) {
+    const reset = (epoch !== undefined && epoch !== this.epoch) || cursor > this.seq;
     const from = reset ? 0 : cursor;
-    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset };
+    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset, epoch: this.epoch };
   }
 }
 
@@ -490,6 +496,7 @@ export class PiRpcSession {
     this.cwd = path.resolve(options.cwd || process.cwd());
     this.createdAt = new Date().toISOString();
     this.clients = new Set();
+    this.clientHeartbeats = new Map();
     this.history = [];
     this.stdoutBuffer = "";
     this.stderrBuffer = "";
@@ -534,21 +541,17 @@ export class PiRpcSession {
     this.proc.stdin.on("error", (error) => {
       recordLog("warn", `PI stdin closed for ${this.cwd}`, { error: error.message });
     });
+    // A spawn failure (no pid: missing binary, vanished cwd) never emits "exit", so it ends the session
+    // here; an error on a running PI (e.g. a failed kill) is only noted and its later exit still counts.
     this.proc.on("error", (error) => {
+      if (this.proc.pid === undefined) return this.finalizeTerminal("error", error);
       recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
-      this.note({ type: "process_error", message: error.message });
-      this.broadcast("process_error", { type: "process_error", message: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
     });
-    this.proc.on("exit", (code, signal) => {
-      this.exited = true;
-      this.exitCode = code;
-      this.signal = signal;
-      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
-      this.note({ type: "process_exit", code, signal });
-      this.broadcast("process_exit", { type: "process_exit", code, signal });
-      for (const client of this.clients) client.end();
-      this.clients.clear();
-    });
+    this.proc.on("exit", (code, signal) => this.finalizeTerminal("exit", null, code, signal));
+    this.proc.on("close", (code, signal) => this.finalizeTerminal("close", null, code, signal));
 
     recordLog("info", `Started PI for ${this.cwd}`, { sessionId: this.id, piBin, args: redactArgs(args) });
     this.broadcast("session_ready", {
@@ -570,6 +573,35 @@ export class PiRpcSession {
         // The process may have failed immediately; process_error covers it.
       }
     }, 250);
+  }
+
+  finalizeTerminal(kind, error = null, code = null, signal = null) {
+    if (this.exited) return;
+    this.exited = true;
+    this.exitCode = code;
+    this.signal = signal;
+    if (kind === "error") {
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
+    } else {
+      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
+      const payload = { type: "process_exit", code, signal };
+      this.note(payload);
+      this.broadcast("process_exit", payload);
+    }
+    const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
+    sessions.delete(this.id);
+    retiredSessions.set(this.id, retired);
+    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
+    for (const client of this.clients) {
+      const heartbeat = this.clientHeartbeats.get(client);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(client);
+      client.end();
+    }
+    this.clients.clear();
   }
 
   consumeStdout(chunk) {
@@ -604,24 +636,36 @@ export class PiRpcSession {
     try {
       const payload = JSON.parse(line);
       this.track(payload);
-      if (payload.type === "response" && payload.command === "get_state" && payload.success) this.lastState = payload.data;
+      if (payload.type === "response" && payload.command === "get_state" && payload.success) {
+        this.lastState = payload.data;
+        if (payload.data?.sessionFile) studioFiles.add(cwdKey(payload.data.sessionFile)); // this PI has this file open (now or soon switched away from)
+      }
       this.broadcast("rpc", payload);
     } catch (error) {
       this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
     }
   }
 
+  pruneUi(now = Date.now()) {
+    for (const [id, expiry] of this.pendingUi) if (expiry <= now) this.pendingUi.delete(id);
+    while (this.pendingUi.size > UI_BOOKKEEPING_LIMIT) this.pendingUi.delete(this.pendingUi.keys().next().value);
+    while (this.answeredUi.size > UI_BOOKKEEPING_LIMIT) this.answeredUi.delete(this.answeredUi.values().next().value);
+  }
+
   track(payload, now = Date.now()) {
+    this.pruneUi(now);
     this.lastEventAt = now;
     this.note(payload, now);
     if (payload.type === "agent_start") this.streaming = true;
     else if (payload.type === "agent_end") this.streaming = false;
     else if (payload.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method) && payload.id) {
       this.pendingUi.set(payload.id, payload.timeout > 0 ? now + payload.timeout : Infinity);
+      this.pruneUi(now);
     }
   }
 
   statusSummary(now = Date.now()) {
+    this.pruneUi(now);
     return {
       projectId: this.projectId,
       sessionId: this.id,
@@ -632,11 +676,25 @@ export class PiRpcSession {
     };
   }
 
+  writeClient(res, chunk) {
+    if (res.writableLength + Buffer.byteLength(chunk) > SSE_BUFFER_LIMIT) {
+      const heartbeat = this.clientHeartbeats.get(res);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
+      res.end();
+      this.clients.delete(res);
+      return false;
+    }
+    res.write(chunk);
+    return true;
+  }
+
   broadcast(event, payload) {
     const envelope = { event, payload, at: new Date().toISOString() };
     this.history.push(envelope);
     if (this.history.length > HISTORY_LIMIT) this.history.shift();
-    for (const client of this.clients) sendSse(client, event, payload);
+    const frame = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of this.clients) this.writeClient(client, frame);
   }
 
   addClient(res) {
@@ -646,22 +704,30 @@ export class PiRpcSession {
       connection: "keep-alive",
       "x-accel-buffering": "no",
     });
-    res.write(`: connected ${this.id}\n\n`);
-    let replayed = 0;
-    for (const item of this.history) {
-      // A dialog already answered must not pop up again on reconnect.
-      if (item.payload?.type === "extension_ui_request" && this.answeredUi.has(item.payload.id)) continue;
-      sendSse(res, item.event, item.payload);
-      replayed++;
-    }
-    // Lets the client tell buffered history from live events.
-    sendSse(res, "replay_done", { type: "replay_done", count: replayed });
-    const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
+    const heartbeat = setInterval(() => this.writeClient(res, ": ping\n\n"), 15000);
+    this.clientHeartbeats.set(res, heartbeat);
     this.clients.add(res);
     res.on("close", () => {
       clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
       this.clients.delete(res);
     });
+    if (!this.writeClient(res, `: connected ${this.id}\n\n`)) return;
+    let replayed = 0;
+    for (const item of this.history) {
+      // A dialog is shown again only while it is still pending: answered, timed-out or pruned ones never pop up
+      // again on reconnect; a pending one comes with the time it has left.
+      let payload = item.payload;
+      if (payload?.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method)) {
+        const expiry = this.pendingUi.get(payload.id);
+        if (expiry === undefined || expiry <= Date.now() || this.answeredUi.has(payload.id)) continue;
+        if (Number.isFinite(expiry)) payload = { ...payload, timeout: Math.max(1, expiry - Date.now()) };
+      }
+      if (!this.writeClient(res, `event: ${item.event}\ndata: ${JSON.stringify(payload)}\n\n`)) return;
+      replayed++;
+    }
+    // Lets the client tell buffered history from live events.
+    this.writeClient(res, `event: replay_done\ndata: ${JSON.stringify({ type: "replay_done", count: replayed })}\n\n`);
   }
 
   send(command) {
@@ -669,9 +735,12 @@ export class PiRpcSession {
     if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
     this.proc.stdin.write(`${JSON.stringify(command)}\n`);
     if (command.type === "extension_ui_response" && command.id) {
+      const wasPending = this.pendingUi.has(command.id);
       this.answeredUi.add(command.id);
+      this.pruneUi();
       this.pendingUi.delete(command.id);
       this.note(command);
+      if (wasPending) this.broadcast("ui_resolved", { type: "ui_resolved", id: command.id });
     }
   }
 
@@ -740,6 +809,29 @@ function compactTitle(text, fallback) {
   return cleaned.length > 72 ? `${cleaned.slice(0, 69)}…` : cleaned;
 }
 
+async function latestSessionInfoNameInTail(filePath, size, maxBytes, currentName) {
+  if (size <= maxBytes) return currentName;
+  const handle = await open(filePath, "r");
+  try {
+    const length = Math.min(512 * 1024, size);
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8", 0, bytesRead).split(/\n/);
+    if (length < size) lines.shift();
+    for (let index = lines.length - 1; index >= 0; index--) {
+      try {
+        const entry = JSON.parse(lines[index]);
+        if (entry && entry.type === "session_info") return typeof entry.name === "string" ? entry.name.trim() : "";
+      } catch {
+        // A truncated tail line is not a session entry.
+      }
+    }
+    return currentName;
+  } finally {
+    await handle.close();
+  }
+}
+
 // One bounded pass over a session file: its title (the latest `session_info` name, else the first
 // user prompt, else `fallback`) and, for a folded query, a snippet of the first matching user/assistant
 // message. Streams at most `maxBytes`, so a huge session is never loaded whole; a line cut by the cap
@@ -764,6 +856,8 @@ export async function scanSession(filePath, { foldedQuery = "", maxBytes = SESSI
       if (!snippet) snippet = searchSnippet(body, foldedQuery);
     }
   }
+  const fileStat = await stat(filePath);
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
   return { title: compactTitle(name || firstPrompt, fallback), snippet };
 }
 
@@ -801,8 +895,10 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
     }
   }
   if (!header || typeof header.cwd !== "string" || !header.cwd) return null;
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
   const entry = {
     filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size,
+    cwd: header.cwd,
     cwdKey: cwdKey(mapHostPath(header.cwd, PATH_MAP)),
     timestamp: header.timestamp || new Date(fileStat.mtimeMs).toISOString(),
     title: compactTitle(name || firstPrompt, "Nova conversa"),
@@ -881,7 +977,7 @@ export class SessionIndex {
     const ordered = [...this.entries.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
     for (const entry of ordered) {
       if (results.length >= limit) break;
-      const project = projectsByCwd.get(entry.cwdKey);
+      const project = projectsByCwd.get(entry.cwd ? cwdKey(mapHostPath(entry.cwd, pathMap)) : entry.cwdKey);
       if (!project) continue;
       if (!(entry.folded ?? foldText(entry.text)).includes(foldedQuery)) continue;
       let snippet = "";
@@ -1003,10 +1099,16 @@ export class SessionStateReader {
 
 const sessionStates = new SessionStateReader();
 
+// Session files the Studio's own PIs had open during this server's lifetime. A recent write to one of them came from the
+// Studio, not from another PI, so the page must not treat it as "owned elsewhere" (history items carry studioOwned).
+const studioFiles = new Set();
+
 // The project PI that is still alive, else the last one that ran (exited), else null.
 function liveSessionFor(projectId) {
-  const mine = [...sessions.values()].filter((session) => session.projectId === projectId);
-  return mine.find((session) => !session.exited) ?? mine.at(-1) ?? null;
+  const live = [...sessions.values()].find((session) => session.projectId === projectId && !session.exited);
+  if (live) return live;
+  const retired = [...retiredSessions.values()].reverse().find((item) => item.status.projectId === projectId);
+  return retired ? { exited: true, lastState: retired.lastState, statusSummary: () => retired.status } : null;
 }
 
 // A session header (first line: id, cwd, timestamp, parentSession) never changes once written, so
@@ -1014,12 +1116,22 @@ function liveSessionFor(projectId) {
 const sessionHeaders = new Map();
 const SESSION_HEADER_CACHE_MAX = 20_000;
 
-export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX } = {}) {
+export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX, statFile = stat, directoryMtimeMs } = {}) {
   const cached = cache.get(filePath);
-  if (cached) return cached;
+  if (cached && directoryMtimeMs !== undefined && cached.directoryMtimeMs === directoryMtimeMs) return cached.header;
+  const fileStat = await statFile(filePath);
+  if (cached) {
+    const sameFile = cached.ino && fileStat.ino
+      ? cached.ino === fileStat.ino && cached.birthtimeMs === fileStat.birthtimeMs
+      : fileStat.size >= cached.size;
+    if (sameFile) {
+      cache.set(filePath, { ...cached, directoryMtimeMs });
+      return cached.header;
+    }
+  }
   const header = JSON.parse(await read(filePath));
   if (cache.size >= max) cache.clear();
-  cache.set(filePath, header);
+  cache.set(filePath, { header, ino: fileStat.ino, birthtimeMs: fileStat.birthtimeMs, size: fileStat.size, directoryMtimeMs });
   return header;
 }
 
@@ -1032,8 +1144,12 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     if (!dir.isDirectory()) continue;
     const fullDir = path.join(sessionsRoot, dir.name);
     let files = [];
+    let directoryMtimeMs;
     try {
-      files = await readdir(fullDir, { withFileTypes: true });
+      [files, directoryMtimeMs] = await Promise.all([
+        readdir(fullDir, { withFileTypes: true }),
+        stat(fullDir).then((info) => info.mtimeMs),
+      ]);
     } catch {
       continue;
     }
@@ -1041,7 +1157,7 @@ export async function listProjectHistory(project, { states = sessionStates, now 
       if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
       const filePath = path.join(fullDir, file.name);
       try {
-        const header = await sessionHeader(filePath);
+        const header = await sessionHeader(filePath, { directoryMtimeMs });
         if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
         const fileStat = await stat(filePath);
         const timestamp = header.timestamp || fileStat.mtime.toISOString();
@@ -1062,7 +1178,13 @@ export async function listProjectHistory(project, { states = sessionStates, now 
       }
     }
   }
-  const top = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, HISTORY_LIMIT_ITEMS);
+  // Main conversations and sub-PIs are capped separately: a busy project spawns dozens of sub-PIs, and one shared cap
+  // let them push every main conversation out of the list (nothing left to open for a worktree).
+  const sorted = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const top = [
+    ...sorted.filter((item) => !item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+    ...sorted.filter((item) => item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+  ].sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
   const live = liveSessionFor(project.id);
   const liveFile = live?.lastState?.sessionFile ? cwdKey(live.lastState.sessionFile) : null;
   return Promise.all(top.map(async ({ fileStat, ...item }) => {
@@ -1072,8 +1194,91 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     } catch {
       // Vanished or unreadable between listing and reading: no state rather than a failed list.
     }
-    return { ...item, state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
+    return { ...item, studioOwned: studioFiles.has(cwdKey(item.path)), state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
   }));
+}
+
+// ---- Watching a session another PI is writing (GET /api/sessions/watch). Strictly read-only: the Studio's own PI never
+// switches into such a file, the page just renders its entries and polls for the appended ones.
+export const WATCH_CAP_BYTES = 2 * 1024 * 1024;
+// A first read parses and re-serializes up to the cap: at most this many run at once, the rest queue (bounds memory under load).
+const WATCH_CONCURRENCY = 4;
+let watchActive = 0;
+const watchWaiters = [];
+
+export async function withWatchSlot(task) {
+  if (watchActive >= WATCH_CONCURRENCY) await new Promise((resolve) => watchWaiters.push(resolve));
+  watchActive++;
+  try {
+    return await task();
+  } finally {
+    watchActive--;
+    watchWaiters.shift()?.();
+  }
+}
+
+// The `path` query must be an absolute .jsonl file inside the sessions root (symlinks resolved); else 400/403/404.
+export async function resolveWatchPath(raw, sessionsRoot = path.join(AGENT_DIR, "sessions")) {
+  if (typeof raw !== "string" || !path.isAbsolute(raw) || raw.includes("\0") || !raw.toLowerCase().endsWith(".jsonl")) throw httpError(400, "Invalid session path");
+  const resolved = path.resolve(raw);
+  if (!pathInside(sessionsRoot, resolved)) throw httpError(403, "Path outside the sessions directory");
+  let real;
+  try {
+    real = await realpath(resolved);
+  } catch {
+    throw httpError(404, "Session file not found");
+  }
+  if (!pathInside(await realpath(sessionsRoot), real)) throw httpError(403, "Path outside the sessions directory");
+  if (!(await stat(real)).isFile()) throw httpError(404, "Session file not found");
+  return real;
+}
+
+// Entries appended after byte `since` (complete lines only), at most `cap` bytes per call. A first read (since 0) of a file
+// bigger than the cap starts at its tail; a cursor past the end (file replaced) restarts there too. A line that is still being
+// written is held back until it completes, except a final line without newline that already parses as a whole object.
+export async function readSessionWatch(filePath, since = 0, { cap = WATCH_CAP_BYTES, states = sessionStates, now = Date.now() } = {}) {
+  const handle = await open(filePath, "r");
+  try {
+    const info = await handle.stat();
+    const reset = since > info.size;
+    let start = reset ? 0 : since;
+    const tail = start === 0 && info.size > cap;
+    if (tail) start = info.size - cap;
+    const buffer = Buffer.alloc(Math.min(cap, info.size - start));
+    const bytesRead = buffer.length ? (await handle.read(buffer, 0, buffer.length, start)).bytesRead : 0; // nothing new: no read
+    let chunk = buffer.subarray(0, bytesRead);
+    let offset = start;
+    if (tail) {
+      const skip = chunk.indexOf(10) + 1 || chunk.length; // the cut falls mid-line: drop that fragment
+      chunk = chunk.subarray(skip);
+      offset += skip;
+    }
+    const end = chunk.lastIndexOf(10) + 1; // bytes through the last newline
+    const parse = (line) => {
+      try {
+        const entry = JSON.parse(line);
+        return isPlainObject(entry) ? entry : null;
+      } catch {
+        return null; // blank or malformed line
+      }
+    };
+    const entries = chunk.toString("utf8", 0, end).split("\n").map(parse).filter(Boolean);
+    let consumed = end;
+    if (end < chunk.length) {
+      const atEof = start + bytesRead >= info.size;
+      const unterminated = atEof ? parse(chunk.toString("utf8", end)) : null;
+      if (unterminated) {
+        entries.push(unterminated);
+        consumed = chunk.length;
+      } else if (!atEof && end === 0) {
+        consumed = chunk.length; // one line bigger than the cap: skipped (its remainder fails to parse)
+      }
+    }
+    const state = classifySessionState(await states.lastMessage(filePath, info), info.mtimeMs, now);
+    return { entries, offset: offset + consumed, size: info.size, mtimeMs: info.mtimeMs, state, reset, truncated: tail };
+  } finally {
+    await handle.close();
+  }
 }
 
 // ---- Running conversations per project (sidebar badge of projects that are not open).
@@ -1218,6 +1423,91 @@ async function projectForPath(raw) {
   return project;
 }
 
+// ---- Navegador: project files for the Inspector viewer.
+const FILE_MAX_BYTES = 20 * 1024 * 1024;
+
+// A file of the project, relative or absolute (`~` expands). Anything that resolves outside the project root
+// (`..`, another drive, a symlink or junction pointing out) is refused; the real path is what gets served.
+async function resolveProjectFile(project, requested) {
+  if (typeof requested !== "string" || !requested || requested.includes("\0")) throw httpError(400, "Invalid path");
+  const wanted = /^~(?:[\\/]|$)/.test(requested) ? path.join(homedir(), requested.slice(1)) : requested;
+  const rootReal = await realpath(project.cwd).catch(() => null);
+  if (!rootReal) throw httpError(404, "Project folder not found");
+  const candidate = path.resolve(rootReal, wanted);
+  if (!pathInside(rootReal, candidate) && !pathInside(project.cwd, candidate)) throw httpError(403, "Outside the project");
+  const real = await realpath(candidate).catch(() => null);
+  if (!real) throw httpError(404, "File not found");
+  if (!pathInside(rootReal, real)) throw httpError(403, "Outside the project");
+  const info = await stat(real);
+  if (!info.isFile()) throw httpError(404, "Not a file");
+  if (info.size > FILE_MAX_BYTES) throw httpError(413, `File too large (${formatBytes(info.size)}; limit ${formatBytes(FILE_MAX_BYTES)})`);
+  return { real, rel: path.relative(rootReal, real).split(path.sep).join("/"), size: info.size, mtimeMs: info.mtimeMs };
+}
+
+function fileDescriptor(project, { real, rel, size, mtimeMs }) {
+  const { kind, mime } = fileInfo(real);
+  const raw = `/api/projects/${encodeURIComponent(project.id)}/raw/${rawCapability(project.id)}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+  return { path: rel, name: path.basename(real), size, mtimeMs, kind, mime, raw };
+}
+
+// `Range: bytes=a-b | a- | -n` against a file of `size` bytes: null (absent, malformed or empty file), "unsatisfiable" or { start, end }.
+export function parseByteRange(header, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header ?? "");
+  if (!match || size === 0 || (match[1] === "" && match[2] === "")) return null;
+  let start;
+  let end;
+  if (match[1] === "") {
+    start = Math.max(0, size - Number(match[2]));
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+  }
+  return start >= size || start > end ? "unsatisfiable" : { start, end };
+}
+
+// Every file leaves with `Content-Security-Policy: sandbox` (opaque origin even when opened as a page) and nosniff.
+// Only HTML served for the Navegador's frame may run scripts, still without the Studio's origin.
+function sendFile(req, res, { real, size }, runScripts) {
+  const { kind, mime } = fileInfo(real);
+  const range = parseByteRange(req.headers.range, size);
+  const headers = {
+    "content-type": mime,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": runScripts && kind === "html" ? "sandbox allow-scripts allow-forms" : "sandbox",
+    "referrer-policy": "no-referrer",
+    "cache-control": "no-store",
+    "accept-ranges": "bytes",
+  };
+  if (range === "unsatisfiable") {
+    res.writeHead(416, { ...headers, "content-range": `bytes */${size}`, "content-length": 0 });
+    return res.end();
+  }
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  if (range) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(range ? 206 : 200, { ...headers, "content-length": size === 0 ? 0 : end - start + 1 });
+  if (size === 0) return res.end();
+  pipeline(createReadStream(real, { start, end }), res, () => {});
+}
+
+async function serveRaw(req, res, [, rawId, capability, tail = ""]) {
+  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+  let projectId;
+  let relative;
+  try {
+    projectId = decodeURIComponent(rawId);
+    relative = tail.split("/").slice(1).map(decodeURIComponent).join("/");
+  } catch {
+    return json(res, 400, { error: "Bad Request" });
+  }
+  const expected = Buffer.from(rawCapability(projectId));
+  const provided = Buffer.from(capability);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return json(res, 403, { error: "Forbidden" });
+  const project = await ensureProject(projectId);
+  // "./" keeps a leading "~" segment a plain name here.
+  return sendFile(req, res, await resolveProjectFile(project, `./${relative}`), true);
+}
+
 // ---- @-mention file picker: relative POSIX paths of a project, ranked per query.
 const FILE_RESULT_LIMIT = 50;
 const FILE_CACHE_TTL_MS = 10_000;
@@ -1320,7 +1610,15 @@ function requestHostAllowed(req) {
   return authority && allowedHosts.has(authority) ? authority : null;
 }
 
-function authorizeApiRequest(req, pathname) {
+// Capability URLs for the Navegador's sandboxed frames: they run without the Studio token (and without
+// cookies: an opaque-origin page sends none), so a read-only, per-project secret rides in the path instead.
+const RAW_ROUTE = /^\/api\/projects\/([^/]+)\/raw\/([0-9a-f]{32})(\/[^?#]*)?(?:[?#]|$)/;
+
+function rawCapability(projectId) {
+  return createHmac("sha256", apiToken).update(`raw:${projectId}`).digest("hex").slice(0, 32);
+}
+
+function authorizeApiRequest(req, pathname, rawRoute = false) {
   if (!pathname.startsWith("/api/")) return null;
   const authority = requestHostAllowed(req);
   if (!authority) return 403;
@@ -1330,7 +1628,8 @@ function authorizeApiRequest(req, pathname) {
     if (req.rawHeaders[index].toLowerCase() === "origin") origins.push(req.rawHeaders[index + 1]);
   }
   if (origins.length > 1) return 403;
-  if (origins.length === 1) {
+  // A sandboxed page (opaque origin) sends `Origin: null` on some subresource requests; only the capability route accepts it.
+  if (origins.length === 1 && !(rawRoute && origins[0] === "null")) {
     if (origins[0] === "null") return 403;
     try {
       const origin = new URL(origins[0]);
@@ -1341,7 +1640,7 @@ function authorizeApiRequest(req, pathname) {
     }
   }
   const isSse = req.method === "GET" && /^\/api\/(?:projects\/[^/]+|sessions\/[^/]+)\/events$/.test(pathname);
-  if (!requestTokenMatches(req, isSse)) return 401;
+  if (!rawRoute && !requestTokenMatches(req, isSse)) return 401;
   return null;
 }
 
@@ -1395,7 +1694,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 function parseProjectRoute(pathname) {
-  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files))?$/);
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files|file))?$/);
   if (!match) return null;
   return { projectId: decodeURIComponent(match[1]), action: match[2] };
 }
@@ -1405,8 +1704,11 @@ async function route(req, res) {
   const { pathname } = url;
 
   try {
-    const authorizationStatus = authorizeApiRequest(req, pathname);
+    const rawMatch = RAW_ROUTE.exec(req.url);
+    const authorizationStatus = authorizeApiRequest(req, pathname, Boolean(rawMatch));
     if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
+    // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
+    if (rawMatch) return await serveRaw(req, res, rawMatch);
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -1415,7 +1717,7 @@ async function route(req, res) {
         agentDir: AGENT_DIR,
         projectRoots: await getProjectRoots(),
         node: process.version,
-        sessions: sessions.size,
+        sessions: sessions.size + retiredSessions.size,
       });
     }
 
@@ -1425,7 +1727,7 @@ async function route(req, res) {
       return json(res, 200, {
         projects: discovered,
         agents: await listAgents(firstProject?.cwd || process.cwd()),
-        activeSessions: [...sessions.values()].map((session) => session.summary()),
+        activeSessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())),
         logs: serverLogs.slice(-200),
         config: { agentDir: AGENT_DIR, projectRoots: await getProjectRoots() },
       });
@@ -1452,7 +1754,7 @@ async function route(req, res) {
     }
 
     if (req.method === "GET" && pathname === "/api/sessions") {
-      return json(res, 200, { sessions: [...sessions.values()].map((session) => session.summary()) });
+      return json(res, 200, { sessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())) });
     }
 
     if (pathname === "/api/orca") {
@@ -1466,23 +1768,31 @@ async function route(req, res) {
     if (pathname === "/api/projects/status") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       const latest = new Map();
-      for (const session of sessions.values()) {
-        if (!latest.get(session.projectId) || latest.get(session.projectId).exited) latest.set(session.projectId, session);
-      }
-      return json(res, 200, { statuses: [...latest.values()].map((session) => session.statusSummary()), runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
+      for (const item of retiredSessions.values()) latest.set(item.status.projectId, item.status);
+      for (const session of sessions.values()) latest.set(session.projectId, session.statusSummary());
+      return json(res, 200, { statuses: [...latest.values()], runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
     }
 
     if (pathname === "/api/activity") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       const since = url.searchParams.get("since") ?? "0";
       if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
-      return json(res, 200, { ...activityLog.since(Number(since)), now: Date.now() });
+      const epoch = url.searchParams.has("epoch") ? url.searchParams.get("epoch") : undefined;
+      return json(res, 200, { ...activityLog.since(Number(since), epoch), now: Date.now() });
     }
 
     if (pathname === "/api/usage/today") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       refreshIfStale(sessionIndex);
       return json(res, 200, { ...sessionIndex.usageOn(localDay(Date.now())), indexing: sessionIndex.lastRefresh === 0 });
+    }
+
+    if (pathname === "/api/sessions/watch") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const since = url.searchParams.get("since") ?? "0";
+      if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
+      const file = await resolveWatchPath(url.searchParams.get("path"));
+      return json(res, 200, await withWatchSlot(() => readSessionWatch(file, Number(since))));
     }
 
     if (pathname === "/api/projects/open-path") {
@@ -1501,7 +1811,12 @@ async function route(req, res) {
       }
 
       if (req.method === "GET" && action === "events") {
-        const session = await getOrStartProjectSession(project);
+        const session = [...sessions.values()].find((item) => item.projectId === project.id);
+        if (!session || session.exited) {
+          res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
+          sendSse(res, "session_stopped", { type: "session_stopped", message: "PI encerrado; abra o projeto para iniciar uma nova sessão." });
+          return res.end();
+        }
         return session.addClient(res);
       }
 
@@ -1533,6 +1848,12 @@ async function route(req, res) {
       if (req.method === "GET" && action === "files") {
         const files = await listProjectFiles(project.cwd);
         return json(res, 200, { files: rankFiles(files, url.searchParams.get("q") || "", FILE_RESULT_LIMIT) });
+      }
+
+      if (req.method === "GET" && action === "file") {
+        const found = await resolveProjectFile(project, url.searchParams.get("path"));
+        if (url.searchParams.get("info") === "1") return json(res, 200, fileDescriptor(project, found));
+        return sendFile(req, res, found, false);
       }
 
       if (req.method === "POST" && action === "switch") {

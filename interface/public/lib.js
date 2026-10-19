@@ -42,6 +42,17 @@ export async function waitSessionGate(holder) {
   while (holder.gate) await holder.gate;
 }
 
+export async function withSessionRollback(operation, restore) {
+  try {
+    const result = await operation();
+    if (result?.success === false || result?.data?.cancelled) await restore();
+    return result;
+  } catch (error) {
+    await restore();
+    throw error;
+  }
+}
+
 // Replayed history is display-only, except a response to a request this page still awaits.
 export function isAwaitedResponse(payload, pending) {
   return payload?.type === "response" && typeof payload.id === "string" && pending.has(payload.id);
@@ -190,12 +201,13 @@ export function renderInline(source) {
   const hold = (html) => `\u0000${slots.push(html) - 1}\u0000`;
   let text = String(source ?? "").replace(/\u0000/g, "");
 
-  text = text.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, code) => hold(`<code>${escapeHtml(code)}</code>`));
-  text = text.replace(/\[([^\]\n]+)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g, (match, label, url) =>
-    SAFE_URL.test(url)
-      ? hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`)
-      : hold(escapeHtml(label)),
+  text = text.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, code) =>
+    hold(isOpenablePath(code) ? pathLink(code, `<code>${escapeHtml(code)}</code>`) : `<code>${escapeHtml(code)}</code>`),
   );
+  text = text.replace(/\[([^\]\n]+)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g, (match, label, url) => {
+    if (SAFE_URL.test(url)) return hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
+    return hold(isOpenablePath(url) ? pathLink(url, escapeHtml(label)) : escapeHtml(label));
+  });
   text = text.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/g, (url) =>
     hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`),
   );
@@ -208,6 +220,11 @@ export function renderInline(source) {
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?!\*)/g, "$1<em>$2</em>")
     .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, "$1<em>$2</em>");
   return html.replace(/\u0000(\d+)\u0000/g, (_, index) => slots[Number(index)]);
+}
+
+// A project file mentioned in a message opens in the Navegador tab (app.js handles the click on [data-open]).
+function pathLink(target, inner) {
+  return `<a href="#" class="path-link" data-open="${escapeHtml(target)}">${inner}</a>`;
 }
 
 const FENCE = /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)/;
@@ -760,6 +777,25 @@ export function timelineSignature(item) {
 
 // ------------------------------------------------------------------- input
 
+export function requestBodyBytes(payload) {
+  return new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+}
+
+export function requestExceedsLimit(payload, maxBytes) {
+  return requestBodyBytes(payload) > maxBytes;
+}
+
+export function restoreFailedDraft(currentMessage, currentAttachments, sentMessage, sentAttachments) {
+  if (currentMessage.trim() || currentAttachments.length) return { message: currentMessage, attachments: currentAttachments };
+  return { message: sentMessage, attachments: sentAttachments };
+}
+
+export function composerSendType(message, mode, commands) {
+  const name = /^\/(\S+)/.exec(String(message ?? "").trim())?.[1]?.toLowerCase();
+  const extensionCommand = name && commands?.some((command) => command?.source === "extension" && command.name?.toLowerCase() === name);
+  return extensionCommand ? "prompt" : mode === "steer" || mode === "follow_up" ? mode : "prompt";
+}
+
 export function composerAction(event, isStreaming) {
   if (!event || event.key !== "Enter" || event.isComposing) return null;
   if (event.shiftKey) return "newline";
@@ -1221,7 +1257,7 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "worktrees"];
+export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "browser", "worktrees"];
 
 // The Worktrees tab exists only while the Orca integration is on.
 export function visibleInspectorTabs(settings) {
@@ -1741,6 +1777,24 @@ export function followDecision({ enabled, activePath, lastFollowed, currentPath,
   return composerText || dialogOpen ? "wait" : "switch";
 }
 
+export function followedPath(lastFollowed, activePath, succeeded) {
+  return succeeded ? activePath : lastFollowed;
+}
+
+export function detachProjectRequests(pending, projectId, clear = clearTimeout) {
+  let detached = 0;
+  for (const [id, request] of pending) {
+    if (request.projectId !== projectId) continue;
+    clear(request.timer);
+    pending.delete(id);
+    const error = new Error("Request detached after switching projects");
+    error.detached = true;
+    request.reject(error);
+    detached++;
+  }
+  return detached;
+}
+
 // Orca is polled only while something on screen needs it.
 export function orcaPollWanted({ enabled, follow, tabVisible, hidden }) {
   return enabled === true && !hidden && (follow === true || tabVisible === true);
@@ -2012,6 +2066,12 @@ export function unseenActivity(items, seenSeq) {
   return items.filter((item) => item.seq > seenSeq).length;
 }
 
+export function activitySinceUrl(seq, epoch) {
+  const params = new URLSearchParams({ since: String(seq) });
+  if (epoch !== undefined && epoch !== null && epoch !== "") params.set("epoch", String(epoch));
+  return `/api/activity?${params}`;
+}
+
 // Newest first; the filter matches project name and text, ignoring case and accents.
 export function activityRows(items, query, now = Date.now()) {
   const needle = foldText(query).trim();
@@ -2066,4 +2126,337 @@ export function todayUsageRows(usage) {
   if (usage.cost !== null) rows.push(["Custo hoje", `US$ ${usage.cost.toFixed(2)}`]);
   rows.push(["Tokens hoje", formatTokens(usage.tokens)], ["Sessões hoje", String(usage.sessions)]);
   return rows;
+}
+
+// ------------------------------------------------------ navegador (files and pages beside the chat)
+
+// [viewer kind, Content-Type, extensions]: one table feeds the viewer choice (client) and the file route (server).
+const FILE_TYPE_TABLE = [
+  ["image", "image/png", "png"], ["image", "image/jpeg", "jpg jpeg"], ["image", "image/gif", "gif"], ["image", "image/webp", "webp"],
+  ["image", "image/avif", "avif"], ["image", "image/bmp", "bmp"], ["image", "image/x-icon", "ico"], ["image", "image/svg+xml", "svg"],
+  ["pdf", "application/pdf", "pdf"],
+  ["html", "text/html; charset=utf-8", "html htm"],
+  ["markdown", "text/markdown; charset=utf-8", "md markdown mdx"],
+  ["audio", "audio/mpeg", "mp3"], ["audio", "audio/wav", "wav"], ["audio", "audio/ogg", "ogg oga"], ["audio", "audio/mp4", "m4a"],
+  ["audio", "audio/flac", "flac"], ["audio", "audio/aac", "aac"],
+  ["video", "video/mp4", "mp4 m4v"], ["video", "video/webm", "webm"], ["video", "video/ogg", "ogv"], ["video", "video/quicktime", "mov"],
+  // Scripts/styles keep their real MIME so a previewed page can load them under X-Content-Type-Options: nosniff.
+  ["text", "text/javascript; charset=utf-8", "js mjs cjs jsx"], ["text", "text/css; charset=utf-8", "css"],
+  ["text", "application/json; charset=utf-8", "json jsonc map"], ["text", "application/xml; charset=utf-8", "xml"],
+  ["text", "text/plain; charset=utf-8", "txt log csv tsv yaml yml toml ini env ts tsx scss less py rb go rs java kt c h cpp hpp cs php sh bash zsh ps1 bat cmd sql lock gitignore editorconfig vue svelte"],
+  ["other", "font/woff2", "woff2"], ["other", "font/woff", "woff"], ["other", "font/ttf", "ttf"], ["other", "font/otf", "otf"], ["other", "application/wasm", "wasm"],
+];
+const FILE_TYPES = new Map(FILE_TYPE_TABLE.flatMap(([kind, mime, exts]) => exts.split(" ").map((ext) => [ext, { kind, mime }])));
+const OTHER_FILE = { kind: "other", mime: "application/octet-stream" };
+const TEXT_FILE = { kind: "text", mime: "text/plain; charset=utf-8" };
+const TEXT_FILE_NAMES = new Set(["dockerfile", "makefile", "license", "readme", "procfile"]);
+
+// { kind: image|pdf|html|markdown|audio|video|text|other, mime } by file name; the extension decides.
+export function fileInfo(name) {
+  const base = basename(name).toLowerCase();
+  const dot = base.lastIndexOf(".");
+  const ext = dot === -1 ? "" : base.slice(dot + 1);
+  return FILE_TYPES.get(ext) ?? (TEXT_FILE_NAMES.has(base) ? TEXT_FILE : OTHER_FILE);
+}
+
+export function viewerKind(name) {
+  return fileInfo(name).kind;
+}
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const BARE_LOCAL = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i;
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const DRIVE_PATH = /^[a-z]:[\\/]/i;
+
+const invalid = (reason) => ({ type: "invalid", reason });
+
+function fileTarget(raw) {
+  const path = raw.replace(/\\/g, "/").replace(/:\d+(?::\d+)?$/, "");
+  return { type: "file", path, name: basename(path), kind: viewerKind(path) };
+}
+
+// What the Navegador was asked to open: a project file (relative, absolute, ~, file://), a local dev server
+// (localhost / 127.0.0.1 / [::1], never Studio's own port), an external https page, or nothing valid.
+export function classifyTarget(input, { studioPort = "" } = {}) {
+  const text = String(input ?? "").trim();
+  if (!text) return invalid("empty");
+  if (/[\u0000-\u001f]/.test(text)) return invalid("control");
+  if (/^file:/i.test(text)) {
+    let url;
+    let pathname;
+    try {
+      url = new URL(text);
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return invalid("bad-url");
+    }
+    if (url.host) return invalid("remote-file");
+    return fileTarget(/^\/[a-z]:/i.test(pathname) ? pathname.slice(1) : pathname);
+  }
+  const candidate = BARE_LOCAL.test(text) ? `http://${text}` : text;
+  if (!URL_SCHEME.test(candidate) || DRIVE_PATH.test(candidate)) return fileTarget(text);
+  let url;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return invalid("bad-url");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return invalid("scheme");
+  if (url.username || url.password) return invalid("credentials");
+  if (!LOCAL_HOSTS.has(url.hostname.replace(/\.$/, ""))) return { type: "external", url: url.href, label: url.host + (url.pathname === "/" ? "" : url.pathname) };
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  if (String(studioPort) === port) return invalid("studio");
+  return { type: "local", url: url.href, label: url.host + (url.pathname === "/" ? "" : url.pathname) };
+}
+
+// The text that classifyTarget turns back into the same target (history keeps these strings).
+export function targetText(target) {
+  return target.type === "file" ? target.path : target.url;
+}
+
+// Paths worth linking inside a message: a known file type; a bare name only for documents/media (not `console.log`).
+const BARE_LINK_KINDS = new Set(["image", "pdf", "html", "markdown", "audio", "video"]);
+export function isOpenablePath(text) {
+  const target = classifyTarget(text);
+  if (target.type !== "file" || target.kind === "other" || /\s/.test(target.path)) return false;
+  return /\//.test(target.path) || BARE_LINK_KINDS.has(target.kind);
+}
+
+// A link inside the file at `basePath` (e.g. a Markdown file) resolved to a project-style path.
+export function resolveSibling(basePath, relative) {
+  if (/^(?:[a-z]:|[\\/]|~)/i.test(relative)) return relative;
+  const parts = String(basePath).replace(/\\/g, "/").split("/").slice(0, -1);
+  for (const segment of relative.replace(/\\/g, "/").split("/")) {
+    if (segment === "..") {
+      if (parts.length && parts[parts.length - 1] !== "..") parts.pop();
+      else parts.push("..");
+    } else if (segment && segment !== ".") {
+      parts.push(segment);
+    }
+  }
+  return parts.join("/");
+}
+
+// A click on a link in a message: "inline" opens it in the Navegador, "outside" in the system browser
+// (Ctrl/Cmd/Shift/Alt+click), "ignore" leaves the browser's own behavior (external links, handled clicks, other buttons).
+export function linkAction(target, event) {
+  if (event.defaultPrevented || event.button !== 0 || (target.type !== "file" && target.type !== "local")) return "ignore";
+  return event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ? "outside" : "inline";
+}
+
+export const BROWSER_HISTORY_LIMIT = 20;
+
+// Back/forward history of one project: { items: [text], index }. Immutable; pushing drops the forward part.
+export const emptyBrowserHistory = () => ({ items: [], index: -1 });
+
+export function browserHistoryPush(history, text, limit = BROWSER_HISTORY_LIMIT) {
+  if (history.items[history.index] === text) return history;
+  const items = [...history.items.slice(0, history.index + 1), text].slice(-limit);
+  return { items, index: items.length - 1 };
+}
+
+export function browserHistoryMove(history, step) {
+  const index = history.index + step;
+  return index < 0 || index >= history.items.length ? history : { ...history, index };
+}
+
+export const browserHistoryCurrent = (history) => history.items[history.index] ?? "";
+
+// Reads what localStorage kept (any shape): strings only, newest 20, index clamped.
+export function parseBrowserHistory(raw) {
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return emptyBrowserHistory();
+  }
+  const items = (Array.isArray(data?.items) ? data.items : []).filter((item) => typeof item === "string" && item.trim()).slice(-BROWSER_HISTORY_LIMIT);
+  const index = Number.isInteger(data?.index) ? Math.min(items.length - 1, Math.max(0, data.index)) : items.length - 1;
+  return { items, index };
+}
+
+export function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ------------------------------------------ conversation "⋯" menu + Fast mode
+
+const BUSY_SESSION_STATES = new Set(["fazendo", "aguardando"]);
+
+// Entries of a sidebar row's "⋯" menu, decided purely from the row and the Studio's state.
+//   item: history entry { path, sessionId, state, isSubagent, parentSession }
+//   isOpen: the row is the Studio's open conversation; streaming: its PI is answering now
+//   parentKnown: the sub-PI's parent conversation is in the loaded history
+// A conversation another PI is writing (fazendo/aguardando, not open here) keeps only the read-only entries.
+// Entries that act on a conversation first open it (see app.js), so they stay enabled for closed rows.
+export function sessionMenuItems({ item, isOpen, processExited, streaming, parentKnown }) {
+  const elsewhere = !isOpen && BUSY_SESSION_STATES.has(item.state);
+  const dead = isOpen && processExited ? "PI encerrado" : undefined;
+  const mutating = (id, label, icon, waitsForAnswer) => {
+    const sub = elsewhere ? "Em execução em outro PI" : dead || (isOpen && streaming && waitsForAnswer ? "Aguarde a resposta terminar" : undefined);
+    return { id, label, icon, disabled: Boolean(sub), sub };
+  };
+  const entries = [];
+  if (!isOpen) entries.push({ id: "open", label: "Abrir", icon: "i-folder-open", disabled: false });
+  entries.push(
+    mutating("rename", "Renomear", "i-edit"),
+    { id: "export", label: "Exportar conversa", icon: "i-file", disabled: Boolean(dead), sub: dead },
+    mutating("fork", "Bifurcar a partir de…", "i-branch", true),
+    mutating("clone", "Duplicar", "i-copy", true),
+    { separator: true },
+    { id: "copy-path", label: "Copiar caminho", icon: "i-copy", disabled: !item.path, sub: item.path ? undefined : "Sem arquivo de sessão" },
+    { id: "copy-id", label: "Copiar ID", icon: "i-copy", disabled: !item.sessionId, sub: item.sessionId ? undefined : "Sem ID" },
+  );
+  if (item.isSubagent) {
+    const known = Boolean(item.parentSession) && parentKnown === true;
+    entries.push({ separator: true }, { id: "parent", label: "Ir para a conversa pai", icon: "i-agents", disabled: !known, sub: known ? undefined : "Conversa pai não encontrada" });
+  }
+  return entries;
+}
+
+// Fast mode as the extension reports it (ctx.ui.setStatus("codex-fast-mode", ...)).
+export const FAST_STATUS_KEY = "codex-fast-mode";
+export const FAST_OPTIONS = [
+  { mode: "off", flag: "off", label: "Desligado" },
+  { mode: "subagents", flag: "eco", label: "Eco" },
+  { mode: "all", flag: "on", label: "Fast" },
+  { mode: "ultra", flag: "ultra", label: "Ultra" },
+  { mode: "ultra-subagents", flag: "ultra-eco", label: "Ultra-eco" },
+];
+const FAST_STATUS_MAP = {
+  "⚡🟢": { mode: "all", live: "active" },
+  "⚡🟡": { mode: "all", live: "pending" },
+  "🚀🟢": { mode: "ultra", live: "active" },
+  "🚀🟡": { mode: "ultra", live: "pending" },
+  "⚡ECO": { mode: "subagents", live: "subagents" },
+  "🚀ECO": { mode: "ultra-subagents", live: "subagents" },
+  "⚡SUB": { mode: "all", live: "subagents" },
+  "🚀SUB": { mode: "ultra", live: "subagents" },
+};
+
+// Status text -> { mode, live }; no status (or one we do not know) means off.
+export function fastFromStatus(text) {
+  const key = typeof text === "string" ? text.replace(/[\s\uFE0F]/g, "").toUpperCase() : "";
+  return FAST_STATUS_MAP[key] ?? { mode: "off", live: "off" };
+}
+
+// Same eligibility the extension applies (extensions/codex-fast-mode.ts).
+export function fastModelEligible(model) {
+  const id = model?.id;
+  if (model?.provider !== "openai-codex" || typeof id !== "string") return false;
+  return id.startsWith("gpt-5.6-") || ["gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"].includes(id);
+}
+
+export function ultraModelEligible(model) {
+  return model?.provider === "openai-codex" && model.id === "gpt-6-astra";
+}
+
+const FAST_LIVE_LABELS = { off: "desligado", active: "ativo (aceito pelo provedor)", pending: "aguardando confirmação", subagents: "só subagentes" };
+const FAST_DESCRIPTIONS = {
+  off: "Usa o service tier padrão do provedor.",
+  subagents: "Eco: só subagentes OpenAI Codex compatíveis usam Fast (~1,5–2× mais rápido, 2,5× créditos); a conversa principal fica no tier padrão.",
+  all: "Fast: a conversa e os subagentes compatíveis ficam ~1,5–2× mais rápidos, com 2,5× de consumo de créditos.",
+  ultra: "Ultra: Ultrafast no GPT-6 Astra (até ~8× mais rápido, 8× do limite) e Fast nos demais modelos compatíveis.",
+  "ultra-subagents": "Ultra-eco: subagentes GPT-6 Astra usam Ultrafast e os demais compatíveis usam Fast; a conversa principal fica no tier padrão.",
+};
+
+// Everything the Velocidade section and the composer chip show.
+//   statusText: the extension's current status (undefined when off)  model: the open session's model
+//   selected: optimistic mode while a change is in flight (overrides the reported one)
+//   disabledReason: the whole control is unavailable (no PI / PI exited)
+export function fastPanel({ statusText, model, selected, disabledReason }) {
+  const reported = fastFromStatus(statusText);
+  const mode = selected ?? reported.mode;
+  const live = selected && selected !== reported.mode ? "pending" : reported.live;
+  const known = Boolean(model);
+  const ultraBlocked = known && !ultraModelEligible(model);
+  const noFast = known && !fastModelEligible(model);
+  const options = FAST_OPTIONS.map((option) => {
+    const isUltra = option.mode === "ultra" || option.mode === "ultra-subagents";
+    const reason = disabledReason || (isUltra && ultraBlocked ? "Ultra só no GPT-6 Astra" : "");
+    return { ...option, selected: option.mode === mode, disabled: Boolean(reason) && option.mode !== mode, reason };
+  });
+  const notes = disabledReason ? [disabledReason] : [];
+  if (noFast) notes.push("Este modelo não tem Fast — vale para subagentes elegíveis.");
+  if (ultraBlocked) notes.push("Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra.");
+  const chipIcon = mode === "ultra" || mode === "ultra-subagents" ? "🚀" : "⚡";
+  const chipWord = { all: "Fast", subagents: "Eco", ultra: "Ultra", "ultra-subagents": "Ultra-eco" }[mode];
+  return {
+    mode,
+    live,
+    liveLabel: FAST_LIVE_LABELS[live],
+    description: FAST_DESCRIPTIONS[mode],
+    options,
+    notes,
+    chip: chipWord ? { label: `${chipIcon} ${chipWord}`, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
+  };
+}
+
+// ------------------------------------------------------ following a conversation another PI is writing
+
+// A conversation touched this recently, still running, or run by a working Orca agent is owned elsewhere: the Studio's PI must not switch into it.
+export const OWNED_RECENT_MS = 2 * 60_000;
+export const WATCH_POLL_MS = 1500;
+export const WATCH_ENTRY_MAX = 5000;
+const TITLE_MATCH_MIN = 4;
+
+const agentWorking = (agent) => agent.state === "working" && !agent.interrupted;
+
+// Accent- and case-insensitive; one title being the prefix of the other counts (Orca cuts agent titles, PI derives session titles from the first prompt).
+export function titleMatches(sessionTitle, agentTitle) {
+  const session = squash(foldText(sessionTitle));
+  const agent = squash(foldText(agentTitle));
+  return Math.min(session.length, agent.length) >= TITLE_MATCH_MIN && (session.startsWith(agent) || agent.startsWith(session));
+}
+
+// The conversation a worktree should show: the Studio PI's own when it is busy (kind "live": keep what is open), else the main
+// session titled like a (working first) Orca agent, else the most recently active main session. Sub-PIs are never picked.
+export function pickConversation({ history = [], agents = [], liveBusy = false }) {
+  if (liveBusy) return { kind: "live", item: null };
+  const activity = (item) => toMs(item.lastActivity) ?? 0;
+  const main = history.filter((item) => !item.isSubagent).sort((a, b) => activity(b) - activity(a));
+  const ordered = [...agents].sort((a, b) => Number(agentWorking(b)) - Number(agentWorking(a)));
+  for (const agent of ordered) {
+    const item = main.find((candidate) => titleMatches(candidate.title, agent.title));
+    if (item) return { kind: "agent", item };
+  }
+  return main.length ? { kind: "latest", item: main[0] } : { kind: "none", item: null };
+}
+
+// Is `item` (a history entry: path, title, state, lastActivity, studioOwned) being written by someone other than the Studio's PIs?
+// A file one of the Studio's own PIs had open (`studioOwned`, set by the server) is never "elsewhere", however recently it was written.
+// `why`: "orca" (a working agent: the one titled like it, or any when `fallback` says the title could not be matched),
+// "state" (fazendo/aguardando) or "recent" (modified under OWNED_RECENT_MS ago).
+export function conversationOwner({ item, agents = [], fallback = false, studioFile = null, now = Date.now() }) {
+  if (!item || item.studioOwned || samePath(item.path, studioFile)) return { elsewhere: false, why: "" };
+  if (agents.some((agent) => agentWorking(agent) && (fallback || titleMatches(item.title, agent.title)))) return { elsewhere: true, why: "orca" };
+  if (item.state === "fazendo" || item.state === "aguardando") return { elsewhere: true, why: "state" };
+  const touched = toMs(item.lastActivity);
+  if (touched !== null && now - touched < OWNED_RECENT_MS) return { elsewhere: true, why: "recent" };
+  return { elsewhere: false, why: "" };
+}
+
+// Text of the bar above the read-only composer; "Continuar aqui" is enabled only once nobody writes the conversation.
+export function watchStatus({ elsewhere, where }) {
+  if (!elsewhere) return { text: "Acompanhando — esta conversa parou; já dá para continuar aqui", canContinue: true };
+  return { text: `Acompanhando — esta conversa está rodando ${where === "orca" ? "no terminal do Orca" : "em outro PI"}`, canContinue: false };
+}
+
+// Appends the entries a watch poll returned (`reset` replaces everything). Entries already known by id are skipped;
+// the same array comes back when nothing is new, and only the newest `max` entries are kept.
+export function mergeWatchEntries(current, incoming, { reset = false, max = WATCH_ENTRY_MAX } = {}) {
+  const base = reset ? [] : current;
+  const known = new Set(base.map((entry) => entry.id));
+  const fresh = incoming.filter((entry) => !(typeof entry.id === "string" && known.has(entry.id)));
+  if (!fresh.length && !reset) return current;
+  const merged = base.concat(fresh);
+  return merged.length > max ? merged.slice(-max) : merged;
+}
+
+// Thread messages of a watched file: the branch ending at its last entry, like get_entries does for the open session.
+export function watchMessages(entries) {
+  return entriesToMessages(entries, entries.findLast((entry) => typeof entry.id === "string")?.id);
 }

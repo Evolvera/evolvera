@@ -4,6 +4,32 @@ import { describe, test } from "node:test";
 import vm from "node:vm";
 import * as lib from "../public/lib.js";
 
+describe("composer send safeguards", () => {
+  test("rejects oversized encoded RPC payloads and reports captured images without replacing a newer draft", () => {
+    const command = { id: "request-1", type: "prompt", message: "", images: [{ type: "image", mimeType: "image/png", data: "abc" }] };
+    assert.equal(lib.requestBodyBytes(command), Buffer.byteLength(JSON.stringify(command)));
+    assert.equal(lib.requestExceedsLimit(command, Buffer.byteLength(JSON.stringify(command))), false);
+    assert.equal(lib.requestExceedsLimit(command, Buffer.byteLength(JSON.stringify(command)) - 1), true);
+    const captured = [{ data: "old" }];
+    assert.deepEqual(lib.restoreFailedDraft("", [], "", captured), { message: "", attachments: captured });
+    const newer = [{ data: "new" }];
+    assert.deepEqual(lib.restoreFailedDraft("new draft", newer, "sent", captured), { message: "new draft", attachments: newer });
+  });
+
+  test("extension slash commands always use prompt while built-ins and ordinary text keep their mode", () => {
+    const commands = [{ name: "deploy", source: "extension" }, { name: "template", source: "prompt" }];
+    assert.equal(lib.composerSendType("/deploy staging", "steer", commands), "prompt");
+    assert.equal(lib.composerSendType("/deploy staging", "follow_up", commands), "prompt");
+    assert.equal(lib.composerSendType("/new", "steer", commands), "steer");
+    assert.equal(lib.composerSendType("/template", "steer", commands), "steer");
+    assert.equal(lib.composerSendType("hello", "follow_up", commands), "follow_up");
+    assert.equal(lib.composerSendType("hello", "prompt", commands), "prompt");
+    assert.equal(lib.composerSendType("/unknown", "steer", commands), "steer");
+    assert.equal(lib.composerSendType(null, "prompt", commands), "prompt");
+    assert.equal(lib.composerSendType("/deploy args", "steer", null), "steer");
+  });
+});
+
 describe("text utils", () => {
   test("reconcileEntries keeps prompts submitted after a stale entries snapshot", () => {
     const pending = { role: "user", content: [{ type: "text", text: "run this" }], _optimistic: true };
@@ -16,6 +42,51 @@ describe("text utils", () => {
   test("escapeHtml", () => {
     assert.equal(lib.escapeHtml(`<a href="x">'&'</a>`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;");
     assert.equal(lib.escapeHtml(null), "");
+  });
+
+  test("session switches defer conversation reset until acknowledged and clear stale queue on reconnect", async () => {
+    const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+    // openSession routes to switchSession (or read-only following); the switch itself holds the rollback.
+    const openStart = app.indexOf("function openSession(");
+    assert.match(app.slice(openStart, app.indexOf("\n}", openStart)), /showConversation\(/);
+    for (const name of ["switchSession", "newSession"]) {
+      const start = app.indexOf(`function ${name}(`);
+      const end = app.indexOf("\n}", start) + 2;
+      const body = app.slice(start, end);
+      assert.match(body, /withSessionRollback/);
+      assert.ok(body.indexOf("await applied") < body.indexOf("resetConversation()"));
+    }
+    const reset = app.slice(app.indexOf("function resetConversation()"), app.indexOf("\n}", app.indexOf("function resetConversation()")));
+    assert.match(reset, /renderQueue\(\)/);
+    assert.match(app, /if \(!state\.replaying\) \{\s*state\.queue = \{ steering: \[\], followUp: \[\] \};\s*renderQueue\(\);/);
+    assert.match(app, /if \(!state\.replaying \|\| payload\.type === "queue_update"\) handleRpc\(payload\)/);
+  });
+
+  test("withSessionRollback restores state on cancelled or failed session changes", async () => {
+    const state = { sessionFile: "/old.jsonl" };
+    const previous = { ...state };
+    let rollbacks = 0;
+    const restore = () => { Object.assign(state, previous); rollbacks++; };
+    const cancelled = await lib.withSessionRollback(async () => {
+      state.sessionFile = "/wrong.jsonl";
+      return { data: { cancelled: true } };
+    }, restore);
+    assert.equal(cancelled.data.cancelled, true);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 1);
+    const failed = await lib.withSessionRollback(async () => {
+      state.sessionFile = "/failed.jsonl";
+      return { success: false, error: "switch failed" };
+    }, restore);
+    assert.equal(failed.success, false);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 2);
+    await assert.rejects(lib.withSessionRollback(async () => {
+      state.sessionFile = "/failed.jsonl";
+      throw new Error("switch failed");
+    }, restore), /switch failed/);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 3);
   });
 
   test("session gate: prompts wait for the in-flight switch, never reject, clear themselves", async () => {
@@ -56,6 +127,22 @@ describe("text utils", () => {
     assert.equal(lib.isAwaitedResponse({ type: "response" }, pending), false);
     assert.equal(lib.isAwaitedResponse({ type: "agent_start", id: "ns1" }, pending), false);
     assert.equal(lib.isAwaitedResponse(null, pending), false);
+  });
+
+  test("Orca follow advances only after the target project opens", () => {
+    assert.equal(lib.followedPath(null, "/tree/a", false), null);
+    assert.equal(lib.followedPath(null, "/tree/a", true), "/tree/a");
+  });
+
+  test("detaching a project's pending RPCs rejects and clears their timers", async () => {
+    let settled = false;
+    let cleared = false;
+    const oldProject = new Map([["a", { projectId: "a", timer: 1, reject(error) { settled = error.detached; } }], ["b", { projectId: "b", timer: 2, reject() { assert.fail("other project rejected"); } }]]);
+    const result = lib.detachProjectRequests(oldProject, "a", () => { cleared = true; });
+    assert.equal(result, 1);
+    assert.equal(settled, true);
+    assert.equal(cleared, true);
+    assert.deepEqual([...oldProject.keys()], ["b"]);
   });
 
   test("runGated claims the gate synchronously and chains after the switch in flight", async () => {
@@ -601,7 +688,7 @@ describe("inspector layout", () => {
     assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
     assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
     assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
-    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "worktrees"]);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "browser", "worktrees"]);
   });
 
   test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
@@ -1853,6 +1940,11 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.deepEqual(lib.problemsFromEvent({ type: "agent_start" }), []);
   });
 
+  test("activity cursor sends the server epoch when available and tolerates its absence", () => {
+    assert.equal(lib.activitySinceUrl(8, "run-1"), "/api/activity?since=8&epoch=run-1");
+    assert.equal(lib.activitySinceUrl(8), "/api/activity?since=8");
+  });
+
   test("activityDot / unseenActivity / activityRows", () => {
     assert.equal(lib.activityDot({ kind: "subagent_end", ok: true }), "pronto");
     assert.equal(lib.activityDot({ kind: "subagent_end", ok: false }), "erro");
@@ -1910,5 +2002,413 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 0 }), 1);
     assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 2 }), 2);
     assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: true, serverCount: 5 }), 1, "the open project trusts its own history");
+  });
+});
+
+describe("navegador (lib)", () => {
+  test("fileInfo / viewerKind: by extension (case-insensitive), special names, fonts and unknowns", () => {
+    const kinds = {
+      "a.png": "image", "A.JPG": "image", "x/y.svg": "image", "doc.pdf": "pdf", "index.html": "html", "p.htm": "html", "README.md": "markdown",
+      "a.mp3": "audio", "a.mp4": "video", "src/app.js": "text", "style.css": "text", "data.json": "text", ".gitignore": "text",
+      Dockerfile: "text", "C:\\proj\\Makefile": "text", README: "text", "a.tar.gz": "other", noext: "other", "dot.": "other", "f.woff2": "other", "m.wasm": "other",
+    };
+    for (const [name, kind] of Object.entries(kinds)) assert.equal(lib.viewerKind(name), kind, name);
+    assert.equal(lib.fileInfo("a.js").mime, "text/javascript; charset=utf-8");
+    assert.equal(lib.fileInfo("a.css").mime, "text/css; charset=utf-8");
+    assert.equal(lib.fileInfo("a.json").mime, "application/json; charset=utf-8");
+    assert.equal(lib.fileInfo("a.PNG").mime, "image/png");
+    assert.equal(lib.fileInfo("a.jpeg").mime, "image/jpeg");
+    assert.equal(lib.fileInfo("a.html").mime, "text/html; charset=utf-8");
+    assert.equal(lib.fileInfo("a.py").mime, "text/plain; charset=utf-8");
+    assert.equal(lib.fileInfo("Dockerfile").mime, "text/plain; charset=utf-8");
+    assert.equal(lib.fileInfo("f.woff2").mime, "font/woff2");
+    assert.deepEqual(lib.fileInfo("a.zip"), { kind: "other", mime: "application/octet-stream" });
+  });
+
+  test("classifyTarget: files (relative, absolute, Windows, ~, file://, :line), never confused with schemes", () => {
+    const file = (input) => lib.classifyTarget(input);
+    assert.deepEqual(file("src/app.js"), { type: "file", path: "src/app.js", name: "app.js", kind: "text" });
+    assert.deepEqual(file("  ./docs/a b.md  "), { type: "file", path: "./docs/a b.md", name: "a b.md", kind: "markdown" });
+    assert.deepEqual(file("C:\\Users\\me\\pic.png"), { type: "file", path: "C:/Users/me/pic.png", name: "pic.png", kind: "image" });
+    assert.equal(file("c:/x/y.pdf").path, "c:/x/y.pdf");
+    assert.equal(file("\\\\srv\\share\\x.txt").path, "//srv/share/x.txt");
+    assert.equal(file("~/notes.md").path, "~/notes.md");
+    assert.equal(file("src/app.js:42").path, "src/app.js");
+    assert.equal(file("src/app.js:42:7").path, "src/app.js");
+    assert.equal(file("/etc/hosts").kind, "other");
+    assert.equal(file("example.com").type, "file", "no scheme: a file name, never a site");
+    assert.equal(file("localhost.txt").type, "file");
+    assert.deepEqual(file("file:///C:/Users/me/a%20b.md"), { type: "file", path: "C:/Users/me/a b.md", name: "a b.md", kind: "markdown" });
+    assert.equal(file("file:///home/me/x.js").path, "/home/me/x.js");
+    assert.deepEqual([file("file://server/share/a.txt"), file("file:///%zz/a"), file("file://[")].map((item) => item.reason), ["remote-file", "bad-url", "bad-url"]);
+    assert.equal(lib.classifyTarget(null).reason, "empty");
+    assert.equal(file("   ").reason, "empty");
+    assert.equal(file("a\u0001b").reason, "control");
+  });
+
+  test("classifyTarget: local dev servers, Studio's own port, external pages and refused schemes", () => {
+    const local = (input, options) => lib.classifyTarget(input, options);
+    assert.deepEqual(local("localhost:3000"), { type: "local", url: "http://localhost:3000/", label: "localhost:3000" });
+    assert.deepEqual(local("127.0.0.1:5173/app?x=1"), { type: "local", url: "http://127.0.0.1:5173/app?x=1", label: "127.0.0.1:5173/app" });
+    assert.equal(local("http://[::1]:8080/").type, "local");
+    assert.equal(local("https://localhost:3443/x").url, "https://localhost:3443/x");
+    assert.equal(local("localhost").url, "http://localhost/");
+    assert.equal(local("http://LOCALHOST:3000").url, "http://localhost:3000/");
+    for (const own of ["http://localhost:4123/x", "127.0.0.1:4123", "http://[::1]:4123", "http://localhost:4123@localhost:4123"]) {
+      assert.equal(local(own, { studioPort: 4123 }).type === "local", false, own);
+    }
+    assert.equal(local("localhost:4123", { studioPort: "4123" }).reason, "studio");
+    assert.equal(local("http://localhost.:4123/", { studioPort: 4123 }).reason, "studio", "a trailing dot is the same host");
+    assert.equal(local("http://localhost.:3000/").type, "local");
+    assert.equal(local("localhost:4124", { studioPort: "4123" }).type, "local");
+    assert.equal(local("http://localhost", { studioPort: 80 }).reason, "studio");
+    assert.equal(local("https://localhost", { studioPort: 443 }).reason, "studio");
+    assert.equal(local("http://localhost", { studioPort: 4123 }).type, "local");
+    assert.deepEqual(local("https://example.com/a/b"), { type: "external", url: "https://example.com/a/b", label: "example.com/a/b" });
+    assert.deepEqual(local("https://example.com"), { type: "external", url: "https://example.com/", label: "example.com" });
+    assert.equal(local("http://127.0.0.2:4123/").type, "external", "only loopback names count as local");
+    assert.deepEqual(["javascript:alert(1)", "data:text/html,x", "ftp://x.dev/a", "mailto:a@b.c", "foo:bar", "C:foo"].map((input) => local(input).reason), Array(6).fill("scheme"));
+    assert.equal(local("http://").reason, "bad-url");
+    assert.equal(local("http://user:pw@localhost:3000/").reason, "credentials");
+    assert.equal(local("https://user@example.com/").reason, "credentials");
+  });
+
+  test("targetText round-trips through classifyTarget", () => {
+    for (const input of ["src/app.js", "C:\\a\\b.png", "localhost:3000/x", "https://example.com/a"]) {
+      const target = lib.classifyTarget(input);
+      assert.deepEqual(lib.classifyTarget(lib.targetText(target)), target, input);
+    }
+  });
+
+  test("isOpenablePath: only paths worth a link (known type; bare names only for documents and media)", () => {
+    for (const yes of ["src/app.js", "docs/readme.md", "C:\\p\\a.png", "README.md", "pic.png", "page.html", "report.pdf", "clip.mp4", "logs/app.log", "./a/b.css"]) assert.equal(lib.isOpenablePath(yes), true, yes);
+    for (const no of ["app.js", "console.log", "a.tar.gz", "dir/file.unknown", "http://localhost:3000", "https://x.dev/a.png", "javascript:void", "", "a b.md", "src/a b.js", "x.y/z"]) assert.equal(lib.isOpenablePath(no), false, no);
+  });
+
+  test("renderInline links project paths and keeps everything else as before", () => {
+    assert.equal(lib.renderInline("veja `src/app.js` agora"), 'veja <a href="#" class="path-link" data-open="src/app.js"><code>src/app.js</code></a> agora');
+    assert.equal(lib.renderInline("`app.js` e `a<b>`"), "<code>app.js</code> e <code>a&lt;b&gt;</code>");
+    assert.equal(lib.renderInline("[o plano](docs/plano.md)"), '<a href="#" class="path-link" data-open="docs/plano.md">o plano</a>');
+    assert.equal(lib.renderInline('[x](a"b.md)'), '<a href="#" class="path-link" data-open="a&quot;b.md">x</a>');
+    assert.equal(lib.renderInline("[x](nada)"), "x");
+    assert.equal(lib.renderInline("[x](javascript:void)"), "x");
+  });
+
+  test("resolveSibling: links inside a file resolve against its folder", () => {
+    assert.equal(lib.resolveSibling("docs/a.md", "b.md"), "docs/b.md");
+    assert.equal(lib.resolveSibling("a.md", "b.md"), "b.md");
+    assert.equal(lib.resolveSibling("docs/sub/a.md", "../x.md"), "docs/x.md");
+    assert.equal(lib.resolveSibling("a.md", "../x.md"), "../x.md");
+    assert.equal(lib.resolveSibling("a.md", "../../x.md"), "../../x.md");
+    assert.equal(lib.resolveSibling("docs/a.md", "./c//./d.md"), "docs/c/d.md");
+    assert.equal(lib.resolveSibling("docs\\a.md", "..\\b.md"), "b.md");
+    assert.equal(lib.resolveSibling("/abs/dir/a.md", "b.md"), "/abs/dir/b.md");
+    for (const absolute of ["/etc/x", "\\x", "C:\\x", "c:/x", "~/x"]) assert.equal(lib.resolveSibling("docs/a.md", absolute), absolute);
+  });
+
+  test("linkAction: plain click opens inline, modifiers open outside, everything else is left alone", () => {
+    const file = lib.classifyTarget("a.md");
+    const local = lib.classifyTarget("localhost:3000");
+    const click = (extra = {}) => ({ button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, defaultPrevented: false, ...extra });
+    assert.equal(lib.linkAction(file, click()), "inline");
+    assert.equal(lib.linkAction(local, click()), "inline");
+    for (const modifier of ["ctrlKey", "metaKey", "shiftKey", "altKey"]) assert.equal(lib.linkAction(file, click({ [modifier]: true })), "outside", modifier);
+    assert.equal(lib.linkAction(file, click({ button: 1 })), "ignore");
+    assert.equal(lib.linkAction(file, click({ defaultPrevented: true })), "ignore");
+    assert.equal(lib.linkAction(lib.classifyTarget("https://example.com"), click()), "ignore");
+    assert.equal(lib.linkAction(lib.classifyTarget("javascript:x"), click()), "ignore");
+  });
+
+  test("history: push drops the forward part, de-dupes, keeps the newest 20; back/forward stop at the ends", () => {
+    let history = lib.emptyBrowserHistory();
+    assert.deepEqual(history, { items: [], index: -1 });
+    assert.equal(lib.browserHistoryCurrent(history), "");
+    assert.equal(lib.browserHistoryMove(history, -1), history);
+    assert.equal(lib.browserHistoryMove(history, 1), history);
+    history = lib.browserHistoryPush(history, "a");
+    assert.equal(lib.browserHistoryPush(history, "a"), history, "same target twice in a row is one entry");
+    history = lib.browserHistoryPush(lib.browserHistoryPush(history, "b"), "c");
+    assert.deepEqual(history, { items: ["a", "b", "c"], index: 2 });
+    assert.equal(lib.browserHistoryMove(history, 1), history, "no forward at the end");
+    history = lib.browserHistoryMove(history, -1);
+    assert.equal(lib.browserHistoryCurrent(history), "b");
+    assert.equal(lib.browserHistoryMove(lib.browserHistoryMove(history, -1), -1).index, 0, "no back before the first");
+    history = lib.browserHistoryMove(history, 1);
+    assert.equal(lib.browserHistoryCurrent(history), "c");
+    history = lib.browserHistoryPush(lib.browserHistoryMove(history, -2), "z");
+    assert.deepEqual(history, { items: ["a", "z"], index: 1 });
+    let long = lib.emptyBrowserHistory();
+    for (let n = 0; n < 25; n++) long = lib.browserHistoryPush(long, `t${n}`);
+    assert.equal(long.items.length, 20);
+    assert.deepEqual([long.items[0], long.items[19], long.index], ["t5", "t24", 19]);
+    assert.equal(lib.browserHistoryPush(lib.emptyBrowserHistory(), "a", 1).items.length, 1);
+    assert.deepEqual(lib.browserHistoryPush({ items: ["a"], index: 0 }, "b", 1), { items: ["b"], index: 0 });
+  });
+
+  test("parseBrowserHistory: whatever localStorage holds becomes a valid history", () => {
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":0}'), { items: ["a", "b"], index: 0 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"]}'), { items: ["a", "b"], index: 1 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":9}'), { items: ["a", "b"], index: 1 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":-3}'), { items: ["a", "b"], index: 0 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a",1,null," ","b"],"index":1.5}'), { items: ["a", "b"], index: 1 });
+    const many = JSON.stringify({ items: Array.from({ length: 30 }, (_, n) => `t${n}`), index: 29 });
+    assert.deepEqual(lib.parseBrowserHistory(many).items.slice(0, 2), ["t10", "t11"]);
+    for (const bad of [null, "", "{oops", "[]", "7", '{"items":"x"}', '{"items":[]}']) assert.deepEqual(lib.parseBrowserHistory(bad), { items: [], index: -1 }, String(bad));
+  });
+
+  test("formatBytes", () => {
+    assert.deepEqual([0, 1023, 1024, 1536, 1048576, 5.5 * 1048576].map(lib.formatBytes), ["0 B", "1023 B", "1.0 KB", "1.5 KB", "1.0 MB", "5.5 MB"]);
+    assert.equal(lib.formatBytes(undefined), "0 B");
+  });
+});
+
+describe("conversation ⋯ menu", () => {
+  const closed = { path: "/s/a.jsonl", sessionId: "abc", state: "pronto" };
+  const byId = (entries, id) => entries.find((entry) => entry.id === id);
+  const ids = (entries) => entries.map((entry) => entry.id ?? "|");
+  const menu = (item, overrides = {}) => lib.sessionMenuItems({ item, isOpen: false, processExited: false, streaming: false, parentKnown: false, ...overrides });
+  const real = (entries) => entries.filter((entry) => !entry.separator);
+
+  test("a closed idle conversation offers every action, enabled (they open it first)", () => {
+    const entries = menu(closed);
+    assert.deepEqual(ids(entries), ["open", "rename", "export", "fork", "clone", "|", "copy-path", "copy-id"]);
+    assert.ok(real(entries).every((entry) => entry.disabled === false && entry.sub === undefined));
+  });
+
+  test("the open conversation has no Abrir; streaming blocks fork/duplicate but not rename", () => {
+    const idle = menu(closed, { isOpen: true });
+    assert.equal(byId(idle, "open"), undefined);
+    assert.ok(real(idle).every((entry) => !entry.disabled));
+    const streaming = menu(closed, { isOpen: true, streaming: true });
+    assert.equal(byId(streaming, "rename").disabled, false);
+    assert.equal(byId(streaming, "export").disabled, false);
+    for (const id of ["fork", "clone"]) assert.deepEqual([byId(streaming, id).disabled, byId(streaming, id).sub], [true, "Aguarde a resposta terminar"]);
+    // Streaming of the Studio's PI says nothing about a row that is not open.
+    assert.equal(byId(menu(closed, { streaming: true }), "fork").disabled, false);
+  });
+
+  test("an exited PI disables what needs it on the open conversation only", () => {
+    const open = menu(closed, { isOpen: true, processExited: true });
+    for (const id of ["rename", "export", "fork", "clone"]) assert.deepEqual([byId(open, id).disabled, byId(open, id).sub], [true, "PI encerrado"]);
+    assert.equal(byId(open, "copy-path").disabled, false);
+    assert.equal(byId(menu(closed, { processExited: true }), "clone").disabled, false);
+  });
+
+  test("a conversation another PI is writing keeps only the read-only entries", () => {
+    for (const state of ["fazendo", "aguardando"]) {
+      const entries = menu({ ...closed, state });
+      for (const id of ["rename", "fork", "clone"]) assert.deepEqual([byId(entries, id).disabled, byId(entries, id).sub], [true, "Em execução em outro PI"]);
+      assert.equal(byId(entries, "export").disabled, false);
+      assert.equal(byId(entries, "open").disabled, false);
+    }
+    // The Studio's own live conversation is "fazendo" too, but it is open here.
+    assert.equal(byId(menu({ ...closed, state: "fazendo" }, { isOpen: true }), "rename").disabled, false);
+  });
+
+  test("copy entries need a path / an id", () => {
+    const entries = menu({ state: "nova" });
+    assert.deepEqual([byId(entries, "copy-path").disabled, byId(entries, "copy-path").sub], [true, "Sem arquivo de sessão"]);
+    assert.deepEqual([byId(entries, "copy-id").disabled, byId(entries, "copy-id").sub], [true, "Sem ID"]);
+  });
+
+  test("sub-PI rows add 'Ir para a conversa pai', disabled when the parent is not loaded", () => {
+    const sub = { ...closed, isSubagent: true, parentSession: "/s/parent.jsonl" };
+    const known = menu(sub, { parentKnown: true });
+    assert.deepEqual(ids(known).slice(-2), ["|", "parent"]);
+    assert.equal(byId(known, "parent").disabled, false);
+    assert.deepEqual([byId(menu(sub), "parent").disabled, byId(menu(sub), "parent").sub], [true, "Conversa pai não encontrada"]);
+    assert.equal(byId(menu({ ...closed, isSubagent: true }, { parentKnown: true }), "parent").disabled, true);
+    assert.equal(byId(menu(closed, { parentKnown: true }), "parent"), undefined);
+  });
+});
+
+describe("Fast mode", () => {
+  const astra = { provider: "openai-codex", id: "gpt-6-astra" };
+  const sol = { provider: "openai-codex", id: "gpt-6-sol" };
+
+  test("fastFromStatus maps every status string the extension sets", () => {
+    const cases = [
+      ["⚡🟢", "all", "active"], ["⚡🟡", "all", "pending"], ["🚀🟢", "ultra", "active"], ["🚀🟡", "ultra", "pending"],
+      ["⚡ECO", "subagents", "subagents"], ["🚀ECO", "ultra-subagents", "subagents"], ["⚡SUB", "all", "subagents"], ["🚀SUB", "ultra", "subagents"],
+    ];
+    for (const [text, mode, live] of cases) assert.deepEqual(lib.fastFromStatus(text), { mode, live }, text);
+    // Tolerates variation selectors, spaces and case.
+    assert.deepEqual(lib.fastFromStatus(" ⚡\uFE0Feco "), { mode: "subagents", live: "subagents" });
+    for (const text of [undefined, null, "", "outra coisa", 7]) assert.deepEqual(lib.fastFromStatus(text), { mode: "off", live: "off" });
+  });
+
+  test("model eligibility mirrors the extension", () => {
+    const codex = (id) => ({ provider: "openai-codex", id });
+    for (const id of ["gpt-5.6-sol", "gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"]) assert.equal(lib.fastModelEligible(codex(id)), true, id);
+    assert.equal(lib.fastModelEligible(codex("gpt-4o")), false);
+    assert.equal(lib.fastModelEligible({ provider: "anthropic", id: "gpt-6-astra" }), false);
+    assert.equal(lib.fastModelEligible({ provider: "openai-codex" }), false);
+    assert.equal(lib.fastModelEligible(undefined), false);
+    assert.equal(lib.ultraModelEligible(astra), true);
+    assert.equal(lib.ultraModelEligible(sol), false);
+    assert.equal(lib.ultraModelEligible({ provider: "x", id: "gpt-6-astra" }), false);
+    assert.equal(lib.ultraModelEligible(undefined), false);
+  });
+
+  test("fastPanel: segmented options, live state, explanation and chip per mode", () => {
+    assert.deepEqual(lib.FAST_OPTIONS.map((option) => option.label), ["Desligado", "Eco", "Fast", "Ultra", "Ultra-eco"]);
+    const off = lib.fastPanel({ statusText: undefined, model: astra });
+    assert.deepEqual([off.mode, off.liveLabel, off.chip, off.notes], ["off", "desligado", null, []]);
+    assert.deepEqual(off.options.filter((option) => option.selected).map((option) => option.flag), ["off"]);
+    assert.ok(off.options.every((option) => !option.disabled));
+    const expected = {
+      "⚡🟢": ["all", "ativo (aceito pelo provedor)", "⚡ Fast"],
+      "⚡🟡": ["all", "aguardando confirmação", "⚡ Fast"],
+      "⚡ECO": ["subagents", "só subagentes", "⚡ Eco"],
+      "🚀🟢": ["ultra", "ativo (aceito pelo provedor)", "🚀 Ultra"],
+      "🚀ECO": ["ultra-subagents", "só subagentes", "🚀 Ultra-eco"],
+    };
+    for (const [status, [mode, label, chip]] of Object.entries(expected)) {
+      const panel = lib.fastPanel({ statusText: status, model: astra });
+      assert.deepEqual([panel.mode, panel.liveLabel, panel.chip.label], [mode, label, chip], status);
+      assert.ok(panel.chip.title.includes(panel.description));
+      assert.ok(panel.description.length > 20);
+    }
+    assert.match(lib.fastPanel({ statusText: "⚡🟢", model: astra }).description, /1,5–2×.*2,5×/);
+    assert.match(lib.fastPanel({ statusText: "⚡ECO", model: astra }).description, /só subagentes/);
+  });
+
+  test("fastPanel: Ultra needs GPT-6 Astra; a model without Fast gets a note but stays selectable", () => {
+    const panel = lib.fastPanel({ statusText: undefined, model: sol });
+    const option = (flag) => panel.options.find((candidate) => candidate.flag === flag);
+    for (const flag of ["ultra", "ultra-eco"]) assert.deepEqual([option(flag).disabled, option(flag).reason], [true, "Ultra só no GPT-6 Astra"]);
+    for (const flag of ["off", "eco", "on"]) assert.equal(option(flag).disabled, false);
+    assert.deepEqual(panel.notes, ["Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra."]);
+    const claude = lib.fastPanel({ statusText: "⚡SUB", model: { provider: "anthropic", id: "claude" } });
+    assert.equal(claude.mode, "all");
+    assert.equal(claude.liveLabel, "só subagentes");
+    assert.deepEqual(claude.notes, ["Este modelo não tem Fast — vale para subagentes elegíveis.", "Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra."]);
+    assert.equal(claude.options.find((candidate) => candidate.flag === "on").disabled, false);
+    // A selected option never becomes unselectable; no model known means no restriction.
+    assert.equal(lib.fastPanel({ statusText: "🚀ECO", model: sol }).options.find((candidate) => candidate.flag === "ultra-eco").disabled, false);
+    assert.ok(lib.fastPanel({ statusText: undefined, model: undefined }).options.every((candidate) => !candidate.disabled));
+  });
+
+  test("fastPanel: an optimistic choice overrides the status and reads as pending; no PI disables the rest", () => {
+    const pending = lib.fastPanel({ statusText: undefined, model: astra, selected: "all" });
+    assert.deepEqual([pending.mode, pending.live, pending.liveLabel, pending.chip.label], ["all", "pending", "aguardando confirmação", "⚡ Fast"]);
+    // Choosing what is already reported is not a change.
+    assert.equal(lib.fastPanel({ statusText: "⚡🟢", model: astra, selected: "all" }).live, "active");
+    const gone = lib.fastPanel({ statusText: "⚡ECO", model: astra, disabledReason: "PI indisponível." });
+    assert.deepEqual(gone.notes, ["PI indisponível."]);
+    assert.deepEqual(gone.options.map((option) => option.disabled), [true, false, true, true, true]);
+    assert.equal(gone.options[1].selected, true);
+  });
+});
+
+describe("following a conversation owned elsewhere", () => {
+  const T0 = Date.parse("2025-03-07T12:00:00Z");
+  const ago = (ms) => new Date(T0 - ms).toISOString();
+  const row = (title, minutesAgo, extra = {}) => ({ path: `/s/${title}.jsonl`, title, lastActivity: ago(minutesAgo * 60_000), isSubagent: false, state: "pronto", ...extra });
+
+  test("titleMatches: accents, case, whitespace and prefix in either direction; short or empty never match", () => {
+    assert.equal(lib.titleMatches("Corrigir a  Configuração do Servidor", "corrigir a configuracao"), true);
+    assert.equal(lib.titleMatches("Corrigir", "CORRIGIR a configuração do servidor, depois testar tudo"), true);
+    assert.equal(lib.titleMatches("Outra tarefa", "Corrigir a configuração"), false);
+    assert.equal(lib.titleMatches("abc", "abcdef"), false, "below the minimum length");
+    assert.equal(lib.titleMatches("", "Corrigir"), false);
+    assert.equal(lib.titleMatches(undefined, undefined), false);
+  });
+
+  test("pickConversation: the Studio's busy PI wins and keeps what is open", () => {
+    const history = [row("Alpha tarefa", 1)];
+    assert.deepEqual(lib.pickConversation({ history, agents: [{ state: "working", title: "Alpha tarefa" }], liveBusy: true }), { kind: "live", item: null });
+  });
+
+  test("pickConversation: the main session titled like the agent beats a more recent one", () => {
+    const history = [row("Refatorar o login", 1), row("Corrigir a configuração", 30), row("Corrigir a configuração do CI", 90)];
+    const agents = [{ state: "done", title: "corrigir a configuracao" }];
+    const pick = lib.pickConversation({ history, agents });
+    assert.equal(pick.kind, "agent");
+    assert.equal(pick.item.title, "Corrigir a configuração", "among the matches the most recently active one");
+  });
+
+  test("pickConversation: a working agent's title is tried before a finished one's", () => {
+    const history = [row("Tarefa antiga pronta", 5), row("Tarefa nova rodando", 50)];
+    const agents = [{ state: "done", title: "Tarefa antiga pronta" }, { state: "working", title: "Tarefa nova rodando" }, { state: "working", interrupted: true, title: "Tarefa antiga pronta" }];
+    assert.equal(lib.pickConversation({ history, agents }).item.title, "Tarefa nova rodando");
+  });
+
+  test("pickConversation: sub-PIs are ignored; no match falls back to the latest main session", () => {
+    const history = [row("Sub tarefa do agente", 1, { isSubagent: true }), row("Conversa velha", 600), row("Conversa recente", 20), row("Sem data", 0, { lastActivity: "bogus" })];
+    const pick = lib.pickConversation({ history, agents: [{ state: "working", title: "Sub tarefa do agente" }, { state: "done", title: "Nada a ver" }] });
+    assert.deepEqual([pick.kind, pick.item.title], ["latest", "Conversa recente"]);
+    assert.equal(lib.pickConversation({ history }).item.title, "Conversa recente");
+  });
+
+  test("pickConversation: nothing to show", () => {
+    assert.deepEqual(lib.pickConversation({}), { kind: "none", item: null });
+    assert.deepEqual(lib.pickConversation({ history: [row("Só sub-PI aqui", 1, { isSubagent: true })] }), { kind: "none", item: null });
+  });
+
+  test("conversationOwner: every ownership condition and the 2-minute edge", () => {
+    const quiet = row("Tarefa parada", 10);
+    const own = (item, extra = {}) => lib.conversationOwner({ item, now: T0, ...extra });
+    assert.deepEqual(own(quiet), { elsewhere: false, why: "" });
+    assert.deepEqual(own(null), { elsewhere: false, why: "" });
+    // The Studio's own file is never "elsewhere", however fresh.
+    assert.deepEqual(own(row("Tarefa parada", 0, { state: "fazendo" }), { studioFile: "/S/Tarefa parada.jsonl" }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0), { studioFile: "/other.jsonl" }), { elsewhere: true, why: "recent" });
+    // A file one of the Studio's PIs had open (server flag) is not "elsewhere" either: fresh, running or matched by a working agent.
+    for (const extra of [{}, { state: "fazendo" }]) assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: true, ...extra })), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: true }), { agents: [{ state: "working", title: "tarefa parada" }], fallback: true }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0, { studioOwned: false })), { elsewhere: true, why: "recent" });
+    // A working Orca agent titled like it (not interrupted, not another title).
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "tarefa parada" }] }), { elsewhere: true, why: "orca" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", interrupted: true, title: "tarefa parada" }] }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "done", title: "tarefa parada" }] }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "Outra coisa qualquer" }] }), { elsewhere: false, why: "" });
+    // The fallback pick (no title match possible) is owned by any working agent.
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "Outra coisa qualquer" }], fallback: true }), { elsewhere: true, why: "orca" });
+    // File state.
+    assert.deepEqual(own(row("Tarefa parada", 10, { state: "fazendo" })), { elsewhere: true, why: "state" });
+    assert.deepEqual(own(row("Tarefa parada", 10, { state: "aguardando" })), { elsewhere: true, why: "state" });
+    for (const state of ["pronto", "parado", "erro", "nova"]) assert.equal(own(row("Tarefa parada", 10, { state })).elsewhere, false, state);
+    // Modified under 2 minutes ago is owned; exactly 2 minutes is not.
+    assert.deepEqual(own({ ...quiet, lastActivity: ago(119_999) }), { elsewhere: true, why: "recent" });
+    assert.deepEqual(own({ ...quiet, lastActivity: ago(120_000) }), { elsewhere: false, why: "" });
+    assert.deepEqual(own({ ...quiet, lastActivity: T0 - 1000 }), { elsewhere: true, why: "recent" }, "numeric mtime");
+    assert.deepEqual(own({ ...quiet, lastActivity: "bogus" }), { elsewhere: false, why: "" });
+    assert.equal(lib.conversationOwner({ item: { ...quiet, lastActivity: new Date().toISOString() } }).why, "recent", "now defaults to the clock");
+    assert.equal(lib.OWNED_RECENT_MS, 120_000);
+  });
+
+  test("watchStatus: running anywhere keeps the button off, a stopped one turns it on", () => {
+    assert.deepEqual(lib.watchStatus({ elsewhere: true, where: "orca" }), { text: "Acompanhando — esta conversa está rodando no terminal do Orca", canContinue: false });
+    assert.deepEqual(lib.watchStatus({ elsewhere: true, where: "pi" }), { text: "Acompanhando — esta conversa está rodando em outro PI", canContinue: false });
+    assert.equal(lib.watchStatus({ elsewhere: false, where: "orca" }).canContinue, true);
+  });
+
+  test("mergeWatchEntries: appends, dedupes by id, resets, caps, returns the same array when nothing is new", () => {
+    const a = { id: "a", type: "message" };
+    const b = { id: "b", type: "message" };
+    const loose = { type: "custom" };
+    const current = [a];
+    assert.deepEqual(lib.mergeWatchEntries(current, [b, loose]), [a, b, loose]);
+    assert.equal(lib.mergeWatchEntries(current, [a]), current, "known ids only: untouched");
+    assert.equal(lib.mergeWatchEntries(current, []), current);
+    assert.deepEqual(lib.mergeWatchEntries(current, [loose]), [a, loose], "an entry without id is always new");
+    assert.deepEqual(lib.mergeWatchEntries(current, [a, b], { reset: true }), [a, b], "reset replaces, even with known ids");
+    assert.deepEqual(lib.mergeWatchEntries(current, [], { reset: true }), []);
+    assert.deepEqual(lib.mergeWatchEntries([a, b], [{ id: "c" }, { id: "d" }], { max: 3 }).map((entry) => entry.id), ["b", "c", "d"]);
+    assert.equal(lib.WATCH_ENTRY_MAX, 5000);
+    assert.equal(lib.WATCH_POLL_MS, 1500);
+  });
+
+  test("watchMessages: renders the branch that ends at the last entry like get_entries", () => {
+    const user = { type: "message", id: "1", parentId: null, message: { role: "user", content: "oi" } };
+    const reply = { type: "message", id: "2", parentId: "1", timestamp: "2025-03-07T12:00:05Z", message: { role: "assistant", content: [{ type: "text", text: "olá" }] } };
+    const abandoned = { type: "message", id: "3", parentId: "1", message: { role: "assistant", content: "ramo velho" } };
+    const header = { type: "session", id: "h" };
+    const messages = lib.watchMessages([header, user, abandoned, reply]);
+    assert.deepEqual(messages.map((message) => message.role), ["user", "assistant"]);
+    assert.equal(lib.messageText(messages[1]), "olá");
+    assert.deepEqual(lib.watchMessages([{ type: "custom" }, { type: "message", message: { role: "user", content: "sem id" } }]).map((message) => message.content), ["sem id"], "no ids: everything");
+    assert.deepEqual(lib.watchMessages([]), []);
   });
 });

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || "HEAD";
 const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/visibility.test.mjs"];
+const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs"];
 
 const run = spawnSync(process.execPath, [
   "--test", "--experimental-test-coverage",

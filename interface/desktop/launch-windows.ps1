@@ -8,7 +8,8 @@ $studioDir = Split-Path -Parent $PSScriptRoot
 $logDir = Join-Path $env:LOCALAPPDATA 'PI Studio'
 $logFile = Join-Path $logDir 'server.log'
 $errorFile = Join-Path $logDir 'server-error.log'
-$pidFile = Join-Path $logDir 'server.pid'
+$pidName = if ($Port -eq 4123) { 'server.pid' } else { "server-$Port.pid" }
+$pidFile = Join-Path $logDir $pidName
 $url = "http://127.0.0.1:$Port"
 
 function Test-StudioHealth {

@@ -1,8 +1,15 @@
 import {
+  FAST_OPTIONS,
+  FAST_STATUS_KEY,
   INSPECTOR_TABS,
+  fastFromStatus,
+  fastPanel,
+  sessionMenuItems,
   NOTIFY_KEY,
   SETTINGS_KEY,
   followDecision,
+  followedPath,
+  detachProjectRequests,
   applyTurnFinish,
   countBadge,
   projectRunningCount,
@@ -74,6 +81,9 @@ import {
   buildTimeline,
   collectOutputs,
   composerAction,
+  composerSendType,
+  requestExceedsLimit,
+  restoreFailedDraft,
   contextUsage,
   createUiResponder,
   diffLines,
@@ -103,13 +113,17 @@ import {
   truncate,
   updateProcessExitUi,
   upsertMessage,
+  withSessionRollback,
 } from "./lib.js";
 
-import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
+import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
+
+import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
   app: $("#app"),
+  sidebar: $("#sidebar"),
   menuBtn: $("#menuBtn"),
   toggleLeft: $("#toggleLeftBtn"),
   toggleRight: $("#toggleRightBtn"),
@@ -145,6 +159,9 @@ const els = {
   todoList: $("#todoList"),
   widgetArea: $("#widgetArea"),
   exitBanner: $("#exitBanner"),
+  watchBar: $("#watchBar"),
+  watchText: $("#watchText"),
+  watchContinue: $("#watchContinue"),
   restart: $("#restartBtn"),
   queueArea: $("#queueArea"),
   composer: $("#composer"),
@@ -158,6 +175,7 @@ const els = {
   modeLabel: $("#modeLabel"),
   statusLine: $("#statusLine"),
   modelBtn: $("#modelBtn"),
+  fastChip: $("#fastChip"),
   modelName: $("#modelName"),
   thinkingName: $("#thinkingName"),
   ctxRing: $("#ctxRing"),
@@ -290,10 +308,11 @@ const state = {
   filter: "",
   uiQueue: [],
   uiActive: null,
+  uiRequestIds: new Set(),
   notices: [],
   problems: [],
   subagentRecords: new Map(),
-  compacting: false,
+  compactingProjects: new Set(),
   commands: null,
   commandsLoading: false,
   lastSent: null,
@@ -308,6 +327,10 @@ const state = {
   attention: new Map(),
   settledSupported: false,
   settleTimer: null,
+  // Read-only follow of a conversation another PI is writing (see startWatch). While following, studioFile is the
+  // file the Studio's own PI has open; session.sessionFile points at the followed one (sidebar highlight).
+  watch: null,
+  studioFile: null,
 };
 
 const nodeCache = new Map();
@@ -362,7 +385,7 @@ async function api(path, { timeoutMs, ...options } = {}) {
   return data;
 }
 
-const report = (error) => toast(error?.message || String(error), "error");
+const report = (error) => { if (!error?.detached) toast(error?.message || String(error), "error"); };
 
 async function sendRpc(command) {
   if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
@@ -381,7 +404,7 @@ function awaitResponse(id, timeoutMs) {
       state.pending.delete(id);
       reject(new Error("Sem resposta do PI para a troca de sessão"));
     }, timeoutMs);
-    state.pending.set(id, { resolve, reject, timer });
+    state.pending.set(id, { resolve, reject, timer, projectId: state.currentProject?.id });
   });
 }
 
@@ -401,7 +424,7 @@ function rpcRequest(command, timeoutMs = 20000) {
       state.pending.delete(id);
       reject(new Error(`Sem resposta do PI para ${command.type}`));
     }, timeoutMs) : null;
-    state.pending.set(id, { resolve, reject, timer });
+    state.pending.set(id, { resolve, reject, timer, projectId: state.currentProject?.id });
     sendRpc({ ...command, id }).catch((error) => {
       clearTimeout(timer);
       state.pending.delete(id);
@@ -421,6 +444,12 @@ const layout = {
 };
 
 function applyLayout() {
+  const closeLeft = layout.left !== "open" && !els.sidebar.inert && els.sidebar.contains(document.activeElement);
+  const closeRight = layout.right !== "open" && !els.panel.inert && els.panel.contains(document.activeElement);
+  els.sidebar.inert = layout.left !== "open";
+  els.panel.inert = layout.right !== "open";
+  if (closeLeft) els.toggleLeft.focus();
+  if (closeRight) els.toggleRight.focus();
   els.app.dataset.left = layout.left;
   els.app.dataset.right = layout.right;
   els.toggleLeft.setAttribute("aria-expanded", String(layout.left === "open"));
@@ -523,9 +552,9 @@ function openMenu(anchor, items, { align = "start", placement = "below", passive
     if (item.checked !== undefined) button.setAttribute("aria-checked", String(Boolean(item.checked)));
     button.disabled = Boolean(item.disabled);
     button.innerHTML = `${item.icon ? svg(item.icon, "menu-ico") : ""}<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<small>${esc(item.sub)}</small>` : ""}</span>${item.badge ? `<span class="menu-badge">${esc(item.badge)}</span>` : ""}${item.checked ? svg("i-check", "menu-check") : ""}`;
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
       closeMenu();
-      Promise.resolve(item.onSelect?.()).catch(report);
+      Promise.resolve(item.onSelect?.(event)).catch(report);
     });
     els.menu.append(button);
   }
@@ -605,17 +634,64 @@ function sessionButton(project, item, active) {
   return row;
 }
 
-// Rename and export go through RPC, which only acts on the open session: the other conversations of
-// the list show the entries disabled (open one first) instead of silently switching sessions.
+// The "⋯" menu works on any conversation of the list. Entries that act through RPC (rename, export,
+// fork, duplicate) first open the conversation, because RPC only ever acts on the open session.
+function historyItemFor(projectId, sessionPath) {
+  const list = state.currentProject?.id === projectId ? state.history : state.otherHistory.get(projectId) || [];
+  return list.find((item) => samePath(item.path, sessionPath));
+}
+
+// Where a sub-PI's parent conversation lives in the loaded histories, or null.
+function findParentRow(item) {
+  if (!item.parentSession) return null;
+  for (const [projectId, list] of [[state.currentProject?.id, state.history], ...state.otherHistory]) {
+    const parent = list.find((entry) => samePath(entry.path, item.parentSession));
+    if (parent) return { projectId, path: parent.path };
+  }
+  return null;
+}
+
+function copyText(text, done) {
+  if (!navigator.clipboard) throw new Error("A cópia não está disponível neste navegador.");
+  return navigator.clipboard.writeText(text).then(() => toast(done));
+}
+
 function openSessionMenu(anchor) {
   const { project: projectId, path: sessionPath, title } = anchor.dataset;
-  const available = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile) && !state.processExited;
-  const sub = available ? undefined : "Abra a conversa primeiro";
+  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title };
+  const isOpen = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile);
+  const parent = findParentRow(item);
+  const openFirst = async () => {
+    if (!isOpen) await openSession(projectId, sessionPath);
+  };
+  const actions = {
+    open: () => openSession(projectId, sessionPath),
+    rename: async () => {
+      await openFirst();
+      promptRename(item.title ?? title);
+    },
+    export: async () => {
+      await openFirst();
+      await exportSession();
+    },
+    fork: async () => {
+      await openFirst();
+      await pickForkPoint();
+    },
+    clone: async () => {
+      await openFirst();
+      await cloneSession();
+    },
+    "copy-path": () => copyText(sessionPath, "Caminho da sessão copiado."),
+    "copy-id": () => copyText(item.sessionId, "ID da sessão copiado."),
+    parent: () => openSession(parent.projectId, parent.path),
+  };
+  const entries = sessionMenuItems({ item, isOpen, processExited: state.processExited, streaming: state.isStreaming, parentKnown: Boolean(parent) });
   anchor.setAttribute("aria-expanded", "true");
-  openMenu(anchor, [
-    { label: "Renomear", icon: "i-edit", disabled: !available, sub, onSelect: () => promptRename(title) },
-    { label: "Exportar conversa", icon: "i-file", disabled: !available, sub, onSelect: exportSession },
-  ], { align: "end", onClose: () => anchor.removeAttribute("aria-expanded") });
+  openMenu(anchor, entries.map(({ id, ...entry }) => (entry.separator ? entry : { ...entry, onSelect: actions[id] })), {
+    align: "end",
+    onClose: () => anchor.removeAttribute("aria-expanded"),
+  });
 }
 
 function promptRename(current = "") {
@@ -634,6 +710,15 @@ els.renameInput.addEventListener("keydown", (event) => {
 
 els.renameDialog.addEventListener("close", () => {
   if (els.renameDialog.returnValue === "save") renameSession(els.renameInput.value.trim()).catch(report);
+});
+
+// Shift+F10 / the ContextMenu key on a focused row open the same menu as a right click.
+els.projects.addEventListener("keydown", (event) => {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+  const anchor = event.target.closest(".session-row")?.querySelector(".session-menu-btn");
+  if (!anchor) return;
+  event.preventDefault();
+  openSessionMenu(anchor);
 });
 
 els.projects.addEventListener("contextmenu", (event) => {
@@ -741,7 +826,6 @@ els.projects.addEventListener("click", (event) => {
 function updateHeader() {
   const project = state.currentProject;
   els.projectTitle.textContent = project?.name || "PI Studio";
-  document.title = project ? `${project.name} · PI Studio` : "PI Studio";
   els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
   els.userName.textContent = prefs.userName || "Você";
   els.userAvatar.textContent = (prefs.userName || "?").trim().charAt(0).toUpperCase() || "?";
@@ -753,11 +837,13 @@ function updateModelButton() {
   const level = state.session?.thinkingLevel;
   els.thinkingName.textContent = model?.reasoning === false || !level ? "" : thinkingLabel(level);
   els.thinkingName.hidden = !els.thinkingName.textContent;
+  refreshFastUi();
 }
 
 // ---------------------------------------------------------------- projects
 
 function resetConversation() {
+  stopWatch();
   state.messages = [];
   state.runtime.clear();
   state.liveMessage = null;
@@ -765,6 +851,7 @@ function resetConversation() {
   updateFilesBadge();
   state.stats = null;
   state.queue = { steering: [], followUp: [] };
+  renderQueue();
   state.liveThinking = "";
   state.notices = [];
   state.problems = [];
@@ -838,6 +925,10 @@ async function loadProject(projectId, { cwd } = {}) {
     ? await api("/api/projects/open-path", { method: "POST", body: JSON.stringify({ cwd }), timeoutMs: SESSION_SWITCH_TIMEOUT_MS })
     : await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
   setExited(false);
+  if (state.currentProject?.id && state.currentProject.id !== project.id) {
+    detachProjectRequests(state.pending, state.currentProject.id);
+    state.compactingProjects.delete(state.currentProject.id);
+  }
   state.currentProject = project;
   state.session = session;
   state.history = history || [];
@@ -846,6 +937,9 @@ async function loadProject(projectId, { cwd } = {}) {
   state.thinkingLevels = null;
   state.statuses.clear();
   state.widgets.clear();
+  clearTimeout(fast.pending?.timer);
+  fast.pending = null;
+  fast.available = null;
   renderWidgets();
   setRunning(Boolean(session?.isStreaming));
   localStorage.setItem("pi-studio:last-project", project.id);
@@ -862,14 +956,30 @@ async function loadProject(projectId, { cwd } = {}) {
   connectProjectEvents(project.id);
 }
 
+// A conversation another process is writing (an Orca agent's terminal, another PI) is only followed, read-only:
+// the Studio's PI never switches into a file with two writers.
 function openSession(projectId, sessionPath) {
   return runGated(state, async () => {
     if (state.currentProject?.id !== projectId) await loadProject(projectId);
-    resetConversation();
-    state.session = { ...(state.session || {}), sessionFile: sessionPath };
-    updateHeader();
-    renderProjects();
-    renderThread();
+    await refreshHistory().catch(() => {});
+    await showConversation(state.history.find((item) => samePath(item.path, sessionPath)), sessionPath);
+  });
+}
+
+// Inside the session gate. `item`: the history entry (null when the file is not listed: then it is not known to be owned).
+async function showConversation(item, sessionPath, { fallback = false } = {}) {
+  if (state.watch && samePath(state.watch.path, sessionPath)) return;
+  const owner = conversationOwner({ item, agents: worktreeAgents(), fallback, studioFile: currentStudioFile(), now: serverNow() });
+  if (owner.elsewhere) return startWatch(item, { fallback });
+  return switchSession(state.currentProject.id, sessionPath);
+}
+
+// The thread and the selected file change only once PI accepted the switch: a cancelled (extension veto)
+// or failed switch leaves the current conversation on screen. The entries are re-requested after the
+// reset, since the server's own follow-up get_entries can arrive before a slow switch response.
+async function switchSession(projectId, sessionPath) {
+  const previousSession = { ...(state.session || {}) };
+  return withSessionRollback(async () => {
     const id = newId();
     const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
     try {
@@ -878,9 +988,123 @@ function openSession(projectId, sessionPath) {
       failPending(id, error);
       throw error;
     }
-    await applied;
+    const response = await applied;
+    if (response.success && !response.data?.cancelled) {
+      resetConversation();
+      state.session = { ...previousSession, sessionFile: sessionPath };
+      updateHeader();
+      renderProjects();
+      renderThread();
+      sendRpc({ type: "get_entries" }).catch(() => {});
+    }
+    return response;
+  }, () => {
+    state.session = previousSession;
+    renderProjects();
+    renderThread();
   });
 }
+
+// ---------------------------------------------------------- following (read-only)
+
+const currentStudioFile = () => (state.watch ? state.studioFile : state.session?.sessionFile ?? null);
+const orcaWorktreeOfProject = () => (orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, state.currentProject?.cwd)) : null);
+const worktreeAgents = () => orcaWorktreeOfProject()?.agents ?? [];
+
+function startWatch(item, { fallback }) {
+  resetConversation();
+  state.studioFile = state.session?.sessionFile ?? null;
+  state.session = { ...(state.session || {}), sessionFile: item.path };
+  setRunning(false);
+  const watch = {
+    path: item.path,
+    title: item.title,
+    fallback,
+    entries: [],
+    offset: 0,
+    fileState: item.state,
+    touchedAt: item.lastActivity,
+    elsewhere: true,
+    where: orcaWorktreeOfProject() ? "orca" : "pi",
+    failures: 0,
+    inflight: false,
+    timer: setInterval(() => watchTick().catch(() => {}), WATCH_POLL_MS),
+  };
+  state.watch = watch;
+  updateHeader();
+  renderProjects();
+  renderThread();
+  updateWatchUi();
+  syncOrcaPolling();
+  return watchTick();
+}
+
+function stopWatch() {
+  const watch = state.watch;
+  if (!watch) return;
+  clearInterval(watch.timer);
+  state.watch = null;
+  if (state.session) state.session = { ...state.session, sessionFile: state.studioFile };
+  updateWatchUi();
+  syncOrcaPolling();
+}
+
+function updateWatchUi() {
+  const watch = state.watch;
+  els.watchBar.hidden = !watch;
+  if (watch) {
+    const status = watchStatus({ elsewhere: watch.elsewhere, where: watch.where });
+    els.watchText.textContent = status.text;
+    els.watchContinue.disabled = !status.canContinue;
+  }
+  applyPlaceholder();
+  updateComposer();
+}
+
+// One poll: new entries since the last offset. Skipped in a hidden page (the next visibility change polls at once).
+async function watchTick() {
+  const watch = state.watch;
+  if (!watch || watch.inflight || document.hidden) return;
+  watch.inflight = true;
+  try {
+    const data = await api(`/api/sessions/watch?path=${encodeURIComponent(watch.path)}&since=${watch.offset}`);
+    if (state.watch !== watch) return;
+    watch.failures = 0;
+    const entries = mergeWatchEntries(watch.entries, data.entries, { reset: data.reset || watch.offset === 0 });
+    watch.offset = data.offset;
+    watch.fileState = data.state;
+    watch.touchedAt = data.mtimeMs;
+    watch.elsewhere = conversationOwner({ item: { path: watch.path, title: watch.title, state: watch.fileState, lastActivity: watch.touchedAt }, agents: worktreeAgents(), fallback: watch.fallback, studioFile: state.studioFile, now: serverNow() }).elsewhere;
+    if (entries !== watch.entries) {
+      watch.entries = entries;
+      state.messages = watchMessages(entries);
+      state.subagentRecords = subagentRecords(entries);
+      applyTodo(todoFromMessages(state.messages));
+      scheduleRender();
+    }
+    updateWatchUi();
+  } catch {
+    if (state.watch !== watch) return;
+    if (++watch.failures >= 5) {
+      // Back to the Studio PI's own conversation instead of a frozen read-only view.
+      resetConversation();
+      renderThread();
+      refreshState().catch(() => {});
+      toast("Não foi possível acompanhar a conversa.", "error");
+    }
+  } finally {
+    watch.inflight = false;
+  }
+}
+
+els.watchContinue.addEventListener("click", () => {
+  const watch = state.watch;
+  if (!watch || els.watchContinue.disabled) return;
+  runGated(state, async () => {
+    await watchTick(); // last look: the other process may have started writing again
+    if (state.watch === watch && !watch.elsewhere) await switchSession(state.currentProject.id, watch.path);
+  }).catch(report);
+});
 
 async function refreshHistory({ onlyIfChanged = false } = {}) {
   const project = state.currentProject;
@@ -907,26 +1131,36 @@ function syncHistoryPolling() {
 function newSession() {
   return runGated(state, async () => {
     if (!state.currentProject) return;
-    const restarting = state.processExited;
-    const id = newId();
-    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
-    try {
-      await sendRpc({ type: "new_session", id });
-    } catch (error) {
-      failPending(id, error);
-      throw error;
-    }
-    if (restarting) {
-      setExited(false);
-      connectProjectEvents(state.currentProject.id);
-    }
-    resetConversation();
-    state.session = { ...(state.session || {}), sessionFile: null };
-    renderThread();
-    renderPanel();
-    setTimeout(() => refreshState().catch(() => {}), 300);
-    refreshHistory().catch(() => {});
-    await applied;
+    const previousSession = { ...(state.session || {}) };
+    return withSessionRollback(async () => {
+      const restarting = state.processExited;
+      const id = newId();
+      const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+      try {
+        await sendRpc({ type: "new_session", id });
+      } catch (error) {
+        failPending(id, error);
+        throw error;
+      }
+      const response = await applied;
+      if (response.success && !response.data?.cancelled) {
+        if (restarting) {
+          setExited(false);
+          connectProjectEvents(state.currentProject.id);
+        }
+        resetConversation();
+        state.session = { ...previousSession, sessionFile: null };
+        renderThread();
+        renderPanel();
+        setTimeout(() => refreshState().catch(() => {}), 300);
+        refreshHistory().catch(() => {});
+      }
+      return response;
+    }, () => {
+      state.session = previousSession;
+      renderProjects();
+      renderThread();
+    });
   });
 }
 
@@ -944,11 +1178,13 @@ function connectProjectEvents(projectId) {
     handler(payload);
   });
   on("rpc", (payload) => {
-    if (!state.replaying) handleRpc(payload);
+    if (!state.replaying || payload.type === "queue_update") handleRpc(payload);
     // A command sent right after opening the project (e.g. new_session) can be answered
     // before this stream connects; its response then only arrives in the replay.
     else if (isAwaitedResponse(payload, state.pending)) handleResponse(payload);
+    else if (payload.type === "extension_ui_request" && ["select", "confirm", "input", "editor", "setStatus", "setWidget"].includes(payload.method)) handleExtensionUi(payload);
   });
+  on("ui_resolved", ({ id }) => resolveUiDialog(id));
   on("replay_done", () => {
     state.replaying = false;
     refreshState().catch(report);
@@ -975,7 +1211,13 @@ function connectProjectEvents(projectId) {
     state.pending.clear();
   });
   source.onerror = () => {
-    if (state.source === source && source.readyState === EventSource.CONNECTING) state.replaying = true;
+    if (state.source === source && source.readyState === EventSource.CONNECTING) {
+      if (!state.replaying) {
+        state.queue = { steering: [], followUp: [] };
+        renderQueue();
+      }
+      state.replaying = true;
+    }
   };
 }
 
@@ -1012,6 +1254,7 @@ async function refreshUsageToday() {
 
 function refreshStats() {
   refreshUsageToday();
+  if (state.watch) return;
   rpcRequest({ type: "get_session_stats" })
     .then((res) => {
       state.stats = res.success ? res.data : null;
@@ -1036,6 +1279,10 @@ function handleResponse(event) {
   }
   switch (event.command) {
     case "get_state":
+      if (state.watch) {
+        state.studioFile = event.data?.sessionFile ?? null;
+        break;
+      }
       state.session = { ...(state.session || {}), ...event.data };
       setRunning(Boolean(event.data?.isStreaming));
       updateModelButton();
@@ -1043,7 +1290,7 @@ function handleResponse(event) {
       renderPanel();
       break;
     case "get_entries":
-      if (!Array.isArray(event.data?.entries)) break;
+      if (state.watch || !Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       state.subagentRecords = subagentRecords(event.data.entries);
       applyTodo(todoFromMessages(state.messages));
@@ -1083,7 +1330,9 @@ function addProblem(problem) {
   scheduleInspector("context");
 }
 
+// Events of the Studio's own PI do not touch a followed (read-only) conversation; its dialogs still reach the user.
 function handleRpc(event) {
+  if (state.watch && event.type !== "response" && event.type !== "extension_ui_request") return;
   problemsFromEvent(event).forEach(addProblem);
   switch (event.type) {
     case "response":
@@ -1173,6 +1422,7 @@ function handleRpc(event) {
       addNotice(eventNotice(event));
       break;
     case "compaction_end":
+      if (state.currentProject) state.compactingProjects.delete(state.currentProject.id);
       if (event.errorMessage) toast(`Falha ao compactar: ${event.errorMessage}`, "error");
       state.phase = "thinking";
       addNotice(eventNotice(event));
@@ -1612,6 +1862,53 @@ function refreshForkMessages() {
     .catch(() => {});
 }
 
+// "Bifurcar a partir de…": the palette lists the fork points of the open conversation; picking one forks
+// there and puts that message in the composer, like the pencil on a message.
+async function pickForkPoint() {
+  const res = await rpcRequest({ type: "get_fork_messages" }, 8000);
+  const messages = res.success && Array.isArray(res.data?.messages) ? res.data.messages : [];
+  state.forkMessages = messages;
+  if (!messages.length) {
+    toast("Esta conversa ainda não tem mensagens para bifurcar.", "warning");
+    return;
+  }
+  openPalettePick("Bifurcar a partir de…", messages.map((message, index) => ({
+    label: truncate(String(message.text ?? "").replace(/\s+/g, " ").trim(), 90) || "(mensagem vazia)",
+    sub: `Mensagem ${index + 1} de ${messages.length}`,
+    icon: "i-branch",
+    run: async () => {
+      const text = await forkFrom(message.entryId);
+      if (text === null) return;
+      setComposerText(text);
+      els.prompt.focus();
+      toast("Bifurcado: ajuste a mensagem e envie.");
+    },
+  })));
+}
+
+// "Duplicar" (RPC `clone`): copies the active branch into a new session and switches to the copy.
+async function cloneSession() {
+  const done = await runGated(state, async () => {
+    const res = await rpcRequest({ type: "clone" }, SESSION_SWITCH_TIMEOUT_MS);
+    if (!res.success) throw new Error(res.error || "Não foi possível duplicar a conversa.");
+    if (res.data?.cancelled) {
+      toast("Uma extensão cancelou a duplicação.", "warning");
+      return false;
+    }
+    resetConversation();
+    state.session = { ...(state.session || {}), sessionFile: null };
+    renderThread();
+    renderPanel();
+    sendRpc({ type: "get_state" }).catch(() => {});
+    sendRpc({ type: "get_entries" }).catch(() => {});
+    refreshStats();
+    refreshHistory().catch(() => {});
+    setTimeout(() => refreshHistory().catch(() => {}), 800);
+    return true;
+  });
+  if (done) toast("Conversa duplicada. Você está na cópia.");
+}
+
 // ------------------------------------------------------------------ tasks
 
 function applyTodo(tasks) {
@@ -1738,7 +2035,7 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, worktrees: renderWorktrees };
+const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
 
 function renderInspector() {
   updateSubBadge();
@@ -1782,6 +2079,36 @@ els.tablist.addEventListener("keydown", (event) => {
   event.preventDefault();
   selectTab(tabs[target].dataset.tab, { focus: true });
 });
+
+// Every tab keeps its label and count badge as long as they fit. Measured (so it holds for any number of tabs and any panel
+// width), the tabs give up first the icons of the unselected ones ("tight"), and only if the labels still overflow their
+// labels ("compact"). Name and count stay in title/aria-label either way.
+function fitInspectorTabs() {
+  els.tablist.classList.remove("tight", "compact");
+  for (const tab of els.tabs) {
+    const badge = tab.querySelector(".count-badge:not([hidden])");
+    const name = tab.querySelector(".insp-label").textContent;
+    const label = badge ? `${name}, ${badge.getAttribute("aria-label") || badge.textContent}` : name;
+    tab.title = label;
+    tab.setAttribute("aria-label", label);
+  }
+  const overflows = () => els.tablist.scrollWidth > els.tablist.clientWidth;
+  if (!overflows()) return;
+  els.tablist.classList.add("tight");
+  if (!overflows()) return;
+  els.tablist.classList.replace("tight", "compact");
+}
+let fitTabsQueued = false;
+function scheduleFitTabs() {
+  if (fitTabsQueued) return;
+  fitTabsQueued = true;
+  requestAnimationFrame(() => {
+    fitTabsQueued = false;
+    fitInspectorTabs();
+  });
+}
+new ResizeObserver(scheduleFitTabs).observe(els.tablist);
+new MutationObserver(scheduleFitTabs).observe(els.tablist, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "aria-selected"] });
 
 // Width: dragged on the panel's left edge (or arrow keys on the separator); persisted per browser.
 function applyPanelWidth() {
@@ -2089,11 +2416,12 @@ function renderContext() {
   const problems = `<section class="insp-sec"><h3 class="sec-title">Erros e tentativas</h3>${state.problems.length
     ? `<ul class="prob-list">${[...state.problems].reverse().map(problemRow).join("")}</ul>`
     : `<p class="sec-hint">Nenhum erro nesta conversa.</p>`}</section>`;
-  const blocked = !state.currentProject || state.processExited || state.isStreaming || state.compacting;
-  const hint = state.compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
-  const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${state.compacting ? ' aria-busy="true"' : ""}>${state.compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
-  const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : "";
-  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
+  const compacting = state.compactingProjects.has(state.currentProject?.id);
+  const blocked = !state.currentProject || state.processExited || state.isStreaming || compacting;
+  const hint = compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
+  const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${compacting ? ' aria-busy="true"' : ""}>${compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
+  const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : document.activeElement?.closest?.(".fast-seg") ? ".fast-seg input:checked" : "";
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
 }
 
@@ -2109,7 +2437,8 @@ function confirmDialog({ title, message, confirm }) {
 }
 
 async function compactNow({ instructions = "", confirm = true } = {}) {
-  if (state.compacting || !state.currentProject) return;
+  const projectId = state.currentProject?.id;
+  if (!projectId || state.compactingProjects.has(projectId)) return;
   if (state.isStreaming) {
     toast("Disponível quando o PI terminar a resposta atual.", "warning");
     return;
@@ -2120,7 +2449,7 @@ async function compactNow({ instructions = "", confirm = true } = {}) {
     confirm: "Compactar",
   });
   if (!ok) return;
-  state.compacting = true;
+  state.compactingProjects.add(projectId);
   scheduleInspector("context");
   try {
     // Compaction calls the model and can take a while: no client-side timeout.
@@ -2130,7 +2459,7 @@ async function compactNow({ instructions = "", confirm = true } = {}) {
   } catch (error) {
     report(error);
   } finally {
-    state.compacting = false;
+    state.compactingProjects.delete(projectId);
     scheduleInspector("context");
     if (!state.processExited) {
       refreshStats();
@@ -2146,6 +2475,115 @@ els.ctxView.addEventListener("click", (event) => {
     const file = contextBreakdown(state.stats, state.session).sessionFile;
     navigator.clipboard?.writeText(file).then(() => toast("Caminho da sessão copiado.")).catch(() => toast("Não foi possível copiar.", "error"));
   }
+});
+
+// --- Fast mode (extension codex-fast-mode): the Velocidade section, the composer chip, Ctrl+K entries.
+// The mode is read from the extension's own status (pure mapping in lib.js) and changed with `/fast <flag>`,
+// an extension command: PI runs it at once even while an answer streams, so no streamingBehavior is sent.
+
+const fast = { available: null, pending: null };
+const FAST_SEND_DELAY_MS = 350;
+const FAST_CONFIRM_MS = 5000;
+
+// Hidden when the extension is not loaded: no `fast` command and no status of its own.
+const fastAvailable = () => fast.available === true || state.statuses.has(FAST_STATUS_KEY);
+
+function fastView() {
+  return fastPanel({
+    statusText: state.statuses.get(FAST_STATUS_KEY),
+    model: state.session?.model,
+    selected: fast.pending?.mode,
+    disabledReason: !state.currentProject || state.processExited ? "PI indisponível." : "",
+  });
+}
+
+function fastSectionHtml() {
+  if (!fastAvailable()) return "";
+  const view = fastView();
+  const radios = view.options.map((option) => `<label title="${esc(option.reason)}"><input type="radio" name="fastMode" value="${option.mode}"${option.selected ? " checked" : ""}${option.disabled ? " disabled" : ""} /><span>${esc(option.label)}</span></label>`).join("");
+  return `<section class="insp-sec fast-sec"><h3 class="sec-title">Velocidade</h3>
+    <div class="seg-group fast-seg" role="radiogroup" aria-label="Velocidade">${radios}</div>
+    <p class="sec-hint">${esc(view.description)}</p>
+    <dl class="kv"><div class="kv-row"><dt>Estado</dt><dd>${esc(view.liveLabel)}</dd></div></dl>
+    ${view.notes.map((note) => `<p class="sec-hint">${esc(note)}</p>`).join("")}</section>`;
+}
+
+function renderFastChip() {
+  const chip = fastAvailable() ? fastView().chip : null;
+  els.fastChip.hidden = !chip;
+  if (chip) {
+    els.fastChip.textContent = chip.label;
+    els.fastChip.title = chip.title;
+  }
+}
+
+function refreshFastUi() {
+  if (fast.available === null && state.currentProject && !state.processExited && !state.commands && !state.commandsLoading) loadCommands();
+  renderFastChip();
+  scheduleInspector("context");
+}
+
+// The extension reported a new status: a pending choice is settled once it shows up.
+function fastStatusChanged() {
+  if (fast.pending && fastFromStatus(state.statuses.get(FAST_STATUS_KEY)).mode === fast.pending.mode) {
+    clearTimeout(fast.pending.timer);
+    fast.pending = null;
+  }
+  refreshFastUi();
+}
+
+// Drops the optimistic choice and says why (the PI's own warning if it sent one).
+function revertFast(pending, reason) {
+  if (fast.pending !== pending) return;
+  clearTimeout(pending.timer);
+  fast.pending = null;
+  refreshFastUi();
+  toast(reason || pending.notice || "O PI não confirmou a mudança do modo Fast.", "warning");
+}
+
+async function sendFast(pending, option) {
+  if (fast.pending !== pending) return;
+  pending.sent = true;
+  pending.timer = setTimeout(() => revertFast(pending), FAST_CONFIRM_MS);
+  try {
+    const res = await rpcRequest({ type: "prompt", message: `/fast ${option.flag}` }, 15000);
+    if (!res.success) revertFast(pending, res.error || "O PI recusou o comando /fast.");
+  } catch (error) {
+    revertFast(pending, error.message);
+  }
+}
+
+// Shows the choice at once and sends it shortly after, so arrowing through the radios sends only the last one.
+function chooseFast(option) {
+  clearTimeout(fast.pending?.timer);
+  if (option.mode === fastFromStatus(state.statuses.get(FAST_STATUS_KEY)).mode && !fast.pending?.sent) {
+    fast.pending = null;
+    refreshFastUi();
+    return;
+  }
+  const pending = { mode: option.mode, sent: false, notice: "", timer: setTimeout(() => sendFast(pending, option), FAST_SEND_DELAY_MS) };
+  fast.pending = pending;
+  refreshFastUi();
+}
+
+function fastPaletteActions() {
+  if (!fastAvailable()) return [];
+  const view = fastView();
+  return [["Fast: ligar", "on"], ["Fast: desligar", "off"], ["Fast: eco", "eco"], ["Fast: ultra", "ultra"]].map(([label, flag]) => {
+    const option = view.options.find((candidate) => candidate.flag === flag);
+    return { label, icon: "i-gauge", keywords: "velocidade fast", run: () => (option.disabled ? toast(option.reason, "warning") : chooseFast(option)) };
+  });
+}
+
+els.ctxView.addEventListener("change", (event) => {
+  const option = event.target.matches?.("input[name=fastMode]") && FAST_OPTIONS.find((candidate) => candidate.mode === event.target.value);
+  if (option) chooseFast(option);
+});
+
+els.fastChip.addEventListener("click", () => {
+  setPanel("right", true);
+  selectTab("context");
+  requestAnimationFrame(() => requestAnimationFrame(() => els.ctxView.querySelector(".fast-seg input:checked")?.focus()));
 });
 
 // --- Files: project path + files written/edited in this session.
@@ -2164,10 +2602,10 @@ function renderOutputs() {
     els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta conversa aparecem aqui.</p>`;
     return;
   }
-  els.outputsList.innerHTML = outputs.map((item) => `<button type="button" class="output-item" data-tools="${esc(item.toolIds.join(","))}" title="${esc(item.path)}">
+  els.outputsList.innerHTML = outputs.map((item) => `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
       ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>
       <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
-    </button>`).join("");
+    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`).join("");
 }
 
 els.envPath.addEventListener("click", (event) => {
@@ -2223,7 +2661,7 @@ function updateComposer() {
   // A shell command needs an idle agent and a command; nothing is sent while one is running.
   const blocked = Boolean(state.bash) || (shell && (state.isStreaming || !shellCommand(value)));
   // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
-  els.send.disabled = state.processExited || state.sending || !hasContent || blocked || (!state.currentProject && !state.gate);
+  els.send.disabled = state.processExited || state.sending || Boolean(state.watch) || !hasContent || blocked || (!state.currentProject && !state.gate);
   els.composer.classList.toggle("is-shell", shell);
   els.shellChip.hidden = !shell;
   els.stop.hidden = !(state.isStreaming || state.bash);
@@ -2231,14 +2669,14 @@ function updateComposer() {
   els.send.setAttribute("aria-label", shell ? "Executar" : state.isStreaming ? "Direcionar (steer)" : "Enviar");
   els.hint.textContent = composerHint(shell);
   els.hint.title = els.hint.textContent;
-  els.prompt.disabled = state.processExited;
+  els.prompt.disabled = state.processExited || Boolean(state.watch);
 }
 
 // The long placeholder (/ commands, @ files, ! shell) does not fit a phone-width composer.
 const narrowComposer = window.matchMedia("(max-width: 560px)");
 const PLACEHOLDER_LONG = els.prompt.placeholder;
 const applyPlaceholder = () => {
-  els.prompt.placeholder = narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
+  els.prompt.placeholder = state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
 };
 narrowComposer.addEventListener("change", applyPlaceholder);
 applyPlaceholder();
@@ -2285,7 +2723,7 @@ async function addImages(files) {
 }
 
 async function submit(mode) {
-  if (state.processExited || state.sending) return;
+  if (state.processExited || state.sending || state.watch) return;
   if (els.prompt.value.trim() || state.attachments.length) ensureNotifyPermission();
   if (state.gate) {
     // Hold the text in the composer until PI finishes switching sessions, then send it.
@@ -2309,8 +2747,15 @@ async function submit(mode) {
   if (isShellText(message)) return runShell(message);
   if (message) state.lastSent = message;
   state.recalled = null;
-  const type = mode === "steer" || mode === "follow_up" ? mode : "prompt";
-  const images = state.attachments.map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
+  const type = composerSendType(message, mode, state.commands);
+  const capturedAttachments = state.attachments.slice();
+  const images = capturedAttachments.map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
+  const id = newId();
+  const command = { id, type, message, ...(images.length ? { images } : {}) };
+  if (requestExceedsLimit(command, 30 * 1024 * 1024)) {
+    toast("Anexos muito grandes (máx. 30 MB)", "error");
+    return;
+  }
   let optimistic = null;
   if (type === "prompt") {
     optimistic = { role: "user", content: [{ type: "text", text: message }, ...images], timestamp: Date.now(), _optimistic: true };
@@ -2325,14 +2770,14 @@ async function submit(mode) {
     if (index !== -1) state.messages.splice(index, 1);
     scheduleRender();
     toast(text, "error");
-    if (!els.prompt.value) {
-      els.prompt.value = message;
-      autoResize();
-      updateComposer();
-    }
+    const restored = restoreFailedDraft(els.prompt.value, state.attachments, message, capturedAttachments);
+    if (restored.message !== els.prompt.value) els.prompt.value = restored.message;
+    if (restored.attachments !== state.attachments) state.attachments = restored.attachments;
+    autoResize();
+    renderAttachments();
   };
   // The response may arrive only after an extension command finishes, so no timeout.
-  const request = rpcRequest({ type, message, ...(images.length ? { images } : {}) }, 0);
+  const request = rpcRequest(command, 0);
   els.prompt.value = "";
   state.attachments = [];
   renderAttachments();
@@ -2555,7 +3000,12 @@ function showComposerMenu(kind, entries, index = 0) {
   composerMenu.kind = kind;
   composerMenu.entries = entries;
   composerMenu.index = index;
-  const items = entries.map((entry, position) => ({ ...entry.item, active: position === index, onSelect: () => acceptComposerEntry(kind, entry, "click") }));
+  const items = entries.map((entry, position) => ({
+    ...entry.item,
+    active: position === index,
+    ...(kind === "mention" && position === index ? { badge: "Alt+↵ Navegador" } : {}),
+    onSelect: (event) => acceptComposerEntry(kind, entry, event?.altKey ? "alt" : "click"),
+  }));
   openMenu(els.composer, items, { placement: "above", passive: true, wide: true, onClose: resetComposerMenu });
   els.prompt.setAttribute("aria-activedescendant", `menu-opt-${index}`);
 }
@@ -2568,6 +3018,12 @@ function setComposerCompletion(text, cursor) {
 
 // via: "enter" | "tab" | "click". Enter submits a command that is already complete.
 function acceptComposerEntry(kind, entry, via) {
+  // Alt+Enter / Alt+click on a file: look at it in the Navegador and leave the message as it is.
+  if (kind === "mention" && via === "alt") {
+    closeComposerMenu();
+    els.prompt.focus();
+    return openInBrowser(entry.file);
+  }
   if (kind === "slash") {
     const query = slashQuery(els.prompt.value);
     if (via === "enter" && query !== null && slashEnterSubmits(entry.command, query)) {
@@ -2596,6 +3052,11 @@ function handleComposerMenuKey(event) {
     event.preventDefault();
     event.stopPropagation();
     closeComposerMenu();
+    return true;
+  }
+  if (event.key === "Enter" && event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey && composerMenu.kind === "mention") {
+    event.preventDefault();
+    acceptComposerEntry("mention", composerMenu.entries[composerMenu.index], "alt");
     return true;
   }
   if ((event.key === "Tab" || event.key === "Enter") && plain) {
@@ -2627,6 +3088,10 @@ async function loadCommands() {
     // Built-ins still work; the next "/" retries.
   } finally {
     state.commandsLoading = false;
+  }
+  if (state.currentProject === project) {
+    fast.available = Boolean(state.commands?.some((command) => command.name === "fast"));
+    refreshFastUi();
   }
   if (state.commands) refreshSlashMenu(true);
 }
@@ -2746,6 +3211,7 @@ async function openModelMenu() {
 function handleExtensionUi(req) {
   switch (req.method) {
     case "notify":
+      if (fast.pending && req.notifyType && req.notifyType !== "info") fast.pending.notice = stripAnsi(req.message);
       toast(stripAnsi(req.message) || "Notificação do PI", req.notifyType || "info");
       addNotice(eventNotice(req));
       break;
@@ -2753,6 +3219,7 @@ function handleExtensionUi(req) {
       if (req.statusText) state.statuses.set(req.statusKey || "default", stripAnsi(req.statusText));
       else state.statuses.delete(req.statusKey || "default");
       renderWidgets();
+      if (req.statusKey === FAST_STATUS_KEY) fastStatusChanged();
       break;
     case "setWidget":
       if (Array.isArray(req.widgetLines) && req.widgetLines.length) state.widgets.set(req.widgetKey || "default", req.widgetLines.map(stripAnsi));
@@ -2760,8 +3227,7 @@ function handleExtensionUi(req) {
       renderWidgets();
       break;
     case "setTitle":
-      document.title = req.title || "PI Studio";
-      break;
+      break; // the window title stays "PI Studio" (one clean bar with the app header)
     case "set_editor_text":
       els.prompt.value = req.text || "";
       autoResize();
@@ -2772,6 +3238,8 @@ function handleExtensionUi(req) {
     case "confirm":
     case "input":
     case "editor":
+      if (!req.id || state.uiRequestIds.has(req.id)) break;
+      state.uiRequestIds.add(req.id);
       notifyUser("input", { title: req.title, text: req.message });
       state.uiQueue.push(req);
       if (!state.uiActive) nextUiDialog();
@@ -2790,9 +3258,20 @@ let dialogTimer = null;
 
 function closeUiDialog() {
   clearTimeout(dialogTimer);
+  if (state.uiActive?.id) state.uiRequestIds.delete(state.uiActive.id);
   if (els.dialog.open) els.dialog.close();
   state.uiActive = null;
   setTimeout(nextUiDialog, 120);
+}
+
+function resolveUiDialog(id) {
+  if (!id) return;
+  if (state.uiActive?.id === id) {
+    closeUiDialog();
+    return;
+  }
+  state.uiQueue = state.uiQueue.filter((req) => req.id !== id);
+  state.uiRequestIds.delete(id);
 }
 
 function openUiDialog(req) {
@@ -2972,6 +3451,7 @@ els.rawInput.addEventListener("keydown", (event) => {
 // ----------------------------------------------------------------- dialogs
 
 function openCustomize() {
+  els.customizeDialog.returnValue = "";
   els.prefName.value = prefs.userName || "";
   els.prefThinking.checked = Boolean(prefs.showThinking);
   els.prefTools.checked = Boolean(prefs.expandTools);
@@ -3048,7 +3528,6 @@ function applyOrcaSettings() {
   }
   const on = orcaOn();
   els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !on;
-  els.tablist.classList.toggle("has-worktrees", on);
   els.worktreesBtn.hidden = !(on && orca.data?.available);
   updateWorktreeBadges();
   orca.uiKey = `${on}/${Boolean(orca.data?.available)}`;
@@ -3063,7 +3542,7 @@ function syncOrcaPolling() {
     enabled: orcaOn(),
     follow: settings.orcaFollow,
     // The top-bar button's running count keeps Orca polled while the button is shown.
-    tabVisible: (inspector.tab === "worktrees" && layout.right === "open") || els.worktreesDialog.open || !els.worktreesBtn.hidden,
+    tabVisible: (inspector.tab === "worktrees" && layout.right === "open") || els.worktreesDialog.open || !els.worktreesBtn.hidden || Boolean(state.watch),
     hidden: document.hidden,
   });
   if (wanted && !orca.timer) {
@@ -3095,10 +3574,19 @@ async function pollOrca() {
   followOrca();
 }
 
-function openWorktree(worktree) {
-  if (samePath(state.currentProject?.cwd, worktree.path)) return Promise.resolve();
-  if (worktree.projectId) return openProject(worktree.projectId);
-  return runGated(state, () => loadProject(null, { cwd: worktree.path }));
+// Opens the worktree's project and shows its conversation: followed read-only when an Orca agent or another PI is
+// writing it, else opened normally. `agent` (a clicked Orca agent row) picks the conversation titled like it.
+// A project that already shows a conversation is left alone unless an agent was clicked.
+function openWorktree(worktree, { agent = null } = {}) {
+  const open = samePath(state.currentProject?.cwd, worktree.path);
+  if (open && !agent && (state.watch || state.messages.length)) return Promise.resolve();
+  return runGated(state, async () => {
+    if (!open) await (worktree.projectId ? loadProject(worktree.projectId) : loadProject(null, { cwd: worktree.path }));
+    await refreshHistory().catch(() => {});
+    const status = studioPiState(projectStatus.last.get(state.currentProject.id));
+    const pick = pickConversation({ history: state.history, agents: agent ? [agent] : worktreeAgents(), liveBusy: state.isStreaming || status === "fazendo" || status === "aguardando" });
+    if (pick.item) await showConversation(pick.item, pick.item.path, { fallback: pick.kind === "latest" });
+  });
 }
 
 // Follow mode: switch to the worktree focused in Orca, unless the user is mid-sentence or answering a dialog
@@ -3114,11 +3602,14 @@ function followOrca() {
     composerText: Boolean(els.prompt.value.trim()) || state.attachments.length > 0,
     dialogOpen: Boolean(document.querySelector("dialog[open]")) || Boolean(state.uiActive),
   });
-  if (decision === "mark" || decision === "switch") orca.lastFollowed = active.path;
+  if (decision === "mark") orca.lastFollowed = active.path;
   if (decision !== "switch") return;
   const worktree = orca.data.worktrees.find((item) => samePath(item.path, active.path)) || { path: active.path, name: basename(active.path) };
   openWorktree(worktree)
-    .then(() => toast(`Seguindo o Orca: ${worktree.name}`))
+    .then(() => {
+      orca.lastFollowed = followedPath(orca.lastFollowed, active.path, true);
+      toast(`Seguindo o Orca: ${worktree.name}`);
+    })
     .catch(report);
 }
 
@@ -3229,7 +3720,7 @@ async function pollProjectStatus() {
 }
 
 // Activity feed: polled with the last seq seen; the first answer is the baseline, so only later items count as unseen.
-const activity = { items: [], seq: 0, seenSeq: 0, primed: false, inflight: false };
+const activity = { items: [], seq: 0, epoch: null, seenSeq: 0, primed: false, inflight: false };
 
 function updateActivityBadge() {
   const unseen = unseenActivity(activity.items, activity.seenSeq);
@@ -3240,8 +3731,9 @@ async function pollActivity() {
   if (document.hidden || activity.inflight) return;
   activity.inflight = true;
   try {
-    const data = await api(`/api/activity?since=${activity.seq}`);
+    const data = await api(activitySinceUrl(activity.seq, activity.epoch));
     clock.skew = data.now - Date.now();
+    if (data.epoch !== undefined) activity.epoch = data.epoch;
     if (data.reset) activity.items = [];
     activity.items = [...activity.items, ...data.items].slice(-ACTIVITY_LIMIT);
     activity.seq = data.seq;
@@ -3266,6 +3758,7 @@ document.addEventListener("visibilitychange", () => {
     pollActivity();
     // Orca may have started since the last probe.
     if (settings.orcaEnabled !== false && orca.data?.available !== true) pollOrca();
+    watchTick().catch(() => {});
   }
   syncOrcaPolling();
   syncHistoryPolling();
@@ -3309,8 +3802,8 @@ function worktreeOverviewItem(worktree, detail, index) {
     </div>
     ${meta.length ? `<p class="sa-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
     ${detail.comment ? `<p class="wtv-comment">${esc(detail.comment)}</p>` : ""}
-    ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent) => `
-      <li class="wtv-agent">
+    ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent, index) => `
+      <li class="wtv-agent" data-agent="${index}">
         <span class="wtv-agent-head"><span class="session-state${agent.key ? ` st-${esc(agent.key)}` : ""}" aria-hidden="true"></span><span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
         ${agent.message ? `<span class="wtv-msg">${esc(agent.message)}</span>` : ""}
       </li>`).join("")}</ul>` : ""}`;
@@ -3418,7 +3911,7 @@ function closeWorktrees() {
 
 els.worktreesDialog.addEventListener("close", syncOrcaPolling);
 
-function chooseWorktree(index) {
+function chooseWorktree(index, agentIndex) {
   const worktree = wtv.entries[index];
   if (!worktree) return;
   closeWorktrees();
@@ -3426,7 +3919,7 @@ function chooseWorktree(index) {
     if (state.currentProject?.id !== worktree.projectId) openProject(worktree.projectId).then(() => toast(`Projeto: ${worktree.project}`)).catch(report);
     return;
   }
-  openWorktree(worktree)
+  openWorktree(worktree, { agent: Number.isInteger(agentIndex) ? worktree.agents[agentIndex] : null })
     .then(() => toast(`Worktree: ${worktree.name}`))
     .catch(report);
 }
@@ -3455,7 +3948,8 @@ els.worktreesInput.addEventListener("keydown", (event) => {
 els.worktreesList.addEventListener("mousedown", (event) => event.preventDefault());
 els.worktreesList.addEventListener("click", (event) => {
   const option = event.target.closest(".wtv-item");
-  if (option) chooseWorktree(Number(option.dataset.index));
+  const agentRow = event.target.closest(".wtv-agent");
+  if (option) chooseWorktree(Number(option.dataset.index), agentRow ? Number(agentRow.dataset.agent) : undefined);
 });
 els.worktreesDialog.addEventListener("click", (event) => {
   if (event.target === els.worktreesDialog) closeWorktrees();
@@ -3466,7 +3960,8 @@ els.worktreesBtn.addEventListener("click", () => openWorktrees());
 // ------------------------------------------------------ command palette
 
 const PALETTE_ICONS = { session: "i-code", hit: "i-search" };
-const palette = { query: "", entries: [], index: 0, hits: [], loading: false, indexing: false, seq: 0, timer: null };
+const palette = { query: "", entries: [], index: 0, hits: [], loading: false, indexing: false, seq: 0, timer: null, pick: null };
+const PALETTE_PLACEHOLDER = els.paletteInput.placeholder;
 
 function paletteActions() {
   const rightTab = (tab) => () => {
@@ -3480,6 +3975,8 @@ function paletteActions() {
     { label: "Abrir aba Subagentes", icon: "i-agents", run: rightTab("subagents") },
     { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
     { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
+    { label: "Abrir aba Navegador", icon: "i-globe", keywords: "arquivo página artefato", run: rightTab("browser") },
+    { label: "Abrir no navegador…", icon: "i-globe", keywords: "arquivo caminho url localhost página artefato", run: promptBrowserTarget },
     ...(orcaOn() ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
     ...(!els.worktreesBtn.hidden ? [{ label: "Ver worktrees", icon: "i-branch", keywords: "orca visão geral alt+w", run: () => openWorktrees() }] : []),
     { label: "Ver atividade", icon: "i-agents", keywords: "feed eventos erros terminou subagentes", run: () => openWorktrees("activity") },
@@ -3487,6 +3984,7 @@ function paletteActions() {
     { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
     { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },
     { label: "Configurações", icon: "i-gear", keywords: "preferências fonte largura", run: openSettings },
+    ...fastPaletteActions(),
   ];
 }
 
@@ -3505,6 +4003,7 @@ function paletteSessions() {
 }
 
 function paletteGroups() {
+  if (palette.pick) return [{ title: palette.pick.title, items: palette.pick.items, limit: 500 }];
   return [
     { title: "Ações", items: paletteActions(), limit: 10 },
     {
@@ -3553,11 +4052,19 @@ function renderPalette() {
 
 function openPalette() {
   closeMenu();
-  Object.assign(palette, { query: "", index: 0, hits: [], loading: false });
+  Object.assign(palette, { query: "", index: 0, hits: [], loading: false, pick: null });
   els.paletteInput.value = "";
   els.paletteDialog.showModal();
   renderPalette();
   els.paletteInput.focus();
+}
+
+// The palette as a plain picker over `items` ({ label, sub, icon, run }): no actions, no conversation search.
+function openPalettePick(title, items) {
+  openPalette();
+  palette.pick = { title, items };
+  els.paletteInput.placeholder = `${title} (digite para filtrar)`;
+  renderPalette();
 }
 
 function closePalette() {
@@ -3565,6 +4072,7 @@ function closePalette() {
 }
 
 els.paletteDialog.addEventListener("close", () => {
+  els.paletteInput.placeholder = PALETTE_PLACEHOLDER;
   clearTimeout(palette.timer);
   palette.seq++;
   palette.loading = false;
@@ -3584,7 +4092,7 @@ els.paletteInput.addEventListener("input", () => {
   const seq = ++palette.seq;
   const query = palette.query.trim();
   palette.hits = [];
-  palette.loading = query.length >= SEARCH_MIN_CHARS;
+  palette.loading = !palette.pick && query.length >= SEARCH_MIN_CHARS;
   renderPalette();
   if (!palette.loading) return;
   palette.timer = setTimeout(async () => {
@@ -3625,6 +4133,286 @@ els.paletteList.addEventListener("click", (event) => {
 els.paletteDialog.addEventListener("click", (event) => {
   if (event.target === els.paletteDialog) closePalette();
 });
+
+// ---------------------------------------------------------------- navegador
+// Inspector tab that opens project files, artifacts and local pages beside the chat. A file is resolved and checked by
+// GET .../file?info=1 and then loaded from the capability URL it returns, so a sandboxed frame never needs the Studio
+// token (it has an opaque origin: no cookies, no storage, no access to this page). A local dev server loads in a frame
+// of its own origin (`allow-same-origin` is only granted to origins other than Studio's, which classifyTarget refuses).
+
+const browserEls = {
+  bar: $("#browserBar"),
+  input: $("#browserInput"),
+  back: $("#browserBack"),
+  forward: $("#browserForward"),
+  reload: $("#browserReload"),
+  outside: $("#browserOutside"),
+  stage: $("#browserStage"),
+};
+const BROWSER_KEY_PREFIX = "pi-studio:browser:";
+const BROWSER_TEXT_CAP = 1024 * 1024;
+const BROWSER_EXTERNAL_TIMEOUT_MS = 12000;
+const BROWSER_REASONS = {
+  studio: "Este endereço é o próprio PI Studio e não abre aqui.",
+  scheme: "Abrimos arquivos do projeto, http://localhost e páginas https.",
+  credentials: "Endereços com usuário e senha não são abertos.",
+  "remote-file": "Arquivos de outros computadores não são abertos.",
+};
+const BROWSER_ERRORS = {
+  "Outside the project": "O arquivo está fora da pasta do projeto.",
+  "File not found": "Arquivo não encontrado.",
+  "Not a file": "O caminho não é um arquivo.",
+  "Invalid path": "Caminho inválido.",
+  "Project folder not found": "A pasta do projeto não existe mais.",
+};
+// History of the open project (back/forward), the signature of what the stage shows, and the "abrir fora" URL.
+const browser = { projectId: null, history: emptyBrowserHistory(), shown: "", seq: 0, nonce: 0, outsideUrl: null, timer: null };
+
+const studioPort = () => location.port || (location.protocol === "https:" ? "443" : "80");
+const classify = (text) => classifyTarget(text, { studioPort: studioPort() });
+
+function saveBrowserHistory() {
+  if (!browser.projectId) return;
+  try {
+    localStorage.setItem(BROWSER_KEY_PREFIX + browser.projectId, JSON.stringify(browser.history));
+  } catch {
+    // Storage full or blocked: the history just stays in memory.
+  }
+}
+
+function syncBrowserProject() {
+  const id = state.currentProject?.id ?? null;
+  if (id === browser.projectId) return;
+  browser.projectId = id;
+  browser.history = id ? parseBrowserHistory(localStorage.getItem(BROWSER_KEY_PREFIX + id)) : emptyBrowserHistory();
+  browser.shown = "";
+}
+
+// Every entry point (Arquivos, message links, @ picker, Ctrl+K, the address bar) ends here.
+function openInBrowser(input) {
+  const target = classify(input);
+  if (target.type === "invalid") return toast(BROWSER_REASONS[target.reason] || "Endereço inválido.", "error");
+  if (!state.currentProject) return toast("Abra um projeto primeiro.", "error");
+  syncBrowserProject();
+  browser.history = browserHistoryPush(browser.history, targetText(target));
+  saveBrowserHistory();
+  browserEls.input.value = targetText(target);
+  setPanel("right", true);
+  selectTab("browser");
+  scheduleInspector("browser");
+}
+
+function moveBrowser(step) {
+  browser.history = browserHistoryMove(browser.history, step);
+  saveBrowserHistory();
+  scheduleInspector("browser");
+}
+
+function setBrowserOutside(url) {
+  browser.outsideUrl = url;
+  browserEls.outside.disabled = !url;
+}
+
+function openBrowserOutside() {
+  if (browser.outsideUrl) window.open(browser.outsideUrl, "_blank", "noopener,noreferrer");
+}
+
+// Ctrl/Cmd+click on a file link: the same capability URL, in the system browser.
+async function openTargetOutside(target) {
+  if (target.type !== "file") return void window.open(target.url, "_blank", "noopener,noreferrer");
+  const info = await browserFileInfo(target.path);
+  window.open(new URL(info.raw, location.origin).href, "_blank", "noopener,noreferrer");
+}
+
+const browserFileInfo = (filePath) =>
+  api(`/api/projects/${encodeURIComponent(state.currentProject.id)}/file?path=${encodeURIComponent(filePath)}&info=1`);
+
+function browserCard(icon, title, text, actions = []) {
+  const card = el("div", "insp-empty browser-card");
+  card.innerHTML = `${svg(icon)}<strong>${esc(title)}</strong><span>${esc(text)}</span>`;
+  for (const action of actions) {
+    const button = el("button", "btn", action.label);
+    button.type = "button";
+    button.addEventListener("click", action.run);
+    card.append(button);
+  }
+  return card;
+}
+
+const OUTSIDE_ACTION = { label: "Abrir fora", run: openBrowserOutside };
+
+function browserFrame(src, title, sandbox) {
+  const frame = el("iframe", "browser-frame");
+  // The sandbox is set before the first navigation; a null sandbox is only for the PDF viewer (see browserFileView).
+  if (sandbox !== null) frame.setAttribute("sandbox", sandbox);
+  frame.title = title;
+  frame.referrerPolicy = "no-referrer";
+  frame.src = src;
+  return frame;
+}
+
+async function browserText(info) {
+  const res = await fetch(info.raw, { headers: { range: `bytes=0-${BROWSER_TEXT_CAP - 1}` } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const note = info.size > BROWSER_TEXT_CAP ? `Mostrando os primeiros ${formatBytes(BROWSER_TEXT_CAP)} de ${formatBytes(info.size)}.` : "";
+  return { text: await res.text(), note };
+}
+
+async function browserFileView(info) {
+  const media = (tag, props) => {
+    const holder = el("div", "browser-media");
+    holder.append(Object.assign(document.createElement(tag), props));
+    return holder;
+  };
+  switch (info.kind) {
+    case "image":
+      return media("img", { src: info.raw, alt: info.name });
+    case "audio":
+    case "video":
+      return media(info.kind, { src: info.raw, controls: true });
+    case "pdf":
+      return browserFrame(info.raw, info.name, null);
+    case "html":
+      // Scripts run, but in an opaque origin: no Studio token, storage or cookies; relative assets load through the capability path.
+      return browserFrame(info.raw, info.name, "allow-scripts allow-forms");
+    case "markdown": {
+      const { text, note } = await browserText(info);
+      const doc = el("article", "browser-doc md");
+      doc.dataset.base = info.path;
+      doc.innerHTML = renderMarkdown(text) + (note ? `<p class="muted">${esc(note)}</p>` : "");
+      return doc;
+    }
+    case "text": {
+      const { text, note } = await browserText(info);
+      const holder = el("div", "browser-code");
+      const code = el("code", "", text);
+      const pre = el("pre", "");
+      pre.append(code);
+      holder.append(pre);
+      if (note) holder.append(el("p", "browser-note", note));
+      return holder;
+    }
+    default:
+      return browserCard("i-file", info.name, `${formatBytes(info.size)} · este tipo de arquivo não tem visualização aqui.`, [OUTSIDE_ACTION]);
+  }
+}
+
+async function showBrowserFile(target, seq) {
+  const { stage } = browserEls;
+  stage.replaceChildren(el("div", "browser-loading", "Abrindo…"));
+  try {
+    const info = await browserFileInfo(target.path);
+    if (seq !== browser.seq) return;
+    setBrowserOutside(new URL(info.raw, location.origin).href);
+    const view = await browserFileView(info);
+    if (seq === browser.seq) stage.replaceChildren(view);
+  } catch (error) {
+    if (seq === browser.seq) stage.replaceChildren(browserCard("i-alert", "Não foi possível abrir", BROWSER_ERRORS[error.message] || error.message));
+  }
+}
+
+function showBrowserPage(target, seq) {
+  const { stage } = browserEls;
+  const local = target.type === "local";
+  // allow-same-origin is safe here only because classifyTarget never lets Studio's own origin through.
+  const frame = browserFrame(target.url, target.label, `allow-scripts allow-forms ${local ? "" : "allow-popups "}allow-same-origin`);
+  setBrowserOutside(target.url);
+  stage.replaceChildren(frame);
+  if (local) return;
+  // Most sites refuse to be framed and the browser gives no signal for it: say so, and fall back to a card if nothing loads.
+  const note = el("div", "browser-note");
+  const open = el("button", "mini-btn", "Abrir fora");
+  open.type = "button";
+  open.addEventListener("click", openBrowserOutside);
+  note.append(el("span", "", "Alguns sites não permitem abrir aqui."), open);
+  stage.append(note);
+  frame.addEventListener("load", () => clearTimeout(browser.timer), { once: true });
+  browser.timer = setTimeout(() => {
+    if (seq === browser.seq) stage.replaceChildren(browserCard("i-globe", "Este site não permite abrir aqui", "A página não carregou dentro do Studio (muitos sites bloqueiam isso).", [OUTSIDE_ACTION]));
+  }, BROWSER_EXTERNAL_TIMEOUT_MS);
+}
+
+function showBrowserTarget(current) {
+  clearTimeout(browser.timer);
+  const seq = ++browser.seq;
+  setBrowserOutside(null);
+  const { stage } = browserEls;
+  if (!current) {
+    stage.replaceChildren(browserCard("i-globe", "Navegador", "Abra aqui arquivos, artefatos e páginas locais do projeto. Clique em um arquivo em Arquivos ou digite um caminho ou endereço acima."));
+    return;
+  }
+  const target = classify(current);
+  if (target.type === "invalid") stage.replaceChildren(browserCard("i-alert", "Endereço inválido", BROWSER_REASONS[target.reason] || "Endereço inválido."));
+  else if (target.type === "file") showBrowserFile(target, seq);
+  else showBrowserPage(target, seq);
+}
+
+function renderBrowser() {
+  syncBrowserProject();
+  const { history } = browser;
+  const current = browserHistoryCurrent(history);
+  browserEls.back.disabled = history.index <= 0;
+  browserEls.forward.disabled = history.index < 0 || history.index >= history.items.length - 1;
+  browserEls.reload.disabled = !current;
+  if (document.activeElement !== browserEls.input) browserEls.input.value = current;
+  const signature = `${browser.projectId}|${current}|${browser.nonce}`;
+  if (signature === browser.shown) return;
+  browser.shown = signature;
+  showBrowserTarget(current);
+}
+
+browserEls.bar.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = browserEls.input.value.trim();
+  if (!value) return;
+  openInBrowser(value);
+  browserEls.input.blur();
+});
+browserEls.input.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  browserEls.input.value = browserHistoryCurrent(browser.history);
+  browserEls.input.blur();
+});
+browserEls.back.addEventListener("click", () => moveBrowser(-1));
+browserEls.forward.addEventListener("click", () => moveBrowser(1));
+browserEls.reload.addEventListener("click", () => {
+  browser.nonce++;
+  scheduleInspector("browser");
+});
+browserEls.outside.addEventListener("click", openBrowserOutside);
+
+// Links in messages (and in a Markdown file shown here): a click opens the target in the Navegador, Ctrl/Cmd+click outside.
+// `baseFile` resolves relative links of a Markdown file against its folder.
+function onLinkClick(event, baseFile = "") {
+  const anchor = event.target.closest?.("a");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href") ?? "";
+  const text = anchor.dataset.open !== undefined ? (baseFile ? resolveSibling(baseFile, anchor.dataset.open) : anchor.dataset.open) : href;
+  if (anchor.dataset.open === undefined && !/^https?:/i.test(href)) return;
+  const target = classify(text);
+  const action = linkAction(target, event);
+  if (action === "ignore") return;
+  event.preventDefault();
+  if (action === "inline") openInBrowser(text);
+  else openTargetOutside(target).catch(report);
+}
+
+els.thread.addEventListener("click", (event) => onLinkClick(event));
+browserEls.stage.addEventListener("click", (event) => onLinkClick(event, event.target.closest?.("[data-base]")?.dataset.base ?? ""));
+els.outputsList.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-open]");
+  if (item) openInBrowser(item.dataset.open);
+});
+
+// Ctrl+K "Abrir no navegador…": shows the tab and puts the cursor in the address bar.
+function promptBrowserTarget() {
+  setPanel("right", true);
+  selectTab("browser");
+  requestAnimationFrame(() => {
+    browserEls.input.focus();
+    browserEls.input.select();
+  });
+}
 
 // ------------------------------------------------------------------ wiring
 
