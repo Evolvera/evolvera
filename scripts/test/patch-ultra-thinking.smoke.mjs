@@ -48,7 +48,7 @@ try {
   assert.ok(shell.indexOf('patch-pi-083-ultra-thinking.mjs') > shell.indexOf('npm install -g --ignore-scripts'));
   assert.ok(shell.indexOf('patch-pi-subagents-ultra-thinking.mjs') > shell.indexOf('pi install npm:@tintinweb/pi-subagents@0.18.2'));
   assert.ok(powershell.indexOf('patch-pi-083-ultra-thinking.mjs') > powershell.indexOf('npm install -g '));
-  assert.ok(powershell.indexOf('patch-pi-subagents-ultra-thinking.mjs') > powershell.indexOf('pi install npm:@tintinweb/pi-subagents@0.18.2'));
+  assert.ok(powershell.indexOf('patch-pi-subagents-ultra-thinking.mjs') > powershell.indexOf('Invoke-PiInstall npm:@tintinweb/pi-subagents@0.18.2'));
   console.log('patch-ultra-thinking smoke: PASS (DISPOSABLE_VERIFIED)');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
