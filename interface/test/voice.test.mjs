@@ -198,6 +198,20 @@ test("GET status and POST raw audio routes validate auth, media type, and return
     assert.equal(empty.status, 400);
     const oversized = await fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token, "content-type": "audio/webm" }, body: Buffer.alloc(10 * 1024 * 1024 + 1) });
     assert.equal(oversized.status, 413);
+    // A 413 or 400 must reach the client every time, never a closed socket mid-upload (it was flaky under load): repeat both.
+    for (let i = 0; i < 5; i += 1) {
+      const again = await fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token, "content-type": "audio/webm" }, body: Buffer.alloc(10 * 1024 * 1024 + 1) });
+      assert.equal(again.status, 413);
+      const wrongType = await fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token, "content-type": "text/plain" }, body: Buffer.alloc(256 * 1024) });
+      assert.equal(wrongType.status, 400);
+    }
+    // No content-type at all is a bad request too (not a crash on the missing header).
+    const noType = await fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token }, body: new Uint8Array([1, 2, 3]) });
+    assert.equal(noType.status, 400);
+    // A runaway upload (over 4x the limit) is cut off instead of being read forever; the server keeps serving afterwards.
+    const runaway = await fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token, "content-type": "audio/webm" }, body: Buffer.alloc(41 * 1024 * 1024) }).then((r) => r.status, () => "closed");
+    assert.ok(runaway === 413 || runaway === "closed", `runaway upload: ${runaway}`);
+    assert.equal((await fetch(`${origin}/api/voice/status`, { headers: { "x-pi-studio-token": token } })).status, 200);
     process.env.PI_STUDIO_FAKE_VOICE_MODE = "slow-load";
     process.env.PI_STUDIO_FAKE_VOICE_DELAY = "250";
     const pending = fetch(`${origin}/api/voice/transcribe`, { method: "POST", headers: { "x-pi-studio-token": token, "content-type": "audio/webm" }, body: Buffer.from("wait for startup") });

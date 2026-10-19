@@ -3125,3 +3125,229 @@ export function filterTree(data, query) {
   }
   return { ...data, projects };
 }
+
+// ------------------------------------------------------------------ voice
+
+export const VOICE_READ_KEY = "pi-studio:voice-read";
+// The server rejects audio longer than 120 s; stop a little earlier. Shorter takes carry no speech.
+export const REC_MAX_MS = 115000;
+export const REC_MIN_MS = 500;
+
+export const VOICE_SHORTCUTS = { title: "Voz", items: [{ keys: ["Ctrl", "Shift", "M"], label: "Gravar voz · parar e transcrever" }] };
+
+export function voiceReadEnabled(raw) {
+  return raw === "1";
+}
+
+export function micShortcut(event) {
+  if (!event || event.isComposing || event.repeat || event.altKey) return false;
+  if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return false;
+  return String(event.key).toLowerCase() === "m" || event.code === "KeyM";
+}
+
+// First container the browser really records; "" lets it choose.
+export function recorderMime(isSupported) {
+  for (const type of ["audio/webm;codecs=opus", "audio/webm"]) {
+    try {
+      if (isSupported?.(type)) return type;
+    } catch {
+      // A throwing probe means unsupported.
+    }
+  }
+  return "";
+}
+
+// The server accepts audio/webm, audio/ogg and audio/wav; codec parameters are dropped.
+export function uploadMime(type) {
+  const base = String(type ?? "").split(";")[0].trim().toLowerCase();
+  return ["audio/webm", "audio/ogg", "audio/wav"].includes(base) ? base : "audio/webm";
+}
+
+export function formatRecTimer(ms) {
+  const seconds = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// RMS of an AnalyserNode time-domain buffer (bytes centred on 128), boosted so ordinary speech fills the meter.
+export function levelFromSamples(samples) {
+  if (!samples?.length) return 0;
+  let sum = 0;
+  for (const value of samples) sum += ((value - 128) / 128) ** 2;
+  return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+}
+
+const MIC_TRANSITIONS = {
+  idle: { toggle: "starting" },
+  starting: { ready: "recording", fail: "idle" },
+  recording: { toggle: "transcribing", abort: "idle", fail: "idle" },
+  transcribing: { done: "idle", fail: "idle" },
+};
+
+// Events that do not apply to a phase keep it (a click while transcribing is ignored); unknown phases reset to idle.
+export function nextMicPhase(phase, event) {
+  const table = MIC_TRANSITIONS[phase];
+  return table ? table[event] ?? phase : "idle";
+}
+
+// Mic button state from the server status (null = not known yet) and the recording phase.
+export function micView(status, phase) {
+  if (phase === "starting") return { disabled: true, pressed: false, title: "Aguardando o microfone…", live: "aguardando o microfone…" };
+  if (phase === "recording") return { disabled: false, pressed: true, title: "Parar e transcrever (Ctrl+Shift+M)", live: "gravando" };
+  if (phase === "transcribing") return { disabled: true, pressed: false, title: "Transcrevendo…", live: "transcrevendo…" };
+  if (status && status.available === false) {
+    const reason = [status.reason, status.message].find((value) => typeof value === "string" && value.trim());
+    return { disabled: true, pressed: false, title: reason ? reason.trim() : "Voz indisponível neste computador.", live: "" };
+  }
+  return { disabled: false, pressed: false, title: "Gravar voz (Ctrl+Shift+M)", live: "" };
+}
+
+// Puts `text` at the caret (a selection is replaced), adding a space only where words would glue together.
+// `cursor` lands after the inserted text and its padding.
+export function insertAtCursor(value, start, end, text) {
+  const base = String(value ?? "");
+  const piece = String(text ?? "").trim();
+  const clamp = (position) => Math.min(Math.max(position, 0), base.length);
+  const from = Number.isInteger(start) ? clamp(start) : base.length;
+  const to = Math.max(from, Number.isInteger(end) ? clamp(end) : from);
+  if (!piece) return { value: base, cursor: from };
+  const before = base.slice(0, from);
+  const after = base.slice(to);
+  const left = before && !/\s$/.test(before) ? " " : "";
+  const right = after && !/^\s/.test(after) ? " " : "";
+  return { value: `${before}${left}${piece}${right}${after}`, cursor: before.length + left.length + piece.length + right.length };
+}
+
+export function micErrorMessage(error) {
+  switch (error?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Permissão do microfone negada.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Nenhum microfone encontrado.";
+    case "NotReadableError":
+      return "O microfone está em uso por outro aplicativo.";
+    default:
+      return "Não foi possível acessar o microfone.";
+  }
+}
+
+// The server's own pt-BR message wins; else the status picks the text (400/401/403/413/429/503).
+export function transcribeErrorMessage(status, body) {
+  const message = body?.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  switch (status) {
+    case 400: return "Áudio inválido.";
+    case 401:
+    case 403: return "Sessão expirada. Recarregue o Studio.";
+    case 413: return "Gravação longa demais (máx. 2 min).";
+    case 429: return "Transcrição ocupada. Tente de novo em instantes.";
+    case 503: return "Transcrição indisponível agora.";
+    default: return "Falha ao transcrever o áudio.";
+  }
+}
+
+// Best speech voice for `lang`: the exact locale beats other regions of the language (an accent mismatch is worse
+// than a plain voice); inside a locale Natural/Online neural voices beat the robotic Desktop ones. null = none.
+export function pickVoice(voices, lang = "pt-BR") {
+  const normalise = (value) => String(value ?? "").toLowerCase().replace("_", "-");
+  const wanted = normalise(lang);
+  const family = wanted.split("-")[0];
+  let best = null;
+  let bestScore = -Infinity;
+  for (const voice of Array.isArray(voices) ? voices : []) {
+    const voiceLang = normalise(voice?.lang);
+    let score;
+    if (voiceLang === wanted) score = 1000;
+    else if (voiceLang.split("-")[0] === family) score = 300;
+    else continue;
+    const name = String(voice.name ?? "");
+    if (/natural/i.test(name)) score += 300;
+    if (/online/i.test(name)) score += 200;
+    if (/google/i.test(name)) score += 100;
+    if (/desktop/i.test(name)) score -= 100;
+    if (score > bestScore) {
+      best = voice;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+// Markdown reply to plain prose for speech: code blocks, urls, tags and syntax marks are dropped; every
+// remaining line ends in punctuation so the voice pauses between list items and headings.
+export function speakableText(markdown) {
+  let fence = null;
+  const prose = [];
+  for (const line of String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    const mark = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length) fence = null;
+    } else if (mark) fence = mark;
+    else prose.push(line);
+  }
+  const out = [];
+  for (const raw of prose) {
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw) || /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(raw)) continue;
+    let line = raw.replace(/^\s*(?:>\s*)+/, "").replace(/^\s*#{1,6}\s+/, "").replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "");
+    if (/^\s*\|/.test(line)) line = line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").replace(/\s*\|\s*/g, ", ");
+    line = line
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/<?https?:\/\/[^\s>]+>?/g, "")
+      .replace(/<\/?[a-z][^>]*>/gi, "")
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/(\*\*|__)(.+?)\1/g, "$2")
+      .replace(/~~(.+?)~~/g, "$1")
+      .replace(/\*(\S(?:.*?\S)?)\*/g, "$1")
+      .replace(/(^|\W)_(\S(?:.*?\S)?)_(?=\W|$)/g, "$1$2")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (line) out.push(/[.!?:;…,)]$/.test(line) ? line : `${line}.`);
+  }
+  return out.join("\n");
+}
+
+// Short pieces for the speech engine (long utterances stall or cut off on some voices): sentences packed up to
+// `max` characters; a longer sentence is cut at a space, or hard when it has none.
+export function speechChunks(text, max = 200) {
+  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return [];
+  const pieces = [];
+  for (let sentence of flat.split(/(?<=[.!?…])\s+/)) {
+    while (sentence.length > max) {
+      let cut = sentence.lastIndexOf(" ", max);
+      if (cut <= 0) cut = max;
+      pieces.push(sentence.slice(0, cut));
+      sentence = sentence.slice(cut).trimStart();
+    }
+    pieces.push(sentence);
+  }
+  const chunks = [];
+  let current = "";
+  for (const piece of pieces) {
+    if (current && current.length + 1 + piece.length > max) {
+      chunks.push(current);
+      current = piece;
+    } else current = current ? `${current} ${piece}` : piece;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+// The newest assistant reply as { key, text } to read aloud, or null when it has nothing speakable or was already read.
+export function lastReplyToSpeak(messages, spokenKey) {
+  const list = Array.isArray(messages) ? messages : [];
+  const index = list.findLastIndex((message) => message?.role === "assistant");
+  if (index < 0) return null;
+  const text = speakableText(messageText(list[index]));
+  const key = String(list[index].timestamp ?? index);
+  return !text || key === spokenKey ? null : { key, text };
+}
+
+// Adds "Ouvir" right after "Copiar" when the browser can speak and the reply has speakable text.
+export function withSpeakAction(actions, { supported, text }) {
+  if (!supported || !speakableText(text)) return actions;
+  const at = actions.findIndex((action) => action.id === "copy") + 1;
+  return [...actions.slice(0, at), { id: "speak", label: "Ouvir", disabled: false }, ...actions.slice(at)];
+}

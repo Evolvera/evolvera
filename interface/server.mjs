@@ -2115,18 +2115,25 @@ async function route(req, res) {
     if (rawMatch) return await serveRaw(req, res, rawMatch);
     if (req.method === "GET" && pathname === "/api/voice/status") return json(res, 200, voice.status());
     if (req.method === "POST" && pathname === "/api/voice/transcribe") {
+      const drainRequest = (request) => new Promise((resolve) => { request.on("end", resolve); request.on("error", resolve); request.resume(); });
       const type = String(req.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
-      if (!["audio/webm", "audio/ogg", "audio/wav"].includes(type)) return json(res, 400, { error: "Formato de áudio inválido." });
+      // Answer only after the body is consumed: replying mid-upload makes the client see "other side closed" instead of the status.
+      if (!["audio/webm", "audio/ogg", "audio/wav"].includes(type)) { await drainRequest(req); return json(res, 400, { error: "Formato de áudio inválido." }); }
       const chunks = [];
       let size = 0;
       const body = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(Object.assign(new Error("Envio de áudio expirou."), { statusCode: 413 })), 120000);
         req.on("data", (chunk) => {
           size += chunk.length;
-          if (size > 10 * 1024 * 1024) { clearTimeout(timer); reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 })); }
-          else chunks.push(chunk);
+          if (size <= 10 * 1024 * 1024) chunks.push(chunk);
+          // Past the limit keep reading (not storing) so the 413 reaches the client; a runaway upload is cut at 4x the limit.
+          else if (size > 40 * 1024 * 1024) { clearTimeout(timer); req.destroy(); reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 })); }
         });
-        req.on("end", () => { clearTimeout(timer); resolve(Buffer.concat(chunks)); });
+        req.on("end", () => {
+          clearTimeout(timer);
+          if (size > 10 * 1024 * 1024) reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 }));
+          else resolve(Buffer.concat(chunks));
+        });
         req.on("error", (error) => { clearTimeout(timer); reject(error); });
       });
       if (!body.length) return json(res, 400, { error: "O áudio está vazio." });

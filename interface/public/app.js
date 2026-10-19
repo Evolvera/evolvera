@@ -132,6 +132,9 @@ import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classify
 
 import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
 
+import { VOICE_READ_KEY, VOICE_SHORTCUTS, voiceReadEnabled, withSpeakAction } from "./lib.js";
+import { createVoice } from "./voice.js";
+
 const $ = (selector) => document.querySelector(selector);
 const els = {
   app: $("#app"),
@@ -184,6 +187,12 @@ const els = {
   hint: $("#composerHint"),
   shellChip: $("#shellChip"),
   stop: $("#stopBtn"),
+  micBtn: $("#micBtn"),
+  micLive: $("#micLive"),
+  micLabel: $("#micLabel"),
+  micTimer: $("#micTimer"),
+  micLevel: $("#micLevel"),
+  speakStop: $("#speakStop"),
   send: $("#sendBtn"),
   modeLabel: $("#modeLabel"),
   statusLine: $("#statusLine"),
@@ -249,6 +258,7 @@ const els = {
   settingsDialog: $("#settingsDialog"),
   settingFont: [...document.querySelectorAll('input[name="settingFont"]')],
   settingWidth: [...document.querySelectorAll('input[name="settingWidth"]')],
+  settingVoiceRead: $("#settingVoiceRead"),
   settingNotify: $("#settingNotify"),
   settingNotifyHint: $("#settingNotifyHint"),
   settingMotion: $("#settingMotion"),
@@ -465,6 +475,33 @@ async function showMoreSessions({ extra, path }) {
   }
   tree.expandEnv(extra, history);
 }
+
+// Voice (public/voice.js): mic in the composer and replies read aloud. Hooks below: message actions, agent_end, submit, settings.
+function updateSpeakButtons(key) {
+  for (const button of els.thread.querySelectorAll('[data-action="msg-speak"]')) {
+    const on = key !== null && button.dataset.key === key;
+    const label = on ? "Parar" : "Ouvir";
+    button.classList.toggle("speaking", on);
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+}
+
+const voice = createVoice({
+  els,
+  token: apiToken,
+  toast,
+  composer: {
+    read: () => ({ value: els.prompt.value, start: els.prompt.selectionStart, end: els.prompt.selectionEnd }),
+    write: (value, cursor) => {
+      setComposerText(value, cursor);
+      els.prompt.focus();
+    },
+  },
+  isReadEnabled: () => voiceReadEnabled(localStorage.getItem(VOICE_READ_KEY)),
+  onSpeakingChange: updateSpeakButtons,
+  env: window,
+});
 
 async function sendRpc(command) {
   if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
@@ -1096,6 +1133,7 @@ function updateModelButton() {
 function resetConversation() {
   stopWatch();
   resetLiveData();
+  voice.stopSpeaking();
   state.messages = [];
   state.runtime.clear();
   state.liveMessage = null;
@@ -1643,6 +1681,7 @@ function handleRpc(event) {
       setRunning(false);
       state.liveMessage = null;
       stampTurnEnd(state.messages);
+      voice.autoRead(state.messages);
       sendRpc({ type: "get_entries" }).catch(() => {});
       refreshStats();
       refreshHistory().catch(() => {});
@@ -1822,7 +1861,10 @@ function annotateActions(items) {
   applyTurnFinish(items, state.isStreaming);
   for (const item of items) {
     if (item.kind === "user") item.actions = messageActions(item, ctx);
-    else if (item.kind === "assistant") item.actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
+    else if (item.kind === "assistant") {
+      const actions = messageActions(item, { ...ctx, lastAssistant: item === lastAssistant, retryId: state.retryTarget?.entryId });
+      item.actions = withSpeakAction(actions, { supported: voice.speechSupported, text: item.text });
+    }
   }
   state.timeline = new Map(items.map((item) => [item.key, item]));
 }
@@ -1831,7 +1873,12 @@ const ACTION_ICONS = { copy: "i-copy", edit: "i-edit", retry: "i-retry" };
 
 function actionsHtml(item) {
   if (!item.actions?.length) return "";
-  const buttons = item.actions.map((action) => `<button type="button" class="act-btn" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(action.label)}" aria-label="${esc(action.label)}"${action.disabled ? " disabled" : ""}>${svg(ACTION_ICONS[action.id])}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`);
+  const buttons = item.actions.map((action) => {
+    const speaking = action.id === "speak" && voice.speakingKey() === item.key;
+    const label = speaking ? "Parar" : action.label;
+    const icon = action.id === "speak" ? svg("i-speaker", "act-speaker") + svg("i-stop", "act-stop") : svg(ACTION_ICONS[action.id]);
+    return `<button type="button" class="act-btn${speaking ? " speaking" : ""}" data-action="msg-${action.id}" data-key="${esc(item.key)}" title="${esc(label)}" aria-label="${esc(label)}"${action.disabled ? " disabled" : ""}>${icon}${action.id === "copy" ? '<span class="act-flash">Copiado</span>' : ""}</button>`;
+  });
   const finished = item.finishAt === undefined ? null : finishedLabel(item.finishAt, item.finishTook);
   const time = finished ? `<span class="act-time" data-finished="${item.finishAt}" title="${esc(finished.title)}">${esc(finished.text)}</span>` : "";
   return `<div class="msg-actions" role="toolbar" aria-label="Ações da mensagem">${buttons.join("")}${time}</div>`;
@@ -2139,6 +2186,9 @@ async function messageAction(action, button) {
     await navigator.clipboard.writeText(item.text);
     button.classList.add("done");
     setTimeout(() => button.classList.remove("done"), 1400);
+  } else if (action === "speak") {
+    if (voice.speakingKey() === item.key) voice.stopSpeaking();
+    else voice.speak(item.key, item.text);
   } else if (action === "edit") {
     const text = await forkFrom(item.entryId);
     if (text === null) return;
@@ -3144,6 +3194,7 @@ async function submit(mode) {
   const message = els.prompt.value.trim();
   if (!message && !state.attachments.length) return;
   if (state.bash) return;
+  voice.stopSpeaking();
   closeComposerMenu();
   const builtin = parseBuiltin(message);
   if (builtin) return runBuiltin(builtin, message);
@@ -3199,6 +3250,12 @@ els.composer.addEventListener("submit", (event) => {
   submit(state.isStreaming ? "steer" : "prompt");
 });
 els.prompt.addEventListener("keydown", (event) => {
+  // While recording, Enter stops the take and transcribes instead of sending.
+  if (voice.isRecording() && event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    voice.toggle();
+    return;
+  }
   if (composerMenu.kind && handleComposerMenuKey(event)) return;
   const recalled = state.recalled !== null && els.prompt.value === state.recalled;
   const recall = recallAction(event, { empty: !els.prompt.value.trim(), recalled });
@@ -3355,7 +3412,7 @@ async function runShell(text) {
 // ---------------------------------------------------- shortcuts overlay
 
 function renderShortcuts() {
-  els.shortcutsBody.replaceChildren(...SHORTCUT_GROUPS.map((group) => {
+  els.shortcutsBody.replaceChildren(...[...SHORTCUT_GROUPS, VOICE_SHORTCUTS].map((group) => {
     const section = document.createElement("section");
     const rows = group.items.map((item) => `<div class="shortcut-row"><span>${esc(item.label)}</span><span class="shortcut-keys">${item.keys.map((key) => `<kbd>${esc(key)}</kbd>`).join("")}</span></div>`);
     section.innerHTML = `<h4>${esc(group.title)}</h4>${rows.join("")}`;
@@ -3878,6 +3935,8 @@ function openSettings() {
   const denied = canNotify && Notification.permission === "denied";
   for (const input of els.settingFont) input.checked = input.value === settings.fontSize;
   for (const input of els.settingWidth) input.checked = input.value === settings.chatWidth;
+  els.settingVoiceRead.checked = voice.speechSupported && voiceReadEnabled(localStorage.getItem(VOICE_READ_KEY));
+  els.settingVoiceRead.disabled = !voice.speechSupported;
   els.settingNotify.checked = notifyOn() && !denied;
   els.settingNotifyHint.textContent = denied
     ? "Bloqueadas pelo navegador: libere nas permissões do site."
@@ -3899,6 +3958,9 @@ els.settingsDialog.addEventListener("change", (event) => {
   else if (target === els.settingOrcaFollow) {
     settings.orcaFollow = target.checked;
     orca.lastFollowed = null;
+  } else if (target === els.settingVoiceRead) {
+    localStorage.setItem(VOICE_READ_KEY, target.checked ? "1" : "0");
+    if (!target.checked) voice.stopSpeaking();
   } else if (target === els.settingNotify) {
     localStorage.setItem(NOTIFY_KEY, target.checked ? "1" : "0");
     ensureNotifyPermission();
@@ -4982,6 +5044,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 renderShortcuts();
+voice.init().catch(() => {});
 updateComposer();
 renderAttachments();
 applyPanelWidth();

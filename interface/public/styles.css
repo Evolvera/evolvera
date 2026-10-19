@@ -1445,3 +1445,26 @@ button.tk-owner:hover { background: var(--bg-hover); color: var(--text); }
 .watch-btn-quiet:not(:disabled):hover { background: var(--bg-hover); opacity: 1; }
 .field textarea { padding: 9px 12px; background: var(--bg-input); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); outline: none; font-size: 13px; line-height: 1.5; resize: vertical; }
 .field textarea:focus { border-color: #5a5a5a; }
+/* Voice: microphone in the composer and replies read aloud. */
+.mic-btn { margin-left: -2px; }
+.mic-btn.is-recording, .mic-btn.is-recording:hover:not(:disabled) { color: var(--red); background: var(--bg-active); }
+.mic-btn:focus-visible, .speak-stop:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.mic-btn:disabled { cursor: not-allowed; }
+.mic-live { flex: none; display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 12.5px; }
+.mic-live[hidden] { display: none; }
+.mic-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+.mic-live.is-recording .mic-dot { display: block; animation: mic-pulse 1.4s ease-in-out infinite; }
+.mic-timer { font: 12.5px/1 var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.mic-meter { width: 72px; height: 4px; border-radius: 99px; background: var(--bg-active); overflow: hidden; }
+.mic-meter i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--green); transform: scaleX(0); transform-origin: left center; transition: transform 70ms linear; }
+.mic-live:not(.is-recording) .mic-timer, .mic-live:not(.is-recording) .mic-meter { display: none; }
+.mic-label { white-space: nowrap; }
+@keyframes mic-pulse { 50% { opacity: 0.3; } }
+.speak-stop { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text-2); }
+.act-btn .act-stop { display: none; }
+.act-btn.speaking { color: var(--text); background: var(--bg-active); }
+.act-btn.speaking .act-speaker { display: none; }
+.act-btn.speaking .act-stop { display: inline; }
+@media (prefers-reduced-motion: reduce) { .mic-live.is-recording .mic-dot { animation: none; } .mic-meter i { transition: none; } }
+html[data-motion="reduce"] .mic-live.is-recording .mic-dot { animation: none !important; }
+@media (max-width: 560px) { .mic-meter { width: 44px; } }
