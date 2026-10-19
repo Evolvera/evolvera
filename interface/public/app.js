@@ -3,6 +3,8 @@ import {
   NOTIFY_KEY,
   SETTINGS_KEY,
   followDecision,
+  followedPath,
+  detachProjectRequests,
   applyTurnFinish,
   countBadge,
   projectRunningCount,
@@ -298,7 +300,7 @@ const state = {
   notices: [],
   problems: [],
   subagentRecords: new Map(),
-  compacting: false,
+  compactingProjects: new Set(),
   commands: null,
   commandsLoading: false,
   lastSent: null,
@@ -367,7 +369,7 @@ async function api(path, { timeoutMs, ...options } = {}) {
   return data;
 }
 
-const report = (error) => toast(error?.message || String(error), "error");
+const report = (error) => { if (!error?.detached) toast(error?.message || String(error), "error"); };
 
 async function sendRpc(command) {
   if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
@@ -386,7 +388,7 @@ function awaitResponse(id, timeoutMs) {
       state.pending.delete(id);
       reject(new Error("Sem resposta do PI para a troca de sessão"));
     }, timeoutMs);
-    state.pending.set(id, { resolve, reject, timer });
+    state.pending.set(id, { resolve, reject, timer, projectId: state.currentProject?.id });
   });
 }
 
@@ -406,7 +408,7 @@ function rpcRequest(command, timeoutMs = 20000) {
       state.pending.delete(id);
       reject(new Error(`Sem resposta do PI para ${command.type}`));
     }, timeoutMs) : null;
-    state.pending.set(id, { resolve, reject, timer });
+    state.pending.set(id, { resolve, reject, timer, projectId: state.currentProject?.id });
     sendRpc({ ...command, id }).catch((error) => {
       clearTimeout(timer);
       state.pending.delete(id);
@@ -844,6 +846,10 @@ async function loadProject(projectId, { cwd } = {}) {
     ? await api("/api/projects/open-path", { method: "POST", body: JSON.stringify({ cwd }), timeoutMs: SESSION_SWITCH_TIMEOUT_MS })
     : await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
   setExited(false);
+  if (state.currentProject?.id && state.currentProject.id !== project.id) {
+    detachProjectRequests(state.pending, state.currentProject.id);
+    state.compactingProjects.delete(state.currentProject.id);
+  }
   state.currentProject = project;
   state.session = session;
   state.history = history || [];
@@ -1207,6 +1213,7 @@ function handleRpc(event) {
       addNotice(eventNotice(event));
       break;
     case "compaction_end":
+      if (state.currentProject) state.compactingProjects.delete(state.currentProject.id);
       if (event.errorMessage) toast(`Falha ao compactar: ${event.errorMessage}`, "error");
       state.phase = "thinking";
       addNotice(eventNotice(event));
@@ -2123,9 +2130,10 @@ function renderContext() {
   const problems = `<section class="insp-sec"><h3 class="sec-title">Erros e tentativas</h3>${state.problems.length
     ? `<ul class="prob-list">${[...state.problems].reverse().map(problemRow).join("")}</ul>`
     : `<p class="sec-hint">Nenhum erro nesta conversa.</p>`}</section>`;
-  const blocked = !state.currentProject || state.processExited || state.isStreaming || state.compacting;
-  const hint = state.compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
-  const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${state.compacting ? ' aria-busy="true"' : ""}>${state.compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
+  const compacting = state.compactingProjects.has(state.currentProject?.id);
+  const blocked = !state.currentProject || state.processExited || state.isStreaming || compacting;
+  const hint = compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
+  const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${compacting ? ' aria-busy="true"' : ""}>${compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
   const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : "";
   els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
@@ -2143,7 +2151,8 @@ function confirmDialog({ title, message, confirm }) {
 }
 
 async function compactNow({ instructions = "", confirm = true } = {}) {
-  if (state.compacting || !state.currentProject) return;
+  const projectId = state.currentProject?.id;
+  if (!projectId || state.compactingProjects.has(projectId)) return;
   if (state.isStreaming) {
     toast("Disponível quando o PI terminar a resposta atual.", "warning");
     return;
@@ -2154,7 +2163,7 @@ async function compactNow({ instructions = "", confirm = true } = {}) {
     confirm: "Compactar",
   });
   if (!ok) return;
-  state.compacting = true;
+  state.compactingProjects.add(projectId);
   scheduleInspector("context");
   try {
     // Compaction calls the model and can take a while: no client-side timeout.
@@ -2164,7 +2173,7 @@ async function compactNow({ instructions = "", confirm = true } = {}) {
   } catch (error) {
     report(error);
   } finally {
-    state.compacting = false;
+    state.compactingProjects.delete(projectId);
     scheduleInspector("context");
     if (!state.processExited) {
       refreshStats();
@@ -3168,11 +3177,14 @@ function followOrca() {
     composerText: Boolean(els.prompt.value.trim()) || state.attachments.length > 0,
     dialogOpen: Boolean(document.querySelector("dialog[open]")) || Boolean(state.uiActive),
   });
-  if (decision === "mark" || decision === "switch") orca.lastFollowed = active.path;
+  if (decision === "mark") orca.lastFollowed = active.path;
   if (decision !== "switch") return;
   const worktree = orca.data.worktrees.find((item) => samePath(item.path, active.path)) || { path: active.path, name: basename(active.path) };
   openWorktree(worktree)
-    .then(() => toast(`Seguindo o Orca: ${worktree.name}`))
+    .then(() => {
+      orca.lastFollowed = followedPath(orca.lastFollowed, active.path, true);
+      toast(`Seguindo o Orca: ${worktree.name}`);
+    })
     .catch(report);
 }
 

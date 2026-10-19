@@ -126,6 +126,22 @@ describe("text utils", () => {
     assert.equal(lib.isAwaitedResponse(null, pending), false);
   });
 
+  test("Orca follow advances only after the target project opens", () => {
+    assert.equal(lib.followedPath(null, "/tree/a", false), null);
+    assert.equal(lib.followedPath(null, "/tree/a", true), "/tree/a");
+  });
+
+  test("detaching a project's pending RPCs rejects and clears their timers", async () => {
+    let settled = false;
+    let cleared = false;
+    const oldProject = new Map([["a", { projectId: "a", timer: 1, reject(error) { settled = error.detached; } }], ["b", { projectId: "b", timer: 2, reject() { assert.fail("other project rejected"); } }]]);
+    const result = lib.detachProjectRequests(oldProject, "a", () => { cleared = true; });
+    assert.equal(result, 1);
+    assert.equal(settled, true);
+    assert.equal(cleared, true);
+    assert.deepEqual([...oldProject.keys()], ["b"]);
+  });
+
   test("runGated claims the gate synchronously and chains after the switch in flight", async () => {
     const holder = {};
     const order = [];
