@@ -64,7 +64,10 @@ export function renderAccountMenu(users, { width = 80, height = 24, selected = 0
     const margin = " ".repeat(Math.floor((columns - frameWidth) / 2));
     const muted = (text) => color ? `\u001b[38;2;154;128;180m${text}\u001b[0m` : text;
     const border = (text) => `${margin}${muted(text)}`;
-    menu = [border(`+- ${title} ${"-".repeat(frameWidth - title.length - 5)}+`), border(`|${" ".repeat(frameWidth - 2)}|`)];
+    menu = [border(`+- ${title} ${"-".repeat(frameWidth - title.length - 5)}+`)];
+    // Move the existing top padding above the box without shrinking the scene.
+    if (artHeight) menu.unshift("");
+    else menu.push(border(`|${" ".repeat(frameWidth - 2)}|`));
     for (const [i, item] of visible.entries()) {
       const active = start + i === selectedIndex;
       const text = pad(fit(`${active ? "> " : "  "}${profileText(item)}`, inner), inner);

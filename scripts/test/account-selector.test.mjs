@@ -331,7 +331,8 @@ test("profile HUD is centered, highlighted, deduplicated, and budgets all remain
     const lines = plain(frame).split("\n");
     assert.equal(lines.length, height);
     assert.deepEqual(lines.slice(0, sceneRows), renderTerminalArt({ width: 120, height: sceneRows, label: "Evolvera" }).map(plain));
-    assert.ok(lines[sceneRows].startsWith(" ".repeat(32) + "+- SELECT YOUR PROFILE"));
+    assert.equal(lines[sceneRows], "", "one blank row separates the unchanged scene from the login box");
+    assert.ok(lines[sceneRows + 1].startsWith(" ".repeat(32) + "+- SELECT YOUR PROFILE"));
     assert.match(frame, /48;2;233;196;255m> Evolvera/u, "active profile has a filled highlight");
     assert.doesNotMatch(frame, /evolvera \(Evolvera\)|Evolvera \/ evolvera/u);
     assert.match(frame, /Create new account/u);
