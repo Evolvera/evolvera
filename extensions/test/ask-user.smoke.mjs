@@ -70,7 +70,8 @@ try {
   assert.match(selected.content[0].text, /decision.*A/s);
   assert.ok(basic.ui.selections[0].options.includes("A (recomendado)"));
   assert.equal(basic.ui.selections[0].opts.timeout, 30 * 60_000);
-  assert.equal(basic.writes.length, 0);
+  // A blocking question is also recorded open then answered, so PI Studio can show "precisa de você" for PIs it does not own.
+  assert.deepEqual(basic.writes.map((w) => [w.data.id, w.data.blocking, w.data.status]), [["decision", true, "open"], ["decision", true, "answered"]]);
 
   // Free text is requested only after its selector choice and remains plain text.
   const free = harness();
@@ -135,12 +136,14 @@ try {
   const persisted = [
     { type: "custom", customType: "ask_user", data: { id: "q1", question: "old", recommended: "R", blocking: false, status: "open" } },
     { type: "custom", customType: "ask_user", data: { id: "q2", question: "closed", recommended: "R", blocking: false, status: "answered" } },
+    // A blocking question left open by a process that died cannot be answered any more: it is not restored as open.
+    { type: "custom", customType: "ask_user", data: { id: "q4", question: "stale blocking", recommended: "R", blocking: true, status: "open" } },
   ];
   const restored = harness({ entries: persisted });
   await restored.events.get("session_start")({}, restored.ctx);
   assert.match(restored.statuses.at(-1).text, /1/);
   await restored.tools.get("ask_user").execute("c", { questions: [{ question: "new", recommended: "R", blocking: false }] }, undefined, undefined, restored.ctx);
-  assert.equal(restored.writes[0].data.id, "q3");
+  assert.equal(restored.writes[0].data.id, "q5", "ids stay unique past every persisted id, blocking ones included");
   await restored.commands.get("perguntas").handler("", restored.ctx);
   assert.match(restored.notices.at(-1).message, /q1.*old/s);
 
