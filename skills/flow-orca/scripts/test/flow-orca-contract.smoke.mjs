@@ -245,9 +245,9 @@ has(SKILL, /mesmo com `--setup skip`/, "setup skip must not be assumed side-effe
 has(SKILL, /worker-start --task <id> --terminal <handle exato> --run <id> --json/, "dispatch must adopt the exact prepared terminal");
 has(SKILL, /`worker-start` aceita `--base-branch`, mas \*\*não\*\* aceita `--issue`/, "worker-start must not be given --issue");
 has(REFERENCE, /Prepare and verify the issue-worker base model\*\* in that PI terminal before creating a Task or dispatch/, "reference must verify the base model before dispatch");
-has(REFERENCE, /pi --continue --provider openai-codex --model gpt-6.1-sol --thinking high/, "issue workers must restart to Sol/high only through the reference protocol");
+has(REFERENCE, /pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium/, "issue workers must restart to Sol/medium only through the reference protocol");
 lacks(SKILL, /pi --continue --provider openai-codex/, "the main skill must not carry a second restart command protocol");
-has(SKILL, /openai-codex\/gpt-6.1-sol` com `high`/, "main skill must require Sol/high before the Task");
+has(SKILL, /openai-codex\/gpt-6.1-sol` com `medium`/, "main skill must require Sol/medium before the Task");
 has(REFERENCE, /never send `--model`\/`--effort` to Orca/, "model flags remain forbidden on Orca");
 has(SKILL, /sem `--model`\/`--effort` ao Orca/, "main skill must keep model flags off Orca");
 has(SKILL, /gh api user -q \.login/, "admission must resolve the authenticated GitHub user");
@@ -263,13 +263,13 @@ has(REFERENCE, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "dispat
 has(SKILL, /EXECUTION_MODE=.*canonical grant mode.*source.*session/, "main skill must require the exact session receipt before the Task");
 has(REFERENCE, /command echo, stale output, agent prose, and exit 0 are not proof/, "stale output and exit status must not prove the pin");
 has(REFERENCE, /never falls back to dispatch, and never changes global\/project settings/, "pin failure must block without fallback or global mutation");
-has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-6.1-sol --thinking high[^\n]*--enter --json/, "reference must start issue workers with Sol/high");
+has(REFERENCE, /ORCA terminal send --terminal <exact handle> --text [^\n]*pi --continue --provider openai-codex --model gpt-6.1-sol --thinking medium[^\n]*--enter --json/, "reference must start issue workers with Sol/medium");
 for (const file of [SKILL, REFERENCE]) {
-  lacks(file, /gpt-6\.1-sol` (?:com|with) `medium`|gpt-6\.1-sol --thinking medium/, "child PI defaults must not retain Sol/medium");
+  lacks(file, /gpt-6\.1-sol` (?:com|with) `high`|gpt-6\.1-sol --thinking high/, "child PI defaults must not retain Sol/high");
 }
 for (const file of [SYSTEM, SYSTEM_MIRROR]) {
-  has(file, /Child PI sessions default to `openai-codex\/gpt-6\.1-sol` with `high` thinking/, "direct child PI handoffs must default to Sol/high");
-  has(file, /PI_REPORT_RUN=<run-id> pi --provider openai-codex --model gpt-6\.1-sol --thinking high/, "direct child PI launch must pin Sol/high explicitly");
+  has(file, /Child PI sessions default to `openai-codex\/gpt-6\.1-sol` with `medium` thinking/, "direct child PI handoffs must default to Sol/medium");
+  has(file, /PI_REPORT_RUN=<run-id> pi --provider openai-codex --model gpt-6\.1-sol --thinking medium/, "direct child PI launch must pin Sol/medium explicitly");
   has(file, /Internal planner\/builder\/QA model routing remains unchanged/, "outer child PI defaults must not override specialists");
 }
 has(REFERENCE, /do not alter planner\/plan-heavy internal routing/, "reference must preserve planner routing");
@@ -367,7 +367,7 @@ has(REFERENCE, /reuse it only after exact ownership proof[^\n]*never duplicate i
 has(SKILL, /\*\*Prioridade de ações do coordenador:\*\* \(1\) tratar pergunta\/resultado pendente[^\n]*\(2\) terminar primeiro um PI aberto ainda sem atribuição[^\n]*\(3\) despachar candidatas independentes seguras[^\n]*\(4\) só então observação limitada/, "action priorities must be explicit and ordered");
 has(SKILL, /Sem timer fixo de polling/, "priorities must not add a polling timer");
 // Model: skip restart when the fresh UI already proves it; restart only for an uninjected owned PI.
-has(REFERENCE, /If that fresh UI already shows `openai-codex\/gpt-6\.1-sol` with `high`, skip `\/quit` and the restart/, "an already-correct fresh model must skip the restart");
+has(REFERENCE, /If that fresh UI already shows `openai-codex\/gpt-6\.1-sol` with `medium`, skip `\/quit` and the restart/, "an already-correct fresh model must skip the restart");
 has(REFERENCE, /one bounded fresh verification read is allowed; never infer the model from command echo, stale output, global settings, or exit 0/, "missing indication allows only a fresh verification read");
 has(REFERENCE, /only when this is a newly created or settled owned PI with \*\*no task injected\*\*/, "restart must be limited to an uninjected owned PI");
 // Mode pin is mandatory even when the model restart was skipped.
@@ -464,7 +464,7 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
 }
 // Report-back: full handoffs launch PI workers bound to the coordinator's Run.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --provider openai-codex --model gpt-6\.1-sol --thinking high`/, "worker launched with PI_REPORT_RUN and Sol/high");
+  has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --provider openai-codex --model gpt-6\.1-sol --thinking medium`/, "worker launched with PI_REPORT_RUN and Sol/medium");
   has(path, /types one line `\[child <worktree>\] goal finished\|blocked/, "worker report is typed into the coordinator terminal");
 }
 // Proportion: reuse proven head evidence, ask gates up front, don't repair Orca bookkeeping.
