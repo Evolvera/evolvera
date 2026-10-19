@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { renderTerminalArt } from "./ui/terminal-art.mjs";
 import { startArtAnimation } from "./ui/terminal-art-animation.mjs";
+import { createTerminalArtOutput } from "./ui/terminal-art-output.mjs";
 import { CREATE_ACCOUNT, selectAccountMenu } from "./users/account-selector.mjs";
 
 const HELP = `Usage: node scripts/preview-terminal-art.mjs --label <name> [--width N --height N --no-color --no-animation]
@@ -10,7 +11,7 @@ const HELP = `Usage: node scripts/preview-terminal-art.mjs --label <name> [--wid
 --width and --height size standalone scenes; --no-animation renders the final scene immediately. Press Ctrl+C to exit an animated scene.`;
 
 function parseArgs(args, output) {
-  const options = { width: output.columns || 80, height: Math.min(36, Math.max(1, (output.rows || 24) - 8)), color: process.env.NO_COLOR === undefined && process.env.TERM !== "dumb", animate: true };
+  const options = { width: output.columns || 80, height: Math.min(36, Math.max(1, (output.rows || 24) - 8)), widthExplicit: false, heightExplicit: false, color: process.env.NO_COLOR === undefined && process.env.TERM !== "dumb", animate: true };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--help" || arg === "-h") { options.help = true; continue; }
@@ -25,6 +26,7 @@ function parseArgs(args, output) {
         const number = Number(value);
         if (!Number.isSafeInteger(number) || number < 1) throw new Error(`${arg} must be a positive integer`);
         options[arg.slice(2)] = number;
+        options[`${arg.slice(2)}Explicit`] = true;
       }
       continue;
     }
@@ -51,18 +53,28 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
     output.write(`Synthetic preview only — ${description}; no account or session was accessed.\n`);
     return 0;
   }
-  const width = output.isTTY ? Math.max(1, Math.min(options.width, output.columns || options.width)) : options.width;
+  const width = output.isTTY ? Math.max(1, Math.min(options.width, Math.max(1, (output.columns || options.width) - 1))) : options.width;
   const height = output.isTTY ? Math.max(1, Math.min(options.height, Math.max(1, (output.rows || options.height) - 1))) : options.height;
-  const draw = (progress, timeMs = 0) => renderTerminalArt({ width, height, label, color: options.color, progress, timeMs });
+  const draw = (progress, timeMs = 0, viewportWidth = width, viewportHeight = height) => renderTerminalArt({
+    width: Math.min(options.widthExplicit ? options.width : viewportWidth, viewportWidth),
+    height: Math.min(options.heightExplicit ? options.height : output.isTTY ? Math.min(36, Math.max(1, viewportHeight - 8)) : options.height, viewportHeight),
+    label, color: options.color, progress, timeMs,
+  });
   if (!options.animate || !output.isTTY || process.env.TERM === "dumb") {
-    output.write(`${draw(1).join("\n")}\n`);
+    const lines = output.isTTY
+      ? renderTerminalArt({ width, height, label, color: options.color, progress: 1 })
+      : draw(1);
+    output.write(`${lines.join(output.isTTY ? "\r\n" : "\n")}${output.isTTY ? "\r\n" : "\n"}`);
     return 0;
   }
-  const drawFrame = (progress, elapsedMs) => draw(progress, elapsedMs);
   const animationResult = await new Promise((resolve, reject) => {
     let settled = false;
     let stop;
-    let paintedRows = 0;
+    let terminalOutput;
+    const drawFrame = (progress, elapsedMs) => terminalOutput?.render(({ width: viewportWidth, height: viewportHeight }) => draw(progress, elapsedMs, viewportWidth, viewportHeight));
+    const onResize = () => drawFrame(currentProgress, currentElapsed);
+    let currentProgress = 0;
+    let currentElapsed = 0;
     const finish = (error, signal) => {
       if (settled) return;
       settled = true;
@@ -70,30 +82,30 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
       process.removeListener("SIGTERM", onTerminate);
       output.off?.("error", onOutputError);
       output.off?.("close", onOutputClose);
+      output.off?.("resize", onResize);
       try { stop?.(); } catch (stopError) { error ??= stopError; }
+      terminalOutput?.dispose();
       if (signal) { resolve(signal === "SIGINT" ? 130 : 143); return; }
       if (error) reject(error);
       else resolve(0);
     };
     const writeFrame = (progress, elapsedMs) => {
       if (settled) return;
-      const lines = drawFrame(progress, elapsedMs);
-      if (paintedRows) output.write(`\u001b[${paintedRows}A\r`);
-      for (const line of lines) {
-        if (settled) break;
-        output.write(`\u001b[2K${line}\r\n`);
-      }
-      paintedRows = lines.length;
+      currentProgress = progress;
+      currentElapsed = elapsedMs;
+      drawFrame(progress, elapsedMs);
     };
     const onInterrupt = () => finish(undefined, "SIGINT");
     const onTerminate = () => finish(undefined, "SIGTERM");
     const onOutputError = (error) => finish(error);
-    const onOutputClose = () => finish(new Error("Preview output closed during animation"));
+    const onOutputClose = () => { terminalOutput?.markBroken(); finish(new Error("Preview output closed during animation")); };
     process.once("SIGINT", onInterrupt);
     process.once("SIGTERM", onTerminate);
-    output.once?.("error", onOutputError);
-    output.once?.("close", onOutputClose);
     try {
+      terminalOutput = createTerminalArtOutput({ output, onError: (error) => finish(error) });
+      output.once?.("error", onOutputError);
+      output.once?.("close", onOutputClose);
+      output.on?.("resize", onResize);
       stop = startArtAnimation({
         onFrame(progress, elapsedMs) { writeFrame(progress, elapsedMs); },
         onError(error) { finish(error); },

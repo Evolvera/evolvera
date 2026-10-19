@@ -86,8 +86,21 @@ optar pela versão estática.
 O seletor recebe teclado desde o primeiro quadro. Mudar a seleção atualiza a marca
 no progresso atual, sem reiniciar a animação a cada seta. Redimensionar preserva a
 seleção. Saída, cancelamento, fechamento e falhas encerram os timers/listeners
-próprios e restauram o estado de entrada. Não há limpeza da tela inteira a cada
-quadro.
+próprios e restauram o estado de entrada.
+
+`scripts/ui/terminal-art-output.mjs` é a única saída animada direta do seletor e do
+preview standalone. Usa um viewport na tela alternativa e coordenadas absolutas,
+com CR explícito e uma coluna de segurança contra autowrap. Cada atualização é
+um único write sincronizado, apenas com as linhas alteradas e preenchidas até sua
+largura: não apaga a linha antes de repintar, não emite LF e não reescreve o HUD
+estático. A limpeza inicial não se repete a cada quadro. Ao sair, restaura a tela
+principal quando a saída ainda está disponível.
+
+Se `write()` devolver `false`, guarda apenas o pedido mais recente e nem gera os
+quadros intermediários. `drain` pinta o estado atual, sem reproduzir uma fila de
+frames antigos; o teclado continua atualizando a seleção enquanto a saída espera.
+O renderer também reaproveita foreground/background ANSI independentes, sem
+alterar os pixels, e evita repetir cálculos constantes dentro do laço de pixels.
 
 A factory `scripts/users/startup-art.mjs` é registrada pelo runtime gerenciado com
 o nome da conta e o `sessionManager` raiz. Usa o widget público `aboveEditor`,
@@ -122,8 +135,9 @@ node scripts/preview-terminal-art.mjs --select --no-color --no-animation
 ```
 
 `--select` usa as dimensões reais do terminal; `--width` e `--height` dimensionam as
-amostras standalone. A animação standalone redesenha apenas as linhas que acabou de
-emitir, sem levar o cursor ao topo e sobrescrever conteúdo anterior do terminal.
+amostras standalone, sempre limitadas ao viewport atual. A animação usa a tela
+alternativa: não sobrescreve o conteúdo anterior da tela principal e o devolve ao
+sair. `--no-animation` imprime uma cena estática que permanece na tela principal.
 Em `--label`, a cena fica aberta até Ctrl+C (saída 130), SIGTERM (143) ou falha da
 saída; não encerra automaticamente após a entrada. Em `--select`, escolher/cancelar
 encerra o timer. O CLI libera sua leitura de stdin ao concluir.
@@ -133,30 +147,42 @@ uma sessão PI. “Create new account” é apenas uma opção visual nesse prev
 ## Validação e limites
 
 ```sh
-node --test --test-concurrency=4 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs scripts/test/terminal-art-animation.test.mjs
+node --test --test-concurrency=5 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs scripts/test/terminal-art-animation.test.mjs scripts/test/terminal-art-output.test.mjs
 ```
 
-Os 42 testes focados passaram em aproximadamente 2,41 s, com quatro workers e
-isolamento de processo por arquivo. Usam streams/relógios sintéticos e, para o
-wiring, leitura do fonte: `NO_STATEFUL_RESOURCES`. Cobrem geometria do navio/bandeira, ciclo ambiente,
-identidade exata, largura/altura/SGR, navegação, cancelamento, callbacks atrasados,
-falhas síncronas/assíncronas de saída e sinais. O teste de destaque no seletor
-acompanha o casco durante a revelação e a bandeira depois que a entrada termina.
+Os **51 testes focados** passaram em aproximadamente **1,90 s**, com cinco workers
+e isolamento de processo por arquivo numa máquina com 12 CPUs lógicas. Usam
+streams/relógios em memória e leitura do fonte: `NO_STATEFUL_RESOURCES`. Cobrem
+geometria, identidade, movimento contínuo, Unicode, navegação, backpressure,
+resize, modo estático, callbacks reais de `Writable`/EPIPE e sinais.
 
-A abertura real foi observada no SDK **1.3.0/Linux**, em PTYs 120×40, com perfis
-sintéticos EVOLVERA/Pessoal e HOME, agentDir, registro, stage, cache e sessões
-próprios em `mkdtemp`. Não havia credenciais, ferramentas ou MCP, e fetch/sockets
-estavam bloqueados. Ambos encerraram com código 0 em aproximadamente 8,7–9,4 s.
-Mesmo após a entrada, os quadros continuaram mudando: a janela ambiente de 700 ms
-produziu saída nos dois casos. Depois da primeira entrada, a arte saiu e uma
-janela de 600 ms não recebeu mais bytes de animação. Os avisos permaneceram acima
-da cena. O preview standalone continuou aberto após a entrada e Ctrl+C o encerrou
-com código 130, como esperado. O pacote instalado permaneceu inalterado.
+Uma comparação independente com o renderer anterior conferiu **180 casos
+coloridos, 529.230 células**, além das versões monocromáticas, sem diferença de
+glifos ou RGB. No microbenchmark de 48 quadros a 120×33, a serialização passou de
+48.836 para 34.644 bytes/quadro (**29% menos**); a mediana do renderer puro caiu de
+3,76 para 2,47 ms. Isso não mede a latência gráfica do emulador.
 
-A validação nativa encontrou e corrigiu dois problemas antes da entrega: um widget
-alto demais ocultava o início dos avisos, e o preview standalone mantinha stdin
-ativo após selecionar. Esses ajustes não alteram credenciais, históricos nem o
-pacote instalado. Não há patch do SDK, instalador modificado ou instalação global.
-Não foram exercitados Windows, macOS, outros SDKs/fontes/emuladores ou chamadas a
-provedores. A baseline 0.83.0 ainda citada no README não foi validada.
+Em saída congestionada, 120 ticks não geraram nem escreveram frames adicionais:
+apenas o primeiro write ficou pendente, em vez dos aproximadamente 2,4 MB da
+reprodução anterior. O teste libera `drain`, verifica somente o estado mais
+recente e confirma que seleção/cancelamento continuam disponíveis.
+
+PTYs Linux reais, com ONLCR desativado, exercitaram o seletor, resize, cena
+contínua e cena estática. As setas atualizaram o destaque em aproximadamente
+13–14 ms; selecionar levou aproximadamente 9 ms. Ctrl+C encerrou a cena contínua
+com código 130. A reprodução dos bytes em xterm-headless confirmou zero rolagens
+na tela alternativa, restauração do conteúdo principal e permanência da cena
+estática.
+
+O SDK **1.3.0/Linux** também foi aberto em PTYs 100×36 com perfis sintéticos
+EVOLVERA/Pessoal e HOME, agentDir, registro, stage, cache e sessões próprios em
+`mkdtemp`. Sem credenciais, ferramentas ou MCP, e com fetch/sockets bloqueados,
+ambos encerraram com código 0 em aproximadamente 6,2 s, sem tentativa de rede.
+Os avisos permaneceram acima da cena e a primeira entrada removeu a arte. Não
+houve patch nem instalação do SDK; os hashes dos entrypoints conferidos ficaram
+iguais. Nenhum processo desses testes ficou ativo.
+
+A validação acima observa protocolo, células e PTY, não uma captura gráfica do
+Orca. Não foram exercitados Windows, macOS, outros SDKs/fontes/emuladores ou
+chamadas a provedores. A baseline 0.83.0 ainda citada no README não foi validada.
 PR e merge continuam dependendo da aprovação posterior do usuário.
