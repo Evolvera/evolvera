@@ -27,8 +27,8 @@ type Runner = (file: string, args: string[], timeoutMs: number) => Promise<strin
 
 const execFile: Runner = (file, args, timeoutMs) => new Promise((resolve, reject) => {
   nodeExecFile(file, args, { timeout: timeoutMs, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }, (error, stdout) => {
-    // lsof exits 1 when some paths are unreadable but still prints valid output.
-    if (error && !stdout) reject(error); else resolve(String(stdout));
+    // Any error (exit code, timeout, buffer overflow) means the output may be partial: reject.
+    if (error) reject(error); else resolve(String(stdout));
   });
 });
 
@@ -51,6 +51,8 @@ export function setupWorkerScratch(cwd: string, env: NodeJS.ProcessEnv = process
     return scratch;
   } catch { return undefined; }
 }
+
+export { execFile as defaultRunner };
 
 export async function sweepStaleTemp(root: string, run: Runner = execFile, now = Date.now()): Promise<string[]> {
   const uid = process.getuid?.();
