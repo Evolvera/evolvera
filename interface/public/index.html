@@ -47,6 +47,20 @@
         <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5.5M11 6.5 5.5 12l5.5 5.5" /></symbol>
         <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h13.5M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
         <symbol id="i-external" viewBox="0 0 24 24"><path d="M13.5 5H19v5.5M19 5l-8 8M17.5 14v3a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" /></symbol>
+        <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m4 6 1.5 1.5L8 4.8M4 12.5 5.5 14 8 11.3M4 19 5.5 20.5 8 17.8" /><path d="M11.5 6.5h8.5M11.5 13h8.5M11.5 19.5h8.5" /></symbol>
+        <symbol id="i-task-pending" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /></symbol>
+        <symbol id="i-task-running" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 7.8V12l2.9 1.7" /></symbol>
+        <symbol id="i-task-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="m8.5 12.3 2.4 2.4 4.6-4.9" /></symbol>
+        <symbol id="i-task-blocked" viewBox="0 0 24 24"><rect x="6.5" y="11" width="11" height="8" rx="2" /><path d="M9 11V8.5a3 3 0 0 1 6 0V11" /></symbol>
+        <symbol id="i-parallel" viewBox="0 0 24 24"><path d="M12 4.5V10M12 10c0 3.2-6 2.6-6 6.5v3M12 10c0 3.2 6 2.6 6 6.5v3" /><path d="m3.8 17.8 2.2 2.2 2.2-2.2M15.8 17.8l2.2 2.2 2.2-2.2" /></symbol>
+        <symbol id="i-msg" viewBox="0 0 24 24"><path d="M5 7a2.5 2.5 0 0 1 2.5-2.5h9A2.5 2.5 0 0 1 19 7v6a2.5 2.5 0 0 1-2.5 2.5H11L7 19v-3.5A2.5 2.5 0 0 1 5 13z" /></symbol>
+        <symbol id="i-ag-scout" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="m14.9 9.1-1.7 4.1-4.1 1.7 1.7-4.1z" /></symbol>
+        <symbol id="i-ag-builder" viewBox="0 0 24 24"><path d="M15 5.5a4 4 0 0 0-4.8 5.2l-5.7 5.7a1.8 1.8 0 0 0 2.6 2.6l5.7-5.7A4 4 0 0 0 18 8.5l-2.3 2.3-2.6-.6-.6-2.6z" /></symbol>
+        <symbol id="i-ag-qa" viewBox="0 0 24 24"><path d="M9.5 4.5h5M10.5 4.5v5L5.8 18a1.4 1.4 0 0 0 1.2 2h10a1.4 1.4 0 0 0 1.2-2L13.5 9.5v-5M8.3 14h7.4" /></symbol>
+        <symbol id="i-ag-validator" viewBox="0 0 24 24"><path d="M12 4 5.5 6.5v5c0 4 2.7 7 6.5 8.5 3.8-1.5 6.5-4.5 6.5-8.5v-5z" /><path d="m9 12 2.2 2.2L15 10.3" /></symbol>
+        <symbol id="i-ag-planner" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15" rx="2" /><path d="M9.5 3.5h5v3h-5zM9 11.5h6M9 15.5h4" /></symbol>
+        <symbol id="i-ag-bug-hunt" viewBox="0 0 24 24"><path d="M9.5 8.5a2.5 2.5 0 0 1 5 0v1h-5zM8 10.5h8v4a4 4 0 0 1-8 0zM12 10.5v8M4.5 12.5H8M16 12.5h3.5M5.5 7.5l3 2M18.5 7.5l-3 2M5.5 19l3-2.5M18.5 19l-3-2.5" /></symbol>
+        <symbol id="i-ag-research" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H18v13H6.5A1.5 1.5 0 0 0 5 18.5z" /><path d="M5 18.5A1.5 1.5 0 0 0 6.5 20H18v-3M9 8h5M9 11.5h3" /></symbol>
       </defs>
     </svg>
 
@@ -112,6 +126,7 @@
           </section>
           <div id="watchBar" class="watch-bar" role="status" hidden>
             <span id="watchText" class="watch-text"></span>
+            <button id="watchBack" class="watch-btn watch-btn-quiet" type="button" hidden>Voltar ao PI principal</button>
             <button id="watchContinue" class="watch-btn" type="button" disabled>Continuar aqui</button>
           </div>
           <form id="composer" class="composer">
@@ -165,6 +180,7 @@
         <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar inspetor" aria-controls="panel" aria-valuemin="320" aria-valuemax="900" aria-valuenow="460" tabindex="0" title="Arraste para redimensionar · duplo clique restaura"></div>
         <div id="inspectorTabs" class="insp-tabs" role="tablist" aria-label="Visões do inspetor">
           <button id="tab-terminal" class="insp-tab" type="button" role="tab" data-tab="terminal" aria-controls="view-terminal" aria-selected="true"><svg><use href="#i-terminal" /></svg><span class="insp-label">Terminal</span></button>
+          <button id="tab-tasks" class="insp-tab" type="button" role="tab" data-tab="tasks" aria-controls="view-tasks" aria-selected="false" tabindex="-1"><svg><use href="#i-tasks" /></svg><span class="insp-label">Tarefas</span><span id="tasksBadge" class="count-badge" hidden></span></button>
           <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="count-badge" hidden></span></button>
           <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
           <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
@@ -176,6 +192,9 @@
           <button id="termJump" class="term-jump" type="button" hidden>Ir para o fim<svg><use href="#i-down" /></svg></button>
           <div id="termWidgets" class="term-widgets" aria-label="Widgets de extensão" hidden></div>
           <div id="termFoot" class="term-foot" role="status"></div>
+        </section>
+        <section id="view-tasks" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-tasks" data-view="tasks" tabindex="0" hidden>
+          <div id="tasksList" class="sa-list tk-list"></div>
         </section>
         <section id="view-subagents" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-subagents" data-view="subagents" tabindex="0" hidden>
           <div id="subList" class="sa-list"></div>
@@ -298,6 +317,19 @@
         <menu>
           <button class="btn" value="cancel" formnovalidate>Cancelar</button>
           <button class="btn btn-primary" value="save">Salvar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="taskWorktreeDialog" class="dialog" aria-labelledby="taskWorktreeTitle">
+      <form method="dialog" class="dialog-form" id="taskWorktreeForm">
+        <h3 id="taskWorktreeTitle">Rodar numa worktree</h3>
+        <p class="muted">Cria uma worktree no Orca a partir da atual e inicia um PI nela com o texto abaixo.</p>
+        <label class="field"><span>Nome da worktree</span><input id="taskWorktreeName" maxlength="60" autocomplete="off" required /></label>
+        <label class="field"><span>Prompt</span><textarea id="taskWorktreePrompt" rows="7" maxlength="8000" required></textarea></label>
+        <menu>
+          <button class="btn" value="cancel" formnovalidate>Cancelar</button>
+          <button class="btn btn-primary" id="taskWorktreeOk" value="create">Criar worktree</button>
         </menu>
       </form>
     </dialog>
