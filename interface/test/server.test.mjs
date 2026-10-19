@@ -894,6 +894,24 @@ describe("conversation states", () => {
     assert.deepEqual([...cache.keys()], ["c"]);
   });
 
+  test("finalizeTerminal ends every connected client once and ignores later terminal events", () => {
+    let ended = 0;
+    const events = [];
+    const fake = {
+      exited: false,
+      cwd: "proj",
+      clients: new Set([{ end: () => ended++ }, { end: () => ended++ }]),
+      note: (event) => events.push(event.type),
+      broadcast: () => {},
+    };
+    server.PiRpcSession.prototype.finalizeTerminal.call(fake, "exit", null, 0, null);
+    server.PiRpcSession.prototype.finalizeTerminal.call(fake, "close", null, 0, null);
+    assert.equal(ended, 2);
+    assert.equal(fake.clients.size, 0);
+    assert.deepEqual(events, ["process_exit"]);
+    assert.equal(fake.exited, true);
+  });
+
   test("readLastMessage closes the file handle even when reading fails", async () => {
     let closed = 0;
     const openFile = async () => ({ read: async () => { throw new Error("EIO"); }, close: async () => { closed++; } });
