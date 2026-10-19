@@ -1912,3 +1912,111 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: true, serverCount: 5 }), 1, "the open project trusts its own history");
   });
 });
+
+describe("following a conversation owned elsewhere", () => {
+  const T0 = Date.parse("2025-03-07T12:00:00Z");
+  const ago = (ms) => new Date(T0 - ms).toISOString();
+  const row = (title, minutesAgo, extra = {}) => ({ path: `/s/${title}.jsonl`, title, lastActivity: ago(minutesAgo * 60_000), isSubagent: false, state: "pronto", ...extra });
+
+  test("titleMatches: accents, case, whitespace and prefix in either direction; short or empty never match", () => {
+    assert.equal(lib.titleMatches("Corrigir a  Configuração do Servidor", "corrigir a configuracao"), true);
+    assert.equal(lib.titleMatches("Corrigir", "CORRIGIR a configuração do servidor, depois testar tudo"), true);
+    assert.equal(lib.titleMatches("Outra tarefa", "Corrigir a configuração"), false);
+    assert.equal(lib.titleMatches("abc", "abcdef"), false, "below the minimum length");
+    assert.equal(lib.titleMatches("", "Corrigir"), false);
+    assert.equal(lib.titleMatches(undefined, undefined), false);
+  });
+
+  test("pickConversation: the Studio's busy PI wins and keeps what is open", () => {
+    const history = [row("Alpha tarefa", 1)];
+    assert.deepEqual(lib.pickConversation({ history, agents: [{ state: "working", title: "Alpha tarefa" }], liveBusy: true }), { kind: "live", item: null });
+  });
+
+  test("pickConversation: the main session titled like the agent beats a more recent one", () => {
+    const history = [row("Refatorar o login", 1), row("Corrigir a configuração", 30), row("Corrigir a configuração do CI", 90)];
+    const agents = [{ state: "done", title: "corrigir a configuracao" }];
+    const pick = lib.pickConversation({ history, agents });
+    assert.equal(pick.kind, "agent");
+    assert.equal(pick.item.title, "Corrigir a configuração", "among the matches the most recently active one");
+  });
+
+  test("pickConversation: a working agent's title is tried before a finished one's", () => {
+    const history = [row("Tarefa antiga pronta", 5), row("Tarefa nova rodando", 50)];
+    const agents = [{ state: "done", title: "Tarefa antiga pronta" }, { state: "working", title: "Tarefa nova rodando" }, { state: "working", interrupted: true, title: "Tarefa antiga pronta" }];
+    assert.equal(lib.pickConversation({ history, agents }).item.title, "Tarefa nova rodando");
+  });
+
+  test("pickConversation: sub-PIs are ignored; no match falls back to the latest main session", () => {
+    const history = [row("Sub tarefa do agente", 1, { isSubagent: true }), row("Conversa velha", 600), row("Conversa recente", 20), row("Sem data", 0, { lastActivity: "bogus" })];
+    const pick = lib.pickConversation({ history, agents: [{ state: "working", title: "Sub tarefa do agente" }, { state: "done", title: "Nada a ver" }] });
+    assert.deepEqual([pick.kind, pick.item.title], ["latest", "Conversa recente"]);
+    assert.equal(lib.pickConversation({ history }).item.title, "Conversa recente");
+  });
+
+  test("pickConversation: nothing to show", () => {
+    assert.deepEqual(lib.pickConversation({}), { kind: "none", item: null });
+    assert.deepEqual(lib.pickConversation({ history: [row("Só sub-PI aqui", 1, { isSubagent: true })] }), { kind: "none", item: null });
+  });
+
+  test("conversationOwner: every ownership condition and the 2-minute edge", () => {
+    const quiet = row("Tarefa parada", 10);
+    const own = (item, extra = {}) => lib.conversationOwner({ item, now: T0, ...extra });
+    assert.deepEqual(own(quiet), { elsewhere: false, why: "" });
+    assert.deepEqual(own(null), { elsewhere: false, why: "" });
+    // The Studio's own file is never "elsewhere", however fresh.
+    assert.deepEqual(own(row("Tarefa parada", 0, { state: "fazendo" }), { studioFile: "/S/Tarefa parada.jsonl" }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(row("Tarefa parada", 0), { studioFile: "/other.jsonl" }), { elsewhere: true, why: "recent" });
+    // A working Orca agent titled like it (not interrupted, not another title).
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "tarefa parada" }] }), { elsewhere: true, why: "orca" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", interrupted: true, title: "tarefa parada" }] }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "done", title: "tarefa parada" }] }), { elsewhere: false, why: "" });
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "Outra coisa qualquer" }] }), { elsewhere: false, why: "" });
+    // The fallback pick (no title match possible) is owned by any working agent.
+    assert.deepEqual(own(quiet, { agents: [{ state: "working", title: "Outra coisa qualquer" }], fallback: true }), { elsewhere: true, why: "orca" });
+    // File state.
+    assert.deepEqual(own(row("Tarefa parada", 10, { state: "fazendo" })), { elsewhere: true, why: "state" });
+    assert.deepEqual(own(row("Tarefa parada", 10, { state: "aguardando" })), { elsewhere: true, why: "state" });
+    for (const state of ["pronto", "parado", "erro", "nova"]) assert.equal(own(row("Tarefa parada", 10, { state })).elsewhere, false, state);
+    // Modified under 2 minutes ago is owned; exactly 2 minutes is not.
+    assert.deepEqual(own({ ...quiet, lastActivity: ago(119_999) }), { elsewhere: true, why: "recent" });
+    assert.deepEqual(own({ ...quiet, lastActivity: ago(120_000) }), { elsewhere: false, why: "" });
+    assert.deepEqual(own({ ...quiet, lastActivity: T0 - 1000 }), { elsewhere: true, why: "recent" }, "numeric mtime");
+    assert.deepEqual(own({ ...quiet, lastActivity: "bogus" }), { elsewhere: false, why: "" });
+    assert.equal(lib.conversationOwner({ item: { ...quiet, lastActivity: new Date().toISOString() } }).why, "recent", "now defaults to the clock");
+    assert.equal(lib.OWNED_RECENT_MS, 120_000);
+  });
+
+  test("watchStatus: running anywhere keeps the button off, a stopped one turns it on", () => {
+    assert.deepEqual(lib.watchStatus({ elsewhere: true, where: "orca" }), { text: "Acompanhando — esta conversa está rodando no terminal do Orca", canContinue: false });
+    assert.deepEqual(lib.watchStatus({ elsewhere: true, where: "pi" }), { text: "Acompanhando — esta conversa está rodando em outro PI", canContinue: false });
+    assert.equal(lib.watchStatus({ elsewhere: false, where: "orca" }).canContinue, true);
+  });
+
+  test("mergeWatchEntries: appends, dedupes by id, resets, caps, returns the same array when nothing is new", () => {
+    const a = { id: "a", type: "message" };
+    const b = { id: "b", type: "message" };
+    const loose = { type: "custom" };
+    const current = [a];
+    assert.deepEqual(lib.mergeWatchEntries(current, [b, loose]), [a, b, loose]);
+    assert.equal(lib.mergeWatchEntries(current, [a]), current, "known ids only: untouched");
+    assert.equal(lib.mergeWatchEntries(current, []), current);
+    assert.deepEqual(lib.mergeWatchEntries(current, [loose]), [a, loose], "an entry without id is always new");
+    assert.deepEqual(lib.mergeWatchEntries(current, [a, b], { reset: true }), [a, b], "reset replaces, even with known ids");
+    assert.deepEqual(lib.mergeWatchEntries(current, [], { reset: true }), []);
+    assert.deepEqual(lib.mergeWatchEntries([a, b], [{ id: "c" }, { id: "d" }], { max: 3 }).map((entry) => entry.id), ["b", "c", "d"]);
+    assert.equal(lib.WATCH_ENTRY_MAX, 5000);
+    assert.equal(lib.WATCH_POLL_MS, 1500);
+  });
+
+  test("watchMessages: renders the branch that ends at the last entry like get_entries", () => {
+    const user = { type: "message", id: "1", parentId: null, message: { role: "user", content: "oi" } };
+    const reply = { type: "message", id: "2", parentId: "1", timestamp: "2025-03-07T12:00:05Z", message: { role: "assistant", content: [{ type: "text", text: "olá" }] } };
+    const abandoned = { type: "message", id: "3", parentId: "1", message: { role: "assistant", content: "ramo velho" } };
+    const header = { type: "session", id: "h" };
+    const messages = lib.watchMessages([header, user, abandoned, reply]);
+    assert.deepEqual(messages.map((message) => message.role), ["user", "assistant"]);
+    assert.equal(lib.messageText(messages[1]), "olá");
+    assert.deepEqual(lib.watchMessages([{ type: "custom" }, { type: "message", message: { role: "user", content: "sem id" } }]).map((message) => message.content), ["sem id"], "no ids: everything");
+    assert.deepEqual(lib.watchMessages([]), []);
+  });
+});

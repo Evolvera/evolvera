@@ -2067,3 +2067,68 @@ export function todayUsageRows(usage) {
   rows.push(["Tokens hoje", formatTokens(usage.tokens)], ["Sessões hoje", String(usage.sessions)]);
   return rows;
 }
+
+// ------------------------------------------------------ following a conversation another PI is writing
+
+// A conversation touched this recently, still running, or run by a working Orca agent is owned elsewhere: the Studio's PI must not switch into it.
+export const OWNED_RECENT_MS = 2 * 60_000;
+export const WATCH_POLL_MS = 1500;
+export const WATCH_ENTRY_MAX = 5000;
+const TITLE_MATCH_MIN = 4;
+
+const agentWorking = (agent) => agent.state === "working" && !agent.interrupted;
+
+// Accent- and case-insensitive; one title being the prefix of the other counts (Orca cuts agent titles, PI derives session titles from the first prompt).
+export function titleMatches(sessionTitle, agentTitle) {
+  const session = squash(foldText(sessionTitle));
+  const agent = squash(foldText(agentTitle));
+  return Math.min(session.length, agent.length) >= TITLE_MATCH_MIN && (session.startsWith(agent) || agent.startsWith(session));
+}
+
+// The conversation a worktree should show: the Studio PI's own when it is busy (kind "live": keep what is open), else the main
+// session titled like a (working first) Orca agent, else the most recently active main session. Sub-PIs are never picked.
+export function pickConversation({ history = [], agents = [], liveBusy = false }) {
+  if (liveBusy) return { kind: "live", item: null };
+  const activity = (item) => toMs(item.lastActivity) ?? 0;
+  const main = history.filter((item) => !item.isSubagent).sort((a, b) => activity(b) - activity(a));
+  const ordered = [...agents].sort((a, b) => Number(agentWorking(b)) - Number(agentWorking(a)));
+  for (const agent of ordered) {
+    const item = main.find((candidate) => titleMatches(candidate.title, agent.title));
+    if (item) return { kind: "agent", item };
+  }
+  return main.length ? { kind: "latest", item: main[0] } : { kind: "none", item: null };
+}
+
+// Is `item` (a history entry: path, title, state, lastActivity) being written by someone other than the Studio's PI?
+// `why`: "orca" (a working agent: the one titled like it, or any when `fallback` says the title could not be matched),
+// "state" (fazendo/aguardando) or "recent" (modified under OWNED_RECENT_MS ago).
+export function conversationOwner({ item, agents = [], fallback = false, studioFile = null, now = Date.now() }) {
+  if (!item || samePath(item.path, studioFile)) return { elsewhere: false, why: "" };
+  if (agents.some((agent) => agentWorking(agent) && (fallback || titleMatches(item.title, agent.title)))) return { elsewhere: true, why: "orca" };
+  if (item.state === "fazendo" || item.state === "aguardando") return { elsewhere: true, why: "state" };
+  const touched = toMs(item.lastActivity);
+  if (touched !== null && now - touched < OWNED_RECENT_MS) return { elsewhere: true, why: "recent" };
+  return { elsewhere: false, why: "" };
+}
+
+// Text of the bar above the read-only composer; "Continuar aqui" is enabled only once nobody writes the conversation.
+export function watchStatus({ elsewhere, where }) {
+  if (!elsewhere) return { text: "Acompanhando — esta conversa parou; já dá para continuar aqui", canContinue: true };
+  return { text: `Acompanhando — esta conversa está rodando ${where === "orca" ? "no terminal do Orca" : "em outro PI"}`, canContinue: false };
+}
+
+// Appends the entries a watch poll returned (`reset` replaces everything). Entries already known by id are skipped;
+// the same array comes back when nothing is new, and only the newest `max` entries are kept.
+export function mergeWatchEntries(current, incoming, { reset = false, max = WATCH_ENTRY_MAX } = {}) {
+  const base = reset ? [] : current;
+  const known = new Set(base.map((entry) => entry.id));
+  const fresh = incoming.filter((entry) => !(typeof entry.id === "string" && known.has(entry.id)));
+  if (!fresh.length && !reset) return current;
+  const merged = base.concat(fresh);
+  return merged.length > max ? merged.slice(-max) : merged;
+}
+
+// Thread messages of a watched file: the branch ending at its last entry, like get_entries does for the open session.
+export function watchMessages(entries) {
+  return entriesToMessages(entries, entries.findLast((entry) => typeof entry.id === "string")?.id);
+}

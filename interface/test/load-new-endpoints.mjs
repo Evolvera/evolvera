@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Load test for the endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
 // (incl. per-project running counts), GET /api/projects/:id/history, GET /api/activity (full 300-item ring) and GET /api/usage/today
-// (cost/tokens of today's sessions) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
+// (cost/tokens of today's sessions) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each,
+// and GET /api/sessions/watch (each client: first read = the 2 MiB tail of a ~5 MB session, then incremental reads by offset)
+// while a writer keeps appending lines to that session; one client checks it saw every appended line exactly once.
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
 // p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
 // Env: LOAD_SECONDS (default 10), LOAD_CONCURRENCY (default 50), LOAD_WARMUP_SECONDS (default 4). Exit 1 on any error, unbounded orca spawns or RSS growth > 64 MB.
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -53,6 +55,11 @@ for (let index = 0; index < SESSION_FILES; index++) {
   body.push(line({ type: "message", id: "a", timestamp: new Date().toISOString(), message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: stops[index % stops.length], usage: { totalTokens: 100, cost: { total: 0.01 } } } }), line({ type: "custom", customType: "loop-state" }));
   await writeFile(path.join(sessionsDir, `s-${index}.jsonl`), body.join(""));
 }
+
+// The session another PI keeps writing during the watch run: ~5 MB, in a project nobody lists.
+const watchFile = path.join(sessionsDir, "watch-live.jsonl");
+const WATCH_BYTES = 5 * 1024 * 1024;
+await writeFile(watchFile, line({ type: "session", id: "watch-live", timestamp: new Date().toISOString(), cwd: path.join(tmp, "watch-cwd") }) + line({ type: "message", id: "u", message: { role: "user", content: "acompanhe" } }) + `${pad}\n`.repeat(Math.ceil(WATCH_BYTES / (pad.length + 1))));
 
 const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
   cwd: root,
@@ -128,6 +135,49 @@ async function hammer(label, pathname, token, runSeconds = DURATION) {
   return { label, seconds, requests: latencies.length, rps: latencies.length / seconds, p50: percentile(latencies, 50), p95: percentile(latencies, 95), p99: percentile(latencies, 99), max: latencies.at(-1), errors, statuses };
 }
 
+// Watch clients keep their own offset like the page does. appendEvery: ms between lines the "other PI" appends.
+async function hammerWatch(label, token, runSeconds = DURATION, appendEvery = 40) {
+  const latencies = [];
+  let errors = 0;
+  let appended = 0;
+  const statuses = {};
+  const seen = [];
+  const writer = setInterval(() => {
+    appendFile(watchFile, line({ type: "message", id: `live-${appended}`, parentId: appended ? `live-${appended - 1}` : "u", message: { role: "assistant", content: [{ type: "text", text: `linha ${appended}` }], stopReason: "toolUse" } }), "utf8").catch(() => { errors++; });
+    appended++;
+  }, appendEvery);
+  const deadline = performance.now() + runSeconds * 1000;
+  const started = performance.now();
+  await Promise.all(Array.from({ length: CONCURRENCY }, async (_, client) => {
+    let offset = 0;
+    while (performance.now() < deadline) {
+      const t0 = performance.now();
+      try {
+        const res = await request("GET", `/api/sessions/watch?path=${encodeURIComponent(watchFile)}&since=${offset}`, { token });
+        statuses[res.status] = (statuses[res.status] || 0) + 1;
+        if (res.status !== 200) errors++;
+        else {
+          const data = JSON.parse(res.text);
+          if (data.offset < offset) errors++;
+          offset = data.offset;
+          if (client === 0) for (const entry of data.entries) if (entry.id?.startsWith("live-")) seen.push(Number(entry.id.slice(5)));
+        }
+        latencies.push(performance.now() - t0);
+      } catch {
+        errors++;
+      }
+    }
+  }));
+  clearInterval(writer);
+  const seconds = (performance.now() - started) / 1000;
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  // Client 0 saw every appended line once, in order (no gaps, no repeats).
+  const contiguous = seen.every((id, index) => index === 0 || id === seen[index - 1] + 1);
+  if (!seen.length || !contiguous) errors++;
+  latencies.sort((a, b) => a - b);
+  return { label: `${label} (${(WATCH_BYTES / 1048576).toFixed(0)} MB session, +${appended} lines appended meanwhile, client 0 saw ${seen.length} in order: ${contiguous})`, seconds, requests: latencies.length, rps: latencies.length / seconds, p50: percentile(latencies, 50), p95: percentile(latencies, 95), p99: percentile(latencies, 99), max: latencies.at(-1), errors, statuses };
+}
+
 let failed = false;
 const openedIds = [];
 try {
@@ -173,7 +223,10 @@ try {
   const results = [];
   for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"]]) {
     results.push(await hammer(label, pathname, token));
+    results.at(-1).rss = rssMb(server.pid);
   }
+  results.push(await hammerWatch("GET /api/sessions/watch", token));
+  results.at(-1).rss = rssMb(server.pid);
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
   const spawns = (await orcaSpawns()) - spawnsBefore;
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -182,7 +235,7 @@ try {
   const fmt = (value, digits = 1) => value.toFixed(digits);
   console.log(`\nLoad test · concurrency ${CONCURRENCY} · ${DURATION}s per endpoint · server pid ${server.pid} port ${port}\n`);
   for (const item of results) {
-    console.log(`${item.label}\n  requests ${item.requests} in ${fmt(item.seconds)}s = ${fmt(item.rps, 0)} req/s · latency ms p50 ${fmt(item.p50, 2)} p95 ${fmt(item.p95, 2)} p99 ${fmt(item.p99, 2)} max ${fmt(item.max, 2)} · errors ${item.errors} · status ${JSON.stringify(item.statuses)}`);
+    console.log(`${item.label}\n  requests ${item.requests} in ${fmt(item.seconds)}s = ${fmt(item.rps, 0)} req/s · latency ms p50 ${fmt(item.p50, 2)} p95 ${fmt(item.p95, 2)} p99 ${fmt(item.p99, 2)} max ${fmt(item.max, 2)} · errors ${item.errors} · status ${JSON.stringify(item.statuses)} · RSS after ${fmt(item.rss)} MB`);
   }
   const bound = Math.ceil(elapsed / 2) + 2;
   console.log(`\norca child processes during the run: ${spawns} (bound for ${fmt(elapsed)}s with a 2 s cache: ${bound})`);
