@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { hasRecentChildActivity, idleThresholdMs, reapIdle } from "./lib-server/idle-reaper.mjs";
 import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
 import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
+import { buildSidePrompt, createSideRegistry, sideArgs, sideCommand } from "./lib-server/side-chat.mjs";
 import { createTitleIndex } from "./lib-server/session-titles.mjs";
 import { createTreeService } from "./lib-server/tree.mjs";
 import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
@@ -528,9 +529,13 @@ export class PiRpcSession {
     }
   }
 
+  piArgs(prefixArgs) {
+    return buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+  }
+
   start() {
     const { bin: piBin, prefixArgs } = piCommand();
-    const args = buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+    const args = this.piArgs(prefixArgs);
 
     this.proc = spawn(piBin, args, {
       cwd: this.cwd,
@@ -599,10 +604,7 @@ export class PiRpcSession {
       this.broadcast("process_exit", payload);
     }
     const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
-    sessions.delete(this.id);
-    resourceHistory.delete(this.id);
-    retiredSessions.set(this.id, retired);
-    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
+    this.retire(retired);
     for (const client of this.clients) {
       const heartbeat = this.clientHeartbeats.get(client);
       if (heartbeat) clearInterval(heartbeat);
@@ -610,6 +612,13 @@ export class PiRpcSession {
       client.end();
     }
     this.clients.clear();
+  }
+
+  retire(retired) {
+    sessions.delete(this.id);
+    resourceHistory.delete(this.id);
+    retiredSessions.set(this.id, retired);
+    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
   }
 
   consumeStdout(chunk) {
@@ -779,6 +788,47 @@ export class PiRpcSession {
       isStreaming: this.lastState?.isStreaming ?? false,
     };
   }
+}
+
+// "Dúvidas": the same RPC session, but ephemeral and read-only (args), kept out of every Studio listing (never in `sessions`,
+// `retiredSessions` or the activity feed). Only the HTTP command route filters commands (sideCommand); internal sends stay as is.
+class SidePiSession extends PiRpcSession {
+  side = true;
+  piArgs(prefixArgs) {
+    return [...super.piArgs(prefixArgs), ...sideArgs(this.options.prompt)];
+  }
+  note() {}
+  retire() {
+    sideChats.remove(this);
+  }
+  summary() {
+    return { ...super.summary(), side: true };
+  }
+}
+
+const sideChats = createSideRegistry();
+export const reapSideChatsNow = (now = Date.now()) => sideChats.reap(now);
+
+// The conversation's project folder, from its JSONL header; 409 when the log cannot say where the project is.
+async function conversationCwd(file) {
+  let cwd;
+  try {
+    cwd = JSON.parse(await readFirstLine(file)).cwd;
+    if (typeof cwd !== "string" || !(await stat(cwd)).isDirectory()) throw new Error("no project folder");
+  } catch {
+    throw httpError(409, "A conversa não informa uma pasta de projeto válida");
+  }
+  return cwd;
+}
+
+async function openSideChat(rawPath) {
+  const file = await resolveWatchPath(rawPath);
+  const cwd = await conversationCwd(file);
+  return sideChats.acquire(cwdKey(file), () => {
+    const session = new SidePiSession({ projectName: "Dúvidas", cwd, prompt: buildSidePrompt({ sessionPath: file, cwd }) });
+    session.start();
+    return session;
+  });
 }
 
 function redactArgs(args) {
@@ -1544,7 +1594,8 @@ const treeService = createTreeService({
   getSessions: treeSessionRecords,
   async getLive() {
     const headers = await treeSessionRecords();
-    const procs = parsePiProcesses(await processTable.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
+    const sidePids = new Set(sideChats.pids());
+    const procs = parsePiProcesses(await processTable.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) }).filter((proc) => !sidePids.has(proc.pid));
     const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs })));
     // Exited sessions leave this map in the same tick (see the exit handler); a just-started one may not know its file yet.
     for (const session of sessions.values()) {
@@ -2422,14 +2473,22 @@ async function route(req, res) {
     }
 
     // Backward-compatible direct session endpoint used by smoke tests/tools.
+    if (pathname === "/api/side-chat") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      return json(res, 200, { session: (await openSideChat(body?.sessionPath)).summary() });
+    }
+
     const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|command|ui-response|stop))?$/);
     if (sessionMatch) {
       const [, id, action] = sessionMatch;
-      const session = sessions.get(id);
+      const session = sessions.get(id) ?? sideChats.find(id);
       if (!session) return json(res, 404, { error: "Unknown session" });
       if (req.method === "GET" && action === "events") return session.addClient(res);
       if (req.method === "POST" && action === "command") {
-        session.send(await readJsonBody(req));
+        const body = await readJsonBody(req);
+        if (session.side) sideChats.touch(id);
+        session.send(session.side ? sideCommand(body) : body);
         return json(res, 202, { ok: true });
       }
       if (req.method === "POST" && action === "stop") {
@@ -2478,7 +2537,7 @@ export function reapIdleStudioPIsNow(now = Date.now()) {
   }));
   return reapIdle(live, { now, thresholdMs, childActive: (file) => hasRecentChildActivity(file, { now, thresholdMs }), log: (line) => recordLog("info", line) });
 }
-const reapIdleStudioPIs = () => { reapIdleStudioPIsNow().catch((error) => recordLog("warn", "Idle PI check failed", { error: error.message })); };
+const reapIdleStudioPIs = () => { reapSideChatsNow(); reapIdleStudioPIsNow().catch((error) => recordLog("warn", "Idle PI check failed", { error: error.message })); };
 
 export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
   return new Promise((resolve) => {
@@ -2503,6 +2562,7 @@ export function stopServer() {
   if (idleReaper) clearInterval(idleReaper);
   idleReaper = null;
   for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
   void voice.stop();
   server.closeAllConnections();
   return new Promise((resolve) => server.close(() => resolve()));
@@ -2510,6 +2570,7 @@ export function stopServer() {
 
 export function shutdown() {
   for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
   void voice.stop().catch(() => {});
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();

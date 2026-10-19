@@ -15,7 +15,7 @@ describe("Orca worktrees (lib)", () => {
   const norm = (over) => lib.normalizeOrca(raw([wt(over)])).worktrees[0];
 
   test("tabs: Worktrees is visible only with the Orca integration on", () => {
-    assert.deepEqual(lib.visibleInspectorTabs(lib.DEFAULT_SETTINGS), ["terminal", "tasks", "subagents", "context", "files", "browser"]);
+    assert.deepEqual(lib.visibleInspectorTabs(lib.DEFAULT_SETTINGS), ["terminal", "tasks", "subagents", "context", "files", "browser", "sidechat"]);
     assert.deepEqual(lib.visibleInspectorTabs({ orcaEnabled: true }), lib.INSPECTOR_TABS);
     assert.equal(lib.resolveInspectorTab("worktrees", lib.DEFAULT_SETTINGS), "terminal");
     assert.equal(lib.resolveInspectorTab("worktrees", { orcaEnabled: true }), "worktrees");
