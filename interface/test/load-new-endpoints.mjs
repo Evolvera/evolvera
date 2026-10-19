@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Load test for GET /api/voice/status plus endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
 // (incl. per-project running counts), GET /api/projects/:id/history, GET /api/activity (full 300-item ring) and GET /api/usage/today
-// (cost/tokens of today's sessions) and GET /api/projects/:id/file (small text and a 5 MB file) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
+// (cost/tokens of today's sessions) and GET /api/projects/:id/file (small text and a 5 MB file) over a temp sessions dir of 2000 files (some multi-MB, some sub-PI) with a tail-read state each.
 // and GET /api/sessions/watch (each client: first read = the 2 MiB tail of a ~5 MB session, then incremental reads by offset)
 // while a writer keeps appending lines to that session; one client checks it saw every appended line exactly once.
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
-// p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
+// p50/p95/p99 latency, cold/warm /api/tree latency, 5-minute 10-client conditional-poll latency and RSS, errors, and bounded child-process counts.
 // Env: LOAD_SECONDS (default 10), LOAD_CONCURRENCY (default 50), LOAD_WARMUP_SECONDS (default 4). Exit 1 on any error, unbounded orca spawns or RSS growth > 64 MB over a settling pass (the endpoints run twice; the second pass is reported).
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
@@ -41,6 +41,9 @@ const psStateFile = path.join(tmp, "ps-state.json");
 const psCountFile = path.join(tmp, "ps-count.txt");
 const piPidFile = path.join(tmp, "pi-pids.txt");
 await writeFile(psStateFile, JSON.stringify({ mode: "normal", rows: [] }));
+const psRows = path.join(tmp, "ps-rows.json");
+const psCount = path.join(tmp, "ps-count.txt");
+await writeFile(psRows, "[]");
 const worktrees = Array.from({ length: 22 }, (_, i) => ({
   path: i < 2 ? projects[i].replace(/\\/g, "/") : `${tmp.replace(/\\/g, "/")}/wt/${i}`,
   displayName: `worktree-${i}`,
@@ -51,7 +54,7 @@ const worktrees = Array.from({ length: 22 }, (_, i) => ({
 await writeFile(stateFile, JSON.stringify({ mode: "normal", active: worktrees[0].path, worktrees }));
 
 // ~700 session files: 60 belong to the project under test (alpha, 12 of them multi-MB), the rest to other cwds.
-const SESSION_FILES = 700;
+const SESSION_FILES = 2000;
 const sessionsDir = path.join(tmp, "agent", "sessions", "--load--");
 await mkdir(sessionsDir, { recursive: true });
 const pad = JSON.stringify({ type: "custom", customType: "pad", data: "p".repeat(900) });
@@ -93,6 +96,8 @@ const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
     FAKE_PS_COUNT_FILE: psCountFile,
     FAKE_PI_PID_FILE: piPidFile,
     GIT_AUTHOR_NAME: "Carga", GIT_AUTHOR_EMAIL: "carga@example.invalid", GIT_COMMITTER_NAME: "Carga", GIT_COMMITTER_EMAIL: "carga@example.invalid",
+    FAKE_PS_ROWS: psRows,
+    FAKE_PS_COUNT: psCount,
   },
 });
 let output = "";
@@ -108,8 +113,8 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const agent = new http.Agent({ keepAlive: true, maxSockets: CONCURRENCY + 4 });
-const request = (method, pathname, { token, body, decode = true } = {}) => new Promise((resolve, reject) => {
-  const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}) } }, (res) => {
+const request = (method, pathname, { token, body, decode = true, etag } = {}) => new Promise((resolve, reject) => {
+  const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}), ...(etag ? { "if-none-match": etag } : {}) } }, (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
     res.on("end", () => {
@@ -134,7 +139,7 @@ const orcaSpawns = async () => (await readFile(countFile, "utf8").catch(() => ""
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
 // `pathname` may be a list: each request takes the next one, round robin.
-async function hammer(label, pathname, token, runSeconds = DURATION, method = "GET", body) {
+async function hammer(label, pathname, token, runSeconds = DURATION, method = "GET", body, etag = null, allow304 = false) {
   const paths = [pathname].flat();
   let turn = 0;
   const latencies = [];
@@ -146,12 +151,14 @@ async function hammer(label, pathname, token, runSeconds = DURATION, method = "G
     while (performance.now() < deadline) {
       const t0 = performance.now();
       try {
-        const res = await request(method, paths[turn++ % paths.length], { token, body: body === undefined ? undefined : JSON.stringify(body), decode: false });
+        const res = await request(method, paths[turn++ % paths.length], { token, body: body === undefined ? undefined : JSON.stringify(body), decode: false, etag });
         statuses[res.status] = (statuses[res.status] || 0) + 1;
-        if (res.status !== 200) errors++;
+        if (res.status !== 200 && !(allow304 && res.status === 304)) errors++;
         latencies.push(performance.now() - t0);
-      } catch {
+      } catch (error) {
         errors++;
+        // Thrown errors (no status) are counted by code so a report can tell a socket reset from a server failure.
+        statuses[error.code || "thrown"] = (statuses[error.code || "thrown"] || 0) + 1;
       }
     }
   }));
@@ -161,6 +168,31 @@ async function hammer(label, pathname, token, runSeconds = DURATION, method = "G
 }
 
 // Watch clients keep their own offset like the page does. appendEvery: ms between lines the "other PI" appends.
+async function soakTree(token, initialEtag) {
+  const rssStart = rssMb(server.pid);
+  const deadline = performance.now() + 5 * 60_000;
+  const statuses = {};
+  let errors = 0;
+  const clients = await Promise.all(Array.from({ length: 10 }, async () => {
+    let etag = initialEtag;
+    let requests = 0;
+    while (performance.now() < deadline) {
+      const tick = performance.now();
+      try {
+        const response = await request("GET", "/api/tree", { token, etag });
+        statuses[response.status] = (statuses[response.status] || 0) + 1;
+        if (response.status === 200) etag = JSON.parse(response.text).version;
+        else if (response.status !== 304) errors++;
+      } catch { errors++; }
+      requests++;
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, tick + 2000 - performance.now())));
+    }
+    return requests;
+  }));
+  const rssEnd = rssMb(server.pid);
+  return { clients: clients.length, requests: clients.reduce((sum, count) => sum + count, 0), statuses, errors, rssStart, rssEnd, rssDelta: rssEnd - rssStart };
+}
+
 async function hammerWatch(label, token, runSeconds = DURATION, appendEvery = 40) {
   const latencies = [];
   let errors = 0;
@@ -239,6 +271,34 @@ try {
   console.log(`git-files sample: ${gitSample.text}`);
   if (resourcesSample.status !== 200 || JSON.parse(resourcesSample.text).children !== 1) throw new Error("resources route must sum the PI process tree");
   if (gitSample.status !== 200 || JSON.parse(gitSample.text).requested["novo.txt"].state !== "untracked") throw new Error("git-files route must report the untracked file");
+  const treeColdTimes = [];
+  const treeWarmTimes = [];
+  let treeStarted = performance.now();
+  const treeFirst = await request("GET", "/api/tree", { token });
+  treeColdTimes.push(performance.now() - treeStarted);
+  let treeEtag = treeFirst.text ? JSON.parse(treeFirst.text).version : null;
+  if (treeFirst.status !== 200 || !treeEtag) throw new Error("/api/tree must return its initial tree body");
+  const firstTree = JSON.parse(treeFirst.text);
+  console.log(`live API sample: ${JSON.stringify({ version: firstTree.version, generatedAt: firstTree.generatedAt, projects: firstTree.projects.map((project) => ({ id: project.id, name: project.name, envs: project.envs.map((env) => ({ key: env.key, name: env.name, pis: env.pis.slice(0, 1).map((pi) => ({ sessionId: pi.sessionId, title: pi.title, live: pi.live, raw: pi.raw })) })) })) })}`);
+  for (let sample = 0; sample < 4; sample++) {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    treeStarted = performance.now();
+    const cold = await request("GET", "/api/tree", { token, etag: treeEtag });
+    treeColdTimes.push(performance.now() - treeStarted);
+    if (cold.status === 200) treeEtag = JSON.parse(cold.text).version;
+    else if (cold.status !== 304) throw new Error(`/api/tree cold sample failed: ${cold.status}`);
+  }
+  for (let sample = 0; sample < 20; sample++) {
+    treeStarted = performance.now();
+    const warm = await request("GET", "/api/tree", { token, etag: treeEtag });
+    treeWarmTimes.push(performance.now() - treeStarted);
+    if (warm.status === 200) treeEtag = JSON.parse(warm.text).version;
+    else if (warm.status !== 304) throw new Error(`/api/tree warm sample failed: ${warm.status}`);
+  }
+  treeColdTimes.sort((a, b) => a - b);
+  treeWarmTimes.sort((a, b) => a - b);
+  console.log(`/api/tree ${SESSION_FILES}-session fixture · cold ms p50 ${percentile(treeColdTimes, 50).toFixed(2)} p95 ${percentile(treeColdTimes, 95).toFixed(2)}; warm ms p50 ${percentile(treeWarmTimes, 50).toFixed(2)} p95 ${percentile(treeWarmTimes, 95).toFixed(2)}`);
+  if ((await request("GET", "/api/tree", { token, etag: treeEtag })).status !== 304) throw new Error("/api/tree must return 304 for an unchanged ETag");
   // Fill the activity ring (300 items): each fake turn adds one "Terminou a resposta" per project.
   for (const id of openedIds) for (let turn = 0; turn < 170; turn++) await request("POST", `/api/projects/${id}/command`, { token, body: JSON.stringify({ id: `t${turn}`, type: "prompt", message: "oi" }) });
   const waitUntil = async (what, check, seconds = 40) => {
@@ -278,6 +338,9 @@ try {
   for (const pathname of ["/api/resources", resourcesPath, gitFilesPath, "/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today", "/api/tasks/links?conversation=load-conversation", fileUrl("small.txt"), fileUrl("big.txt")]) await hammer("warm-up", pathname, token, WARMUP);
   await hammer("warm-up", "/api/orca/terminal-send", token, WARMUP, "POST", { handle: "load-terminal", text: "load message" });
   await new Promise((resolve) => setTimeout(resolve, 1500));
+  const warmTree = await request("GET", "/api/tree", { token });
+  treeEtag = JSON.parse(warmTree.text).version;
+  if ((await request("GET", "/api/tree", { token, etag: treeEtag })).status !== 304) throw new Error("warm /api/tree ETag must yield 304");
 
   // Leak check: one full settling pass first (V8 keeps heap it grew to, and a GC right before the
   // baseline made "before" swing 35-250 MB), then the measured pass must not grow past that plateau.
@@ -296,15 +359,23 @@ try {
     return out;
   };
   const settling = await runPass(false);
-  if (settling.some((item) => item.errors)) console.log("settling pass had request errors");
+  // Name every erroring settling segment (a bare "had errors" line hid which endpoint failed).
+  for (const item of settling.filter((entry) => entry.errors)) console.log(`settling pass errors: ${item.label} · errors ${item.errors} · status ${JSON.stringify(item.statuses)}`);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   // Baseline = the plateau the settling pass reached (largest RSS seen in it): a leak keeps climbing past it, GC noise does not.
   const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
   const spawnsBefore = await orcaSpawns();
   const psBefore = await psSpawns();
+  const psListBefore = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
   const results = await runPass(true);
-  if (settling.some((item) => item.errors)) results.push({ ...settling.find((item) => item.errors), label: "settling pass (errors)" });
-  const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
+  const treeLoad = await hammer("GET /api/tree (conditional)", "/api/tree", token, DURATION, "GET", undefined, treeEtag, true);
+  treeLoad.rss = rssMb(server.pid);
+  results.push(treeLoad);
+  const treeSoak = await soakTree(token, treeEtag);
+  console.log(`/api/tree 5-minute soak · 10 clients / 2 s · ${treeSoak.requests} polls · status ${JSON.stringify(treeSoak.statuses)} · errors ${treeSoak.errors} · RSS ${treeSoak.rssStart.toFixed(1)} MB → ${treeSoak.rssEnd.toFixed(1)} MB (Δ ${treeSoak.rssDelta.toFixed(1)} MB)`);
+  const psListRuns = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length - psListBefore;
+  if (settling.some((item) => item.errors)) for (const item of settling.filter((entry) => entry.errors)) results.push({ ...item, label: `settling pass (errors): ${item.label}` });
+  const elapsed = results.reduce((sum, item) => sum + item.seconds, 0) + 300;
   const spawns = (await orcaSpawns()) - spawnsBefore;
   const psRuns = (await psSpawns()) - psBefore;
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -319,11 +390,17 @@ try {
   console.log(`\norca child processes during the run: ${spawns} (bound for ${fmt(elapsed)}s with a 2 s cache: ${bound})`);
   const psBound = Math.ceil(elapsed / 5) + 2;
   console.log(`process-table sampler runs during the run: ${psRuns} (bound for ${fmt(elapsed)}s with a 5 s cache: ${psBound})`);
+  console.log(`process-list child processes during /api/tree load: ${psListRuns} (5 s cache; expected bounded)`);
   console.log(`server RSS: after the settling pass ${fmt(rssBefore)} MB, after ${fmt(rssAfter)} MB (Δ ${fmt(rssAfter - rssBefore)} MB, limit ${RSS_GROWTH_LIMIT_MB} MB)`);
   const problems = [];
   if (results.some((item) => item.errors)) problems.push("request errors");
   if (spawns > bound) problems.push("orca spawns exceed the cache bound");
   if (psRuns > psBound) problems.push("sampler spawns exceed the cache bound");
+  // Window = the /api/tree segment plus the 5-minute soak (both poll the process list through its 5 s cache).
+  if (psListRuns > Math.ceil((DURATION + 300) / 5) + 2) problems.push("process-list spawns exceed the 5 s cache bound");
+  if (treeLoad.statuses[304] < 1) problems.push("/api/tree did not return unchanged 304 responses");
+  if (treeSoak.errors || treeSoak.statuses[304] < treeSoak.requests * 0.9) problems.push("/api/tree soak did not sustain unchanged 304 polls");
+  if (treeSoak.rssDelta > RSS_GROWTH_LIMIT_MB) problems.push("/api/tree soak RSS growth");
   if (rssAfter - rssBefore > RSS_GROWTH_LIMIT_MB) problems.push("RSS growth");
   failed = problems.length > 0;
   console.log(failed ? `FAIL: ${problems.join(", ")}` : "PASS");
