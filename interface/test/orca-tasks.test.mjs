@@ -20,10 +20,11 @@ await writeFile(path.join(projectDir, "package.json"), "{}");
 const projectWorktree = { path: projectDir, repoId: "repo-1" };
 await writeFile(orcaState, JSON.stringify({ mode: "normal", worktrees: [projectWorktree] }));
 
+// 6 s Orca timeout: the fake orca is a fresh node process; 2.5 s was flaky (504 instead of the expected result) when the machine was busy.
 Object.assign(process.env, { PI_WEB_HOST: "127.0.0.1", PI_WEB_PORT: "0", PI_AGENT_DIR: agentDir, PI_PROJECT_ROOTS: roots,
   PI_WEB_PI_BIN: process.execPath, PI_WEB_PI_BIN_ARGS: JSON.stringify([path.join(here, "fake-pi-rpc.mjs")]),
   PI_STUDIO_ORCA_BIN: process.execPath, PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.join(here, "fake-orca.mjs")]),
-  PI_STUDIO_ORCA_TIMEOUT_MS: "2500", FAKE_ORCA_STATE: orcaState, FAKE_ORCA_ARGV_FILE: argvFile, FAKE_ORCA_WORKTREE_ROOT: path.join(tmp, "worktrees") });
+  PI_STUDIO_ORCA_TIMEOUT_MS: "6000", FAKE_ORCA_STATE: orcaState, FAKE_ORCA_ARGV_FILE: argvFile, FAKE_ORCA_WORKTREE_ROOT: path.join(tmp, "worktrees") });
 const server = await import("../server.mjs");
 let base;
 let token;
