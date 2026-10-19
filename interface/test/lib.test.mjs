@@ -999,6 +999,8 @@ describe("context breakdown", () => {
     const data = lib.contextBreakdown(stats, { model: { id: "m", name: "Model", provider: "p", reasoning: true }, thinkingLevel: "high", sessionFile: "/other" });
     assert.deepEqual(data.usage, { percent: 30, tokens: 60000, contextWindow: 200000 });
     assert.deepEqual(data.parts.map((part) => [part.label, part.value, part.share]), [["Entrada", 50000, 0.5], ["Saída", 10000, 0.1], ["Cache lido", 40000, 0.4], ["Cache gravado", 0, 0]]);
+    // Each part carries a stable key so the bar colors follow the meaning, not the position (a missing part must not shift colors).
+    assert.deepEqual(data.parts.map((part) => part.key), ["input", "output", "cacheRead", "cacheWrite"]);
     assert.equal(data.total, 105000);
     assert.equal(data.cost, 0.45);
     assert.deepEqual(data.counts.map((item) => item.value), [5, 5, 12, 22]);
@@ -1010,7 +1012,7 @@ describe("context breakdown", () => {
     const empty = lib.contextBreakdown(null, null);
     assert.deepEqual(empty, { usage: null, parts: [], total: null, cost: null, counts: [], model: "", provider: "", thinking: "", sessionFile: "" });
     const zero = lib.contextBreakdown({ tokens: { input: 0, output: Number.NaN } }, { model: { id: "m", reasoning: false }, thinkingLevel: "high", sessionFile: "/f" });
-    assert.deepEqual(zero.parts, [{ label: "Entrada", value: 0, share: 0 }]);
+    assert.deepEqual(zero.parts, [{ label: "Entrada", value: 0, key: "input", share: 0 }]);
     assert.equal(zero.thinking, "");
     assert.equal(zero.provider, "");
     assert.equal(zero.sessionFile, "/f");

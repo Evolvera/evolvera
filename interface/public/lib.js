@@ -1651,9 +1651,9 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
 export function contextBreakdown(stats, session) {
   const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : null);
   const tokens = stats?.tokens || {};
-  const parts = [["Entrada", tokens.input], ["Saída", tokens.output], ["Cache lido", tokens.cacheRead], ["Cache gravado", tokens.cacheWrite]]
+  const parts = [["Entrada", tokens.input, "input"], ["Saída", tokens.output, "output"], ["Cache lido", tokens.cacheRead, "cacheRead"], ["Cache gravado", tokens.cacheWrite, "cacheWrite"]]
     .filter(([, value]) => num(value) !== null)
-    .map(([label, value]) => ({ label, value }));
+    .map(([label, value, key]) => ({ label, value, key }));
   const sum = parts.reduce((acc, part) => acc + part.value, 0);
   for (const part of parts) part.share = sum ? part.value / sum : 0;
   const counts = [["Mensagens suas", stats?.userMessages], ["Respostas do PI", stats?.assistantMessages], ["Chamadas de ferramenta", stats?.toolCalls], ["Total de mensagens", stats?.totalMessages]]
@@ -1671,6 +1671,97 @@ export function contextBreakdown(stats, session) {
     thinking: model && model.reasoning !== false && session.thinkingLevel ? thinkingLabel(session.thinkingLevel) : "",
     sessionFile: stats?.sessionFile || session?.sessionFile || "",
   };
+}
+
+// Context gauge color: calm below 60 %, warning up to 85 %, alarm above.
+export function contextTone(percent) {
+  return percent > 85 ? "red" : percent >= 60 ? "amber" : "green";
+}
+
+// ------------------------------------------------------ PI resources (RAM / CPU)
+
+const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+export function formatMb(mb) {
+  if (!finiteNonNegative(mb)) return "—";
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
+
+export function formatCpu(pct) {
+  if (!finiteNonNegative(pct)) return "—";
+  return pct > 0 && pct < 0.5 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+// "RAM 312 MB · CPU 4%" for a worktree card; empty when there is nothing measured.
+export function resourceLine(resource) {
+  if (!finiteNonNegative(resource?.rssMb)) return "";
+  return `RAM ${formatMb(resource.rssMb)} · CPU ${formatCpu(resource.cpuRecentPct ?? resource.cpuAvgPct)}`;
+}
+
+export function resourceRows(resource) {
+  if (!resource) return [];
+  return [["Memória (RAM)", formatMb(resource.rssMb)], ["CPU média", formatCpu(resource.cpuAvgPct)], ["CPU (10 s)", formatCpu(resource.cpuRecentPct)], ["Processos filhos", String(resource.children ?? 0)]];
+}
+
+export function resourceForPath(resources, cwd) {
+  if (!Array.isArray(resources) || !cwd) return null;
+  return resources.find((item) => samePath(item.cwd, cwd)) ?? null;
+}
+
+// ------------------------------------------------------ git state of files
+
+const GIT_STATE_INFO = {
+  pushed: { group: "pushed", label: "enviado", tone: "green" },
+  committed: { group: "committed", label: "commitado", tone: "blue" },
+  modified: { group: "changed", label: "alterado", tone: "amber" },
+  staged: { group: "changed", label: "alterado", tone: "amber" },
+  untracked: { group: "untracked", label: "novo", tone: "teal" },
+  deleted: { group: "deleted", label: "apagado", tone: "red" },
+};
+const GIT_GROUP_ORDER = ["changed", "untracked", "deleted", "committed", "pushed"];
+const GIT_URL_PATHS = 60;
+const GIT_URL_PATH_CHARS = 400;
+
+// null for states that get no color (ignored, outside the repository, unknown).
+export function gitStateInfo(state) {
+  return Object.hasOwn(GIT_STATE_INFO, state) ? GIT_STATE_INFO[state] : null;
+}
+
+export function gitLegend() {
+  return ["pushed", "committed", "modified", "untracked", "deleted"].map((state) => ({ label: GIT_STATE_INFO[state].label, tone: GIT_STATE_INFO[state].tone }));
+}
+
+// The conversation's files travel in the query so the server can say if a clean file is committed or pushed.
+export function gitFilesUrl(sessionId, paths = []) {
+  const query = paths
+    .filter((item) => typeof item === "string" && item && item.length <= GIT_URL_PATH_CHARS)
+    .slice(0, GIT_URL_PATHS)
+    .map((item) => `path=${encodeURIComponent(item)}`);
+  return `/api/sessions/${encodeURIComponent(sessionId)}/git-files${query.length ? `?${query.join("&")}` : ""}`;
+}
+
+// One list grouped by state: the conversation's files first (with their diff counts), then the other files
+// the repository reports. Without usable git data everything lands in "other" (the plain list).
+export function groupGitFiles(outputs = [], data = null, { limit = 200 } = {}) {
+  const ok = data?.git === true;
+  const requested = ok && isRecord(data.requested) ? data.requested : {};
+  const root = ok && typeof data.root === "string" ? data.root.replace(/\/+$/, "") : "";
+  const buckets = new Map([...GIT_GROUP_ORDER, "other"].map((key) => [key, []]));
+  const seen = new Set();
+  for (const output of outputs ?? []) {
+    const hit = requested[output.path];
+    if (typeof hit?.path === "string") seen.add(hit.path);
+    buckets.get(gitStateInfo(hit?.state)?.group ?? "other").push({ path: output.path, name: output.name, output });
+  }
+  for (const file of ok && Array.isArray(data.files) ? data.files : []) {
+    const info = typeof file?.path === "string" ? gitStateInfo(file.state) : null;
+    if (!info || seen.has(file.path)) continue;
+    buckets.get(info.group).push({ path: root ? `${root}/${file.path}` : file.path, name: basename(file.path), rel: file.path, output: null });
+  }
+  const meta = (key) => (key === "other" ? { label: "outros", tone: "" } : Object.values(GIT_STATE_INFO).find((info) => info.group === key));
+  return [...buckets]
+    .filter(([, items]) => items.length)
+    .map(([key, items]) => ({ key, label: meta(key).label, tone: meta(key).tone, count: items.length, more: Math.max(0, items.length - limit), items: items.slice(0, limit) }));
 }
 
 // ------------------------------------------------------ Orca worktrees
