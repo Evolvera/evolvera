@@ -133,7 +133,7 @@ try {
   await assert.rejects(p.patch(fixture), /anchor cardinality mismatch/);
   assert.deepEqual(fs.readFileSync(drift), before, 'refusal mutated fixture');
 
-  for (const [file, install] of [['install.sh', 'pi install npm:@tintinweb/pi-subagents@0.18.2'], ['install.ps1', 'pi install npm:@tintinweb/pi-subagents@0.18.2']]) {
+  for (const [file, install] of [['install.sh', 'pi install npm:@tintinweb/pi-subagents@0.18.2'], ['install.ps1', 'Invoke-PiInstall npm:@tintinweb/pi-subagents@0.18.2']]) {
     const text = fs.readFileSync(path.join(root, file), 'utf8');
     assert.ok(text.indexOf('patch-pi-subagents-deferred-nudges.mjs') > text.indexOf(install), `${file} must run the patch after installing pi-subagents`);
   }
