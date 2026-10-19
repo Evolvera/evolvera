@@ -78,3 +78,67 @@ This is an in-memory `NO_STATEFUL_RESOURCES` test: no fixtures are written, no
 services are called, and no cleanup hooks run. Tests cover bounded dimensions,
 normalization, determinism, SGR-only color, monochrome equivalence, and sampled
 logo silhouettes in full and compact layouts.
+
+## Onde aparece e como experimentar
+
+O seletor (`scripts/users/account-selector.mjs`) usa a conta **destacada** para
+escolher a composição. A opção de criar conta não tem marca Evolvera. Em janelas
+baixas a paisagem é omitida para manter o título, a navegação e as contas acessíveis;
+redimensionar recalcula a composição sem perder a seleção.
+
+Na sessão, `scripts/users/startup-art.mjs` é uma factory interna registrada pelo
+runtime gerenciado, com o nome exibido da conta e o `sessionManager` raiz. O widget
+`aboveEditor` fica depois do conteúdo/avisos do chat e antes do campo de entrada;
+não substitui o cabeçalho nem atrasa, apaga ou intercepta avisos assíncronos. Sai no
+primeiro evento `input` ou `before_agent_start`. Não reaparece em `/new`, `/reload`,
+fork ou troca de sessão. Não produz mensagens de histórico nem contexto do modelo.
+RPC, print e sessões que não sejam a raiz TUI não recebem o widget. `--no-extensions`
+continua desativando as extensões internas, inclusive essa arte da sessão.
+
+A composição inicial tem até 12 linhas, reservando 10 para a interface existente;
+terminais muito baixos a omitem. `NO_COLOR` (inclusive vazio) e `TERM=dumb` desativam
+as cores da arte, sem desativar o controle de cursor necessário ao seletor interativo.
+A fonte pertence ao emulador de terminal: o PI não instala nem força JetBrains Mono.
+
+Execute na raiz **desta branch**, sem instalar ou alterar o PI em uso:
+
+```sh
+# Seletor real, mas apenas com contas sintéticas; não abre uma sessão PI.
+node scripts/preview-terminal-art.mjs --select
+
+# Com e sem a marca Evolvera.
+node scripts/preview-terminal-art.mjs --label EVOLVERA
+node scripts/preview-terminal-art.mjs --label Pessoal
+
+# Composição compacta, monocromática.
+node scripts/preview-terminal-art.mjs --label Evolvera --width 56 --height 8 --no-color
+```
+
+Esse preview serve para avaliar a aparência e o seletor. Ele não autentica, não lê
+registro, credenciais ou histórico, não cria contas e não simula uma conversa com
+um modelo. Selecionar “Create new account” mostra apenas a composição sem Evolvera.
+A validação da TUI nativa é separada do preview.
+
+## Evidência e limites da integração
+
+Os testes focados usam streams e sessões sintéticas, sem recursos persistentes:
+
+```sh
+node --test --test-concurrency=3 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs
+```
+
+Na implementação inicial, 7 testes do renderer passaram (1 worker, 75 ms), mais 17
+testes de seletor/lifecycle. A abertura real foi observada no SDK **1.3.0**, em PTYs
+100×36, com dois processos em paralelo e contas sintéticas EVOLVERA/Pessoal. Cada
+processo tinha HOME, agentDir, registro, perfis, cache, stage e sessões próprios em
+`mkdtemp`; não havia credenciais, ferramentas ou MCP, e fetch/sockets estavam
+bloqueados. Ambos encerraram com código 0 em aproximadamente 5,64 s, sem tentativa
+de rede. Os avisos nativos ficaram acima da arte, PI permaneceu nos dois casos,
+Evolvera apareceu só para EVOLVERA, e enviar uma entrada removeu a arte. A falha de
+autenticação esperada nesse fixture sem credenciais não foi uma chamada a provedor.
+O pacote instalado permaneceu inalterado.
+
+Essa observação cobre a UI no SDK 1.3.0 em Linux. Não certifica outros SDKs, Windows,
+macOS, fontes ou todos os emuladores. A baseline 0.83.0 ainda citada no README não
+foi exercitada. Não há patch do SDK, alteração de instaladores ou instalação global.
+PR e merge dependem da aprovação posterior do usuário.
