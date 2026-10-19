@@ -688,7 +688,7 @@ describe("inspector layout", () => {
     assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
     assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
     assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
-    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "browser", "worktrees"]);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees"]);
   });
 
   test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
@@ -2257,11 +2257,11 @@ describe("Fast mode", () => {
     assert.deepEqual(off.options.filter((option) => option.selected).map((option) => option.flag), ["off"]);
     assert.ok(off.options.every((option) => !option.disabled));
     const expected = {
-      "⚡🟢": ["all", "ativo (aceito pelo provedor)", "⚡ Fast"],
-      "⚡🟡": ["all", "aguardando confirmação", "⚡ Fast"],
-      "⚡ECO": ["subagents", "só subagentes", "⚡ Eco"],
-      "🚀🟢": ["ultra", "ativo (aceito pelo provedor)", "🚀 Ultra"],
-      "🚀ECO": ["ultra-subagents", "só subagentes", "🚀 Ultra-eco"],
+      "⚡🟢": ["all", "ativo (aceito pelo provedor)", "Fast"],
+      "⚡🟡": ["all", "aguardando confirmação", "Fast"],
+      "⚡ECO": ["subagents", "só subagentes", "Eco"],
+      "🚀🟢": ["ultra", "ativo (aceito pelo provedor)", "Ultra"],
+      "🚀ECO": ["ultra-subagents", "só subagentes", "Ultra-eco"],
     };
     for (const [status, [mode, label, chip]] of Object.entries(expected)) {
       const panel = lib.fastPanel({ statusText: status, model: astra });
@@ -2291,7 +2291,7 @@ describe("Fast mode", () => {
 
   test("fastPanel: an optimistic choice overrides the status and reads as pending; no PI disables the rest", () => {
     const pending = lib.fastPanel({ statusText: undefined, model: astra, selected: "all" });
-    assert.deepEqual([pending.mode, pending.live, pending.liveLabel, pending.chip.label], ["all", "pending", "aguardando confirmação", "⚡ Fast"]);
+    assert.deepEqual([pending.mode, pending.live, pending.liveLabel, pending.chip.label], ["all", "pending", "aguardando confirmação", "Fast"]);
     // Choosing what is already reported is not a change.
     assert.equal(lib.fastPanel({ statusText: "⚡🟢", model: astra, selected: "all" }).live, "active");
     const gone = lib.fastPanel({ statusText: "⚡ECO", model: astra, disabledReason: "PI indisponível." });

@@ -1153,9 +1153,9 @@ function cleanTasks(tasks, preserveDetails = false) {
 }
 
 // Snapshot carried by one successful `todo` result (tool_execution_end event or toolResult message), else null.
-export function todoSnapshot(result) {
+export function todoSnapshot(result, preserveDetails = false) {
   if (!result || result.toolName !== "todo" || result.isError || !isTodoDetails(result.details)) return null;
-  return cleanTasks(result.details.tasks);
+  return cleanTasks(result.details.tasks, preserveDetails);
 }
 
 // Last-write-wins over a message list, like replayFromBranch; null when the session never used `todo`.
@@ -1257,7 +1257,7 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "browser", "worktrees"];
+export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees"];
 
 // The Worktrees tab exists only while the Orca integration is on.
 export function visibleInspectorTabs(settings) {
@@ -1615,7 +1615,7 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
       key: run.key,
       agentId,
       name: String(args.name || ""),
-      title: String(args.name || details.displayName || args.subagent_type || "Agente"),
+      title: [args.name, details.displayName, args.subagent_type].map(stripEmoji).find(Boolean) || "Agente",
       type: String(details.subagentType || args.subagent_type || ""),
       description: String(args.description || details.description || note?.description || ""),
       model: String(details.modelName || args.model || ""),
@@ -2382,7 +2382,6 @@ export function fastPanel({ statusText, model, selected, disabledReason }) {
   const notes = disabledReason ? [disabledReason] : [];
   if (noFast) notes.push("Este modelo não tem Fast — vale para subagentes elegíveis.");
   if (ultraBlocked) notes.push("Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra.");
-  const chipIcon = mode === "ultra" || mode === "ultra-subagents" ? "🚀" : "⚡";
   const chipWord = { all: "Fast", subagents: "Eco", ultra: "Ultra", "ultra-subagents": "Ultra-eco" }[mode];
   return {
     mode,
@@ -2391,7 +2390,7 @@ export function fastPanel({ statusText, model, selected, disabledReason }) {
     description: FAST_DESCRIPTIONS[mode],
     options,
     notes,
-    chip: chipWord ? { label: `${chipIcon} ${chipWord}`, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
+    chip: chipWord ? { label: chipWord, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
   };
 }
 
@@ -2558,4 +2557,159 @@ export function steerCommand(agentId, text) {
 
 export function parallelPrompt(task) {
   return `Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #${task.id}: ${task.subject}${task.description ? `\nDescrição: ${task.description}` : ""}`;
+}
+
+// ------------------------------------------------- Tarefas tab: stamps, labels, actions
+
+// Stamps of a conversation, rebuilt from every successful `todo` result in its messages (each with its own time),
+// so a reload keeps real start/end times. `base` (saved stamps) only fills tasks the messages no longer show.
+export function taskStampsFromMessages(messages, base = {}) {
+  let stamps = {};
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const tasks = todoSnapshot(message);
+    if (tasks && Number.isFinite(message.timestamp)) stamps = stampTaskChanges(stamps, tasks, message.timestamp);
+  }
+  return { ...base, ...stamps };
+}
+
+const STAMP_SESSIONS = 30;
+const STAMP_TASKS = 200;
+
+function parseStampStore(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Stamps persisted per session path in one localStorage value: { [sessionPath]: { at, stamps } }.
+export function loadTaskStamps(raw, key) {
+  const stamps = parseStampStore(raw)[key]?.stamps;
+  return stamps && typeof stamps === "object" && !Array.isArray(stamps) ? stamps : {};
+}
+
+// The new storage value: this session's stamps (newest STAMP_TASKS tasks) next to the STAMP_SESSIONS most recently updated sessions.
+export function saveTaskStamps(raw, key, stamps, now = Date.now(), limit = STAMP_SESSIONS) {
+  const kept = Object.entries(parseStampStore(raw)).filter(([name, entry]) => name !== key && entry && typeof entry === "object" && Number.isFinite(entry.at));
+  const newest = Object.entries(stamps || {}).sort((a, b) => (b[1].since ?? 0) - (a[1].since ?? 0)).slice(0, STAMP_TASKS);
+  kept.push([key, { at: now, stamps: Object.fromEntries(newest) }]);
+  return JSON.stringify(Object.fromEntries(kept.sort((a, b) => b[1].at - a[1].at).slice(0, limit)));
+}
+
+// Inspector tab labels: "full" (icon + text on every tab) when it fits; else "selected" (text only on the selected tab);
+// else "icons". `withText[i]` / `iconOnly[i]`: width of tab i with / without its text; `available`: width of the tab list.
+export function tabFitMode({ withText = [], iconOnly = [], available = 0, selected = -1 } = {}) {
+  const sum = (widths) => widths.reduce((total, width) => total + width, 0);
+  if (sum(withText) <= available) return "full";
+  if (selected < 0 || selected >= withText.length) return "icons";
+  return sum(iconOnly) - (iconOnly[selected] ?? 0) + withText[selected] <= available ? "selected" : "icons";
+}
+
+// Display names carry emoji from the agent definitions ("🧪 QA"); the Studio shows none of them.
+const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u200D\u20E3\uFE0E\uFE0F]/gu;
+export function stripEmoji(text) {
+  return squash(String(text ?? "").replace(EMOJI, ""));
+}
+
+// Family of a subagent (one line icon each): decided from its type, name and title, in this order.
+const FAMILIES = [
+  ["validator", /validator/],
+  ["qa", /(^|[^a-z])qa([^a-z]|$)/],
+  ["bug-hunt", /bug/],
+  ["research", /research/],
+  ["planner", /(^|[^a-z])plan/],
+  ["builder", /(^|[^a-z])build/],
+  ["scout", /scout|(^|[^a-z])explor/],
+];
+export function subagentFamily({ title, name, type } = {}) {
+  const text = foldText(stripEmoji(`${type ?? ""} ${name ?? ""} ${title ?? ""}`));
+  return FAMILIES.find(([, pattern]) => pattern.test(text))?.[0] ?? "general";
+}
+
+// data-state of the status dots (styled globally): working = running, done = finished, attention = running but quiet,
+// urgent = error, idle = everything else.
+export function subagentDotState(run, stalled = false) {
+  if (run?.phase === "running") return stalled ? "attention" : "working";
+  if (run?.phase === "done") return "done";
+  return run?.phase === "error" ? "urgent" : "idle";
+}
+
+export function taskDotState(row) {
+  if (row?.running) return "working";
+  return row?.status === "completed" ? "done" : "idle";
+}
+
+// The sub-PI conversation (history item) of a subagent run: a sub-PI of this parent conversation whose title matches
+// the run's task text or description; the newest one when a task was re-run.
+export function subagentSession({ run, history, parentFile } = {}) {
+  const texts = run ? [runPrompt(run), run.description].map((text) => String(text ?? "")).filter(Boolean) : [];
+  if (!texts.length || !Array.isArray(history)) return null;
+  const newest = (item) => String(item.timestamp ?? item.lastActivity ?? "");
+  return history
+    .filter((item) => item?.isSubagent && (!parentFile || samePath(item.parentSession, parentFile)) && texts.some((text) => titleMatches(item.title, text)))
+    .sort((a, b) => newest(b).localeCompare(newest(a)))[0] ?? null;
+}
+
+const WORKTREE_PROMPT_MAX = 8000;
+
+// Orca worktree name (the server accepts 1-60 letters, digits, space . _ -): the subject as a slug.
+export function taskWorktreeName(subject, id) {
+  const slug = foldText(subject ?? "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
+  return slug || `tarefa-${id}`;
+}
+
+// What the new worktree's PI is asked: the task, then where it came from. The description gives way to stay under the server's limit.
+export function taskWorktreePrompt(task, title) {
+  const subject = String(task.subject ?? "").slice(0, 500);
+  const context = `Contexto: conversa ${String(title || "(sem título)").slice(0, 200)}`;
+  const room = WORKTREE_PROMPT_MAX - subject.length - context.length - 4;
+  const description = String(task.description ?? "");
+  const shown = description.length > room ? `${description.slice(0, room - 1)}…` : description;
+  return [subject, shown, context].filter(Boolean).join("\n\n");
+}
+
+const WORKTREE_ERRORS = {
+  "project-not-in-orca": { kind: "not-in-orca", level: "warning", text: "Esta pasta não está no Orca." },
+  "orca-unavailable": { kind: "unavailable", level: "error", text: "Orca indisponível — abra o Orca e tente de novo." },
+  "orca-timeout": { kind: "timeout", level: "error", text: "O Orca demorou para responder — confira no Orca antes de tentar de novo." },
+  "orca-failed": { kind: "failed", level: "error", text: "O Orca falhou ao criar a worktree." },
+  "orca-invalid-response": { kind: "failed", level: "error", text: "O Orca falhou ao criar a worktree." },
+  "invalid-request": { kind: "invalid", level: "error", text: "Dados inválidos para criar a worktree." },
+  "invalid-project": { kind: "invalid", level: "error", text: "Dados inválidos para criar a worktree." },
+};
+
+// One message for every answer of POST /api/orca/worktrees: `data` (2xx body) or `error` (the server's error code).
+export function worktreeCreateFeedback({ data, error } = {}) {
+  if (data?.ok && data.link) return { kind: "created", level: "info", text: data.link.worktreeName ? `Worktree “${data.link.worktreeName}” criada no Orca.` : "Worktree criada no Orca." };
+  if (data?.unknown) return { kind: "unknown", level: "warning", text: "Não deu para confirmar — confira no Orca." };
+  const code = error?.message ?? error;
+  return WORKTREE_ERRORS[code] ?? { kind: "error", level: "error", text: `Não foi possível criar a worktree: ${code ?? "resposta inesperada"}.` };
+}
+
+function handoffReason(row, parallel) {
+  if (row.status === "completed") return "Tarefa concluída";
+  if (row.blocked) return "Tarefa bloqueada";
+  return parallel && row.status === "in_progress" ? "Já está em andamento" : "Já tem responsável";
+}
+
+// Availability of the three row buttons. `piBlocked`: why the open PI cannot take a message right now ("" when it can);
+// `link`: the row's worktree link (its terminal handle is what "Mensagem" needs).
+export function taskActionStates(row, { orcaAvailable = false, projectInOrca = true, piBlocked = "", link = null } = {}) {
+  const parallel = { enabled: row.actions.parallel && !piBlocked, reason: row.actions.parallel ? piBlocked : handoffReason(row, true) };
+  const worktree = {
+    visible: orcaAvailable,
+    enabled: row.actions.worktree && projectInOrca,
+    reason: row.actions.worktree ? (projectInOrca ? "" : "Esta pasta não está no Orca") : handoffReason(row, false),
+  };
+  const none = (reason) => ({ enabled: false, reason, target: null });
+  let message = none("Sem responsável em execução");
+  if (row.actions.message && row.owner.kind === "worktree") {
+    message = link?.terminalHandle ? { enabled: true, reason: "", target: { kind: "worktree", handle: link.terminalHandle } } : none("Terminal não identificado");
+  } else if (row.actions.message && row.owner.kind === "subagent") {
+    if (row.owner.runId == null) message = none("Subagente sem identificador");
+    else message = piBlocked ? none(piBlocked) : { enabled: true, reason: "", target: { kind: "steer", agentId: row.owner.runId } };
+  }
+  return { parallel, worktree, message };
 }
