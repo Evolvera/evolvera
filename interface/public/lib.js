@@ -2713,3 +2713,17 @@ export function taskActionStates(row, { orcaAvailable = false, projectInOrca = t
   }
   return { parallel, worktree, message };
 }
+
+const TERMINAL_SEND_ERRORS = {
+  "terminal-not-linked": "Este terminal não pertence a uma tarefa do Studio.",
+  "orca-unavailable": "Orca indisponível — abra o Orca e tente de novo.",
+  "orca-timeout": "O Orca demorou para responder — a mensagem pode não ter chegado.",
+  "orca-failed": "O Orca falhou ao enviar a mensagem.",
+  "invalid-request": "Mensagem inválida (de 1 a 8000 caracteres).",
+};
+
+// pt-BR text for an error of POST /api/orca/terminal-send (the server's error code is the Error's message).
+export function terminalSendFeedback(error) {
+  const code = error?.message ?? error ?? "erro desconhecido";
+  return TERMINAL_SEND_ERRORS[code] ?? `Não foi possível enviar a mensagem: ${code}.`;
+}

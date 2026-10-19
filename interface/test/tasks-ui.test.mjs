@@ -228,3 +228,16 @@ describe("opening a subagent and acting on a task", () => {
     assert.equal(lib.taskActionStates(row(), undefined).worktree.visible, false);
   });
 });
+
+describe("messages to a task's worktree", () => {
+  test("terminalSendFeedback explains each failure of POST /api/orca/terminal-send in pt-BR", () => {
+    assert.match(lib.terminalSendFeedback(new Error("terminal-not-linked")), /não pertence/);
+    assert.match(lib.terminalSendFeedback(new Error("orca-unavailable")), /Orca indisponível/);
+    assert.match(lib.terminalSendFeedback(new Error("orca-timeout")), /demorou/);
+    assert.match(lib.terminalSendFeedback(new Error("orca-failed")), /falhou ao enviar/);
+    assert.match(lib.terminalSendFeedback(new Error("invalid-request")), /inválida/);
+    assert.equal(lib.terminalSendFeedback(new Error("HTTP 500")), "Não foi possível enviar a mensagem: HTTP 500.");
+    assert.equal(lib.terminalSendFeedback("texto"), "Não foi possível enviar a mensagem: texto.");
+    assert.equal(lib.terminalSendFeedback(), "Não foi possível enviar a mensagem: erro desconhecido.");
+  });
+});
