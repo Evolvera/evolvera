@@ -18,6 +18,48 @@ describe("text utils", () => {
     assert.equal(lib.escapeHtml(null), "");
   });
 
+  test("session switches defer conversation reset until acknowledged and clear stale queue on reconnect", async () => {
+    const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+    for (const name of ["openSession", "newSession"]) {
+      const start = app.indexOf(`function ${name}(`);
+      const end = app.indexOf("\n}", start) + 2;
+      const body = app.slice(start, end);
+      assert.match(body, /withSessionRollback/);
+      assert.ok(body.indexOf("await applied") < body.indexOf("resetConversation()"));
+    }
+    const reset = app.slice(app.indexOf("function resetConversation()"), app.indexOf("\n}", app.indexOf("function resetConversation()")));
+    assert.match(reset, /renderQueue\(\)/);
+    assert.match(app, /if \(!state\.replaying\) \{\s*state\.queue = \{ steering: \[\], followUp: \[\] \};\s*renderQueue\(\);/);
+    assert.match(app, /if \(!state\.replaying \|\| payload\.type === "queue_update"\) handleRpc\(payload\)/);
+  });
+
+  test("withSessionRollback restores state on cancelled or failed session changes", async () => {
+    const state = { sessionFile: "/old.jsonl" };
+    const previous = { ...state };
+    let rollbacks = 0;
+    const restore = () => { Object.assign(state, previous); rollbacks++; };
+    const cancelled = await lib.withSessionRollback(async () => {
+      state.sessionFile = "/wrong.jsonl";
+      return { data: { cancelled: true } };
+    }, restore);
+    assert.equal(cancelled.data.cancelled, true);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 1);
+    const failed = await lib.withSessionRollback(async () => {
+      state.sessionFile = "/failed.jsonl";
+      return { success: false, error: "switch failed" };
+    }, restore);
+    assert.equal(failed.success, false);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 2);
+    await assert.rejects(lib.withSessionRollback(async () => {
+      state.sessionFile = "/failed.jsonl";
+      throw new Error("switch failed");
+    }, restore), /switch failed/);
+    assert.equal(state.sessionFile, "/old.jsonl");
+    assert.equal(rollbacks, 3);
+  });
+
   test("session gate: prompts wait for the in-flight switch, never reject, clear themselves", async () => {
     const holder = {};
     await lib.waitSessionGate(holder);

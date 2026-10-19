@@ -42,6 +42,17 @@ export async function waitSessionGate(holder) {
   while (holder.gate) await holder.gate;
 }
 
+export async function withSessionRollback(operation, restore) {
+  try {
+    const result = await operation();
+    if (result?.success === false || result?.data?.cancelled) await restore();
+    return result;
+  } catch (error) {
+    await restore();
+    throw error;
+  }
+}
+
 // Replayed history is display-only, except a response to a request this page still awaits.
 export function isAwaitedResponse(payload, pending) {
   return payload?.type === "response" && typeof payload.id === "string" && pending.has(payload.id);

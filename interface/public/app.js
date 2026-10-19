@@ -103,6 +103,7 @@ import {
   truncate,
   updateProcessExitUi,
   upsertMessage,
+  withSessionRollback,
 } from "./lib.js";
 
 import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
@@ -765,6 +766,7 @@ function resetConversation() {
   updateFilesBadge();
   state.stats = null;
   state.queue = { steering: [], followUp: [] };
+  renderQueue();
   state.liveThinking = "";
   state.notices = [];
   state.problems = [];
@@ -865,20 +867,30 @@ async function loadProject(projectId, { cwd } = {}) {
 function openSession(projectId, sessionPath) {
   return runGated(state, async () => {
     if (state.currentProject?.id !== projectId) await loadProject(projectId);
-    resetConversation();
-    state.session = { ...(state.session || {}), sessionFile: sessionPath };
-    updateHeader();
-    renderProjects();
-    renderThread();
-    const id = newId();
-    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
-    try {
-      await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
-    } catch (error) {
-      failPending(id, error);
-      throw error;
-    }
-    await applied;
+    const previousSession = { ...(state.session || {}) };
+    return withSessionRollback(async () => {
+      const id = newId();
+      const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+      try {
+        await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
+      } catch (error) {
+        failPending(id, error);
+        throw error;
+      }
+      const response = await applied;
+      if (response.success && !response.data?.cancelled) {
+        resetConversation();
+        state.session = { ...previousSession, sessionFile: sessionPath };
+        updateHeader();
+        renderProjects();
+        renderThread();
+      }
+      return response;
+    }, () => {
+      state.session = previousSession;
+      renderProjects();
+      renderThread();
+    });
   });
 }
 
@@ -907,26 +919,36 @@ function syncHistoryPolling() {
 function newSession() {
   return runGated(state, async () => {
     if (!state.currentProject) return;
-    const restarting = state.processExited;
-    const id = newId();
-    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
-    try {
-      await sendRpc({ type: "new_session", id });
-    } catch (error) {
-      failPending(id, error);
-      throw error;
-    }
-    if (restarting) {
-      setExited(false);
-      connectProjectEvents(state.currentProject.id);
-    }
-    resetConversation();
-    state.session = { ...(state.session || {}), sessionFile: null };
-    renderThread();
-    renderPanel();
-    setTimeout(() => refreshState().catch(() => {}), 300);
-    refreshHistory().catch(() => {});
-    await applied;
+    const previousSession = { ...(state.session || {}) };
+    return withSessionRollback(async () => {
+      const restarting = state.processExited;
+      const id = newId();
+      const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+      try {
+        await sendRpc({ type: "new_session", id });
+      } catch (error) {
+        failPending(id, error);
+        throw error;
+      }
+      const response = await applied;
+      if (response.success && !response.data?.cancelled) {
+        if (restarting) {
+          setExited(false);
+          connectProjectEvents(state.currentProject.id);
+        }
+        resetConversation();
+        state.session = { ...previousSession, sessionFile: null };
+        renderThread();
+        renderPanel();
+        setTimeout(() => refreshState().catch(() => {}), 300);
+        refreshHistory().catch(() => {});
+      }
+      return response;
+    }, () => {
+      state.session = previousSession;
+      renderProjects();
+      renderThread();
+    });
   });
 }
 
@@ -944,7 +966,7 @@ function connectProjectEvents(projectId) {
     handler(payload);
   });
   on("rpc", (payload) => {
-    if (!state.replaying) handleRpc(payload);
+    if (!state.replaying || payload.type === "queue_update") handleRpc(payload);
     // A command sent right after opening the project (e.g. new_session) can be answered
     // before this stream connects; its response then only arrives in the replay.
     else if (isAwaitedResponse(payload, state.pending)) handleResponse(payload);
@@ -975,7 +997,13 @@ function connectProjectEvents(projectId) {
     state.pending.clear();
   });
   source.onerror = () => {
-    if (state.source === source && source.readyState === EventSource.CONNECTING) state.replaying = true;
+    if (state.source === source && source.readyState === EventSource.CONNECTING) {
+      if (!state.replaying) {
+        state.queue = { steering: [], followUp: [] };
+        renderQueue();
+      }
+      state.replaying = true;
+    }
   };
 }
 
