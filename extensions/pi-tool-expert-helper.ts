@@ -10,7 +10,26 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { managedMemoryContext } from "./plastic-memory/index.ts";
+
+type ManagedContext = { profile: { id: string; agentDir: string }; admitUserResources(input: { resource: string; root: string }): void } | undefined;
+
+/**
+ * Plastic Memory is not installed while disabled (installers delete extensions/plastic-memory),
+ * so load its user-context guard lazily. Without the module, only an active managed user
+ * context (PI_USER_ID or the users receipt) must fail closed; ordinary sessions continue.
+ */
+async function loadManagedMemoryContext(cwd: string | undefined): Promise<ManagedContext> {
+  let mod: { managedMemoryContext(cwd?: string): ManagedContext };
+  try {
+    mod = await import("./plastic-memory/index.ts");
+  } catch {
+    if (process.env.PI_USER_ID !== undefined || Object.getOwnPropertyDescriptor(globalThis, Symbol.for("pi.users.context"))) {
+      throw new Error("managed user context cannot be verified without plastic-memory");
+    }
+    return undefined;
+  }
+  return mod.managedMemoryContext(cwd);
+}
 
 /** Report package/extension sources as strings only, without object fields or URL userinfo. */
 function publicSources(entries: unknown): string[] {
@@ -38,7 +57,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       let managed;
       try {
-        managed = managedMemoryContext(typeof ctx?.cwd === "string" ? ctx.cwd : undefined);
+        managed = await loadManagedMemoryContext(typeof ctx?.cwd === "string" ? ctx.cwd : undefined);
         if (managed) managed.admitUserResources({ resource: "pi-env-inspect", root: managed.profile.agentDir });
       } catch {
         return {
