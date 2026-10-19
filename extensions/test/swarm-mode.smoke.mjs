@@ -53,12 +53,17 @@ assert.equal(JSON.parse(fs.readFileSync(path.join(root, "config/pi-goal.json"), 
   assert.deepEqual((await swarm.getArgumentCompletions("o")).map((o) => o.value), ["on", "off"]);
   assert.deepEqual((await swarm.getArgumentCompletions("of")).map((o) => o.value), ["off"]);
   await handlers.get("session_start")({}, ctx);
-  assert.equal(statuses.at(-1), undefined);
+  // Confirms fresh sessions start enabled and expose the status indicator, because swarm is now a harness default.
+  assert.equal(statuses.at(-1), "🐝SWARM");
   await swarm.handler("", ctx);
-  assert.match(notices.at(-1).t, /desligado/);
+  assert.match(notices.at(-1).t, /Swarm ativo/);
   await swarm.handler("xyz", ctx);
   assert.equal(notices.at(-1).l, "warning");
   const primary = { systemPrompt: "BASE", systemPromptOptions: { customPrompt: "# PI Coding Agent\n" } };
+  // Confirms default-on injects the directive only into the primary prompt; subagents remain excluded below.
+  assert.equal((await handlers.get("before_agent_start")(primary)).systemPrompt, `BASE\n${m.SWARM_DIRECTIVE}`);
+  await swarm.handler("off", ctx);
+  assert.equal(statuses.at(-1), undefined);
   assert.equal(await handlers.get("before_agent_start")(primary), undefined, "off: prompt untouched");
 
   await swarm.handler("on", ctx);
@@ -129,7 +134,8 @@ try {
   modelCore.setResponses([reply("plain")]);
   await session.prompt("hello");
   await session.waitForIdle();
-  assert.doesNotMatch(prompts.at(-1), /SWARM MODE/, "default prompt untouched");
+  // Confirms the real fresh primary session receives swarm by default, because startup should match /swarm on.
+  assert.match(prompts.at(-1), /SWARM MODE \(active/);
 
   await session.prompt("/swarm on Fazer a tarefa X inteira");
   for (let i = 0; i < 100 && !globalThis.__swarmProbe?.events.length; i++) await new Promise((r) => setTimeout(r, 20));

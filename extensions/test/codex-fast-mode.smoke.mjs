@@ -8,6 +8,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
+// Confirms the installed harness settings select Opus at medium thinking, because these are the requested session defaults.
+const settings = JSON.parse(readFileSync(path.join(root, "config/settings.json"), "utf8"));
+assert.equal(settings.defaultProvider, "anthropic");
+assert.equal(settings.defaultModel, "claude-opus-5-5");
+assert.equal(settings.defaultThinkingLevel, "medium");
 const sandbox = mkdtempSync(path.join(tmpdir(), "codex-fast-mode-smoke-"));
 // Running inside a PI would otherwise inherit that PI's Fast mode; root-default cases need a clean start.
 delete process.env.PI_FAST_MODE;
@@ -95,13 +100,15 @@ try {
   completions = await fastCommand.getArgumentCompletions("u");
   assert.deepEqual(completions.map((item) => item.value), ["ultra", "ultra-eco"]);
 
-  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" }, "Fast ECO is the root default");
+  // Confirms Opus-like ineligible roots retain default-all for eligible children without startup warning spam.
+  assert.deepEqual(statuses.at(-1), { key: "codex-fast-mode", text: "⚡SUB" }, "root default is Fast all; this model is ineligible");
+  assert.equal(notifications.length, 0, "ineligible default model gets no misleading startup notification");
 
-  // Selecting a compatible GPT exposes on while ECO still keeps the main session standard.
+  // Selecting an eligible GPT exposes Fast on the owner too, because root default is now all.
   ctx.model = gpt56;
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   assert.equal(notifications.length, 0);
-  assert.equal(statuses.at(-1).text, "⚡ECO");
+  assert.equal(statuses.at(-1).text, "⚡🟡");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "ultra-eco", "off"]);
   assert.match(completions[1].description, /Ultrafast on Astra, Fast on other eligible models/);
@@ -109,9 +116,10 @@ try {
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
   );
-  assert.equal(defaultPayload, undefined);
+  // Confirms eligible owner requests use priority at the all-mode default, unlike ECO's standard owner tier.
+  assert.equal(defaultPayload.service_tier, "priority");
 
-  // A child receives Fast by default through the owner's ECO state.
+  // A child receives Fast by default through the owner's all-mode state.
   const child = createExtensionHarness();
   const childCtx = {
     mode: "headless",
@@ -289,7 +297,7 @@ try {
   );
   assert.equal(continuedSessionPayload.service_tier, "priority");
 
-  // A real owner shutdown clears the session state; a fresh root starts in ECO by default.
+  // A real owner shutdown clears the session state; a fresh root returns to Fast all by default.
   const freshOwner = createExtensionHarness();
   const freshStatuses = [];
   const freshCtx = {
@@ -311,8 +319,9 @@ try {
     { payload: { model: gpt56.id } },
     freshCtx,
   );
-  assert.deepEqual(freshStatuses.at(-1), { key: "codex-fast-mode", text: "⚡ECO" });
-  assert.equal(newSessionPayload, undefined);
+  // Confirms fresh roots use all-mode by default, because startup should match /fast on.
+  assert.deepEqual(freshStatuses.at(-1), { key: "codex-fast-mode", text: "⚡🟡" });
+  assert.equal(newSessionPayload.service_tier, "priority");
 
   // Astra is eligible and receives the priority service tier after explicit activation.
   ctx.model = astra;
@@ -429,10 +438,14 @@ try {
   for (const mode of ["off", "all", "subagents", "ultra", "ultra-subagents"]) {
     assert.equal(mod.fastModeFromFlag(mod.fastFlagFor(mode)), mode, `flag round-trip ${mode}`);
   }
-  assert.equal(mod.startupFastMode(undefined, undefined), "subagents", "a root PI without parent stays ECO");
+  // Confirms flag/inheritance resolution falls back to all, because new root sessions should match /fast on.
+  assert.equal(mod.startupFastMode(undefined, undefined), "all");
   assert.equal(mod.startupFastMode(undefined, "on"), "all", "inherits the parent's mode");
+  // Confirms an explicit ECO choice beats an inherited ON mode, preserving the user's CLI override.
+  assert.equal(mod.startupFastMode("eco", "on"), "subagents");
   assert.equal(mod.startupFastMode("off", "ultra"), "off", "--fast wins over the inherited mode");
-  assert.equal(mod.startupFastMode("junk", "junk"), "subagents");
+  // Confirms invalid CLI and parent values fall back to the new root default rather than ECO.
+  assert.equal(mod.startupFastMode("junk", "junk"), "all");
   const launch = 'orca terminal create --worktree active --title "builder" --command "pi --model openai-codex/gpt-6-luna --thinking high"';
   assert.equal(mod.propagateFastToOrcaCommand(launch, "all"), launch.replace('"pi --model', '"pi --fast on --model'));
   assert.equal(mod.propagateFastToOrcaCommand("orca terminal create --command=pi", "ultra"), "orca terminal create --command=pi --fast ultra");
@@ -481,14 +494,16 @@ try {
     assert.match(explicit.notices.at(-1), /\/fast ultra/, "--fast overrides the inherited mode");
 
     const plainRoot = await startRoot({ sessionId: "plain-pi" });
-    assert.equal(plainRoot.statuses.at(-1), "⚡ECO", "without parent or flag the default stays ECO");
-    assert.equal(plainRoot.notices.length, 0);
-    assert.equal(process.env[mod.FAST_MODE_ENV], "eco");
+    // Confirms a compatible fresh root gets Fast and an accurate default notice, because no CLI/parent mode was supplied.
+    assert.equal(plainRoot.statuses.at(-1), "⚡🟡");
+    assert.match(plainRoot.notices.at(-1), /\(padrão\)/);
+    assert.doesNotMatch(plainRoot.notices.at(-1), /--fast ou herdado/);
+    assert.equal(process.env[mod.FAST_MODE_ENV], "on");
 
     // The bash hook only rewrites orca launches, using the live mode.
     const bashInput = { command: launch };
     await plainRoot.handlers.get("tool_call")({ toolName: "bash", input: bashInput }, plainRoot.rootCtx);
-    assert.match(bashInput.command, /"pi --fast eco --model/);
+    assert.match(bashInput.command, /"pi --fast on --model/);
     const readInput = { path: "x" };
     await plainRoot.handlers.get("tool_call")({ toolName: "read", input: readInput }, plainRoot.rootCtx);
     assert.deepEqual(readInput, { path: "x" });

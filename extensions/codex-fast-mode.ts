@@ -40,9 +40,9 @@ export function fastFlagFor(mode: FastMode): string {
   return FLAG_BY_MODE[mode];
 }
 
-/** A root TUI starts at --fast, else the mode inherited from the parent PI, else ECO. */
+/** A root TUI starts at --fast, else the mode inherited from the parent PI, else Fast for all sessions. */
 export function startupFastMode(flag: unknown, inherited: unknown): FastMode {
-  return fastModeFromFlag(flag) ?? fastModeFromFlag(inherited) ?? "subagents";
+  return fastModeFromFlag(flag) ?? fastModeFromFlag(inherited) ?? "all";
 }
 
 /**
@@ -141,7 +141,7 @@ export function applyFastServiceTier(payload: unknown, tier: string = FAST_REQUE
 export default function codexFastModeExtension(pi: ExtensionAPI) {
   const inherited = inheritedFastMode();
   pi.registerFlag?.("fast", {
-    description: "Start with Fast mode: on | eco | ultra | ultra-eco | off (default: inherited from the parent PI, else eco)",
+    description: "Start with Fast mode: on | eco | ultra | ultra-eco | off (default: inherited from the parent PI, else on)",
     type: "string",
   });
   let eligibleModelSelected = false;
@@ -285,13 +285,19 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   pi.on("session_start", (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sharedState = getSharedFastState();
-    // ECO is the default for each TUI root; only eligible subagents use Fast.
+    // Only TUI roots default to all; non-TUI owners retain their existing reset/eligibility behavior.
     if (event.reason === "new" && ctx.mode === "tui") {
       continueFastStateForNewOwner(sessionId);
     } else if (ctx.mode === "tui") {
-      const mode = startupFastMode(pi.getFlag?.("fast"), inherited);
+      const flag = pi.getFlag?.("fast");
+      const mode = startupFastMode(flag, inherited);
       setFastMode(sharedState, mode, sessionId);
-      if (mode !== "subagents") ctx.ui.notify(`Fast Mode iniciado como /fast ${fastFlagFor(mode)} (--fast ou herdado do Pi pai).`, "info");
+      if (mode !== "subagents" && isFastEligibleModel(ctx.model)) {
+        const source = fastModeFromFlag(flag) || fastModeFromFlag(inherited)
+          ? "--fast ou herdado do Pi pai"
+          : "padrão";
+        ctx.ui.notify(`Fast Mode iniciado como /fast ${fastFlagFor(mode)} (${source}).`, "info");
+      }
     } else {
       resetFastStateForOwner(sessionId);
     }

@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.80.3",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6.1-sol",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-opus-5-5",
   "defaultThinkingLevel": "medium",
   "packages": [
     "npm:pi-mcp-adapter",
