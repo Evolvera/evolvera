@@ -19,6 +19,7 @@ const globalModules = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'n
 const sdkSource = path.join(globalModules, '@earendil-works', 'pi-coding-agent');
 const subagentsSource = path.join(realAgent, 'npm', 'node_modules', '@tintinweb', 'pi-subagents');
 const authSource = path.join(realAgent, 'npm', 'node_modules', '@gotgenes', 'pi-anthropic-auth');
+const rpivTodoSource = path.join(realAgent, 'npm', 'node_modules', '@juicesharp', 'rpiv-todo');
 const sdkFiles = [
   'package.json',
   'dist/core/agent-session.js',
@@ -42,10 +43,12 @@ const sdkFiles = [
 ];
 const subagentsFiles = ['package.json', 'src/index.ts', 'dist/index.js'];
 const authFiles = ['package.json', 'src/constants.ts'];
+const rpivTodoFiles = ['package.json', 'index.ts', 'todo.ts', 'todo-overlay.ts'];
 const sourceInputs = [
   ...sdkFiles.map((relative) => path.join(sdkSource, relative)),
   ...subagentsFiles.map((relative) => path.join(subagentsSource, relative)),
   ...authFiles.map((relative) => path.join(authSource, relative)),
+  ...rpivTodoFiles.map((relative) => path.join(rpivTodoSource, relative)),
 ];
 // Snapshot only installer/patcher write surfaces in the real home. Deliberately
 // exclude sessions, logs, and runtime memory: the active PI session writes there.
@@ -112,11 +115,13 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   const fakeSdk = path.join(fakeGlobalModules, '@earendil-works', 'pi-coding-agent');
   const fakeSubagents = path.join(parent, 'fixtures', 'pi-subagents');
   const fakeAuth = path.join(parent, 'fixtures', 'pi-anthropic-auth');
+  const fakeRpivTodo = path.join(parent, 'fixtures', 'rpiv-todo');
   const fakeBin = path.join(parent, 'bin');
   fs.mkdirSync(fakeBin, { recursive: true });
   copyPackage(sdkSource, fakeSdk, sdkFiles);
   copyPackage(subagentsSource, fakeSubagents, subagentsFiles);
   copyPackage(authSource, fakeAuth, authFiles);
+  copyPackage(rpivTodoSource, fakeRpivTodo, rpivTodoFiles);
   for (const command of ['pi', 'npm']) {
     const source = path.join(root, 'scripts', 'test', 'fixtures', command);
     const destination = path.join(fakeBin, command);
@@ -147,6 +152,7 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     FAKE_NPM_ROOT: fakeGlobalModules,
     FAKE_SUBAGENTS_FIXTURE: fakeSubagents,
     FAKE_AUTH_FIXTURE: fakeAuth,
+    FAKE_RPIV_TODO_FIXTURE: fakeRpivTodo,
     PI_CODING_AGENT_DIR: path.join(home, '.pi', 'agent'),
   };
   delete env.WSL_DISTRO_NAME;
@@ -174,10 +180,10 @@ function assertInstalled(testCase, mcpExpected) {
   assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).compaction.reserveTokens,
     JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).compaction.reserveTokens,
     `${testCase.label}: settings.json compaction.reserveTokens`);
-  const mcpPath = path.join(agent, 'mcp.json');
-  assert.ok(fs.statSync(mcpPath).isFile(), `${testCase.label}: mcp.json`);
+  const mcpAdapterPath = path.join(agent, 'mcp-adapter.json');
+  assert.ok(fs.statSync(mcpAdapterPath).isFile(), `${testCase.label}: mcp-adapter.json`);
   if (mcpExpected !== null) {
-    assert.deepEqual(fs.readFileSync(mcpPath), mcpExpected, `${testCase.label}: mcp.json bytes differ`);
+    assert.deepEqual(fs.readFileSync(mcpAdapterPath), mcpExpected, `${testCase.label}: mcp-adapter.json bytes differ`);
   }
 }
 function hostPathFromBash(value) {
@@ -230,11 +236,12 @@ try {
   runPreflight(home);
 
   const cleanOutput = runInstall(home);
-  assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp.json')));
+  assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp-adapter.json')));
   assert.ok(cleanOutput.includes('Setup completo!'), 'clean install should still report full success');
-  const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
+  const agentDir = path.join(home.home, '.pi', 'agent');
+  const mcpAdapterPath = path.join(agentDir, 'mcp-adapter.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
-  fs.writeFileSync(mcpPath, expected);
+  fs.writeFileSync(mcpAdapterPath, expected);
   const failedPackage = 'npm:@tintinweb/pi-subagents@0.18.2';
   fs.rmSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents'),
     { recursive: true, force: true });
@@ -251,6 +258,17 @@ try {
   assert.equal(fs.existsSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents')), false,
     'pi-subagents package must remain absent after simulated install failure');
   assertInstalled(home, expected);
+
+  const legacyMcpPath = path.join(agentDir, 'mcp.json');
+  const legacyMcp = Buffer.from('{"legacy-preserve-me":true}\n');
+  fs.rmSync(mcpAdapterPath);
+  fs.writeFileSync(legacyMcpPath, legacyMcp);
+  delete home.env.FAKE_PI_FAIL;
+  delete home.env.FAKE_PI_FAIL_REASON;
+  const legacyOutput = runInstall(home);
+  assert.ok(legacyOutput.includes('[!] MCP config setup bloqueado'), 'legacy MCP config must visibly block adapter setup');
+  assert.equal(fs.existsSync(mcpAdapterPath), false, 'legacy MCP config must prevent adapter config creation');
+  assert.deepEqual(fs.readFileSync(legacyMcpPath), legacyMcp, 'legacy mcp.json bytes must remain untouched');
 } finally {
   fs.rmSync(home.parent, { recursive: true, force: true });
 }

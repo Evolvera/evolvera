@@ -18,5 +18,9 @@ case "$*" in
     mkdir -p "$HOME/.pi/agent/npm/node_modules/@gotgenes"
     cp -R "$FAKE_AUTH_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@gotgenes/pi-anthropic-auth"
     ;;
+  "install npm:@juicesharp/rpiv-todo@2.11.0")
+    mkdir -p "$HOME/.pi/agent/npm/node_modules/@juicesharp"
+    cp -R "$FAKE_RPIV_TODO_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@juicesharp/rpiv-todo"
+    ;;
 esac
 exit 0
