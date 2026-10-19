@@ -5,7 +5,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { createReadStream, existsSync } from "node:fs";
 import { access, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { homedir } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
@@ -593,6 +593,7 @@ export class PiRpcSession {
     }
     const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
     sessions.delete(this.id);
+    resourceHistory.delete(this.id);
     retiredSessions.set(this.id, retired);
     while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
     for (const client of this.clients) {
@@ -1522,6 +1523,309 @@ async function projectForPath(raw) {
   return project;
 }
 
+// ---- RAM/CPU of the PIs the Studio spawned. One batched process-table sample (all pids at once) is shared by every
+// caller for 5 s; the table is read once and each session's process tree (pi + bash + MCP servers...) is summed from it.
+const RESOURCE_CACHE_MS = 5000;
+const RESOURCE_FAILURE_MS = 1000;
+const RESOURCE_TIMEOUT_MS = Number.parseInt(process.env.PI_STUDIO_PS_TIMEOUT_MS || "4000", 10);
+const RESOURCE_MAX_BUFFER = 16 * 1024 * 1024;
+const RESOURCE_MAX_ROWS = 50_000;
+const RESOURCE_RECENT_MAX_MS = 30_000;
+const RESOURCE_CSV_HEADER = '"ProcessId","ParentProcessId","WorkingSetSize","KernelModeTime","UserModeTime"';
+// Windows: one CIM query, only the properties needed (measured ~0.45-0.65 s; `wmic` is gone from current Windows).
+const RESOURCE_WIN_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime | Select ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Csv -NoTypeInformation";
+const resourceCache = { at: -Infinity, ttl: RESOURCE_CACHE_MS, value: null, pending: null };
+const resourceHistory = new Map();
+
+// PI_STUDIO_PS_BIN (+ PI_STUDIO_PS_BIN_ARGS, a JSON array) replaces the sampler (tests, unusual hosts).
+export function resolveSamplerCommand({ platform = process.platform, env = process.env } = {}) {
+  if (env.PI_STUDIO_PS_BIN) return { bin: env.PI_STUDIO_PS_BIN, args: parseJsonStringArray(env.PI_STUDIO_PS_BIN_ARGS) };
+  if (platform === "win32") return { bin: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", RESOURCE_WIN_QUERY] };
+  return { bin: "ps", args: ["-A", "-o", "pid=,ppid=,rss=,time="] };
+}
+
+// ps `time`: [[dd-]hh:]mm:ss[.cc], or plain seconds. null when it is neither.
+function psCpuSeconds(text) {
+  if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
+  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(text);
+  return match ? Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600 + Number(match[3]) * 60 + Number(match[4]) : null;
+}
+
+// Both sampler shapes (ps lines, the Windows CSV) become Map<pid, { ppid, rssKb, cpuSeconds }>; null when no row is valid.
+export function parseProcessTable(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const csv = lines.find((line) => line.trim())?.trim() === RESOURCE_CSV_HEADER;
+  const table = new Map();
+  for (const line of lines) {
+    if (table.size >= RESOURCE_MAX_ROWS) break;
+    if (csv) {
+      const match = /^"(\d+)","(\d+)","(\d*)","(\d*)","(\d*)"$/.exec(line.trim());
+      if (match) table.set(Number(match[1]), { ppid: Number(match[2]), rssKb: Number(match[3]) / 1024, cpuSeconds: (Number(match[4]) + Number(match[5])) / 1e7 });
+      continue;
+    }
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line);
+    const cpuSeconds = match ? psCpuSeconds(match[4]) : null;
+    if (cpuSeconds !== null) table.set(Number(match[1]), { ppid: Number(match[2]), rssKb: Number(match[3]), cpuSeconds });
+  }
+  return table.size ? table : null;
+}
+
+// Never rejects: any failure (missing binary, non-zero exit, timeout, unreadable output) is null.
+export function sampleProcesses(command = resolveSamplerCommand(), timeoutMs = RESOURCE_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    execFile(command.bin, command.args, { timeout: timeoutMs, maxBuffer: RESOURCE_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      resolve(error ? null : parseProcessTable(stdout));
+    });
+  });
+}
+
+export function clearResourceCache() {
+  resourceCache.at = -Infinity;
+  resourceCache.value = null;
+}
+
+// { at, table } or null (sampler unavailable). Concurrent callers await the same sample, so one process runs at a time.
+export function getProcessTable({ now = Date.now, sample = sampleProcesses } = {}) {
+  if (now() - resourceCache.at < resourceCache.ttl) return Promise.resolve(resourceCache.value);
+  resourceCache.pending ??= Promise.resolve()
+    .then(() => sample())
+    .catch(() => null)
+    .then((table) => {
+      resourceCache.at = now();
+      resourceCache.value = table ? { at: resourceCache.at, table } : null;
+      resourceCache.ttl = table ? RESOURCE_CACHE_MS : RESOURCE_FAILURE_MS;
+      return resourceCache.value;
+    })
+    .finally(() => { resourceCache.pending = null; });
+  return resourceCache.pending;
+}
+
+// The pid and all its descendants. null when the pid is not in the table. Cycles in a corrupt table end at the visited set.
+export function treeTotals(table, rootPid) {
+  if (!table.has(rootPid)) return null;
+  const childrenOf = new Map();
+  for (const [pid, row] of table) childrenOf.set(row.ppid, [...(childrenOf.get(row.ppid) ?? []), pid]);
+  const seen = new Set([rootPid]);
+  const queue = [rootPid];
+  const totals = { rssKb: 0, cpuSeconds: 0, children: -1 };
+  for (const pid of queue) {
+    const row = table.get(pid);
+    totals.rssKb += row.rssKb;
+    totals.cpuSeconds += row.cpuSeconds;
+    totals.children += 1;
+    for (const child of childrenOf.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return totals;
+}
+
+const oneDecimal = (value) => Math.round(value * 10) / 10;
+
+// cpuAvgPct: cpu seconds / wall seconds since the PI started / logical CPUs. cpuRecentPct: the same over the last two
+// samples (null on the first one, on a clock that did not advance, or when the previous sample is older than 30 s).
+export function sessionResources({ id, pid, startedAt, table, at, cpus = availableParallelism(), history = resourceHistory }) {
+  const totals = treeTotals(table, pid);
+  if (!totals) return null;
+  let entry = history.get(id);
+  if (entry?.last.at !== at) {
+    entry = { prev: entry?.last ?? null, last: { at, cpuSeconds: totals.cpuSeconds } };
+    history.set(id, entry);
+  }
+  const wall = (at - startedAt) / 1000;
+  const gap = entry.prev ? at - entry.prev.at : 0;
+  const recent = gap > 0 && gap <= RESOURCE_RECENT_MAX_MS ? (Math.max(0, totals.cpuSeconds - entry.prev.cpuSeconds) / (gap / 1000) / cpus) * 100 : null;
+  return {
+    pid,
+    rssMb: oneDecimal(totals.rssKb / 1024),
+    cpuAvgPct: wall > 0 ? oneDecimal((totals.cpuSeconds / wall / cpus) * 100) : null,
+    cpuRecentPct: recent === null ? null : oneDecimal(recent),
+    sampledAt: at,
+    children: totals.children,
+  };
+}
+
+// `sessions` only holds PIs that have not exited; start() ran in the same tick that added them, so `proc` is set.
+const measureSession = (session, snapshot) => sessionResources({ id: session.id, pid: session.proc.pid, startedAt: Date.parse(session.createdAt), table: snapshot.table, at: snapshot.at });
+
+async function sendSessionResources(res, id) {
+  const session = sessions.get(id);
+  if (!session) return retiredSessions.has(id) ? json(res, 409, { error: "no-live-process" }) : json(res, 404, { error: "Unknown session" });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = measureSession(session, snapshot);
+  return resources ? json(res, 200, resources) : json(res, 409, { error: "no-live-process" });
+}
+
+async function sendAllResources(res) {
+  const live = [...sessions.values()];
+  if (!live.length) return json(res, 200, { resources: [] });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = live.flatMap((session) => {
+    const measured = measureSession(session, snapshot);
+    return measured ? [{ sessionId: session.id, projectId: session.projectId, cwd: session.cwd, ...measured }] : [];
+  });
+  return json(res, 200, { resources });
+}
+
+// ---- Git state of the files of a conversation (GET /api/sessions/:id/git-files): colors of the Arquivos tab.
+// Read-only git (argv arrays, literal pathspecs, no optional locks so it never fights the user's own git), at most 4 git
+// processes at once, answers cached 2 s per directory and path set, output bounded.
+const GIT_CACHE_MS = 2000;
+const GIT_CACHE_MAX = 200;
+const GIT_MAX_ENTRIES = 2000;
+const GIT_MAX_BUFFER = 8 * 1024 * 1024;
+const GIT_SLOTS = 4;
+const GIT_REQUEST_PATHS = 100;
+const GIT_REQUEST_PATH_CHARS = 1024;
+const gitFilesCache = new Map();
+
+// Runs tasks with at most `slots` in flight; the rest wait their turn. A failing task still frees its slot.
+export function createLimiter(slots) {
+  let active = 0;
+  const waiting = [];
+  return async (task) => {
+    if (active >= slots) await new Promise((resolve) => waiting.push(resolve));
+    else active += 1;
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
+}
+
+const gitSlots = createLimiter(GIT_SLOTS);
+
+// { ok, stdout, truncated? } | { timedOut } | { ok: false, code }. Never rejects. Output past the buffer keeps what was read.
+export function runGit(cwd, args, { bin = "git", timeoutMs = Number.parseInt(process.env.PI_STUDIO_GIT_TIMEOUT_MS || "5000", 10), maxBuffer = GIT_MAX_BUFFER } = {}) {
+  return gitSlots(() => new Promise((resolve) => {
+    execFile(bin, ["--no-optional-locks", "--literal-pathspecs", "-C", cwd, ...args], { timeout: timeoutMs, maxBuffer, windowsHide: true, encoding: "utf8" }, (error, stdout) => {
+      if (!error) return resolve({ ok: true, stdout });
+      if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve({ ok: true, stdout, truncated: true });
+      resolve(error.killed ? { timedOut: true } : { ok: false, code: error.code });
+    });
+  }));
+}
+
+// NUL-separated output without its terminator; a cut output also loses its last (possibly half) field.
+function gitFields(stdout, truncated) {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (truncated) fields.pop();
+  return fields;
+}
+
+// Porcelain v1 XY code -> state. A change in the work tree wins over a staged one; D on either side is a deletion.
+function gitFileState(code) {
+  const [index, tree] = code;
+  if (code === "??") return "untracked";
+  if (code === "!!") return null;
+  if (index === "U" || tree === "U" || code === "AA" || code === "DD") return "modified";
+  if (index === "D" || tree === "D") return "deleted";
+  return tree === " " ? "staged" : "modified";
+}
+
+// `git status --porcelain=v1 -z`: "XY path" fields; a rename/copy is followed by its origin path in a field of its own.
+export function parseGitStatus(stdout, { truncated = false } = {}) {
+  const fields = gitFields(stdout, truncated);
+  const entries = [];
+  for (let index = 0; index < fields.length; index++) {
+    const field = fields[index];
+    if (field.length < 4 || field[2] !== " ") continue;
+    if (/[RC]/.test(field.slice(0, 2))) index += 1;
+    const state = gitFileState(field.slice(0, 2));
+    if (state) entries.push({ path: field.slice(3), state });
+  }
+  return entries;
+}
+
+export function parseGitNames(stdout, { truncated = false } = {}) {
+  return [...new Set(gitFields(stdout, truncated).filter(Boolean))];
+}
+
+const gitPathKey = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
+const validRequestPath = (value) => typeof value === "string" && value.length > 0 && value.length <= GIT_REQUEST_PATH_CHARS && !value.includes("\0");
+
+// A requested path as the repository names it (relative to the root, "/"); null when it is the directory itself or outside the repo.
+function repoPathOf(cwd, prefix, input) {
+  const relative = path.relative(cwd, path.resolve(cwd, input));
+  if (relative === "" || path.isAbsolute(relative)) return null;
+  const combined = path.posix.normalize(`${prefix}${relative.split(path.sep).join("/")}`);
+  return combined === "." || combined === ".." || combined.startsWith("../") ? null : combined;
+}
+
+// null = git did not answer in time (or failed oddly); { git: false } = not a repository or no git.
+export async function readGitFiles(cwd, paths = [], { run = (args, dir) => runGit(dir, args) } = {}) {
+  const top = await run(["rev-parse", "--show-toplevel", "--show-prefix"], cwd);
+  if (top.timedOut) return null;
+  const [root, prefix = ""] = top.ok ? top.stdout.split(/\r?\n/) : [];
+  if (!root) return { git: false };
+  const mapped = new Map([...new Set(paths.filter(validRequestPath))].slice(0, GIT_REQUEST_PATHS).map((input) => [input, repoPathOf(cwd, prefix, input)]));
+  const inside = [...new Set([...mapped.values()].filter(Boolean))];
+  const [status, log, tracked] = await Promise.all([
+    run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], root),
+    run(["log", "-z", "--name-only", "--format=", "@{u}..HEAD"], root),
+    inside.length ? run(["ls-files", "-z", "--full-name", "--", ...inside], root) : { ok: true, stdout: "" },
+  ]);
+  if (!status.ok || log.timedOut || tracked.timedOut) return null;
+  const entries = parseGitStatus(status.stdout, status);
+  const stateByPath = new Map(entries.map((entry) => [gitPathKey(entry.path), entry.state]));
+  const upstream = log.ok === true;
+  const unpushed = upstream ? parseGitNames(log.stdout, log) : [];
+  const unpushedKeys = new Set(unpushed.map(gitPathKey));
+  const trackedKeys = new Set(tracked.ok ? parseGitNames(tracked.stdout).map(gitPathKey) : []);
+  const stateOf = (repoPath) => {
+    const key = gitPathKey(repoPath);
+    if (stateByPath.has(key)) return stateByPath.get(key);
+    if (unpushedKeys.has(key)) return "committed";
+    return trackedKeys.has(key) ? (upstream ? "pushed" : "committed") : "ignored";
+  };
+  const files = entries.concat(unpushed.filter((name) => !stateByPath.has(gitPathKey(name))).map((name) => ({ path: name, state: "committed" })));
+  const requested = Object.create(null);
+  for (const [input, repoPath] of mapped) requested[input] = repoPath === null ? { state: "outside", path: null } : { state: stateOf(repoPath), path: repoPath };
+  return { git: true, root, upstream, truncated: Boolean(status.truncated || log.truncated || files.length > GIT_MAX_ENTRIES), files: files.slice(0, GIT_MAX_ENTRIES), requested };
+}
+
+export function clearGitFilesCache() {
+  gitFilesCache.clear();
+}
+
+export function gitFilesCacheSize() {
+  return gitFilesCache.size;
+}
+
+// Same-key callers share one read (also while it runs) and its result for 2 s; the cache holds at most 200 keys.
+export function gitFilesCached(cwd, paths, { run, now = Date.now } = {}) {
+  const key = `${cwdKey(cwd)}\0${[...new Set(paths)].sort().join("\0")}`;
+  const hit = gitFilesCache.get(key);
+  if (hit?.pending) return hit.pending;
+  if (hit && now() - hit.at < GIT_CACHE_MS) return Promise.resolve(hit.value);
+  gitFilesCache.delete(key);
+  const entry = { at: 0, value: null, pending: null };
+  entry.pending = readGitFiles(cwd, paths, { run })
+    .catch(() => null)
+    .then((value) => {
+      Object.assign(entry, { at: now(), value, pending: null });
+      return value;
+    });
+  gitFilesCache.set(key, entry);
+  while (gitFilesCache.size > GIT_CACHE_MAX) gitFilesCache.delete(gitFilesCache.keys().next().value);
+  return entry.pending;
+}
+
+async function sendSessionGitFiles(res, id, paths) {
+  const cwd = sessions.get(id)?.cwd ?? retiredSessions.get(id)?.summary.cwd;
+  if (!cwd) return json(res, 404, { error: "Unknown session" });
+  const data = await gitFilesCached(cwd, paths);
+  return data ? json(res, 200, data) : json(res, 503, { error: "git-unavailable" });
+}
+
 // ---- Navegador: project files for the Inspector viewer.
 const FILE_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -1961,6 +2265,18 @@ async function route(req, res) {
       if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
       const file = await resolveWatchPath(url.searchParams.get("path"));
       return json(res, 200, await withWatchSlot(() => readSessionWatch(file, Number(since))));
+    }
+
+    if (pathname === "/api/resources") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return await sendAllResources(res);
+    }
+
+    const sessionRoute = pathname.match(/^\/api\/sessions\/([^/]+)\/(resources|git-files)$/);
+    if (sessionRoute) {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      if (sessionRoute[2] === "resources") return await sendSessionResources(res, sessionRoute[1]);
+      return await sendSessionGitFiles(res, sessionRoute[1], url.searchParams.getAll("path"));
     }
 
     if (pathname === "/api/projects/open-path") {

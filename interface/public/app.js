@@ -1,5 +1,12 @@
 import {
   FAST_OPTIONS,
+  contextTone,
+  gitFilesUrl,
+  gitLegend,
+  groupGitFiles,
+  resourceForPath,
+  resourceLine,
+  resourceRows,
   FAST_STATUS_KEY,
   INSPECTOR_TABS,
   fastFromStatus,
@@ -219,6 +226,7 @@ const els = {
   filesView: $("#view-files"),
   envPath: $("#envPath"),
   outputsList: $("#outputsList"),
+  gitLegend: $("#gitLegend"),
   confirmDialog: $("#confirmDialog"),
   confirmTitle: $("#confirmTitle"),
   confirmMessage: $("#confirmMessage"),
@@ -527,6 +535,7 @@ function applyLayout() {
   els.toggleRight.setAttribute("aria-expanded", String(layout.right === "open"));
   els.scrim.hidden = !["left", "right"].some((side) => overlayQuery[side].matches && layout[side] === "open");
   if (layout.right === "open") scheduleInspector(inspector.tab);
+  syncLivePolling();
 }
 
 // Inspector (right panel): one persisted tab and width; views render lazily when visible.
@@ -543,6 +552,118 @@ const inspector = {
 const term = { cache: new Map(), stick: true, collapsed: new Set() };
 // Orca integration (off by default): latest /api/orca answer, the path follow mode last handled, and its poll timer.
 const orca = { data: null, lastFollowed: null, timer: null, inflight: false, renderSig: "", uiKey: "" };
+// Live data of the visible tab: RAM/CPU of this conversation's PI (Contexto), of every Studio PI (Worktrees) and the git
+// state of the files (Arquivos). Each poller runs only while its tab is on screen in a visible page, one request at a time.
+const LIVE_POLL_MS = 5000;
+const LIVE_KICK_MS = 1000;
+const tabShown = (tab) => layout.right === "open" && inspector.tab === tab && !document.hidden;
+// A PI whose RAM/CPU can be read: the Studio's own, still running (not a followed conversation of another PI).
+const livePiSessionId = () => (state.processExited || state.watch ? null : currentSessionId());
+// The Studio session summary the project was opened with (still readable by id after the PI exits).
+const currentSessionId = () => state.session?.id ?? null;
+
+// run(): one load at a time (a request asked meanwhile runs once more after it); sync(): start/stop the interval;
+// kick(): run soon, debounced.
+function makePoller(wanted, load) {
+  const poller = { timer: null, busy: false, again: false, kickTimer: null };
+  poller.run = async () => {
+    if (!wanted()) return;
+    if (poller.busy) {
+      poller.again = true;
+      return;
+    }
+    poller.busy = true;
+    try {
+      await load();
+    } finally {
+      poller.busy = false;
+    }
+    if (poller.again) {
+      poller.again = false;
+      poller.run();
+    }
+  };
+  poller.sync = () => {
+    if (wanted() && !poller.timer) {
+      poller.timer = setInterval(poller.run, LIVE_POLL_MS);
+      poller.run();
+    } else if (!wanted() && poller.timer) {
+      clearInterval(poller.timer);
+      poller.timer = null;
+    }
+  };
+  poller.kick = () => {
+    clearTimeout(poller.kickTimer);
+    poller.kickTimer = setTimeout(poller.run, LIVE_KICK_MS);
+  };
+  return poller;
+}
+
+const piResources = { data: null, error: false, sig: "" };
+const allResources = { list: null, sig: "" };
+const gitFiles = { data: null, sig: "", asked: null };
+
+async function loadPiResources() {
+  const id = livePiSessionId();
+  if (!id) return;
+  let data = null;
+  try {
+    data = await api(`/api/sessions/${encodeURIComponent(id)}/resources`);
+  } catch {
+    // Shown as "Indisponível"; the next tick retries.
+  }
+  if (livePiSessionId() !== id) return;
+  const sig = JSON.stringify(resourceRows(data));
+  if (sig === piResources.sig && Boolean(data) !== piResources.error) return;
+  Object.assign(piResources, { data, error: !data, sig });
+  scheduleInspector("context");
+}
+
+async function loadAllResources() {
+  let list = null;
+  try {
+    list = (await api("/api/resources")).resources;
+  } catch {
+    // No line is better than a stale one.
+  }
+  const sig = JSON.stringify((list ?? []).map((item) => [item.cwd, resourceLine(item)]));
+  if (sig === allResources.sig) return;
+  Object.assign(allResources, { list, sig });
+  scheduleInspector("worktrees");
+}
+
+async function loadGitFiles() {
+  const id = currentSessionId();
+  const paths = state.outputs.map((item) => item.path);
+  gitFiles.asked = paths.join("\0");
+  if (!id) return;
+  let data;
+  try {
+    data = await api(gitFilesUrl(id, paths));
+  } catch {
+    return; // Keeps the last good colors.
+  }
+  if (currentSessionId() !== id) return;
+  const sig = JSON.stringify(data);
+  if (sig === gitFiles.sig) return;
+  Object.assign(gitFiles, { data, sig });
+  scheduleInspector("files");
+}
+
+const resourcesPoller = makePoller(() => tabShown("context") && Boolean(livePiSessionId()), loadPiResources);
+const worktreeResourcesPoller = makePoller(() => tabShown("worktrees"), loadAllResources);
+const gitPoller = makePoller(() => tabShown("files") && Boolean(currentSessionId()), loadGitFiles);
+function syncLivePolling() {
+  for (const poller of [resourcesPoller, worktreeResourcesPoller, gitPoller]) poller.sync();
+}
+// A new conversation starts without the previous one's numbers and colors.
+function resetLiveData() {
+  Object.assign(piResources, { data: null, error: false, sig: "" });
+  Object.assign(gitFiles, { data: null, sig: "", asked: null });
+  resourcesPoller.kick();
+  gitPoller.kick();
+}
+
 const subOpen = new Set();
 const subCache = new Map();
 let noticeSeq = 0;
@@ -974,6 +1095,7 @@ function updateModelButton() {
 
 function resetConversation() {
   stopWatch();
+  resetLiveData();
   state.messages = [];
   state.runtime.clear();
   state.liveMessage = null;
@@ -1577,6 +1699,7 @@ function handleRpc(event) {
       state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result, endedAt: Date.now() });
       applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }, true));
       state.phase = "thinking";
+      gitPoller.kick();
       break;
     }
     case "bash_execution_update": {
@@ -2252,6 +2375,7 @@ function selectTab(tab, { focus = false } = {}) {
   if (tab === "tasks") tasksPanel.refreshLinks();
   scheduleInspector(tab);
   syncOrcaPolling();
+  syncLivePolling();
 }
 
 els.tablist.addEventListener("click", (event) => {
@@ -2588,15 +2712,21 @@ function renderContext() {
   const windowText = usage?.tokens !== null && usage?.contextWindow ? `${formatTokens(usage.tokens)} / ${formatTokens(usage.contextWindow)} tokens` : "";
   const hero = usage
     ? `<div class="ctx-big"><strong>${usage.percent}<small>%</small></strong><span>da janela de contexto</span></div>
-      <div class="progress ctx-progress${usage.percent >= 80 ? " warn" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
+      <div class="progress ctx-progress tone-${contextTone(usage.percent)}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${usage.percent}" aria-label="Contexto usado"><span style="width:${usage.percent}%"></span></div>
       <div class="ctx-meta"><span>${esc(windowText)}</span>${data.cost !== null ? `<span>US$ ${data.cost.toFixed(2)}</span>` : ""}</div>`
     : `<div class="ctx-big is-empty"><strong>—</strong><span>${state.currentProject ? "Uso de contexto aparece após a primeira resposta." : "Nenhum projeto aberto."}</span></div>`;
   const row = (label, value, extra = "") => `<div class="kv-row"><dt>${extra}${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
   const tokens = data.parts.length
     ? `<section class="insp-sec"><h3 class="sec-title">Tokens da sessão</h3>
-        <div class="stack-bar" aria-hidden="true">${data.parts.map((part, index) => `<span class="seg s${index}" style="flex-grow:${part.share}"></span>`).join("")}</div>
-        <dl class="kv">${data.parts.map((part, index) => row(part.label, `${formatTokens(part.value)} · ${Math.round(part.share * 100)}%`, `<i class="sw s${index}" aria-hidden="true"></i>`)).join("")}
+        <div class="stack-bar" aria-hidden="true">${data.parts.map((part) => `<span class="seg k-${part.key}" style="flex-grow:${part.share}"></span>`).join("")}</div>
+        <dl class="kv">${data.parts.map((part) => row(part.label, `${formatTokens(part.value)} · ${Math.round(part.share * 100)}%`, `<i class="sw k-${part.key}" aria-hidden="true"></i>`)).join("")}
         ${data.total !== null ? row("Total", formatTokens(data.total)) : ""}</dl></section>`
+    : "";
+  const resourceRowsList = resourceRows(piResources.data);
+  const resources = livePiSessionId()
+    ? `<section class="insp-sec"><h3 class="sec-title">Recursos</h3>${resourceRowsList.length
+      ? `<dl class="kv">${resourceRowsList.map(([label, value]) => row(label, value)).join("")}</dl>`
+      : `<p class="sec-hint">${piResources.error ? "Indisponível no momento." : "Medindo…"}</p>`}</section>`
     : "";
   const model = data.model
     ? `<section class="insp-sec"><h3 class="sec-title">Modelo</h3><dl class="kv">${row("Modelo", data.model)}${data.provider ? row("Provedor", data.provider) : ""}${data.thinking ? row("Raciocínio", data.thinking) : ""}</dl></section>`
@@ -2619,7 +2749,7 @@ function renderContext() {
   const hint = compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
   const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${compacting ? ' aria-busy="true"' : ""}>${compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
   const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : document.activeElement?.closest?.(".fast-seg") ? ".fast-seg input:checked" : "";
-  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${resources}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
 }
 
@@ -2794,16 +2924,40 @@ function renderFiles() {
   renderOutputs();
 }
 
+const gitTag = (info) => `<span class="git-tag tone-${info.tone}"><i class="git-dot" aria-hidden="true"></i>${esc(info.label)}</span>`;
+
+function outputRowHtml(item, tag = "") {
+  return `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
+      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>${tag}
+      <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
+    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`;
+}
+
+// A file the repository reports as changed that this conversation did not touch: no diff counts, same click-to-open.
+function repoFileRowHtml(item, tag) {
+  return `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
+      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.rel)}</small></span>${tag}
+    </button></div>`;
+}
+
+function gitGroupHtml(group) {
+  const head = `<h4 class="git-group${group.tone ? ` tone-${group.tone}` : ""}"><i class="git-dot" aria-hidden="true"></i>${esc(group.label)}<b>${group.count}</b></h4>`;
+  const tag = group.tone ? gitTag(group) : "";
+  const rows = group.items.map((item) => (item.output ? outputRowHtml(item.output, tag) : repoFileRowHtml(item, tag))).join("");
+  return `<section class="git-section">${head}${rows}${group.more ? `<p class="muted git-more">+${group.more} arquivos não listados</p>` : ""}</section>`;
+}
+
 function renderOutputs() {
-  const outputs = state.outputs;
-  if (!outputs.length) {
+  const groups = groupGitFiles(state.outputs, gitFiles.data);
+  const colored = groups.some((group) => group.tone);
+  els.gitLegend.hidden = !colored;
+  if (colored) els.gitLegend.innerHTML = gitLegend().map(gitTag).join("");
+  if (state.outputs.map((item) => item.path).join("\0") !== gitFiles.asked) gitPoller.kick();
+  if (!groups.length) {
     els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta conversa aparecem aqui.</p>`;
     return;
   }
-  els.outputsList.innerHTML = outputs.map((item) => `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
-      ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>
-      <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
-    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`).join("");
+  els.outputsList.innerHTML = colored ? groups.map(gitGroupHtml).join("") : groups[0].items.map((item) => outputRowHtml(item.output)).join("");
 }
 
 els.envPath.addEventListener("click", (event) => {
@@ -3864,6 +4018,7 @@ function followOrca() {
 
 function worktreeCard(worktree) {
   const row = worktreeRow(worktree);
+  const resources = resourceLine(resourceForPath(allResources.list, worktree.path));
   const current = samePath(state.currentProject?.cwd, worktree.path);
   const node = document.createElement("article");
   node.className = `sa-card wt-card${row.running ? " is-running" : ""}${current ? " is-current" : ""}`;
@@ -3876,6 +4031,7 @@ function worktreeCard(worktree) {
     <div class="wt-body">
       ${row.agents ? `<p class="sa-desc">${esc(row.agents)}</p>` : ""}
       ${row.message ? `<p class="wt-msg">${esc(row.message)}</p>` : ""}
+      ${resources ? `<p class="wt-res">${esc(resources)}</p>` : ""}
       ${row.meta.length ? `<p class="sa-meta">${row.meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
     </div>`;
   return node;
@@ -3883,7 +4039,7 @@ function worktreeCard(worktree) {
 
 function renderWorktrees() {
   const data = orca.data;
-  const sig = JSON.stringify([data, state.currentProject?.cwd]);
+  const sig = JSON.stringify([data, state.currentProject?.cwd, allResources.sig]);
   if (sig === orca.renderSig) return;
   orca.renderSig = sig;
   const focused = els.wtList.contains(document.activeElement) ? document.activeElement.dataset.wt : null;
@@ -4011,6 +4167,7 @@ document.addEventListener("visibilitychange", () => {
   }
   syncOrcaPolling();
   syncHistoryPolling();
+  syncLivePolling();
 });
 
 // ------------------------------------------------------ worktrees overview (top bar)

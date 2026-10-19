@@ -90,7 +90,7 @@ test("createProcessLister coalesces spawn, caches, refreshes, and tolerates malf
   const rowsFile = path.join(tmp, "rows.json");
   const countFile = path.join(tmp, "count.txt");
   await writeFile(rowsFile, JSON.stringify(Array.from({ length: 2000 }, (_, index) => row(index + 1, 0, `node --session \"C:/s/${index} α.jsonl\" @earendil-works/pi-coding-agent/dist/cli.js`))));
-  const fake = fileURLToPath(new URL("./fake-ps.mjs", import.meta.url));
+  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
   const command = { command: process.execPath, args: [fake], platform: process.platform };
   const previousRows = process.env.FAKE_PS_ROWS;
   const previousCount = process.env.FAKE_PS_COUNT;
@@ -117,7 +117,7 @@ test("createProcessLister coalesces spawn, caches, refreshes, and tolerates malf
 
 // Rejects malformed command output and invalid rows as a safe empty snapshot.
 test("createProcessLister returns empty rows for malformed process JSON", async () => {
-  const fake = fileURLToPath(new URL("./fake-ps.mjs", import.meta.url));
+  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
   const previousMode = process.env.FAKE_PS_MODE;
   process.env.FAKE_PS_MODE = "malformed";
   try { assert.deepEqual(await createProcessLister({ command: process.execPath, args: [fake], platform: "win32", now: () => 1 }).list(), []); }
@@ -160,7 +160,7 @@ test("createProcessLister handles env overrides and invalid JSON args", async ()
     process.env.PI_STUDIO_PS_BIN_ARGS = "{bad";
     const fallback = createProcessLister({ command: process.execPath, platform: "linux", now: () => 1 });
     assert.deepEqual(await fallback.list(), []);
-    const fake = fileURLToPath(new URL("./fake-ps.mjs", import.meta.url));
+    const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
     process.env.FAKE_PS_ROWS = path.join(tmp, "empty.json");
     await writeFile(process.env.FAKE_PS_ROWS, "[]");
     const emptyOutput = createProcessLister({ command: process.execPath, args: ["-e", "process.stdout.write('')"], platform: "win32", now: () => 1 });
@@ -186,7 +186,7 @@ test("parsePiProcesses skips vanished and malformed process rows without losing 
 test("createProcessLister bounds and cleans up its spawned process", async () => {
   const previousRows = process.env.FAKE_PS_ROWS;
   const previousMode = process.env.FAKE_PS_MODE;
-  const fake = fileURLToPath(new URL("./fake-ps.mjs", import.meta.url));
+  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
   const command = { command: process.execPath, args: [fake], platform: "win32" };
   try {
     process.env.FAKE_PS_ROWS = path.join(tmp, "empty-rows.json");

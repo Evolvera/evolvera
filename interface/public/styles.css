@@ -26,6 +26,7 @@
   --green: #5fc58a;
   --red: #e5766e;
   --amber: #d9a93c;
+  /* accents (dots, thin bars, chart segments, tiny labels); never large areas. -soft = ~14% alpha for tiny chips */
   --c-green: #5fc58a;
   --c-amber: #d9a93c;
   --c-red: #e5766e;
@@ -857,13 +858,15 @@ code { font-family: var(--mono); }
 .ctx-big span { color: var(--faint); font-size: 12.5px; }
 .ctx-big.is-empty strong { color: #4a4a4a; }
 .ctx-progress { height: 5px; }
-.ctx-progress.warn span { background: repeating-linear-gradient(-45deg, var(--text) 0 6px, #9a9a9a 6px 12px); }
+.ctx-progress.tone-green span { background: var(--c-green); }
+.ctx-progress.tone-amber span { background: var(--c-amber); }
+.ctx-progress.tone-red span { background: var(--c-red); }
 .stack-bar { display: flex; gap: 2px; height: 8px; margin-bottom: 12px; border-radius: 99px; overflow: hidden; background: var(--bg-active); }
 .stack-bar .seg { flex-basis: 0; min-width: 2px; }
-.s0 { background: #f5f5f5; }
-.s1 { background: #a8a8a8; }
-.s2 { background: #6b6b6b; }
-.s3 { background: #3e3e3e; }
+.k-input { background: var(--c-blue); }
+.k-output { background: var(--c-purple); }
+.k-cacheRead { background: var(--c-teal); }
+.k-cacheWrite { background: var(--c-amber); }
 .kv { display: grid; gap: 1px; margin: 0; }
 .kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 13px; }
 .kv-row dt { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
@@ -878,6 +881,25 @@ code { font-family: var(--mono); }
 .output-text { flex: 1; min-width: 0; display: grid; }
 .output-name { font-size: 14px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .output-text small { color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 8px; }
+.git-tag { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px 1px 6px; border-radius: 99px; font-size: 11px; line-height: 1.5; background: var(--bg-active); color: var(--muted); }
+.git-dot { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--faint); }
+.tone-green .git-dot { background: var(--c-green); }
+.tone-blue .git-dot { background: var(--c-blue); }
+.tone-amber .git-dot { background: var(--c-amber); }
+.tone-teal .git-dot { background: var(--c-teal); }
+.tone-red .git-dot { background: var(--c-red); }
+.git-tag.tone-green { background: var(--c-green-soft); color: var(--c-green); }
+.git-tag.tone-blue { background: var(--c-blue-soft); color: var(--c-blue); }
+.git-tag.tone-amber { background: var(--c-amber-soft); color: var(--c-amber); }
+.git-tag.tone-teal { background: var(--c-teal-soft); color: var(--c-teal); }
+.git-tag.tone-red { background: var(--c-red-soft); color: var(--c-red); }
+.git-legend .git-tag { background: none; color: var(--faint); padding: 0; }
+.git-section { display: grid; gap: 2px; }
+.git-group { display: flex; align-items: center; gap: 7px; margin: 10px 0 2px; padding: 0 8px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.git-group b { font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.git-section:first-child .git-group { margin-top: 2px; }
+.git-more { padding: 2px 8px; }
 
 /* ---------------------------------------------------------- drawer */
 .drawer {
@@ -1232,6 +1254,7 @@ html[data-motion="reduce"] .project.attn-waiting .run-dot { animation: none !imp
 .wt-card .sa-type { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt-body { display: grid; gap: 2px; }
 .wt-msg { margin: 0 14px 0 32px; color: var(--faint); font-size: 12.5px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-res { margin: 0 14px 0 32px; color: var(--faint); font: 11.5px/1.5 var(--mono); font-variant-numeric: tabular-nums; }
 .wt-unread { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--text-2); }
 .wt-flag { padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--muted); font-size: 11.5px; }
 .settings-sec { margin: 14px 0 0; }
