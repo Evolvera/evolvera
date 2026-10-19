@@ -46,6 +46,19 @@ test('both harness installers call the same isolated payload helper', async () =
   assert.match(sh, /desktop\/install-app\.sh/);
 });
 
+test('payload installer preserves the prior install when staging fails', async (t) => {
+  const home = await tempDir('pi-studio-payload-rollback-');
+  t.after(() => import('node:fs/promises').then(({ rm }) => rm(home, { recursive: true, force: true })));
+  const source = path.join(home, 'incomplete-source');
+  const piDir = path.join(home, '.pi', 'agent');
+  const destination = path.join(piDir, 'studio');
+  await mkdir(destination, { recursive: true });
+  await writeFile(path.join(destination, 'keep.txt'), 'previous install');
+  await mkdir(source, { recursive: true });
+  await assert.rejects(installPayload(source, piDir));
+  assert.equal(await readFile(path.join(destination, 'keep.txt'), 'utf8'), 'previous install');
+});
+
 test('payload command reports usage, success, and copy failures', async (t) => {
   const home = await tempDir('pi-studio-payload-command-');
   t.after(() => import('node:fs/promises').then(({ rm }) => rm(home, { recursive: true, force: true })));

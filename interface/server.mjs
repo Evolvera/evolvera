@@ -534,21 +534,9 @@ export class PiRpcSession {
     this.proc.stdin.on("error", (error) => {
       recordLog("warn", `PI stdin closed for ${this.cwd}`, { error: error.message });
     });
-    this.proc.on("error", (error) => {
-      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
-      this.note({ type: "process_error", message: error.message });
-      this.broadcast("process_error", { type: "process_error", message: error.message });
-    });
-    this.proc.on("exit", (code, signal) => {
-      this.exited = true;
-      this.exitCode = code;
-      this.signal = signal;
-      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
-      this.note({ type: "process_exit", code, signal });
-      this.broadcast("process_exit", { type: "process_exit", code, signal });
-      for (const client of this.clients) client.end();
-      this.clients.clear();
-    });
+    this.proc.on("error", (error) => this.finalizeTerminal("error", error));
+    this.proc.on("exit", (code, signal) => this.finalizeTerminal("exit", null, code, signal));
+    this.proc.on("close", (code, signal) => this.finalizeTerminal("close", null, code, signal));
 
     recordLog("info", `Started PI for ${this.cwd}`, { sessionId: this.id, piBin, args: redactArgs(args) });
     this.broadcast("session_ready", {
@@ -570,6 +558,26 @@ export class PiRpcSession {
         // The process may have failed immediately; process_error covers it.
       }
     }, 250);
+  }
+
+  finalizeTerminal(kind, error = null, code = null, signal = null) {
+    if (this.exited) return;
+    this.exited = true;
+    this.exitCode = code;
+    this.signal = signal;
+    if (kind === "error") {
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
+    } else {
+      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
+      const payload = { type: "process_exit", code, signal };
+      this.note(payload);
+      this.broadcast("process_exit", payload);
+    }
+    for (const client of this.clients) client.end();
+    this.clients.clear();
   }
 
   consumeStdout(chunk) {

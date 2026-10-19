@@ -80,6 +80,14 @@ describe("main mode", () => {
 });
 
 describe("PI stdin errors", () => {
+  test("a spawn error marks the wrapper exited so a later open can replace it", async () => {
+    const session = new server.PiRpcSession({ projectId: "spawn-error", projectName: "spawn-error", cwd: path.join(tmp, "missing-cwd") });
+    session.start();
+    await waitFor(() => session.exited);
+    assert.equal(session.summary().exited, true);
+    assert.throws(() => session.send({ type: "get_state" }), /not running/);
+  });
+
   test("a stdin error (write racing PI exit) is logged, not thrown as uncaught", async () => {
     const session = new server.PiRpcSession({ projectId: "stdin-err", projectName: "stdin-err", cwd: tmp });
     session.start();
