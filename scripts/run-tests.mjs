@@ -56,6 +56,8 @@ const semEstadoPadrao = new Set([
   "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
+  // só lê config/SYSTEM.md; sem escrita, rede ou subprocessos
+  "delivery-contract.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",
