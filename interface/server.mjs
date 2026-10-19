@@ -534,7 +534,15 @@ export class PiRpcSession {
     this.proc.stdin.on("error", (error) => {
       recordLog("warn", `PI stdin closed for ${this.cwd}`, { error: error.message });
     });
-    this.proc.on("error", (error) => this.finalizeTerminal("error", error));
+    // A spawn failure (no pid: missing binary, vanished cwd) never emits "exit", so it ends the session
+    // here; an error on a running PI (e.g. a failed kill) is only noted and its later exit still counts.
+    this.proc.on("error", (error) => {
+      if (this.proc.pid === undefined) return this.finalizeTerminal("error", error);
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
+    });
     this.proc.on("exit", (code, signal) => this.finalizeTerminal("exit", null, code, signal));
     this.proc.on("close", (code, signal) => this.finalizeTerminal("close", null, code, signal));
 
