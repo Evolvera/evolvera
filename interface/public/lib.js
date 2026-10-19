@@ -190,12 +190,13 @@ export function renderInline(source) {
   const hold = (html) => `\u0000${slots.push(html) - 1}\u0000`;
   let text = String(source ?? "").replace(/\u0000/g, "");
 
-  text = text.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, code) => hold(`<code>${escapeHtml(code)}</code>`));
-  text = text.replace(/\[([^\]\n]+)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g, (match, label, url) =>
-    SAFE_URL.test(url)
-      ? hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`)
-      : hold(escapeHtml(label)),
+  text = text.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, __, code) =>
+    hold(isOpenablePath(code) ? pathLink(code, `<code>${escapeHtml(code)}</code>`) : `<code>${escapeHtml(code)}</code>`),
   );
+  text = text.replace(/\[([^\]\n]+)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g, (match, label, url) => {
+    if (SAFE_URL.test(url)) return hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
+    return hold(isOpenablePath(url) ? pathLink(url, escapeHtml(label)) : escapeHtml(label));
+  });
   text = text.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/g, (url) =>
     hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`),
   );
@@ -208,6 +209,11 @@ export function renderInline(source) {
     .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?!\*)/g, "$1<em>$2</em>")
     .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, "$1<em>$2</em>");
   return html.replace(/\u0000(\d+)\u0000/g, (_, index) => slots[Number(index)]);
+}
+
+// A project file mentioned in a message opens in the Navegador tab (app.js handles the click on [data-open]).
+function pathLink(target, inner) {
+  return `<a href="#" class="path-link" data-open="${escapeHtml(target)}">${inner}</a>`;
 }
 
 const FENCE = /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)/;
@@ -1221,7 +1227,7 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "worktrees"];
+export const INSPECTOR_TABS = ["terminal", "subagents", "context", "files", "browser", "worktrees"];
 
 // The Worktrees tab exists only while the Orca integration is on.
 export function visibleInspectorTabs(settings) {
@@ -2066,4 +2072,158 @@ export function todayUsageRows(usage) {
   if (usage.cost !== null) rows.push(["Custo hoje", `US$ ${usage.cost.toFixed(2)}`]);
   rows.push(["Tokens hoje", formatTokens(usage.tokens)], ["Sessões hoje", String(usage.sessions)]);
   return rows;
+}
+
+// ------------------------------------------------------ navegador (files and pages beside the chat)
+
+// [viewer kind, Content-Type, extensions]: one table feeds the viewer choice (client) and the file route (server).
+const FILE_TYPE_TABLE = [
+  ["image", "image/png", "png"], ["image", "image/jpeg", "jpg jpeg"], ["image", "image/gif", "gif"], ["image", "image/webp", "webp"],
+  ["image", "image/avif", "avif"], ["image", "image/bmp", "bmp"], ["image", "image/x-icon", "ico"], ["image", "image/svg+xml", "svg"],
+  ["pdf", "application/pdf", "pdf"],
+  ["html", "text/html; charset=utf-8", "html htm"],
+  ["markdown", "text/markdown; charset=utf-8", "md markdown mdx"],
+  ["audio", "audio/mpeg", "mp3"], ["audio", "audio/wav", "wav"], ["audio", "audio/ogg", "ogg oga"], ["audio", "audio/mp4", "m4a"],
+  ["audio", "audio/flac", "flac"], ["audio", "audio/aac", "aac"],
+  ["video", "video/mp4", "mp4 m4v"], ["video", "video/webm", "webm"], ["video", "video/ogg", "ogv"], ["video", "video/quicktime", "mov"],
+  // Scripts/styles keep their real MIME so a previewed page can load them under X-Content-Type-Options: nosniff.
+  ["text", "text/javascript; charset=utf-8", "js mjs cjs jsx"], ["text", "text/css; charset=utf-8", "css"],
+  ["text", "application/json; charset=utf-8", "json jsonc map"], ["text", "application/xml; charset=utf-8", "xml"],
+  ["text", "text/plain; charset=utf-8", "txt log csv tsv yaml yml toml ini env ts tsx scss less py rb go rs java kt c h cpp hpp cs php sh bash zsh ps1 bat cmd sql lock gitignore editorconfig vue svelte"],
+  ["other", "font/woff2", "woff2"], ["other", "font/woff", "woff"], ["other", "font/ttf", "ttf"], ["other", "font/otf", "otf"], ["other", "application/wasm", "wasm"],
+];
+const FILE_TYPES = new Map(FILE_TYPE_TABLE.flatMap(([kind, mime, exts]) => exts.split(" ").map((ext) => [ext, { kind, mime }])));
+const OTHER_FILE = { kind: "other", mime: "application/octet-stream" };
+const TEXT_FILE = { kind: "text", mime: "text/plain; charset=utf-8" };
+const TEXT_FILE_NAMES = new Set(["dockerfile", "makefile", "license", "readme", "procfile"]);
+
+// { kind: image|pdf|html|markdown|audio|video|text|other, mime } by file name; the extension decides.
+export function fileInfo(name) {
+  const base = basename(name).toLowerCase();
+  const dot = base.lastIndexOf(".");
+  const ext = dot === -1 ? "" : base.slice(dot + 1);
+  return FILE_TYPES.get(ext) ?? (TEXT_FILE_NAMES.has(base) ? TEXT_FILE : OTHER_FILE);
+}
+
+export function viewerKind(name) {
+  return fileInfo(name).kind;
+}
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const BARE_LOCAL = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i;
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const DRIVE_PATH = /^[a-z]:[\\/]/i;
+
+const invalid = (reason) => ({ type: "invalid", reason });
+
+function fileTarget(raw) {
+  const path = raw.replace(/\\/g, "/").replace(/:\d+(?::\d+)?$/, "");
+  return { type: "file", path, name: basename(path), kind: viewerKind(path) };
+}
+
+// What the Navegador was asked to open: a project file (relative, absolute, ~, file://), a local dev server
+// (localhost / 127.0.0.1 / [::1], never Studio's own port), an external https page, or nothing valid.
+export function classifyTarget(input, { studioPort = "" } = {}) {
+  const text = String(input ?? "").trim();
+  if (!text) return invalid("empty");
+  if (/[\u0000-\u001f]/.test(text)) return invalid("control");
+  if (/^file:/i.test(text)) {
+    let url;
+    let pathname;
+    try {
+      url = new URL(text);
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return invalid("bad-url");
+    }
+    if (url.host) return invalid("remote-file");
+    return fileTarget(/^\/[a-z]:/i.test(pathname) ? pathname.slice(1) : pathname);
+  }
+  const candidate = BARE_LOCAL.test(text) ? `http://${text}` : text;
+  if (!URL_SCHEME.test(candidate) || DRIVE_PATH.test(candidate)) return fileTarget(text);
+  let url;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return invalid("bad-url");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return invalid("scheme");
+  if (url.username || url.password) return invalid("credentials");
+  if (!LOCAL_HOSTS.has(url.hostname.replace(/\.$/, ""))) return { type: "external", url: url.href, label: url.host + (url.pathname === "/" ? "" : url.pathname) };
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  if (String(studioPort) === port) return invalid("studio");
+  return { type: "local", url: url.href, label: url.host + (url.pathname === "/" ? "" : url.pathname) };
+}
+
+// The text that classifyTarget turns back into the same target (history keeps these strings).
+export function targetText(target) {
+  return target.type === "file" ? target.path : target.url;
+}
+
+// Paths worth linking inside a message: a known file type; a bare name only for documents/media (not `console.log`).
+const BARE_LINK_KINDS = new Set(["image", "pdf", "html", "markdown", "audio", "video"]);
+export function isOpenablePath(text) {
+  const target = classifyTarget(text);
+  if (target.type !== "file" || target.kind === "other" || /\s/.test(target.path)) return false;
+  return /\//.test(target.path) || BARE_LINK_KINDS.has(target.kind);
+}
+
+// A link inside the file at `basePath` (e.g. a Markdown file) resolved to a project-style path.
+export function resolveSibling(basePath, relative) {
+  if (/^(?:[a-z]:|[\\/]|~)/i.test(relative)) return relative;
+  const parts = String(basePath).replace(/\\/g, "/").split("/").slice(0, -1);
+  for (const segment of relative.replace(/\\/g, "/").split("/")) {
+    if (segment === "..") {
+      if (parts.length && parts[parts.length - 1] !== "..") parts.pop();
+      else parts.push("..");
+    } else if (segment && segment !== ".") {
+      parts.push(segment);
+    }
+  }
+  return parts.join("/");
+}
+
+// A click on a link in a message: "inline" opens it in the Navegador, "outside" in the system browser
+// (Ctrl/Cmd/Shift/Alt+click), "ignore" leaves the browser's own behavior (external links, handled clicks, other buttons).
+export function linkAction(target, event) {
+  if (event.defaultPrevented || event.button !== 0 || (target.type !== "file" && target.type !== "local")) return "ignore";
+  return event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ? "outside" : "inline";
+}
+
+export const BROWSER_HISTORY_LIMIT = 20;
+
+// Back/forward history of one project: { items: [text], index }. Immutable; pushing drops the forward part.
+export const emptyBrowserHistory = () => ({ items: [], index: -1 });
+
+export function browserHistoryPush(history, text, limit = BROWSER_HISTORY_LIMIT) {
+  if (history.items[history.index] === text) return history;
+  const items = [...history.items.slice(0, history.index + 1), text].slice(-limit);
+  return { items, index: items.length - 1 };
+}
+
+export function browserHistoryMove(history, step) {
+  const index = history.index + step;
+  return index < 0 || index >= history.items.length ? history : { ...history, index };
+}
+
+export const browserHistoryCurrent = (history) => history.items[history.index] ?? "";
+
+// Reads what localStorage kept (any shape): strings only, newest 20, index clamped.
+export function parseBrowserHistory(raw) {
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return emptyBrowserHistory();
+  }
+  const items = (Array.isArray(data?.items) ? data.items : []).filter((item) => typeof item === "string" && item.trim()).slice(-BROWSER_HISTORY_LIMIT);
+  const index = Number.isInteger(data?.index) ? Math.min(items.length - 1, Math.max(0, data.index)) : items.length - 1;
+  return { items, index };
+}
+
+export function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }

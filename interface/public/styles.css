@@ -1268,3 +1268,42 @@ html[data-motion="reduce"] .session-state { animation: none !important; }
 .prob-list .session-state { align-self: center; }
 .prob-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .prob-time { flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ navegador */
+.output-row { display: flex; align-items: center; gap: 2px; }
+.output-row .output-item { flex: 1; }
+.output-diff { flex: none; color: var(--faint); }
+.md a.path-link { text-decoration-style: dotted; }
+.view-browser { display: flex; flex-direction: column; background: var(--bg-side); }
+.view-browser[hidden] { display: none; }
+.browser-bar { flex: none; display: flex; align-items: center; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.browser-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0 4px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-code);
+  color: var(--text-2);
+  font: 12.5px var(--mono);
+  outline: none;
+  transition: border-color 140ms var(--ease), color 140ms var(--ease);
+}
+.browser-input:focus { border-color: var(--muted); color: var(--text); }
+.browser-input::placeholder { color: var(--faint); }
+.browser-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.browser-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #ffffff; }
+.browser-media { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; overflow: auto; background: var(--bg-code); }
+.browser-media img, .browser-media video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.browser-media audio { width: 100%; }
+.browser-doc.md { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px 28px; font-size: 14.5px; }
+.browser-code { flex: 1; min-height: 0; overflow: auto; background: var(--bg-code); }
+.browser-code pre { margin: 0; padding: 12px 14px; }
+.browser-code code { font: 12.5px/1.6 var(--mono); color: var(--text-2); white-space: pre; }
+.browser-note { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+.browser-loading { padding: 48px 20px; text-align: center; color: var(--faint); font-size: 13px; }
+.browser-card { margin: auto; padding: 32px 20px; }
+.browser-card .btn { margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { .browser-input { transition: none; } }

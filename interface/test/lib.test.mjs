@@ -601,7 +601,7 @@ describe("inspector layout", () => {
     assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
     assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
     assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
-    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "worktrees"]);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "subagents", "context", "files", "browser", "worktrees"]);
   });
 
   test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
@@ -1910,5 +1910,162 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 0 }), 1);
     assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 2 }), 2);
     assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: true, serverCount: 5 }), 1, "the open project trusts its own history");
+  });
+});
+
+describe("navegador (lib)", () => {
+  test("fileInfo / viewerKind: by extension (case-insensitive), special names, fonts and unknowns", () => {
+    const kinds = {
+      "a.png": "image", "A.JPG": "image", "x/y.svg": "image", "doc.pdf": "pdf", "index.html": "html", "p.htm": "html", "README.md": "markdown",
+      "a.mp3": "audio", "a.mp4": "video", "src/app.js": "text", "style.css": "text", "data.json": "text", ".gitignore": "text",
+      Dockerfile: "text", "C:\\proj\\Makefile": "text", README: "text", "a.tar.gz": "other", noext: "other", "dot.": "other", "f.woff2": "other", "m.wasm": "other",
+    };
+    for (const [name, kind] of Object.entries(kinds)) assert.equal(lib.viewerKind(name), kind, name);
+    assert.equal(lib.fileInfo("a.js").mime, "text/javascript; charset=utf-8");
+    assert.equal(lib.fileInfo("a.css").mime, "text/css; charset=utf-8");
+    assert.equal(lib.fileInfo("a.json").mime, "application/json; charset=utf-8");
+    assert.equal(lib.fileInfo("a.PNG").mime, "image/png");
+    assert.equal(lib.fileInfo("a.jpeg").mime, "image/jpeg");
+    assert.equal(lib.fileInfo("a.html").mime, "text/html; charset=utf-8");
+    assert.equal(lib.fileInfo("a.py").mime, "text/plain; charset=utf-8");
+    assert.equal(lib.fileInfo("Dockerfile").mime, "text/plain; charset=utf-8");
+    assert.equal(lib.fileInfo("f.woff2").mime, "font/woff2");
+    assert.deepEqual(lib.fileInfo("a.zip"), { kind: "other", mime: "application/octet-stream" });
+  });
+
+  test("classifyTarget: files (relative, absolute, Windows, ~, file://, :line), never confused with schemes", () => {
+    const file = (input) => lib.classifyTarget(input);
+    assert.deepEqual(file("src/app.js"), { type: "file", path: "src/app.js", name: "app.js", kind: "text" });
+    assert.deepEqual(file("  ./docs/a b.md  "), { type: "file", path: "./docs/a b.md", name: "a b.md", kind: "markdown" });
+    assert.deepEqual(file("C:\\Users\\me\\pic.png"), { type: "file", path: "C:/Users/me/pic.png", name: "pic.png", kind: "image" });
+    assert.equal(file("c:/x/y.pdf").path, "c:/x/y.pdf");
+    assert.equal(file("\\\\srv\\share\\x.txt").path, "//srv/share/x.txt");
+    assert.equal(file("~/notes.md").path, "~/notes.md");
+    assert.equal(file("src/app.js:42").path, "src/app.js");
+    assert.equal(file("src/app.js:42:7").path, "src/app.js");
+    assert.equal(file("/etc/hosts").kind, "other");
+    assert.equal(file("example.com").type, "file", "no scheme: a file name, never a site");
+    assert.equal(file("localhost.txt").type, "file");
+    assert.deepEqual(file("file:///C:/Users/me/a%20b.md"), { type: "file", path: "C:/Users/me/a b.md", name: "a b.md", kind: "markdown" });
+    assert.equal(file("file:///home/me/x.js").path, "/home/me/x.js");
+    assert.deepEqual([file("file://server/share/a.txt"), file("file:///%zz/a"), file("file://[")].map((item) => item.reason), ["remote-file", "bad-url", "bad-url"]);
+    assert.equal(lib.classifyTarget(null).reason, "empty");
+    assert.equal(file("   ").reason, "empty");
+    assert.equal(file("a\u0001b").reason, "control");
+  });
+
+  test("classifyTarget: local dev servers, Studio's own port, external pages and refused schemes", () => {
+    const local = (input, options) => lib.classifyTarget(input, options);
+    assert.deepEqual(local("localhost:3000"), { type: "local", url: "http://localhost:3000/", label: "localhost:3000" });
+    assert.deepEqual(local("127.0.0.1:5173/app?x=1"), { type: "local", url: "http://127.0.0.1:5173/app?x=1", label: "127.0.0.1:5173/app" });
+    assert.equal(local("http://[::1]:8080/").type, "local");
+    assert.equal(local("https://localhost:3443/x").url, "https://localhost:3443/x");
+    assert.equal(local("localhost").url, "http://localhost/");
+    assert.equal(local("http://LOCALHOST:3000").url, "http://localhost:3000/");
+    for (const own of ["http://localhost:4123/x", "127.0.0.1:4123", "http://[::1]:4123", "http://localhost:4123@localhost:4123"]) {
+      assert.equal(local(own, { studioPort: 4123 }).type === "local", false, own);
+    }
+    assert.equal(local("localhost:4123", { studioPort: "4123" }).reason, "studio");
+    assert.equal(local("http://localhost.:4123/", { studioPort: 4123 }).reason, "studio", "a trailing dot is the same host");
+    assert.equal(local("http://localhost.:3000/").type, "local");
+    assert.equal(local("localhost:4124", { studioPort: "4123" }).type, "local");
+    assert.equal(local("http://localhost", { studioPort: 80 }).reason, "studio");
+    assert.equal(local("https://localhost", { studioPort: 443 }).reason, "studio");
+    assert.equal(local("http://localhost", { studioPort: 4123 }).type, "local");
+    assert.deepEqual(local("https://example.com/a/b"), { type: "external", url: "https://example.com/a/b", label: "example.com/a/b" });
+    assert.deepEqual(local("https://example.com"), { type: "external", url: "https://example.com/", label: "example.com" });
+    assert.equal(local("http://127.0.0.2:4123/").type, "external", "only loopback names count as local");
+    assert.deepEqual(["javascript:alert(1)", "data:text/html,x", "ftp://x.dev/a", "mailto:a@b.c", "foo:bar", "C:foo"].map((input) => local(input).reason), Array(6).fill("scheme"));
+    assert.equal(local("http://").reason, "bad-url");
+    assert.equal(local("http://user:pw@localhost:3000/").reason, "credentials");
+    assert.equal(local("https://user@example.com/").reason, "credentials");
+  });
+
+  test("targetText round-trips through classifyTarget", () => {
+    for (const input of ["src/app.js", "C:\\a\\b.png", "localhost:3000/x", "https://example.com/a"]) {
+      const target = lib.classifyTarget(input);
+      assert.deepEqual(lib.classifyTarget(lib.targetText(target)), target, input);
+    }
+  });
+
+  test("isOpenablePath: only paths worth a link (known type; bare names only for documents and media)", () => {
+    for (const yes of ["src/app.js", "docs/readme.md", "C:\\p\\a.png", "README.md", "pic.png", "page.html", "report.pdf", "clip.mp4", "logs/app.log", "./a/b.css"]) assert.equal(lib.isOpenablePath(yes), true, yes);
+    for (const no of ["app.js", "console.log", "a.tar.gz", "dir/file.unknown", "http://localhost:3000", "https://x.dev/a.png", "javascript:void", "", "a b.md", "src/a b.js", "x.y/z"]) assert.equal(lib.isOpenablePath(no), false, no);
+  });
+
+  test("renderInline links project paths and keeps everything else as before", () => {
+    assert.equal(lib.renderInline("veja `src/app.js` agora"), 'veja <a href="#" class="path-link" data-open="src/app.js"><code>src/app.js</code></a> agora');
+    assert.equal(lib.renderInline("`app.js` e `a<b>`"), "<code>app.js</code> e <code>a&lt;b&gt;</code>");
+    assert.equal(lib.renderInline("[o plano](docs/plano.md)"), '<a href="#" class="path-link" data-open="docs/plano.md">o plano</a>');
+    assert.equal(lib.renderInline('[x](a"b.md)'), '<a href="#" class="path-link" data-open="a&quot;b.md">x</a>');
+    assert.equal(lib.renderInline("[x](nada)"), "x");
+    assert.equal(lib.renderInline("[x](javascript:void)"), "x");
+  });
+
+  test("resolveSibling: links inside a file resolve against its folder", () => {
+    assert.equal(lib.resolveSibling("docs/a.md", "b.md"), "docs/b.md");
+    assert.equal(lib.resolveSibling("a.md", "b.md"), "b.md");
+    assert.equal(lib.resolveSibling("docs/sub/a.md", "../x.md"), "docs/x.md");
+    assert.equal(lib.resolveSibling("a.md", "../x.md"), "../x.md");
+    assert.equal(lib.resolveSibling("a.md", "../../x.md"), "../../x.md");
+    assert.equal(lib.resolveSibling("docs/a.md", "./c//./d.md"), "docs/c/d.md");
+    assert.equal(lib.resolveSibling("docs\\a.md", "..\\b.md"), "b.md");
+    assert.equal(lib.resolveSibling("/abs/dir/a.md", "b.md"), "/abs/dir/b.md");
+    for (const absolute of ["/etc/x", "\\x", "C:\\x", "c:/x", "~/x"]) assert.equal(lib.resolveSibling("docs/a.md", absolute), absolute);
+  });
+
+  test("linkAction: plain click opens inline, modifiers open outside, everything else is left alone", () => {
+    const file = lib.classifyTarget("a.md");
+    const local = lib.classifyTarget("localhost:3000");
+    const click = (extra = {}) => ({ button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, defaultPrevented: false, ...extra });
+    assert.equal(lib.linkAction(file, click()), "inline");
+    assert.equal(lib.linkAction(local, click()), "inline");
+    for (const modifier of ["ctrlKey", "metaKey", "shiftKey", "altKey"]) assert.equal(lib.linkAction(file, click({ [modifier]: true })), "outside", modifier);
+    assert.equal(lib.linkAction(file, click({ button: 1 })), "ignore");
+    assert.equal(lib.linkAction(file, click({ defaultPrevented: true })), "ignore");
+    assert.equal(lib.linkAction(lib.classifyTarget("https://example.com"), click()), "ignore");
+    assert.equal(lib.linkAction(lib.classifyTarget("javascript:x"), click()), "ignore");
+  });
+
+  test("history: push drops the forward part, de-dupes, keeps the newest 20; back/forward stop at the ends", () => {
+    let history = lib.emptyBrowserHistory();
+    assert.deepEqual(history, { items: [], index: -1 });
+    assert.equal(lib.browserHistoryCurrent(history), "");
+    assert.equal(lib.browserHistoryMove(history, -1), history);
+    assert.equal(lib.browserHistoryMove(history, 1), history);
+    history = lib.browserHistoryPush(history, "a");
+    assert.equal(lib.browserHistoryPush(history, "a"), history, "same target twice in a row is one entry");
+    history = lib.browserHistoryPush(lib.browserHistoryPush(history, "b"), "c");
+    assert.deepEqual(history, { items: ["a", "b", "c"], index: 2 });
+    assert.equal(lib.browserHistoryMove(history, 1), history, "no forward at the end");
+    history = lib.browserHistoryMove(history, -1);
+    assert.equal(lib.browserHistoryCurrent(history), "b");
+    assert.equal(lib.browserHistoryMove(lib.browserHistoryMove(history, -1), -1).index, 0, "no back before the first");
+    history = lib.browserHistoryMove(history, 1);
+    assert.equal(lib.browserHistoryCurrent(history), "c");
+    history = lib.browserHistoryPush(lib.browserHistoryMove(history, -2), "z");
+    assert.deepEqual(history, { items: ["a", "z"], index: 1 });
+    let long = lib.emptyBrowserHistory();
+    for (let n = 0; n < 25; n++) long = lib.browserHistoryPush(long, `t${n}`);
+    assert.equal(long.items.length, 20);
+    assert.deepEqual([long.items[0], long.items[19], long.index], ["t5", "t24", 19]);
+    assert.equal(lib.browserHistoryPush(lib.emptyBrowserHistory(), "a", 1).items.length, 1);
+    assert.deepEqual(lib.browserHistoryPush({ items: ["a"], index: 0 }, "b", 1), { items: ["b"], index: 0 });
+  });
+
+  test("parseBrowserHistory: whatever localStorage holds becomes a valid history", () => {
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":0}'), { items: ["a", "b"], index: 0 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"]}'), { items: ["a", "b"], index: 1 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":9}'), { items: ["a", "b"], index: 1 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a","b"],"index":-3}'), { items: ["a", "b"], index: 0 });
+    assert.deepEqual(lib.parseBrowserHistory('{"items":["a",1,null," ","b"],"index":1.5}'), { items: ["a", "b"], index: 1 });
+    const many = JSON.stringify({ items: Array.from({ length: 30 }, (_, n) => `t${n}`), index: 29 });
+    assert.deepEqual(lib.parseBrowserHistory(many).items.slice(0, 2), ["t10", "t11"]);
+    for (const bad of [null, "", "{oops", "[]", "7", '{"items":"x"}', '{"items":[]}']) assert.deepEqual(lib.parseBrowserHistory(bad), { items: [], index: -1 }, String(bad));
+  });
+
+  test("formatBytes", () => {
+    assert.deepEqual([0, 1023, 1024, 1536, 1048576, 5.5 * 1048576].map(lib.formatBytes), ["0 B", "1023 B", "1.0 KB", "1.5 KB", "1.0 MB", "5.5 MB"]);
+    assert.equal(lib.formatBytes(undefined), "0 B");
   });
 });

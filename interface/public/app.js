@@ -105,6 +105,8 @@ import {
   upsertMessage,
 } from "./lib.js";
 
+import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
+
 import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -523,9 +525,9 @@ function openMenu(anchor, items, { align = "start", placement = "below", passive
     if (item.checked !== undefined) button.setAttribute("aria-checked", String(Boolean(item.checked)));
     button.disabled = Boolean(item.disabled);
     button.innerHTML = `${item.icon ? svg(item.icon, "menu-ico") : ""}<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<small>${esc(item.sub)}</small>` : ""}</span>${item.badge ? `<span class="menu-badge">${esc(item.badge)}</span>` : ""}${item.checked ? svg("i-check", "menu-check") : ""}`;
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
       closeMenu();
-      Promise.resolve(item.onSelect?.()).catch(report);
+      Promise.resolve(item.onSelect?.(event)).catch(report);
     });
     els.menu.append(button);
   }
@@ -1738,7 +1740,7 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, worktrees: renderWorktrees };
+const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
 
 function renderInspector() {
   updateSubBadge();
@@ -2164,10 +2166,10 @@ function renderOutputs() {
     els.outputsList.innerHTML = `<p class="muted">Arquivos criados ou editados nesta conversa aparecem aqui.</p>`;
     return;
   }
-  els.outputsList.innerHTML = outputs.map((item) => `<button type="button" class="output-item" data-tools="${esc(item.toolIds.join(","))}" title="${esc(item.path)}">
+  els.outputsList.innerHTML = outputs.map((item) => `<div class="output-row"><button type="button" class="output-item" data-open="${esc(item.path)}" title="Abrir no Navegador · ${esc(item.path)}">
       ${svg("i-file", "file-ico")}<span class="output-text"><span class="output-name">${esc(item.name)}</span><small>${esc(item.kind === "write" ? "criado" : "editado")} · ${esc(item.path)}</small></span>
       <span class="diff-count"><span class="add">+${item.added}</span><span class="del">-${item.removed}</span></span>
-    </button>`).join("");
+    </button><button type="button" class="icon-btn small output-diff" data-tools="${esc(item.toolIds.join(","))}" aria-label="Ver alterações de ${esc(item.name)}" title="Ver alterações">${svg("i-code")}</button></div>`).join("");
 }
 
 els.envPath.addEventListener("click", (event) => {
@@ -2555,7 +2557,12 @@ function showComposerMenu(kind, entries, index = 0) {
   composerMenu.kind = kind;
   composerMenu.entries = entries;
   composerMenu.index = index;
-  const items = entries.map((entry, position) => ({ ...entry.item, active: position === index, onSelect: () => acceptComposerEntry(kind, entry, "click") }));
+  const items = entries.map((entry, position) => ({
+    ...entry.item,
+    active: position === index,
+    ...(kind === "mention" && position === index ? { badge: "Alt+↵ Navegador" } : {}),
+    onSelect: (event) => acceptComposerEntry(kind, entry, event?.altKey ? "alt" : "click"),
+  }));
   openMenu(els.composer, items, { placement: "above", passive: true, wide: true, onClose: resetComposerMenu });
   els.prompt.setAttribute("aria-activedescendant", `menu-opt-${index}`);
 }
@@ -2568,6 +2575,12 @@ function setComposerCompletion(text, cursor) {
 
 // via: "enter" | "tab" | "click". Enter submits a command that is already complete.
 function acceptComposerEntry(kind, entry, via) {
+  // Alt+Enter / Alt+click on a file: look at it in the Navegador and leave the message as it is.
+  if (kind === "mention" && via === "alt") {
+    closeComposerMenu();
+    els.prompt.focus();
+    return openInBrowser(entry.file);
+  }
   if (kind === "slash") {
     const query = slashQuery(els.prompt.value);
     if (via === "enter" && query !== null && slashEnterSubmits(entry.command, query)) {
@@ -2596,6 +2609,11 @@ function handleComposerMenuKey(event) {
     event.preventDefault();
     event.stopPropagation();
     closeComposerMenu();
+    return true;
+  }
+  if (event.key === "Enter" && event.altKey && !event.shiftKey && !event.ctrlKey && !event.metaKey && composerMenu.kind === "mention") {
+    event.preventDefault();
+    acceptComposerEntry("mention", composerMenu.entries[composerMenu.index], "alt");
     return true;
   }
   if ((event.key === "Tab" || event.key === "Enter") && plain) {
@@ -3480,6 +3498,8 @@ function paletteActions() {
     { label: "Abrir aba Subagentes", icon: "i-agents", run: rightTab("subagents") },
     { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
     { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
+    { label: "Abrir aba Navegador", icon: "i-globe", keywords: "arquivo página artefato", run: rightTab("browser") },
+    { label: "Abrir no navegador…", icon: "i-globe", keywords: "arquivo caminho url localhost página artefato", run: promptBrowserTarget },
     ...(orcaOn() ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
     ...(!els.worktreesBtn.hidden ? [{ label: "Ver worktrees", icon: "i-branch", keywords: "orca visão geral alt+w", run: () => openWorktrees() }] : []),
     { label: "Ver atividade", icon: "i-agents", keywords: "feed eventos erros terminou subagentes", run: () => openWorktrees("activity") },
@@ -3625,6 +3645,286 @@ els.paletteList.addEventListener("click", (event) => {
 els.paletteDialog.addEventListener("click", (event) => {
   if (event.target === els.paletteDialog) closePalette();
 });
+
+// ---------------------------------------------------------------- navegador
+// Inspector tab that opens project files, artifacts and local pages beside the chat. A file is resolved and checked by
+// GET .../file?info=1 and then loaded from the capability URL it returns, so a sandboxed frame never needs the Studio
+// token (it has an opaque origin: no cookies, no storage, no access to this page). A local dev server loads in a frame
+// of its own origin (`allow-same-origin` is only granted to origins other than Studio's, which classifyTarget refuses).
+
+const browserEls = {
+  bar: $("#browserBar"),
+  input: $("#browserInput"),
+  back: $("#browserBack"),
+  forward: $("#browserForward"),
+  reload: $("#browserReload"),
+  outside: $("#browserOutside"),
+  stage: $("#browserStage"),
+};
+const BROWSER_KEY_PREFIX = "pi-studio:browser:";
+const BROWSER_TEXT_CAP = 1024 * 1024;
+const BROWSER_EXTERNAL_TIMEOUT_MS = 12000;
+const BROWSER_REASONS = {
+  studio: "Este endereço é o próprio PI Studio e não abre aqui.",
+  scheme: "Abrimos arquivos do projeto, http://localhost e páginas https.",
+  credentials: "Endereços com usuário e senha não são abertos.",
+  "remote-file": "Arquivos de outros computadores não são abertos.",
+};
+const BROWSER_ERRORS = {
+  "Outside the project": "O arquivo está fora da pasta do projeto.",
+  "File not found": "Arquivo não encontrado.",
+  "Not a file": "O caminho não é um arquivo.",
+  "Invalid path": "Caminho inválido.",
+  "Project folder not found": "A pasta do projeto não existe mais.",
+};
+// History of the open project (back/forward), the signature of what the stage shows, and the "abrir fora" URL.
+const browser = { projectId: null, history: emptyBrowserHistory(), shown: "", seq: 0, nonce: 0, outsideUrl: null, timer: null };
+
+const studioPort = () => location.port || (location.protocol === "https:" ? "443" : "80");
+const classify = (text) => classifyTarget(text, { studioPort: studioPort() });
+
+function saveBrowserHistory() {
+  if (!browser.projectId) return;
+  try {
+    localStorage.setItem(BROWSER_KEY_PREFIX + browser.projectId, JSON.stringify(browser.history));
+  } catch {
+    // Storage full or blocked: the history just stays in memory.
+  }
+}
+
+function syncBrowserProject() {
+  const id = state.currentProject?.id ?? null;
+  if (id === browser.projectId) return;
+  browser.projectId = id;
+  browser.history = id ? parseBrowserHistory(localStorage.getItem(BROWSER_KEY_PREFIX + id)) : emptyBrowserHistory();
+  browser.shown = "";
+}
+
+// Every entry point (Arquivos, message links, @ picker, Ctrl+K, the address bar) ends here.
+function openInBrowser(input) {
+  const target = classify(input);
+  if (target.type === "invalid") return toast(BROWSER_REASONS[target.reason] || "Endereço inválido.", "error");
+  if (!state.currentProject) return toast("Abra um projeto primeiro.", "error");
+  syncBrowserProject();
+  browser.history = browserHistoryPush(browser.history, targetText(target));
+  saveBrowserHistory();
+  browserEls.input.value = targetText(target);
+  setPanel("right", true);
+  selectTab("browser");
+  scheduleInspector("browser");
+}
+
+function moveBrowser(step) {
+  browser.history = browserHistoryMove(browser.history, step);
+  saveBrowserHistory();
+  scheduleInspector("browser");
+}
+
+function setBrowserOutside(url) {
+  browser.outsideUrl = url;
+  browserEls.outside.disabled = !url;
+}
+
+function openBrowserOutside() {
+  if (browser.outsideUrl) window.open(browser.outsideUrl, "_blank", "noopener,noreferrer");
+}
+
+// Ctrl/Cmd+click on a file link: the same capability URL, in the system browser.
+async function openTargetOutside(target) {
+  if (target.type !== "file") return void window.open(target.url, "_blank", "noopener,noreferrer");
+  const info = await browserFileInfo(target.path);
+  window.open(new URL(info.raw, location.origin).href, "_blank", "noopener,noreferrer");
+}
+
+const browserFileInfo = (filePath) =>
+  api(`/api/projects/${encodeURIComponent(state.currentProject.id)}/file?path=${encodeURIComponent(filePath)}&info=1`);
+
+function browserCard(icon, title, text, actions = []) {
+  const card = el("div", "insp-empty browser-card");
+  card.innerHTML = `${svg(icon)}<strong>${esc(title)}</strong><span>${esc(text)}</span>`;
+  for (const action of actions) {
+    const button = el("button", "btn", action.label);
+    button.type = "button";
+    button.addEventListener("click", action.run);
+    card.append(button);
+  }
+  return card;
+}
+
+const OUTSIDE_ACTION = { label: "Abrir fora", run: openBrowserOutside };
+
+function browserFrame(src, title, sandbox) {
+  const frame = el("iframe", "browser-frame");
+  // The sandbox is set before the first navigation; a null sandbox is only for the PDF viewer (see browserFileView).
+  if (sandbox !== null) frame.setAttribute("sandbox", sandbox);
+  frame.title = title;
+  frame.referrerPolicy = "no-referrer";
+  frame.src = src;
+  return frame;
+}
+
+async function browserText(info) {
+  const res = await fetch(info.raw, { headers: { range: `bytes=0-${BROWSER_TEXT_CAP - 1}` } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const note = info.size > BROWSER_TEXT_CAP ? `Mostrando os primeiros ${formatBytes(BROWSER_TEXT_CAP)} de ${formatBytes(info.size)}.` : "";
+  return { text: await res.text(), note };
+}
+
+async function browserFileView(info) {
+  const media = (tag, props) => {
+    const holder = el("div", "browser-media");
+    holder.append(Object.assign(document.createElement(tag), props));
+    return holder;
+  };
+  switch (info.kind) {
+    case "image":
+      return media("img", { src: info.raw, alt: info.name });
+    case "audio":
+    case "video":
+      return media(info.kind, { src: info.raw, controls: true });
+    case "pdf":
+      return browserFrame(info.raw, info.name, null);
+    case "html":
+      // Scripts run, but in an opaque origin: no Studio token, storage or cookies; relative assets load through the capability path.
+      return browserFrame(info.raw, info.name, "allow-scripts allow-forms");
+    case "markdown": {
+      const { text, note } = await browserText(info);
+      const doc = el("article", "browser-doc md");
+      doc.dataset.base = info.path;
+      doc.innerHTML = renderMarkdown(text) + (note ? `<p class="muted">${esc(note)}</p>` : "");
+      return doc;
+    }
+    case "text": {
+      const { text, note } = await browserText(info);
+      const holder = el("div", "browser-code");
+      const code = el("code", "", text);
+      const pre = el("pre", "");
+      pre.append(code);
+      holder.append(pre);
+      if (note) holder.append(el("p", "browser-note", note));
+      return holder;
+    }
+    default:
+      return browserCard("i-file", info.name, `${formatBytes(info.size)} · este tipo de arquivo não tem visualização aqui.`, [OUTSIDE_ACTION]);
+  }
+}
+
+async function showBrowserFile(target, seq) {
+  const { stage } = browserEls;
+  stage.replaceChildren(el("div", "browser-loading", "Abrindo…"));
+  try {
+    const info = await browserFileInfo(target.path);
+    if (seq !== browser.seq) return;
+    setBrowserOutside(new URL(info.raw, location.origin).href);
+    const view = await browserFileView(info);
+    if (seq === browser.seq) stage.replaceChildren(view);
+  } catch (error) {
+    if (seq === browser.seq) stage.replaceChildren(browserCard("i-alert", "Não foi possível abrir", BROWSER_ERRORS[error.message] || error.message));
+  }
+}
+
+function showBrowserPage(target, seq) {
+  const { stage } = browserEls;
+  const local = target.type === "local";
+  // allow-same-origin is safe here only because classifyTarget never lets Studio's own origin through.
+  const frame = browserFrame(target.url, target.label, `allow-scripts allow-forms ${local ? "" : "allow-popups "}allow-same-origin`);
+  setBrowserOutside(target.url);
+  stage.replaceChildren(frame);
+  if (local) return;
+  // Most sites refuse to be framed and the browser gives no signal for it: say so, and fall back to a card if nothing loads.
+  const note = el("div", "browser-note");
+  const open = el("button", "mini-btn", "Abrir fora");
+  open.type = "button";
+  open.addEventListener("click", openBrowserOutside);
+  note.append(el("span", "", "Alguns sites não permitem abrir aqui."), open);
+  stage.append(note);
+  frame.addEventListener("load", () => clearTimeout(browser.timer), { once: true });
+  browser.timer = setTimeout(() => {
+    if (seq === browser.seq) stage.replaceChildren(browserCard("i-globe", "Este site não permite abrir aqui", "A página não carregou dentro do Studio (muitos sites bloqueiam isso).", [OUTSIDE_ACTION]));
+  }, BROWSER_EXTERNAL_TIMEOUT_MS);
+}
+
+function showBrowserTarget(current) {
+  clearTimeout(browser.timer);
+  const seq = ++browser.seq;
+  setBrowserOutside(null);
+  const { stage } = browserEls;
+  if (!current) {
+    stage.replaceChildren(browserCard("i-globe", "Navegador", "Abra aqui arquivos, artefatos e páginas locais do projeto. Clique em um arquivo em Arquivos ou digite um caminho ou endereço acima."));
+    return;
+  }
+  const target = classify(current);
+  if (target.type === "invalid") stage.replaceChildren(browserCard("i-alert", "Endereço inválido", BROWSER_REASONS[target.reason] || "Endereço inválido."));
+  else if (target.type === "file") showBrowserFile(target, seq);
+  else showBrowserPage(target, seq);
+}
+
+function renderBrowser() {
+  syncBrowserProject();
+  const { history } = browser;
+  const current = browserHistoryCurrent(history);
+  browserEls.back.disabled = history.index <= 0;
+  browserEls.forward.disabled = history.index < 0 || history.index >= history.items.length - 1;
+  browserEls.reload.disabled = !current;
+  if (document.activeElement !== browserEls.input) browserEls.input.value = current;
+  const signature = `${browser.projectId}|${current}|${browser.nonce}`;
+  if (signature === browser.shown) return;
+  browser.shown = signature;
+  showBrowserTarget(current);
+}
+
+browserEls.bar.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = browserEls.input.value.trim();
+  if (!value) return;
+  openInBrowser(value);
+  browserEls.input.blur();
+});
+browserEls.input.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  browserEls.input.value = browserHistoryCurrent(browser.history);
+  browserEls.input.blur();
+});
+browserEls.back.addEventListener("click", () => moveBrowser(-1));
+browserEls.forward.addEventListener("click", () => moveBrowser(1));
+browserEls.reload.addEventListener("click", () => {
+  browser.nonce++;
+  scheduleInspector("browser");
+});
+browserEls.outside.addEventListener("click", openBrowserOutside);
+
+// Links in messages (and in a Markdown file shown here): a click opens the target in the Navegador, Ctrl/Cmd+click outside.
+// `baseFile` resolves relative links of a Markdown file against its folder.
+function onLinkClick(event, baseFile = "") {
+  const anchor = event.target.closest?.("a");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href") ?? "";
+  const text = anchor.dataset.open !== undefined ? (baseFile ? resolveSibling(baseFile, anchor.dataset.open) : anchor.dataset.open) : href;
+  if (anchor.dataset.open === undefined && !/^https?:/i.test(href)) return;
+  const target = classify(text);
+  const action = linkAction(target, event);
+  if (action === "ignore") return;
+  event.preventDefault();
+  if (action === "inline") openInBrowser(text);
+  else openTargetOutside(target).catch(report);
+}
+
+els.thread.addEventListener("click", (event) => onLinkClick(event));
+browserEls.stage.addEventListener("click", (event) => onLinkClick(event, event.target.closest?.("[data-base]")?.dataset.base ?? ""));
+els.outputsList.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-open]");
+  if (item) openInBrowser(item.dataset.open);
+});
+
+// Ctrl+K "Abrir no navegador…": shows the tab and puts the cursor in the address bar.
+function promptBrowserTarget() {
+  setPanel("right", true);
+  selectTab("browser");
+  requestAnimationFrame(() => {
+    browserEls.input.focus();
+    browserEls.input.select();
+  });
+}
 
 // ------------------------------------------------------------------ wiring
 
