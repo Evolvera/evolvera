@@ -1505,11 +1505,8 @@ const treeTitles = createTitleIndex({
   async *readLines(file) { const input = createInterface({ input: createReadStream(file), crlfDelay: Infinity }); for await (const line of input) yield line; },
   statFile: async (file) => { const info = await stat(file); return { mtimeMs: info.mtimeMs, size: info.size }; },
 });
-let treeRecordsCache = [];
-let treeRecordsAt = 0;
 let treeRecordsPending = null;
 async function treeSessionRecords() {
-  if (treeRecordsAt && Date.now() - treeRecordsAt < 1000) return treeRecordsCache;
   if (treeRecordsPending) return treeRecordsPending;
   treeRecordsPending = (async () => {
   const root = path.join(AGENT_DIR, "sessions");
@@ -1517,9 +1514,7 @@ async function treeSessionRecords() {
   for (const directory of await readdirSafe(root)) {
     if (!directory.isDirectory()) continue;
     const dir = path.join(root, directory.name);
-    let files;
-    try { files = await readdir(dir, { withFileTypes: true }); } catch { continue; }
-    for (const entry of files) {
+    for (const entry of await readdirSafe(dir)) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
       const file = path.join(dir, entry.name);
       try {
@@ -1533,8 +1528,6 @@ async function treeSessionRecords() {
       } catch { /* malformed or disappearing session records are skipped */ }
     }
   }
-  treeRecordsCache = records;
-  treeRecordsAt = Date.now();
   return records;
   })();
   try { return await treeRecordsPending; } finally { treeRecordsPending = null; }
@@ -1547,7 +1540,6 @@ const treeService = createTreeService({
   getProjects: async () => knownProjects(projects, discoverProjects), getOrca,
   getSessions: treeSessionRecords,
   async getLive() {
-    if (Date.now() - treeLastPollAt > 30_000) return [];
     const headers = await treeSessionRecords();
     const procs = parsePiProcesses(await treePs.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
     const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs }))).filter((item) => item.sessionPath);

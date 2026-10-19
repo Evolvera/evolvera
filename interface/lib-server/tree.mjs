@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 const cleanPath = (value) => String(value ?? "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
 const within = (child, parent) => cleanPath(child) === cleanPath(parent) || cleanPath(child).startsWith(`${cleanPath(parent)}/`);
 const timestamp = (value) => { const parsed = typeof value === "number" ? value : Date.parse(value); return Number.isFinite(parsed) ? parsed : null; };
-const projectEnv = (project, worktree) => worktree.path === project.cwd || within(worktree.path, project.cwd) || within(project.cwd, worktree.path);
+const projectEnv = (project, worktree, repoId) => (repoId && worktree.repoId === repoId) || within(worktree.path, project.cwd);
 
 export function createTreeService({ getProjects, getOrca, getSessions, getLive, now = Date.now, onPoll = () => {} }) {
   let current = null;
@@ -18,7 +18,8 @@ export function createTreeService({ getProjects, getOrca, getSessions, getLive, 
     const liveByPath = new Map((live ?? []).filter((item) => item?.sessionPath).map((item) => [cleanPath(item.sessionPath), item]));
     const treeProjects = [];
     for (const project of projects ?? []) {
-      const worktreeList = worktrees.filter((item) => projectEnv(project, item));
+      const projectRepoId = worktrees.find((item) => cleanPath(item.path) === cleanPath(project.cwd))?.repoId;
+      const worktreeList = worktrees.filter((item) => projectEnv(project, item, projectRepoId));
       const envs = worktreeList.map((item) => ({ key: item.worktreeId || item.path, name: item.displayName || item.branch || "Worktree", branch: item.branch ?? "", primary: item.isMainWorktree === true, path: item.path, orca: true, orcaStatus: item.workspaceStatus ?? item.status ?? null, issue: item.linkedIssue?.title ?? item.issue ?? null, pis: [], morePis: 0, _agents: item.agents ?? [] }));
       if (!worktreeList.some((item) => cleanPath(item.path) === cleanPath(project.cwd))) envs.push({ key: "local", name: "Local", branch: "", primary: false, path: project.cwd, orca: false, orcaStatus: null, issue: null, pis: [], morePis: 0, _agents: [] });
       const envFor = (cwd) => envs.find((env) => cleanPath(env.path) === cleanPath(cwd));
@@ -32,7 +33,7 @@ export function createTreeService({ getProjects, getOrca, getSessions, getLive, 
         const titleInfo = session.title && typeof session.title === "object" ? session.title : null;
         const state = session.state ?? "parado";
         const item = {
-          sessionPath: session.path, sessionId: String(header.id ?? ""), title: titleInfo?.title ?? session.title ?? session.name ?? "Nova conversa",
+          sessionPath: session.path, sessionId: String(header.id ?? ""), title: titleInfo?.title ?? (typeof session.title === "string" ? session.title : null) ?? session.name ?? "Nova conversa",
           agentType: titleInfo?.agentType ?? session.agentType ?? null, isSubagent: Boolean(header.parentSession),
           live: liveItem ? { pid: liveItem.pid ?? null, owner: liveItem.owner, startedAt: liveItem.startedAt ?? null } : null,
           raw: { busy: liveItem ? Boolean(liveItem.streaming || state === "fazendo") : state === "fazendo", streaming: Boolean(liveItem?.streaming), waitingUi: Boolean(liveItem?.waitingUi), error: state === "erro", stalledMs: liveItem?.streaming && session.stat?.mtimeMs ? Math.max(0, now() - session.stat.mtimeMs) : null, orcaState: null },
