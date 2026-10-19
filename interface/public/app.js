@@ -1913,10 +1913,11 @@ els.tablist.addEventListener("keydown", (event) => {
   selectTab(tabs[target].dataset.tab, { focus: true });
 });
 
-// Every tab keeps its icon, label and count badge; the labels of the unselected tabs go away only while the tabs
-// really overflow (measured, so it holds for any number of tabs and any panel width). Name and count stay in title/aria-label.
+// Every tab keeps its label and count badge as long as they fit. Measured (so it holds for any number of tabs and any panel
+// width), the tabs give up first the icons of the unselected ones ("tight"), and only if the labels still overflow their
+// labels ("compact"). Name and count stay in title/aria-label either way.
 function fitInspectorTabs() {
-  els.tablist.classList.remove("compact");
+  els.tablist.classList.remove("tight", "compact");
   for (const tab of els.tabs) {
     const badge = tab.querySelector(".count-badge:not([hidden])");
     const name = tab.querySelector(".insp-label").textContent;
@@ -1924,7 +1925,11 @@ function fitInspectorTabs() {
     tab.title = label;
     tab.setAttribute("aria-label", label);
   }
-  els.tablist.classList.toggle("compact", els.tablist.scrollWidth > els.tablist.clientWidth);
+  const overflows = () => els.tablist.scrollWidth > els.tablist.clientWidth;
+  if (!overflows()) return;
+  els.tablist.classList.add("tight");
+  if (!overflows()) return;
+  els.tablist.classList.replace("tight", "compact");
 }
 let fitTabsQueued = false;
 function scheduleFitTabs() {

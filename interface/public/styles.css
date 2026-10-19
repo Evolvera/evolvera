@@ -665,15 +665,15 @@ code { font-family: var(--mono); }
 .panel-resizer:focus-visible { outline: none; }
 .panel-resizer:focus-visible::after { left: 3px; width: 3px; background: var(--text-2); }
 
-.insp-tabs { flex: none; display: flex; align-items: stretch; gap: 2px; height: 42px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.insp-tabs { flex: none; display: flex; align-items: stretch; gap: 0; height: 42px; padding: 0 6px; border-bottom: 1px solid var(--line); }
 .insp-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 0 6px;
   color: var(--faint);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   transition: color 140ms var(--ease);
@@ -681,13 +681,15 @@ code { font-family: var(--mono); }
 .insp-tab svg { width: 16px; height: 16px; }
 .insp-tab:hover { color: var(--text-2); }
 .insp-tab[aria-selected="true"] { color: var(--text); }
-.insp-tab::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); transform: scaleX(0); transition: transform 200ms var(--ease); }
+.insp-tab::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); transform: scaleX(0); transition: transform 200ms var(--ease); }
 .insp-tab[aria-selected="true"]::after { transform: scaleX(1); }
 .insp-tab:focus-visible { outline-offset: -6px; }
 /* Count badge: transparent pill, 1px gray border; one digit is a circle, more digits a pill. */
 .count-badge { flex: none; display: inline-grid; place-items: center; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 99px; background: transparent; color: #fff; font: 600 10px/1 var(--mono); font-variant-numeric: tabular-nums; }
 .count-badge.muted { color: var(--muted); }
 .icon-btn:has(.count-badge:not([hidden])) { width: auto; padding: 0 7px; gap: 5px; grid-auto-flow: column; }
+/* Fitting ladder (see fitInspectorTabs): all icons + labels; else only the selected tab keeps its icon; else only the selected tab keeps its label. */
+.insp-tabs.tight .insp-tab:not([aria-selected="true"]) svg { display: none; }
 .insp-tabs.compact .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
 
 .insp-view { flex: 1; min-height: 0; }
