@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import readline from "node:readline";
 import { CREATE_ACCOUNT, renderAccountMenu, selectAccountMenu } from "../users/account-selector.mjs";
+import { renderTerminalArt } from "../ui/terminal-art.mjs";
 
 class FakeInput extends PassThrough {
   constructor() {
@@ -137,6 +138,68 @@ test("close, error, and setup/write failures settle once and clean owned lifecyc
 
 test("non-TTY streams retain the headless selection error", async () => {
   await assert.rejects(selectAccountMenu({ users, input: new EventEmitter(), output: new FakeOutput() }), { code: "ACCOUNT_SELECTION_REQUIRED" });
+});
+
+test("account picker redraws label-responsive art, resizes, and preserves tiny viewports", async () => {
+  const output = new FakeOutput();
+  const input = new FakeInput();
+  const pending = selectAccountMenu({ users, input, output, color: false });
+  const firstArt = renderTerminalArt({ width: 80, height: 12, label: "Alpha", color: false }).join("\n");
+  assert.ok(output.text.includes(firstArt));
+  data(input, "\u001b[B");
+  const secondArt = renderTerminalArt({ width: 80, height: 12, label: "Beta", color: false }).join("\n");
+  assert.ok(output.text.includes(secondArt), "highlight changes the art label");
+  const listenersBeforeResize = output.listenerCount("resize");
+  output.rows = 14;
+  output.emit("resize");
+  assert.ok(output.text.includes(renderTerminalArt({ width: 80, height: 9, label: "Beta", color: false }).join("\n")));
+  data(input, "\r");
+  assert.equal(await pending, "beta");
+  assert.equal(output.listenerCount("resize"), listenersBeforeResize - 1, "owned resize listener is removed");
+
+  for (const height of [1, 2, 3, 4, 9]) {
+    const rendered = renderAccountMenu(users, { width: 80, height, selected: 0, color: false });
+    assert.ok(rendered.split("\n").length <= height);
+    assert.match(rendered, /Select an account|alpha/u);
+    assert.doesNotMatch(rendered, /Acid Shellscape/u, "small viewports omit art");
+  }
+});
+
+test("resize write failures reject and clean up the picker lifecycle", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const before = baseline(input);
+  const wasPaused = input.isPaused();
+  const failure = new Error("synthetic resize write failure");
+  const pending = selectAccountMenu({ users, input, output, color: false });
+  output.write = () => { throw failure; };
+  output.emit("resize");
+  await assert.rejects(pending, (error) => error === failure);
+  assert.equal(input.isRaw, false);
+  assert.equal(input.isPaused(), wasPaused);
+  assertListeners(input, before);
+  assert.equal(output.listenerCount("resize"), 0);
+});
+
+test("empty NO_COLOR suppresses picker colors and restores the environment", async () => {
+  const hadNoColor = Object.hasOwn(process.env, "NO_COLOR");
+  const previousNoColor = process.env.NO_COLOR;
+  const previousTerm = process.env.TERM;
+  try {
+    process.env.NO_COLOR = "";
+    process.env.TERM = "xterm-256color";
+    const input = new FakeInput();
+    const output = new FakeOutput();
+    const pending = selectAccountMenu({ users, input, output });
+    assert.doesNotMatch(output.text, /\u001b\[[0-9;]*m/u);
+    data(input, "\r");
+    assert.equal(await pending, "alpha");
+  } finally {
+    if (hadNoColor) process.env.NO_COLOR = previousNoColor;
+    else delete process.env.NO_COLOR;
+    if (previousTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = previousTerm;
+  }
 });
 
 test("renderer handles display-cell widths, viewport scrolling, and tiny heights", () => {
