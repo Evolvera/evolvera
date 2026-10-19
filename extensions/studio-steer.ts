@@ -5,6 +5,7 @@ const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 type AgentRecord = {
   id: string;
   status: string;
+  resultConsumed?: boolean;
   session?: { steer(message: string): Promise<void> };
   pendingSteers?: string[];
 };
@@ -36,12 +37,15 @@ export default function studioSteerExtension(pi: ExtensionAPI) {
           ctx.ui.notify(`Subagente desconhecido: ${match[1]}.`, "warning");
           return;
         }
-        if (record.status !== "running") {
+        // Same rule as pi-subagents' own @mention steering: running or still queued.
+        if (record.status !== "running" && record.status !== "queued") {
           ctx.ui.notify(`O subagente ${match[1]} não está em execução.`, "warning");
           return;
         }
 
         const message = match[2].trim();
+        // Like the steer_subagent tool: un-consume the result so the agent's reply to this message is relayed.
+        record.resultConsumed = false;
         if (!record.session) {
           if (!record.pendingSteers) record.pendingSteers = [];
           record.pendingSteers.push(message);

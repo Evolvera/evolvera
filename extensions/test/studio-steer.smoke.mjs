@@ -42,11 +42,12 @@ try {
   assert.equal(notices.at(-1).type, "warning");
   assert.match(notices.at(-1).message, /não está em execução/);
 
-  const queued = { id: "queued", status: "running" };
+  const queued = { id: "queued", status: "queued", resultConsumed: true };
   globalThis[Symbol.for("pi-subagents:manager")] = { getRecord: () => queued };
   const eventCountBeforeQueue = events.length;
   await handler("queued  keep going\ncarefully  ", ctx);
   assert.deepEqual(queued.pendingSteers, ["keep going\ncarefully"]);
+  assert.equal(queued.resultConsumed, false, "the reply to a steer is relayed again");
   assert.deepEqual(events.at(-1), { name: "subagents:steered", payload: { id: "queued", message: "keep going\ncarefully" } });
   assert.equal(events.length, eventCountBeforeQueue + 1);
   assert.deepEqual(notices.at(-1), { message: "Mensagem enviada ao subagente queued", type: "info" });
