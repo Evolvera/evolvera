@@ -24,6 +24,11 @@ const tmpdirProprioPadrao = new Set([
   "plastic-memory-host.smoke.mjs", "plastic-memory-install.smoke.mjs",
   "plastic-memory-context-injection.smoke.mjs", // writes only to its owned mkdtemp sandbox and removes it in finally
   "plastic-memory-learning-queue-ui.smoke.mjs",
+  // Fixture writes stay in owned mkdtemp roots; chrome-control uses a synthetic Typebox module.
+  "chrome-control.smoke.mjs",
+  "mcp-config.smoke.mjs",
+  // Only a fresh mkdtemp root, removed in finally; resolvePiSdkRoot only reads the global npm root (like codex-fast-mode).
+  "continuation-reviewer.smoke.mjs", "write-guard.smoke.mjs",
   "plastic-memory-migration.smoke.mjs", "plastic-memory-project.smoke.mjs",
   "plastic-memory-proposal-commands.smoke.mjs",
   "plastic-memory-publication.smoke.mjs", "plastic-memory-retrieval.smoke.mjs",
@@ -84,6 +89,8 @@ const semEstadoPadrao = new Set([
   "plastic-memory-search-root.smoke.mjs",
   "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
   "subagent-watchdog.smoke.mjs", "github-kanban-sync.smoke.mjs",
+  // Git e Orca são fakes injetados; resolvePiSdkRoot só lê a raiz global do npm (como anthropic-model-policy).
+  "orca-worktree-visibility.smoke.mjs",
 ]);
 let tmpdirProprio = tmpdirProprioPadrao;
 let semEstado = semEstadoPadrao;
@@ -103,6 +110,7 @@ if (root !== repoRoot) {
 // Escrita isolada é provada nos smoke tests; estes exceções acessam dado externo.
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
+  ["patch-rpiv-todo-eta.smoke.mjs", "lê alvo instalado fora do tmpdir (caminho fixo em ~/.pi/agent) para montar fixture"],
 ]);
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };

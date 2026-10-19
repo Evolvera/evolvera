@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createTestSymlink } from "./lib/test-symlink.mjs";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(testDir, "../..");
@@ -12,13 +11,14 @@ const oldHome = process.env.USERPROFILE;
 const oldLocalAppData = process.env.LOCALAPPDATA;
 const home = path.join(sandbox, "home");
 const localAppData = path.join(sandbox, "local-app-data");
-const agentDir = path.join(homedir(), ".pi", "agent");
 const handlers = new Map();
 const tools = new Map();
 
 try {
-  mkdirSync(path.join(sandbox, "node_modules"), { recursive: true });
-  createTestSymlink(path.join(agentDir, "npm", "node_modules", "typebox"), path.join(sandbox, "node_modules", "typebox"), "dir");
+  const typeboxDir = path.join(sandbox, "node_modules", "typebox");
+  mkdirSync(typeboxDir, { recursive: true });
+  writeFileSync(path.join(typeboxDir, "package.json"), '{"type":"module","exports":"./index.js"}');
+  writeFileSync(path.join(typeboxDir, "index.js"), "export const Type = new Proxy({}, { get: () => (...args) => ({}) });");
   cpSync(path.join(root, "extensions", "chrome-control.ts"), path.join(sandbox, "chrome-control.ts"));
   process.env.USERPROFILE = home;
   process.env.LOCALAPPDATA = localAppData;
@@ -32,7 +32,6 @@ try {
     assert.throws(() => mod.normalizeProfileName(invalid));
   }
   assert.deepEqual(mod.listRealChromeProfiles(path.join(sandbox, "missing")), []);
-  const { writeFileSync } = await import("node:fs");
   writeFileSync(localState, localStateContents);
   assert.deepEqual(mod.listRealChromeProfiles(localState), [
     { directory: "Profile 1", name: "Real profile name" },
