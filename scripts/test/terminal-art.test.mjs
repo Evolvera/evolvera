@@ -73,6 +73,39 @@ test("all layered frames are deterministic, bounded, and consume no ambient RNG"
   assert.doesNotMatch(renderTerminalArt({ label: "Evolvera", progress: .6 }).join(""), BLUE);
 });
 
+test("SGR cell decoder applies foreground/background deltas and line resets", () => {
+  const decode = (line) => {
+    let fg = null, bg = null;
+    const cells = [];
+    for (const token of line.match(/\u001b\[[0-9;]*m|./gu) ?? []) {
+      if (token === "\u001b[0m") { fg = null; bg = null; continue; }
+      if (token.startsWith("\u001b[")) {
+        const params = token.slice(2, -1).split(";");
+        for (let i = 0; i < params.length;) {
+          if (params[i] === "0") { fg = null; bg = null; i++; }
+          else if (params[i] === "38" || params[i] === "48") {
+            const target = params[i] === "38" ? "fg" : "bg";
+            const value = params.slice(i + 2, i + 5).join(";");
+            if (target === "fg") fg = value; else bg = value;
+            i += 5;
+          } else throw new Error(`Unexpected SGR parameter ${params[i]}`);
+        }
+      } else cells.push({ char: token, fg, bg });
+    }
+    return cells;
+  };
+  assert.deepEqual(decode("\u001b[38;2;1;2;3;48;2;4;5;6mA\u001b[38;2;7;8;9mB\u001b[48;2;9;8;7mC\u001b[0mD"), [
+    { char: "A", fg: "1;2;3", bg: "4;5;6" },
+    { char: "B", fg: "7;8;9", bg: "4;5;6" },
+    { char: "C", fg: "7;8;9", bg: "9;8;7" },
+    { char: "D", fg: null, bg: null },
+  ]);
+  const frame = renderTerminalArt({ width: 120, height: 28 });
+  assert.ok(frame.every((line) => decode(line).length === 120));
+  assert.deepEqual(decode(frame[0])[0], { char: " ", fg: "29;21;53", bg: "29;21;53" });
+  assert.ok(frame.some((line) => /\u001b\[38;2;[0-9;]+m(?!\u001b\[48;2;)/u.test(line)), "foreground-only changes reuse the existing background");
+});
+
 test("colored frames emit SGR only and reset every line; tonal fields use backgrounds", () => {
   const lines = renderTerminalArt({ width: 120, height: 28, label: "evolvera" });
   for (const line of lines) {
