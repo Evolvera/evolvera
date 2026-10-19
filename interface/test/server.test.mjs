@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open as openFile, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -1056,5 +1056,235 @@ describe("conversation states", () => {
       }
       assert.equal(exited, "parado");
     });
+  });
+});
+
+describe("navegador: project files and the capability route", () => {
+  const siteDir = path.join(rootsDir, "sitebrowser");
+  const outsideDir = path.join(rootsDir, "sitebrowser-outside");
+  const linkedRoot = path.join(rootsDir, "sitebrowser-link");
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  let listening;
+  let base;
+  let port;
+  let token;
+  let project;
+  let linked;
+  let escapeLink;
+  let raw;
+  const headers = (extra = {}) => ({ "x-pi-studio-token": token, ...extra });
+  const api = (pathname, extra = {}) => fetch(`${base}${pathname}`, { headers: headers(extra) });
+  const file = (query, extra) => api(`/api/projects/${project.id}/file?${query}`, extra);
+  // fetch() would normalise "/../"; this sends the request line exactly as given.
+  const exact = (pathname, { method = "GET", extra = {} } = {}) => new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, path: pathname, method, headers: extra }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+
+  before(async () => {
+    for (const dir of [path.join(siteDir, "sub"), outsideDir]) await mkdir(dir, { recursive: true });
+    await writeFile(path.join(siteDir, "package.json"), "{}");
+    await writeFile(path.join(siteDir, "index.html"), '<link rel="stylesheet" href="style.css"><script src="sub/app.js"></script><h1>oi</h1>');
+    await writeFile(path.join(siteDir, "style.css"), "h1{color:red}");
+    await writeFile(path.join(siteDir, "sub", "app.js"), "document.title='x'");
+    await writeFile(path.join(siteDir, "sub", "ola mundo.txt"), "com espaço");
+    await writeFile(path.join(siteDir, "pic.png"), PNG);
+    await writeFile(path.join(siteDir, "notes.md"), "# Notas");
+    await writeFile(path.join(siteDir, "doc.pdf"), "%PDF-1.4\n");
+    await writeFile(path.join(siteDir, "data.bin"), "0123456789");
+    await writeFile(path.join(siteDir, "empty.txt"), "");
+    await writeFile(path.join(siteDir, "~tilde.txt"), "til");
+    const big = await openFile(path.join(siteDir, "big.bin"), "w");
+    await big.truncate(21 * 1024 * 1024);
+    await big.close();
+    await writeFile(path.join(outsideDir, "secret.txt"), "TOP-SECRET");
+    // Junctions need no privilege on Windows (a plain symlink on POSIX): a link inside the project that leads out of it.
+    await symlink(outsideDir, path.join(siteDir, "escape"), "junction");
+    await symlink(siteDir, linkedRoot, "junction");
+    try {
+      await symlink(path.join(outsideDir, "secret.txt"), path.join(siteDir, "secret-link.txt"), "file");
+      escapeLink = true;
+    } catch {
+      escapeLink = false; // creating file symlinks needs a privilege on Windows
+    }
+    listening = await server.startServer(0);
+    port = listening.address().port;
+    base = `http://127.0.0.1:${port}`;
+    const page = await fetch(`${base}/`);
+    token = (await page.text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
+    const openProject = async (cwd) => (await (await fetch(`${base}/api/projects/open-path`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify({ cwd }) })).json()).project;
+    project = await openProject(siteDir);
+    linked = await openProject(linkedRoot);
+    raw = (await (await file("path=index.html&info=1")).json()).raw.replace(/index\.html$/, "");
+  });
+
+  after(async () => {
+    await server.stopServer();
+  });
+
+  test("auth: token, Host and Origin are enforced like the other routes", async () => {
+    const url = `${base}/api/projects/${project.id}/file?path=notes.md`;
+    assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(url, { headers: { "x-pi-studio-token": "0".repeat(64) } })).status, 401);
+    assert.equal((await fetch(url, { headers: headers({ origin: "https://evil.example" }) })).status, 403);
+    assert.equal((await fetch(url, { headers: headers({ origin: "null" }) })).status, 403);
+    assert.equal((await fetch(url, { headers: headers({ origin: base }) })).status, 200);
+    assert.equal((await exact(`/api/projects/${project.id}/file?path=notes.md`, { extra: { ...headers(), host: "evil.example" } })).status, 403);
+    assert.equal((await fetch(url, { method: "POST", headers: headers() })).status, 405);
+  });
+
+  test("info describes the file and hands out a capability URL; bad input fails cleanly", async () => {
+    const info = await (await file("path=sub%2Fapp.js&info=1")).json();
+    assert.deepEqual({ ...info, mtimeMs: typeof info.mtimeMs, raw: undefined }, { path: "sub/app.js", name: "app.js", size: 18, mtimeMs: "number", kind: "text", mime: "text/javascript; charset=utf-8", raw: undefined });
+    assert.match(info.raw, new RegExp(`^/api/projects/${project.id}/raw/[0-9a-f]{32}/sub/app\\.js$`));
+    const spaced = await (await file(`path=${encodeURIComponent("sub/ola mundo.txt")}&info=1`)).json();
+    assert.ok(spaced.raw.endsWith("/sub/ola%20mundo.txt"));
+    assert.equal((await file("info=1")).status, 400);
+    assert.equal((await file("path=")).status, 400);
+    assert.equal((await file("path=a%00b")).status, 400);
+    assert.equal((await api("/api/projects/nope/file?path=a")).status, 404);
+  });
+
+  test("the file route streams bytes with the right type and the hardening headers", async () => {
+    const png = await file("path=pic.png");
+    assert.equal(png.status, 200);
+    assert.equal(png.headers.get("content-type"), "image/png");
+    assert.equal(png.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(png.headers.get("content-security-policy"), "sandbox");
+    assert.equal(png.headers.get("referrer-policy"), "no-referrer");
+    assert.deepEqual(Buffer.from(await png.arrayBuffer()), PNG);
+    const html = await file("path=index.html");
+    assert.equal(html.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(html.headers.get("content-security-policy"), "sandbox", "only the capability route lets a page run scripts");
+    assert.equal(await (await file("path=notes.md")).text(), "# Notas");
+    assert.equal(await (await file("path=~tilde.txt")).text(), "til", "only ~ and ~/ expand to the home folder");
+    assert.equal((await file("path=data.bin")).headers.get("content-type"), "application/octet-stream");
+    assert.equal((await file("path=doc.pdf")).headers.get("content-type"), "application/pdf");
+    const empty = await file("path=empty.txt");
+    assert.deepEqual([empty.status, empty.headers.get("content-length"), await empty.text()], [200, "0", ""]);
+  });
+
+  test("absolute paths inside the project (also through a linked project root) and ./relative paths resolve", async () => {
+    assert.equal(await (await file(`path=${encodeURIComponent(path.join(siteDir, "notes.md"))}`)).text(), "# Notas");
+    assert.equal(await (await file("path=.%2Fsub%2F..%2Fnotes.md")).text(), "# Notas");
+    assert.equal((await file("path=notes.md%3A12")).status, 404, "the :line suffix is the client's business");
+    const viaLink = await api(`/api/projects/${linked.id}/file?path=${encodeURIComponent(path.join(linkedRoot, "notes.md"))}`);
+    assert.equal(await viaLink.text(), "# Notas");
+    const info = await (await api(`/api/projects/${linked.id}/file?path=notes.md&info=1`)).json();
+    assert.equal(info.path, "notes.md");
+  });
+
+  test("anything outside the project root is 403: .., encoded dots, absolute paths, ~, junctions and file symlinks", async () => {
+    const outside = encodeURIComponent(path.join(outsideDir, "secret.txt"));
+    const wanted = ["../sitebrowser-outside/secret.txt", "..%2Fsitebrowser-outside%2Fsecret.txt", "%2e%2e/sitebrowser-outside/secret.txt", "sub/../../sitebrowser-outside/secret.txt", "..%5Csitebrowser-outside%5Csecret.txt", outside, "~", "~%2Fsecret.txt", "~%5Csecret.txt", "escape%2Fsecret.txt", "escape%5Csecret.txt", "escape", "%2F", "Z%3A%5Celsewhere%5Cx.txt"];
+    for (const query of wanted) {
+      for (const suffix of ["", "&info=1"]) {
+        const res = await file(`path=${query}${suffix}`);
+        assert.equal(res.status, 403, query);
+        assert.doesNotMatch(await res.text(), /TOP-SECRET/);
+      }
+    }
+    if (escapeLink) assert.equal((await file("path=secret-link.txt")).status, 403);
+  });
+
+  test("missing, directory and oversized targets", async () => {
+    assert.equal((await file("path=nope.txt")).status, 404);
+    assert.equal((await file("path=sub")).status, 404);
+    const big = await file("path=big.bin");
+    assert.equal(big.status, 413);
+    assert.match((await big.json()).error, /too large \(21\.0 MB; limit 20\.0 MB\)/);
+    assert.equal((await file("path=big.bin&info=1")).status, 413);
+    assert.equal((await exact(`${raw}big.bin`)).status, 413);
+  });
+
+  test("Range requests: partial, open-ended, suffix, unsatisfiable, malformed and multi", async () => {
+    const ranged = async (value) => {
+      const res = await file("path=data.bin", { range: value });
+      return { status: res.status, range: res.headers.get("content-range"), length: res.headers.get("content-length"), body: await res.text() };
+    };
+    assert.deepEqual(await ranged("bytes=2-4"), { status: 206, range: "bytes 2-4/10", length: "3", body: "234" });
+    assert.deepEqual(await ranged("bytes=7-"), { status: 206, range: "bytes 7-9/10", length: "3", body: "789" });
+    assert.deepEqual(await ranged("bytes=-3"), { status: 206, range: "bytes 7-9/10", length: "3", body: "789" });
+    assert.deepEqual(await ranged("bytes=5-999"), { status: 206, range: "bytes 5-9/10", length: "5", body: "56789" });
+    assert.deepEqual(await ranged("bytes=-99"), { status: 206, range: "bytes 0-9/10", length: "10", body: "0123456789" });
+    assert.deepEqual(await ranged("bytes=10-"), { status: 416, range: "bytes */10", length: "0", body: "" });
+    assert.equal((await ranged("bytes=-0")).status, 416);
+    assert.equal((await ranged("bytes=5-2")).status, 416);
+    for (const ignored of ["bytes=-", "items=1-2", "bytes=1-2,4-5", "garbage"]) {
+      const result = await ranged(ignored);
+      assert.deepEqual([result.status, result.body], [200, "0123456789"], ignored);
+    }
+    assert.equal((await file("path=empty.txt", { range: "bytes=0-" })).status, 200);
+    assert.deepEqual([server.parseByteRange(undefined, 5), server.parseByteRange("bytes=9-", 5), server.parseByteRange("bytes=1-2", 5)], [null, "unsatisfiable", { start: 1, end: 2 }]);
+  });
+
+  test("capability route: no token needed, relative assets resolve, HTML may run scripts only here (sandboxed)", async () => {
+    const page = await exact(`${raw}index.html`);
+    assert.equal(page.status, 200);
+    assert.equal(page.headers["content-type"], "text/html; charset=utf-8");
+    assert.equal(page.headers["content-security-policy"], "sandbox allow-scripts allow-forms");
+    assert.equal(page.headers["x-content-type-options"], "nosniff");
+    assert.equal(page.headers["referrer-policy"], "no-referrer");
+    assert.match(page.body.toString(), /<h1>oi<\/h1>/);
+    // What the browser does with the page's relative URLs:
+    const pageUrl = new URL(`${raw}index.html`, base);
+    const css = await exact(new URL("style.css", pageUrl).pathname);
+    assert.deepEqual([css.status, css.headers["content-type"], css.headers["content-security-policy"], css.body.toString()], [200, "text/css; charset=utf-8", "sandbox", "h1{color:red}"]);
+    const script = await exact(new URL("sub/app.js", pageUrl).pathname);
+    assert.deepEqual([script.status, script.headers["content-type"]], [200, "text/javascript; charset=utf-8"]);
+    assert.equal((await exact(`${raw}sub/ola%20mundo.txt`)).body.toString(), "com espaço");
+    assert.equal((await exact(`${raw}~tilde.txt`)).body.toString(), "til");
+    const partial = await exact(`${raw}data.bin`, { extra: { range: "bytes=1-2" } });
+    assert.deepEqual([partial.status, partial.body.toString()], [206, "12"]);
+    // Subresources of an opaque-origin page may carry `Origin: null`; real foreign origins stay out.
+    assert.equal((await exact(`${raw}style.css`, { extra: { origin: "null" } })).status, 200);
+    assert.equal((await exact(`${raw}style.css`, { extra: { origin: "https://evil.example" } })).status, 403);
+    assert.equal((await exact(`${raw}style.css`, { extra: { host: "evil.example" } })).status, 403);
+  });
+
+  test("capability route: wrong or foreign capabilities, bad encodings, methods and traversal", async () => {
+    const forged = raw.replace(/\/raw\/[0-9a-f]{32}\//, `/raw/${"0".repeat(32)}/`);
+    assert.equal((await exact(`${forged}style.css`)).status, 403);
+    const otherProject = (await (await api(`/api/projects/${linked.id}/file?path=notes.md&info=1`)).json()).raw;
+    assert.equal((await exact(otherProject.replace(linked.id, project.id))).status, 403, "a capability is bound to its project");
+    assert.equal((await exact(`/api/projects/${project.id}/raw/short/style.css`)).status, 401, "not a capability URL: the normal token rule applies");
+    assert.equal((await exact(`${raw}%zz`)).status, 400);
+    assert.equal((await exact(`${raw.replace(project.id, "%zz")}style.css`)).status, 400);
+    assert.equal((await exact(`${raw}style.css`, { method: "POST" })).status, 405);
+    assert.equal((await exact(raw)).status, 404, "the project folder itself is not a file");
+    assert.equal((await exact(raw.slice(0, -1))).status, 404);
+    assert.equal((await exact(`${raw}sub/`)).status, 404);
+    assert.equal((await exact(`${raw}nope.css`)).status, 404);
+    assert.equal((await exact(`${raw}a%00b`)).status, 400);
+    const secretPaths = ["../../sitebrowser-outside/secret.txt", "%2e%2e/%2e%2e/sitebrowser-outside/secret.txt", "..%2F..%2Fsitebrowser-outside%2Fsecret.txt", "sub/../../../sitebrowser-outside/secret.txt", "escape/secret.txt"];
+    for (const wanted of secretPaths) {
+      const res = await exact(`${raw}${wanted}`);
+      assert.equal(res.status, 403, wanted);
+      assert.doesNotMatch(res.body.toString(), /TOP-SECRET/);
+    }
+    // Backslash forms: 403 on Windows, a plain (missing) file name elsewhere; never the secret.
+    const backslash = await exact(`${raw}..%5C..%5Csitebrowser-outside%5Csecret.txt`);
+    assert.ok([403, 404].includes(backslash.status));
+    assert.doesNotMatch(backslash.body.toString(), /TOP-SECRET/);
+    // The token check is skipped for capability URLs, so a "../" tail must never reach another route.
+    const sneaky = await exact(`${raw}../../../../health`);
+    assert.equal(sneaky.status, 403);
+    assert.doesNotMatch(sneaky.body.toString(), /"ok"/);
+    assert.equal((await exact("/api/health")).status, 401);
+  });
+
+  test("a project whose folder vanished answers 404", async () => {
+    const gone = path.join(rootsDir, "sitebrowser-gone");
+    await mkdir(gone, { recursive: true });
+    const opened = (await (await fetch(`${base}/api/projects/open-path`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify({ cwd: gone }) })).json()).project;
+    await fetch(`${base}/api/projects/${opened.id}/stop`, { method: "POST", headers: headers() });
+    // Windows keeps the folder busy until the fake PI is gone.
+    await rm(gone, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
+    assert.equal((await api(`/api/projects/${opened.id}/file?path=a.txt`)).status, 404);
   });
 });

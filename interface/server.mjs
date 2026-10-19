@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { access, open, readdir, readFile, stat } from "node:fs/promises";
+import { access, open, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -1247,6 +1248,91 @@ async function projectForPath(raw) {
   return project;
 }
 
+// ---- Navegador: project files for the Inspector viewer.
+const FILE_MAX_BYTES = 20 * 1024 * 1024;
+
+// A file of the project, relative or absolute (`~` expands). Anything that resolves outside the project root
+// (`..`, another drive, a symlink or junction pointing out) is refused; the real path is what gets served.
+async function resolveProjectFile(project, requested) {
+  if (typeof requested !== "string" || !requested || requested.includes("\0")) throw httpError(400, "Invalid path");
+  const wanted = /^~(?:[\\/]|$)/.test(requested) ? path.join(homedir(), requested.slice(1)) : requested;
+  const rootReal = await realpath(project.cwd).catch(() => null);
+  if (!rootReal) throw httpError(404, "Project folder not found");
+  const candidate = path.resolve(rootReal, wanted);
+  if (!pathInside(rootReal, candidate) && !pathInside(project.cwd, candidate)) throw httpError(403, "Outside the project");
+  const real = await realpath(candidate).catch(() => null);
+  if (!real) throw httpError(404, "File not found");
+  if (!pathInside(rootReal, real)) throw httpError(403, "Outside the project");
+  const info = await stat(real);
+  if (!info.isFile()) throw httpError(404, "Not a file");
+  if (info.size > FILE_MAX_BYTES) throw httpError(413, `File too large (${formatBytes(info.size)}; limit ${formatBytes(FILE_MAX_BYTES)})`);
+  return { real, rel: path.relative(rootReal, real).split(path.sep).join("/"), size: info.size, mtimeMs: info.mtimeMs };
+}
+
+function fileDescriptor(project, { real, rel, size, mtimeMs }) {
+  const { kind, mime } = fileInfo(real);
+  const raw = `/api/projects/${encodeURIComponent(project.id)}/raw/${rawCapability(project.id)}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+  return { path: rel, name: path.basename(real), size, mtimeMs, kind, mime, raw };
+}
+
+// `Range: bytes=a-b | a- | -n` against a file of `size` bytes: null (absent, malformed or empty file), "unsatisfiable" or { start, end }.
+export function parseByteRange(header, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header ?? "");
+  if (!match || size === 0 || (match[1] === "" && match[2] === "")) return null;
+  let start;
+  let end;
+  if (match[1] === "") {
+    start = Math.max(0, size - Number(match[2]));
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+  }
+  return start >= size || start > end ? "unsatisfiable" : { start, end };
+}
+
+// Every file leaves with `Content-Security-Policy: sandbox` (opaque origin even when opened as a page) and nosniff.
+// Only HTML served for the Navegador's frame may run scripts, still without the Studio's origin.
+function sendFile(req, res, { real, size }, runScripts) {
+  const { kind, mime } = fileInfo(real);
+  const range = parseByteRange(req.headers.range, size);
+  const headers = {
+    "content-type": mime,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": runScripts && kind === "html" ? "sandbox allow-scripts allow-forms" : "sandbox",
+    "referrer-policy": "no-referrer",
+    "cache-control": "no-store",
+    "accept-ranges": "bytes",
+  };
+  if (range === "unsatisfiable") {
+    res.writeHead(416, { ...headers, "content-range": `bytes */${size}`, "content-length": 0 });
+    return res.end();
+  }
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  if (range) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(range ? 206 : 200, { ...headers, "content-length": size === 0 ? 0 : end - start + 1 });
+  if (size === 0) return res.end();
+  pipeline(createReadStream(real, { start, end }), res, () => {});
+}
+
+async function serveRaw(req, res, [, rawId, capability, tail = ""]) {
+  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+  let projectId;
+  let relative;
+  try {
+    projectId = decodeURIComponent(rawId);
+    relative = tail.split("/").slice(1).map(decodeURIComponent).join("/");
+  } catch {
+    return json(res, 400, { error: "Bad Request" });
+  }
+  const expected = Buffer.from(rawCapability(projectId));
+  const provided = Buffer.from(capability);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return json(res, 403, { error: "Forbidden" });
+  const project = await ensureProject(projectId);
+  // "./" keeps a leading "~" segment a plain name here.
+  return sendFile(req, res, await resolveProjectFile(project, `./${relative}`), true);
+}
+
 // ---- @-mention file picker: relative POSIX paths of a project, ranked per query.
 const FILE_RESULT_LIMIT = 50;
 const FILE_CACHE_TTL_MS = 10_000;
@@ -1349,7 +1435,15 @@ function requestHostAllowed(req) {
   return authority && allowedHosts.has(authority) ? authority : null;
 }
 
-function authorizeApiRequest(req, pathname) {
+// Capability URLs for the Navegador's sandboxed frames: they run without the Studio token (and without
+// cookies: an opaque-origin page sends none), so a read-only, per-project secret rides in the path instead.
+const RAW_ROUTE = /^\/api\/projects\/([^/]+)\/raw\/([0-9a-f]{32})(\/[^?#]*)?(?:[?#]|$)/;
+
+function rawCapability(projectId) {
+  return createHmac("sha256", apiToken).update(`raw:${projectId}`).digest("hex").slice(0, 32);
+}
+
+function authorizeApiRequest(req, pathname, rawRoute = false) {
   if (!pathname.startsWith("/api/")) return null;
   const authority = requestHostAllowed(req);
   if (!authority) return 403;
@@ -1359,7 +1453,8 @@ function authorizeApiRequest(req, pathname) {
     if (req.rawHeaders[index].toLowerCase() === "origin") origins.push(req.rawHeaders[index + 1]);
   }
   if (origins.length > 1) return 403;
-  if (origins.length === 1) {
+  // A sandboxed page (opaque origin) sends `Origin: null` on some subresource requests; only the capability route accepts it.
+  if (origins.length === 1 && !(rawRoute && origins[0] === "null")) {
     if (origins[0] === "null") return 403;
     try {
       const origin = new URL(origins[0]);
@@ -1370,7 +1465,7 @@ function authorizeApiRequest(req, pathname) {
     }
   }
   const isSse = req.method === "GET" && /^\/api\/(?:projects\/[^/]+|sessions\/[^/]+)\/events$/.test(pathname);
-  if (!requestTokenMatches(req, isSse)) return 401;
+  if (!rawRoute && !requestTokenMatches(req, isSse)) return 401;
   return null;
 }
 
@@ -1424,7 +1519,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 function parseProjectRoute(pathname) {
-  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files))?$/);
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files|file))?$/);
   if (!match) return null;
   return { projectId: decodeURIComponent(match[1]), action: match[2] };
 }
@@ -1434,8 +1529,11 @@ async function route(req, res) {
   const { pathname } = url;
 
   try {
-    const authorizationStatus = authorizeApiRequest(req, pathname);
+    const rawMatch = RAW_ROUTE.exec(req.url);
+    const authorizationStatus = authorizeApiRequest(req, pathname, Boolean(rawMatch));
     if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
+    // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
+    if (rawMatch) return await serveRaw(req, res, rawMatch);
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -1568,6 +1666,12 @@ async function route(req, res) {
       if (req.method === "GET" && action === "files") {
         const files = await listProjectFiles(project.cwd);
         return json(res, 200, { files: rankFiles(files, url.searchParams.get("q") || "", FILE_RESULT_LIMIT) });
+      }
+
+      if (req.method === "GET" && action === "file") {
+        const found = await resolveProjectFile(project, url.searchParams.get("path"));
+        if (url.searchParams.get("info") === "1") return json(res, 200, fileDescriptor(project, found));
+        return sendFile(req, res, found, false);
       }
 
       if (req.method === "POST" && action === "switch") {

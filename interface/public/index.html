@@ -41,6 +41,10 @@
         <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4.5a7.5 7.5 0 1 1-7.5 7.5" /></symbol>
         <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4.5M12 15.6v.1" /></symbol>
         <symbol id="i-agents" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="5" rx="1.6" /><rect x="3.5" y="15.5" width="6" height="5" rx="1.6" /><rect x="14.5" y="15.5" width="6" height="5" rx="1.6" /><path d="M12 8.5v3.5M6.5 15.5V13.5a1.5 1.5 0 0 1 1.5-1.5h8a1.5 1.5 0 0 1 1.5 1.5v2" /></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" /><path d="M3.8 12h16.4M12 3.8c2.2 2.3 3.3 5 3.3 8.2s-1.1 5.9-3.3 8.2c-2.2-2.3-3.3-5-3.3-8.2s1.1-5.9 3.3-8.2Z" /></symbol>
+        <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5.5M11 6.5 5.5 12l5.5 5.5" /></symbol>
+        <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h13.5M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M13.5 5H19v5.5M19 5l-8 8M17.5 14v3a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" /></symbol>
       </defs>
     </svg>
 
@@ -157,6 +161,7 @@
           <button id="tab-subagents" class="insp-tab" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Subagentes</span><span id="subBadge" class="count-badge" hidden></span></button>
           <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
           <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
+          <button id="tab-browser" class="insp-tab" type="button" role="tab" data-tab="browser" aria-controls="view-browser" aria-selected="false" tabindex="-1"><svg><use href="#i-globe" /></svg><span class="insp-label">Navegador</span></button>
           <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span><span id="wtTabBadge" class="count-badge" hidden></span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
@@ -176,6 +181,16 @@
             <section class="insp-sec"><h3 class="sec-title">Projeto</h3><div id="envPath" class="env-path"></div></section>
             <section class="insp-sec"><h3 class="sec-title">Arquivos alterados</h3><div id="outputsList" class="outputs"></div></section>
           </div>
+        </section>
+        <section id="view-browser" class="insp-view view-browser" role="tabpanel" aria-labelledby="tab-browser" data-view="browser" hidden>
+          <form id="browserBar" class="browser-bar" autocomplete="off">
+            <button id="browserBack" class="icon-btn small" type="button" aria-label="Voltar" title="Voltar" disabled><svg><use href="#i-arrow-left" /></svg></button>
+            <button id="browserForward" class="icon-btn small" type="button" aria-label="Avançar" title="Avançar" disabled><svg><use href="#i-arrow-right" /></svg></button>
+            <button id="browserReload" class="icon-btn small" type="button" aria-label="Recarregar" title="Recarregar" disabled><svg><use href="#i-retry" /></svg></button>
+            <input id="browserInput" class="browser-input" type="text" spellcheck="false" placeholder="Arquivo, caminho ou http://localhost:3000" aria-label="Endereço do navegador" />
+            <button id="browserOutside" class="icon-btn small" type="button" aria-label="Abrir fora" title="Abrir fora (navegador do sistema)" disabled><svg><use href="#i-external" /></svg></button>
+          </form>
+          <div id="browserStage" class="browser-stage" role="region" aria-label="Conteúdo do navegador" aria-live="polite"></div>
         </section>
         <section id="view-worktrees" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-worktrees" data-view="worktrees" tabindex="0" hidden>
           <div id="wtList" class="sa-list"></div>
