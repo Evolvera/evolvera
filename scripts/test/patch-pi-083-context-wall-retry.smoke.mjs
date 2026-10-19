@@ -87,10 +87,11 @@ try {
 
   writeFixture(fixtureSource('unpatched'));
   fs.chmodSync(fixtureTarget, 0o744);
+  const modeBefore = fs.statSync(fixtureTarget).mode & 0o7777;
   const first = patchRoot(fixtureRoot);
   assert.equal(first.status, 0, first.stderr);
   assert.equal(fs.readFileSync(fixtureTarget, 'utf8'), fixtureSource('patched'), 'bytes outside anchors changed');
-  assert.equal(fs.statSync(fixtureTarget).mode & 0o7777, 0o744, 'file mode changed');
+  assert.equal(fs.statSync(fixtureTarget).mode & 0o7777, modeBefore, 'file mode changed');
   const second = patchRoot(fixtureRoot);
   assert.equal(second.status, 0, second.stderr);
   assert.equal(fs.readFileSync(fixtureTarget, 'utf8'), fixtureSource('patched'), 'second run changed bytes');
