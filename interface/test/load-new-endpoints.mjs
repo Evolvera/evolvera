@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Load test for the endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
+// Load test for GET /api/voice/status plus endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
 // (incl. per-project running counts), GET /api/projects/:id/history, GET /api/activity (full 300-item ring) and GET /api/usage/today
 // (cost/tokens of today's sessions) and GET /api/projects/:id/file (small text and a 5 MB file) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
 // and GET /api/sessions/watch (each client: first read = the 2 MiB tail of a ~5 MB session, then incremental reads by offset)
@@ -281,7 +281,7 @@ try {
 
   // Leak check: one full settling pass first (V8 keeps heap it grew to, and a GC right before the
   // baseline made "before" swing 35-250 MB), then the measured pass must not grow past that plateau.
-  const ENDPOINTS = [["GET /api/resources (cached 5 s)", "/api/resources"], ["GET /api/sessions/:id/resources", resourcesPath], ["GET /api/sessions/:id/git-files (2 paths)", gitFilesPath], ["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/tasks/links", "/api/tasks/links?conversation=load-conversation"], ["POST /api/orca/terminal-send", "/api/orca/terminal-send", "POST", { handle: "load-terminal", text: "load message" }], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]];
+  const ENDPOINTS = [["GET /api/voice/status", "/api/voice/status"], ["GET /api/resources (cached 5 s)", "/api/resources"], ["GET /api/sessions/:id/resources", resourcesPath], ["GET /api/sessions/:id/git-files (2 paths)", gitFilesPath], ["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"], ["GET /api/tasks/links", "/api/tasks/links?conversation=load-conversation"], ["POST /api/orca/terminal-send", "/api/orca/terminal-send", "POST", { handle: "load-terminal", text: "load message" }], ["GET /api/projects/:id/file (small text, 600 B)", fileUrl("small.txt")], ["GET /api/projects/:id/file (5 MB)", fileUrl("big.txt")], ["GET /api/projects/:id/file (mix: 1 small + 1 of 5 MB)", [fileUrl("small.txt"), fileUrl("big.txt")]]];
   // The watch check appends to its session file and counts lines from a fresh start, so it runs once (measured pass).
   const runPass = async (withWatch) => {
     const out = [];

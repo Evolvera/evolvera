@@ -11,6 +11,7 @@ import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { voice } from "./lib-server/voice.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -2109,9 +2110,29 @@ async function route(req, res) {
   try {
     const rawMatch = RAW_ROUTE.exec(req.url);
     const authorizationStatus = authorizeApiRequest(req, pathname, Boolean(rawMatch));
-    if (authorizationStatus) return json(res, authorizationStatus, { error: authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
+    if (authorizationStatus) return json(res, authorizationStatus, { error: pathname.startsWith("/api/voice/") ? authorizationStatus === 401 ? "Autenticação necessária." : "Origem não permitida." : authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
     // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
     if (rawMatch) return await serveRaw(req, res, rawMatch);
+    if (req.method === "GET" && pathname === "/api/voice/status") return json(res, 200, voice.status());
+    if (req.method === "POST" && pathname === "/api/voice/transcribe") {
+      const type = String(req.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+      if (!["audio/webm", "audio/ogg", "audio/wav"].includes(type)) return json(res, 400, { error: "Formato de áudio inválido." });
+      const chunks = [];
+      let size = 0;
+      const body = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(Object.assign(new Error("Envio de áudio expirou."), { statusCode: 413 })), 120000);
+        req.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > 10 * 1024 * 1024) { clearTimeout(timer); reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 })); }
+          else chunks.push(chunk);
+        });
+        req.on("end", () => { clearTimeout(timer); resolve(Buffer.concat(chunks)); });
+        req.on("error", (error) => { clearTimeout(timer); reject(error); });
+      });
+      if (!body.length) return json(res, 400, { error: "O áudio está vazio." });
+      try { return json(res, 200, { text: (await voice.transcribeBuffer(body)).text }); }
+      catch (error) { return json(res, error.status || 503, { error: error.status === 429 ? "O serviço de transcrição está ocupado. Tente novamente." : error.message?.includes("Tempo limite") ? "A transcrição excedeu o tempo limite." : "Transcrição local indisponível. Verifique o Python e o modelo local." }); }
+    }
     if (req.method === "GET" && pathname === "/api/health") {
       return json(res, 200, {
         ok: true,
@@ -2420,12 +2441,14 @@ export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
 // Graceful stop for embedders/tests: stops PI children and closes the listener without exiting.
 export function stopServer() {
   for (const session of sessions.values()) session.stop();
+  void voice.stop();
   server.closeAllConnections();
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
-function shutdown() {
+export function shutdown() {
   for (const session of sessions.values()) session.stop();
+  void voice.stop().catch(() => {});
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }
