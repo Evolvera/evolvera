@@ -479,6 +479,8 @@ Esta versão do harness traz a skill e a política verificadas **estaticamente**
 | `/om:status` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:status`. |
 | `/om:view` ou `/om:view full` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:view`. |
 
+A arte de entrada **Acid Shellscape** aparece no seletor de contas e, na TUI gerenciada, entre os avisos iniciais e o editor. A marca PI permanece; a marca Evolvera aparece somente quando o nome exibido da conta é `evolvera` (ignorando maiúsculas/minúsculas e espaços nas pontas). A arte inicial sai quando a conversa começa e não é enviada ao modelo. Para experimentar nesta branch, sem instalar nem acessar contas reais, use `node scripts/preview-terminal-art.mjs --select`; veja [design, limites e testes](docs/terminal-art.md).
+
 Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
 
 `todo-reconciliation.ts` injeta lembretes transitórios antes da resposta final após nova solicitação, trabalho posterior à revisão ou entrega concluída/falha de subagente iniciado pelo PI principal nesta sessão. Uma listagem/mutação bem-sucedida limpa a necessidade até novo trabalho; lista somente leitura basta se nada precisar mudar. Pode solicitar uma única rodada corretiva, o que pode acrescentar uma chamada ao modelo. Lê o último resultado `todo` da branch; nunca marca tarefas concluídas nem trata uma listagem como prova semântica. Não é veto final e modelos podem ignorar o lembrete. Use `/reload` para ativar após instalar ou alterar.
