@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createProcessLister, parsePiProcesses, resolveSessions } from "../lib-server/live-pis.mjs";
+import { parsePiProcesses, resolveSessions } from "../lib-server/live-pis.mjs";
 
 const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-live-pis-"));
 after(() => rm(tmp, { recursive: true, force: true }));
@@ -85,124 +85,8 @@ test("parsers accept alternate process fields and reject non-array or malformed 
   assert.deepEqual(resolveSessions([null, { sessionArg: "", startedAt: NaN, continueFlag: true }], [null, { path: 9 }]).map((item) => item.sessionPath), [null, null]);
 });
 
-// Handles large process snapshots without unsafe command execution and coalesces concurrent listings.
-test("createProcessLister coalesces spawn, caches, refreshes, and tolerates malformed JSON", async () => {
-  const rowsFile = path.join(tmp, "rows.json");
-  const countFile = path.join(tmp, "count.txt");
-  await writeFile(rowsFile, JSON.stringify(Array.from({ length: 2000 }, (_, index) => row(index + 1, 0, `node --session \"C:/s/${index} α.jsonl\" @earendil-works/pi-coding-agent/dist/cli.js`))));
-  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
-  const command = { command: process.execPath, args: [fake], platform: process.platform };
-  const previousRows = process.env.FAKE_PS_ROWS;
-  const previousCount = process.env.FAKE_PS_COUNT;
-  const previousMode = process.env.FAKE_PS_MODE;
-  process.env.FAKE_PS_ROWS = rowsFile;
-  process.env.FAKE_PS_COUNT = countFile;
-  delete process.env.FAKE_PS_MODE;
-  try {
-    let clock = 10_000;
-    const lister = createProcessLister({ ...command, timeoutMs: 2000, cacheMs: 3000, now: () => clock });
-    const [a, b, c] = await Promise.all([lister.list(), lister.list(), lister.list()]);
-    assert.deepEqual([a.length, b.length, c.length], [2000, 2000, 2000]);
-    assert.equal((await readFile(countFile, "utf8")).trim().split("\n").length, 1);
-    assert.equal((await lister.list()).length, 2000);
-    clock += 3001;
-    await lister.list();
-    assert.equal((await readFile(countFile, "utf8")).trim().split("\n").length, 2);
-  } finally {
-    if (previousRows === undefined) delete process.env.FAKE_PS_ROWS; else process.env.FAKE_PS_ROWS = previousRows;
-    if (previousCount === undefined) delete process.env.FAKE_PS_COUNT; else process.env.FAKE_PS_COUNT = previousCount;
-    if (previousMode === undefined) delete process.env.FAKE_PS_MODE; else process.env.FAKE_PS_MODE = previousMode;
-  }
-});
-
-// Rejects malformed command output and invalid rows as a safe empty snapshot.
-test("createProcessLister returns empty rows for malformed process JSON", async () => {
-  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
-  const previousMode = process.env.FAKE_PS_MODE;
-  process.env.FAKE_PS_MODE = "malformed";
-  try { assert.deepEqual(await createProcessLister({ command: process.execPath, args: [fake], platform: "win32", now: () => 1 }).list(), []); }
-  finally { if (previousMode === undefined) delete process.env.FAKE_PS_MODE; else process.env.FAKE_PS_MODE = previousMode; }
-});
-
-// Parses the POSIX ps table and the single-object PowerShell JSON shape without shell interpretation.
-test("createProcessLister uses safe platform defaults and parses both listing formats", async () => {
-  const savedBin = process.env.PI_STUDIO_PS_BIN;
-  const savedArgs = process.env.PI_STUDIO_PS_BIN_ARGS;
-  delete process.env.PI_STUDIO_PS_BIN;
-  delete process.env.PI_STUDIO_PS_BIN_ARGS;
-  try {
-    assert.equal(typeof createProcessLister({ platform: "win32" }).list, "function");
-    assert.equal(typeof createProcessLister({ platform: "linux" }).list, "function");
-  }
-  finally {
-    if (savedBin === undefined) delete process.env.PI_STUDIO_PS_BIN; else process.env.PI_STUDIO_PS_BIN = savedBin;
-    if (savedArgs === undefined) delete process.env.PI_STUDIO_PS_BIN_ARGS; else process.env.PI_STUDIO_PS_BIN_ARGS = savedArgs;
-  }
-  const winOutput = JSON.stringify({ ProcessId: 8, ParentProcessId: 1, CreationDate: "/Date(1735819200000)/", CommandLine: "node @earendil-works/pi-coding-agent/dist/cli.js", Name: "node.exe" });
-  const win = createProcessLister({ command: process.execPath, args: ["-e", `process.stdout.write(${JSON.stringify(winOutput)})`], platform: "win32", now: () => 1 });
-  assert.equal((await win.list()).length, 1);
-  const posixOutput = "PID PPID STARTED COMMAND\n8 1 Thu Jan  2 12:00:00 2025 node @earendil-works/pi-coding-agent/dist/cli.js\nmalformed";
-  const posix = createProcessLister({ command: process.execPath, args: ["-e", `process.stdout.write(${JSON.stringify(posixOutput)})`], platform: "linux", now: () => 1 });
-  const rows = await posix.list();
-  assert.equal(rows[0].ProcessId, "8");
-  assert.equal(rows.length, 1);
-});
-
-// Honors JSON env overrides, with safe fallbacks when override JSON is malformed.
-test("createProcessLister handles env overrides and invalid JSON args", async () => {
-  const previousBin = process.env.PI_STUDIO_PS_BIN;
-  const previousArgs = process.env.PI_STUDIO_PS_BIN_ARGS;
-  try {
-    process.env.PI_STUDIO_PS_BIN = process.execPath;
-    process.env.PI_STUDIO_PS_BIN_ARGS = JSON.stringify(["-e", "process.stdout.write('[]')"]);
-    const overridden = createProcessLister({ now: () => 1 });
-    assert.deepEqual(await overridden.list(), []);
-    process.env.PI_STUDIO_PS_BIN_ARGS = "{bad";
-    const fallback = createProcessLister({ command: process.execPath, platform: "linux", now: () => 1 });
-    assert.deepEqual(await fallback.list(), []);
-    const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
-    process.env.FAKE_PS_ROWS = path.join(tmp, "empty.json");
-    await writeFile(process.env.FAKE_PS_ROWS, "[]");
-    const emptyOutput = createProcessLister({ command: process.execPath, args: ["-e", "process.stdout.write('')"], platform: "win32", now: () => 1 });
-    assert.deepEqual(await emptyOutput.list(), []);
-    const nullRows = createProcessLister({ command: process.execPath, args: ["-e", "process.stdout.write('null')"], platform: "win32", now: () => 1 });
-    assert.deepEqual(await nullRows.list(), []);
-    const noStdout = createProcessLister({ command: process.execPath, args: [fake], platform: "win32", now: () => 1 });
-    delete process.env.FAKE_PS_ROWS;
-    assert.deepEqual(await noStdout.list(), []);
-  } finally {
-    if (previousBin === undefined) delete process.env.PI_STUDIO_PS_BIN; else process.env.PI_STUDIO_PS_BIN = previousBin;
-    if (previousArgs === undefined) delete process.env.PI_STUDIO_PS_BIN_ARGS; else process.env.PI_STUDIO_PS_BIN_ARGS = previousArgs;
-  }
-});
-
 // Keeps surviving rows when a process disappears while the operating-system snapshot is being read.
 test("parsePiProcesses skips vanished and malformed process rows without losing survivors", () => {
   const rows = [row(1, 0, "node @earendil-works/pi-coding-agent/dist/cli.js"), null, row("gone", 0, "node @earendil-works/pi-coding-agent/dist/cli.js"), row(2, 0, "node @earendil-works/pi-coding-agent/dist/cli.js", { CreationDate: "not a date" })];
   assert.deepEqual(parsePiProcesses(rows).map(({ pid, startedAt }) => ({ pid, startedAt })), [{ pid: 1, startedAt: Date.parse("2025-01-02T12:00:00Z") }, { pid: 2, startedAt: 0 }]);
-});
-
-// Exercises the owned child-process path, including spawn errors, timeout cleanup, and output caps.
-test("createProcessLister bounds and cleans up its spawned process", async () => {
-  const previousRows = process.env.FAKE_PS_ROWS;
-  const previousMode = process.env.FAKE_PS_MODE;
-  const fake = fileURLToPath(new URL("./fake-ps-pis.mjs", import.meta.url));
-  const command = { command: process.execPath, args: [fake], platform: "win32" };
-  try {
-    process.env.FAKE_PS_ROWS = path.join(tmp, "empty-rows.json");
-    await writeFile(process.env.FAKE_PS_ROWS, "[]");
-    delete process.env.FAKE_PS_MODE;
-    assert.deepEqual(await createProcessLister(command).list(), []);
-    process.env.FAKE_PS_MODE = "fail";
-    assert.deepEqual(await createProcessLister(command).list(), []);
-    process.env.FAKE_PS_MODE = "hang";
-    assert.deepEqual(await createProcessLister({ ...command, timeoutMs: 40 }).list(), []);
-    process.env.FAKE_PS_MODE = "large";
-    assert.deepEqual(await createProcessLister(command).list(), []);
-    const missing = createProcessLister({ command: path.join(tmp, "missing-bin.exe"), args: [], platform: "win32" });
-    assert.deepEqual(await missing.list(), []);
-  } finally {
-    if (previousRows === undefined) delete process.env.FAKE_PS_ROWS; else process.env.FAKE_PS_ROWS = previousRows;
-    if (previousMode === undefined) delete process.env.FAKE_PS_MODE; else process.env.FAKE_PS_MODE = previousMode;
-  }
 });

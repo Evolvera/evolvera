@@ -109,7 +109,7 @@ test("tree coalesces concurrent refreshes and closes cleanly", async () => {
 // The authenticated HTTP route returns the composed tree and its ETag, then answers unchanged polls with 304.
 test("GET /api/tree is authenticated and serves conditional JSON", async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-tree-route-"));
-  const names = ["PI_AGENT_DIR", "PI_PROJECT_ROOTS", "PI_WEB_PI_BIN", "PI_WEB_PI_BIN_ARGS", "PI_STUDIO_ORCA_BIN", "PI_STUDIO_ORCA_BIN_ARGS", "PI_STUDIO_PS_BIN", "PI_STUDIO_PS_BIN_ARGS", "FAKE_ORCA_STATE", "FAKE_PS_ROWS", "FAKE_PI_SESSION_FILE"];
+  const names = ["PI_AGENT_DIR", "PI_PROJECT_ROOTS", "PI_WEB_PI_BIN", "PI_WEB_PI_BIN_ARGS", "PI_STUDIO_ORCA_BIN", "PI_STUDIO_ORCA_BIN_ARGS", "PI_STUDIO_PS_BIN", "PI_STUDIO_PS_BIN_ARGS", "FAKE_ORCA_STATE", "FAKE_PS_STATE", "FAKE_PI_SESSION_FILE"];
   const prior = Object.fromEntries(names.map((key) => [key, process.env[key]]));
   let app;
   try {
@@ -132,14 +132,14 @@ test("GET /api/tree is authenticated and serves conditional JSON", async () => {
     await mkdir(path.join(sessionDir, "not-a-file.jsonl"));
     await writeFile(path.join(agentDir, "sessions", "ignored.jsonl"), "ignored\n");
     const orcaState = path.join(tmp, "orca.json");
-    const psRows = path.join(tmp, "ps.json");
+    const psState = path.join(tmp, "ps.json");
     await writeFile(orcaState, JSON.stringify({ mode: "normal", worktrees: [{ path: project, repoId: "r", displayName: "Main", isMainWorktree: true }] }));
-    await writeFile(psRows, "[]");
+    await writeFile(psState, JSON.stringify({ format: "csv", rows: [] }));
     Object.assign(process.env, {
       PI_AGENT_DIR: agentDir, PI_PROJECT_ROOTS: roots,
       PI_WEB_PI_BIN: process.execPath, PI_WEB_PI_BIN_ARGS: JSON.stringify([path.resolve("test/fake-pi-rpc.mjs")]),
       PI_STUDIO_ORCA_BIN: process.execPath, PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.resolve("test/fake-orca.mjs")]), FAKE_ORCA_STATE: orcaState,
-      PI_STUDIO_PS_BIN: process.execPath, PI_STUDIO_PS_BIN_ARGS: JSON.stringify([path.resolve("test/fake-ps-pis.mjs")]), FAKE_PS_ROWS: psRows,
+      PI_STUDIO_PS_BIN: process.execPath, PI_STUDIO_PS_BIN_ARGS: JSON.stringify([path.resolve("test/fake-ps.mjs")]), FAKE_PS_STATE: psState,
       FAKE_PI_SESSION_FILE: mainSession,
     });
     app = await import(`../server.mjs?tree-route-${process.pid}`);

@@ -10,7 +10,7 @@
 // Env: LOAD_SECONDS (default 10), LOAD_CONCURRENCY (default 50), LOAD_WARMUP_SECONDS (default 4). Exit 1 on any error, unbounded orca spawns or RSS growth > 64 MB over a settling pass (the endpoints run twice; the second pass is reported).
 import { execFileSync, spawn } from "node:child_process";
 import http from "node:http";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -40,10 +40,7 @@ const countFile = path.join(tmp, "orca-count.txt");
 const psStateFile = path.join(tmp, "ps-state.json");
 const psCountFile = path.join(tmp, "ps-count.txt");
 const piPidFile = path.join(tmp, "pi-pids.txt");
-await writeFile(psStateFile, JSON.stringify({ mode: "normal", rows: [] }));
-const psRows = path.join(tmp, "ps-rows.json");
-const psCount = path.join(tmp, "ps-count.txt");
-await writeFile(psRows, "[]");
+await writeFile(psStateFile, JSON.stringify({ mode: "normal", format: "csv", rows: [] }));
 const worktrees = Array.from({ length: 22 }, (_, i) => ({
   path: i < 2 ? projects[i].replace(/\\/g, "/") : `${tmp.replace(/\\/g, "/")}/wt/${i}`,
   displayName: `worktree-${i}`,
@@ -96,8 +93,6 @@ const server = spawn(process.execPath, [path.join(root, "server.mjs")], {
     FAKE_PS_COUNT_FILE: psCountFile,
     FAKE_PI_PID_FILE: piPidFile,
     GIT_AUTHOR_NAME: "Carga", GIT_AUTHOR_EMAIL: "carga@example.invalid", GIT_COMMITTER_NAME: "Carga", GIT_COMMITTER_EMAIL: "carga@example.invalid",
-    FAKE_PS_ROWS: psRows,
-    FAKE_PS_COUNT: psCount,
   },
 });
 let output = "";
@@ -262,7 +257,7 @@ try {
   await writeFile(path.join(projects[1], "novo.txt"), "novo");
   // Process table: each fake PI with a bash child; pids come from the PI pid file.
   const piPids = (await readFile(piPidFile, "utf8")).split("\n").filter(Boolean).map(Number);
-  await writeFile(psStateFile, JSON.stringify({ mode: "normal", rows: [[1, 0, 100, 1], ...piPids.flatMap((pid, i) => [[pid, 1, 40000, 3 + i], [pid + 500000, pid, 8000, 1]])] }));
+  await writeFile(psStateFile, JSON.stringify({ mode: "normal", format: "csv", rows: [{ pid: 1, ppid: 0, rssBytes: 102400, cpuSeconds: 1, name: "node.exe", commandLine: "node" }, ...piPids.flatMap((pid, i) => [{ pid, ppid: 1, rssBytes: 40000 * 1024, cpuSeconds: 3 + i, name: "node.exe", commandLine: "node @earendil-works/pi-coding-agent/dist/cli.js" }, { pid: pid + 500000, ppid: pid, rssBytes: 8000 * 1024, cpuSeconds: 1, name: "bash", commandLine: "bash" }])] }));
   const resourcesPath = `/api/sessions/${sessionIds[0]}/resources`;
   const gitFilesPath = `/api/sessions/${sessionIds[1]}/git-files?path=package.json&path=novo.txt`;
   const resourcesSample = await request("GET", resourcesPath, { token });
@@ -321,6 +316,10 @@ try {
   const usage = await getJson("/api/usage/today");
   console.log(`usage sample: ${JSON.stringify(usage)}`);
   if (!(usage.sessions >= SESSION_FILES && usage.tokens >= SESSION_FILES * 100 && usage.cost > 0)) throw new Error("usage/today must sum every indexed session");
+  // A project-0 fixture whose last message is a tool call counts as running only while its file is fresh (90 s); the slow fixture
+  // setup above outlives that, so touch it now: the assertion must not depend on how long the setup took.
+  const inFlight = Array.from({ length: SESSION_FILES }, (_, index) => index).find((index) => index % 12 === 0 && stops[index % stops.length] === "toolUse");
+  await utimes(path.join(sessionsDir, `s-${inFlight}.jsonl`), new Date(), new Date());
   const running = (await getJson("/api/projects/status")).runningCounts;
   console.log(`running counts sample: ${JSON.stringify(running)}`);
   if (!(running[openedIds[0]] >= 1)) throw new Error("runningCounts must count the in-flight conversations of the project");
@@ -366,14 +365,14 @@ try {
   const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
   const spawnsBefore = await orcaSpawns();
   const psBefore = await psSpawns();
-  const psListBefore = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length;
+  const psListBefore = await psSpawns();
   const results = await runPass(true);
   const treeLoad = await hammer("GET /api/tree (conditional)", "/api/tree", token, DURATION, "GET", undefined, treeEtag, true);
   treeLoad.rss = rssMb(server.pid);
   results.push(treeLoad);
   const treeSoak = await soakTree(token, treeEtag);
   console.log(`/api/tree 5-minute soak · 10 clients / 2 s · ${treeSoak.requests} polls · status ${JSON.stringify(treeSoak.statuses)} · errors ${treeSoak.errors} · RSS ${treeSoak.rssStart.toFixed(1)} MB → ${treeSoak.rssEnd.toFixed(1)} MB (Δ ${treeSoak.rssDelta.toFixed(1)} MB)`);
-  const psListRuns = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length - psListBefore;
+  const psListRuns = await psSpawns() - psListBefore;
   if (settling.some((item) => item.errors)) for (const item of settling.filter((entry) => entry.errors)) results.push({ ...item, label: `settling pass (errors): ${item.label}` });
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0) + 300;
   const spawns = (await orcaSpawns()) - spawnsBefore;

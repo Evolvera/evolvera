@@ -1,5 +1,3 @@
-import { spawn as nodeSpawn } from "node:child_process";
-
 const CLI = /@earendil-works[\\/]pi-coding-agent[\\/]dist[\\/]cli\.js/i;
 
 function number(value) {
@@ -53,24 +51,24 @@ export function parsePiProcesses(rows, { studioPids = new Set(), orcaPids = new 
   if (!Array.isArray(rows)) return [];
   const byPid = new Map();
   for (const row of rows) {
-    const pid = number(row?.ProcessId ?? row?.pid);
+    const pid = number(row?.pid ?? row?.ProcessId);
     if (pid !== null) byPid.set(pid, row);
   }
   const out = [];
   for (const row of rows) {
-    const pid = number(row?.ProcessId ?? row?.pid);
-    const ppid = number(row?.ParentProcessId ?? row?.ppid) ?? 0;
-    const commandLine = row?.CommandLine ?? row?.args;
+    const pid = number(row?.pid ?? row?.ProcessId);
+    const ppid = number(row?.ppid ?? row?.ParentProcessId) ?? 0;
+    const commandLine = row?.commandLine ?? row?.CommandLine ?? row?.args;
     if (pid === null || typeof commandLine !== "string" || !CLI.test(commandLine)) continue;
-    const parsedTime = timestamp(row?.CreationDate ?? row?.startedAt ?? row?.lstart);
+    const parsedTime = timestamp(row?.startedAt ?? row?.CreationDate ?? row?.lstart);
     let owner = studioPids.has(pid) ? "studio" : "terminal";
     if (owner !== "studio") {
       const seen = new Set([pid]);
       let parent = ppid;
       while (parent !== null && !seen.has(parent)) {
-        if (orcaPids.has(parent) || /(?:^|[\\/])Orca\.exe$/i.test(String(byPid.get(parent)?.Name ?? ""))) { owner = "orca"; break; }
+        if (orcaPids.has(parent) || /(?:^|[\\/])Orca\.exe$/i.test(String(byPid.get(parent)?.name ?? byPid.get(parent)?.Name ?? ""))) { owner = "orca"; break; }
         seen.add(parent);
-        parent = number(byPid.get(parent)?.ParentProcessId ?? byPid.get(parent)?.ppid);
+        parent = number(byPid.get(parent)?.ppid ?? byPid.get(parent)?.ParentProcessId);
       }
     }
     out.push({ pid, ppid, owner, startedAt: parsedTime ?? 0, ...processTokens(commandLine) });
@@ -96,55 +94,3 @@ export function resolveSessions(procs, sessionHeaders) {
   });
 }
 
-function windowsCommand() {
-  return "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -or $_.Name -eq 'Orca.exe' } | Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine,Name | ConvertTo-Json -Compress";
-}
-
-function parsePosix(text) {
-  const lines = text.trim().split(/\r?\n/);
-  lines.shift();
-  return lines.map((line) => {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.*)$/);
-    return match ? { ProcessId: match[1], ParentProcessId: match[2], CreationDate: match[3], CommandLine: match[4], Name: match[4].split(/[\\/]/).pop()?.split(/\s/)[0] } : null;
-  }).filter(Boolean);
-}
-
-function runSpawn(command, args, options, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const child = nodeSpawn(command, args, { ...options, stdio: ["ignore", "pipe", "ignore"] });
-    let output = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("process listing timeout")); }, timeoutMs);
-    child.stdout.on("data", (chunk) => { output += chunk; if (output.length > 16 * 1024 * 1024) { child.kill(); reject(new Error("process listing too large")); } });
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("close", (code) => { clearTimeout(timer); code === 0 ? resolve(output) : reject(new Error(`process listing exited ${code}`)); });
-  });
-}
-
-export function createProcessLister({ command, args, platform = process.platform, timeoutMs = 4000, cacheMs = 3000, now = Date.now } = {}) {
-  const envBin = process.env.PI_STUDIO_PS_BIN;
-  const bin = command ?? envBin ?? (platform === "win32" ? "powershell.exe" : "ps");
-  let argv = args;
-  if (argv === undefined && process.env.PI_STUDIO_PS_BIN_ARGS) {
-    try { const decoded = JSON.parse(process.env.PI_STUDIO_PS_BIN_ARGS); if (Array.isArray(decoded) && decoded.every((item) => typeof item === "string")) argv = decoded; } catch { argv = undefined; }
-  }
-  if (argv === undefined) argv = platform === "win32" ? ["-NoProfile", "-Command", windowsCommand()] : ["-eo", "pid,ppid,lstart,args"];
-  let cachedAt = -Infinity;
-  let cached = [];
-  let pending = null;
-  return {
-    async list() {
-      if (now() - cachedAt < cacheMs) return cached;
-      if (pending) return pending;
-      pending = (async () => {
-        try {
-          const output = await runSpawn(bin, argv, { windowsHide: true }, timeoutMs);
-          const rows = platform === "win32" ? JSON.parse(output || "[]") : parsePosix(output);
-          cached = Array.isArray(rows) ? rows : rows ? [rows] : [];
-        } catch { cached = []; }
-        cachedAt = now();
-        return cached;
-      })();
-      try { return await pending; } finally { pending = null; }
-    },
-  };
-}

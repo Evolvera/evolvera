@@ -11,7 +11,8 @@ import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { hasRecentChildActivity, idleThresholdMs, reapIdle } from "./lib-server/idle-reaper.mjs";
-import { createProcessLister, parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
 import { createTitleIndex } from "./lib-server/session-titles.mjs";
 import { createTreeService } from "./lib-server/tree.mjs";
 import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
@@ -1502,7 +1503,6 @@ export function getOrca({ now = Date.now, fetch = fetchOrca } = {}) {
   return orcaCache.pending;
 }
 
-const treePs = createProcessLister({ cacheMs: 5000 });
 let treeLastPollAt = 0;
 const treeTitles = createTitleIndex({
   async *readLines(file) { const input = createInterface({ input: createReadStream(file), crlfDelay: Infinity }); for await (const line of input) yield line; },
@@ -1544,7 +1544,7 @@ const treeService = createTreeService({
   getSessions: treeSessionRecords,
   async getLive() {
     const headers = await treeSessionRecords();
-    const procs = parsePiProcesses(await treePs.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
+    const procs = parsePiProcesses(await processTable.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
     const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs })));
     // Exited sessions leave this map in the same tick (see the exit handler); a just-started one may not know its file yet.
     for (const session of sessions.values()) {
@@ -1585,81 +1585,49 @@ async function projectForPath(raw) {
   return project;
 }
 
-// ---- RAM/CPU of the PIs the Studio spawned. One batched process-table sample (all pids at once) is shared by every
-// caller for 5 s; the table is read once and each session's process tree (pi + bash + MCP servers...) is summed from it.
-const RESOURCE_CACHE_MS = 5000;
-const RESOURCE_FAILURE_MS = 1000;
-const RESOURCE_TIMEOUT_MS = Number.parseInt(process.env.PI_STUDIO_PS_TIMEOUT_MS || "4000", 10);
-const RESOURCE_MAX_BUFFER = 16 * 1024 * 1024;
-const RESOURCE_MAX_ROWS = 50_000;
+// Per-session process-tree totals remain local; acquisition, parsing, bounds, and cache are shared with live PIs.
 const RESOURCE_RECENT_MAX_MS = 30_000;
-const RESOURCE_CSV_HEADER = '"ProcessId","ParentProcessId","WorkingSetSize","KernelModeTime","UserModeTime"';
-// Windows: one CIM query, only the properties needed (measured ~0.45-0.65 s; `wmic` is gone from current Windows).
-const RESOURCE_WIN_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime | Select ProcessId,ParentProcessId,WorkingSetSize,KernelModeTime,UserModeTime | ConvertTo-Csv -NoTypeInformation";
-const resourceCache = { at: -Infinity, ttl: RESOURCE_CACHE_MS, value: null, pending: null };
 const resourceHistory = new Map();
 
-// PI_STUDIO_PS_BIN (+ PI_STUDIO_PS_BIN_ARGS, a JSON array) replaces the sampler (tests, unusual hosts).
-export function resolveSamplerCommand({ platform = process.platform, env = process.env } = {}) {
-  if (env.PI_STUDIO_PS_BIN) return { bin: env.PI_STUDIO_PS_BIN, args: parseJsonStringArray(env.PI_STUDIO_PS_BIN_ARGS) };
-  if (platform === "win32") return { bin: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", RESOURCE_WIN_QUERY] };
-  return { bin: "ps", args: ["-A", "-o", "pid=,ppid=,rss=,time="] };
-}
+export function clearResourceCache() { processTable.clear(); testProcessTable?.clear(); testProcessTable = null; }
 
-// ps `time`: [[dd-]hh:]mm:ss[.cc], or plain seconds. null when it is neither.
-function psCpuSeconds(text) {
-  if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
-  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(text);
-  return match ? Number(match[1] ?? 0) * 86400 + Number(match[2] ?? 0) * 3600 + Number(match[3]) * 60 + Number(match[4]) : null;
-}
-
-// Both sampler shapes (ps lines, the Windows CSV) become Map<pid, { ppid, rssKb, cpuSeconds }>; null when no row is valid.
-export function parseProcessTable(text) {
-  const lines = String(text ?? "").split(/\r?\n/);
-  const csv = lines.find((line) => line.trim())?.trim() === RESOURCE_CSV_HEADER;
+function resourceMap(rows) {
+  if (!rows?.length) return null;
   const table = new Map();
-  for (const line of lines) {
-    if (table.size >= RESOURCE_MAX_ROWS) break;
-    if (csv) {
-      const match = /^"(\d+)","(\d+)","(\d*)","(\d*)","(\d*)"$/.exec(line.trim());
-      if (match) table.set(Number(match[1]), { ppid: Number(match[2]), rssKb: Number(match[3]) / 1024, cpuSeconds: (Number(match[4]) + Number(match[5])) / 1e7 });
-      continue;
-    }
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line);
-    const cpuSeconds = match ? psCpuSeconds(match[4]) : null;
-    if (cpuSeconds !== null) table.set(Number(match[1]), { ppid: Number(match[2]), rssKb: Number(match[3]), cpuSeconds });
+  for (const row of rows) table.set(row.pid, { ppid: row.ppid, rssKb: row.rssBytes / 1024, cpuSeconds: row.cpuSeconds });
+  return table;
+}
+
+// Compatibility helpers expose the shared command/parser for focused resource math tests.
+export function resolveSamplerCommand(options) {
+  const { timeoutMs, ...command } = resolveProcessTableCommand(options);
+  return command;
+}
+export function parseProcessTable(output) { return resourceMap(parseUnifiedProcessTable(output)); }
+export async function sampleProcesses(command = resolveProcessTableCommand(), timeoutMs = command.timeoutMs ?? 4000) {
+  return resourceMap(await sampleProcessTable({ ...command, timeoutMs }));
+}
+
+let testProcessTable = null;
+let mappedSnapshot = null;
+let mappedResourceSnapshot = null;
+function mapSnapshot(snapshot) {
+  if (snapshot === mappedSnapshot) return mappedResourceSnapshot;
+  mappedSnapshot = snapshot;
+  mappedResourceSnapshot = snapshot ? { at: snapshot.at, table: resourceMap(snapshot.rows) } : null;
+  return mappedResourceSnapshot;
+}
+export async function getProcessTable(options) {
+  if (options?.sample) {
+    testProcessTable ??= createProcessTable({ now: options.now, sample: async () => {
+      const value = await options.sample();
+      return value instanceof Map ? [...value].map(([pid, row]) => ({ pid, ppid: row.ppid, name: "", startedAt: null, commandLine: "", rssBytes: row.rssKb * 1024, cpuSeconds: row.cpuSeconds })) : value;
+    } });
+    const snapshot = await testProcessTable.snapshot();
+    return mapSnapshot(snapshot);
   }
-  return table.size ? table : null;
-}
-
-// Never rejects: any failure (missing binary, non-zero exit, timeout, unreadable output) is null.
-export function sampleProcesses(command = resolveSamplerCommand(), timeoutMs = RESOURCE_TIMEOUT_MS) {
-  return new Promise((resolve) => {
-    execFile(command.bin, command.args, { timeout: timeoutMs, maxBuffer: RESOURCE_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
-      resolve(error ? null : parseProcessTable(stdout));
-    });
-  });
-}
-
-export function clearResourceCache() {
-  resourceCache.at = -Infinity;
-  resourceCache.value = null;
-}
-
-// { at, table } or null (sampler unavailable). Concurrent callers await the same sample, so one process runs at a time.
-export function getProcessTable({ now = Date.now, sample = sampleProcesses } = {}) {
-  if (now() - resourceCache.at < resourceCache.ttl) return Promise.resolve(resourceCache.value);
-  resourceCache.pending ??= Promise.resolve()
-    .then(() => sample())
-    .catch(() => null)
-    .then((table) => {
-      resourceCache.at = now();
-      resourceCache.value = table ? { at: resourceCache.at, table } : null;
-      resourceCache.ttl = table ? RESOURCE_CACHE_MS : RESOURCE_FAILURE_MS;
-      return resourceCache.value;
-    })
-    .finally(() => { resourceCache.pending = null; });
-  return resourceCache.pending;
+  const snapshot = await processTable.snapshot();
+  return mapSnapshot(snapshot);
 }
 
 // The pid and all its descendants. null when the pid is not in the table. Cycles in a corrupt table end at the visited set.

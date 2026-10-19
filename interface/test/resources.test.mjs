@@ -68,12 +68,12 @@ describe("sampler command", () => {
   });
   test("POSIX uses ps with no header and one batched call; Windows uses one PowerShell CIM query", () => {
     // Both ask for the whole table once; the pids of interest are picked from it afterwards.
-    assert.deepEqual(server.resolveSamplerCommand({ platform: "linux", env: {} }), { bin: "ps", args: ["-A", "-o", "pid=,ppid=,rss=,time="] });
+    assert.deepEqual(server.resolveSamplerCommand({ platform: "linux", env: {} }), { bin: "ps", args: ["-eo", "pid=,ppid=,rss=,time=,lstart=,args="] });
     const win = server.resolveSamplerCommand({ platform: "win32", env: {} });
     assert.equal(win.bin, "powershell.exe");
     assert.deepEqual(win.args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-Command"]);
     assert.match(win.args[3], /Get-CimInstance Win32_Process/);
-    assert.match(win.args[3], /WorkingSetSize,KernelModeTime,UserModeTime/);
+    assert.match(win.args[3], /Name,CreationDate,CommandLine,WorkingSetSize,KernelModeTime,UserModeTime/);
   });
 });
 
@@ -172,6 +172,12 @@ describe("getProcessTable cache", () => {
     clock += 2;
     assert.notEqual(await server.getProcessTable({ now: () => clock, sample }), first);
     assert.equal(calls, 2);
+  });
+  test("maps normalized shared rows for the session-math consumer", async () => {
+    // The shared sampler owns normalized rows; only the resource consumer derives its existing Map shape.
+    server.clearResourceCache();
+    const result = await server.getProcessTable({ now: () => 5000, sample: async () => [{ pid: 8, ppid: 1, rssBytes: 2048, cpuSeconds: 2 }] });
+    assert.deepEqual(result.table.get(8), { ppid: 1, rssKb: 2, cpuSeconds: 2 });
   });
   test("50 concurrent callers await one sample; a failure is shared, cached for 1 s only and never throws", async () => {
     // Coalescing is the "never more than one sampling process at a time" rule; a rejecting sampler is the worst case.
