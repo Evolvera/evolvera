@@ -11,7 +11,7 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-type ManagedContext = { profile: { agentDir: string }; admitUserResources(input: { resource: string; root: string }): void } | undefined;
+type ManagedContext = { profile: { id: string; agentDir: string }; admitUserResources(input: { resource: string; root: string }): void } | undefined;
 
 /**
  * Plastic Memory is not installed while disabled (installers delete extensions/plastic-memory),
