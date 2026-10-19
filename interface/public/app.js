@@ -116,6 +116,8 @@ import {
   withSessionRollback,
 } from "./lib.js";
 
+import { createTasksPanel } from "./tasks-panel.js";
+import { steerCommand, subagentDotState, subagentFamily, subagentSession, tabFitMode } from "./lib.js";
 import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
 
 import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
@@ -200,6 +202,12 @@ const els = {
   subList: $("#subList"),
   wtList: $("#wtList"),
   subBadge: $("#subBadge"),
+  tasksBadge: $("#tasksBadge"),
+  tasksList: $("#tasksList"),
+  taskWorktreeDialog: $("#taskWorktreeDialog"),
+  taskWorktreeName: $("#taskWorktreeName"),
+  taskWorktreePrompt: $("#taskWorktreePrompt"),
+  watchBack: $("#watchBack"),
   filesBadge: $("#filesBadge"),
   wtTabBadge: $("#wtTabBadge"),
   worktreesBadge: $("#worktreesBadge"),
@@ -475,6 +483,49 @@ const orca = { data: null, lastFollowed: null, timer: null, inflight: false, ren
 const subOpen = new Set();
 const subCache = new Map();
 let noticeSeq = 0;
+
+// Tarefas tab (see tasks-panel.js). Everything it needs from the app goes through these callbacks.
+function tasksContext(runs = currentSubagents()) {
+  const orcaAvailable = Boolean(orcaOn() && orca.data?.available);
+  const worktrees = orcaAvailable ? orca.data.worktrees : [];
+  const file = state.session?.sessionFile ?? null;
+  let piBlocked = "";
+  if (state.processExited) piBlocked = "PI encerrado";
+  else if (state.watch) piBlocked = "Conversa em modo de acompanhamento (somente leitura)";
+  else if (!state.currentProject) piBlocked = "Nenhum projeto aberto";
+  return {
+    tasks: state.todo || [],
+    runs,
+    sessionKey: file,
+    conversationId: state.watch ? state.watch.sessionId || null : state.session?.sessionId || null,
+    title: state.watch ? state.watch.title : state.history.find((item) => samePath(item.path, file))?.title || state.session?.sessionName || "",
+    projectId: state.currentProject?.id ?? null,
+    orcaAvailable,
+    projectInOrca: Boolean(orcaWorktreeOfProject()),
+    orcaAgents: worktrees.flatMap((worktree) => (worktree.agents || []).map((agent) => ({ ...agent, worktreePath: worktree.path }))),
+    piBlocked,
+  };
+}
+
+const tasksPanel = createTasksPanel({
+  els: { list: els.tasksList, dialog: els.taskWorktreeDialog, name: els.taskWorktreeName, prompt: els.taskWorktreePrompt },
+  svg,
+  esc,
+  toast,
+  api,
+  setBadge: (count) => setBadge(els.tasksBadge, count, plural(count, "tarefa executando agora", "tarefas executando agora")),
+  context: tasksContext,
+  sendParallel: (text) => sendProgrammatic(text, "prompt").catch(report),
+  sendSteer: (agentId, text) => steerSubagent(agentId, text),
+  openSubagent: (run) => openSubagent(run).catch(report),
+  openWorktree: (worktreePath) => openTaskWorktree(worktreePath),
+  scrollToEnd: () => {
+    state.stick = true;
+    scrollToBottom();
+  },
+  refreshOrca: () => pollOrca(),
+  invalidate: () => scheduleInspector("tasks"),
+});
 
 function setPanel(side, open) {
   layout[side] = open ? "open" : "closed";
@@ -875,6 +926,7 @@ function resetConversation() {
   els.term.replaceChildren();
   subOpen.clear();
   subCache.clear();
+  tasksPanel.reset();
   scheduleInspector();
 }
 
@@ -1011,7 +1063,7 @@ const currentStudioFile = () => (state.watch ? state.studioFile : state.session?
 const orcaWorktreeOfProject = () => (orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, state.currentProject?.cwd)) : null);
 const worktreeAgents = () => orcaWorktreeOfProject()?.agents ?? [];
 
-function startWatch(item, { fallback }) {
+function startWatch(item, { fallback, steer = null }) {
   resetConversation();
   state.studioFile = state.session?.sessionFile ?? null;
   state.session = { ...(state.session || {}), sessionFile: item.path };
@@ -1019,6 +1071,8 @@ function startWatch(item, { fallback }) {
   const watch = {
     path: item.path,
     title: item.title,
+    sessionId: item.sessionId ?? null,
+    steer,
     fallback,
     entries: [],
     offset: 0,
@@ -1057,6 +1111,7 @@ function updateWatchUi() {
     els.watchText.textContent = status.text;
     els.watchContinue.disabled = !status.canContinue;
   }
+  els.watchBack.hidden = !watch?.steer;
   applyPlaceholder();
   updateComposer();
 }
@@ -1079,7 +1134,7 @@ async function watchTick() {
       watch.entries = entries;
       state.messages = watchMessages(entries);
       state.subagentRecords = subagentRecords(entries);
-      applyTodo(todoFromMessages(state.messages));
+      applyTodo(todoFromMessages(state.messages), state.messages);
       scheduleRender();
     }
     updateWatchUi();
@@ -1095,6 +1150,35 @@ async function watchTick() {
   } finally {
     watch.inflight = false;
   }
+}
+
+// Back from a followed subagent to the Studio PI's own conversation (its parent).
+els.watchBack.addEventListener("click", () => {
+  if (!state.watch) return;
+  resetConversation();
+  renderThread();
+  refreshState().catch(report);
+});
+
+// Opens a subagent's own conversation, read-only and live, with its message box (see steerableWatch).
+// The child session is named "<agent>#<id8>" by pi-subagents; the run's task text is only a fallback.
+async function openSubagent(run) {
+  if (!run) throw new Error("Subagente não encontrado nesta conversa.");
+  await refreshHistory().catch(() => {});
+  const item = subagentSession({ run, history: state.history, parentFile: currentStudioFile() });
+  if (!item) throw new Error("A conversa deste subagente ainda não está disponível.");
+  await runGated(state, () => startWatch(item, { fallback: false, steer: { agentId: run.agentId, label: run.title } }));
+}
+
+function openTaskWorktree(worktreePath) {
+  const worktree = orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, worktreePath)) : null;
+  if (!worktree) return toast("Esta worktree não aparece no Orca.", "warning");
+  return openWorktree(worktree).catch(report);
+}
+
+// A followed subagent takes messages while its file is still being written (the Studio PI forwards them with /steer).
+function steerableWatch() {
+  return Boolean(state.watch?.steer && state.watch.elsewhere);
 }
 
 els.watchContinue.addEventListener("click", () => {
@@ -1293,7 +1377,7 @@ function handleResponse(event) {
       if (state.watch || !Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       state.subagentRecords = subagentRecords(event.data.entries);
-      applyTodo(todoFromMessages(state.messages));
+      applyTodo(todoFromMessages(state.messages), state.messages);
       refreshForkMessages();
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
       // Finished Agent runs stay: their end time is the only source of "terminou há N min" once the result is in the entries.
@@ -1404,7 +1488,7 @@ function handleRpc(event) {
     case "tool_execution_end": {
       const tool = state.runtime.get(event.toolCallId) || { name: event.toolName, args: {} };
       state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result, endedAt: Date.now() });
-      applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }));
+      applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }, true));
       state.phase = "thinking";
       break;
     }
@@ -1510,7 +1594,7 @@ function renderThread() {
   while (els.thread.children.length > nodes.length) els.thread.lastElementChild.remove();
   els.thread.classList.toggle("is-empty", !items.length && !state.isStreaming);
   updateRunStatus();
-  scheduleInspector("terminal", "subagents", "files");
+  scheduleInspector("terminal", "subagents", "files", "tasks");
   if (stick) scrollToBottom();
 }
 
@@ -1713,6 +1797,10 @@ setInterval(() => {
   // Finished runs only age by the minute ("terminou há N min"): refresh them every 15 s.
   else if (inspector.tab === "subagents" && (!els.subBadge.hidden || tick % 15 === 0)) scheduleInspector("subagents");
   else if (inspector.tab === "context" && state.problems.length && tick % 15 === 0) scheduleInspector("context");
+  else if (inspector.tab === "tasks" && tick % 30 === 0) {
+    scheduleInspector("tasks");
+    tasksPanel.refreshLinks();
+  }
 }, 1000);
 
 function setRunning(running) {
@@ -1911,10 +1999,12 @@ async function cloneSession() {
 
 // ------------------------------------------------------------------ tasks
 
-function applyTodo(tasks) {
+function applyTodo(tasks, messages = null) {
   if (!tasks) return;
   state.todo = tasks;
+  tasksPanel.observe(tasks, messages);
   renderTodo();
+  scheduleInspector("tasks");
 }
 
 function renderTodo() {
@@ -2035,10 +2125,12 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
+const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
 
 function renderInspector() {
-  updateSubBadge();
+  const runs = currentSubagents();
+  updateSubBadge(runs);
+  tasksPanel.updateBadge(runs);
   if (layout.right !== "open" || !inspector.dirty.has(inspector.tab)) return;
   inspector.dirty.delete(inspector.tab);
   VIEW_RENDERERS[inspector.tab]();
@@ -2063,6 +2155,7 @@ function selectTab(tab, { focus = false } = {}) {
   for (const view of els.views) view.hidden = view.dataset.view !== tab;
   els.panel.dataset.tab = tab;
   if (tab === "context" && state.currentProject && !state.processExited) refreshStats();
+  if (tab === "tasks") tasksPanel.refreshLinks();
   scheduleInspector(tab);
   syncOrcaPolling();
 }
@@ -2080,11 +2173,11 @@ els.tablist.addEventListener("keydown", (event) => {
   selectTab(tabs[target].dataset.tab, { focus: true });
 });
 
-// Every tab keeps its label and count badge as long as they fit. Measured (so it holds for any number of tabs and any panel
-// width), the tabs give up first the icons of the unselected ones ("tight"), and only if the labels still overflow their
-// labels ("compact"). Name and count stay in title/aria-label either way.
+// Every tab shows icon + label while they fit. Measured (any number of tabs, any panel width), the tabs give up first the
+// labels of the unselected ones ("fit-selected"), and only if that still overflows all labels ("fit-icons").
+// Name and count stay in title/aria-label either way.
 function fitInspectorTabs() {
-  els.tablist.classList.remove("tight", "compact");
+  els.tablist.classList.remove("fit-selected", "fit-icons");
   for (const tab of els.tabs) {
     const badge = tab.querySelector(".count-badge:not([hidden])");
     const name = tab.querySelector(".insp-label").textContent;
@@ -2092,11 +2185,17 @@ function fitInspectorTabs() {
     tab.title = label;
     tab.setAttribute("aria-label", label);
   }
-  const overflows = () => els.tablist.scrollWidth > els.tablist.clientWidth;
-  if (!overflows()) return;
-  els.tablist.classList.add("tight");
-  if (!overflows()) return;
-  els.tablist.classList.replace("tight", "compact");
+  // Measured once with text and once icon-only (two layouts per pass, no writes in between); tabFitMode (lib.js) decides.
+  const tabs = els.tabs.filter((tab) => !tab.hidden);
+  const withText = tabs.map((tab) => tab.offsetWidth);
+  els.tablist.classList.add("fit-icons");
+  const iconOnly = tabs.map((tab) => tab.offsetWidth);
+  els.tablist.classList.remove("fit-icons");
+  const style = getComputedStyle(els.tablist);
+  const available = els.tablist.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const selected = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+  const mode = tabFitMode({ withText, iconOnly, available, selected });
+  if (mode !== "full") els.tablist.classList.add(`fit-${mode}`);
 }
 let fitTabsQueued = false;
 function scheduleFitTabs() {
@@ -2300,6 +2399,11 @@ function updateWorktreeBadges() {
   setBadge(els.worktreesBadge, running, label);
 }
 
+function subagentFamilyIcon(run) {
+  const family = subagentFamily(run);
+  return family === "general" ? "i-agents" : `i-ag-${family}`;
+}
+
 function subCard(run, open) {
   const node = document.createElement("article");
   const timing = subagentTiming(run);
@@ -2310,8 +2414,8 @@ function subCard(run, open) {
   const sections = run.sections.map((section) => `<section class="sa-sec"><h4>${esc(section.label)}</h4><pre>${esc(truncate(section.text, 60000))}</pre></section>`).join("");
   node.innerHTML = `
     <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}">
-      <span class="sa-dot" aria-hidden="true"></span>
-      <span class="sa-title"><strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
+      <span class="sa-dot" data-state="${subagentDotState(run, Boolean(timing.stalled))}" aria-hidden="true"></span>
+      <span class="sa-title">${svg(subagentFamilyIcon(run), "sa-ico")}<strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
       <span class="sa-state"><span class="sa-phase">${esc(SUB_PHASE[run.phase])}</span><span class="sa-time">${esc(formatElapsed(run.elapsed))}</span></span>
       ${svg("i-chevron-right", "sa-chev")}
     </button>
@@ -2661,7 +2765,7 @@ function updateComposer() {
   // A shell command needs an idle agent and a command; nothing is sent while one is running.
   const blocked = Boolean(state.bash) || (shell && (state.isStreaming || !shellCommand(value)));
   // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
-  els.send.disabled = state.processExited || state.sending || Boolean(state.watch) || !hasContent || blocked || (!state.currentProject && !state.gate);
+  els.send.disabled = state.processExited || state.sending || (Boolean(state.watch) && !steerableWatch()) || !hasContent || blocked || (!state.currentProject && !state.gate);
   els.composer.classList.toggle("is-shell", shell);
   els.shellChip.hidden = !shell;
   els.stop.hidden = !(state.isStreaming || state.bash);
@@ -2669,14 +2773,14 @@ function updateComposer() {
   els.send.setAttribute("aria-label", shell ? "Executar" : state.isStreaming ? "Direcionar (steer)" : "Enviar");
   els.hint.textContent = composerHint(shell);
   els.hint.title = els.hint.textContent;
-  els.prompt.disabled = state.processExited || Boolean(state.watch);
+  els.prompt.disabled = state.processExited || (Boolean(state.watch) && !steerableWatch());
 }
 
 // The long placeholder (/ commands, @ files, ! shell) does not fit a phone-width composer.
 const narrowComposer = window.matchMedia("(max-width: 560px)");
 const PLACEHOLDER_LONG = els.prompt.placeholder;
 const applyPlaceholder = () => {
-  els.prompt.placeholder = state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
+  els.prompt.placeholder = steerableWatch() ? `Mensagem para ${state.watch.steer.label} (via PI principal)` : state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
 };
 narrowComposer.addEventListener("change", applyPlaceholder);
 applyPlaceholder();
@@ -2722,7 +2826,58 @@ async function addImages(files) {
   renderAttachments();
 }
 
+// A message to a running subagent: the Studio PI runs /steer (extensions/studio-steer.ts); its notify comes back as a toast.
+async function steerSubagent(agentId, text) {
+  const message = steerCommand(agentId, text);
+  if (!message) throw new Error("Escreva uma mensagem.");
+  if (!state.commands) await loadCommands();
+  if (state.commands && !state.commands.some((command) => command.name === "steer")) throw new Error("O comando /steer não está instalado no PI — reinstale as extensões do Studio.");
+  await sendProgrammatic(message, "command");
+}
+
+// A message the app writes for the user (not the composer): "prompt" is a normal user message (queued as a follow-up while
+// the PI answers); "command" is an extension slash command, which the PI runs at once and which leaves no user message.
+async function sendProgrammatic(message, kind) {
+  if (state.processExited || (state.watch && kind !== "command")) throw new Error("O PI não pode receber mensagens agora.");
+  if (state.gate) await waitSessionGate(state);
+  if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
+  const type = kind === "command" ? "prompt" : state.isStreaming ? "follow_up" : "prompt";
+  const optimistic = type === "prompt" && kind !== "command" ? { role: "user", content: [{ type: "text", text: message }], timestamp: Date.now(), _optimistic: true } : null;
+  if (optimistic) {
+    state.messages.push(optimistic);
+    state.stick = true;
+    scheduleRender();
+  }
+  const drop = () => {
+    const index = state.messages.indexOf(optimistic);
+    if (index !== -1) state.messages.splice(index, 1);
+    scheduleRender();
+  };
+  let res;
+  try {
+    res = await rpcRequest({ type, message }, 0);
+  } catch (error) {
+    drop();
+    throw error;
+  }
+  if (!res.success) {
+    drop();
+    throw new Error(res.error || "O PI recusou a mensagem.");
+  }
+  if (type === "follow_up") toast("Tarefa adicionada à fila.");
+}
+
 async function submit(mode) {
+  if (state.watch?.steer && steerableWatch()) {
+    const text = els.prompt.value.trim();
+    if (!text || state.sending) return;
+    clearComposer();
+    steerSubagent(state.watch.steer.agentId, text).catch((error) => {
+      if (!els.prompt.value) setComposerText(text);
+      report(error);
+    });
+    return;
+  }
   if (state.processExited || state.sending || state.watch) return;
   if (els.prompt.value.trim() || state.attachments.length) ensureNotifyPermission();
   if (state.gate) {
@@ -3149,7 +3304,7 @@ function renderWidgets() {
   els.widgetArea.textContent = lines.join("\n");
   els.widgetArea.classList.toggle("hidden", !lines.length);
   els.statusLine.textContent = [...state.statuses.values()].join(" · ");
-  scheduleInspector("terminal", "subagents");
+  scheduleInspector("terminal", "subagents", "tasks");
 }
 
 // ------------------------------------------------------------- model menu
@@ -3569,7 +3724,7 @@ async function pollOrca() {
   orca.data = data;
   updateWorktreeBadges();
   if (orca.uiKey !== `${orcaOn()}/${Boolean(data.available)}`) applyOrcaSettings();
-  scheduleInspector("worktrees");
+  scheduleInspector("worktrees", "tasks");
   renderWorktreesOverlay();
   followOrca();
 }
