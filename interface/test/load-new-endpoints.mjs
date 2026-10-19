@@ -328,7 +328,8 @@ try {
     return out;
   };
   const settling = await runPass(false);
-  if (settling.some((item) => item.errors)) console.log("settling pass had request errors");
+  // Name every erroring settling segment (a bare "had errors" line hid which endpoint failed).
+  for (const item of settling.filter((entry) => entry.errors)) console.log(`settling pass errors: ${item.label} · errors ${item.errors} · status ${JSON.stringify(item.statuses)}`);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   // Baseline = the plateau the settling pass reached (largest RSS seen in it): a leak keeps climbing past it, GC noise does not.
   const rssBefore = Math.max(rssMb(server.pid), ...settling.map((item) => item.rss));
@@ -341,7 +342,7 @@ try {
   const treeSoak = await soakTree(token, treeEtag);
   console.log(`/api/tree 5-minute soak · 10 clients / 2 s · ${treeSoak.requests} polls · status ${JSON.stringify(treeSoak.statuses)} · errors ${treeSoak.errors} · RSS ${treeSoak.rssStart.toFixed(1)} MB → ${treeSoak.rssEnd.toFixed(1)} MB (Δ ${treeSoak.rssDelta.toFixed(1)} MB)`);
   const psSpawns = (await readFile(psCount, "utf8").catch(() => "")).split("\n").filter(Boolean).length - psBefore;
-  if (settling.some((item) => item.errors)) results.push({ ...settling.find((item) => item.errors), label: "settling pass (errors)" });
+  if (settling.some((item) => item.errors)) for (const item of settling.filter((entry) => entry.errors)) results.push({ ...item, label: `settling pass (errors): ${item.label}` });
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0) + 300;
   const spawns = (await orcaSpawns()) - spawnsBefore;
   await new Promise((resolve) => setTimeout(resolve, 1000));

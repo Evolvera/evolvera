@@ -10,6 +10,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { hasRecentChildActivity, idleThresholdMs, reapIdle } from "./lib-server/idle-reaper.mjs";
 import { createProcessLister, parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
 import { createTitleIndex } from "./lib-server/session-titles.mjs";
 import { createTreeService } from "./lib-server/tree.mjs";
@@ -1542,13 +1543,13 @@ const treeService = createTreeService({
   async getLive() {
     const headers = await treeSessionRecords();
     const procs = parsePiProcesses(await treePs.list(), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) });
-    const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs }))).filter((item) => item.sessionPath);
+    const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs })));
+    // Exited sessions leave this map in the same tick (see the exit handler); a just-started one may not know its file yet.
     for (const session of sessions.values()) {
       const file = session.lastState?.sessionFile;
-      if (!file || session.exited) continue;
-      resolved.push({ pid: session.proc?.pid ?? null, owner: "studio", startedAt: Date.parse(session.createdAt), sessionPath: file, streaming: session.streaming, waitingUi: session.statusSummary().waitingUi });
+      resolved.push({ pid: session.proc.pid, owner: "studio", startedAt: Date.parse(session.createdAt), sessionPath: file, streaming: session.streaming, waitingUi: session.statusSummary().waitingUi });
     }
-    return resolved;
+    return resolved.filter((item) => item.sessionPath);
   },
   onPoll(at) { treeLastPollAt = at; },
 });
@@ -2153,18 +2154,19 @@ const server = createServer((req, res) => {
 });
 
 let idleReaper = null;
-function idleReapMinutes() {
-  const value = Number(process.env.PI_STUDIO_IDLE_PI_MINUTES ?? 15);
-  return Number.isFinite(value) ? Math.min(240, Math.max(5, value)) : 15;
+// Rules live in lib-server/idle-reaper.mjs; here only the live session data is adapted to them.
+export function reapIdleStudioPIsNow(now = Date.now()) {
+  const thresholdMs = idleThresholdMs();
+  const live = [...sessions.values()].map((session) => ({
+    id: session.id,
+    cwd: session.cwd,
+    sessionFile: session.lastState?.sessionFile || null,
+    snapshot: () => ({ exited: session.exited, streaming: session.streaming, clientCount: session.clients.size, waitingUi: session.statusSummary(now).waitingUi, lastViewedAt: session.lastViewedAt, lastEventAt: session.lastEventAt }),
+    stop: () => session.stop(),
+  }));
+  return reapIdle(live, { now, thresholdMs, childActive: (file) => hasRecentChildActivity(file, { now, thresholdMs }), log: (line) => recordLog("info", line) });
 }
-function reapIdleStudioPIs(now = Date.now()) {
-  const threshold = idleReapMinutes() * 60_000;
-  for (const session of sessions.values()) {
-    if (session.exited || session.streaming || session.clients.size || session.statusSummary(now).waitingUi || now - session.lastViewedAt < threshold) continue;
-    recordLog("info", `Reaping idle Studio PI for ${session.cwd}`, { sessionId: session.id, idleMs: now - session.lastViewedAt });
-    session.stop();
-  }
-}
+const reapIdleStudioPIs = () => { reapIdleStudioPIsNow().catch((error) => recordLog("warn", "Idle PI check failed", { error: error.message })); };
 
 export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
   return new Promise((resolve) => {
