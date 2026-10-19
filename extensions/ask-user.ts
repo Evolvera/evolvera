@@ -141,19 +141,27 @@ export default function askUserExtension(pi: ExtensionAPI) {
           output.push(`Pergunta ${question.id}: sem interface; siga a opção recomendada: ${question.recommended}`);
           continue;
         }
+        // Recorded open/closed so other viewers of this session (PI Studio) can show that the run waits for the user.
+        append({ id: question.id, question: question.question, options: question.options, recommended: question.recommended, blocking: true, status: "open", askedAt: question.askedAt });
+        const closeBlocking = (status: "answered" | "ignored", answer: string) =>
+          append({ id: question.id, blocking: true, status, answer, answeredAt: new Date().toISOString() });
         const choices = (question.options ?? []).map((option) => option === question.recommended ? `${option} (recomendado)` : option);
         choices.push(FREE_TEXT, IGNORE);
         const title = question.context ? `${question.question}\n\nContexto: ${question.context}` : question.question;
         const selected = await ctx.ui.select(title, choices, { timeout: timeoutMs() });
         if (selected === FREE_TEXT) {
           const answer = await ctx.ui.input(title, "Sua resposta", { timeout: timeoutMs() });
+          if (answer === undefined) closeBlocking("ignored", question.recommended);
+          else closeBlocking("answered", cleanText(answer, 1000));
           output.push(answer === undefined
             ? `Pergunta ${question.id}: ignorada; siga a opção recomendada (${question.recommended}).`
             : `Resposta à pergunta ${question.id}: ${cleanText(answer, 1000)}`);
         } else if (!selected || selected === IGNORE) {
+          closeBlocking("ignored", question.recommended);
           output.push(`Pergunta ${question.id}: ignorada; siga a opção recomendada (${question.recommended}).`);
         } else {
           const answer = selected.endsWith(" (recomendado)") ? selected.slice(0, -" (recomendado)".length) : selected;
+          closeBlocking("answered", cleanText(answer, 1000));
           output.push(`Resposta à pergunta ${question.id}: ${cleanText(answer, 1000)}`);
         }
       }
@@ -208,7 +216,8 @@ export default function askUserExtension(pi: ExtensionAPI) {
       if (!id) continue;
       usedIds.add(id);
       const prior = questions.get(id);
-      if (data.status === "open" && typeof data.question === "string") {
+      // A blocking question that is still "open" belongs to a dead process (it cannot be answered any more).
+      if (data.status === "open" && data.blocking !== true && typeof data.question === "string") {
         questions.set(id, {
           id, question: cleanText(data.question, 1000),
           options: Array.isArray(data.options) ? data.options.map((item: unknown) => cleanText(item, 200)) : undefined,
