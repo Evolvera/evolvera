@@ -31,7 +31,7 @@ function fixtureSource(root) {
   writeFileSync(path.join(root, "config/models.json"), "{}\n");
   writeFileSync(path.join(root, "config/SYSTEM.md"), "fixture system\n");
   writeFileSync(path.join(root, "config/pi-goal.json"), "{}\n");
-  writeFileSync(path.join(root, "config/mcp.json"), "{}\n");
+  writeFileSync(path.join(root, "config/mcp-adapter.json"), "{}\n");
   writeFileSync(path.join(root, "agents/fixture.md"), "fixture agent\n");
   writeFileSync(path.join(root, "skills/fixture/SKILL.md"), "# Fixture\n");
   cpSync(path.join(repositoryRoot, "skills/project-memory/scripts/validate-architecture.mjs"), path.join(root, "skills/project-memory/scripts/validate-architecture.mjs"));
@@ -46,7 +46,7 @@ function installEnvironment(home, cpMode = "normal") {
   writeExecutable("npm", `#!/bin/sh\nprintf 'npm %s\\n' \"$*\" >> \"${log}\"\nexit 0\n`);
   writeExecutable("pi", `#!/bin/sh\nprintf 'pi %s\\n' \"$*\" >> \"${log}\"\nexit 0\n`);
   const cpFailure = cpMode === "fault"
-    ? `case \"$*\" in *mcp.json*) printf 'forced-cp-fault %s\\n' \"$*\" >> \"${log}\"; exit 91 ;; esac\n`
+    ? `case \"$*\" in *mcp-adapter.json*) printf 'forced-cp-fault %s\\n' \"$*\" >> \"${log}\"; exit 91 ;; esac\n`
     : "";
   writeExecutable("cp", `#!/bin/sh\nprintf 'cp %s\\n' \"$*\" >> \"${log}\"\n${cpFailure}/bin/cp \"$@\"\n`);
   return log;
@@ -99,7 +99,7 @@ try {
   assert.equal(existsSync(path.join(destinationRoot, "extensions/flat-fixture.ts")), true);
   assert.equal(readFileSync(path.join(destinationRoot, "settings.json"), "utf8"), readFileSync(path.join(sourceRoot, "config/settings.json"), "utf8"));
   assert.equal(success.logText.includes("extensions/plastic-memory"), false, "installer must not stage plastic-memory");
-  const resourceCopyIndex = success.logText.indexOf("config/mcp.json");
+  const resourceCopyIndex = success.logText.indexOf("config/mcp-adapter.json");
   const activationIndex = success.logText.lastIndexOf("config/settings.json");
   assert.equal(resourceCopyIndex >= 0 && activationIndex > resourceCopyIndex, true, "activation follows complete resource staging");
   assert.equal(success.logText.includes("observational-memory"), false, "fake package commands omit OM");
