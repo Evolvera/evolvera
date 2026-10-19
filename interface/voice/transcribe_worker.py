@@ -37,8 +37,17 @@ def main():
         request = None
         try:
             request = json.loads(raw)
-            segments, info = model.transcribe(request["path"], language="pt", vad_filter=True)
-            text = " ".join(segment.text.strip() for segment in segments).strip()
+            try:
+                segments, info = model.transcribe(request["path"], language="pt", vad_filter=True)
+                text = " ".join(segment.text.strip() for segment in segments).strip()
+            except Exception:
+                if device != "cuda":
+                    raise
+                from faster_whisper import WhisperModel
+                model = WhisperModel(model_name, device="cpu", compute_type="int8")
+                device = "cpu"
+                segments, info = model.transcribe(request["path"], language="pt", vad_filter=True)
+                text = " ".join(segment.text.strip() for segment in segments).strip()
             emit({"id": request["id"], "text": text, "language": info.language, "durationMs": round(info.duration * 1000), "device": device})
         except Exception as exc:
             emit({"id": request.get("id") if isinstance(request, dict) else None, "error": str(exc)[:300]})

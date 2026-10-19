@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 
 const pt = (error) => ({ error: error || "Falha ao transcrever o áudio." });
 
-export function createVoiceService({ spawnWorker = startWorker, idleMs = 600000, timeoutMs = 60000, maxQueue = 3 } = {}) {
+export function createVoiceService({ spawnWorker = startWorker, idleMs = 600000, timeoutMs = Number(process.env.PI_STUDIO_VOICE_REQUEST_TIMEOUT_MS) || 60000, startupTimeoutMs = Number(process.env.PI_STUDIO_VOICE_START_TIMEOUT_MS) || 120000, maxQueue = 3 } = {}) {
   let worker = null;
   let starting = null;
   let state = "off";
@@ -26,7 +26,7 @@ export function createVoiceService({ spawnWorker = startWorker, idleMs = 600000,
     if (worker) return worker;
     if (starting) return starting;
     state = "loading";
-    starting = Promise.resolve().then(spawnWorker).then((child) => {
+    starting = Promise.resolve().then(() => spawnWorker(startupTimeoutMs)).then((child) => {
       worker = child;
       device = child.device || device;
       model = child.model || model;
@@ -36,25 +36,29 @@ export function createVoiceService({ spawnWorker = startWorker, idleMs = 600000,
     }).catch((error) => { state = "off"; worker = null; throw error; }).finally(() => { starting = null; });
     return starting;
   }
+  function finishRequest() {
+    queue--;
+    if (worker) state = queue ? "busy" : "ready";
+    if (!queue && worker) scheduleStop();
+  }
   async function transcribe(file) {
     if (queue >= maxQueue) { const error = new Error("O serviço de transcrição está ocupado."); error.status = 429; throw error; }
     queue++;
     clearTimeout(idleTimer);
+    let result;
     try {
       const child = await ensureWorker();
       state = "busy";
       let timeout;
-      const result = await Promise.race([child.transcribe(file), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Tempo limite da transcrição excedido.")), timeoutMs); })]).finally(() => clearTimeout(timeout));
+      result = await Promise.race([child.transcribe(file), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Tempo limite da transcrição excedido.")), timeoutMs); })]).finally(() => clearTimeout(timeout));
       device = result.device || child.device || device;
-      return result;
     } catch (error) {
       if (worker) { await worker.stop().catch(() => {}); worker = null; state = "off"; }
+      finishRequest();
       throw error;
-    } finally {
-      queue--;
-      if (worker) state = queue ? "busy" : "ready";
-      if (!queue && worker) scheduleStop();
     }
+    finishRequest();
+    return result;
   }
   async function transcribeBuffer(buffer) {
     const file = path.join(os.tmpdir(), `pi-studio-voice-${randomUUID()}.webm`);
@@ -73,24 +77,30 @@ export function createVoiceService({ spawnWorker = startWorker, idleMs = 600000,
   return { status, transcribe, transcribeBuffer, stop, pt };
 }
 
-async function startWorker() {
-  const fake = process.env.PI_STUDIO_VOICE_WORKER_CMD;
-  const command = fake ? process.execPath : process.env.PI_STUDIO_PYTHON || (process.platform === "win32" ? "py" : "python3");
-  const args = fake ? JSON.parse(fake) : process.env.PI_STUDIO_PYTHON ? [] : process.platform === "win32" ? ["-3.14"] : [];
-  if (!fake) args.push(path.resolve("voice/transcribe_worker.py"));
+export function resolveWorkerCommand(env = process.env, platform = process.platform, scriptPath = path.resolve("voice/transcribe_worker.py")) {
+  const fake = env.PI_STUDIO_VOICE_WORKER_CMD;
+  return {
+    command: fake ? process.execPath : env.PI_STUDIO_PYTHON || (platform === "win32" ? "py" : "python3"),
+    args: fake ? JSON.parse(fake) : env.PI_STUDIO_PYTHON ? [scriptPath] : platform === "win32" ? ["-3.14", scriptPath] : [scriptPath],
+  };
+}
+
+async function startWorker(startupTimeoutMs) {
+  const launch = resolveWorkerCommand();
+  const { command, args } = launch;
   const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const lines = createInterface({ input: child.stdout });
   const pending = new Map();
   let readyResolve;
   let readyReject;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
-  const loadTimer = setTimeout(() => readyReject(new Error("O modelo de voz não iniciou.")), 300000);
+  const loadTimer = setTimeout(() => { readyReject(new Error("O modelo de voz não iniciou dentro do limite de inicialização.")); child.kill(); }, startupTimeoutMs);
   loadTimer.unref?.();
   let exited = false;
   lines.on("line", (line) => {
     let message;
     try { message = JSON.parse(line); } catch { return; }
-    if (message.ready) { clearTimeout(loadTimer); message.error || message.ready === false ? readyReject(new Error("O mecanismo local de voz não está disponível.")) : readyResolve(message); return; }
+    if (Object.hasOwn(message, "ready")) { clearTimeout(loadTimer); message.ready ? readyResolve(message) : readyReject(new Error("O mecanismo local de voz não está disponível.")); return; }
     const waiter = pending.get(message.id);
     if (waiter) { pending.delete(message.id); message.error ? waiter.reject(new Error(message.error)) : waiter.resolve(message); }
   });

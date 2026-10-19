@@ -2130,9 +2130,9 @@ export function stopServer() {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
-function shutdown() {
+export function shutdown() {
   for (const session of sessions.values()) session.stop();
-  void voice.stop();
+  void voice.stop().catch(() => {});
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();
 }
