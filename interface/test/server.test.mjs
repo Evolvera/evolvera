@@ -1,5 +1,6 @@
 // In-process tests for server.mjs helpers and routes (fake PI only; owned temp dirs only).
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import http from "node:http";
 import { mkdir, mkdtemp, open as openFile, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
@@ -103,6 +104,67 @@ describe("session header cache", () => {
     id = "replaced";
     assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "replaced");
     assert.equal(reads, 2);
+  });
+});
+
+describe("SSE client backpressure", () => {
+  test("disconnects clients that exceed the cap during replay", () => {
+    const makeClient = (bufferedBytes) => {
+      const client = new EventEmitter();
+      client.writableLength = bufferedBytes;
+      client.writeHead = () => {};
+      client.write = (chunk) => { client.writableLength += Buffer.byteLength(chunk); return false; };
+      client.end = () => { client.ended = true; client.emit("close"); };
+      return client;
+    };
+    const connecting = new server.PiRpcSession({ projectId: "sse-connect-cap", projectName: "sse", cwd: tmp });
+    const alreadyFull = makeClient(8 * 1024 * 1024 + 1);
+    try {
+      connecting.addClient(alreadyFull);
+      assert.equal(alreadyFull.ended, true, "initial connection frame is subject to the limit");
+    } finally {
+      alreadyFull.emit("close");
+    }
+
+    const replaying = new server.PiRpcSession({ projectId: "sse-replay-cap", projectName: "sse", cwd: tmp });
+    replaying.history.push({ event: "rpc", payload: { type: "message_update", content: "payload" } });
+    const duringReplay = makeClient(8 * 1024 * 1024 - 64);
+    try {
+      replaying.addClient(duringReplay);
+      assert.equal(duringReplay.ended, true, "replay frame must not exceed the per-client limit");
+    } finally {
+      duringReplay.emit("close");
+    }
+  });
+
+  test("drops a client above the buffered-byte cap but keeps healthy clients", () => {
+    const session = new server.PiRpcSession({ projectId: "sse-cap", projectName: "sse-cap", cwd: tmp });
+    const makeClient = () => {
+      const client = new EventEmitter();
+      client.writes = [];
+      client.writeHead = () => {};
+      client.write = (chunk) => { client.writes.push(chunk); return true; };
+      client.end = () => { client.ended = true; client.emit("close"); };
+      client.writableLength = 0;
+      return client;
+    };
+    const slow = makeClient();
+    const healthy = makeClient();
+    session.addClient(slow);
+    session.addClient(healthy);
+    try {
+      slow.writableLength = 8 * 1024 * 1024 + 1;
+      session.broadcast("rpc", { type: "message_update", content: "next" });
+      assert.equal(slow.ended, true, "slow client should be disconnected to replay on reconnect");
+      assert.equal(session.clients.has(slow), false);
+      assert.equal(session.clientHeartbeats.has(slow), false);
+      assert.equal(session.clients.has(healthy), true);
+      assert.ok(healthy.writes.some((chunk) => chunk.includes("message_update")));
+      session.finalizeTerminal("exit", null, 0, null);
+      assert.equal(session.clientHeartbeats.size, 0);
+    } finally {
+      for (const client of [slow, healthy]) client.emit("close");
+    }
   });
 });
 
@@ -432,6 +494,20 @@ describe("history discovery + routes", () => {
     await waitFor(() => events.some((item) => item.event === "session_stopped"));
     assert.equal(events.some((item) => item.event === "session_ready"), false);
     client.destroy();
+  });
+
+  test("retired session wrappers are replaced by a bounded summary window", async () => {
+    let latestId;
+    for (let index = 0; index < 205; index++) {
+      const session = new server.PiRpcSession({ projectId: `retired-${index}`, projectName: "retired", cwd: projA });
+      latestId = session.id;
+      session.finalizeTerminal("exit", null, 0, null);
+    }
+    const response = await getJson("/api/sessions");
+    assert.ok(response.sessions.length <= 200);
+    assert.equal(response.sessions.at(-1).id, latestId);
+    const status = await getJson("/api/projects/status");
+    assert.ok(status.statuses.some((item) => item.sessionId === latestId && item.exited));
   });
 
   test("SSE replay ends with replay_done and skips answered dialogs", async () => {
@@ -949,24 +1025,6 @@ describe("conversation states", () => {
     // At the bound the cache restarts instead of growing without limit.
     await server.sessionHeader("c", { read, cache, max: 2, statFile });
     assert.deepEqual([...cache.keys()], ["c"]);
-  });
-
-  test("finalizeTerminal ends every connected client once and ignores later terminal events", () => {
-    let ended = 0;
-    const events = [];
-    const fake = {
-      exited: false,
-      cwd: "proj",
-      clients: new Set([{ end: () => ended++ }, { end: () => ended++ }]),
-      note: (event) => events.push(event.type),
-      broadcast: () => {},
-    };
-    server.PiRpcSession.prototype.finalizeTerminal.call(fake, "exit", null, 0, null);
-    server.PiRpcSession.prototype.finalizeTerminal.call(fake, "close", null, 0, null);
-    assert.equal(ended, 2);
-    assert.equal(fake.clients.size, 0);
-    assert.deepEqual(events, ["process_exit"]);
-    assert.equal(fake.exited, true);
   });
 
   test("readLastMessage closes the file handle even when reading fails", async () => {

@@ -274,6 +274,24 @@ describe("session activity tracking", () => {
     assert.equal(session.statusSummary(300).streaming, false);
   });
 
+  test("answered UI IDs and expired pending UI requests stay bounded", () => {
+    const session = make();
+    session.proc = { stdin: { writable: true, write() {} } };
+    for (let index = 0; index < 1200; index++) {
+      session.send({ type: "extension_ui_response", id: `answered-${index}` });
+      session.track({ type: "extension_ui_request", id: `expired-${index}`, method: "select", timeout: 1 }, 1000);
+    }
+    assert.ok(session.pendingUi.size <= 1000);
+    session.pendingUi.clear();
+    for (let index = 0; index < 1001; index++) session.pendingUi.set(`cap-${index}`, Infinity);
+    session.pruneUi(0);
+    assert.equal(session.pendingUi.size, 1000);
+    session.pendingUi.clear();
+    session.statusSummary(1002);
+    assert.ok(session.answeredUi.size <= 1000);
+    assert.equal(session.pendingUi.size, 0);
+  });
+
   test("a dialog with a timeout stops counting as waiting once it passes; an exited session is idle", () => {
     const session = make();
     session.track({ type: "extension_ui_request", id: "t1", method: "confirm", timeout: 1000 }, 1000);

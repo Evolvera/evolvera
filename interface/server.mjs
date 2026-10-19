@@ -21,6 +21,9 @@ const apiToken = randomBytes(32).toString("hex");
 const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
+const SSE_BUFFER_LIMIT = 8 * 1024 * 1024;
+const RETIRED_SESSION_LIMIT = 200;
+const UI_BOOKKEEPING_LIMIT = 1000;
 const SESSION_SCAN_MAX_BYTES = 5 * 1024 * 1024;
 const SEARCH_LIMIT = 30;
 const SEARCH_MIN_CHARS = 2;
@@ -57,6 +60,7 @@ const SKIP_DIRS = new Set([
 ]);
 
 const sessions = new Map();
+const retiredSessions = new Map();
 const projects = new Map();
 // Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
 const addedProjects = new Map();
@@ -492,6 +496,7 @@ export class PiRpcSession {
     this.cwd = path.resolve(options.cwd || process.cwd());
     this.createdAt = new Date().toISOString();
     this.clients = new Set();
+    this.clientHeartbeats = new Map();
     this.history = [];
     this.stdoutBuffer = "";
     this.stderrBuffer = "";
@@ -586,7 +591,16 @@ export class PiRpcSession {
       this.note(payload);
       this.broadcast("process_exit", payload);
     }
-    for (const client of this.clients) client.end();
+    const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
+    sessions.delete(this.id);
+    retiredSessions.set(this.id, retired);
+    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
+    for (const client of this.clients) {
+      const heartbeat = this.clientHeartbeats.get(client);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(client);
+      client.end();
+    }
     this.clients.clear();
   }
 
@@ -632,17 +646,26 @@ export class PiRpcSession {
     }
   }
 
+  pruneUi(now = Date.now()) {
+    for (const [id, expiry] of this.pendingUi) if (expiry <= now) this.pendingUi.delete(id);
+    while (this.pendingUi.size > UI_BOOKKEEPING_LIMIT) this.pendingUi.delete(this.pendingUi.keys().next().value);
+    while (this.answeredUi.size > UI_BOOKKEEPING_LIMIT) this.answeredUi.delete(this.answeredUi.values().next().value);
+  }
+
   track(payload, now = Date.now()) {
+    this.pruneUi(now);
     this.lastEventAt = now;
     this.note(payload, now);
     if (payload.type === "agent_start") this.streaming = true;
     else if (payload.type === "agent_end") this.streaming = false;
     else if (payload.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method) && payload.id) {
       this.pendingUi.set(payload.id, payload.timeout > 0 ? now + payload.timeout : Infinity);
+      this.pruneUi(now);
     }
   }
 
   statusSummary(now = Date.now()) {
+    this.pruneUi(now);
     return {
       projectId: this.projectId,
       sessionId: this.id,
@@ -653,11 +676,25 @@ export class PiRpcSession {
     };
   }
 
+  writeClient(res, chunk) {
+    if (res.writableLength + Buffer.byteLength(chunk) > SSE_BUFFER_LIMIT) {
+      const heartbeat = this.clientHeartbeats.get(res);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
+      res.end();
+      this.clients.delete(res);
+      return false;
+    }
+    res.write(chunk);
+    return true;
+  }
+
   broadcast(event, payload) {
     const envelope = { event, payload, at: new Date().toISOString() };
     this.history.push(envelope);
     if (this.history.length > HISTORY_LIMIT) this.history.shift();
-    for (const client of this.clients) sendSse(client, event, payload);
+    const frame = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of this.clients) this.writeClient(client, frame);
   }
 
   addClient(res) {
@@ -667,31 +704,30 @@ export class PiRpcSession {
       connection: "keep-alive",
       "x-accel-buffering": "no",
     });
-    res.write(`: connected ${this.id}\n\n`);
-    let replayed = 0;
-    for (const item of this.history) {
-      // A dialog already answered or timed out must not pop up again on reconnect.
-      if (item.payload?.type === "extension_ui_request" && UI_DIALOG_METHODS.has(item.payload.method)) {
-        if (this.answeredUi.has(item.payload.id)) continue;
-        const expiry = this.pendingUi.get(item.payload.id);
-        if (expiry !== undefined && expiry <= Date.now()) continue;
-        if (Number.isFinite(expiry)) {
-          sendSse(res, item.event, { ...item.payload, timeout: Math.max(1, expiry - Date.now()) });
-          replayed++;
-          continue;
-        }
-      }
-      sendSse(res, item.event, item.payload);
-      replayed++;
-    }
-    // Lets the client tell buffered history from live events.
-    sendSse(res, "replay_done", { type: "replay_done", count: replayed });
-    const heartbeat = setInterval(() => res.write(": ping\n\n"), 15000);
+    const heartbeat = setInterval(() => this.writeClient(res, ": ping\n\n"), 15000);
+    this.clientHeartbeats.set(res, heartbeat);
     this.clients.add(res);
     res.on("close", () => {
       clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
       this.clients.delete(res);
     });
+    if (!this.writeClient(res, `: connected ${this.id}\n\n`)) return;
+    let replayed = 0;
+    for (const item of this.history) {
+      // A dialog is shown again only while it is still pending: answered, timed-out or pruned ones never pop up
+      // again on reconnect; a pending one comes with the time it has left.
+      let payload = item.payload;
+      if (payload?.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method)) {
+        const expiry = this.pendingUi.get(payload.id);
+        if (expiry === undefined || expiry <= Date.now() || this.answeredUi.has(payload.id)) continue;
+        if (Number.isFinite(expiry)) payload = { ...payload, timeout: Math.max(1, expiry - Date.now()) };
+      }
+      if (!this.writeClient(res, `event: ${item.event}\ndata: ${JSON.stringify(payload)}\n\n`)) return;
+      replayed++;
+    }
+    // Lets the client tell buffered history from live events.
+    this.writeClient(res, `event: replay_done\ndata: ${JSON.stringify({ type: "replay_done", count: replayed })}\n\n`);
   }
 
   send(command) {
@@ -701,6 +737,7 @@ export class PiRpcSession {
     if (command.type === "extension_ui_response" && command.id) {
       const wasPending = this.pendingUi.has(command.id);
       this.answeredUi.add(command.id);
+      this.pruneUi();
       this.pendingUi.delete(command.id);
       this.note(command);
       if (wasPending) this.broadcast("ui_resolved", { type: "ui_resolved", id: command.id });
@@ -1068,8 +1105,10 @@ const studioFiles = new Set();
 
 // The project PI that is still alive, else the last one that ran (exited), else null.
 function liveSessionFor(projectId) {
-  const mine = [...sessions.values()].filter((session) => session.projectId === projectId);
-  return mine.find((session) => !session.exited) ?? mine.at(-1) ?? null;
+  const live = [...sessions.values()].find((session) => session.projectId === projectId && !session.exited);
+  if (live) return live;
+  const retired = [...retiredSessions.values()].reverse().find((item) => item.status.projectId === projectId);
+  return retired ? { exited: true, lastState: retired.lastState, statusSummary: () => retired.status } : null;
 }
 
 // A session header (first line: id, cwd, timestamp, parentSession) never changes once written, so
@@ -1672,7 +1711,7 @@ async function route(req, res) {
         agentDir: AGENT_DIR,
         projectRoots: await getProjectRoots(),
         node: process.version,
-        sessions: sessions.size,
+        sessions: sessions.size + retiredSessions.size,
       });
     }
 
@@ -1682,7 +1721,7 @@ async function route(req, res) {
       return json(res, 200, {
         projects: discovered,
         agents: await listAgents(firstProject?.cwd || process.cwd()),
-        activeSessions: [...sessions.values()].map((session) => session.summary()),
+        activeSessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())),
         logs: serverLogs.slice(-200),
         config: { agentDir: AGENT_DIR, projectRoots: await getProjectRoots() },
       });
@@ -1709,7 +1748,7 @@ async function route(req, res) {
     }
 
     if (req.method === "GET" && pathname === "/api/sessions") {
-      return json(res, 200, { sessions: [...sessions.values()].map((session) => session.summary()) });
+      return json(res, 200, { sessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())) });
     }
 
     if (pathname === "/api/orca") {
@@ -1723,10 +1762,9 @@ async function route(req, res) {
     if (pathname === "/api/projects/status") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       const latest = new Map();
-      for (const session of sessions.values()) {
-        if (!latest.get(session.projectId) || latest.get(session.projectId).exited) latest.set(session.projectId, session);
-      }
-      return json(res, 200, { statuses: [...latest.values()].map((session) => session.statusSummary()), runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
+      for (const item of retiredSessions.values()) latest.set(item.status.projectId, item.status);
+      for (const session of sessions.values()) latest.set(session.projectId, session.statusSummary());
+      return json(res, 200, { statuses: [...latest.values()], runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
     }
 
     if (pathname === "/api/activity") {
