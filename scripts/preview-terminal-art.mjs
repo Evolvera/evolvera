@@ -1,19 +1,22 @@
 import { pathToFileURL } from "node:url";
 import { renderTerminalArt } from "./ui/terminal-art.mjs";
+import { startArtAnimation } from "./ui/terminal-art-animation.mjs";
 import { CREATE_ACCOUNT, selectAccountMenu } from "./users/account-selector.mjs";
 
-const HELP = `Usage: node scripts/preview-terminal-art.mjs --label <name> [--width N --height N --no-color]
-       node scripts/preview-terminal-art.mjs --select [--width N --height N --no-color]
+const HELP = `Usage: node scripts/preview-terminal-art.mjs --label <name> [--width N --height N --no-color --no-animation]
+       node scripts/preview-terminal-art.mjs --select [--no-color --no-animation]
 
---select opens the real account-picker UI with synthetic Evolvera/Pessoal choices only.`;
+--select opens the real account-picker UI at the terminal size, with synthetic Evolvera/Pessoal choices only.
+--width and --height size standalone scenes; --no-animation renders the final scene immediately.`;
 
-function parseArgs(args) {
-  const options = { width: process.stdout.columns || 80, height: process.stdout.rows || 24, color: process.env.NO_COLOR === undefined && process.env.TERM !== "dumb" };
+function parseArgs(args, output) {
+  const options = { width: output.columns || 80, height: Math.min(36, Math.max(1, (output.rows || 24) - 8)), color: process.env.NO_COLOR === undefined && process.env.TERM !== "dumb", animate: true };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--help" || arg === "-h") { options.help = true; continue; }
     if (arg === "--select") { if (options.select) throw new Error("--select may be specified once"); options.select = true; continue; }
     if (arg === "--no-color") { options.color = false; continue; }
+    if (arg === "--no-animation") { options.animate = false; continue; }
     if (arg === "--label" || arg === "--width" || arg === "--height") {
       const value = args[++i];
       if (value === undefined || value.startsWith("--")) throw new Error(`${arg} requires a value`);
@@ -31,26 +34,71 @@ function parseArgs(args) {
   return options;
 }
 
-export async function main(args = process.argv.slice(2), { input = process.stdin, output = process.stdout } = {}) {
+export async function main(args = process.argv.slice(2), { input = process.stdin, output = process.stdout, animationClock } = {}) {
   let options;
-  try { options = parseArgs(args); }
+  try { options = parseArgs(args, output); }
   catch (error) { output.write(`${error.message}\n${HELP}\n`); return 2; }
   if (options.help) { output.write(`${HELP}\n`); return 0; }
   let label = options.label ?? "";
   if (options.select) {
     if (!input.isTTY || !output.isTTY) { output.write("--select requires an interactive TTY\n"); return 2; }
     const selected = await selectAccountMenu({
-      users: [{ id: "evolvera", label: "Evolvera" }, { id: "pessoal", label: "Pessoal" }], input, output, color: options.color,
+      users: [{ id: "evolvera", label: "Evolvera" }, { id: "pessoal", label: "Pessoal" }], input, output, color: options.color, animate: options.animate && output.isTTY,
     });
     if (selected === null) { output.write("Synthetic preview selection cancelled. No account or session was accessed.\n"); return 0; }
     label = selected === CREATE_ACCOUNT ? "" : selected === "evolvera" ? "Evolvera" : "Pessoal";
     const description = selected === CREATE_ACCOUNT ? "Create new account menu item" : `selected ${label}`;
     output.write(`Synthetic preview only — ${description}; no account or session was accessed.\n`);
+    return 0;
   }
-  output.write(`${renderTerminalArt({ width: options.width, height: options.height, label, color: options.color }).join("\n")}\n`);
-  return 0;
+  const width = output.isTTY ? Math.max(1, Math.min(options.width, output.columns || options.width)) : options.width;
+  const height = output.isTTY ? Math.max(1, Math.min(options.height, Math.max(1, (output.rows || options.height) - 1))) : options.height;
+  const draw = (progress) => renderTerminalArt({ width, height, label, color: options.color, progress });
+  if (!options.animate || !output.isTTY || process.env.TERM === "dumb") {
+    output.write(`${draw(1).join("\n")}\n`);
+    return 0;
+  }
+  const drawFrame = (progress) => draw(progress);
+  const animationResult = await new Promise((resolve, reject) => {
+    let settled = false;
+    let stop;
+    let paintedRows = 0;
+    const finish = (error, signal) => {
+      if (settled) return;
+      settled = true;
+      process.removeListener("SIGINT", onInterrupt);
+      process.removeListener("SIGTERM", onTerminate);
+      try { stop?.(); } catch (stopError) { error ??= stopError; }
+      if (signal) { resolve(signal === "SIGINT" ? 130 : 143); return; }
+      if (error) reject(error);
+      else resolve(0);
+    };
+    const writeFrame = (progress) => {
+      const lines = drawFrame(progress);
+      if (paintedRows) output.write(`\u001b[${paintedRows}A\r`);
+      for (const line of lines) output.write(`\u001b[2K${line}\r\n`);
+      paintedRows = lines.length;
+    };
+    const onInterrupt = () => finish(undefined, "SIGINT");
+    const onTerminate = () => finish(undefined, "SIGTERM");
+    process.once("SIGINT", onInterrupt);
+    process.once("SIGTERM", onTerminate);
+    try {
+      stop = startArtAnimation({
+        onFrame(progress) { writeFrame(progress); if (progress >= 1) finish(); },
+        onError(error) { finish(error); },
+        clock: animationClock,
+      });
+    } catch (error) { finish(error); }
+  });
+  return animationResult;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main();
+  try {
+    process.exitCode = await main();
+  } finally {
+    // This standalone CLI owns stdin; the shared picker leaves it reusable.
+    process.stdin.pause();
+  }
 }
