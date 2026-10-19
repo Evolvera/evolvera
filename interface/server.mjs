@@ -1392,7 +1392,15 @@ async function readTaskLinks() {
   }
 }
 
-async function saveTaskLink(link) {
+// One writer at a time: concurrent creates must not drop each other's links (read-modify-write).
+let taskLinkWrites = Promise.resolve();
+function saveTaskLink(link) {
+  const write = taskLinkWrites.then(() => writeTaskLink(link));
+  taskLinkWrites = write.catch(() => {});
+  return write;
+}
+
+async function writeTaskLink(link) {
   const links = (await readTaskLinks()).filter((item) => !(item.conversationId === link.conversationId && item.taskId === link.taskId));
   links.push(link);
   const temp = `${TASK_LINKS_FILE}.${randomUUID()}.tmp`;
@@ -1406,7 +1414,24 @@ async function saveTaskLink(link) {
   }
 }
 
-function runOrcaJson(command, args) {
+// At most ORCA_TASK_SLOTS task CLI processes at once; the rest wait their turn (a busy client cannot fork-bomb the host).
+const ORCA_TASK_SLOTS = 4;
+let orcaTaskRunning = 0;
+const orcaTaskQueue = [];
+async function runOrcaJson(command, args) {
+  // A finishing call hands its slot straight to the next waiter, so the count never exceeds the cap.
+  if (orcaTaskRunning >= ORCA_TASK_SLOTS) await new Promise((resolve) => orcaTaskQueue.push(resolve));
+  else orcaTaskRunning += 1;
+  try {
+    return await execOrcaJson(command, args);
+  } finally {
+    const next = orcaTaskQueue.shift();
+    if (next) next();
+    else orcaTaskRunning -= 1;
+  }
+}
+
+function execOrcaJson(command, args) {
   return new Promise((resolve, reject) => {
     execFile(command.bin, args, { timeout: ORCA_TIMEOUT_MS, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
       if (error) return reject(error);
@@ -1424,12 +1449,28 @@ function taskLinkFromOrca(value, body) {
   return { conversationId: body.conversationId, taskId: body.taskId, worktreePath, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
 }
 
-function findTaskWorktree(value, body) {
+function orcaWorktreeList(value) {
   const outer = value?.result ?? value;
-  const lists = [outer?.worktrees, outer?.result?.worktrees];
-  const match = lists.flatMap((items) => Array.isArray(items) ? items : []).find((item) => item?.name === body.name || item?.displayName === body.name || item?.comment === `pi-studio task ${body.conversationId}#${body.taskId}`);
-  if (!match) return null;
-  return { ...match, agentTerminalHandle: match.agentTerminalHandle ?? match.terminalHandle ?? match.agents?.find((agent) => agent.terminalHandle)?.terminalHandle };
+  return [outer?.worktrees, outer?.result?.worktrees].flatMap((items) => Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
+}
+
+// After a create timeout: the worktree carries our comment (unique per conversation/task) in the same repo.
+// `worktree ps` reports no terminal handle, so a recovered link may have none (messaging then stays off).
+function findTaskWorktree(value, body, repoId) {
+  const match = orcaWorktreeList(value).find((item) => item.repoId === repoId && item.comment === taskComment(body));
+  if (!match || typeof match.path !== "string" || !match.path) return null;
+  const terminalHandle = match.agentTerminalHandle ?? match.terminalHandle ?? match.agents?.find((agent) => agent?.terminalHandle)?.terminalHandle ?? null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath: match.path, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+const taskComment = (body) => `pi-studio task ${body.conversationId}#${body.taskId}`;
+
+// The conversation's project must be a checkout Orca knows: it names the repo (--repo) and the parent worktree,
+// instead of letting Orca infer them from the server's own cwd or from whatever worktree is active in the app.
+function orcaWorktreeForProject(value, cwd) {
+  const key = cwdKey(cwd);
+  return orcaWorktreeList(value).find((item) => typeof item.path === "string" && item.path && cwdKey(item.path) === key &&
+    typeof item.repoId === "string" && item.repoId && typeof item.worktreeId === "string" && item.worktreeId) || null;
 }
 
 export function clearOrcaCache() {
@@ -1836,8 +1877,19 @@ async function route(req, res) {
       if (!project) return json(res, 400, { error: "invalid-project" });
       const orca = resolveOrcaCommand();
       if (!orca) return json(res, 503, { error: "orca-unavailable" });
-      const args = [...orca.prefixArgs, "worktree", "create", "--name", body.name, "--agent", "pi", "--prompt", body.prompt,
-        "--parent-worktree", "active", "--comment", `pi-studio task ${body.conversationId}#${body.taskId}`, "--json"];
+      let listing;
+      try {
+        listing = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]);
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+      const parent = orcaWorktreeForProject(listing, project.cwd);
+      if (!parent) return json(res, 409, { error: "project-not-in-orca" });
+      // Orca's parser reads a space-separated value that starts with "--" as a new flag; --flag=value is verbatim.
+      const args = [...orca.prefixArgs, "worktree", "create", `--name=${body.name}`, `--repo=id:${parent.repoId}`, "--agent", "pi",
+        `--prompt=${body.prompt}`, `--parent-worktree=worktree:${parent.worktreeId}`, `--comment=${taskComment(body)}`, "--json"];
       try {
         const result = await runOrcaJson(orca, args);
         const link = taskLinkFromOrca(result, body);
@@ -1848,9 +1900,7 @@ async function route(req, res) {
         if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
         if (!error.killed && error.code !== "ETIMEDOUT") throw error;
         const listed = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]).catch(() => null);
-        const found = findTaskWorktree(listed, body);
-        if (!found) return json(res, 202, { ok: false, unknown: true });
-        const link = taskLinkFromOrca(found, body);
+        const link = findTaskWorktree(listed, body, parent.repoId);
         if (!link) return json(res, 202, { ok: false, unknown: true });
         await saveTaskLink(link);
         return json(res, 201, { ok: true, link });
@@ -1866,7 +1916,7 @@ async function route(req, res) {
       const orca = resolveOrcaCommand();
       if (!orca) return json(res, 503, { error: "orca-unavailable" });
       try {
-        await runOrcaJson(orca, [...orca.prefixArgs, "terminal", "send", "--terminal", body.handle, "--text", body.text, "--enter", "--json"]);
+        await runOrcaJson(orca, [...orca.prefixArgs, "terminal", "send", `--terminal=${body.handle}`, `--text=${body.text}`, "--enter", "--json"]);
         return json(res, 200, { ok: true });
       } catch (error) {
         if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
