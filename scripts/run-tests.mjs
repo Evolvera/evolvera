@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -106,9 +106,9 @@ const exclusoes = new Map([
 ]);
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
-function executar(nome, comando, args, cwd, shell = false) {
+function executar(nome, comando, args, cwd, shell = false, limiteMs = timeoutMs) {
   const child = spawnSync(comando, args, {
-    cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 1024 * 1024, shell,
+    cwd, encoding: "utf8", timeout: limiteMs, maxBuffer: 1024 * 1024, shell,
   });
   if (child.error?.code !== "ENOBUFS") {
     if (child.stdout) process.stdout.write(child.stdout);
@@ -117,7 +117,7 @@ function executar(nome, comando, args, cwd, shell = false) {
   const failed = child.error || child.status !== 0;
   if (failed) {
     const motivo = child.error?.code === "ETIMEDOUT"
-      ? `tempo limite (${timeoutMs} ms)`
+      ? `tempo limite (${limiteMs} ms)`
       : child.error?.code === "ENOBUFS" ? "saída excedeu 1 MiB" :
         `código ${child.status ?? "indisponível"}`;
     resultados.falhos.push(`${nome} (${motivo})`);
@@ -151,12 +151,15 @@ for (const dir of ["extensions/test", "scripts/test"]) {
   }
 }
 
-// --root fornece uma árvore falsa para testar glob/processos sem disparar suítes
-// fixas contra o repositório de trabalho.
-if (root === repoRoot) {
+// A suíte da interface roda na própria árvore (a do --root só tem interface/ quando o teste a cria) e é uma suíte
+// inteira, não um smoke: ~60 s com a CPU ocupada. Por isso tem limite próprio de no mínimo 300 s; os smokes
+// mantêm o --timeout (padrão 30 s) para um smoke travado continuar sendo detectado rápido.
+const INTERFACE_TIMEOUT_MS = 300_000;
+if (existsSync(path.join(root, "interface", "package.json"))) {
   const interfaceTest = "npm test (interface)";
-  console.log("\n[tmpdir próprio] npm test (interface)");
-  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
+  const limite = Math.max(timeoutMs, INTERFACE_TIMEOUT_MS);
+  console.log(`\n[tmpdir próprio] npm test (interface) (limite ${limite} ms)`);
+  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32", limite);
 }
 
 console.log("\nResumo final");

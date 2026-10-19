@@ -70,6 +70,35 @@ try {
   assert.match(result.stdout, /Falhos: 0/);
   rmSync(path.join(smokeDir, "normal.smoke.mjs"));
 
+  // A suíte da interface (centenas de testes, ~60 s) tem limite próprio de no mínimo 300 s: com --timeout 500 o smoke
+  // de 800 ms falha, mas a interface de 800 ms passa. Antes, o limite único de 30 s derrubava a suíte que passa sozinha.
+  const interfaceDir = path.join(fakeRoot, "interface");
+  mkdirSync(interfaceDir, { recursive: true });
+  writeFileSync(path.join(interfaceDir, "package.json"), JSON.stringify({
+    name: "fake-interface", private: true, scripts: { test: 'node -e "setTimeout(() => {}, 800)"' },
+  }));
+  writeFileSync(path.join(smokeDir, "lento.smoke.mjs"), 'await new Promise((resolve) => setTimeout(resolve, 800));\n');
+  writeFileSync(path.join(smokeDir, ".classificacao.json"), JSON.stringify({
+    semEstado: ["um.smoke.mjs", "dois.smoke.mjs", "lento.smoke.mjs"], tmpdirProprio: [],
+  }));
+  result = spawnSync(process.execPath, [runner, "--root", fakeRoot, "--timeout", "500"], {
+    cwd: repoRoot, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /Falha: lento\.smoke\.mjs \(tempo limite \(500 ms\)\)/);
+  assert.doesNotMatch(result.stdout, /Falha: npm test \(interface\)/);
+  assert.match(result.stdout, /npm test \(interface\) \(limite 300000 ms\)/);
+  assert.match(result.stdout, /Aprovados: 3/);
+  // Um --timeout explícito acima de 300 s também vale para a interface: o limite próprio é piso, nunca teto.
+  result = spawnSync(process.execPath, [runner, "--root", fakeRoot, "--timeout", "400000"], {
+    cwd: repoRoot, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npm test \(interface\) \(limite 400000 ms\)/);
+  assert.match(result.stdout, /Aprovados: 4/);
+  rmSync(path.join(smokeDir, "lento.smoke.mjs"));
+  rmSync(interfaceDir, { recursive: true, force: true });
+
   // Saída acima do limite deve falhar com motivo nomeado sem travar o runner.
   writeFileSync(path.join(smokeDir, "dois.smoke.mjs"), 'process.exitCode = 0;\n');
   writeFileSync(path.join(smokeDir, "grande.smoke.mjs"),
