@@ -94,14 +94,14 @@ const port = await new Promise((resolve, reject) => {
 });
 
 const agent = new http.Agent({ keepAlive: true, maxSockets: CONCURRENCY + 4 });
-const request = (method, pathname, { token, body } = {}) => new Promise((resolve, reject) => {
+const request = (method, pathname, { token, body, decode = true } = {}) => new Promise((resolve, reject) => {
   const req = http.request({ host: "127.0.0.1", port, path: pathname, method, agent, headers: { ...(token ? { "x-pi-studio-token": token } : {}), ...(body ? { "content-type": "application/json" } : {}) } }, (res) => {
     const chunks = [];
     res.on("data", (chunk) => chunks.push(chunk));
     res.on("end", () => {
       const bytes = Buffer.concat(chunks);
-      // Big file bodies are only measured, not decoded.
-      resolve({ status: res.statusCode, bytes: bytes.length, text: bytes.length > 262_144 ? "" : bytes.toString("utf8") });
+      // The hammered file route only measures its (multi-MB) bodies; every other caller reads the text.
+      resolve({ status: res.statusCode, bytes: bytes.length, text: decode ? bytes.toString("utf8") : "" });
     });
   });
   req.on("error", reject);
@@ -131,7 +131,7 @@ async function hammer(label, pathname, token, runSeconds = DURATION) {
     while (performance.now() < deadline) {
       const t0 = performance.now();
       try {
-        const res = await request("GET", paths[turn++ % paths.length], { token });
+        const res = await request("GET", paths[turn++ % paths.length], { token, decode: false });
         statuses[res.status] = (statuses[res.status] || 0) + 1;
         if (res.status !== 200) errors++;
         latencies.push(performance.now() - t0);
