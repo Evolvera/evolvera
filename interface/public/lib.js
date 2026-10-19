@@ -2559,3 +2559,306 @@ export function steerCommand(agentId, text) {
 export function parallelPrompt(task) {
   return `Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #${task.id}: ${task.subject}${task.description ? `\nDescrição: ${task.description}` : ""}`;
 }
+
+// ------------------------------------------------ conversation state + sidebar tree
+
+// Emoji and other pictographs never show in names: ZWJ/variation selectors/keycap/skin-tone/flag pieces go too.
+// (c) (R) TM are text and stay.
+const PICTOGRAPHS = /(?![\u00a9\u00ae\u2122])[\p{Extended_Pictographic}\p{Regional_Indicator}\u200d\ufe0f\u20e3\u{1f3fb}-\u{1f3ff}]/gu;
+export function stripPictographs(text) {
+  return String(text ?? "").replace(PICTOGRAPHS, "").replace(/\s+/g, " ").trim();
+}
+
+// One vocabulary for every status dot: precedence urgent > attention > working > done > idle.
+const STATE_RANK = { idle: 0, done: 1, working: 2, attention: 3, urgent: 4 };
+const STATE_LABEL = { working: "trabalhando", done: "terminou", attention: "precisa de resposta (continua trabalhando)", urgent: "precisa de você", idle: "parado" };
+export const STATE_STALL_URGENT_MS = 10 * 60_000;
+
+export function stateLabel(state) {
+  return STATE_LABEL[state] ?? STATE_LABEL.idle;
+}
+
+export function worstState(states) {
+  let worst = "idle";
+  for (const state of states) if ((STATE_RANK[state] ?? -1) > STATE_RANK[worst]) worst = state;
+  return worst;
+}
+
+// Blocking questions may arrive as a count or as a boolean ("all of them blocking").
+function blockingCount(questions) {
+  const total = Number(questions?.total) || 0;
+  const blocking = questions?.blocking;
+  return typeof blocking === "boolean" ? (blocking ? total : 0) : Number(blocking) || 0;
+}
+
+// State of one PI from the server's raw flags. `lastSeenAt`: when the user last saw its newest turn (ms; undefined = never).
+export function conversationState(item, lastSeenAt, now = Date.now()) {
+  const raw = item?.raw ?? {};
+  const orca = raw.orcaState;
+  const producing = raw.streaming === true || raw.busy === true || orca === "working";
+  if (raw.waitingUi === true || blockingCount(item?.pendingQuestions) > 0) return "urgent";
+  if (orca === "blocked" || orca === "waiting" || orca === "error") return "urgent";
+  if (raw.error === true && !producing) return "urgent";
+  if (item?.live && Number(raw.stalledMs) > STATE_STALL_URGENT_MS) return "urgent";
+  if ((Number(item?.pendingQuestions?.total) || 0) > 0) return "attention";
+  if (producing) return "working";
+  return Number(item?.lastAssistantAt) > (Number.isFinite(lastSeenAt) ? lastSeenAt : -1) ? "done" : "idle";
+}
+
+// The older Portuguese keys (history items, Studio PI, Orca agents) mapped onto the shared states.
+export function legacyState(key) {
+  return { fazendo: "working", aguardando: "urgent", erro: "urgent" }[key] ?? "idle";
+}
+
+// Orca worktree: working spins; blocked/waiting/error need the user; finished is blue only while unread.
+export function worktreeIndicator(worktree) {
+  const status = worktree?.status;
+  if (status === "working") return "working";
+  if (status === "blocked" || status === "waiting" || status === "error") return "urgent";
+  return status === "done" && worktree.unread ? "done" : "idle";
+}
+
+export function subagentIndicator(phase) {
+  return { running: "working", error: "urgent" }[phase] ?? "idle";
+}
+
+// -------------------------------------- "seen" store (client side, bounded, LRU by time)
+
+export const SEEN_MAX = 2000;
+const plainObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : null);
+
+// `baseline`: what counts as seen for conversations never opened here (the first load), so old ones do not all turn blue.
+export function seenLoad(rawText, now = Date.now()) {
+  let data = null;
+  try {
+    data = plainObject(JSON.parse(rawText));
+  } catch {
+    // Missing or corrupt: start fresh.
+  }
+  const seen = {};
+  for (const [path, at] of Object.entries(plainObject(data?.seen) ?? {})) if (Number.isFinite(at)) seen[path] = at;
+  return { baseline: Number.isFinite(data?.baseline) ? data.baseline : now, seen };
+}
+
+export const seenSerialize = (store) => JSON.stringify({ baseline: store.baseline, seen: store.seen });
+export const seenAt = (store, path) => store.seen[path] ?? store.baseline;
+
+export function seenMark(store, path, at, max = SEEN_MAX) {
+  if ((store.seen[path] ?? -Infinity) >= at) return store;
+  const seen = { ...store.seen, [path]: at };
+  const paths = Object.keys(seen);
+  if (paths.length > max) {
+    paths.sort((a, b) => seen[a] - seen[b]);
+    for (const old of paths.slice(0, paths.length - max)) delete seen[old];
+  }
+  return { baseline: store.baseline, seen };
+}
+
+export const shouldMarkSeen = ({ open, visible, atBottom }) => open === true && visible === true && atBottom === true;
+
+// -------------------------------------- expanded / collapsed overrides (key -> boolean)
+
+export const EXPANDED_MAX = 1000;
+
+export function expandedLoad(rawText) {
+  const map = new Map();
+  try {
+    for (const [key, value] of Object.entries(plainObject(JSON.parse(rawText)) ?? {})) if (typeof value === "boolean") map.set(key, value);
+  } catch {
+    // Missing or corrupt: every node uses its default.
+  }
+  return map;
+}
+
+export const isExpanded = (map, key, fallback) => (map.has(key) ? map.get(key) : fallback);
+export const expandedSerialize = (map) => JSON.stringify(Object.fromEntries(map));
+
+export function toggleExpanded(map, key, fallback) {
+  const next = new Map(map);
+  next.delete(key);
+  next.set(key, !isExpanded(map, key, fallback));
+  while (next.size > EXPANDED_MAX) next.delete(next.keys().next().value);
+  return next;
+}
+
+// -------------------------------------- /api/tree payload
+
+export const TREE_TITLE_MAX = 160;
+export const TREE_MAX_DEPTH = 8;
+export const TREE_MAX_NODES = 3000;
+
+function treeTitle(title, agentType) {
+  const clean = stripPictographs(title) || stripPictographs(agentType) || "Nova conversa";
+  const letters = [...clean];
+  return letters.length > TREE_TITLE_MAX ? `${letters.slice(0, TREE_TITLE_MAX - 1).join("")}…` : clean;
+}
+
+const timeOrNull = (value) => (Number.isFinite(value) ? value : null);
+const countOf = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+
+function normalizePi(item, budget, depth, maxDepth) {
+  if (!plainObject(item) || typeof item.sessionPath !== "string" || !item.sessionPath || budget.left <= 0) return null;
+  budget.left--;
+  const raw = plainObject(item.raw) ?? {};
+  const questions = plainObject(item.pendingQuestions) ?? {};
+  const live = plainObject(item.live);
+  const children = [];
+  if (depth < maxDepth && Array.isArray(item.children)) {
+    for (const child of item.children) {
+      const normal = normalizePi(child, budget, depth + 1, maxDepth);
+      if (normal) children.push(normal);
+    }
+  }
+  return {
+    sessionPath: item.sessionPath,
+    sessionId: String(item.sessionId ?? ""),
+    title: treeTitle(item.title, item.agentType),
+    agentType: item.agentType ? String(item.agentType) : null,
+    isSubagent: item.isSubagent === true,
+    live: live ? { pid: live.pid ?? null, owner: String(live.owner ?? ""), startedAt: timeOrNull(live.startedAt) } : null,
+    raw: {
+      busy: raw.busy === true, streaming: raw.streaming === true, waitingUi: raw.waitingUi === true, error: raw.error === true,
+      stalledMs: timeOrNull(raw.stalledMs), orcaState: raw.orcaState ? String(raw.orcaState) : null,
+    },
+    pendingQuestions: { total: countOf(questions.total), blocking: typeof questions.blocking === "boolean" ? questions.blocking : countOf(questions.blocking) },
+    lastAssistantAt: timeOrNull(item.lastAssistantAt),
+    updatedAt: timeOrNull(item.updatedAt) ?? 0,
+    startedAt: timeOrNull(item.startedAt) ?? 0,
+    children,
+  };
+}
+
+// Cleans a /api/tree body for rendering: malformed items are skipped, depth and node count are bounded. null = not a tree.
+export function normalizeTree(data, { maxDepth = TREE_MAX_DEPTH, maxNodes = TREE_MAX_NODES } = {}) {
+  if (!plainObject(data) || !Array.isArray(data.projects)) return null;
+  const budget = { left: maxNodes };
+  const projects = [];
+  for (const project of data.projects) {
+    if (!plainObject(project) || typeof project.id !== "string") continue;
+    const envs = [];
+    for (const env of Array.isArray(project.envs) ? project.envs : []) {
+      if (!plainObject(env) || typeof env.key !== "string") continue;
+      const pis = [];
+      for (const item of Array.isArray(env.pis) ? env.pis : []) {
+        const normal = normalizePi(item, budget, 1, maxDepth);
+        if (normal) pis.push(normal);
+      }
+      envs.push({
+        key: env.key, name: String(env.name ?? env.branch ?? env.key), branch: env.branch ? String(env.branch) : "",
+        primary: env.primary === true, path: String(env.path ?? ""), orca: env.orca === true,
+        orcaStatus: env.orcaStatus ? String(env.orcaStatus) : null, issue: env.issue ? String(env.issue) : null,
+        pis, morePis: countOf(env.morePis),
+      });
+    }
+    projects.push({ id: project.id, name: String(project.name ?? ""), cwd: String(project.cwd ?? ""), envs });
+  }
+  return { version: String(data.version ?? ""), projects };
+}
+
+// -------------------------------------- tree view model
+
+// This PI's own state, with its sub-PIs folded in so a collapsed parent still shows a working or blocked child.
+function piState(item, store, now, ignoreDone) {
+  let own = conversationState(item, seenAt(store, item.sessionPath), now);
+  if (ignoreDone && own === "done") own = "idle";
+  return worstState([own, ...item.children.map((child) => piState(child, store, now, true))]);
+}
+
+// For folders and environments: a sub-PI finishing is not news, so its "done" does not count.
+export const aggregateState = (item, store, now) => piState(item, store, now, item.isSubagent);
+
+const OWNER_TEXT = { orca: "no Orca", terminal: "no terminal", studio: "no Studio" };
+
+export function treePiRow(item, store, now = Date.now()) {
+  const state = piState(item, store, now, false);
+  const tooltip = [
+    item.title,
+    item.isSubagent ? `sub-PI${item.agentType ? ` ${item.agentType}` : ""}` : "",
+    stateLabel(state),
+    item.live ? OWNER_TEXT[item.live.owner] ?? "" : "",
+  ].filter(Boolean).join(" · ");
+  return {
+    key: item.sessionPath, title: item.title, state, label: stateLabel(state), tooltip,
+    time: item.updatedAt ? relativeTime(item.updatedAt, now) : "",
+    chip: item.isSubagent && item.agentType ? item.agentType : "",
+    childCount: item.children.length,
+  };
+}
+
+export function treeEnvRow(env, store, now = Date.now()) {
+  const count = env.pis.length;
+  const state = worstState(env.pis.map((item) => aggregateState(item, store, now)));
+  return {
+    key: env.key, name: env.name, primary: env.primary, state, label: stateLabel(state), count,
+    branch: env.branch && env.branch !== env.name ? env.branch : "",
+    countLabel: count ? plural(count, "agente", "agentes") : "sem agentes",
+    more: env.morePis ?? 0,
+    issue: env.issue ?? "",
+  };
+}
+
+export function treeProjectRow(project, store, now = Date.now()) {
+  const state = worstState(project.envs.map((env) => treeEnvRow(env, store, now).state));
+  return { key: project.id, name: project.name || basename(project.cwd), state, label: stateLabel(state), envCount: project.envs.length };
+}
+
+// The history entry showConversation needs. A PI some other process holds open must be followed read-only,
+// so it is reported as running even when its history entry says otherwise.
+export function treeHistoryItem(entry, item) {
+  const elsewhere = Boolean(item.live) && item.live.owner !== "studio";
+  if (entry) return elsewhere && entry.state !== "fazendo" && entry.state !== "aguardando" ? { ...entry, state: "fazendo" } : entry;
+  let state = "parado";
+  if (item.live && item.raw.waitingUi) state = "aguardando";
+  else if (elsewhere || item.raw.streaming || item.raw.busy) state = "fazendo";
+  return { path: item.sessionPath, title: item.title, state, studioOwned: item.live?.owner === "studio", lastActivity: item.updatedAt };
+}
+
+// Conversations of a project's history the tree did not show ("Mostrar mais"), newest first, as tree-shaped items.
+export function extraHistoryPis(history, shown, limit = 50) {
+  const at = (entry) => toMs(entry.lastActivity) ?? toMs(entry.timestamp) ?? 0;
+  return (Array.isArray(history) ? history : [])
+    .filter((entry) => !entry.isSubagent && !shown.has(entry.path))
+    .sort((a, b) => at(b) - at(a))
+    .slice(0, limit)
+    .map((entry) => ({
+      sessionPath: entry.path, sessionId: String(entry.sessionId ?? ""), title: treeTitle(entry.title, null), agentType: null, isSubagent: false, live: null,
+      raw: { busy: entry.state === "fazendo", streaming: false, waitingUi: entry.state === "aguardando", error: false, stalledMs: null, orcaState: null },
+      pendingQuestions: { total: 0, blocking: 0 }, lastAssistantAt: null, updatedAt: at(entry), startedAt: 0, children: [],
+    }));
+}
+
+// The tree is re-read every 2 s while visible, 15 s hidden; failures back off up to 30 s.
+export function treePollDelay({ hidden, failures = 0 }) {
+  return Math.min((hidden ? 15_000 : 2000) * 2 ** failures, 30_000);
+}
+
+// Sidebar search over the tree: a PI matches by title/type, an environment by name/branch, a project by name.
+// A match on a parent keeps its whole subtree; a match deeper down keeps the ancestors. Blank query: same object.
+export function filterTree(data, query) {
+  const needle = foldText(query).trim();
+  if (!needle) return data;
+  const has = (...values) => foldText(values.join(" ")).includes(needle);
+  const keepPi = (item) => {
+    if (has(item.title, item.agentType ?? "")) return item;
+    const children = item.children.map(keepPi).filter(Boolean);
+    return children.length ? { ...item, children } : null;
+  };
+  const projects = [];
+  for (const project of data.projects) {
+    if (has(project.name)) {
+      projects.push(project);
+      continue;
+    }
+    const envs = [];
+    for (const env of project.envs) {
+      if (has(env.name, env.branch)) {
+        envs.push(env);
+        continue;
+      }
+      const pis = env.pis.map(keepPi).filter(Boolean);
+      if (pis.length) envs.push({ ...env, pis, morePis: 0 });
+    }
+    if (envs.length) projects.push({ ...project, envs });
+  }
+  return { ...data, projects };
+}
