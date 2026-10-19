@@ -109,6 +109,25 @@ describe("PI stdin errors", () => {
   });
 });
 
+describe("activity restart cursor", () => {
+  test("a cursor from another server epoch resets to the complete feed", () => {
+    const activity = new server.ActivityLog(10);
+    activity.push({ message: "current" });
+    const previousEpoch = "previous-server";
+    const response = activity.since(1, previousEpoch);
+    assert.equal(typeof response.epoch, "string");
+    assert.notEqual(response.epoch, previousEpoch);
+    assert.equal(response.reset, true);
+    assert.deepEqual(response.items.map((item) => item.message), ["current"]);
+  });
+
+  test("legacy sequence-only cursor keeps its existing behavior", () => {
+    const activity = new server.ActivityLog(10);
+    activity.push({ message: "current" });
+    assert.deepEqual(activity.since(0).items.map((item) => item.message), ["current"]);
+  });
+});
+
 describe("host path map", () => {
   test("parsePathMap accepts only [[from, to], ...] JSON", () => {
     assert.deepEqual(server.parsePathMap(""), []);
@@ -324,6 +343,16 @@ describe("history discovery + routes", () => {
     cookie = page.headers.get("set-cookie").match(/pi-studio-token=([^;]+)/)[1];
   });
 
+  test("activity response carries epoch and resets a mismatched cursor", async () => {
+    const initial = await getJson("/api/activity?since=0");
+    assert.equal(typeof initial.epoch, "string");
+    const restarted = await getJson("/api/activity?since=1&epoch=old-instance");
+    assert.equal(restarted.reset, true);
+    assert.equal(restarted.epoch, initial.epoch);
+    const legacy = await getJson("/api/activity?since=0");
+    assert.equal(legacy.epoch, initial.epoch);
+  });
+
   after(async () => {
     await server.stopServer();
     assert.equal(listening.listening, false);
@@ -497,6 +526,12 @@ describe("history discovery + routes", () => {
       await put("third.jsonl", [header(projA), user("zebra terceira")], 1_000_000_001);
       const names = async (options) => (await server.searchSessions(dir, "zebra", { projectsByCwd: known, ...options })).map((hit) => path.basename(hit.sessionPath));
       assert.deepEqual(await names({}), ["early.jsonl", "late.jsonl", "third.jsonl"]);
+      const remappedCwd = path.join(tmp, "remapped-project");
+      const mappedHeader = { ...header("Z:\\Host\\remote-project"), cwd: "Z:\\Host\\remote-project" };
+      await put("mapped.jsonl", [mappedHeader, user("zebra mapped")], 1_000_000_003);
+      const mappedProjects = new Map([[server.cwdKey(remappedCwd), { id: "mapped-project" }]]);
+      const mapped = await server.searchSessions(dir, "zebra", { projectsByCwd: mappedProjects, pathMap: [["Z:\\Host\\remote-project", remappedCwd]] });
+      assert.equal(mapped.some((hit) => path.basename(hit.sessionPath) === "mapped.jsonl"), true);
       assert.deepEqual(await names({ maxFileBytes: 1000 }), ["early.jsonl", "third.jsonl"]);
       assert.deepEqual(await names({ limit: 1 }), ["early.jsonl"]);
       const capped = await server.scanSessionIndexEntry(path.join(dir, "d", "late.jsonl"), { textCap: 8 });

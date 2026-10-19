@@ -46,13 +46,14 @@ async function waitFor(predicate, timeoutMs = 8000) {
 describe("ActivityLog", () => {
   test("is bounded, numbers items and answers since a cursor", () => {
     const log = new server.ActivityLog(3);
-    assert.deepEqual(log.since(0), { items: [], seq: 0, reset: false });
+    assert.deepEqual(log.since(0), { items: [], seq: 0, reset: false, epoch: log.epoch });
     for (const text of ["a", "b", "c", "d", "e"]) log.push({ text });
     assert.deepEqual(log.items.map((item) => [item.seq, item.text]), [[3, "c"], [4, "d"], [5, "e"]], "the oldest items fall off");
     assert.deepEqual(log.since(0).items.map((item) => item.seq), [3, 4, 5]);
     assert.deepEqual(log.since(3).items.map((item) => item.seq), [4, 5]);
-    assert.deepEqual(log.since(5), { items: [], seq: 5, reset: false });
-    assert.deepEqual(log.since(9), { items: log.items, seq: 5, reset: true }, "a cursor past the newest seq (restart) starts over");
+    assert.deepEqual(log.since(5), { items: [], seq: 5, reset: false, epoch: log.epoch });
+    assert.deepEqual(log.since(9), { items: log.items, seq: 5, reset: true, epoch: log.epoch }, "a cursor past the newest seq (restart) starts over");
+    assert.deepEqual(log.since(5, "old-epoch"), { items: log.items, seq: 5, reset: true, epoch: log.epoch }, "an epoch mismatch starts over");
     assert.equal(new server.ActivityLog().limit, 300);
   });
 });
@@ -154,10 +155,13 @@ describe("routes + running counts + today's usage (live server)", () => {
   test("/api/activity: since validation, pagination, reset and real PI events", async () => {
     for (const bad of ["abc", "-1", "1.5", "1e3", "", "1234567890123456"]) assert.equal((await getJson(`/api/activity?since=${bad}`)).status, 400, `since=${bad}`);
     const first = (await getJson("/api/activity")).data;
-    assert.deepEqual(Object.keys(first).sort(), ["items", "now", "reset", "seq"]);
+    assert.deepEqual(Object.keys(first).sort(), ["epoch", "items", "now", "reset", "seq"]);
     assert.equal(typeof first.now, "number");
     const empty = (await getJson(`/api/activity?since=${first.seq}`)).data;
-    assert.deepEqual([empty.items, empty.reset, empty.seq], [[], false, first.seq]);
+    assert.deepEqual([empty.items, empty.reset, empty.seq, empty.epoch], [[], false, first.seq, first.epoch]);
+    const restarted = (await getJson(`/api/activity?since=${first.seq}&epoch=old-instance`)).data;
+    assert.equal(restarted.reset, true);
+    assert.equal(restarted.epoch, first.epoch);
 
     const opened = await post("/api/projects/open-path", { cwd: projA });
     assert.equal(opened.status, 201);

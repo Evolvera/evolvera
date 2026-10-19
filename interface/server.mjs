@@ -67,6 +67,7 @@ const STALL = stallThresholds(process.env);
 export class ActivityLog {
   constructor(limit = ACTIVITY_LIMIT) {
     this.limit = limit;
+    this.epoch = randomUUID();
     this.items = [];
     this.seq = 0;
   }
@@ -78,10 +79,10 @@ export class ActivityLog {
     return item;
   }
 
-  since(cursor) {
-    const reset = cursor > this.seq;
+  since(cursor, epoch) {
+    const reset = (epoch !== undefined && epoch !== this.epoch) || cursor > this.seq;
     const from = reset ? 0 : cursor;
-    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset };
+    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset, epoch: this.epoch };
   }
 }
 
@@ -819,6 +820,7 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
   if (!header || typeof header.cwd !== "string" || !header.cwd) return null;
   const entry = {
     filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size,
+    cwd: header.cwd,
     cwdKey: cwdKey(mapHostPath(header.cwd, PATH_MAP)),
     timestamp: header.timestamp || new Date(fileStat.mtimeMs).toISOString(),
     title: compactTitle(name || firstPrompt, "Nova conversa"),
@@ -897,7 +899,7 @@ export class SessionIndex {
     const ordered = [...this.entries.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
     for (const entry of ordered) {
       if (results.length >= limit) break;
-      const project = projectsByCwd.get(entry.cwdKey);
+      const project = projectsByCwd.get(entry.cwd ? cwdKey(mapHostPath(entry.cwd, pathMap)) : entry.cwdKey);
       if (!project) continue;
       if (!(entry.folded ?? foldText(entry.text)).includes(foldedQuery)) continue;
       let snippet = "";
@@ -1492,7 +1494,8 @@ async function route(req, res) {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       const since = url.searchParams.get("since") ?? "0";
       if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
-      return json(res, 200, { ...activityLog.since(Number(since)), now: Date.now() });
+      const epoch = url.searchParams.has("epoch") ? url.searchParams.get("epoch") : undefined;
+      return json(res, 200, { ...activityLog.since(Number(since), epoch), now: Date.now() });
     }
 
     if (pathname === "/api/usage/today") {
