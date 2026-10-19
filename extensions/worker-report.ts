@@ -112,6 +112,7 @@ export function createWorkerReportExtension(run: Runner = execFile) {
     const retryAtAgentEnd = new Map<string, { goalId: string; outcome: string; body: string; cwd: string }>();
     const reported = new Set<string>();
     const warned = new Set<string>();
+    const inFlight = new Set<string>();
 
     const send = async (report: { goalId: string; outcome: string; body: string; cwd: string }) => {
       try {
@@ -204,13 +205,16 @@ export function createWorkerReportExtension(run: Runner = execFile) {
       const outcome = goal.status === "blocked" ? "blocked" : goal.status;
       // updatedAt distinguishes a later stop after `/goal resume` of the same Goal.
       const key = `${goal.id}\0${outcome}\0${String(goal.updatedAt ?? "")}`;
-      if (reported.has(key) || reported.has(`${goal.id}\0${outcome}`)) return;
+      if (reported.has(key) || reported.has(`${goal.id}\0${outcome}`) || inFlight.has(key)) return;
+      inFlight.add(key);
       const errorMessage = [...(event.messages ?? [])].reverse()
         .map((message) => (message as { role?: unknown; errorMessage?: unknown }))
         .find((message) => message.role === "assistant" && typeof message.errorMessage === "string")?.errorMessage as string | undefined;
       const report = { goalId: goal.id, outcome, cwd: ctx.cwd, body: `Reason: Goal stopped by the runtime without goal_complete/goal_blocked${errorMessage ? ` (${errorMessage})` : ""}. Worker is idle.` };
-      if (await send(report)) reported.add(key);
-      else warn(ctx, key, goal.id);
+      try {
+        if (await send(report)) reported.add(key);
+        else warn(ctx, key, goal.id);
+      } finally { inFlight.delete(key); }
     };
 
     pi.on("agent_end", async (event, ctx) => {
