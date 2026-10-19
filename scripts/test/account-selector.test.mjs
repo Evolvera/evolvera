@@ -192,6 +192,22 @@ test("account picker redraws label-responsive art, resizes, and preserves tiny v
   }
 });
 
+test("interactive scrolling uses the effective viewport at the HUD width boundary", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  output.columns = 44; output.rows = 12;
+  const choices = Array.from({ length: 12 }, (_, index) => ({ id: `user${index}`, label: `User${index}` }));
+  const pending = selectAccountMenu({ users: choices, input, output, color: false });
+  try {
+    for (let index = 0; index < 5; index++) data(input, "\u001b[B");
+    const expected = renderAccountMenu(choices, { width: 43, height: 12, selected: 5, offset: 0, color: false });
+    assert.ok(includesRows(screenRows(output.text), expected.split("\n")), "do not scroll before the visible list reaches its edge");
+  } finally {
+    data(input, "\r");
+    await pending;
+  }
+});
+
 test("slow output coalesces animation while keyboard selection remains immediate and latest at drain", async () => {
   const input = new FakeInput();
   const output = new FakeOutput();
