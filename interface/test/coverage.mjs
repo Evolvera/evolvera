@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || "HEAD";
 const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs"];
+const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/voice.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs"];
 
 const run = spawnSync(process.execPath, [
   "--test", "--experimental-test-coverage",
-  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs",
+  "--test-coverage-include=server.mjs", "--test-coverage-include=lib-server/voice.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs",
   "--test-reporter=dot", "--test-reporter-destination=stdout",
   "--test-reporter=lcov", `--test-reporter-destination=${lcovPath}`,
   ...suites,
@@ -82,6 +82,7 @@ function report(label, data, only) {
 
 const changed = changedLines("server.mjs");
 let missed = report(`server.mjs changed vs ${base} (${changed.size} changed lines)`, files.get("server.mjs"), changed);
+missed += report("lib-server/voice.mjs (whole file)", files.get("lib-server/voice.mjs"));
 missed += report("public/lib.js (whole file)", files.get("public/lib.js"));
 missed += report("cli-lib.mjs (whole file)", files.get("cli-lib.mjs"));
 report("server.mjs (whole file, informational)", files.get("server.mjs"));
