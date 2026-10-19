@@ -45,7 +45,7 @@ const profileText = (item) => {
 };
 
 /** Render a bounded, injection-safe account menu for terminal evidence and redraws. */
-export function renderAccountMenu(users, { width = 80, height = 24, selected = 0, offset = 0, color = false, progress = 1 } = {}) {
+export function renderAccountMenu(users, { width = 80, height = 24, selected = 0, offset = 0, color = false, progress = 1, timeMs = 0 } = {}) {
   const items = [...users.map((user) => ({ id: user.id, label: user.label })), { create: true, label: "Create new account" }];
   const { columns, terminalRows, hud, visible: rows, artHeight } = layout(width, height, items.length);
   const selectedIndex = Math.max(0, Math.min(Number.isFinite(selected) ? Math.floor(selected) : 0, items.length - 1));
@@ -53,7 +53,7 @@ export function renderAccountMenu(users, { width = 80, height = 24, selected = 0
   if (selectedIndex < start) start = selectedIndex;
   if (selectedIndex >= start + rows) start = selectedIndex - rows + 1;
   const visible = items.slice(start, start + rows);
-  const artLines = artHeight ? renderTerminalArt({ width: columns, height: artHeight, label: users[selectedIndex]?.label ?? "", color, progress }) : [];
+  const artLines = artHeight ? renderTerminalArt({ width: columns, height: artHeight, label: users[selectedIndex]?.label ?? "", color, progress, timeMs }) : [];
   const title = "SELECT YOUR PROFILE";
   const help = "↑/↓ select · ENTER start · ESC back";
   let menu;
@@ -101,6 +101,7 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   const height = () => safeDimension(output.rows, 24, 80);
   const rowCount = () => layout(output.columns, height(), items.length).visible;
   let progress = 1;
+  let elapsedMs = 0;
   let stopAnimation;
   let paintedRows = 0;
   let clearScreen = true;
@@ -122,7 +123,7 @@ export async function selectAccountMenu({ users, input, output, color = terminal
     const rows = rowCount();
     if (selected < offset) offset = selected;
     if (selected >= offset + rows) offset = selected - rows + 1;
-    const lines = renderAccountMenu(users, { width: output.columns, height: height(), selected, offset, color, progress }).split("\n");
+    const lines = renderAccountMenu(users, { width: output.columns, height: height(), selected, offset, color, progress, timeMs: elapsedMs }).split("\n");
     const eraseRows = Math.min(height(), Math.max(paintedRows, lines.length));
     const frame = Array.from({ length: eraseRows }, (_, i) => `\u001b[2K${lines[i] ?? ""}`).join("\n");
     write(`${clearScreen ? "\u001b[2J" : ""}\u001b[H${frame}`);
@@ -196,7 +197,7 @@ export async function selectAccountMenu({ users, input, output, color = terminal
     output.on("resize", onResize);
     if (typeof input.setRawMode === "function") input.setRawMode(true);
     if (animate && process.env.TERM !== "dumb") {
-      stopAnimation = startArtAnimation({ clock: animationClock, onFrame: (value) => { progress = value; redraw(); }, onError: (error) => finish(error) });
+      stopAnimation = startArtAnimation({ clock: animationClock, onFrame: (value, elapsed) => { progress = value; elapsedMs = elapsed; redraw(); }, onError: (error) => finish(error) });
     } else redraw();
     input.resume();
     result = await choice;

@@ -26,6 +26,7 @@ export function createStartupArtFactory({ label, sessionManager, color = termina
       visible = true;
       ctx.ui.setWidget(KEY, (tui) => {
         let progress = 1;
+        let elapsedMs = 0;
         const rows = () => Number.isFinite(tui.terminal?.rows) ? tui.terminal.rows : 24;
         const height = () => Math.min(36, Math.floor(rows() / 2), Math.max(0, rows() - 10));
         const dispose = () => {
@@ -35,15 +36,15 @@ export function createStartupArtFactory({ label, sessionManager, color = termina
         if (animate && height() >= 4) {
           progress = 0;
           stopAnimation = startArtAnimation({
-            onFrame(value) { progress = value; tui.requestRender?.(); },
-            onError() { progress = 1; stopAnimation = undefined; tui.requestRender?.(); },
+            onFrame(value, elapsed) { progress = value; elapsedMs = elapsed; tui.requestRender?.(); },
+            onError() { progress = 1; elapsedMs = 0; stopAnimation = undefined; tui.requestRender?.(); },
             clock: animationClock,
           });
         }
         return {
           render(width) {
             const artHeight = height();
-            return artHeight >= 4 ? renderTerminalArt({ width, height: artHeight, label, color, progress }) : [];
+            return artHeight >= 4 ? renderTerminalArt({ width, height: artHeight, label, color, progress, timeMs: elapsedMs }) : [];
           },
           invalidate() {},
           dispose,

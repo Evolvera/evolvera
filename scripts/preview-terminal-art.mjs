@@ -7,7 +7,7 @@ const HELP = `Usage: node scripts/preview-terminal-art.mjs --label <name> [--wid
        node scripts/preview-terminal-art.mjs --select [--no-color --no-animation]
 
 --select opens the real account-picker UI at the terminal size, with synthetic Evolvera/Pessoal choices only.
---width and --height size standalone scenes; --no-animation renders the final scene immediately.`;
+--width and --height size standalone scenes; --no-animation renders the final scene immediately. Press Ctrl+C to exit an animated scene.`;
 
 function parseArgs(args, output) {
   const options = { width: output.columns || 80, height: Math.min(36, Math.max(1, (output.rows || 24) - 8)), color: process.env.NO_COLOR === undefined && process.env.TERM !== "dumb", animate: true };
@@ -53,12 +53,12 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
   }
   const width = output.isTTY ? Math.max(1, Math.min(options.width, output.columns || options.width)) : options.width;
   const height = output.isTTY ? Math.max(1, Math.min(options.height, Math.max(1, (output.rows || options.height) - 1))) : options.height;
-  const draw = (progress) => renderTerminalArt({ width, height, label, color: options.color, progress });
+  const draw = (progress, timeMs = 0) => renderTerminalArt({ width, height, label, color: options.color, progress, timeMs });
   if (!options.animate || !output.isTTY || process.env.TERM === "dumb") {
     output.write(`${draw(1).join("\n")}\n`);
     return 0;
   }
-  const drawFrame = (progress) => draw(progress);
+  const drawFrame = (progress, elapsedMs) => draw(progress, elapsedMs);
   const animationResult = await new Promise((resolve, reject) => {
     let settled = false;
     let stop;
@@ -75,8 +75,9 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
       if (error) reject(error);
       else resolve(0);
     };
-    const writeFrame = (progress) => {
-      const lines = drawFrame(progress);
+    const writeFrame = (progress, elapsedMs) => {
+      if (settled) return;
+      const lines = drawFrame(progress, elapsedMs);
       if (paintedRows) output.write(`\u001b[${paintedRows}A\r`);
       for (const line of lines) {
         if (settled) break;
@@ -94,7 +95,7 @@ export async function main(args = process.argv.slice(2), { input = process.stdin
     output.once?.("close", onOutputClose);
     try {
       stop = startArtAnimation({
-        onFrame(progress) { writeFrame(progress); if (progress >= 1) finish(); },
+        onFrame(progress, elapsedMs) { writeFrame(progress, elapsedMs); },
         onError(error) { finish(error); },
         clock: animationClock,
       });
