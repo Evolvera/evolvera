@@ -74,6 +74,9 @@ import {
   buildTimeline,
   collectOutputs,
   composerAction,
+  composerSendType,
+  requestExceedsLimit,
+  restoreFailedDraft,
   contextUsage,
   createUiResponder,
   diffLines,
@@ -2337,8 +2340,15 @@ async function submit(mode) {
   if (isShellText(message)) return runShell(message);
   if (message) state.lastSent = message;
   state.recalled = null;
-  const type = mode === "steer" || mode === "follow_up" ? mode : "prompt";
-  const images = state.attachments.map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
+  const type = composerSendType(message, mode, state.commands);
+  const capturedAttachments = state.attachments.slice();
+  const images = capturedAttachments.map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
+  const id = newId();
+  const command = { id, type, message, ...(images.length ? { images } : {}) };
+  if (requestExceedsLimit(command, 30 * 1024 * 1024)) {
+    toast("Anexos muito grandes (máx. 30 MB)", "error");
+    return;
+  }
   let optimistic = null;
   if (type === "prompt") {
     optimistic = { role: "user", content: [{ type: "text", text: message }, ...images], timestamp: Date.now(), _optimistic: true };
@@ -2353,14 +2363,14 @@ async function submit(mode) {
     if (index !== -1) state.messages.splice(index, 1);
     scheduleRender();
     toast(text, "error");
-    if (!els.prompt.value) {
-      els.prompt.value = message;
-      autoResize();
-      updateComposer();
-    }
+    const restored = restoreFailedDraft(els.prompt.value, state.attachments, message, capturedAttachments);
+    if (restored.message !== els.prompt.value) els.prompt.value = restored.message;
+    if (restored.attachments !== state.attachments) state.attachments = restored.attachments;
+    autoResize();
+    renderAttachments();
   };
   // The response may arrive only after an extension command finishes, so no timeout.
-  const request = rpcRequest({ type, message, ...(images.length ? { images } : {}) }, 0);
+  const request = rpcRequest(command, 0);
   els.prompt.value = "";
   state.attachments = [];
   renderAttachments();

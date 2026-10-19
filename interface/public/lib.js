@@ -771,6 +771,25 @@ export function timelineSignature(item) {
 
 // ------------------------------------------------------------------- input
 
+export function requestBodyBytes(payload) {
+  return new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+}
+
+export function requestExceedsLimit(payload, maxBytes) {
+  return requestBodyBytes(payload) > maxBytes;
+}
+
+export function restoreFailedDraft(currentMessage, currentAttachments, sentMessage, sentAttachments) {
+  if (currentMessage.trim() || currentAttachments.length) return { message: currentMessage, attachments: currentAttachments };
+  return { message: sentMessage, attachments: sentAttachments };
+}
+
+export function composerSendType(message, mode, commands) {
+  const name = /^\/(\S+)/.exec(String(message ?? "").trim())?.[1]?.toLowerCase();
+  const extensionCommand = name && commands?.some((command) => command?.source === "extension" && command.name?.toLowerCase() === name);
+  return extensionCommand ? "prompt" : mode === "steer" || mode === "follow_up" ? mode : "prompt";
+}
+
 export function composerAction(event, isStreaming) {
   if (!event || event.key !== "Enter" || event.isComposing) return null;
   if (event.shiftKey) return "newline";
