@@ -124,6 +124,7 @@ import {
 } from "./lib.js";
 
 import { createTasksPanel } from "./tasks-panel.js";
+import { createSideChat } from "./side-chat.js";
 import { steerCommand, subagentDotState, subagentFamily, subagentSession, tabFitMode } from "./lib.js";
 import { legacyState, shouldMarkSeen, stripPictographs, subagentIndicator, treeHistoryItem, worktreeIndicator } from "./lib.js";
 import { applyState, stateHtml } from "./state-indicator.js";
@@ -132,7 +133,7 @@ import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classify
 
 import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
 
-import { VOICE_READ_KEY, VOICE_SHORTCUTS, voiceReadEnabled, withSpeakAction } from "./lib.js";
+import { VOICE_READ_KEY, VOICE_SHORTCUTS, sideChatPath, voiceReadEnabled, withSpeakAction } from "./lib.js";
 import { createVoice } from "./voice.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -747,6 +748,24 @@ const tasksPanel = createTasksPanel({
   refreshOrca: () => pollOrca(),
   invalidate: () => scheduleInspector("tasks"),
 });
+
+// Dúvidas tab (see side-chat.js): a read-only side PI per open conversation.
+const sideChat = createSideChat({
+  els: { list: $("#scList"), status: $("#scStatus"), form: $("#scForm"), input: $("#scInput"), send: $("#scSend"), stop: $("#scStop") },
+  api,
+  renderMarkdown,
+  esc,
+  svg,
+  path: () => sideChatPath({ watch: state.watch, session: state.session }),
+  report,
+});
+
+function openDoubts() {
+  setPanel("right", true);
+  selectTab("sidechat");
+  sideChat.render();
+  requestAnimationFrame(() => sideChat.focus());
+}
 
 function setPanel(side, open) {
   layout[side] = open ? "open" : "closed";
@@ -2379,7 +2398,7 @@ function renderPanel() {
     els.ctxRing.title = `${usage.percent}% do contexto usado`;
     els.ctxRing.classList.toggle("warn", usage.percent >= 80);
   }
-  scheduleInspector("terminal", "context", "files", "worktrees");
+  scheduleInspector("terminal", "context", "files", "worktrees", "sidechat");
 }
 
 function scheduleInspector(...tabs) {
@@ -2392,7 +2411,7 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees };
+const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees, sidechat: () => sideChat.render() };
 
 function renderInspector() {
   const runs = currentSubagents();
@@ -5028,6 +5047,9 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (els.worktreesDialog.open) closeWorktrees();
     else if (!modalOpen && !els.worktreesBtn.hidden) openWorktrees();
+  } else if (action === "doubts") {
+    event.preventDefault();
+    if (!modalOpen) openDoubts();
   } else if (action === "todos") {
     event.preventDefault();
     if (!modalOpen) toggleTodo();

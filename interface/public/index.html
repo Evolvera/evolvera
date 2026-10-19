@@ -49,6 +49,7 @@
         <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5.5M11 6.5 5.5 12l5.5 5.5" /></symbol>
         <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h13.5M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
         <symbol id="i-external" viewBox="0 0 24 24"><path d="M13.5 5H19v5.5M19 5l-8 8M17.5 14v3a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" /></symbol>
+        <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5M12 16.6v.1" /></symbol>
         <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m4 6 1.5 1.5L8 4.8M4 12.5 5.5 14 8 11.3M4 19 5.5 20.5 8 17.8" /><path d="M11.5 6.5h8.5M11.5 13h8.5M11.5 19.5h8.5" /></symbol>
         <symbol id="i-task-pending" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /></symbol>
         <symbol id="i-task-running" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 7.8V12l2.9 1.7" /></symbol>
@@ -196,6 +197,7 @@
           <button id="tab-files" class="insp-tab" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
           <button id="tab-browser" class="insp-tab" type="button" role="tab" data-tab="browser" aria-controls="view-browser" aria-selected="false" tabindex="-1"><svg><use href="#i-globe" /></svg><span class="insp-label">Navegador</span></button>
           <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span><span id="wtTabBadge" class="count-badge" hidden></span></button>
+          <button id="tab-sidechat" class="insp-tab" type="button" role="tab" data-tab="sidechat" aria-controls="view-sidechat" aria-selected="false" tabindex="-1" title="Dúvidas (Alt+D)"><svg><use href="#i-help" /></svg><span class="insp-label">Dúvidas</span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
           <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
@@ -230,6 +232,16 @@
         </section>
         <section id="view-worktrees" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-worktrees" data-view="worktrees" tabindex="0" hidden>
           <div id="wtList" class="sa-list"></div>
+        </section>
+        <section id="view-sidechat" class="insp-view view-sidechat" role="tabpanel" aria-labelledby="tab-sidechat" data-view="sidechat" hidden>
+          <p class="sc-note">Só responde — não mexe em nada.</p>
+          <div id="scList" class="sc-list" role="log" aria-live="polite" aria-label="Dúvidas sobre esta conversa" tabindex="0"></div>
+          <div id="scStatus" class="sc-status" role="status"></div>
+          <form id="scForm" class="sc-form" autocomplete="off">
+            <textarea id="scInput" class="sc-input" rows="2" maxlength="8000" placeholder="Pergunte sobre o que está acontecendo…" aria-label="Pergunta sobre o que está acontecendo"></textarea>
+            <button id="scStop" class="icon-btn" type="button" aria-label="Parar a resposta" title="Parar a resposta" hidden><svg><use href="#i-stop" /></svg></button>
+            <button id="scSend" class="icon-btn sc-send" type="submit" aria-label="Enviar pergunta" title="Enviar (Enter)"><svg><use href="#i-send" /></svg></button>
+          </form>
         </section>
       </aside>
       <div id="scrim" class="scrim" hidden></div>

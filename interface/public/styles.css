@@ -1468,3 +1468,28 @@ button.tk-owner:hover { background: var(--bg-hover); color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .mic-live.is-recording .mic-dot { animation: none; } .mic-meter i { transition: none; } }
 html[data-motion="reduce"] .mic-live.is-recording .mic-dot { animation: none !important; }
 @media (max-width: 560px) { .mic-meter { width: 44px; } }
+
+/* ----------------------------------------------- Dúvidas (read-only side chat) */
+.view-sidechat { display: flex; flex-direction: column; min-height: 0; }
+.view-sidechat[hidden] { display: none; }
+.sc-note { flex: none; margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--faint); font-size: 12.5px; line-height: 1.4; }
+.sc-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
+.sc-list:focus-visible { outline-offset: -2px; }
+.sc-empty { margin: auto; max-width: 280px; display: grid; justify-items: center; gap: 8px; text-align: center; color: var(--faint); font-size: 13px; line-height: 1.5; }
+.sc-empty svg { width: 26px; height: 26px; color: var(--muted); stroke-width: 1.4; }
+.sc-empty strong { color: var(--text-2); font-size: 14px; font-weight: 500; }
+.sc-msg { max-width: 94%; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.55; }
+.sc-user { align-self: flex-end; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--line-2); border-radius: 12px; color: var(--text); white-space: pre-wrap; }
+.sc-user.is-pending { opacity: 0.7; }
+.sc-assistant { align-self: flex-start; color: var(--text); }
+.sc-assistant .md { font-size: 13.5px; line-height: 1.6; }
+.sc-assistant .md pre { max-width: 100%; overflow-x: auto; }
+.sc-error { align-self: flex-start; padding: 8px 12px; border: 1px solid var(--c-red-soft); background: var(--c-red-soft); border-radius: 12px; color: var(--c-red); }
+.sc-status { flex: none; min-height: 20px; padding: 0 16px 6px; display: flex; align-items: center; gap: 8px; color: var(--faint); font-size: 12px; }
+.sc-status:empty { min-height: 0; padding: 0; }
+.sc-form { flex: none; display: flex; align-items: flex-end; gap: 4px; margin: 0 12px 12px; padding: 6px 6px 6px 12px; background: var(--bg-input); border: 1px solid #333333; border-radius: 14px; transition: border-color 160ms var(--ease); }
+.sc-form:focus-within { border-color: #5a5a5a; }
+.sc-input { flex: 1; min-width: 0; max-height: 140px; padding: 6px 0; resize: none; background: none; border: 0; outline: none; color: var(--text); font-size: 13.5px; line-height: 1.5; }
+.sc-input::placeholder { color: var(--faint); }
+.sc-input:disabled { opacity: 0.5; }
+.sc-send { color: var(--text); }

@@ -140,6 +140,14 @@ describe("server: /api/side-chat with the fake PI", () => {
   const sideChat = (sessionPath) => post("/api/side-chat", { sessionPath });
   const argvLines = async () => (await readFile(argvFile, "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => JSON.parse(line));
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // The fake PI writes its argv line when its process starts, which under a busy full suite can take well over a fixed sleep: poll.
+  const waitArgv = async (count, timeoutMs = 10_000) => {
+    for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await sleep(50)) {
+      const lines = await argvLines();
+      if (lines.length >= count) return lines;
+    }
+    return argvLines();
+  };
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
   // Reads an SSE stream until `done(events)` or the deadline; returns the parsed events.
@@ -217,8 +225,7 @@ describe("server: /api/side-chat with the fake PI", () => {
     assert.ok(session.id);
     assert.equal(session.side, true);
     assert.equal(session.cwd, path.resolve(project));
-    await sleep(300);
-    const [start] = await argvLines();
+    const [start] = await waitArgv(1);
     const { argv } = start;
     assert.ok(argv.includes("--no-session"));
     assert.equal(argv[argv.indexOf("--tools") + 1], "read,grep,find,ls");
@@ -334,8 +341,7 @@ describe("server: /api/side-chat with the fake PI", () => {
     assert.equal((await post(`/api/sessions/${first.id}/command`, { type: "get_state" })).status, 404, "the old id is gone");
     const second = (await (await sideChat(mainSession)).json()).session;
     assert.notEqual(second.id, first.id);
-    await sleep(300);
-    assert.equal((await argvLines()).length, startedBefore + 1);
+    assert.equal((await waitArgv(startedBefore + 1)).length, startedBefore + 1);
     assert.deepEqual(app.reapSideChatsNow(Date.now() + 11 * 60_000), [second.id]);
     await sleep(600);
     const third = (await (await sideChat(mainSession)).json()).session;
@@ -369,6 +375,6 @@ describe("server: /api/side-chat with the fake PI", () => {
     assert.ok(live.length > 0);
     await app.stopServer();
     await sleep(3500);
-    assert.deepEqual(pids.filter(alive), []);
+    assert.deepEqual(live.filter(alive), [], "every process alive before the stop is gone");
   });
 });

@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.argv[2] || "HEAD";
 const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/tasks-ui.test.mjs", "test/tasks-fake-pi.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs", "test/sidebar-tree.test.mjs", "test/sidebar-tree-dom.test.mjs", "test/live-pis.test.mjs", "test/session-titles.test.mjs", "test/ctx-lib.test.mjs", "test/resources.test.mjs", "test/git-files.test.mjs", "test/voice.test.mjs", "test/tree.test.mjs", "test/idle-reaper.test.mjs"];
+const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/tasks-ui.test.mjs", "test/tasks-fake-pi.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs", "test/sidebar-tree.test.mjs", "test/sidebar-tree-dom.test.mjs", "test/live-pis.test.mjs", "test/session-titles.test.mjs", "test/ctx-lib.test.mjs", "test/resources.test.mjs", "test/git-files.test.mjs", "test/voice.test.mjs", "test/tree.test.mjs", "test/idle-reaper.test.mjs", "test/side-chat.test.mjs", "test/side-chat-ui.test.mjs"];
 
 const run = spawnSync(process.execPath, [
   "--test", "--experimental-test-coverage",
-  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs", "--test-coverage-include=lib-server/live-pis.mjs", "--test-coverage-include=lib-server/session-titles.mjs", "--test-coverage-include=lib-server/voice.mjs", "--test-coverage-include=lib-server/tree.mjs", "--test-coverage-include=lib-server/idle-reaper.mjs",
+  "--test-coverage-include=server.mjs", "--test-coverage-include=public/lib.js", "--test-coverage-include=cli-lib.mjs", "--test-coverage-include=lib-server/live-pis.mjs", "--test-coverage-include=lib-server/session-titles.mjs", "--test-coverage-include=lib-server/voice.mjs", "--test-coverage-include=lib-server/tree.mjs", "--test-coverage-include=lib-server/idle-reaper.mjs", "--test-coverage-include=lib-server/side-chat.mjs",
   "--test-reporter=dot", "--test-reporter-destination=stdout",
   "--test-reporter=lcov", `--test-reporter-destination=${lcovPath}`,
   ...suites,
@@ -89,5 +89,6 @@ missed += report("lib-server/live-pis.mjs (whole file)", files.get("lib-server/l
 missed += report("lib-server/session-titles.mjs (whole file)", files.get("lib-server/session-titles.mjs"));
 missed += report("lib-server/tree.mjs (whole file)", files.get("lib-server/tree.mjs"));
 missed += report("lib-server/idle-reaper.mjs (whole file)", files.get("lib-server/idle-reaper.mjs"));
+missed += report("lib-server/side-chat.mjs (whole file)", files.get("lib-server/side-chat.mjs"));
 report("server.mjs (whole file, informational)", files.get("server.mjs"));
 process.exit(missed ? 1 : 0);

@@ -972,6 +972,7 @@ export function shortcutAction(event, { typing = false } = {}) {
     const plainAlt = !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (!plainAlt) return null;
     if (key.toLowerCase() === "t" || event.code === "KeyT") return "todos";
+    if (key.toLowerCase() === "d" || event.code === "KeyD") return "doubts";
     return key.toLowerCase() === "w" || event.code === "KeyW" ? "worktrees" : null;
   }
   if (event.ctrlKey || event.metaKey) {
@@ -1013,6 +1014,7 @@ export const SHORTCUT_GROUPS = [
       { keys: ["Ctrl", "`"], label: "Console RPC" },
       { keys: ["Alt", "T"], label: "Mostrar ou ocultar a lista de tarefas" },
       { keys: ["Alt", "W"], label: "Visão geral das worktrees (Orca)" },
+      { keys: ["Alt", "D"], label: "Dúvidas: perguntar sobre o que acontece, sem interferir" },
     ],
   },
 ];
@@ -1257,7 +1259,7 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees"];
+export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "sidechat"];
 
 // The Worktrees tab exists only while the Orca integration is on.
 export function visibleInspectorTabs(settings) {
@@ -3350,4 +3352,66 @@ export function withSpeakAction(actions, { supported, text }) {
   if (!supported || !speakableText(text)) return actions;
   const at = actions.findIndex((action) => action.id === "copy") + 1;
   return [...actions.slice(0, at), { id: "speak", label: "Ouvir", disabled: false }, ...actions.slice(at)];
+}
+
+// --------------------------------------------------------------- "Dúvidas" (read-only side chat)
+
+export const SIDE_CHAT_MAX_ITEMS = 200;
+
+export const sideChatInitial = () => ({ items: [], live: "", busy: false, ended: false });
+
+// The conversation the side chat is about: the followed one, else the file the Studio's own PI has open.
+export function sideChatPath({ watch, session } = {}) {
+  const file = watch?.path ?? session?.sessionFile;
+  return typeof file === "string" && file ? file : null;
+}
+
+export function sideChatText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((part) => part?.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n");
+}
+
+export function sideChatStatusText(chat) {
+  if (chat.busy) return "Consultando a conversa…";
+  return chat.ended ? "Sessão de dúvidas encerrada por inatividade. A próxima pergunta abre uma nova." : "";
+}
+
+const sideChatPush = (chat, item) => ({ ...chat, items: [...chat.items, item].slice(-SIDE_CHAT_MAX_ITEMS) });
+
+// The question shows at once (unconfirmed) and is confirmed when the PI echoes it as a user message.
+export function sideChatAsk(chat, text) {
+  const question = typeof text === "string" ? text.trim() : "";
+  return question ? { ...sideChatPush(chat, { role: "user", text: question, confirmed: false }), busy: true } : chat;
+}
+
+export function sideChatFail(chat, message) {
+  return { ...sideChatPush(chat, { role: "error", text: message || "Não foi possível consultar agora." }), busy: false, live: "" };
+}
+
+function sideChatUser(chat, text) {
+  if (!text) return chat;
+  const at = chat.items.findIndex((item) => item.role === "user" && !item.confirmed && item.text === text);
+  if (at === -1) return sideChatPush(chat, { role: "user", text, confirmed: true });
+  return { ...chat, items: chat.items.map((item, index) => (index === at ? { ...item, confirmed: true } : item)) };
+}
+
+// Folds one RPC event of the side PI into the chat. Rebuilding from a replayed history gives the same result.
+export function sideChatApply(chat, payload) {
+  if (!payload || typeof payload !== "object") return chat;
+  if (payload.type === "agent_start") return { ...chat, busy: true };
+  if (payload.type === "agent_end") return { ...chat, busy: false, live: "" };
+  if (payload.type === "process_exit" || payload.type === "process_error") return { ...chat, busy: false, live: "", ended: true };
+  if (payload.type === "message_update") {
+    const event = payload.assistantMessageEvent;
+    return event?.type === "text_delta" && typeof event.delta === "string" ? { ...chat, live: chat.live + event.delta } : chat;
+  }
+  if (payload.type !== "message_end") return chat;
+  const message = payload.message;
+  if (message?.role === "user") return sideChatUser(chat, sideChatText(message.content));
+  if (message?.role !== "assistant") return chat;
+  const text = sideChatText(message.content);
+  if (text) return { ...sideChatPush(chat, { role: "assistant", text }), live: "" };
+  if (message.stopReason === "error") return { ...sideChatPush(chat, { role: "error", text: message.errorMessage || "O assistente não conseguiu responder." }), live: "" };
+  return { ...chat, live: "" };
 }
