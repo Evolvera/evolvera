@@ -1,6 +1,7 @@
 import { StringDecoder } from "node:string_decoder";
 import { renderTerminalArt } from "../ui/terminal-art.mjs";
 import { startArtAnimation } from "../ui/terminal-art-animation.mjs";
+import { createTerminalArtOutput } from "../ui/terminal-art-output.mjs";
 
 export const CREATE_ACCOUNT = Symbol("create-account");
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -103,8 +104,7 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   let progress = 1;
   let elapsedMs = 0;
   let stopAnimation;
-  let paintedRows = 0;
-  let clearScreen = true;
+  let terminalOutput;
   const clearEscapeTimer = () => { if (escapeTimer) clearTimeout(escapeTimer); escapeTimer = undefined; };
   let resolveChoice;
   let rejectChoice;
@@ -117,18 +117,14 @@ export async function selectAccountMenu({ users, input, output, color = terminal
     if (error) rejectChoice(error);
     else resolveChoice(value);
   };
-  const write = (text) => output.write(text, (error) => { if (error) finish(error); });
   const redraw = () => {
     if (settled) return;
     const rows = rowCount();
     if (selected < offset) offset = selected;
     if (selected >= offset + rows) offset = selected - rows + 1;
-    const lines = renderAccountMenu(users, { width: output.columns, height: height(), selected, offset, color, progress, timeMs: elapsedMs }).split("\n");
-    const eraseRows = Math.min(height(), Math.max(paintedRows, lines.length));
-    const frame = Array.from({ length: eraseRows }, (_, i) => `\u001b[2K${lines[i] ?? ""}`).join("\n");
-    write(`${clearScreen ? "\u001b[2J" : ""}\u001b[H${frame}`);
-    clearScreen = false;
-    paintedRows = lines.length;
+    terminalOutput.render(({ width, height: viewportHeight }) => renderAccountMenu(users, {
+      width, height: Math.min(height(), viewportHeight), selected, offset, color, progress, timeMs: elapsedMs,
+    }).split("\n"));
   };
   const move = (delta) => {
     selected = (selected + delta + items.length) % items.length;
@@ -177,10 +173,10 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   const onEnd = () => finish(undefined, null);
   const onClose = () => finish(undefined, null);
   const onInputError = (error) => finish(error);
-  const onOutputError = (error) => finish(error);
+  const onOutputError = (error) => { terminalOutput?.markBroken(); finish(error); };
+  const onOutputClose = () => { terminalOutput?.markBroken(); finish(undefined, null); };
   const onResize = () => {
     if (settled) return;
-    clearScreen = true;
     try { redraw(); } catch (error) { finish(error); }
   };
   const beforePaused = typeof input.isPaused === "function" ? input.isPaused() : false;
@@ -188,12 +184,13 @@ export async function selectAccountMenu({ users, input, output, color = terminal
   let result;
   let failure;
   try {
+    terminalOutput = createTerminalArtOutput({ output, getSize: () => ({ columns: output.columns, rows: height() }), onError: (error) => finish(error) });
     input.on("data", onData);
     input.once("end", onEnd);
     input.once("close", onClose);
     input.once("error", onInputError);
     output.once("error", onOutputError);
-    output.once("close", onClose);
+    output.once("close", onOutputClose);
     output.on("resize", onResize);
     if (typeof input.setRawMode === "function") input.setRawMode(true);
     if (animate && process.env.TERM !== "dumb") {
@@ -201,18 +198,18 @@ export async function selectAccountMenu({ users, input, output, color = terminal
     } else redraw();
     input.resume();
     result = await choice;
-    write("\r\n");
   } catch (error) {
     failure = error;
   } finally {
     stopAnimation?.();
+    terminalOutput?.dispose();
     clearEscapeTimer();
     input.off("data", onData);
     input.off("end", onEnd);
     input.off("close", onClose);
     input.off("error", onInputError);
     output.off("error", onOutputError);
-    output.off("close", onClose);
+    output.off("close", onOutputClose);
     output.off("resize", onResize);
     try {
       if (typeof input.setRawMode === "function" && typeof beforeRaw === "boolean" && input.isRaw !== beforeRaw) input.setRawMode(beforeRaw);

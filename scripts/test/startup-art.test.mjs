@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
+import { Writable } from "node:stream";
 import { createStartupArtFactory } from "../users/startup-art.mjs";
 import { isEvolveraLabel, renderTerminalArt } from "../ui/terminal-art.mjs";
 import { main as previewMain } from "../preview-terminal-art.mjs";
@@ -178,15 +179,16 @@ test("preview animates continuously on TTY and prints one clean final frame othe
 
   const optedOut = { text: "", isTTY: true, rows: 24, columns: 80, write(value) { this.text += value; } };
   assert.equal(await previewMain(["--label", "Evolvera", "--no-animation", "--no-color"], { output: optedOut }), 0);
-  assert.doesNotMatch(optedOut.text, /\u001b\[(?:2J|H|s|u)/u);
+  assert.equal(optedOut.text, `${renderTerminalArt({ width: 79, height: 16, label: "Evolvera", color: false, progress: 1 }).join("\r\n")}\r\n`);
+  assert.doesNotMatch(optedOut.text, /\u001b\[(?:\?1049|\?25|\?2026|2J|\d+;\d+H)/u);
   const cramped = { text: "", isTTY: true, rows: 4, columns: 10, write(value) { this.text += value; } };
   assert.equal(await previewMain(["--label", "Evolvera", "--no-animation", "--width", "200", "--height", "40", "--no-color"], { output: cramped }), 0);
-  assert.equal(cramped.text.trimEnd().split("\n").length, 3, "real TTY dimensions bound explicit scene height");
+  assert.equal(cramped.text.trimEnd().split("\r\n").length, 3, "real TTY dimensions bound explicit scene height");
 
   const fake = fakeClock();
   const tty = { text: "", isTTY: true, rows: 24, columns: 80, write(value) { this.text += value; } };
   const pending = previewMain(["--label", "Evolvera", "--no-color"], { output: tty, animationClock: fake.clock });
-  assert.doesNotMatch(tty.text, /\u001b\[(?:H|s|u|2J)/u);
+  assert.doesNotMatch(tty.text, /\u001b\[\d+A|\u001b\[2K|\r?\n/u);
   fake.tick(1500);
   const afterIntro = tty.text.length;
   fake.tick(500);
@@ -199,17 +201,39 @@ test("preview animates continuously on TTY and prints one clean final frame othe
   process.emit("SIGTERM");
   assert.equal(await pending, 143);
   assert.equal(fake.active, false);
-  assert.match(tty.text, /\u001b\[16A\r/u);
-  assert.doesNotMatch(tty.text, /\u001b\[(?:H|s|u|2J)/u);
+  assert.match(tty.text, /^\u001b\[\?1049h\u001b\[\?25l\u001b\[2J/u);
+  assert.match(tty.text, /\r\u001b\[1;1H/u);
+  assert.match(tty.text, /\u001b\[\?1049l$/u);
+  assert.doesNotMatch(tty.text, /\r?\n|\u001b\[2K/u);
+});
+
+test("TERM=dumb TTY preview leaves one static final frame visible without terminal controls", async () => {
+  const previousTerm = process.env.TERM;
+  const previousNoColor = process.env.NO_COLOR;
+  try {
+    process.env.TERM = "dumb";
+    delete process.env.NO_COLOR;
+    const fake = fakeClock();
+    const output = { isTTY: true, columns: 80, rows: 24, text: "", write(value) { this.text += value; } };
+    assert.equal(await previewMain(["--label", "Evolvera"], { output, animationClock: fake.clock }), 0);
+    assert.equal(output.text, `${renderTerminalArt({ width: 79, height: 16, label: "Evolvera", color: false, progress: 1 }).join("\r\n")}\r\n`);
+    assert.equal(fake.active, false);
+    assert.doesNotMatch(output.text, /\u001b\[(?:\?1049|\?25|\?2026|2J|\d+;\d+H)/u);
+  } finally {
+    if (previousTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = previousTerm;
+    if (previousNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previousNoColor;
+  }
 });
 
 test("preview write failures reject after cleanup and remove timer and signal listeners", async () => {
   const fake = fakeClock();
   const baseline = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
   let writes = 0;
-  const output = { isTTY: true, rows: 24, columns: 80, write() { writes++; if (writes === 18) throw new Error("terminal write failed"); } };
+  const output = { isTTY: true, rows: 24, columns: 80, write() { writes++; if (writes === 2) throw new Error("terminal write failed"); } };
   const pending = previewMain(["--label", "Evolvera", "--no-color"], { output, animationClock: fake.clock });
-  assert.equal(writes, 16, "initial frame is drawn inline");
+  assert.equal(writes, 1, "initial frame is sent in one buffered write");
   fake.tick(100);
   await assert.rejects(pending, /terminal write failed/u);
   assert.equal(fake.active, false);
@@ -221,7 +245,7 @@ test("preview output failure on the deadline frame also settles and removes owne
   const fake = fakeClock();
   const baseline = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
   let writes = 0;
-  const output = { isTTY: true, rows: 24, columns: 80, write() { if (++writes === 17) throw new Error("final frame write failed"); } };
+  const output = { isTTY: true, rows: 24, columns: 80, write() { if (++writes === 2) throw new Error("final frame write failed"); } };
   const pending = previewMain(["--label", "Evolvera", "--no-color"], { output, animationClock: fake.clock });
   fake.tick(1500);
   await assert.rejects(pending, /final frame write failed/u);
@@ -264,6 +288,70 @@ test("preview stream errors and close cancel animation and remove only owned lis
   } finally {
     if (previousTerm === undefined) delete process.env.TERM;
     else process.env.TERM = previousTerm;
+  }
+});
+
+test("animated preview respects explicit bounds and adapts default bounds through resize", async () => {
+  const verifyFrame = (write, width, height, label) => {
+    const expected = renderTerminalArt({ width, height, label, color: false, progress: 0 });
+    assert.equal(expected.length, height);
+    for (const [index, row] of expected.entries()) assert.ok(write.includes(`\r\u001b[${index + 1};1H${row}`), `row ${index + 1} is rendered at ${width}x${height}`);
+  };
+  const output = new EventEmitter();
+  Object.assign(output, { isTTY: true, columns: 80, rows: 24, writes: [], write(value) { this.writes.push(value); return true; } });
+  const fake = fakeClock();
+  const bounded = previewMain(["--label", "Evolvera", "--width", "12", "--height", "3", "--no-color"], { output, animationClock: fake.clock });
+  verifyFrame(output.writes[0], 12, 3, "Evolvera");
+  output.columns = 32; output.rows = 16; output.emit("resize");
+  verifyFrame(output.writes.at(-1), 12, 3, "Evolvera");
+  output.columns = 80; output.rows = 40; output.emit("resize");
+  verifyFrame(output.writes.at(-1), 12, 3, "Evolvera");
+  process.emit("SIGTERM");
+  assert.equal(await bounded, 143);
+  assert.equal(fake.active, false);
+
+  const responsive = new EventEmitter();
+  Object.assign(responsive, { isTTY: true, columns: 80, rows: 24, writes: [], write(value) { this.writes.push(value); return true; } });
+  const responsiveClock = fakeClock();
+  const pending = previewMain(["--label", "Evolvera", "--no-color"], { output: responsive, animationClock: responsiveClock.clock });
+  verifyFrame(responsive.writes[0], 79, 16, "Evolvera");
+  responsive.columns = 32; responsive.rows = 16; responsive.emit("resize");
+  verifyFrame(responsive.writes.at(-1), 31, 8, "Evolvera");
+  responsive.columns = 80; responsive.rows = 40; responsive.emit("resize");
+  verifyFrame(responsive.writes.at(-1), 79, 32, "Evolvera");
+  process.emit("SIGTERM");
+  assert.equal(await pending, 143);
+  assert.equal(responsiveClock.active, false);
+});
+
+test("real Writable EPIPE is handled for synchronous and post-intro callback failures", async () => {
+  for (const mode of ["sync-initial", "next-tick-after-intro"]) {
+    const fake = fakeClock();
+    const failure = Object.assign(new Error(`synthetic EPIPE ${mode}`), { code: "EPIPE" });
+    let writes = 0;
+    const output = new Writable({ write(_chunk, _encoding, callback) {
+      writes++;
+      if (mode === "sync-initial" || writes > 1) {
+        if (mode === "sync-initial") callback(failure);
+        else queueMicrotask(() => callback(failure));
+      } else callback();
+    } });
+    Object.assign(output, { isTTY: true, columns: 80, rows: 24 });
+    const seen = [];
+    const otherErrorListener = (error) => seen.push(error);
+    output.on("error", otherErrorListener);
+    const baselineSignals = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    const pending = previewMain(["--label", "Evolvera", "--no-color"], { output, animationClock: fake.clock });
+    if (mode === "next-tick-after-intro") {
+      assert.equal(writes, 1);
+      fake.tick(1500);
+    }
+    await assert.rejects(pending, (error) => error === failure);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(seen, [failure], "the real stream error event was consumed");
+    assert.deepEqual(output.listeners("error"), [otherErrorListener], "only the listener owned by the caller remains");
+    assert.equal(fake.active, false);
+    assert.deepEqual({ int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") }, baselineSignals);
   }
 });
 
