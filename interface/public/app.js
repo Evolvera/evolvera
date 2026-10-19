@@ -118,6 +118,9 @@ import {
 
 import { createTasksPanel } from "./tasks-panel.js";
 import { steerCommand, subagentDotState, subagentFamily, subagentSession, tabFitMode } from "./lib.js";
+import { legacyState, shouldMarkSeen, stripPictographs, subagentIndicator, treeHistoryItem, worktreeIndicator } from "./lib.js";
+import { applyState, stateHtml } from "./state-indicator.js";
+import { createTreeController } from "./tree-controller.js";
 import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
 
 import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
@@ -131,6 +134,7 @@ const els = {
   toggleRight: $("#toggleRightBtn"),
   projectMenuBtn: $("#projectMenuBtn"),
   projectTitle: $("#projectTitle"),
+  headerState: $("#headerState"),
   consoleBtn: $("#consoleBtn"),
   filesBtn: $("#filesBtn"),
   worktreesBtn: $("#worktreesBtn"),
@@ -394,6 +398,65 @@ async function api(path, { timeoutMs, ...options } = {}) {
 }
 
 const report = (error) => { if (!error?.detached) toast(error?.message || String(error), "error"); };
+
+// ---------------------------------------------------- sidebar tree (/api/tree)
+
+const projectIdForPath = (path) => state.projects.find((project) => samePath(project.cwd, path))?.id ?? null;
+
+// 200 = a (new) tree; 304 = unchanged. Anything else throws, and the poller backs off.
+async function fetchTree({ etag, signal }) {
+  const response = await fetch("/api/tree", { cache: "no-store", signal, headers: { "x-pi-studio-token": apiToken, ...(etag ? { "if-none-match": etag } : {}) } });
+  if (response.status === 304) return { status: 304 };
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return { status: 200, data: await response.json() };
+}
+
+const tree = createTreeController({
+  root: els.projects,
+  doc: document,
+  icon: (name, cls = "") => svg(name, cls),
+  storage: localStorage,
+  fetchTree,
+  isHidden: () => document.hidden,
+  getView: () => ({
+    currentPath: state.session?.sessionFile ?? null,
+    filter: state.filter,
+    projectsKey: state.projects.map((project) => `${project.id}|${project.cwd}`).join("\n"),
+    projectIdFor: (path, treeProjectId) => projectIdForPath(path) ?? treeProjectId,
+  }),
+  beforeRender: () => markOpenSeen({ render: false }),
+  onChange: () => {
+    updateHeaderState();
+    if (!tree.active()) renderProjects();
+  },
+});
+globalThis.__piTree = tree; // read by the browser checks: render counters
+
+// The conversation on screen has been read once the page is visible and scrolled to the bottom.
+function markOpenSeen({ render = true } = {}) {
+  const path = state.session?.sessionFile;
+  if (!path || !shouldMarkSeen({ open: true, visible: document.visibilityState === "visible", atBottom: state.stick })) return;
+  tree.markSeen(path, { render });
+}
+
+// Dot next to the title of the open conversation: local facts first (they are instant), the tree's state otherwise.
+function updateHeaderState() {
+  const path = state.session?.sessionFile;
+  applyState(els.headerState, state.uiActive ? "urgent" : state.isStreaming ? "working" : (path && tree.stateOf(path)) || "idle");
+}
+
+// "Mostrar mais (N)": the older conversations of one environment, from its project history.
+async function showMoreSessions({ extra, path }) {
+  const known = projectIdForPath(path);
+  let history;
+  if (state.currentProject && samePath(state.currentProject.cwd, path)) history = state.history;
+  else if (known) history = (await api(`/api/projects/${encodeURIComponent(known)}/history`)).history || [];
+  else {
+    await openWorktree({ path, name: basename(path) });
+    history = state.history;
+  }
+  tree.expandEnv(extra, history);
+}
 
 async function sendRpc(command) {
   if (!state.currentProject) throw new Error("Escolha um projeto primeiro.");
@@ -668,8 +731,8 @@ function sessionButton(project, item, active) {
   button.dataset.path = item.path;
   if (active) button.setAttribute("aria-current", "true");
   const badge = sessionStateBadge(item);
-  const dot = badge ? `<span class="session-state st-${badge.state}" role="img" aria-label="${esc(badge.aria)}"></span>` : "";
-  button.innerHTML = `<span class="session-title">${esc(item.title || "Nova conversa")}</span>${dot}<span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
+  const dot = badge ? stateHtml(legacyState(badge.state)) : "";
+  button.innerHTML = `<span class="session-title">${esc(stripPictographs(item.title) || "Nova conversa")}</span>${dot}<span class="session-time">${esc(relativeTime(item.timestamp))}</span>`;
   button.title = sessionTooltip(item);
   const menu = document.createElement("button");
   menu.type = "button";
@@ -708,15 +771,16 @@ function copyText(text, done) {
 }
 
 function openSessionMenu(anchor) {
-  const { project: projectId, path: sessionPath, title } = anchor.dataset;
-  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title };
+  const { project: projectId, path: sessionPath, title, env } = anchor.dataset;
+  const cwd = env || undefined;
+  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title, sessionId: tree.findPi(sessionPath)?.sessionId };
   const isOpen = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile);
   const parent = findParentRow(item);
   const openFirst = async () => {
-    if (!isOpen) await openSession(projectId, sessionPath);
+    if (!isOpen) await openSession(projectId, sessionPath, { cwd });
   };
   const actions = {
-    open: () => openSession(projectId, sessionPath),
+    open: () => openSession(projectId, sessionPath, { cwd }),
     rename: async () => {
       await openFirst();
       promptRename(item.title ?? title);
@@ -780,6 +844,12 @@ els.projects.addEventListener("contextmenu", (event) => {
 });
 
 function renderProjects() {
+  if (tree.active()) {
+    tree.render();
+    updateHeaderState();
+    syncHistoryPolling();
+    return;
+  }
   const fragment = document.createDocumentFragment();
   for (const project of state.projects) {
     const active = state.currentProject?.id === project.id;
@@ -799,7 +869,7 @@ function renderProjects() {
       <div class="project-row-wrap">
         <button type="button" class="project-row" data-action="open-project" data-project="${esc(project.id)}" title="${esc(project.cwd)}"${active ? ' aria-current="true"' : ""}>
           ${svg("i-code", "project-ico")}
-          <span class="project-name">${esc(project.name)}</span>
+          <span class="project-name">${esc(stripPictographs(project.name) || project.name)}</span>
           ${badge ? `<span class="count-badge" role="img" aria-label="${esc(badgeLabel)}" title="${esc(badgeLabel)}">${badge}</span>` : ""}
           <span class="run-dot" aria-hidden="true"></span>
           ${attention ? `<span class="sr-only">${attention === "waiting" ? "aguardando sua resposta" : "terminou enquanto você estava fora"}</span>` : ""}
@@ -852,6 +922,10 @@ els.projects.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const { action, project: projectId, path } = target.dataset;
+  if (action === "tree-toggle") {
+    tree.toggle(target.dataset.toggle, target.dataset.default === "1");
+    return;
+  }
   if (action === "open-project") {
     if (state.currentProject?.id !== projectId) openProject(projectId).catch(report);
   } else if (action === "expand-project") {
@@ -865,18 +939,23 @@ els.projects.addEventListener("click", (event) => {
     state.showAllSessions = true;
     renderProjects();
   } else if (action === "open-session") {
-    openSession(projectId, path).catch(report);
+    openSession(projectId, path, { cwd: target.dataset.env || undefined }).catch(report);
+  } else if (action === "tree-env") {
+    openWorktree({ path: target.dataset.path, name: target.dataset.name, projectId: projectIdForPath(target.dataset.path) }).catch(report);
+  } else if (action === "tree-more") {
+    showMoreSessions(target.dataset).catch(report);
   } else if (action === "session-menu") {
     openSessionMenu(target);
   }
-  if (action !== "expand-project" && action !== "more-sessions" && action !== "session-menu") closeOverlays();
+  if (action !== "expand-project" && action !== "more-sessions" && action !== "session-menu" && action !== "tree-more") closeOverlays();
 });
 
 // ------------------------------------------------------------------ header
 
 function updateHeader() {
   const project = state.currentProject;
-  els.projectTitle.textContent = project?.name || "PI Studio";
+  els.projectTitle.textContent = stripPictographs(project?.name) || project?.name || "PI Studio";
+  updateHeaderState();
   els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
   els.userName.textContent = prefs.userName || "Você";
   els.userAvatar.textContent = (prefs.userName || "?").trim().charAt(0).toUpperCase() || "?";
@@ -948,6 +1027,8 @@ async function bootstrap() {
   state.projects = data.projects || [];
   renderProjects();
   renderPanel();
+  tree.start();
+  setInterval(() => !document.hidden && tree.render(), 20_000);
   if (!state.projects.length) {
     renderThread();
     return;
@@ -963,6 +1044,7 @@ async function refreshProjects() {
   state.otherHistory.clear();
   renderProjects();
   renderPanel();
+  tree.poke();
 }
 
 // Opening a project starts PI for it (seconds on a cold start). The session gate makes a
@@ -1010,11 +1092,16 @@ async function loadProject(projectId, { cwd } = {}) {
 
 // A conversation another process is writing (an Orca agent's terminal, another PI) is only followed, read-only:
 // the Studio's PI never switches into a file with two writers.
-function openSession(projectId, sessionPath) {
+function openSession(projectId, sessionPath, { cwd } = {}) {
   return runGated(state, async () => {
-    if (state.currentProject?.id !== projectId) await loadProject(projectId);
+    if (cwd ? !samePath(state.currentProject?.cwd, cwd) : state.currentProject?.id !== projectId) {
+      const known = cwd ? projectIdForPath(cwd) : projectId;
+      await (known ? loadProject(known) : loadProject(null, { cwd }));
+    }
     await refreshHistory().catch(() => {});
-    await showConversation(state.history.find((item) => samePath(item.path, sessionPath)), sessionPath);
+    const entry = state.history.find((item) => samePath(item.path, sessionPath));
+    const live = tree.findPi(sessionPath);
+    await showConversation(live ? treeHistoryItem(entry ?? null, live) : entry, sessionPath);
   });
 }
 
@@ -1812,6 +1899,7 @@ function setRunning(running) {
     state.liveThinkingOpen = false;
   }
   updateComposer();
+  updateHeaderState();
   if (was !== state.isStreaming) {
     scheduleRender();
     scheduleInspector("context");
@@ -1826,6 +1914,7 @@ els.scroller.addEventListener("scroll", () => {
   const distance = els.scroller.scrollHeight - els.scroller.scrollTop - els.scroller.clientHeight;
   state.stick = distance < 64;
   els.jump.hidden = state.stick;
+  if (state.stick) markOpenSeen();
 }, { passive: true });
 
 els.jump.addEventListener("click", () => {
@@ -2019,7 +2108,7 @@ function renderTodo() {
     const item = document.createElement("li");
     item.className = `todo-item ${task.status}`;
     if (task.status === "in_progress") item.setAttribute("aria-current", "step");
-    item.innerHTML = `<span class="todo-mark" aria-hidden="true"></span><span><span class="sr-only">${labels[task.status]}</span><span class="todo-subject">${esc(task.status === "in_progress" ? task.activeForm || task.subject : task.subject)}</span></span>`;
+    item.innerHTML = `${task.status === "in_progress" ? stateHtml("working", "todo-state") : '<span class="todo-mark" aria-hidden="true"></span>'}<span><span class="sr-only">${labels[task.status]}</span><span class="todo-subject">${esc(task.status === "in_progress" ? task.activeForm || task.subject : task.subject)}</span></span>`;
     return item;
   }));
 }
@@ -2100,6 +2189,11 @@ async function onSettled() {
 
 window.addEventListener("focus", () => state.currentProject && markSeen(state.currentProject.id));
 document.addEventListener("visibilitychange", () => state.currentProject && markSeen(state.currentProject.id));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) tree.poke();
+  markOpenSeen();
+});
+window.addEventListener("pagehide", () => tree.stop());
 
 // --------------------------------------------------------------- inspector
 
@@ -2414,7 +2508,7 @@ function subCard(run, open) {
   const sections = run.sections.map((section) => `<section class="sa-sec"><h4>${esc(section.label)}</h4><pre>${esc(truncate(section.text, 60000))}</pre></section>`).join("");
   node.innerHTML = `
     <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}">
-      <span class="sa-dot" data-state="${subagentDotState(run, Boolean(timing.stalled))}" aria-hidden="true"></span>
+      ${stateHtml(timing.stalled ? "attention" : subagentIndicator(run.phase))}
       <span class="sa-title">${svg(subagentFamilyIcon(run), "sa-ico")}<strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
       <span class="sa-state"><span class="sa-phase">${esc(SUB_PHASE[run.phase])}</span><span class="sa-time">${esc(formatElapsed(run.elapsed))}</span></span>
       ${svg("i-chevron-right", "sa-chev")}
@@ -2516,7 +2610,7 @@ function renderContext() {
   const today = todayUsageRows(usageToday.data);
   const todaySection = today.length ? `<section class="insp-sec"><h3 class="sec-title">Hoje</h3><dl class="kv">${today.map(([label, value]) => row(label, value)).join("")}</dl></section>` : "";
   const now = Date.now();
-  const problemRow = (item) => `<li><span class="session-state st-${item.kind === "error" ? "erro" : "aguardando"}" aria-hidden="true"></span><span class="prob-text">${esc(item.text)}</span>${item.at ? `<span class="prob-time">${esc(agoLabel(item.at, now))}</span>` : ""}</li>`;
+  const problemRow = (item) => `<li>${stateHtml(item.kind === "error" ? "urgent" : "attention")}<span class="prob-text">${esc(item.text)}</span>${item.at ? `<span class="prob-time">${esc(agoLabel(item.at, now))}</span>` : ""}</li>`;
   const problems = `<section class="insp-sec"><h3 class="sec-title">Erros e tentativas</h3>${state.problems.length
     ? `<ul class="prob-list">${[...state.problems].reverse().map(problemRow).join("")}</ul>`
     : `<p class="sec-hint">Nenhum erro nesta conversa.</p>`}</section>`;
@@ -3775,7 +3869,7 @@ function worktreeCard(worktree) {
   node.className = `sa-card wt-card${row.running ? " is-running" : ""}${current ? " is-current" : ""}`;
   node.innerHTML = `
     <button type="button" class="sa-head" data-wt="${esc(worktree.path)}" data-project="${esc(worktree.projectId || "")}"${current ? ' aria-current="true"' : ""}>
-      <span class="sa-dot" aria-hidden="true"></span>
+      ${stateHtml(worktreeIndicator(worktree))}
       <span class="sa-title"><strong>${esc(row.name)}</strong><span class="sa-type">${esc(row.sub)}</span></span>
       <span class="sa-state">${row.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}${row.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}<span class="sa-phase">${esc(row.statusLabel)}</span></span>
     </button>
@@ -3944,13 +4038,13 @@ function worktreeOverviewItem(worktree, detail, index) {
   const meta = [worktree.repo, detail.issue, detail.pr, detail.terminals, detail.lastActivity && `atividade ${detail.lastActivity}`].filter(Boolean);
   node.innerHTML = `
     <div class="wtv-head">
-      <span class="sa-dot" aria-hidden="true"></span>
+      ${stateHtml(worktreeIndicator(worktree))}
       <span class="sa-title"><strong>${esc(detail.name)}</strong><span class="sa-type">${esc(detail.sub)}</span></span>
       <span class="sa-state">
         ${detail.unread ? '<span class="wt-unread" role="img" aria-label="não lido" title="Não lido"></span>' : ""}
         ${current ? '<span class="wt-flag">Aberta</span>' : ""}
         ${detail.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}
-        ${detail.studio ? `<span class="wt-flag wtv-chip"><span class="session-state st-${esc(detail.studio.key)}" aria-hidden="true"></span>${esc(detail.studio.label)}</span>` : ""}
+        ${detail.studio ? `<span class="wt-flag wtv-chip">${stateHtml(legacyState(detail.studio.key))}${esc(detail.studio.label)}</span>` : ""}
         ${detail.stalled ? `<span class="wt-flag wtv-chip"><i class="stall-dot" aria-hidden="true"></i>${esc(detail.stalled)}</span>` : ""}
         <span class="sa-phase">${esc(detail.statusLabel)}</span>
       </span>
@@ -3959,7 +4053,7 @@ function worktreeOverviewItem(worktree, detail, index) {
     ${detail.comment ? `<p class="wtv-comment">${esc(detail.comment)}</p>` : ""}
     ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent, index) => `
       <li class="wtv-agent" data-agent="${index}">
-        <span class="wtv-agent-head"><span class="session-state${agent.key ? ` st-${esc(agent.key)}` : ""}" aria-hidden="true"></span><span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
+        <span class="wtv-agent-head">${stateHtml(legacyState(agent.key))}<span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
         ${agent.message ? `<span class="wtv-msg">${esc(agent.message)}</span>` : ""}
       </li>`).join("")}</ul>` : ""}`;
   return node;
@@ -3975,7 +4069,7 @@ function activityItem(row, index) {
   node.dataset.index = String(index);
   node.innerHTML = `
     <div class="wtv-head">
-      <span class="session-state${row.dot ? ` st-${esc(row.dot)}` : ""}" aria-hidden="true"></span>
+      ${stateHtml(legacyState(row.dot))}
       <span class="sa-title"><strong>${esc(row.project)}</strong></span>
       <span class="sa-state"><span class="sa-phase">${esc(row.ago)}</span></span>
     </div>
