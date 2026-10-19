@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --check server.mjs && node --check public/app.js && node --check public/lib.js && node --check cli.mjs && node --check cli-lib.mjs && node --test test/lib.test.mjs test/server.test.mjs test/smoke.mjs test/git-wrapper.test.mjs test/cli.test.mjs test/desktop.test.mjs test/orca.test.mjs test/visibility.test.mjs",
+    "test": "node --check server.mjs && node --check public/app.js && node --check public/lib.js && node --check cli.mjs && node --check cli-lib.mjs && node --test test/lib.test.mjs test/server.test.mjs test/smoke.mjs test/git-wrapper.test.mjs test/cli.test.mjs test/desktop.test.mjs test/orca.test.mjs test/visibility.test.mjs test/menu-fast.test.mjs",
     "test:load": "node test/load-new-endpoints.mjs",
     "coverage": "node test/coverage.mjs"
   },

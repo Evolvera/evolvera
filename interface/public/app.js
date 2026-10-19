@@ -1,5 +1,10 @@
 import {
+  FAST_OPTIONS,
+  FAST_STATUS_KEY,
   INSPECTOR_TABS,
+  fastFromStatus,
+  fastPanel,
+  sessionMenuItems,
   NOTIFY_KEY,
   SETTINGS_KEY,
   followDecision,
@@ -167,6 +172,7 @@ const els = {
   modeLabel: $("#modeLabel"),
   statusLine: $("#statusLine"),
   modelBtn: $("#modelBtn"),
+  fastChip: $("#fastChip"),
   modelName: $("#modelName"),
   thinkingName: $("#thinkingName"),
   ctxRing: $("#ctxRing"),
@@ -621,17 +627,64 @@ function sessionButton(project, item, active) {
   return row;
 }
 
-// Rename and export go through RPC, which only acts on the open session: the other conversations of
-// the list show the entries disabled (open one first) instead of silently switching sessions.
+// The "⋯" menu works on any conversation of the list. Entries that act through RPC (rename, export,
+// fork, duplicate) first open the conversation, because RPC only ever acts on the open session.
+function historyItemFor(projectId, sessionPath) {
+  const list = state.currentProject?.id === projectId ? state.history : state.otherHistory.get(projectId) || [];
+  return list.find((item) => samePath(item.path, sessionPath));
+}
+
+// Where a sub-PI's parent conversation lives in the loaded histories, or null.
+function findParentRow(item) {
+  if (!item.parentSession) return null;
+  for (const [projectId, list] of [[state.currentProject?.id, state.history], ...state.otherHistory]) {
+    const parent = list.find((entry) => samePath(entry.path, item.parentSession));
+    if (parent) return { projectId, path: parent.path };
+  }
+  return null;
+}
+
+function copyText(text, done) {
+  if (!navigator.clipboard) throw new Error("A cópia não está disponível neste navegador.");
+  return navigator.clipboard.writeText(text).then(() => toast(done));
+}
+
 function openSessionMenu(anchor) {
   const { project: projectId, path: sessionPath, title } = anchor.dataset;
-  const available = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile) && !state.processExited;
-  const sub = available ? undefined : "Abra a conversa primeiro";
+  const item = historyItemFor(projectId, sessionPath) || { path: sessionPath, title };
+  const isOpen = state.currentProject?.id === projectId && samePath(sessionPath, state.session?.sessionFile);
+  const parent = findParentRow(item);
+  const openFirst = async () => {
+    if (!isOpen) await openSession(projectId, sessionPath);
+  };
+  const actions = {
+    open: () => openSession(projectId, sessionPath),
+    rename: async () => {
+      await openFirst();
+      promptRename(item.title ?? title);
+    },
+    export: async () => {
+      await openFirst();
+      await exportSession();
+    },
+    fork: async () => {
+      await openFirst();
+      await pickForkPoint();
+    },
+    clone: async () => {
+      await openFirst();
+      await cloneSession();
+    },
+    "copy-path": () => copyText(sessionPath, "Caminho da sessão copiado."),
+    "copy-id": () => copyText(item.sessionId, "ID da sessão copiado."),
+    parent: () => openSession(parent.projectId, parent.path),
+  };
+  const entries = sessionMenuItems({ item, isOpen, processExited: state.processExited, streaming: state.isStreaming, parentKnown: Boolean(parent) });
   anchor.setAttribute("aria-expanded", "true");
-  openMenu(anchor, [
-    { label: "Renomear", icon: "i-edit", disabled: !available, sub, onSelect: () => promptRename(title) },
-    { label: "Exportar conversa", icon: "i-file", disabled: !available, sub, onSelect: exportSession },
-  ], { align: "end", onClose: () => anchor.removeAttribute("aria-expanded") });
+  openMenu(anchor, entries.map(({ id, ...entry }) => (entry.separator ? entry : { ...entry, onSelect: actions[id] })), {
+    align: "end",
+    onClose: () => anchor.removeAttribute("aria-expanded"),
+  });
 }
 
 function promptRename(current = "") {
@@ -650,6 +703,15 @@ els.renameInput.addEventListener("keydown", (event) => {
 
 els.renameDialog.addEventListener("close", () => {
   if (els.renameDialog.returnValue === "save") renameSession(els.renameInput.value.trim()).catch(report);
+});
+
+// Shift+F10 / the ContextMenu key on a focused row open the same menu as a right click.
+els.projects.addEventListener("keydown", (event) => {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+  const anchor = event.target.closest(".session-row")?.querySelector(".session-menu-btn");
+  if (!anchor) return;
+  event.preventDefault();
+  openSessionMenu(anchor);
 });
 
 els.projects.addEventListener("contextmenu", (event) => {
@@ -769,6 +831,7 @@ function updateModelButton() {
   const level = state.session?.thinkingLevel;
   els.thinkingName.textContent = model?.reasoning === false || !level ? "" : thinkingLabel(level);
   els.thinkingName.hidden = !els.thinkingName.textContent;
+  refreshFastUi();
 }
 
 // ---------------------------------------------------------------- projects
@@ -867,6 +930,9 @@ async function loadProject(projectId, { cwd } = {}) {
   state.thinkingLevels = null;
   state.statuses.clear();
   state.widgets.clear();
+  clearTimeout(fast.pending?.timer);
+  fast.pending = null;
+  fast.available = null;
   renderWidgets();
   setRunning(Boolean(session?.isStreaming));
   localStorage.setItem("pi-studio:last-project", project.id);
@@ -1662,6 +1728,53 @@ function refreshForkMessages() {
     .catch(() => {});
 }
 
+// "Bifurcar a partir de…": the palette lists the fork points of the open conversation; picking one forks
+// there and puts that message in the composer, like the pencil on a message.
+async function pickForkPoint() {
+  const res = await rpcRequest({ type: "get_fork_messages" }, 8000);
+  const messages = res.success && Array.isArray(res.data?.messages) ? res.data.messages : [];
+  state.forkMessages = messages;
+  if (!messages.length) {
+    toast("Esta conversa ainda não tem mensagens para bifurcar.", "warning");
+    return;
+  }
+  openPalettePick("Bifurcar a partir de…", messages.map((message, index) => ({
+    label: truncate(String(message.text ?? "").replace(/\s+/g, " ").trim(), 90) || "(mensagem vazia)",
+    sub: `Mensagem ${index + 1} de ${messages.length}`,
+    icon: "i-branch",
+    run: async () => {
+      const text = await forkFrom(message.entryId);
+      if (text === null) return;
+      setComposerText(text);
+      els.prompt.focus();
+      toast("Bifurcado: ajuste a mensagem e envie.");
+    },
+  })));
+}
+
+// "Duplicar" (RPC `clone`): copies the active branch into a new session and switches to the copy.
+async function cloneSession() {
+  const done = await runGated(state, async () => {
+    const res = await rpcRequest({ type: "clone" }, SESSION_SWITCH_TIMEOUT_MS);
+    if (!res.success) throw new Error(res.error || "Não foi possível duplicar a conversa.");
+    if (res.data?.cancelled) {
+      toast("Uma extensão cancelou a duplicação.", "warning");
+      return false;
+    }
+    resetConversation();
+    state.session = { ...(state.session || {}), sessionFile: null };
+    renderThread();
+    renderPanel();
+    sendRpc({ type: "get_state" }).catch(() => {});
+    sendRpc({ type: "get_entries" }).catch(() => {});
+    refreshStats();
+    refreshHistory().catch(() => {});
+    setTimeout(() => refreshHistory().catch(() => {}), 800);
+    return true;
+  });
+  if (done) toast("Conversa duplicada. Você está na cópia.");
+}
+
 // ------------------------------------------------------------------ tasks
 
 function applyTodo(tasks) {
@@ -2143,8 +2256,8 @@ function renderContext() {
   const blocked = !state.currentProject || state.processExited || state.isStreaming || compacting;
   const hint = compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
   const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${compacting ? ' aria-busy="true"' : ""}>${compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
-  const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : "";
-  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
+  const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : document.activeElement?.closest?.(".fast-seg") ? ".fast-seg input:checked" : "";
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${fastSectionHtml()}${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
 }
 
@@ -2198,6 +2311,115 @@ els.ctxView.addEventListener("click", (event) => {
     const file = contextBreakdown(state.stats, state.session).sessionFile;
     navigator.clipboard?.writeText(file).then(() => toast("Caminho da sessão copiado.")).catch(() => toast("Não foi possível copiar.", "error"));
   }
+});
+
+// --- Fast mode (extension codex-fast-mode): the Velocidade section, the composer chip, Ctrl+K entries.
+// The mode is read from the extension's own status (pure mapping in lib.js) and changed with `/fast <flag>`,
+// an extension command: PI runs it at once even while an answer streams, so no streamingBehavior is sent.
+
+const fast = { available: null, pending: null };
+const FAST_SEND_DELAY_MS = 350;
+const FAST_CONFIRM_MS = 5000;
+
+// Hidden when the extension is not loaded: no `fast` command and no status of its own.
+const fastAvailable = () => fast.available === true || state.statuses.has(FAST_STATUS_KEY);
+
+function fastView() {
+  return fastPanel({
+    statusText: state.statuses.get(FAST_STATUS_KEY),
+    model: state.session?.model,
+    selected: fast.pending?.mode,
+    disabledReason: !state.currentProject || state.processExited ? "PI indisponível." : "",
+  });
+}
+
+function fastSectionHtml() {
+  if (!fastAvailable()) return "";
+  const view = fastView();
+  const radios = view.options.map((option) => `<label title="${esc(option.reason)}"><input type="radio" name="fastMode" value="${option.mode}"${option.selected ? " checked" : ""}${option.disabled ? " disabled" : ""} /><span>${esc(option.label)}</span></label>`).join("");
+  return `<section class="insp-sec fast-sec"><h3 class="sec-title">Velocidade</h3>
+    <div class="seg-group fast-seg" role="radiogroup" aria-label="Velocidade">${radios}</div>
+    <p class="sec-hint">${esc(view.description)}</p>
+    <dl class="kv"><div class="kv-row"><dt>Estado</dt><dd>${esc(view.liveLabel)}</dd></div></dl>
+    ${view.notes.map((note) => `<p class="sec-hint">${esc(note)}</p>`).join("")}</section>`;
+}
+
+function renderFastChip() {
+  const chip = fastAvailable() ? fastView().chip : null;
+  els.fastChip.hidden = !chip;
+  if (chip) {
+    els.fastChip.textContent = chip.label;
+    els.fastChip.title = chip.title;
+  }
+}
+
+function refreshFastUi() {
+  if (fast.available === null && state.currentProject && !state.processExited && !state.commands && !state.commandsLoading) loadCommands();
+  renderFastChip();
+  scheduleInspector("context");
+}
+
+// The extension reported a new status: a pending choice is settled once it shows up.
+function fastStatusChanged() {
+  if (fast.pending && fastFromStatus(state.statuses.get(FAST_STATUS_KEY)).mode === fast.pending.mode) {
+    clearTimeout(fast.pending.timer);
+    fast.pending = null;
+  }
+  refreshFastUi();
+}
+
+// Drops the optimistic choice and says why (the PI's own warning if it sent one).
+function revertFast(pending, reason) {
+  if (fast.pending !== pending) return;
+  clearTimeout(pending.timer);
+  fast.pending = null;
+  refreshFastUi();
+  toast(reason || pending.notice || "O PI não confirmou a mudança do modo Fast.", "warning");
+}
+
+async function sendFast(pending, option) {
+  if (fast.pending !== pending) return;
+  pending.sent = true;
+  pending.timer = setTimeout(() => revertFast(pending), FAST_CONFIRM_MS);
+  try {
+    const res = await rpcRequest({ type: "prompt", message: `/fast ${option.flag}` }, 15000);
+    if (!res.success) revertFast(pending, res.error || "O PI recusou o comando /fast.");
+  } catch (error) {
+    revertFast(pending, error.message);
+  }
+}
+
+// Shows the choice at once and sends it shortly after, so arrowing through the radios sends only the last one.
+function chooseFast(option) {
+  clearTimeout(fast.pending?.timer);
+  if (option.mode === fastFromStatus(state.statuses.get(FAST_STATUS_KEY)).mode && !fast.pending?.sent) {
+    fast.pending = null;
+    refreshFastUi();
+    return;
+  }
+  const pending = { mode: option.mode, sent: false, notice: "", timer: setTimeout(() => sendFast(pending, option), FAST_SEND_DELAY_MS) };
+  fast.pending = pending;
+  refreshFastUi();
+}
+
+function fastPaletteActions() {
+  if (!fastAvailable()) return [];
+  const view = fastView();
+  return [["Fast: ligar", "on"], ["Fast: desligar", "off"], ["Fast: eco", "eco"], ["Fast: ultra", "ultra"]].map(([label, flag]) => {
+    const option = view.options.find((candidate) => candidate.flag === flag);
+    return { label, icon: "i-gauge", keywords: "velocidade fast", run: () => (option.disabled ? toast(option.reason, "warning") : chooseFast(option)) };
+  });
+}
+
+els.ctxView.addEventListener("change", (event) => {
+  const option = event.target.matches?.("input[name=fastMode]") && FAST_OPTIONS.find((candidate) => candidate.mode === event.target.value);
+  if (option) chooseFast(option);
+});
+
+els.fastChip.addEventListener("click", () => {
+  setPanel("right", true);
+  selectTab("context");
+  requestAnimationFrame(() => requestAnimationFrame(() => els.ctxView.querySelector(".fast-seg input:checked")?.focus()));
 });
 
 // --- Files: project path + files written/edited in this session.
@@ -2703,6 +2925,10 @@ async function loadCommands() {
   } finally {
     state.commandsLoading = false;
   }
+  if (state.currentProject === project) {
+    fast.available = Boolean(state.commands?.some((command) => command.name === "fast"));
+    refreshFastUi();
+  }
   if (state.commands) refreshSlashMenu(true);
 }
 
@@ -2821,6 +3047,7 @@ async function openModelMenu() {
 function handleExtensionUi(req) {
   switch (req.method) {
     case "notify":
+      if (fast.pending && req.notifyType && req.notifyType !== "info") fast.pending.notice = stripAnsi(req.message);
       toast(stripAnsi(req.message) || "Notificação do PI", req.notifyType || "info");
       addNotice(eventNotice(req));
       break;
@@ -2828,6 +3055,7 @@ function handleExtensionUi(req) {
       if (req.statusText) state.statuses.set(req.statusKey || "default", stripAnsi(req.statusText));
       else state.statuses.delete(req.statusKey || "default");
       renderWidgets();
+      if (req.statusKey === FAST_STATUS_KEY) fastStatusChanged();
       break;
     case "setWidget":
       if (Array.isArray(req.widgetLines) && req.widgetLines.length) state.widgets.set(req.widgetKey || "default", req.widgetLines.map(stripAnsi));
@@ -3559,7 +3787,8 @@ els.worktreesBtn.addEventListener("click", () => openWorktrees());
 // ------------------------------------------------------ command palette
 
 const PALETTE_ICONS = { session: "i-code", hit: "i-search" };
-const palette = { query: "", entries: [], index: 0, hits: [], loading: false, indexing: false, seq: 0, timer: null };
+const palette = { query: "", entries: [], index: 0, hits: [], loading: false, indexing: false, seq: 0, timer: null, pick: null };
+const PALETTE_PLACEHOLDER = els.paletteInput.placeholder;
 
 function paletteActions() {
   const rightTab = (tab) => () => {
@@ -3582,6 +3811,7 @@ function paletteActions() {
     { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
     { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },
     { label: "Configurações", icon: "i-gear", keywords: "preferências fonte largura", run: openSettings },
+    ...fastPaletteActions(),
   ];
 }
 
@@ -3600,6 +3830,7 @@ function paletteSessions() {
 }
 
 function paletteGroups() {
+  if (palette.pick) return [{ title: palette.pick.title, items: palette.pick.items, limit: 500 }];
   return [
     { title: "Ações", items: paletteActions(), limit: 10 },
     {
@@ -3648,11 +3879,19 @@ function renderPalette() {
 
 function openPalette() {
   closeMenu();
-  Object.assign(palette, { query: "", index: 0, hits: [], loading: false });
+  Object.assign(palette, { query: "", index: 0, hits: [], loading: false, pick: null });
   els.paletteInput.value = "";
   els.paletteDialog.showModal();
   renderPalette();
   els.paletteInput.focus();
+}
+
+// The palette as a plain picker over `items` ({ label, sub, icon, run }): no actions, no conversation search.
+function openPalettePick(title, items) {
+  openPalette();
+  palette.pick = { title, items };
+  els.paletteInput.placeholder = `${title} (digite para filtrar)`;
+  renderPalette();
 }
 
 function closePalette() {
@@ -3660,6 +3899,7 @@ function closePalette() {
 }
 
 els.paletteDialog.addEventListener("close", () => {
+  els.paletteInput.placeholder = PALETTE_PLACEHOLDER;
   clearTimeout(palette.timer);
   palette.seq++;
   palette.loading = false;
@@ -3679,7 +3919,7 @@ els.paletteInput.addEventListener("input", () => {
   const seq = ++palette.seq;
   const query = palette.query.trim();
   palette.hits = [];
-  palette.loading = query.length >= SEARCH_MIN_CHARS;
+  palette.loading = !palette.pick && query.length >= SEARCH_MIN_CHARS;
   renderPalette();
   if (!palette.loading) return;
   palette.timer = setTimeout(async () => {

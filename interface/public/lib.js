@@ -2281,3 +2281,116 @@ export function formatBytes(bytes) {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+// ------------------------------------------ conversation "⋯" menu + Fast mode
+
+const BUSY_SESSION_STATES = new Set(["fazendo", "aguardando"]);
+
+// Entries of a sidebar row's "⋯" menu, decided purely from the row and the Studio's state.
+//   item: history entry { path, sessionId, state, isSubagent, parentSession }
+//   isOpen: the row is the Studio's open conversation; streaming: its PI is answering now
+//   parentKnown: the sub-PI's parent conversation is in the loaded history
+// A conversation another PI is writing (fazendo/aguardando, not open here) keeps only the read-only entries.
+// Entries that act on a conversation first open it (see app.js), so they stay enabled for closed rows.
+export function sessionMenuItems({ item, isOpen, processExited, streaming, parentKnown }) {
+  const elsewhere = !isOpen && BUSY_SESSION_STATES.has(item.state);
+  const dead = isOpen && processExited ? "PI encerrado" : undefined;
+  const mutating = (id, label, icon, waitsForAnswer) => {
+    const sub = elsewhere ? "Em execução em outro PI" : dead || (isOpen && streaming && waitsForAnswer ? "Aguarde a resposta terminar" : undefined);
+    return { id, label, icon, disabled: Boolean(sub), sub };
+  };
+  const entries = [];
+  if (!isOpen) entries.push({ id: "open", label: "Abrir", icon: "i-folder-open", disabled: false });
+  entries.push(
+    mutating("rename", "Renomear", "i-edit"),
+    { id: "export", label: "Exportar conversa", icon: "i-file", disabled: Boolean(dead), sub: dead },
+    mutating("fork", "Bifurcar a partir de…", "i-branch", true),
+    mutating("clone", "Duplicar", "i-copy", true),
+    { separator: true },
+    { id: "copy-path", label: "Copiar caminho", icon: "i-copy", disabled: !item.path, sub: item.path ? undefined : "Sem arquivo de sessão" },
+    { id: "copy-id", label: "Copiar ID", icon: "i-copy", disabled: !item.sessionId, sub: item.sessionId ? undefined : "Sem ID" },
+  );
+  if (item.isSubagent) {
+    const known = Boolean(item.parentSession) && parentKnown === true;
+    entries.push({ separator: true }, { id: "parent", label: "Ir para a conversa pai", icon: "i-agents", disabled: !known, sub: known ? undefined : "Conversa pai não encontrada" });
+  }
+  return entries;
+}
+
+// Fast mode as the extension reports it (ctx.ui.setStatus("codex-fast-mode", ...)).
+export const FAST_STATUS_KEY = "codex-fast-mode";
+export const FAST_OPTIONS = [
+  { mode: "off", flag: "off", label: "Desligado" },
+  { mode: "subagents", flag: "eco", label: "Eco" },
+  { mode: "all", flag: "on", label: "Fast" },
+  { mode: "ultra", flag: "ultra", label: "Ultra" },
+  { mode: "ultra-subagents", flag: "ultra-eco", label: "Ultra-eco" },
+];
+const FAST_STATUS_MAP = {
+  "⚡🟢": { mode: "all", live: "active" },
+  "⚡🟡": { mode: "all", live: "pending" },
+  "🚀🟢": { mode: "ultra", live: "active" },
+  "🚀🟡": { mode: "ultra", live: "pending" },
+  "⚡ECO": { mode: "subagents", live: "subagents" },
+  "🚀ECO": { mode: "ultra-subagents", live: "subagents" },
+  "⚡SUB": { mode: "all", live: "subagents" },
+  "🚀SUB": { mode: "ultra", live: "subagents" },
+};
+
+// Status text -> { mode, live }; no status (or one we do not know) means off.
+export function fastFromStatus(text) {
+  const key = typeof text === "string" ? text.replace(/[\s\uFE0F]/g, "").toUpperCase() : "";
+  return FAST_STATUS_MAP[key] ?? { mode: "off", live: "off" };
+}
+
+// Same eligibility the extension applies (extensions/codex-fast-mode.ts).
+export function fastModelEligible(model) {
+  const id = model?.id;
+  if (model?.provider !== "openai-codex" || typeof id !== "string") return false;
+  return id.startsWith("gpt-5.6-") || ["gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"].includes(id);
+}
+
+export function ultraModelEligible(model) {
+  return model?.provider === "openai-codex" && model.id === "gpt-6-astra";
+}
+
+const FAST_LIVE_LABELS = { off: "desligado", active: "ativo (aceito pelo provedor)", pending: "aguardando confirmação", subagents: "só subagentes" };
+const FAST_DESCRIPTIONS = {
+  off: "Usa o service tier padrão do provedor.",
+  subagents: "Eco: só subagentes OpenAI Codex compatíveis usam Fast (~1,5–2× mais rápido, 2,5× créditos); a conversa principal fica no tier padrão.",
+  all: "Fast: a conversa e os subagentes compatíveis ficam ~1,5–2× mais rápidos, com 2,5× de consumo de créditos.",
+  ultra: "Ultra: Ultrafast no GPT-6 Astra (até ~8× mais rápido, 8× do limite) e Fast nos demais modelos compatíveis.",
+  "ultra-subagents": "Ultra-eco: subagentes GPT-6 Astra usam Ultrafast e os demais compatíveis usam Fast; a conversa principal fica no tier padrão.",
+};
+
+// Everything the Velocidade section and the composer chip show.
+//   statusText: the extension's current status (undefined when off)  model: the open session's model
+//   selected: optimistic mode while a change is in flight (overrides the reported one)
+//   disabledReason: the whole control is unavailable (no PI / PI exited)
+export function fastPanel({ statusText, model, selected, disabledReason }) {
+  const reported = fastFromStatus(statusText);
+  const mode = selected ?? reported.mode;
+  const live = selected && selected !== reported.mode ? "pending" : reported.live;
+  const known = Boolean(model);
+  const ultraBlocked = known && !ultraModelEligible(model);
+  const noFast = known && !fastModelEligible(model);
+  const options = FAST_OPTIONS.map((option) => {
+    const isUltra = option.mode === "ultra" || option.mode === "ultra-subagents";
+    const reason = disabledReason || (isUltra && ultraBlocked ? "Ultra só no GPT-6 Astra" : "");
+    return { ...option, selected: option.mode === mode, disabled: Boolean(reason) && option.mode !== mode, reason };
+  });
+  const notes = disabledReason ? [disabledReason] : [];
+  if (noFast) notes.push("Este modelo não tem Fast — vale para subagentes elegíveis.");
+  if (ultraBlocked) notes.push("Ultra e Ultra-eco só estão disponíveis no GPT-6 Astra.");
+  const chipIcon = mode === "ultra" || mode === "ultra-subagents" ? "🚀" : "⚡";
+  const chipWord = { all: "Fast", subagents: "Eco", ultra: "Ultra", "ultra-subagents": "Ultra-eco" }[mode];
+  return {
+    mode,
+    live,
+    liveLabel: FAST_LIVE_LABELS[live],
+    description: FAST_DESCRIPTIONS[mode],
+    options,
+    notes,
+    chip: chipWord ? { label: `${chipIcon} ${chipWord}`, title: `Velocidade: ${FAST_DESCRIPTIONS[mode]}` } : null,
+  };
+}
