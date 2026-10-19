@@ -28,6 +28,8 @@
         <symbol id="i-code" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13" /></symbol>
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8" /><circle cx="12" cy="12" r="7" stroke-dasharray="2.75 2.75" stroke-width="3.2" /><circle cx="12" cy="12" r="5.6" /></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m19.5 19.5-4-4" /></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.8" width="6" height="10.4" rx="3" /><path d="M5.8 11.4a6.2 6.2 0 0 0 12.4 0M12 17.6v2.6" /></symbol>
+        <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M5 9.6h3l4.4-3.6v12L8 14.4H5z" /><path d="M15.6 9.3a3.8 3.8 0 0 1 0 5.4M18.2 6.8a7.3 7.3 0 0 1 0 10.4" /></symbol>
         <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 18.5v-13M6.5 11 12 5.5l5.5 5.5" /></symbol>
         <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor" stroke="none" /></symbol>
         <symbol id="i-file" viewBox="0 0 24 24"><path d="M7.5 3.5h6l4.5 4.5v10.5a2 2 0 0 1-2 2h-8.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" /><path d="M13.5 3.5V8H18" /></symbol>
@@ -122,8 +124,16 @@
                 <input id="imageInput" type="file" accept="image/*" multiple />
                 <svg><use href="#i-plus" /></svg><span class="sr-only">Anexar imagem</span>
               </label>
+              <button id="micBtn" class="icon-btn mic-btn" type="button" title="Gravar voz (Ctrl+Shift+M)" aria-label="Gravar voz (Ctrl+Shift+M)" aria-pressed="false"><svg><use href="#i-mic" /></svg></button>
+              <span id="micLive" class="mic-live" role="status" aria-live="polite" hidden>
+                <span class="mic-dot" aria-hidden="true"></span>
+                <span id="micTimer" class="mic-timer">0:00</span>
+                <span class="mic-meter" aria-hidden="true"><i id="micLevel"></i></span>
+                <span id="micLabel" class="mic-label"></span>
+              </span>
               <span id="shellChip" class="shell-chip" hidden>$ shell</span>
               <span id="composerHint" class="composer-hint"></span>
+              <button id="speakStop" class="icon-btn speak-stop" type="button" title="Parar a leitura em voz alta" aria-label="Parar a leitura em voz alta" hidden><svg><use href="#i-speaker" /></svg></button>
               <button id="stopBtn" class="stop-btn" type="button" aria-label="Interromper" hidden><svg><use href="#i-stop" /></svg></button>
               <button id="sendBtn" class="send-btn" type="submit" aria-label="Enviar" disabled><svg><use href="#i-send" /></svg></button>
             </div>
@@ -282,6 +292,7 @@
           </div>
         </div>
         <label class="switch-row"><span><strong>Notificações</strong><small id="settingNotifyHint">Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.</small></span><input id="settingNotify" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Ler respostas em voz alta</strong><small id="settingVoiceReadHint">Fala cada resposta ao terminar. As vozes “Online (Natural)” do Edge são sintetizadas pela nuvem da Microsoft.</small></span><input id="settingVoiceRead" type="checkbox" class="switch" /></label>
         <label class="switch-row"><span><strong>Reduzir movimento</strong><small>Desliga animações e rolagem suave.</small></span><input id="settingMotion" type="checkbox" class="switch" /></label>
         <label class="switch-row"><span><strong>Mostrar raciocínio por padrão</strong><small>Expande o raciocínio do modelo nas respostas.</small></span><input id="settingThinking" type="checkbox" class="switch" /></label>
         <p class="sec-title settings-sec">Orca</p>

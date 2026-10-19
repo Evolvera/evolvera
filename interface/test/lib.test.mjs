@@ -2534,3 +2534,251 @@ describe("task board model", () => {
     assert.equal(lib.parallelPrompt({ id: 2, subject: "X" }), "Inicie um subagente em segundo plano para exatamente esta tarefa. Informe o resultado ao concluir.\nTarefa #2: X");
   });
 });
+
+describe("voice: microphone helpers", () => {
+  // Ctrl+Shift+M (and Cmd on mac) is the mic shortcut; anything else, composing or repeating keys, is not.
+  test("micShortcut accepts only Ctrl/Cmd+Shift+M, without Alt, composition or key repeat", () => {
+    const base = { key: "M", ctrlKey: true, shiftKey: true, altKey: false, metaKey: false };
+    assert.equal(lib.micShortcut(base), true);
+    assert.equal(lib.micShortcut({ ...base, key: "m" }), true);
+    assert.equal(lib.micShortcut({ ...base, key: "x", code: "KeyM" }), true);
+    assert.equal(lib.micShortcut({ ...base, ctrlKey: false, metaKey: true }), true);
+    assert.equal(lib.micShortcut({ ...base, shiftKey: false }), false);
+    assert.equal(lib.micShortcut({ ...base, ctrlKey: false }), false);
+    assert.equal(lib.micShortcut({ ...base, altKey: true }), false);
+    assert.equal(lib.micShortcut({ ...base, key: "k" }), false);
+    assert.equal(lib.micShortcut({ ...base, isComposing: true }), false);
+    assert.equal(lib.micShortcut({ ...base, repeat: true }), false);
+    assert.equal(lib.micShortcut(null), false);
+  });
+
+  // The recorder must use the first container the browser really supports, opus/webm first, else let the browser choose.
+  test("recorderMime prefers webm+opus, falls back to webm, then to the browser default", () => {
+    assert.equal(lib.recorderMime(() => true), "audio/webm;codecs=opus");
+    assert.equal(lib.recorderMime((type) => type === "audio/webm"), "audio/webm");
+    assert.equal(lib.recorderMime(() => false), "");
+    assert.equal(lib.recorderMime(undefined), "");
+    assert.equal(lib.recorderMime(() => { throw new Error("boom"); }), "");
+  });
+
+  // The server accepts only webm/ogg/wav; codec suffixes are dropped and anything unknown is sent as webm.
+  test("uploadMime normalises the recorded blob type to one the server accepts", () => {
+    assert.equal(lib.uploadMime("audio/webm;codecs=opus"), "audio/webm");
+    assert.equal(lib.uploadMime("audio/ogg; codecs=opus"), "audio/ogg");
+    assert.equal(lib.uploadMime("AUDIO/WAV"), "audio/wav");
+    assert.equal(lib.uploadMime("video/mp4"), "audio/webm");
+    assert.equal(lib.uploadMime(""), "audio/webm");
+    assert.equal(lib.uploadMime(undefined), "audio/webm");
+  });
+
+  // The timer reads m:ss and never shows negative or broken values.
+  test("formatRecTimer renders m:ss and clamps bad input to 0:00", () => {
+    assert.equal(lib.formatRecTimer(0), "0:00");
+    assert.equal(lib.formatRecTimer(7400), "0:07");
+    assert.equal(lib.formatRecTimer(65000), "1:05");
+    assert.equal(lib.formatRecTimer(120000), "2:00");
+    assert.equal(lib.formatRecTimer(-5), "0:00");
+    assert.equal(lib.formatRecTimer(Number.NaN), "0:00");
+    assert.equal(lib.formatRecTimer(undefined), "0:00");
+  });
+
+  // The level bar is the RMS of the centred time-domain samples, boosted so speech fills it, capped at 1.
+  test("levelFromSamples maps silence to 0, speech to a middle value and a clipped signal to 1", () => {
+    assert.equal(lib.levelFromSamples(new Uint8Array(64).fill(128)), 0);
+    assert.equal(lib.levelFromSamples(new Uint8Array(0)), 0);
+    assert.equal(lib.levelFromSamples(null), 0);
+    const quiet = Uint8Array.from({ length: 64 }, (_, index) => (index % 2 ? 144 : 112));
+    assert.ok(Math.abs(lib.levelFromSamples(quiet) - 0.5) < 1e-9);
+    const loud = Uint8Array.from({ length: 64 }, (_, index) => (index % 2 ? 255 : 1));
+    assert.equal(lib.levelFromSamples(loud), 1);
+  });
+
+  // The recording lifecycle is a small state machine; clicks while busy must not start a second recording or upload.
+  test("nextMicPhase walks idle > starting > recording > transcribing > idle and ignores clicks while busy", () => {
+    assert.equal(lib.nextMicPhase("idle", "toggle"), "starting");
+    assert.equal(lib.nextMicPhase("starting", "ready"), "recording");
+    assert.equal(lib.nextMicPhase("starting", "toggle"), "starting");
+    assert.equal(lib.nextMicPhase("starting", "fail"), "idle");
+    assert.equal(lib.nextMicPhase("recording", "toggle"), "transcribing");
+    assert.equal(lib.nextMicPhase("recording", "abort"), "idle");
+    assert.equal(lib.nextMicPhase("recording", "fail"), "idle");
+    assert.equal(lib.nextMicPhase("transcribing", "toggle"), "transcribing");
+    assert.equal(lib.nextMicPhase("transcribing", "done"), "idle");
+    assert.equal(lib.nextMicPhase("transcribing", "fail"), "idle");
+    assert.equal(lib.nextMicPhase("idle", "done"), "idle");
+    assert.equal(lib.nextMicPhase("bogus", "toggle"), "idle");
+  });
+
+  // The mic button reflects phase and server status: disabled with a reason when unavailable, hint text per phase.
+  test("micView disables the mic with the server reason when unavailable and describes each phase", () => {
+    const idle = lib.micView({ available: true, state: "off" }, "idle");
+    assert.deepEqual([idle.disabled, idle.pressed, idle.live], [false, false, ""]);
+    assert.match(idle.title, /Ctrl\+Shift\+M/);
+    assert.equal(lib.micView(null, "idle").disabled, false);
+    const off = lib.micView({ available: false, reason: "Python não encontrado." }, "idle");
+    assert.deepEqual([off.disabled, off.title], [true, "Python não encontrado."]);
+    assert.equal(lib.micView({ available: false, message: "Sem faster-whisper." }, "idle").title, "Sem faster-whisper.");
+    assert.match(lib.micView({ available: false }, "idle").title, /indisponível/);
+    assert.match(lib.micView({ available: false, reason: "  " }, "idle").title, /indisponível/);
+    const starting = lib.micView({ available: true }, "starting");
+    assert.deepEqual([starting.disabled, starting.live], [true, "aguardando o microfone…"]);
+    const rec = lib.micView({ available: true }, "recording");
+    assert.deepEqual([rec.disabled, rec.pressed, rec.live], [false, true, "gravando"]);
+    assert.match(rec.title, /Parar/);
+    const busy = lib.micView({ available: true, state: "loading" }, "transcribing");
+    assert.deepEqual([busy.disabled, busy.live], [true, "transcrevendo…"]);
+  });
+
+  // Transcribed text lands at the caret (replacing a selection) with spaces only where words would otherwise glue together.
+  test("insertAtCursor inserts at the caret, replaces a selection and pads with spaces only when needed", () => {
+    assert.deepEqual(lib.insertAtCursor("", 0, 0, "olá mundo"), { value: "olá mundo", cursor: 9 });
+    assert.deepEqual(lib.insertAtCursor("abc def", 3, 3, "xyz"), { value: "abc xyz def", cursor: 7 });
+    assert.deepEqual(lib.insertAtCursor("abc ", 4, 4, "xyz"), { value: "abc xyz", cursor: 7 });
+    assert.deepEqual(lib.insertAtCursor("abc\n", 4, 4, "xyz"), { value: "abc\nxyz", cursor: 7 });
+    assert.deepEqual(lib.insertAtCursor("abc def", 4, 7, "x"), { value: "abc x", cursor: 5 });
+    assert.deepEqual(lib.insertAtCursor("abc", 3, 3, "xyz"), { value: "abc xyz", cursor: 7 });
+    assert.deepEqual(lib.insertAtCursor("ab cd", 3, 3, "x"), { value: "ab x cd", cursor: 5 });
+    assert.deepEqual(lib.insertAtCursor("abc", undefined, undefined, " xyz "), { value: "abc xyz", cursor: 7 });
+    assert.deepEqual(lib.insertAtCursor("abc", 0, 0, "   "), { value: "abc", cursor: 0 });
+    assert.deepEqual(lib.insertAtCursor("abc", 1, 1, null), { value: "abc", cursor: 1 });
+    assert.deepEqual(lib.insertAtCursor(null, 0, 0, "x"), { value: "x", cursor: 1 });
+    assert.deepEqual(lib.insertAtCursor("abc", 99, 1, "x"), { value: "abc x", cursor: 5 });
+  });
+
+  // getUserMedia failures become short pt-BR toasts per cause, never a raw DOMException name.
+  test("micErrorMessage maps getUserMedia failures to specific pt-BR messages", () => {
+    assert.match(lib.micErrorMessage({ name: "NotAllowedError" }), /negada/);
+    assert.match(lib.micErrorMessage({ name: "SecurityError" }), /negada/);
+    assert.match(lib.micErrorMessage({ name: "NotFoundError" }), /Nenhum microfone/);
+    assert.match(lib.micErrorMessage({ name: "OverconstrainedError" }), /Nenhum microfone/);
+    assert.match(lib.micErrorMessage({ name: "NotReadableError" }), /em uso/);
+    assert.match(lib.micErrorMessage(new Error("x")), /Não foi possível/);
+    assert.match(lib.micErrorMessage(null), /Não foi possível/);
+  });
+
+  // The server's pt-BR message wins; otherwise the HTTP status picks a sensible text (400/401/403/413/429/503).
+  test("transcribeErrorMessage prefers the server message and falls back per HTTP status", () => {
+    assert.equal(lib.transcribeErrorMessage(503, { error: "unavailable", message: "Modelo fora do ar." }), "Modelo fora do ar.");
+    assert.match(lib.transcribeErrorMessage(400, {}), /inválido/);
+    assert.match(lib.transcribeErrorMessage(401, null), /Recarregue/);
+    assert.match(lib.transcribeErrorMessage(403, { message: "" }), /Recarregue/);
+    assert.match(lib.transcribeErrorMessage(413, {}), /longa/);
+    assert.match(lib.transcribeErrorMessage(429, {}), /ocupada/);
+    assert.match(lib.transcribeErrorMessage(503, {}), /indisponível/);
+    assert.match(lib.transcribeErrorMessage(500, {}), /Falha ao transcrever/);
+    assert.match(lib.transcribeErrorMessage(undefined, undefined), /Falha ao transcrever/);
+  });
+});
+
+describe("voice: replies read aloud", () => {
+  const voice = (name, lang, extra = {}) => ({ name, lang, localService: true, ...extra });
+
+  // Miguel dislikes robotic voices: Natural/Online pt-BR first, then any pt-BR, never a Desktop voice while a better one exists.
+  test("pickVoice prefers pt-BR Natural/Online voices and avoids Desktop ones", () => {
+    const desktop = voice("Microsoft Maria Desktop - Portuguese(Brazil)", "pt-BR");
+    const online = voice("Microsoft Francisca Online (Natural) - Portuguese (Brazil)", "pt-BR", { localService: false });
+    const natural = voice("Microsoft Antonio Natural", "pt-BR");
+    const google = voice("Google português do Brasil", "pt-BR");
+    const plain = voice("Luciana", "pt_BR");
+    assert.equal(lib.pickVoice([desktop, plain, google, online, natural]), online);
+    assert.equal(lib.pickVoice([desktop, plain, google, natural]), natural);
+    assert.equal(lib.pickVoice([desktop, plain, google]), google);
+    assert.equal(lib.pickVoice([desktop, plain]), plain);
+    assert.equal(lib.pickVoice([desktop]), desktop);
+  });
+
+  // An accent mismatch is worse than a Desktop voice: pt-PT Natural must lose to any pt-BR voice, but beat non-Portuguese ones.
+  test("pickVoice ranks pt-BR over other Portuguese, ignores other languages and tolerates junk", () => {
+    const ptPt = voice("Microsoft Raquel Online (Natural)", "pt-PT");
+    const desktopBr = voice("Microsoft Maria Desktop", "pt-BR");
+    const english = voice("Microsoft Aria Online (Natural)", "en-US");
+    assert.equal(lib.pickVoice([ptPt, desktopBr]), desktopBr);
+    assert.equal(lib.pickVoice([english, ptPt]), ptPt);
+    assert.equal(lib.pickVoice([english]), null);
+    assert.equal(lib.pickVoice([]), null);
+    assert.equal(lib.pickVoice(null), null);
+    assert.equal(lib.pickVoice([null, {}, { name: "x" }]), null);
+    const nameless = { lang: "pt-BR" };
+    assert.equal(lib.pickVoice([nameless]), nameless);
+    assert.equal(lib.pickVoice([voice("A", "pt-BR"), voice("B", "pt-BR")]).name, "A");
+    assert.equal(lib.pickVoice([voice("A", "es-ES")], "es-ES").name, "A");
+  });
+
+  // Speech must not read code or markup aloud: fences, inline code marks, links, urls, lists and emphasis are removed.
+  test("speakableText drops code blocks and markdown syntax, keeping the prose", () => {
+    const markdown = "# Título\n\nTexto **negrito**, _itálico_ e `código`.\n\n```js\nconst a = 1;\n```\n\n- item um\n- item dois\n1. primeiro\n\n[link](https://x.com) e https://y.com/z\n> citação\n";
+    assert.equal(lib.speakableText(markdown), "Título.\nTexto negrito, itálico e código.\nitem um.\nitem dois.\nprimeiro.\nlink e.\ncitação.");
+  });
+
+  // Edge cases: unclosed fences swallow the rest, ~~~ fences, tables, rules, images, html, strikethrough; snake_case stays.
+  test("speakableText handles unclosed fences, tables, rules, images, html and keeps snake_case", () => {
+    assert.equal(lib.speakableText("antes\n```\ncódigo sem fim\nmais código"), "antes.");
+    assert.equal(lib.speakableText("a\n~~~\nx\n~~~\nb"), "a.\nb.");
+    assert.equal(lib.speakableText("a\n````\n```\n````\nb"), "a.\nb.");
+    assert.equal(lib.speakableText("a\n```\nx\n~~~\ny\n```\nb"), "a.\nb.");
+    assert.equal(lib.speakableText("| nome | idade |\n|------|:-----:|\n| Ana | 30 |"), "nome, idade.\nAna, 30.");
+    assert.equal(lib.speakableText("antes\n\n---\n\ndepois\n***\nfim"), "antes.\ndepois.\nfim.");
+    assert.equal(lib.speakableText("![gráfico de vendas](http://i/x.png) <b>negrito</b> ~~riscado~~"), "gráfico de vendas negrito riscado.");
+    assert.equal(lib.speakableText("use my_var_name e *ênfase* __forte__"), "use my_var_name e ênfase forte.");
+    assert.equal(lib.speakableText("  > > duplo\n   * item aninhado\n2) dois"), "duplo.\nitem aninhado.\ndois.");
+    assert.equal(lib.speakableText("Já termina com ponto! Pergunta? Dois:\r\nlinha"), "Já termina com ponto! Pergunta? Dois:\nlinha.");
+    assert.equal(lib.speakableText("Acesse <https://a.b/c> agora"), "Acesse agora.");
+    assert.equal(lib.speakableText("```js\nsó código\n```"), "");
+    assert.equal(lib.speakableText(""), "");
+    assert.equal(lib.speakableText(null), "");
+    assert.equal(lib.speakableText(42), "42.");
+  });
+
+  // Long replies are spoken in short pieces: some voices cut off or stall on long utterances.
+  test("speechChunks packs sentences up to the limit and splits oversized ones at spaces, then hard", () => {
+    assert.deepEqual(lib.speechChunks(""), []);
+    assert.deepEqual(lib.speechChunks(null), []);
+    assert.deepEqual(lib.speechChunks("Olá mundo."), ["Olá mundo."]);
+    assert.deepEqual(lib.speechChunks("Um dois. Três quatro. Cinco seis.", 20), ["Um dois.", "Três quatro.", "Cinco seis."]);
+    assert.deepEqual(lib.speechChunks("Um dois. Três quatro. Cinco seis.", 30), ["Um dois. Três quatro.", "Cinco seis."]);
+    assert.deepEqual(lib.speechChunks("3.5 vale mais.\nsim", 100), ["3.5 vale mais. sim"]);
+    assert.deepEqual(lib.speechChunks("aaaa bbbb cccc dddd", 10), ["aaaa bbbb", "cccc dddd"]);
+    assert.deepEqual(lib.speechChunks("abcdefghijkl", 5), ["abcde", "fghij", "kl"]);
+    const long = Array.from({ length: 80 }, (_, index) => `palavra${index}`).join(" ");
+    const chunks = lib.speechChunks(long);
+    assert.ok(chunks.length > 3 && chunks.every((chunk) => chunk.length <= 200));
+    assert.equal(chunks.join(" "), long);
+  });
+
+  // Auto-read speaks only the newest finished assistant reply, once, and never an empty/code-only one.
+  test("lastReplyToSpeak returns the newest assistant reply once, keyed by timestamp or index", () => {
+    const messages = [
+      { role: "user", content: "oi" },
+      { role: "assistant", timestamp: 111, content: [{ type: "text", text: "Resposta **boa**." }] },
+    ];
+    assert.deepEqual(lib.lastReplyToSpeak(messages, null), { key: "111", text: "Resposta boa." });
+    assert.equal(lib.lastReplyToSpeak(messages, "111"), null);
+    assert.deepEqual(lib.lastReplyToSpeak([{ role: "assistant", content: "sem hora" }], ""), { key: "0", text: "sem hora." });
+    assert.equal(lib.lastReplyToSpeak([{ role: "assistant", content: "```\nx\n```" }], null), null);
+    assert.equal(lib.lastReplyToSpeak([{ role: "user", content: "oi" }], null), null);
+    assert.equal(lib.lastReplyToSpeak([], null), null);
+    assert.equal(lib.lastReplyToSpeak(null, null), null);
+  });
+
+  // The "ouvir" button sits right after "copiar" and only exists when the browser can speak and the reply has text.
+  test("withSpeakAction adds Ouvir after Copiar only when speech is supported and there is text", () => {
+    const base = [{ id: "copy", label: "Copiar", disabled: false }, { id: "retry", label: "Tentar de novo", disabled: false }];
+    assert.deepEqual(lib.withSpeakAction(base, { supported: true, text: "olá" }).map((action) => action.id), ["copy", "speak", "retry"]);
+    assert.equal(lib.withSpeakAction(base, { supported: true, text: "olá" })[1].label, "Ouvir");
+    assert.equal(lib.withSpeakAction(base, { supported: false, text: "olá" }), base);
+    assert.equal(lib.withSpeakAction(base, { supported: true, text: "  " }), base);
+    assert.equal(lib.withSpeakAction(base, { supported: true, text: "```\nx\n```" }), base);
+    assert.deepEqual(lib.withSpeakAction([], { supported: true, text: "olá" }).map((action) => action.id), ["speak"]);
+  });
+
+  // The toggle is stored as "1"/"0"; anything else (first run, corrupt) means off. Constants stay inside the server limits.
+  test("voiceReadEnabled is on only for the stored value 1 and the constants are consistent", () => {
+    assert.equal(lib.voiceReadEnabled("1"), true);
+    assert.equal(lib.voiceReadEnabled("0"), false);
+    assert.equal(lib.voiceReadEnabled(null), false);
+    assert.equal(lib.voiceReadEnabled("yes"), false);
+    assert.equal(lib.VOICE_READ_KEY, "pi-studio:voice-read");
+    assert.ok(lib.REC_MAX_MS <= 120000 && lib.REC_MIN_MS > 0);
+    assert.equal(lib.VOICE_SHORTCUTS.items[0].keys.join("+"), "Ctrl+Shift+M");
+  });
+});
