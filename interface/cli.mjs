@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import readline from "node:readline";
 import { randomUUID } from "node:crypto";
-import { parseArgs, createSseParser, matchProject, classifyInput, formatEvent, parseProjectList } from "./cli-lib.mjs";
+import { parseArgs, createSseParser, matchProject, classifyInput, formatEvent, parseProjectList, clearPendingState } from "./cli-lib.mjs";
 
 const color = process.env.NO_COLOR === undefined && process.stdout.isTTY;
 const paint = (s, code) => color ? `\x1b[${code}m${s}\x1b[0m` : s;
@@ -18,6 +18,7 @@ let sseController;
 let thinkingTimer;
 let thinkingSince = 0;
 const pending = new Map();
+const pendingTimers = new Map();
 const uiPending = new Map();
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: Boolean(process.stdin.isTTY), prompt: "› " });
 
@@ -44,8 +45,9 @@ async function rpc(type, fields = {}) {
   catch (error) { pending.delete(id); throw error; }
   if (["prompt", "steer", "follow_up", "bash"].includes(type)) { pending.delete(id); return; }
   return new Promise((resolve, reject) => {
-    const complete = (event) => { clearTimeout(timer); event.success ? resolve(event.data) : reject(new Error(event.error || "Comando falhou")); };
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error("Tempo esgotado aguardando PI")); }, 10000);
+    const complete = (event) => { clearTimeout(timer); pendingTimers.delete(id); event.success ? resolve(event.data) : reject(new Error(event.error || "Comando falhou")); };
+    const timer = setTimeout(() => { pending.delete(id); pendingTimers.delete(id); reject(new Error("Tempo esgotado aguardando PI")); }, 10000);
+    pendingTimers.set(id, timer);
     if (earlyResponse) complete(earlyResponse);
     else pending.set(id, complete);
   });
@@ -78,14 +80,27 @@ function startUi(req) {
   })().catch(() => finish({ cancelled: true }));
 }
 function ask(prompt) { return new Promise((resolve) => rl.question(prompt, resolve)); }
+function stopThinkingTimer() { clearInterval(thinkingTimer); thinkingTimer = null; }
+function shutdown() {
+  if (closed) return;
+  closed = true;
+  stopThinkingTimer();
+  clearPendingState(pending, pendingTimers);
+  uiPending.clear();
+  sseController?.abort();
+  process.stdin.pause();
+  rl.close();
+}
 async function onRpc(e) {
   if (e.type === "agent_start") {
     streaming = true; thinkingSince = Date.now(); clearInterval(thinkingTimer); process.stdout.write("Pensando… 0 s");
     thinkingTimer = setInterval(() => { if (streaming) process.stdout.write(`\rPensando… ${Math.floor((Date.now() - thinkingSince) / 1000)} s`); }, 1000);
   }
-  if (e.type === "agent_end" || e.type === "agent_settled") { streaming = false; clearInterval(thinkingTimer); thinkingTimer = null; process.stdout.write(color ? "\r\x1b[K" : "\n"); if (!closed) rl.prompt(true); }
+  if (e.type === "agent_end" || e.type === "agent_settled") { streaming = false; stopThinkingTimer(); process.stdout.write(color ? "\r\x1b[K" : "\n"); if (!closed) rl.prompt(true); }
+  if ((e.type === "message_start" && e.message?.role === "assistant") || (e.type === "message_update" && e.assistantMessageEvent?.type === "text_delta")) stopThinkingTimer();
   if (e.type === "response" && e.id) {
     pending.get(e.id)?.(e); pending.delete(e.id);
+    clearTimeout(pendingTimers.get(e.id)); pendingTimers.delete(e.id);
     if (e.command === "extension_ui_response") uiPending.delete(e.id);
   }
   if (e.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(e.method)) startUi(e);
@@ -128,6 +143,7 @@ async function consumeSse() {
         if (name === "rpc") {
           if (replay && payload.type === "agent_start") streaming = true;
           if (replay && (payload.type === "agent_end" || payload.type === "agent_settled")) streaming = false;
+          if (replay && payload.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(payload.method)) void onRpc(payload);
           const line = formatEvent("rpc", payload);
           if (replay) { if (line) print(line, true); }
           else void onRpc(payload);
@@ -150,7 +166,7 @@ async function sendLine(text) {
   const action = classifyInput(text, streaming);
   if (action.kind === "empty") return;
   if (action.kind === "builtin") {
-    if (action.name === "sair") { closed = true; rl.close(); process.stdin.pause(); sseController?.abort(); process.stdout.write("", () => process.exit(0)); }
+    if (action.name === "sair") { shutdown(); process.stdout.write("", () => process.exit(0)); }
     if (action.name === "ajuda") { print("/new · /compact [instruções] · /name <título> · /export · /sair · /ajuda · >> texto / /fila texto · !comando"); return; }
     if (action.name === "new") { await rpc("new_session"); print("Nova conversa iniciada."); return; }
     if (action.name === "compact") { await rpc("compact", { ...(action.args ? { customInstructions: action.args } : {}) }); return; }
@@ -174,10 +190,10 @@ function handleLine(line) {
 rl.on("line", (line) => { if (ready) handleLine(line); else queuedLines.push(line); });
 rl.on("SIGINT", () => {
   const now = Date.now();
-  if (!streaming || now - lastInterrupt < 1500) { closed = true; rl.close(); }
+  if (!streaming || now - lastInterrupt < 1500) shutdown();
   else { lastInterrupt = now; void rpc("abort").catch(() => {}); print("Interrompendo…"); }
 });
-rl.on("close", () => { closed = true; sseController?.abort(); process.stdin.pause(); });
+rl.on("close", shutdown);
 
 try {
   await discoverToken();
