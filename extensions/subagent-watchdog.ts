@@ -20,6 +20,9 @@ type AgentEvent = {
 type Guard = {
   warningTimer: ReturnType<typeof setTimeout>;
   stopTimer: ReturnType<typeof setTimeout>;
+  timeoutMs: number;
+  type: string;
+  description: string;
 };
 
 type SubagentManagerFacade = {
@@ -34,10 +37,16 @@ export function isPlanHeavyPlanner(type: unknown, description: unknown): boolean
   return type === TARGET_AGENT && description === PLAN_HEAVY_DESCRIPTION;
 }
 
-function planHeavyTimeoutMs(): number {
+export function planHeavyTimeoutMs(): number {
   const configured = Number(process.env.PI_PLANNER_HEAVY_TIMEOUT_MS);
   if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_PLAN_HEAVY_TIMEOUT_MS;
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(configured)));
+}
+
+export function subagentTimeoutMs(value: string | undefined = process.env.PI_SUBAGENT_MAX_MINUTES): number {
+  if (!value || !/^\d+$/.test(value)) return 60 * 60_000;
+  const minutes = Number(value);
+  return Number.isSafeInteger(minutes) && minutes >= 5 && minutes <= 360 ? minutes * 60_000 : 60 * 60_000;
 }
 
 function formatMinutes(ms: number): string {
@@ -48,7 +57,7 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
   const guards = new Map<string, Guard>();
   const pendingRpcCleanups = new Set<() => void>();
   const timeoutMs = planHeavyTimeoutMs();
-  const warningMs = Math.min(30 * 60_000, Math.max(60_000, Math.floor(timeoutMs * 2 / 3)));
+  const ordinaryTimeoutMs = subagentTimeoutMs();
   let currentCtx: ExtensionContext | undefined;
 
   const notify = (message: string, level: "info" | "warning" | "error" = "warning") => {
@@ -64,7 +73,11 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
   };
 
   const stopAgent = (agentId: string, description?: string) => {
+    const guard = guards.get(agentId);
+    const isPlanner = guard?.type === TARGET_AGENT && guard.description === PLAN_HEAVY_DESCRIPTION;
+    const limit = guard?.timeoutMs ?? timeoutMs;
     clearGuard(agentId);
+    const label = isPlanner ? "Plan-heavy planner" : `Subagente ${description ?? agentId}`;
     const requestId = randomUUID();
     const replyEvent = `subagents:rpc:stop:reply:${requestId}`;
     let unsubscribe = () => {};
@@ -81,7 +94,7 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
 
     replyDeadline = setTimeout(() => {
       cleanupRpc();
-      notify(`Plan-heavy planner watchdog could not confirm stop for ${agentId}.`, "error");
+      notify(`${label} watchdog não conseguiu confirmar a interrupção do agente ${agentId} após ${formatMinutes(limit)}.`, "error");
     }, 5_000);
     replyDeadline.unref?.();
 
@@ -89,21 +102,25 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
       cleanupRpc();
       const reply = raw as { success?: boolean; error?: string };
       if (reply?.success) {
-        notify(`Plan-heavy planner stopped after hard wall-clock limit (${formatMinutes(timeoutMs)}).`, "error");
+        notify(isPlanner
+          ? `Plan-heavy planner stopped after hard wall-clock limit (${formatMinutes(limit)}).`
+          : `Subagente ${description ?? agentId} (${agentId}) foi interrompido após o limite de ${formatMinutes(limit)}.`, "error");
       } else {
-        notify(`Plan-heavy planner watchdog stop failed: ${reply?.error ?? "unknown error"}.`, "error");
+        notify(isPlanner
+          ? `Plan-heavy planner watchdog stop failed: ${reply?.error ?? "unknown error"}.`
+          : `Falha ao interromper subagente ${description ?? agentId} (${agentId}) após ${formatMinutes(limit)}: ${reply?.error ?? "erro desconhecido"}.`, "error");
       }
     });
     pendingRpcCleanups.add(cleanupRpc);
 
     pi.appendEntry("subagent-watchdog", {
       agentId,
-      agentType: TARGET_AGENT,
-      mode: "plan-heavy",
+      agentType: guard?.type ?? TARGET_AGENT,
+      mode: isPlanner ? "plan-heavy" : "all-subagents",
       description: description ?? "",
       action: "stop",
       reason: "wall-clock-timeout",
-      timeoutMs,
+      timeoutMs: limit,
       at: new Date().toISOString(),
     });
 
@@ -112,23 +129,23 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
 
   const onStarted = pi.events.on("subagents:started", (raw: unknown) => {
     const event = raw as AgentEvent;
-    if (!isPlanHeavyPlanner(event.type, event.description) || typeof event.id !== "string") return;
-
+    if (typeof event.id !== "string") return;
+    const planner = isPlanHeavyPlanner(event.type, event.description);
+    const limit = planner ? timeoutMs : ordinaryTimeoutMs;
+    const description = typeof event.description === "string" ? event.description : String(event.type ?? "subagente");
     clearGuard(event.id);
+    const warningMs = planner
+      ? Math.min(30 * 60_000, Math.max(60_000, Math.floor(limit * 2 / 3)))
+      : Math.floor(limit * 2 / 3);
     const warningTimer = setTimeout(() => {
-      notify(
-        `Plan-heavy planner ${event.id} is still running after ${formatMinutes(warningMs)}; hard stop at ${formatMinutes(timeoutMs)}.`,
-        "warning",
-      );
+      notify(planner
+        ? `Plan-heavy planner ${event.id} is still running after ${formatMinutes(warningMs)}; hard stop at ${formatMinutes(limit)}.`
+        : `Subagente ${description} (${event.id}) continua ativo; limite de ${formatMinutes(limit)}.`, "warning");
     }, warningMs);
     warningTimer.unref?.();
-
-    const stopTimer = setTimeout(() => {
-      stopAgent(event.id as string, typeof event.description === "string" ? event.description : undefined);
-    }, timeoutMs);
+    const stopTimer = setTimeout(() => stopAgent(event.id as string, description), limit);
     stopTimer.unref?.();
-
-    guards.set(event.id, { warningTimer, stopTimer });
+    guards.set(event.id, { warningTimer, stopTimer, timeoutMs: limit, type: String(event.type ?? ""), description });
   });
 
   const onCompleted = pi.events.on("subagents:completed", (raw: unknown) => {
@@ -171,4 +188,5 @@ export default function subagentWatchdog(pi: ExtensionAPI) {
     onCompleted();
     onFailed();
   });
+  return { guards };
 }
