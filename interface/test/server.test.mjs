@@ -79,6 +79,33 @@ describe("main mode", () => {
   });
 });
 
+describe("session header cache", () => {
+  test("reads a replaced session file header again", async () => {
+    const file = path.join(tmp, "replaceable-session.jsonl");
+    const cache = new Map();
+    await writeFile(file, JSON.stringify({ type: "session", id: "old", cwd: projA }));
+    assert.equal((await server.sessionHeader(file, { cache })).id, "old");
+    await rm(file);
+    await writeFile(file, JSON.stringify({ type: "session", id: "new", cwd: projC }));
+    assert.equal((await server.sessionHeader(file, { cache })).id, "new");
+  });
+
+  test("uses non-shrinking size when file identity metadata is unavailable", async () => {
+    const cache = new Map();
+    let size = 10;
+    let id = "same";
+    let reads = 0;
+    const read = async () => { reads++; return JSON.stringify({ type: "session", id }); };
+    const statFile = async () => ({ size });
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "same");
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "same");
+    size = 9;
+    id = "replaced";
+    assert.equal((await server.sessionHeader("fallback", { read, cache, statFile })).id, "replaced");
+    assert.equal(reads, 2);
+  });
+});
+
 describe("PI stdin errors", () => {
   test("a spawn error marks the wrapper exited so a later open can replace it", async () => {
     const session = new server.PiRpcSession({ projectId: "spawn-error", projectName: "spawn-error", cwd: path.join(tmp, "missing-cwd") });
@@ -441,6 +468,18 @@ describe("history discovery + routes", () => {
         // Links need privileges on some Windows setups; the path comes from readdir either way.
       }
       await server.refreshSessionIndex();
+    });
+
+    test("finds the latest session name in the bounded tail beyond the title scan prefix", async () => {
+      const large = path.join(tmp, "large-title-session.jsonl");
+      await writeFile(large, `${JSON.stringify({ type: "session", id: "large", cwd: projA })}\n${JSON.stringify(user("inicio"))}\n`);
+      const padding = "x".repeat(5 * 1024 * 1024);
+      await writeFile(large, (await readFile(large, "utf8")) + `${JSON.stringify(user(padding))}\n${JSON.stringify({ type: "session_info", name: "Título do tail" })}\n${JSON.stringify({ type: "custom" })}\nnull\n`);
+      assert.equal((await server.scanSession(large)).title, "Título do tail");
+      assert.equal((await server.scanSessionIndexEntry(large)).title, "Título do tail");
+      const unnamed = path.join(tmp, "large-unnamed-session.jsonl");
+      await writeFile(unnamed, `${JSON.stringify({ type: "session", id: "unnamed", cwd: projA })}\n${"x".repeat(5 * 1024 * 1024)}\n${JSON.stringify({ type: "session_info", name: 42 })}\n`);
+      assert.equal((await server.scanSession(unnamed)).title, "Nova conversa");
     });
 
     test("titles prefer the latest session name over the first prompt, falling back to the prompt", async () => {
@@ -812,17 +851,18 @@ describe("conversation states", () => {
     const cache = new Map();
     const reads = [];
     const read = async (file) => { reads.push(file); return file === "partial" ? "{\"type\":\"sess" : JSON.stringify({ type: "session", id: file }); };
-    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
-    assert.equal((await server.sessionHeader("a", { read, cache, max: 2 })).id, "a");
+    const statFile = async () => ({ ino: 1, birthtimeMs: 1, size: 100 });
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2, statFile })).id, "a");
+    assert.equal((await server.sessionHeader("a", { read, cache, max: 2, statFile })).id, "a");
     assert.deepEqual(reads, ["a"]);
     // A file still being written (partial first line) is not cached, so the next call retries it.
-    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
-    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2 }));
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2, statFile }));
+    await assert.rejects(server.sessionHeader("partial", { read, cache, max: 2, statFile }));
     assert.equal(reads.filter((file) => file === "partial").length, 2);
-    await server.sessionHeader("b", { read, cache, max: 2 });
+    await server.sessionHeader("b", { read, cache, max: 2, statFile });
     assert.equal(cache.size, 2);
     // At the bound the cache restarts instead of growing without limit.
-    await server.sessionHeader("c", { read, cache, max: 2 });
+    await server.sessionHeader("c", { read, cache, max: 2, statFile });
     assert.deepEqual([...cache.keys()], ["c"]);
   });
 
