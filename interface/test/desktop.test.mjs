@@ -132,9 +132,49 @@ test('macOS launcher checks health before opening and owns its start/stop PID', 
   const callsBeforeNoWindow = await readFile(calls, 'utf8');
   await execFileAsync('bash', [path.join(desktop, 'launch-macos.sh'), '--port', '4193'], { env: { ...env, PI_STUDIO_NO_WINDOW: '1' } });
   assert.equal(await readFile(calls, 'utf8'), callsBeforeNoWindow);
-  const pidFile = path.join(home, 'Library', 'Logs', 'PI Studio', 'server.pid');
+  const pidFile = path.join(home, 'Library', 'Logs', 'PI Studio', 'server-4193.pid');
   assert.match(await readFile(pidFile, 'utf8'), /^\d+\s*$/);
   await execFileAsync('bash', [path.join(desktop, 'launch-macos.sh'), '--stop'], { env });
+});
+
+test('shell launchers stop only the requested port PID', async (t) => {
+  const bash = await import('node:child_process').then(({ execFileSync }) => {
+    try { return execFileSync('where.exe', ['bash'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0]; }
+    catch { return 'bash'; }
+  });
+  for (const [name, statePath] of [['launch-macos.sh', ['Library', 'Logs', 'PI Studio']], ['launch-unix.sh', ['.local', 'state', 'pi-studio']]]) {
+    const home = await tempDir(`pi-studio-${name}-pids-`);
+    try {
+      const logDir = path.join(home, ...statePath);
+      const bin = path.join(home, 'fake-bin');
+      await mkdir(logDir, { recursive: true });
+      await mkdir(bin);
+      const queried = path.join(home, 'queried');
+      await writeFile(path.join(logDir, 'server.pid'), '99999998');
+      await writeFile(path.join(logDir, 'server-4193.pid'), '99999999');
+      await writeFile(path.join(bin, 'ps'), `#!/bin/sh\nprintf '%s\\n' "$2" >>'${queried}'\nprintf "server.mjs\\n"\n`);
+      await import('node:fs/promises').then(({ chmod }) => chmod(path.join(bin, 'ps'), 0o755));
+      const launcher = path.join(desktop, name);
+      await execFileAsync(bash, [launcher, '--port', '4193', '--stop'], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` } });
+      assert.equal(await readFile(path.join(logDir, 'server.pid'), 'utf8'), '99999998', `${name} must preserve default-port PID`);
+      await assert.rejects(readFile(path.join(logDir, 'server-4193.pid'), 'utf8'), { code: 'ENOENT' });
+      assert.equal((await readFile(queried, 'utf8')).trim(), '99999999');
+    } finally {
+      await import('node:fs/promises').then(({ rm }) => rm(home, { recursive: true, force: true }));
+    }
+  }
+});
+
+test('Windows launcher stops only the requested port PID', async (t) => {
+  if (process.platform !== 'win32') return t.skip('PowerShell launcher is Windows-only');
+  const home = await tempDir('pi-studio-windows-pids-');
+  const logDir = path.join(home, 'PI Studio');
+  await mkdir(logDir);
+  const launcher = path.join(desktop, 'launch-windows.ps1').replaceAll("'", "''");
+  const escapedHome = home.replaceAll("'", "''");
+  const escapedLogDir = logDir.replaceAll("'", "''");
+  const script = `$ErrorActionPreference='Stop'; $env:LOCALAPPDATA='${escapedHome}'; Set-Content -NoNewline -Path (Join-Path '${escapedLogDir}' 'server.pid') -Value 101; Set-Content -NoNewline -Path (Join-Path '${escapedLogDir}' 'server-4193.pid') -Value 202; function Get-CimInstance { param($ClassName,$Filter,$ErrorAction); [pscustomobject]@{ProcessId=202;CommandLine='node server.mjs'} }; function Stop-Process { param($Id,[switch]$Force); [System.IO.File]::AppendAllText('${escapedHome}\\stopped', [string]$Id) }; & '${launcher}' -Port 4193 -Stop; if ((Get-Content -Raw (Join-Path '${escapedLogDir}' 'server.pid')) -ne '101') { throw 'default-port PID file was removed' }; if (Test-Path (Join-Path '${escapedLogDir}' 'server-4193.pid')) { throw 'requested-port PID file was not removed' }; if ((Get-Content -Raw (Join-Path '${escapedHome}' 'stopped')) -ne '202') { throw 'wrong process was stopped' }`;
+  await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
 });
 
 test('Windows shortcut helper targets PowerShell launcher and uses a temp shortcut directory', async (t) => {
