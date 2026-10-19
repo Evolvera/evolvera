@@ -1,144 +1,142 @@
-# Static terminal artwork
+# Arte de entrada — Acid Shellscape
 
-`scripts/ui/terminal-art.mjs` is the single artwork source. It exports:
+A entrada combina uma paisagem ampliada de pôr do sol, uma revelação animada em
+camadas e um seletor de perfis inspirado em telas de videogame. Antes, a composição
+era limitada a 12 linhas e dividia espaço com duas marcas; agora a paisagem ocupa
+a largura disponível e somente a marca Evolvera pode aparecer dentro dela.
+
+## Composição e identidade
+
+- Céu em faixas discretas de roxo, lilás e coral, sol com halo pontilhado, três
+  planos de montanhas e reflexo na água. Sem blur ou gradiente suave.
+- Campos de cor usam espaços com fundo ANSI; meios-blocos conservam a proporção
+  1:2 da célula de terminal. Texturas são estáveis por coordenada, sem RNG por quadro.
+- A marca Evolvera é um marco da paisagem, com máscara de 40×34 pixels derivada do
+  SVG oficial e duas faces azuis. Não é uma letra “A” desenhada com uma fonte.
+- **Não há logo nem texto PI na arte personalizada.** O pequeno cabeçalho nativo
+  do SDK continua pertencendo ao próprio PI e não é substituído por esta integração.
+- A marca Evolvera aparece somente quando o **nome exibido** da conta é uma string
+  cujo `trim().toLowerCase()` seja `evolvera`. Não há fallback para ID, provedor,
+  usuário do sistema ou nomes como `Evolvera Labs`.
+- Outros usuários recebem a mesma paisagem, sem marca. No seletor, a conta
+  destacada determina a marca; “Create new account” nunca recebe essa marca.
+
+A referência é o **Acid Shellscape** privado de Kevin, commit
+`9075be47288d4b85a9eadb59234cbc769a02e130`: README, tokens e imagem do tema poente.
+A implementação é uma tradução nativa para células de terminal, não um Canvas
+embutido. A fonte privada permanece © Kevin; seu código completo e capturas não
+são vendorizados nem recebem uma licença nova por esta tradução.
+A geometria da marca vem de <https://evolvera.com.br/logo.svg>.
+Nenhuma imagem, fonte ou recurso remoto é baixado durante a execução.
+
+## Renderização e tamanho
+
+`scripts/ui/terminal-art.mjs` é a autoridade da composição, com geometria da marca
+em `scripts/ui/terminal-art-masks.mjs`:
 
 ```js
-renderTerminalArt({ width = 80, height = 12, label = '', color = true } = {}) // string[]
+renderTerminalArt({ width = 80, height = 24, label = '', color = true, progress = 1 } = {}) // string[]
 isEvolveraLabel(label) // boolean
 ```
 
-The renderer is synchronous and pure: no environment, terminal, filesystem, network,
-clock, dependencies, or ambient randomness. Callers own available-space calculation,
-margins, and whether to enable ANSI color. Every colored line restores SGR style;
-there are no cursor commands or OSC sequences. `color: false` emits no escapes.
+O renderer é puro: sem relógio, timers, ambiente, I/O ou aleatoriedade externa.
+`progress` varia de 0 a 1; omitir significa a composição final. Todos os quadros
+mantêm o mesmo orçamento de linhas/colunas. Dimensões finitas são arredondadas para
+baixo e limitadas a **240 colunas × 40 linhas**; inválidas ou não positivas não
+alocam uma cena. Superfícies pequenas conservam uma paisagem proporcional e omitem
+a marca quando ela não seria legível. ANSI é apenas SGR, com reset ao fim de cada
+linha; `color: false` conserva uma cena monocromática sem escapes.
 
-## Composition and sizes
+O seletor tem um orçamento único para cena, moldura, ajuda e até cinco opções
+visíveis, com rolagem. Com dois perfis e a opção de criar conta, a cena recebe
+**17 de 24 linhas** ou **29 de 36 linhas**. A moldura é centralizada, o perfil
+selecionado tem preenchimento destacado e um contador mostra a posição na lista.
+ID e nome não são repetidos quando são equivalentes sem distinguir caixa. Em
+janelas pequenas, a moldura/paisagem cedem espaço à lista e aos controles.
 
-The sunset is a new terminal-native composition inspired by Kevin's private **Acid
-Shellscape**, source commit `9075be47288d4b85a9eadb59234cbc769a02e130`.
-Only its supplied README, token palette, and sunset reference informed this
-translation; no private source, original screenshots, or full design copy are
-vendored. The original private design remains © Kevin; this translation does not
-assert a license for that source.
+Na TUI, a altura da arte é o menor valor entre 36, metade das linhas do terminal e
+as linhas disponíveis após reservar 10 para a interface. Por exemplo, um terminal
+de 40 linhas recebe 20 linhas de cena. **Não use o espaço inteiro do terminal para
+o widget:** isso pode deixar apenas a última linha de um aviso visível. A lista de
+avisos continua no chat nativo acima da arte; não é apagada ou transformada em arte.
+A fonte continua sendo uma escolha do emulador; esta integração não instala fontes.
 
-Five design rules are retained:
+## Movimento e ciclo de vida
 
-- Crisp blocks, half blocks, halftones, and dots, rather than smooth shading.
-- Stable coordinate hashing with a fixed seed; never `Math.random()`.
-- Lighter distant mountains, solid middle layers, denser foreground/reflection
-  characters drawn from ` .:-=+*#%@$`.
-- No smooth gradients, blur, shadows, or animated effects.
-- At most five accent colors: dominant purple, lilac, coral, acid yellow, blue.
-  The dark purple ground is a neutral canvas, not another accent.
+`scripts/ui/terminal-art-animation.mjs` é a única autoridade temporal. A revelação
+dura aproximadamente **1,5 s, a 12 quadros/s**: céu, luz/nuvens, montanhas, água e
+marca. Ao terminar, o timer para e a composição final fica estática; não há loop
+ocioso consumindo CPU. O relógio pode ser injetado em testes.
 
-Terminal cells are treated as 1:2 rectangles. Two square-pixel logo samples become
-one `▀`, `▄`, or `█` cell. ASCII, blocks, and shade characters are single-column
-terminal glyphs; no emoji, combining characters, or ambiguous wide symbols are used.
+O seletor recebe teclado desde o primeiro quadro. Mudar a seleção atualiza a marca
+no progresso atual, sem reiniciar a animação a cada seta. Redimensionar preserva a
+seleção. Saída, cancelamento, fechamento e falhas encerram os timers/listeners
+próprios e restauram o estado de entrada. Não há limpeza da tela inteira a cada
+quadro.
 
-At ≥72 columns and ≥12 rows the full composition uses larger marks and more
-landscape detail. At ≥40 columns and ≥6 rows it retains both appropriate marks,
-their names, a sunset, mountains, and sea at lower resolution. In particular,
-80×8 retains the scene rather than becoming only a wordmark. Smaller surfaces use
-`PI` (and ` / evolvera` when appropriate) truncated to the available width.
+A factory `scripts/users/startup-art.mjs` é registrada pelo runtime gerenciado com
+o nome da conta e o `sessionManager` raiz. Usa o widget público `aboveEditor`,
+depois do chat/avisos e antes do editor. Os quadros pedem um redesenho ao TUI, sem
+escrever diretamente em stdout. `input`, `before_agent_start`, shutdown e dispose
+encerram o movimento; o início da conversa retira o widget. Não reaparece em
+`/new`, `/reload`, fork ou troca de sessão. Não adiciona mensagens ao histórico ou
+contexto do modelo. RPC, print e sessões que não sejam a raiz TUI não recebem a arte.
+`--no-extensions` continua desativando essa extensão interna.
 
-Finite numeric dimensions are floored and clamped to nonnegative integers.
-Invalid/nonfinite dimensions become zero; any zero dimension returns `[]`.
-Allocation is capped at 112 columns × 12 rows even for huge finite requests.
-Defaults apply to omitted/undefined dimensions. Output never exceeds requested
-width or height; monochrome trailing blanks may be trimmed.
+`NO_COLOR` (inclusive vazio) desativa cores. `TERM=dumb` também desativa movimento.
+`--no-animation` no preview mostra o quadro final imediatamente. Saída redirecionada
+produz somente um quadro final, sem controles de cursor ou espera de animação.
 
-## Logo provenance and conditional branding
+## Experimentar sem instalar
 
-The PI mark is derived from the official <https://pi.dev/logo-auto.svg> supplied
-locally for implementation. Cropping its transparent margin reveals an exact
-four-unit grid: coral horizontal top and right return, blue angular lower-left,
-and yellow lower-right vertical stem. The terminal version preserves this geometry
-and the three color roles, using the scene's acid yellow. It is not the letter
-`π` or a typographic substitute.
-
-The Evolvera triangular mark is sampled from the supplied official
-<https://evolvera.com.br/logo.svg>. The cropped SVG silhouette is encoded as
-18×16 and 12×10 square-pixel masks. Its open triangular silhouette and disconnected
-upper/left joint are retained; the original blue facets/gradient are intentionally
-flattened to the palette's one blue. No SVG rasterization happens at runtime.
-
-PI's mark and name remain present at normal/compact sizes. **Only** a string whose
-`trim().toLowerCase()` equals `evolvera` adds the Evolvera mark and name.
-`Evolvera Labs`, IDs, providers, OS users, objects, and missing labels do not.
-The exact label decision is shared through `isEvolveraLabel`; this renderer does
-not perform account lookup or fallback inference.
-
-## Focused validation
+Execute na raiz desta branch:
 
 ```sh
-node --test --test-concurrency=1 scripts/test/terminal-art.test.mjs
-```
-
-This is an in-memory `NO_STATEFUL_RESOURCES` test: no fixtures are written, no
-services are called, and no cleanup hooks run. Tests cover bounded dimensions,
-normalization, determinism, SGR-only color, monochrome equivalence, and sampled
-logo silhouettes in full and compact layouts.
-
-## Onde aparece e como experimentar
-
-O seletor (`scripts/users/account-selector.mjs`) usa a conta **destacada** para
-escolher a composição. A opção de criar conta não tem marca Evolvera. Em janelas
-baixas a paisagem é omitida para manter o título, a navegação e as contas acessíveis;
-redimensionar recalcula a composição sem perder a seleção.
-
-Na sessão, `scripts/users/startup-art.mjs` é uma factory interna registrada pelo
-runtime gerenciado, com o nome exibido da conta e o `sessionManager` raiz. O widget
-`aboveEditor` fica depois do conteúdo/avisos do chat e antes do campo de entrada;
-não substitui o cabeçalho nem atrasa, apaga ou intercepta avisos assíncronos. Sai no
-primeiro evento `input` ou `before_agent_start`. Não reaparece em `/new`, `/reload`,
-fork ou troca de sessão. Não produz mensagens de histórico nem contexto do modelo.
-RPC, print e sessões que não sejam a raiz TUI não recebem o widget. `--no-extensions`
-continua desativando as extensões internas, inclusive essa arte da sessão.
-
-A composição inicial tem até 12 linhas, reservando 10 para a interface existente;
-terminais muito baixos a omitem. `NO_COLOR` (inclusive vazio) e `TERM=dumb` desativam
-as cores da arte, sem desativar o controle de cursor necessário ao seletor interativo.
-A fonte pertence ao emulador de terminal: o PI não instala nem força JetBrains Mono.
-
-Execute na raiz **desta branch**, sem instalar ou alterar o PI em uso:
-
-```sh
-# Seletor real, mas apenas com contas sintéticas; não abre uma sessão PI.
+# Seletor real, mas somente com perfis sintéticos Evolvera/Pessoal.
 node scripts/preview-terminal-art.mjs --select
 
-# Com e sem a marca Evolvera.
-node scripts/preview-terminal-art.mjs --label EVOLVERA
+# Animação da paisagem, com e sem marca.
+node scripts/preview-terminal-art.mjs --label Evolvera
 node scripts/preview-terminal-art.mjs --label Pessoal
 
-# Composição compacta, monocromática.
-node scripts/preview-terminal-art.mjs --label Evolvera --width 56 --height 8 --no-color
+# Amostra com tamanho explícito, sem movimento.
+node scripts/preview-terminal-art.mjs --label Evolvera --width 120 --height 28 --no-animation
+
+# Versão monocromática e sem movimento.
+node scripts/preview-terminal-art.mjs --select --no-color --no-animation
 ```
 
-Esse preview serve para avaliar a aparência e o seletor. Ele não autentica, não lê
-registro, credenciais ou histórico, não cria contas e não simula uma conversa com
-um modelo. Selecionar “Create new account” mostra apenas a composição sem Evolvera.
-A validação da TUI nativa é separada do preview.
+`--select` usa as dimensões reais do terminal; `--width` e `--height` dimensionam as
+amostras standalone. A animação standalone redesenha apenas as linhas que acabou de
+emitir, sem levar o cursor ao topo e sobrescrever conteúdo anterior do terminal.
+O CLI encerra sua própria leitura de stdin ao concluir, sem deixar o processo aberto.
+O preview não lê registro, credenciais ou histórico, não cria contas e não abre
+uma sessão PI. “Create new account” é apenas uma opção visual nesse preview.
 
-## Evidência e limites da integração
-
-Os testes focados usam streams e sessões sintéticas, sem recursos persistentes:
+## Validação e limites
 
 ```sh
-node --test --test-concurrency=3 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs
+node --test --test-concurrency=4 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs scripts/test/terminal-art-animation.test.mjs
 ```
 
-Na implementação inicial, 7 testes do renderer passaram (1 worker, 75 ms), mais 17
-testes de seletor/lifecycle. A abertura real foi observada no SDK **1.3.0**, em PTYs
-100×36, com dois processos em paralelo e contas sintéticas EVOLVERA/Pessoal. Cada
-processo tinha HOME, agentDir, registro, perfis, cache, stage e sessões próprios em
-`mkdtemp`; não havia credenciais, ferramentas ou MCP, e fetch/sockets estavam
-bloqueados. Ambos encerraram com código 0 em aproximadamente 5,64 s, sem tentativa
-de rede. Os avisos nativos ficaram acima da arte, PI permaneceu nos dois casos,
-Evolvera apareceu só para EVOLVERA, e enviar uma entrada removeu a arte. A falha de
-autenticação esperada nesse fixture sem credenciais não foi uma chamada a provedor.
-O pacote instalado permaneceu inalterado.
+Os 36 testes focados passaram em aproximadamente 0,57 s, com quatro workers e
+isolamento de processo por arquivo. Usam streams/relógios sintéticos e, para o
+wiring, leitura do fonte: `NO_STATEFUL_RESOURCES`. A revisão do orçamento da TUI
+recebeu também sua validação focada após o ajuste de altura.
 
-Essa observação cobre a UI no SDK 1.3.0 em Linux. Não certifica outros SDKs, Windows,
-macOS, fontes ou todos os emuladores. A baseline 0.83.0 ainda citada no README não
-foi exercitada. Não há patch do SDK, alteração de instaladores ou instalação global.
-PR e merge dependem da aprovação posterior do usuário.
+A abertura real foi observada no SDK **1.3.0/Linux**, em PTYs 120×40, com perfis
+sintéticos EVOLVERA/Pessoal e HOME, agentDir, registro, stage, cache e sessões
+próprios em `mkdtemp`. Não havia credenciais, ferramentas ou MCP, e fetch/sockets
+estavam bloqueados. Ambos os processos saíram com código 0 em cerca de 6,7–7,0 s.
+Os quadros nativos mudaram ao longo da entrada; os avisos ficaram acima da cena,
+a marca apareceu só para EVOLVERA e a primeira entrada retirou a arte. Após a
+revelação, uma janela de observação de 450 ms não recebeu bytes de animação.
+O preview interativo 120×24 também encerrou com código 0 após a seleção.
+
+A validação nativa encontrou e corrigiu dois problemas antes da entrega: um widget
+alto demais ocultava o início dos avisos, e o preview standalone mantinha stdin
+ativo após selecionar. Esses ajustes não alteram credenciais, históricos nem o
+pacote instalado. Não há patch do SDK, instalador modificado ou instalação global.
+Não foram exercitados Windows, macOS, outros SDKs/fontes/emuladores ou chamadas a
+provedores. A baseline 0.83.0 ainda citada no README não foi validada.
+PR e merge continuam dependendo da aprovação posterior do usuário.
