@@ -1477,10 +1477,11 @@ function lastLines(text, count) {
 
 // One entry per Agent tool call, merged with live partial results, completion notifications
 // (custom message "subagent-notification") and persisted records. Running runs first, newest first.
-export function collectSubagents(messages = [], runtime = new Map(), records = new Map(), now = Date.now()) {
+export function collectSubagents(messages = [], runtime = new Map(), records = new Map(), now = Date.now(), stallMs = STALL_SUBAGENT_MS) {
   const runs = [];
   const byCall = new Map();
   const notes = new Map();
+  const noteAt = new Map();
   const extras = [];
   const extraByCall = new Map();
 
@@ -1490,7 +1491,7 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
         if (part?.type !== "toolCall") return;
         const args = part.arguments || {};
         if (part.name === SUBAGENT_TOOLS.agent) {
-          const run = { key: `sa:${mi}.${pi}`, args, startedAt: stamp(message.timestamp), result: null, isError: false, live: false };
+          const run = { key: `sa:${mi}.${pi}`, args, startedAt: stamp(message.timestamp), progressAt: null, endedAt: null, result: null, isError: false, live: false };
           runs.push(run);
           byCall.set(part.id, run);
         } else if (part.name === SUBAGENT_TOOLS.steer || part.name === SUBAGENT_TOOLS.result) {
@@ -1510,7 +1511,9 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
       if (extra && !extra.text) extra.text = toolResultText(message);
     } else if (message?.role === "custom" && message.customType === "subagent-notification" && message.details) {
       for (const note of [message.details, ...(Array.isArray(message.details.others) ? message.details.others : [])]) {
-        if (note?.id) notes.set(note.id, note);
+        if (!note?.id) continue;
+        notes.set(note.id, note);
+        noteAt.set(note.id, stamp(message.timestamp));
       }
     }
   });
@@ -1519,11 +1522,13 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
     if (live.name !== SUBAGENT_TOOLS.agent) continue;
     let run = byCall.get(id);
     if (!run) {
-      run = { key: `sa:live:${id}`, args: live.args || {}, startedAt: null, result: null, isError: false, live: false };
+      run = { key: `sa:live:${id}`, args: live.args || {}, startedAt: null, progressAt: null, endedAt: null, result: null, isError: false, live: false };
       runs.push(run);
       byCall.set(id, run);
     }
     if (live.startedAt) run.startedAt = live.startedAt;
+    run.progressAt = live.updatedAt ?? live.startedAt ?? null;
+    run.endedAt = live.endedAt ?? null;
     if (run.result) continue;
     run.result = live.result ?? live.partial ?? null;
     run.isError = live.status === "error";
@@ -1543,6 +1548,7 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
     const resultText = record?.result || note?.resultPreview || (inFlight ? "" : output);
     const errorText = note?.error || record?.error || details.error || "";
     const startedAt = record?.startedAt ?? run.startedAt;
+    const endedAt = phase === "running" ? null : stamp(record?.completedAt) ?? noteAt.get(agentId) ?? run.endedAt;
 
     let elapsed;
     if (note) elapsed = note.durationMs || 0;
@@ -1582,6 +1588,9 @@ export function collectSubagents(messages = [], runtime = new Map(), records = n
       phase,
       background: details.status === "background",
       elapsed,
+      startedAt,
+      endedAt,
+      stalled: phase === "running" && run.live ? stallLabel(stalledMinutes(run.progressAt, stallMs, now)) : null,
       tail,
       sections,
       order,
@@ -1802,7 +1811,7 @@ export function groupWorktrees(list) {
 }
 
 // Everything a row of the Worktrees overview shows; `status` is the worktree's project status, if it has one.
-export function worktreeDetail(worktree, status, now = Date.now()) {
+export function worktreeDetail(worktree, status, now = Date.now(), stallMs = STALL_PI_MS) {
   const row = worktreeRow(worktree);
   const studio = studioPiState(status);
   return {
@@ -1818,6 +1827,7 @@ export function worktreeDetail(worktree, status, now = Date.now()) {
     terminals: worktree.terminals ? plural(worktree.terminals, "terminal", "terminais") : "",
     lastActivity: worktree.lastActivityAt ? relativeTime(worktree.lastActivityAt, now) : "",
     studio: studio ? { key: studio, label: `PI do Studio: ${studio}` } : null,
+    stalled: stalledPi(status, now, stallMs),
     agents: worktree.agents.map((agent) => ({ ...orcaAgentState(agent), title: agent.title || agent.type || "agente", message: agent.lastMessage })),
   };
 }
@@ -1845,7 +1855,215 @@ export function runningWorktreeCount(worktrees, statusOf) {
 }
 
 // Conversations (sub-PIs included) of a project that are running: the listed ones, or the project's live PI when the list is not loaded.
-export function projectRunningCount(history, status) {
+// A project that is not open has no loaded history: the server's per-project count (`serverCount`) stands in for it.
+export function projectRunningCount(history, status, { open = true, serverCount = 0 } = {}) {
+  const live = studioPiState(status) === "fazendo" ? 1 : 0;
+  if (!open) return Math.max(serverCount, live);
   const listed = (history || []).filter((item) => item.state === "fazendo").length;
-  return Math.max(listed, studioPiState(status) === "fazendo" ? 1 : 0);
+  return Math.max(listed, live);
+}
+
+// ------------------------------------------------------ visibility: stalled PIs, timing, activity feed
+
+export const STALL_PI_MS = 3 * 60_000;
+export const STALL_SUBAGENT_MS = 5 * 60_000;
+export const ACTIVITY_LIMIT = 300;
+export const UI_DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
+
+// Thresholds are constants; PI_STUDIO_STALL_PI_MS / PI_STUDIO_STALL_SUBAGENT_MS (positive integers) override them for tests.
+export function stallThresholds(env = {}) {
+  const read = (raw, fallback) => (Number.isInteger(Number(raw)) && Number(raw) > 0 ? Number(raw) : fallback);
+  return { piMs: read(env.PI_STUDIO_STALL_PI_MS, STALL_PI_MS), subagentMs: read(env.PI_STUDIO_STALL_SUBAGENT_MS, STALL_SUBAGENT_MS) };
+}
+
+// Whole minutes of silence once it is strictly longer than the threshold, else null (also for a missing timestamp).
+export function stalledMinutes(lastAt, thresholdMs, now = Date.now()) {
+  if (!Number.isFinite(lastAt)) return null;
+  const idle = now - lastAt;
+  return idle > thresholdMs ? Math.max(1, Math.floor(idle / 60_000)) : null;
+}
+
+export function stallLabel(minutes) {
+  return minutes === null ? null : `sem atividade há ${minutes} min`;
+}
+
+// A live PI that is streaming (and not waiting for the user) without any event for longer than the threshold.
+export function stalledPi(status, now = Date.now(), thresholdMs = STALL_PI_MS) {
+  if (!status || status.exited || status.waitingUi || !status.streaming) return null;
+  return stallLabel(stalledMinutes(status.lastEventAt, thresholdMs, now));
+}
+
+// "agora" | "há 5 min" | "há 2 h" | "em 3 de mai." (the relative helper falls back to a date past a week).
+export function agoLabel(value, now = Date.now()) {
+  const relative = relativeTime(value, now);
+  if (relative === "" || relative === "agora") return relative;
+  return /^\d+ (min|h|d)$/.test(relative) ? `há ${relative}` : `em ${relative}`;
+}
+
+// Card line of a subagent run: "rodando há 2 min 3 s" or "terminou há 4 min · levou 1 min 10 s", plus the stalled marker.
+export function subagentTiming(run, now = Date.now()) {
+  if (run.phase === "running") return { text: `rodando há ${formatElapsed(run.elapsed)}`, stalled: run.stalled };
+  const finished = run.endedAt ? finishedLabel(run.endedAt, null, now).text : "";
+  const took = run.elapsed >= 1000 ? `levou ${formatElapsed(run.elapsed)}` : "";
+  return { text: [finished, took].filter(Boolean).join(" · "), stalled: null };
+}
+
+export function newActivityTracker() {
+  return { turnStartedAt: null, calls: new Map(), background: new Map() };
+}
+
+const elapsedSince = (entry, now) => (entry.startedAt === null ? null : now - entry.startedAt);
+
+function subagentEnd(entry, ok, durationMs) {
+  return {
+    kind: "subagent_end",
+    text: `Subagente ${entry.title} ${ok ? "terminou" : "falhou"}${durationMs === null ? "" : ` · levou ${formatElapsed(durationMs)}`}`,
+    name: entry.title,
+    type: entry.type,
+    durationMs,
+    ok,
+  };
+}
+
+// Notable events of one PI -> feed items (project fields are added by the server). `tracker` carries the turn start and the
+// in-flight Agent calls between events; a background agent ends with a "subagent-notification" message, not with its tool call.
+export function activityFromEvent(event, tracker = newActivityTracker(), now = Date.now()) {
+  switch (event?.type) {
+    case "agent_start":
+      tracker.turnStartedAt = now;
+      return [];
+    case "agent_end": {
+      if (event.willRetry) return [];
+      const took = tracker.turnStartedAt === null ? null : now - tracker.turnStartedAt;
+      tracker.turnStartedAt = null;
+      return [{ kind: "turn", text: `Terminou a resposta${took === null ? "" : ` · levou ${formatElapsed(took)}`}`, durationMs: took }];
+    }
+    case "tool_execution_start": {
+      if (event.toolName !== SUBAGENT_TOOLS.agent) return [];
+      const args = event.args || {};
+      const entry = { startedAt: now, title: String(args.name || args.subagent_type || "Agente"), type: String(args.subagent_type || "") };
+      tracker.calls.set(event.toolCallId, entry);
+      return [{ kind: "subagent_start", text: `Subagente iniciado: ${entry.title}`, name: entry.title, type: entry.type }];
+    }
+    case "tool_execution_end": {
+      if (event.toolName !== SUBAGENT_TOOLS.agent) return [];
+      const entry = tracker.calls.get(event.toolCallId) || { startedAt: null, title: "Agente", type: "" };
+      tracker.calls.delete(event.toolCallId);
+      const details = event.result?.details || {};
+      if (!event.isError && details.status === "background" && details.agentId) {
+        tracker.background.set(details.agentId, entry);
+        return [];
+      }
+      return [subagentEnd(entry, !event.isError && subagentPhase(details.status || "completed") !== "error", elapsedSince(entry, now))];
+    }
+    case "message_end": {
+      const message = event.message || {};
+      if (message.role === "assistant") {
+        return message.stopReason === "error" ? [{ kind: "error", text: `Erro do modelo: ${message.errorMessage || "desconhecido"}` }] : [];
+      }
+      if (message.role !== "custom" || message.customType !== "subagent-notification" || !message.details) return [];
+      const notes = [message.details, ...(Array.isArray(message.details.others) ? message.details.others : [])].filter((note) => note?.id);
+      return notes.map((note) => {
+        const entry = tracker.background.get(note.id) || { startedAt: null, title: String(note.description || "Agente"), type: "" };
+        tracker.background.delete(note.id);
+        const took = Number.isFinite(note.durationMs) ? note.durationMs : elapsedSince(entry, now);
+        return subagentEnd(entry, subagentPhase(note.status) !== "error", took);
+      });
+    }
+    case "compaction_end":
+      if (event.errorMessage) return [{ kind: "error", text: `Falha ao compactar: ${event.errorMessage}` }];
+      return event.aborted ? [] : [{ kind: "compaction", text: "Contexto compactado" }];
+    case "auto_retry_start":
+      return [{ kind: "retry", text: `Nova tentativa ${event.attempt}/${event.maxAttempts}${event.errorMessage ? ` · ${event.errorMessage}` : ""}` }];
+    case "auto_retry_end":
+      return [event.success
+        ? { kind: "retry", text: `Tentativa ${event.attempt} bem-sucedida` }
+        : { kind: "error", text: `Falhou após ${event.attempt} tentativas: ${event.finalError || "erro desconhecido"}` }];
+    case "extension_error":
+      return [{ kind: "error", text: `Erro de extensão: ${event.error}` }];
+    case "extension_ui_request":
+      if (UI_DIALOG_METHODS.has(event.method) && event.id) return [{ kind: "ui_wait", text: `Aguardando sua resposta: ${truncate(stripAnsi(event.title || event.method), 80)}` }];
+      return event.method === "notify" && event.notifyType === "error" ? [{ kind: "error", text: `Aviso de extensão: ${truncate(stripAnsi(event.message), 120)}` }] : [];
+    case "extension_ui_response":
+      return [{ kind: "ui_answered", text: "Resposta enviada" }];
+    case "process_error":
+      return [{ kind: "error", text: `Falha ao executar o PI: ${event.message}` }];
+    case "process_exit":
+      return [{ kind: "exit", text: `PI encerrado (${event.signal ? `sinal ${event.signal}` : `código ${event.code}`})` }];
+    default:
+      return [];
+  }
+}
+
+// Errors and auto-retries only: the conversation's "Erros e tentativas" list.
+export function problemsFromEvent(event, now = Date.now()) {
+  return activityFromEvent(event, undefined, now).filter((item) => item.kind === "error" || item.kind === "retry").map((item) => ({ ...item, at: now }));
+}
+
+const ACTIVITY_DOTS = { turn: "pronto", subagent_start: "fazendo", ui_wait: "aguardando", retry: "aguardando", error: "erro", exit: "parado" };
+
+// State-dot key (same vocabulary as conversations) of a feed item; "" = neutral.
+export function activityDot(item) {
+  if (item.kind === "subagent_end") return item.ok ? "pronto" : "erro";
+  return ACTIVITY_DOTS[item.kind] ?? "";
+}
+
+export function unseenActivity(items, seenSeq) {
+  return items.filter((item) => item.seq > seenSeq).length;
+}
+
+// Newest first; the filter matches project name and text, ignoring case and accents.
+export function activityRows(items, query, now = Date.now()) {
+  const needle = foldText(query).trim();
+  return items
+    .filter((item) => !needle || foldText(`${item.projectName} ${item.text}`).includes(needle))
+    .map((item) => ({ seq: item.seq, projectId: item.projectId, project: item.projectName, text: item.text, ago: agoLabel(item.at, now), dot: activityDot(item) }))
+    .reverse();
+}
+
+// ----------------------------------------------------------------- usage
+
+const finiteOr = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+
+// Local calendar day ("2025-03-07") of a timestamp (ms, ISO string or Date); null when it is not a date.
+export function localDay(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Adds one assistant message's `usage` to the per-day buckets { day: { cost, tokens } }. cost stays null while no message
+// of that day reported one, so "no cost data" is told apart from "free".
+export function addUsage(days, stampValue, usage) {
+  const day = localDay(stampValue);
+  if (day === null || !isRecord(usage)) return;
+  const bucket = (days[day] ??= { cost: null, tokens: 0 });
+  const cost = usage.cost?.total;
+  if (Number.isFinite(cost)) bucket.cost = (bucket.cost ?? 0) + cost;
+  bucket.tokens += finiteOr(usage.totalTokens, finiteOr(usage.input, 0) + finiteOr(usage.output, 0) + finiteOr(usage.cacheRead, 0) + finiteOr(usage.cacheWrite, 0));
+}
+
+// Sum of one day over indexed sessions (`entry.usage`): cost null when no session had cost data.
+export function sumUsage(entries, day) {
+  let cost = null;
+  let tokens = 0;
+  let sessions = 0;
+  for (const entry of entries) {
+    const bucket = entry.usage?.[day];
+    if (!bucket) continue;
+    sessions++;
+    tokens += bucket.tokens;
+    if (bucket.cost !== null) cost = (cost ?? 0) + bucket.cost;
+  }
+  return { cost, tokens, sessions };
+}
+
+// Rows of the Contexto "Hoje" block; cost is dropped when the sessions carry none (tokens only).
+export function todayUsageRows(usage) {
+  if (!usage) return [];
+  const rows = [];
+  if (usage.cost !== null) rows.push(["Custo hoje", `US$ ${usage.cost.toFixed(2)}`]);
+  rows.push(["Tokens hoje", formatTokens(usage.tokens)], ["Sessões hoje", String(usage.sessions)]);
+  return rows;
 }

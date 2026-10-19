@@ -804,7 +804,7 @@ describe("subagents", () => {
     assert.deepEqual({ ...running[0], sections: undefined }, {
       key: "sa:0.1", agentId: "", name: "", title: "Explore", type: "Explore", description: "Mapear rotas", model: "haiku",
       stats: ["haiku", "2 ferramentas", "4k token"], status: "running", phase: "running", background: false, elapsed: 3000,
-      tail: ["└ reading…"], sections: undefined, order: 0,
+      tail: ["└ reading…"], sections: undefined, order: 0, startedAt: NOW - 3000, endedAt: null, stalled: null,
     });
     assert.deepEqual(running[0].sections, [{ label: "Tarefa", text: "liste rotas" }]);
     const noActivity = lib.collectSubagents(messages, new Map([["fg", { name: "Agent", status: "running", partial: { details: { status: "running" } } }]]), new Map(), NOW);
@@ -1503,7 +1503,7 @@ describe("conversation states + worktrees overview", () => {
     assert.deepEqual(lib.worktreeDetail(full, { streaming: true }, now), {
       name: "Nome", sub: "feat/x", statusLabel: "trabalhando", running: true, active: true, unread: true,
       issue: "#321", pr: "PR #9 · draft", comment: "nota", terminals: "3 terminais", lastActivity: "5 min",
-      studio: { key: "fazendo", label: "PI do Studio: fazendo" },
+      studio: { key: "fazendo", label: "PI do Studio: fazendo" }, stalled: null,
       agents: [
         { key: "fazendo", label: "trabalhando", title: "Tarefa", message: "quase" },
         { key: "pronto", label: "pronto", title: "claude", message: "" },
@@ -1683,5 +1683,232 @@ describe("count badges", () => {
     assert.equal(lib.projectRunningCount([{ state: "fazendo" }, { state: "fazendo" }], { streaming: true }), 2);
     assert.equal(lib.projectRunningCount([{ state: "pronto" }], { streaming: true, waitingUi: true }), 0);
     assert.equal(lib.projectRunningCount(null, undefined), 0);
+  });
+});
+
+describe("visibility: stalled detection, timing, activity feed, usage", () => {
+  const T0 = 1_700_000_000_000;
+  const MIN = 60_000;
+  const agentCall = (id, args) => ({ type: "toolCall", id, name: "Agent", arguments: args });
+  const toolResult = (id, text, details) => ({ role: "toolResult", toolCallId: id, toolName: "Agent", content: [{ type: "text", text }], details, isError: false });
+
+  test("stallThresholds: defaults, valid overrides, invalid values fall back", () => {
+    assert.deepEqual(lib.stallThresholds(), { piMs: 3 * MIN, subagentMs: 5 * MIN });
+    assert.deepEqual(lib.stallThresholds({ PI_STUDIO_STALL_PI_MS: "1500", PI_STUDIO_STALL_SUBAGENT_MS: "2500" }), { piMs: 1500, subagentMs: 2500 });
+    assert.deepEqual(lib.stallThresholds({ PI_STUDIO_STALL_PI_MS: "0", PI_STUDIO_STALL_SUBAGENT_MS: "1.5" }), { piMs: 3 * MIN, subagentMs: 5 * MIN });
+    assert.deepEqual(lib.stallThresholds({ PI_STUDIO_STALL_PI_MS: "abc", PI_STUDIO_STALL_SUBAGENT_MS: "-4" }), { piMs: 3 * MIN, subagentMs: 5 * MIN });
+  });
+
+  test("stalledMinutes / stallLabel / stalledPi: edges at the thresholds", () => {
+    assert.equal(lib.stalledMinutes(T0, 3 * MIN, T0 + 3 * MIN), null, "exactly at the threshold is not stalled");
+    assert.equal(lib.stalledMinutes(T0, 3 * MIN, T0 + 3 * MIN + 1), 3);
+    assert.equal(lib.stalledMinutes(T0, 3 * MIN, T0 + 10 * MIN + 59_999), 10);
+    assert.equal(lib.stalledMinutes(T0, 1500, T0 + 1501), 1, "sub-minute thresholds still read at least 1 min");
+    assert.equal(lib.stalledMinutes(undefined, 1, T0), null);
+    assert.equal(lib.stalledMinutes(NaN, 1, T0), null);
+    assert.ok(lib.stalledMinutes(T0, 1) > 1_000_000, "now defaults to Date.now()");
+    assert.equal(lib.stallLabel(4), "sem atividade há 4 min");
+    assert.equal(lib.stallLabel(null), null);
+
+    const streaming = { streaming: true, lastEventAt: T0 };
+    assert.equal(lib.stalledPi(streaming, T0 + 3 * MIN), null);
+    assert.equal(lib.stalledPi(streaming, T0 + 3 * MIN + 1), "sem atividade há 3 min");
+    assert.equal(lib.stalledPi(streaming, T0 + 2 * MIN, 1000), "sem atividade há 2 min", "custom threshold");
+    assert.equal(lib.stalledPi({ ...streaming, waitingUi: true }, T0 + 9 * MIN), null, "waiting for the user is not stalled");
+    assert.equal(lib.stalledPi({ ...streaming, exited: true }, T0 + 9 * MIN), null);
+    assert.equal(lib.stalledPi({ streaming: false, lastEventAt: T0 }, T0 + 9 * MIN), null, "idle PI is not stalled");
+    assert.equal(lib.stalledPi(null, T0), null);
+    assert.equal(typeof lib.stalledPi(streaming), "string", "now defaults to Date.now()");
+  });
+
+  test("worktreeDetail carries the stalled label of the Studio PI", () => {
+    const worktree = { path: "/w", name: "w", branch: "", repo: "", status: "working", agents: [] };
+    assert.equal(lib.worktreeDetail(worktree, { streaming: true, lastEventAt: T0 }, T0 + 4 * MIN).stalled, "sem atividade há 4 min");
+    assert.equal(lib.worktreeDetail(worktree, { streaming: true, lastEventAt: T0 }, T0 + 4 * MIN, 5 * MIN).stalled, null);
+    assert.equal(lib.worktreeDetail(worktree, null, T0).stalled, null);
+  });
+
+  test("agoLabel: agora / há N / em <data>", () => {
+    assert.equal(lib.agoLabel(T0, T0 + 5_000), "agora");
+    assert.equal(lib.agoLabel(T0, T0 + 2 * MIN), "há 2 min");
+    assert.equal(lib.agoLabel(T0, T0 + 3 * 60 * MIN), "há 3 h");
+    assert.equal(lib.agoLabel(T0, T0 + 3 * 24 * 60 * MIN), "há 3 d");
+    assert.match(lib.agoLabel(T0, T0 + 30 * 24 * 60 * MIN), /^em /);
+    assert.equal(lib.agoLabel("nope", T0), "");
+    assert.equal(typeof lib.agoLabel(T0), "string", "now defaults to Date.now()");
+  });
+
+  test("subagentTiming: running, finished with and without end time / duration", () => {
+    assert.deepEqual(lib.subagentTiming({ phase: "running", elapsed: 125_000, stalled: null }), { text: "rodando há 2 min 5 s", stalled: null });
+    assert.deepEqual(lib.subagentTiming({ phase: "running", elapsed: 5000, stalled: "sem atividade há 6 min" }), { text: "rodando há 5 s", stalled: "sem atividade há 6 min" });
+    assert.deepEqual(lib.subagentTiming({ phase: "done", elapsed: 70_000, endedAt: T0 }, T0 + 4 * MIN), { text: "terminou há 4 min · levou 1 min 10 s", stalled: null });
+    assert.deepEqual(lib.subagentTiming({ phase: "error", elapsed: 500, endedAt: T0 }, T0 + 1000), { text: "terminou agora", stalled: null });
+    assert.deepEqual(lib.subagentTiming({ phase: "done", elapsed: 3000, endedAt: null }), { text: "levou 3 s", stalled: null });
+    assert.deepEqual(lib.subagentTiming({ phase: "done", elapsed: 0, endedAt: null }), { text: "", stalled: null });
+    assert.match(lib.subagentTiming({ phase: "done", elapsed: 0, endedAt: T0 }).text, /^terminou /);
+  });
+
+  test("collectSubagents: end time, progress and stalled marker", () => {
+    const args = { description: "Mapear", subagent_type: "Explore", prompt: "x" };
+    const messages = [{ role: "assistant", timestamp: T0 - 9000, content: [agentCall("fg", args)] }];
+    const partial = { details: { status: "running", activity: "lendo" } };
+    const live = (extra) => new Map([["fg", { name: "Agent", status: "running", partial, startedAt: T0, ...extra }]]);
+    const quiet = lib.collectSubagents(messages, live({ updatedAt: T0 + MIN }), new Map(), T0 + 6 * MIN + 1)[0];
+    assert.equal(quiet.stalled, "sem atividade há 5 min");
+    assert.equal(quiet.endedAt, null);
+    assert.equal(lib.collectSubagents(messages, live({ updatedAt: T0 + MIN }), new Map(), T0 + 6 * MIN)[0].stalled, null, "exactly at the threshold");
+    assert.equal(lib.collectSubagents(messages, live({}), new Map(), T0 + 1000, 1000)[0].stalled, null, "progress falls back to the start");
+    assert.equal(lib.collectSubagents(messages, live({}), new Map(), T0 + 3 * MIN, 1000)[0].stalled, "sem atividade há 3 min");
+    assert.equal(lib.collectSubagents(messages, live({ startedAt: undefined }), new Map(), T0 + 99 * MIN)[0].stalled, null, "no progress timestamp, no marker");
+    const ended = lib.collectSubagents(messages, new Map([["fg", { name: "Agent", status: "done", result: { content: [], details: { status: "completed", durationMs: 2000 } }, startedAt: T0, endedAt: T0 + 2000 }]]), new Map(), T0 + MIN)[0];
+    assert.equal(ended.endedAt, T0 + 2000);
+    assert.equal(ended.stalled, null);
+
+    const bg = [{ role: "assistant", timestamp: T0, content: [agentCall("bg", { ...args, name: "x" })] },
+      toolResult("bg", "started", { status: "background", agentId: "ag9" })];
+    const note = { role: "custom", customType: "subagent-notification", timestamp: T0 + 5 * MIN, details: { id: "ag9", status: "completed", durationMs: 4 * MIN, others: [{ id: "ag8", status: "completed" }, { noId: true }] } };
+    assert.equal(lib.collectSubagents([...bg, note], new Map(), new Map(), T0 + 6 * MIN).find((run) => run.agentId === "ag9").endedAt, T0 + 5 * MIN);
+    const recorded = lib.collectSubagents(bg, new Map(), new Map([["ag9", { id: "ag9", status: "completed", startedAt: T0, completedAt: T0 + 2 * MIN }]]), T0 + 6 * MIN)[0];
+    assert.equal(recorded.endedAt, T0 + 2 * MIN);
+    assert.equal(recorded.startedAt, T0);
+    const running = lib.collectSubagents(bg, new Map(), new Map(), T0 + 6 * MIN)[0];
+    assert.equal(running.endedAt, null);
+    assert.equal(running.stalled, null, "background runs have no progress signal");
+  });
+
+  test("activityFromEvent: turn finished with duration (and willRetry / no start)", () => {
+    const tracker = lib.newActivityTracker();
+    assert.deepEqual(lib.activityFromEvent({ type: "agent_start" }, tracker, T0), []);
+    assert.deepEqual(lib.activityFromEvent({ type: "agent_end", willRetry: true }, tracker, T0 + 1000), []);
+    assert.deepEqual(lib.activityFromEvent({ type: "agent_end" }, tracker, T0 + 125_000), [{ kind: "turn", text: "Terminou a resposta · levou 2 min 5 s", durationMs: 125_000 }]);
+    assert.deepEqual(lib.activityFromEvent({ type: "agent_end" }, tracker, T0 + 200_000), [{ kind: "turn", text: "Terminou a resposta", durationMs: null }], "start was consumed");
+    assert.equal(lib.activityFromEvent({ type: "agent_start" }).length, 0, "default tracker and clock");
+  });
+
+  test("activityFromEvent: foreground and background subagents", () => {
+    const tracker = lib.newActivityTracker();
+    const start = (id, args) => lib.activityFromEvent({ type: "tool_execution_start", toolName: "Agent", toolCallId: id, args }, tracker, T0);
+    assert.deepEqual(lib.activityFromEvent({ type: "tool_execution_start", toolName: "bash", toolCallId: "b" }, tracker, T0), []);
+    assert.deepEqual(lib.activityFromEvent({ type: "tool_execution_end", toolName: "bash", toolCallId: "b" }, tracker, T0), []);
+    assert.deepEqual(start("fg", { name: "auditor", subagent_type: "Explore" }), [{ kind: "subagent_start", text: "Subagente iniciado: auditor", name: "auditor", type: "Explore" }]);
+    assert.equal(start("t", { subagent_type: "Plan" })[0].name, "Plan");
+    assert.deepEqual(start("n"), [{ kind: "subagent_start", text: "Subagente iniciado: Agente", name: "Agente", type: "" }]);
+    const end = (id, extra) => lib.activityFromEvent({ type: "tool_execution_end", toolName: "Agent", toolCallId: id, ...extra }, tracker, T0 + 90_000);
+    assert.deepEqual(end("fg", { result: { details: { status: "completed" } } }), [{ kind: "subagent_end", text: "Subagente auditor terminou · levou 1 min 30 s", name: "auditor", type: "Explore", durationMs: 90_000, ok: true }]);
+    assert.equal(end("t", { isError: true })[0].ok, false);
+    assert.equal(end("unknown", { result: { details: { status: "error" } } })[0].text, "Subagente Agente falhou", "unknown call: no start, no duration");
+    assert.equal(end("never", {})[0].ok, true, "no result at all counts as completed");
+
+    // Background: the tool call ends at launch; the notification closes the run.
+    start("bg", { name: "worker", subagent_type: "general-purpose" });
+    assert.deepEqual(end("bg", { result: { details: { status: "background", agentId: "ag1" } } }), []);
+    start("bg2", { name: "w2" });
+    assert.equal(end("bg2", { result: { details: { status: "background" } } })[0].kind, "subagent_end", "background without agent id ends right away");
+    start("bg3", { name: "w3" });
+    assert.equal(end("bg3", { isError: true, result: { details: { status: "background", agentId: "ag3" } } })[0].ok, false, "a failed launch is an error");
+    const notify = (details, message = {}) => lib.activityFromEvent({ type: "message_end", message: { role: "custom", customType: "subagent-notification", details, ...message } }, tracker, T0 + 10 * MIN);
+    const done = notify({ id: "ag1", status: "completed", durationMs: 3 * MIN, others: [{ id: "ag2", status: "failed", description: "Outro", durationMs: "x" }, { nope: 1 }] });
+    assert.deepEqual(done.map((item) => [item.text, item.ok]), [["Subagente worker terminou · levou 3 min 0 s", true], ["Subagente Outro falhou", false]]);
+    assert.equal(notify({ id: "ag4", status: "completed" })[0].text, "Subagente Agente terminou");
+    start("bg5", { name: "w5" });
+    end("bg5", { result: { details: { status: "background", agentId: "ag5" } } });
+    assert.equal(notify({ id: "ag5", status: "completed" })[0].durationMs, 10 * MIN, "falls back to launch -> notification time");
+    assert.deepEqual(notify(undefined), []);
+    assert.deepEqual(notify({ id: "x" }, { customType: "other" }), []);
+    assert.deepEqual(notify({ id: "x" }, { role: "user" }), []);
+    assert.deepEqual(lib.activityFromEvent({ type: "message_end" }, tracker, T0), []);
+  });
+
+  test("activityFromEvent: errors, retries, compaction, dialogs, process", () => {
+    const map = (event) => lib.activityFromEvent(event, undefined, T0);
+    assert.deepEqual(map({ type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "429" } }), [{ kind: "error", text: "Erro do modelo: 429" }]);
+    assert.equal(map({ type: "message_end", message: { role: "assistant", stopReason: "error" } })[0].text, "Erro do modelo: desconhecido");
+    assert.deepEqual(map({ type: "message_end", message: { role: "assistant", stopReason: "stop" } }), []);
+    assert.equal(map({ type: "compaction_end", errorMessage: "boom" })[0].text, "Falha ao compactar: boom");
+    assert.deepEqual(map({ type: "compaction_end", aborted: true }), []);
+    assert.deepEqual(map({ type: "compaction_end", result: {} }), [{ kind: "compaction", text: "Contexto compactado" }]);
+    assert.equal(map({ type: "auto_retry_start", attempt: 1, maxAttempts: 3, errorMessage: "overloaded" })[0].text, "Nova tentativa 1/3 · overloaded");
+    assert.equal(map({ type: "auto_retry_start", attempt: 2, maxAttempts: 3 })[0].text, "Nova tentativa 2/3");
+    assert.deepEqual(map({ type: "auto_retry_end", success: true, attempt: 2 }), [{ kind: "retry", text: "Tentativa 2 bem-sucedida" }]);
+    assert.deepEqual(map({ type: "auto_retry_end", success: false, attempt: 3, finalError: "fim" }), [{ kind: "error", text: "Falhou após 3 tentativas: fim" }]);
+    assert.equal(map({ type: "auto_retry_end", success: false, attempt: 3 })[0].text, "Falhou após 3 tentativas: erro desconhecido");
+    assert.deepEqual(map({ type: "extension_error", error: "x" }), [{ kind: "error", text: "Erro de extensão: x" }]);
+    assert.deepEqual(map({ type: "extension_ui_request", id: "u1", method: "confirm", title: "\u001b[1mApagar?\u001b[0m" }), [{ kind: "ui_wait", text: "Aguardando sua resposta: Apagar?" }]);
+    assert.equal(map({ type: "extension_ui_request", id: "u2", method: "input" })[0].text, "Aguardando sua resposta: input");
+    assert.deepEqual(map({ type: "extension_ui_request", method: "select" }), [], "a dialog without id cannot be answered");
+    assert.deepEqual(map({ type: "extension_ui_request", method: "notify", notifyType: "error", message: "ruim" }), [{ kind: "error", text: "Aviso de extensão: ruim" }]);
+    assert.deepEqual(map({ type: "extension_ui_request", method: "notify", notifyType: "warning", message: "meh" }), []);
+    assert.deepEqual(map({ type: "extension_ui_response", id: "u1" }), [{ kind: "ui_answered", text: "Resposta enviada" }]);
+    assert.deepEqual(map({ type: "process_error", message: "ENOENT" }), [{ kind: "error", text: "Falha ao executar o PI: ENOENT" }]);
+    assert.equal(map({ type: "process_exit", code: 1, signal: null })[0].text, "PI encerrado (código 1)");
+    assert.equal(map({ type: "process_exit", code: null, signal: "SIGTERM" })[0].text, "PI encerrado (sinal SIGTERM)");
+    assert.deepEqual(map({ type: "something_else" }), []);
+    assert.deepEqual(map(undefined), []);
+  });
+
+  test("problemsFromEvent keeps errors and retries only, stamped", () => {
+    assert.deepEqual(lib.problemsFromEvent({ type: "auto_retry_start", attempt: 1, maxAttempts: 2 }, T0), [{ kind: "retry", text: "Nova tentativa 1/2", at: T0 }]);
+    assert.deepEqual(lib.problemsFromEvent({ type: "extension_error", error: "e" }, T0), [{ kind: "error", text: "Erro de extensão: e", at: T0 }]);
+    assert.deepEqual(lib.problemsFromEvent({ type: "compaction_end", result: {} }, T0), []);
+    assert.deepEqual(lib.problemsFromEvent({ type: "agent_start" }), []);
+  });
+
+  test("activityDot / unseenActivity / activityRows", () => {
+    assert.equal(lib.activityDot({ kind: "subagent_end", ok: true }), "pronto");
+    assert.equal(lib.activityDot({ kind: "subagent_end", ok: false }), "erro");
+    assert.deepEqual(["turn", "subagent_start", "ui_wait", "retry", "error", "exit", "compaction", "ui_answered"].map((kind) => lib.activityDot({ kind })), ["pronto", "fazendo", "aguardando", "aguardando", "erro", "parado", "", ""]);
+    const items = [
+      { seq: 1, at: T0, projectId: "a", projectName: "Alpha", kind: "turn", text: "Terminou a resposta" },
+      { seq: 2, at: T0 + MIN, projectId: "b", projectName: "Beta", kind: "error", text: "Erro de extensão: falhou" },
+      { seq: 3, at: T0 + 2 * MIN, projectId: "a", projectName: "Alpha", kind: "subagent_end", ok: true, text: "Subagente x terminou" },
+    ];
+    assert.equal(lib.unseenActivity(items, 0), 3);
+    assert.equal(lib.unseenActivity(items, 2), 1);
+    assert.equal(lib.unseenActivity(items, 3), 0);
+    assert.equal(lib.unseenActivity([], 0), 0);
+    const rows = lib.activityRows(items, "", T0 + 3 * MIN);
+    assert.deepEqual(rows.map((row) => [row.seq, row.project, row.ago, row.dot]), [[3, "Alpha", "há 1 min", "pronto"], [2, "Beta", "há 2 min", "erro"], [1, "Alpha", "há 3 min", "pronto"]]);
+    assert.deepEqual(lib.activityRows(items, "  EXTENSÃO ", T0 + 3 * MIN).map((row) => row.seq), [2]);
+    assert.deepEqual(lib.activityRows(items, "alpha", T0 + 3 * MIN).map((row) => row.seq), [3, 1]);
+    assert.deepEqual(lib.activityRows(items, "zzz"), []);
+    assert.equal(rows[0].projectId, "a");
+    assert.equal(rows[0].text, "Subagente x terminou");
+  });
+
+  test("localDay: local calendar day, around midnight", () => {
+    assert.equal(lib.localDay(new Date(2025, 2, 7, 23, 59, 59).getTime()), "2025-03-07");
+    assert.equal(lib.localDay(new Date(2025, 2, 8, 0, 0, 1).getTime()), "2025-03-08");
+    assert.equal(lib.localDay(new Date(2025, 0, 2, 12).toISOString()), "2025-01-02");
+    assert.equal(lib.localDay("nope"), null);
+    assert.equal(lib.localDay(undefined), null);
+  });
+
+  test("addUsage / sumUsage / todayUsageRows", () => {
+    const at = new Date(2025, 2, 7, 10).getTime();
+    const days = {};
+    lib.addUsage(days, at, { totalTokens: 100, cost: { total: 0.5 } });
+    lib.addUsage(days, at, { input: 10, output: 20, cacheRead: 5, cacheWrite: 1, cost: { total: 0.25 } });
+    lib.addUsage(days, at, { input: "x", cost: {} });
+    lib.addUsage(days, at, null);
+    lib.addUsage(days, "nope", { totalTokens: 9 });
+    lib.addUsage(days, new Date(2025, 2, 6, 23, 59).getTime(), { totalTokens: 7 });
+    assert.deepEqual(days, { "2025-03-07": { cost: 0.75, tokens: 136 }, "2025-03-06": { cost: null, tokens: 7 } });
+
+    const entries = [{ usage: days }, { usage: { "2025-03-07": { cost: null, tokens: 4 } } }, { usage: { "2025-03-01": { cost: 9, tokens: 9 } } }, {}];
+    assert.deepEqual(lib.sumUsage(entries, "2025-03-07"), { cost: 0.75, tokens: 140, sessions: 2 });
+    assert.deepEqual(lib.sumUsage(entries, "2025-03-06"), { cost: null, tokens: 7, sessions: 1 });
+    assert.deepEqual(lib.sumUsage(entries, "2030-01-01"), { cost: null, tokens: 0, sessions: 0 });
+
+    assert.deepEqual(lib.todayUsageRows(null), []);
+    assert.deepEqual(lib.todayUsageRows({ cost: 1.234, tokens: 12_500, sessions: 3 }), [["Custo hoje", "US$ 1.23"], ["Tokens hoje", "13k"], ["Sessões hoje", "3"]]);
+    assert.deepEqual(lib.todayUsageRows({ cost: null, tokens: 800, sessions: 1 }), [["Tokens hoje", "800"], ["Sessões hoje", "1"]]);
+  });
+
+  test("projectRunningCount: a project that is not open uses the server count", () => {
+    assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: false, serverCount: 3 }), 3, "stale history is ignored when not open");
+    assert.equal(lib.projectRunningCount([], null, { open: false }), 0);
+    assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 0 }), 1);
+    assert.equal(lib.projectRunningCount([], { streaming: true }, { open: false, serverCount: 2 }), 2);
+    assert.equal(lib.projectRunningCount([{ state: "fazendo" }], null, { open: true, serverCount: 5 }), 1, "the open project trusts its own history");
   });
 });

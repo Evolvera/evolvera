@@ -94,6 +94,16 @@ Ou use `pi-studio amphipod` se a pasta `interface` já estiver no PATH. Opcional
 - Só usa o comando de leitura `orca worktree ps --json`. Funciona no app desktop (nativo); no Docker a aba mostra "Disponível no app desktop".
 - Variáveis: `PI_STUDIO_ORCA_BIN` (executável do orca), `PI_STUDIO_ORCA_BIN_ARGS` (JSON com argumentos antes dos do orca), `PI_STUDIO_ORCA_TIMEOUT_MS` (padrão 5000).
 
+## Visibilidade (atividade, travado, tempos, erros, custo)
+
+- **Atividade**: o servidor guarda em memória os últimos 300 eventos notáveis de todos os PIs (resposta terminada com duração, subagente iniciado/terminou com duração e ok/erro — em segundo plano, pela notificação do subagente —, erro, nova tentativa, compactação, diálogo aguardando/respondido, PI encerrado). `GET /api/activity?since=<seq>` devolve `{ items, seq, reset, now }` (`reset` quando o cursor é maior que o último seq, ou seja, o servidor reiniciou; `since` inválido = 400). Na UI: botão Worktrees (`Alt+W`) → controle **Worktrees | Atividade** (também "Ver atividade" no `Ctrl+K`, mesmo sem Orca). Cada linha mostra tempo relativo, projeto e texto; filtro por projeto/texto; clicar abre o projeto. O selo "Atividade" conta o que chegou desde a última vez que a visão foi aberta.
+- **Travado?**: um PI respondendo sem nenhum evento há mais de 3 min, ou um subagente em primeiro plano sem progresso há mais de 5 min, aparece como "sem atividade há N min" (ponto âmbar) na barra lateral, no cartão do subagente e na visão geral das worktrees. Um PI esperando sua resposta não conta. Os limites são constantes em `public/lib.js`; `PI_STUDIO_STALL_PI_MS` e `PI_STUDIO_STALL_SUBAGENT_MS` (inteiros positivos, em ms) os substituem (testes). Subagentes em segundo plano não emitem progresso e por isso não são marcados.
+- **Subagentes**: o cartão mostra "rodando há Y" ou "terminou há X · levou Y". O horário de término vem do fim da ferramenta, da notificação ou do registro persistido; sem ele, só "levou Y".
+- **Erros e tentativas**: aba Contexto → "Erros e tentativas" lista, desta conversa, erros do modelo, tentativas automáticas (n/máx e erro final), erros de extensão, falhas de compactação e falhas do processo.
+- **Custo**: aba Contexto → "Hoje": custo, tokens e nº de sessões do dia (data local da mensagem) somados em todos os projetos (`GET /api/usage/today` → `{ cost, tokens, sessions, indexing }`). Vem do índice de sessões (cache por mtime e tamanho; lê no máximo os primeiros 5 MiB de cada sessão). Sem custo nas mensagens, mostra só tokens (`cost: null`).
+- **Contagem na barra lateral**: `GET /api/projects/status` também devolve `runningCounts` (`{ projectId: n }`): conversas de cada projeto, sub-PIs incluídos, cujo arquivo mudou nos últimos 30 min e termina em execução ("fazendo"). Só esses arquivos têm o final lido; o resultado é cacheado por 2 s. É o que mantém o selo de projetos que não estão abertos. A mesma resposta traz `now` (relógio do servidor) e `stall` (limites).
+- Fora de escopo: parar um único subagente (o RPC só tem `abort` global), status de PR/CI e estado git sujo.
+
 ## Segurança
 
 Mantenha local. O PI pode executar shell, editar arquivos e acessar credenciais disponíveis ao processo. No Docker, monte só os diretórios de projeto que você quer expor.

@@ -105,6 +105,8 @@ import {
   upsertMessage,
 } from "./lib.js";
 
+import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
+
 const $ = (selector) => document.querySelector(selector);
 const els = {
   app: $("#app"),
@@ -119,6 +121,8 @@ const els = {
   worktreesDialog: $("#worktreesDialog"),
   worktreesInput: $("#worktreesInput"),
   worktreesList: $("#worktreesList"),
+  activityBadge: $("#activityBadge"),
+  wtvModes: [...document.querySelectorAll('input[name="wtvMode"]')],
   newSession: $("#newSessionBtn"),
   newSessionLabel: $("#newSessionLabel"),
   searchWrap: $("#searchWrap"),
@@ -287,6 +291,7 @@ const state = {
   uiQueue: [],
   uiActive: null,
   notices: [],
+  problems: [],
   subagentRecords: new Map(),
   compacting: false,
   commands: null,
@@ -648,7 +653,8 @@ function renderProjects() {
     const expanded = active || state.expandedProjects.has(project.id) || Boolean(state.filter && sessions.length);
     const wrap = document.createElement("div");
     const attention = attentionState(state.attention.get(project.id) || {});
-    const running = projectRunningCount(history, projectStatus.last.get(project.id));
+    const running = projectRunningCount(history, projectStatus.last.get(project.id), { open: active, serverCount: projectStatus.running.get(project.id) ?? 0 });
+    const stalled = projectStatus.stalled.get(project.id);
     const badge = countBadge(running);
     const badgeLabel = plural(running, "conversa em andamento", "conversas em andamento");
     wrap.className = `project${active ? " active" : ""}${project.activeSessionId ? " running" : ""}${attention ? ` attn-${attention}` : ""}`;
@@ -663,7 +669,8 @@ function renderProjects() {
           ${attention ? `<span class="sr-only">${attention === "waiting" ? "aguardando sua resposta" : "terminou enquanto você estava fora"}</span>` : ""}
         </button>
         <button type="button" class="project-chev${expanded ? " open" : ""}" data-action="expand-project" data-project="${esc(project.id)}" aria-label="${expanded ? "Recolher" : "Expandir"} conversas de ${esc(project.name)}" aria-expanded="${expanded}">${svg("i-chevron-right")}</button>
-      </div>`;
+      </div>
+      ${stalled ? `<p class="project-stall"><i class="stall-dot" aria-hidden="true"></i>${esc(stalled)}</p>` : ""}`;
     if (expanded) {
       const list = document.createElement("div");
       list.className = "sessions";
@@ -760,6 +767,7 @@ function resetConversation() {
   state.queue = { steering: [], followUp: [] };
   state.liveThinking = "";
   state.notices = [];
+  state.problems = [];
   state.subagentRecords = new Map();
   state.commands = null;
   state.lastSent = null;
@@ -950,6 +958,7 @@ function connectProjectEvents(projectId) {
   on("stderr", () => {});
   on("process_error", (payload) => {
     if (state.replaying) return;
+    problemsFromEvent({ type: "process_error", message: payload.message }).forEach(addProblem);
     toast(`Não foi possível executar o PI: ${payload.message}`, "error");
   });
   on("process_exit", (exit) => {
@@ -983,7 +992,26 @@ async function refreshState() {
   }
 }
 
+// Cost of today's sessions across projects (server-side sum); asked at most every 5 s, none while the index is still building.
+const usageToday = { data: null, at: 0, inflight: false };
+
+async function refreshUsageToday() {
+  if (usageToday.inflight || Date.now() - usageToday.at < 5000) return;
+  usageToday.inflight = true;
+  try {
+    const res = await api("/api/usage/today");
+    usageToday.data = res.indexing ? null : res;
+    usageToday.at = Date.now();
+    scheduleInspector("context");
+  } catch {
+    // Transient: the next stats refresh retries.
+  } finally {
+    usageToday.inflight = false;
+  }
+}
+
 function refreshStats() {
+  refreshUsageToday();
   rpcRequest({ type: "get_session_stats" })
     .then((res) => {
       state.stats = res.success ? res.data : null;
@@ -1021,7 +1049,8 @@ function handleResponse(event) {
       applyTodo(todoFromMessages(state.messages));
       refreshForkMessages();
       if (state.isStreaming && state.liveMessage && !state.messages.includes(state.liveMessage)) state.messages.push(state.liveMessage);
-      for (const [id, tool] of state.runtime) if (tool.status !== "running") state.runtime.delete(id);
+      // Finished Agent runs stay: their end time is the only source of "terminou há N min" once the result is in the entries.
+      for (const [id, tool] of state.runtime) if (tool.status !== "running" && tool.name !== SUBAGENT_TOOLS.agent) state.runtime.delete(id);
       scheduleRender();
       break;
     case "switch_session":
@@ -1047,7 +1076,15 @@ function liveAssistant() {
   return state.liveMessage;
 }
 
+// Errors and auto-retries of this conversation, kept for the Contexto tab (toasts vanish). Replayed history never reaches here.
+function addProblem(problem) {
+  state.problems.push({ kind: problem.kind, text: problem.text, at: problem.at });
+  if (state.problems.length > 100) state.problems.shift();
+  scheduleInspector("context");
+}
+
 function handleRpc(event) {
+  problemsFromEvent(event).forEach(addProblem);
   switch (event.type) {
     case "response":
       handleResponse(event);
@@ -1104,17 +1141,20 @@ function handleRpc(event) {
       } else upsertMessage(state.messages, event.message);
       break;
     case "tool_execution_start":
-      state.runtime.set(event.toolCallId, { name: event.toolName, args: event.args || {}, status: "running", partial: null, result: null, startedAt: Date.now() });
+      state.runtime.set(event.toolCallId, { name: event.toolName, args: event.args || {}, status: "running", partial: null, result: null, startedAt: Date.now(), updatedAt: Date.now() });
       state.phase = "tool";
       break;
     case "tool_execution_update": {
       const tool = state.runtime.get(event.toolCallId);
-      if (tool) tool.partial = event.partialResult;
+      if (tool) {
+        tool.partial = event.partialResult;
+        tool.updatedAt = Date.now();
+      }
       break;
     }
     case "tool_execution_end": {
       const tool = state.runtime.get(event.toolCallId) || { name: event.toolName, args: {} };
-      state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result });
+      state.runtime.set(event.toolCallId, { ...tool, status: event.isError ? "error" : "done", result: event.result, endedAt: Date.now() });
       applyTodo(todoSnapshot({ toolName: event.toolName, isError: event.isError, details: event.result?.details }));
       state.phase = "thinking";
       break;
@@ -1414,11 +1454,15 @@ function updateRunStatus() {
   if (!panel.hidden) panel.textContent = state.liveThinking.slice(-4000);
 }
 
+let tick = 0;
 setInterval(() => {
+  tick++;
   updateRunStatus();
   if (layout.right !== "open") return;
   if (inspector.tab === "terminal" && state.isStreaming) renderTermFoot();
-  else if (inspector.tab === "subagents" && !els.subBadge.hidden) scheduleInspector("subagents");
+  // Finished runs only age by the minute ("terminou há N min"): refresh them every 15 s.
+  else if (inspector.tab === "subagents" && (!els.subBadge.hidden || tick % 15 === 0)) scheduleInspector("subagents");
+  else if (inspector.tab === "context" && state.problems.length && tick % 15 === 0) scheduleInspector("context");
 }, 1000);
 
 function setRunning(running) {
@@ -1900,7 +1944,7 @@ els.term.addEventListener("click", (event) => {
 const SUB_PHASE = { running: "rodando", done: "concluído", error: "erro" };
 
 function currentSubagents() {
-  return collectSubagents(state.messages, state.runtime, state.subagentRecords, Date.now());
+  return collectSubagents(state.messages, state.runtime, state.subagentRecords, Date.now(), projectStatus.stall.subagentMs);
 }
 
 // Count badges (pure counting lives in lib.js): hidden at 0, otherwise the number with a tooltip/aria label.
@@ -1931,7 +1975,8 @@ function updateWorktreeBadges() {
 
 function subCard(run, open) {
   const node = document.createElement("article");
-  node.className = `sa-card is-${run.phase}${open ? " open" : ""}`;
+  const timing = subagentTiming(run);
+  node.className = `sa-card is-${run.phase}${timing.stalled ? " is-stalled" : ""}${open ? " open" : ""}`;
   node.dataset.key = run.key;
   const subtitle = run.name && run.type ? run.type : "";
   const meta = [run.model && !run.stats.includes(run.model) ? run.model : "", ...run.stats, run.background ? "segundo plano" : ""].filter(Boolean);
@@ -1944,6 +1989,7 @@ function subCard(run, open) {
       ${svg("i-chevron-right", "sa-chev")}
     </button>
     ${run.description ? `<p class="sa-desc">${esc(run.description)}</p>` : ""}
+    ${timing.text || timing.stalled ? `<p class="sa-timing">${timing.text ? `<span>${esc(timing.text)}</span>` : ""}${timing.stalled ? `<span class="sa-stalled"><i class="stall-dot" aria-hidden="true"></i>${esc(timing.stalled)}</span>` : ""}</p>` : ""}
     ${meta.length ? `<p class="sa-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
     ${run.tail.length ? `<div class="sa-tail">${run.tail.map((line) => `<span>${esc(truncate(line, 400))}</span>`).join("")}</div>` : ""}
     ${open ? `<div class="sa-detail">${sections || `<p class="muted">Sem transcrição disponível.</p>`}</div>` : ""}`;
@@ -1980,7 +2026,7 @@ function renderSubagents() {
   const seen = new Set(["head", "empty"]);
   for (const run of runs) {
     const open = subOpen.has(run.key);
-    const sig = JSON.stringify([run, open, formatElapsed(run.elapsed)]);
+    const sig = JSON.stringify([run, open, formatElapsed(run.elapsed), subagentTiming(run)]);
     seen.add(run.key);
     const cached = subCache.get(run.key);
     if (cached?.sig === sig) {
@@ -2036,11 +2082,18 @@ function renderContext() {
   const file = data.sessionFile
     ? `<section class="insp-sec"><h3 class="sec-title">Arquivo da sessão</h3><div class="path-row"><code title="${esc(data.sessionFile)}">&lrm;${esc(data.sessionFile)}&lrm;</code><button type="button" class="icon-btn small" data-copy-session aria-label="Copiar caminho da sessão">${svg("i-copy")}</button></div></section>`
     : "";
+  const today = todayUsageRows(usageToday.data);
+  const todaySection = today.length ? `<section class="insp-sec"><h3 class="sec-title">Hoje</h3><dl class="kv">${today.map(([label, value]) => row(label, value)).join("")}</dl></section>` : "";
+  const now = Date.now();
+  const problemRow = (item) => `<li><span class="session-state st-${item.kind === "error" ? "erro" : "aguardando"}" aria-hidden="true"></span><span class="prob-text">${esc(item.text)}</span>${item.at ? `<span class="prob-time">${esc(agoLabel(item.at, now))}</span>` : ""}</li>`;
+  const problems = `<section class="insp-sec"><h3 class="sec-title">Erros e tentativas</h3>${state.problems.length
+    ? `<ul class="prob-list">${[...state.problems].reverse().map(problemRow).join("")}</ul>`
+    : `<p class="sec-hint">Nenhum erro nesta conversa.</p>`}</section>`;
   const blocked = !state.currentProject || state.processExited || state.isStreaming || state.compacting;
   const hint = state.compacting ? "Compactando… isso pode levar alguns instantes." : state.isStreaming ? "Disponível quando o PI terminar a resposta atual." : "Resume o histórico para liberar espaço na janela de contexto.";
   const compact = `<section class="insp-sec ctx-actions"><button type="button" class="btn btn-block" data-compact${blocked ? " disabled" : ""}${state.compacting ? ' aria-busy="true"' : ""}>${state.compacting ? `${svg("i-spinner", "spin")}Compactando…` : "Compactar agora"}</button><p class="sec-hint">${esc(hint)}</p></section>`;
   const focused = document.activeElement?.closest?.("[data-compact]") ? "[data-compact]" : document.activeElement?.closest?.("[data-copy-session]") ? "[data-copy-session]" : "";
-  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${tokens}${model}${counts}${file}${compact}`;
+  els.ctxView.innerHTML = `<section class="insp-sec ctx-hero">${hero}</section>${todaySection}${tokens}${problems}${model}${counts}${file}${compact}`;
   if (focused) els.ctxView.querySelector(focused)?.focus();
 }
 
@@ -3121,13 +3174,25 @@ els.wtList.addEventListener("click", (event) => {
 });
 
 // Sidebar dots for every project with a live PI, not only the open one.
-const projectStatus = { last: new Map(), inflight: false };
+const projectStatus = { last: new Map(), inflight: false, running: new Map(), stalled: new Map(), stall: stallThresholds() };
 
-function applyProjectStatuses(statuses) {
+// The server's clock stamps events and statuses; "há N min" is computed against it, not the browser's.
+const clock = { skew: 0 };
+const serverNow = () => Date.now() + clock.skew;
+
+function applyProjectStatuses(statuses, meta = {}) {
+  if (Number.isFinite(meta.now)) clock.skew = meta.now - Date.now();
+  if (meta.stall) projectStatus.stall = meta.stall;
   const next = new Map(statuses.map((status) => [status.projectId, status]));
+  const running = new Map(Object.entries(meta.runningCounts || {}));
+  const stalled = new Map();
   let changed = false;
   for (const project of state.projects) {
     const status = next.get(project.id);
+    const stalledLabel = stalledPi(status, serverNow(), projectStatus.stall.piMs);
+    if (stalledLabel) stalled.set(project.id, stalledLabel);
+    if ((projectStatus.stalled.get(project.id) ?? null) !== stalledLabel) changed = true;
+    if ((projectStatus.running.get(project.id) ?? 0) !== (running.get(project.id) ?? 0)) changed = true;
     if (studioPiState(projectStatus.last.get(project.id)) !== studioPiState(status)) changed = true;
     const isCurrent = state.currentProject?.id === project.id;
     const activeSessionId = status ? (status.exited ? null : status.sessionId) : isCurrent ? project.activeSessionId : null;
@@ -3143,6 +3208,8 @@ function applyProjectStatuses(statuses) {
     }
   }
   projectStatus.last = next;
+  projectStatus.running = running;
+  projectStatus.stalled = stalled;
   updateWorktreeBadges();
   if (changed) renderProjects();
   renderWorktreesOverlay();
@@ -3152,7 +3219,8 @@ async function pollProjectStatus() {
   if (document.hidden || projectStatus.inflight) return;
   projectStatus.inflight = true;
   try {
-    applyProjectStatuses((await api("/api/projects/status")).statuses || []);
+    const data = await api("/api/projects/status");
+    applyProjectStatuses(data.statuses || [], data);
   } catch {
     // Transient: the next poll retries.
   } finally {
@@ -3160,10 +3228,42 @@ async function pollProjectStatus() {
   }
 }
 
+// Activity feed: polled with the last seq seen; the first answer is the baseline, so only later items count as unseen.
+const activity = { items: [], seq: 0, seenSeq: 0, primed: false, inflight: false };
+
+function updateActivityBadge() {
+  const unseen = unseenActivity(activity.items, activity.seenSeq);
+  setBadge(els.activityBadge, unseen, plural(unseen, "evento novo", "eventos novos"));
+}
+
+async function pollActivity() {
+  if (document.hidden || activity.inflight) return;
+  activity.inflight = true;
+  try {
+    const data = await api(`/api/activity?since=${activity.seq}`);
+    clock.skew = data.now - Date.now();
+    if (data.reset) activity.items = [];
+    activity.items = [...activity.items, ...data.items].slice(-ACTIVITY_LIMIT);
+    activity.seq = data.seq;
+    if (!activity.primed || (els.worktreesDialog.open && wtv.mode === "activity")) activity.seenSeq = data.seq;
+    else if (data.reset) activity.seenSeq = 0;
+    activity.primed = true;
+    updateActivityBadge();
+    renderWorktreesOverlay();
+  } catch {
+    // Transient: the next poll retries.
+  } finally {
+    activity.inflight = false;
+  }
+}
+
 setInterval(pollProjectStatus, POLL_MS);
+setInterval(pollActivity, POLL_MS);
+pollActivity();
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     pollProjectStatus();
+    pollActivity();
     // Orca may have started since the last probe.
     if (settings.orcaEnabled !== false && orca.data?.available !== true) pollOrca();
   }
@@ -3173,7 +3273,9 @@ document.addEventListener("visibilitychange", () => {
 
 // ------------------------------------------------------ worktrees overview (top bar)
 
-const wtv = { query: "", selected: null, entries: [], sig: "" };
+const wtv = { mode: "worktrees", query: "", selected: null, entries: [], sig: "" };
+// Rows of the worktrees mode are identified by path, rows of the activity mode by seq.
+const wtvKey = (item) => (wtv.mode === "activity" ? item.seq : item.path);
 
 function worktreeEmptyText() {
   if (!orca.data) return "Carregando…";
@@ -3201,6 +3303,7 @@ function worktreeOverviewItem(worktree, detail, index) {
         ${current ? '<span class="wt-flag">Aberta</span>' : ""}
         ${detail.active ? '<span class="wt-flag" title="Em foco no Orca">Orca</span>' : ""}
         ${detail.studio ? `<span class="wt-flag wtv-chip"><span class="session-state st-${esc(detail.studio.key)}" aria-hidden="true"></span>${esc(detail.studio.label)}</span>` : ""}
+        ${detail.stalled ? `<span class="wt-flag wtv-chip"><i class="stall-dot" aria-hidden="true"></i>${esc(detail.stalled)}</span>` : ""}
         <span class="sa-phase">${esc(detail.statusLabel)}</span>
       </span>
     </div>
@@ -3214,15 +3317,73 @@ function worktreeOverviewItem(worktree, detail, index) {
   return node;
 }
 
+function activityItem(row, index) {
+  const selected = row.seq === wtv.selected;
+  const node = document.createElement("div");
+  node.id = `wtv-opt-${index}`;
+  node.className = `wtv-item wtv-activity${selected ? " active" : ""}`;
+  node.setAttribute("role", "option");
+  node.setAttribute("aria-selected", String(selected));
+  node.dataset.index = String(index);
+  node.innerHTML = `
+    <div class="wtv-head">
+      <span class="session-state${row.dot ? ` st-${esc(row.dot)}` : ""}" aria-hidden="true"></span>
+      <span class="sa-title"><strong>${esc(row.project)}</strong></span>
+      <span class="sa-state"><span class="sa-phase">${esc(row.ago)}</span></span>
+    </div>
+    <p class="wtv-comment">${esc(row.text)}</p>`;
+  return node;
+}
+
+function renderActivityList() {
+  const rows = activityRows(activity.items, wtv.query, serverNow());
+  wtv.entries = rows;
+  if (!rows.some((row) => row.seq === wtv.selected)) wtv.selected = rows[0]?.seq ?? null;
+  const sig = JSON.stringify([rows, wtv.selected]);
+  if (sig === wtv.sig) return;
+  wtv.sig = sig;
+  const scrollTop = els.worktreesList.scrollTop;
+  const nodes = rows.map(activityItem);
+  if (!nodes.length) nodes.push(el("div", "palette-empty", wtv.query.trim() ? "Nada encontrado." : "Nenhuma atividade ainda."));
+  els.worktreesList.replaceChildren(...nodes);
+  els.worktreesList.scrollTop = scrollTop;
+  const activeIndex = rows.findIndex((row) => row.seq === wtv.selected);
+  els.worktreesInput.setAttribute("aria-activedescendant", activeIndex >= 0 ? `wtv-opt-${activeIndex}` : "");
+}
+
+// "Worktrees | Atividade" segmented control of the overlay; the filter and the list are shared.
+function setWtvMode(mode) {
+  Object.assign(wtv, { mode, query: "", selected: null, sig: "", entries: [] });
+  const isActivity = mode === "activity";
+  els.worktreesInput.value = "";
+  els.worktreesInput.placeholder = isActivity ? "Filtrar atividade por projeto ou texto…" : "Filtrar worktrees por nome, branch ou repositório…";
+  els.worktreesInput.setAttribute("aria-label", isActivity ? "Filtrar atividade" : "Filtrar worktrees");
+  els.worktreesList.setAttribute("aria-label", isActivity ? "Atividade" : "Worktrees");
+  for (const input of els.wtvModes) input.checked = input.value === mode;
+  if (isActivity) {
+    activity.seenSeq = activity.seq;
+    updateActivityBadge();
+  }
+  renderWorktreesOverlay();
+}
+
+for (const input of els.wtvModes) {
+  input.addEventListener("change", () => {
+    setWtvMode(input.value);
+    els.worktreesInput.focus();
+  });
+}
+
 // Re-rendered by every Orca / project-status poll while open; skipped when nothing visible changed.
 function renderWorktreesOverlay() {
   if (!els.worktreesDialog.open) return;
-  const now = Date.now();
+  if (wtv.mode === "activity") return renderActivityList();
+  const now = serverNow();
   const data = orca.data;
   const groups = groupWorktrees(data?.available ? filterWorktrees(data.worktrees, wtv.query) : []);
   wtv.entries = groups.flatMap((group) => group.worktrees);
   if (!wtv.entries.some((item) => item.path === wtv.selected)) wtv.selected = wtv.entries[0]?.path ?? null;
-  const details = new Map(wtv.entries.map((worktree) => [worktree, worktreeDetail(worktree, worktree.projectId ? projectStatus.last.get(worktree.projectId) : null, now)]));
+  const details = new Map(wtv.entries.map((worktree) => [worktree, worktreeDetail(worktree, worktree.projectId ? projectStatus.last.get(worktree.projectId) : null, now, projectStatus.stall.piMs)]));
   const sig = JSON.stringify([[...details.values()], groups.map((group) => group.repo), wtv.selected, worktreeEmptyText(), state.currentProject?.cwd]);
   if (sig === wtv.sig) return;
   wtv.sig = sig;
@@ -3240,15 +3401,14 @@ function renderWorktreesOverlay() {
   els.worktreesInput.setAttribute("aria-activedescendant", activeIndex >= 0 ? `wtv-opt-${activeIndex}` : "");
 }
 
-function openWorktrees() {
+function openWorktrees(mode = "worktrees") {
   closeMenu();
-  Object.assign(wtv, { query: "", selected: null, sig: "" });
-  els.worktreesInput.value = "";
   els.worktreesDialog.showModal();
-  renderWorktreesOverlay();
+  setWtvMode(mode === "activity" ? "activity" : "worktrees");
   els.worktreesInput.focus();
   pollOrca();
   pollProjectStatus();
+  pollActivity();
   syncOrcaPolling();
 }
 
@@ -3262,6 +3422,10 @@ function chooseWorktree(index) {
   const worktree = wtv.entries[index];
   if (!worktree) return;
   closeWorktrees();
+  if (wtv.mode === "activity") {
+    if (state.currentProject?.id !== worktree.projectId) openProject(worktree.projectId).then(() => toast(`Projeto: ${worktree.project}`)).catch(report);
+    return;
+  }
   openWorktree(worktree)
     .then(() => toast(`Worktree: ${worktree.name}`))
     .catch(report);
@@ -3274,10 +3438,11 @@ els.worktreesInput.addEventListener("input", () => {
 });
 
 els.worktreesInput.addEventListener("keydown", (event) => {
-  const index = Math.max(0, wtv.entries.findIndex((item) => item.path === wtv.selected));
+  const index = Math.max(0, wtv.entries.findIndex((item) => wtvKey(item) === wtv.selected));
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
-    wtv.selected = wtv.entries[stepIndex(index, event.key === "ArrowDown" ? 1 : -1, wtv.entries.length)]?.path ?? null;
+    const target = wtv.entries[stepIndex(index, event.key === "ArrowDown" ? 1 : -1, wtv.entries.length)];
+    wtv.selected = target ? wtvKey(target) : null;
     renderWorktreesOverlay();
     els.worktreesList.querySelector(".wtv-item.active")?.scrollIntoView({ block: "nearest" });
   } else if (event.key === "Enter" && !event.isComposing) {
@@ -3295,7 +3460,7 @@ els.worktreesList.addEventListener("click", (event) => {
 els.worktreesDialog.addEventListener("click", (event) => {
   if (event.target === els.worktreesDialog) closeWorktrees();
 });
-els.worktreesBtn.addEventListener("click", openWorktrees);
+els.worktreesBtn.addEventListener("click", () => openWorktrees());
 
 
 // ------------------------------------------------------ command palette
@@ -3316,7 +3481,8 @@ function paletteActions() {
     { label: "Abrir aba Contexto", icon: "i-gauge", run: rightTab("context") },
     { label: "Abrir aba Arquivos", icon: "i-files", run: rightTab("files") },
     ...(orcaOn() ? [{ label: "Abrir aba Worktrees", icon: "i-branch", keywords: "orca", run: rightTab("worktrees") }] : []),
-    ...(!els.worktreesBtn.hidden ? [{ label: "Ver worktrees", icon: "i-branch", keywords: "orca visão geral alt+w", run: openWorktrees }] : []),
+    ...(!els.worktreesBtn.hidden ? [{ label: "Ver worktrees", icon: "i-branch", keywords: "orca visão geral alt+w", run: () => openWorktrees() }] : []),
+    { label: "Ver atividade", icon: "i-agents", keywords: "feed eventos erros terminou subagentes", run: () => openWorktrees("activity") },
     { label: "Exportar conversa", icon: "i-file", keywords: "html salvar", run: () => exportSession() },
     { label: "Compactar conversa", icon: "i-gauge", keywords: "contexto resumir", run: () => compactNow() },
     { label: "Atalhos de teclado", icon: "i-code", keywords: "ajuda teclas", run: () => toggleShortcuts(true) },

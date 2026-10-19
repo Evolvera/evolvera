@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { foldText, normalizeOrca, rankFiles, searchSnippet } from "./public/lib.js";
+import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -60,6 +60,32 @@ const projects = new Map();
 // Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
 const addedProjects = new Map();
 const serverLogs = [];
+const STALL = stallThresholds(process.env);
+
+// Bounded in-memory feed of notable events of every PI (turn finished, subagents, errors, dialogs, exits).
+// `seq` only grows, so a client polls with `since=<last seq>`; a cursor past the newest seq (server restarted) resets it.
+export class ActivityLog {
+  constructor(limit = ACTIVITY_LIMIT) {
+    this.limit = limit;
+    this.items = [];
+    this.seq = 0;
+  }
+
+  push(entry) {
+    const item = { seq: ++this.seq, ...entry };
+    this.items.push(item);
+    if (this.items.length > this.limit) this.items.shift();
+    return item;
+  }
+
+  since(cursor) {
+    const reset = cursor > this.seq;
+    const from = reset ? 0 : cursor;
+    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset };
+  }
+}
+
+export const activityLog = new ActivityLog();
 
 function recordLog(level, message, details = undefined) {
   const entry = { at: new Date().toISOString(), level, message, details };
@@ -478,6 +504,14 @@ export class PiRpcSession {
     this.streaming = false;
     this.pendingUi = new Map();
     this.lastEventAt = Date.now();
+    this.activity = newActivityTracker();
+  }
+
+  // Notable PI events (see activityFromEvent) go to the shared feed, tagged with this project.
+  note(payload, now = Date.now()) {
+    for (const item of activityFromEvent(payload, this.activity, now)) {
+      activityLog.push({ at: now, projectId: this.projectId, projectName: this.projectName, ...item });
+    }
   }
 
   start() {
@@ -502,6 +536,7 @@ export class PiRpcSession {
     });
     this.proc.on("error", (error) => {
       recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      this.note({ type: "process_error", message: error.message });
       this.broadcast("process_error", { type: "process_error", message: error.message });
     });
     this.proc.on("exit", (code, signal) => {
@@ -509,6 +544,7 @@ export class PiRpcSession {
       this.exitCode = code;
       this.signal = signal;
       recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
+      this.note({ type: "process_exit", code, signal });
       this.broadcast("process_exit", { type: "process_exit", code, signal });
       for (const client of this.clients) client.end();
       this.clients.clear();
@@ -577,6 +613,7 @@ export class PiRpcSession {
 
   track(payload, now = Date.now()) {
     this.lastEventAt = now;
+    this.note(payload, now);
     if (payload.type === "agent_start") this.streaming = true;
     else if (payload.type === "agent_end") this.streaming = false;
     else if (payload.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method) && payload.id) {
@@ -634,6 +671,7 @@ export class PiRpcSession {
     if (command.type === "extension_ui_response" && command.id) {
       this.answeredUi.add(command.id);
       this.pendingUi.delete(command.id);
+      this.note(command);
     }
   }
 
@@ -663,8 +701,6 @@ export class PiRpcSession {
     };
   }
 }
-
-const UI_DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
 function redactArgs(args) {
   return args.map((arg) => (/key|token|auth|secret/i.test(String(arg)) ? "[redacted]" : arg));
@@ -739,6 +775,7 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
   let header;
   let name = "";
   let firstPrompt = "";
+  const usage = {};
   const textParts = [];
   let textLength = 0;
   for await (const line of createInterface({ input, crlfDelay: Infinity })) {
@@ -749,6 +786,7 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
     if (entry?.type !== "message" || !["user", "assistant"].includes(entry.message?.role)) continue;
     const body = messageText(entry.message);
     if (entry.message.role === "user" && !firstPrompt) firstPrompt = body;
+    if (entry.message.role === "assistant") addUsage(usage, entry.timestamp ?? entry.message.timestamp, entry.message.usage);
     if (body) {
       textParts.push(body);
       textLength += body.length + 1;
@@ -770,6 +808,7 @@ export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_
     title: compactTitle(name || firstPrompt, "Nova conversa"),
     text: textParts.join("\n").slice(-textCap),
   };
+  entry.usage = usage;
   // Folded once here so a query is a plain substring test, not a re-fold of every session.
   entry.folded = foldText(entry.text);
   return entry;
@@ -828,6 +867,11 @@ export class SessionIndex {
       }
     });
     await Promise.all(workers);
+  }
+
+  // Cost/tokens of the assistant messages dated `day` (local YYYY-MM-DD); entries are reused until mtime/size change.
+  usageOn(day) {
+    return sumUsage(this.entries.values(), day);
   }
 
   search(query, projectsByCwd, { limit = SEARCH_LIMIT, pathMap = PATH_MAP } = {}) {
@@ -1030,6 +1074,56 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     }
     return { ...item, state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
   }));
+}
+
+// ---- Running conversations per project (sidebar badge of projects that are not open).
+const RUNNING_WINDOW_MS = 30 * 60_000;
+const RUNNING_CACHE_MS = 2000;
+const runningCache = { at: 0, value: null, pending: null };
+
+// { projectId: n } for session files touched within `windowMs` whose last message says the run is still going ("fazendo").
+// Older files are never read; headers and tails come from the same caches the history list uses.
+export async function countRunningByProject(sessionsRoot, { states = sessionStates, now = Date.now(), windowMs = RUNNING_WINDOW_MS, pathMap = PATH_MAP, statFile = stat } = {}) {
+  const counts = {};
+  for (const dir of await readdirSafe(sessionsRoot)) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsRoot, dir.name);
+    const ids = await Promise.all((await readdirSafe(fullDir)).filter((file) => file.isFile() && file.name.endsWith(".jsonl")).map(async (file) => {
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const info = await statFile(filePath);
+        if (now - info.mtimeMs > windowMs) return null;
+        const header = await sessionHeader(filePath);
+        if (typeof header.cwd !== "string" || !header.cwd) return null;
+        const state = classifySessionState(await states.lastMessage(filePath, info), info.mtimeMs, now);
+        return state === "fazendo" ? projectIdFor(mapHostPath(header.cwd, pathMap)) : null;
+      } catch {
+        return null; // vanished or malformed between listing and reading
+      }
+    }));
+    for (const id of ids) if (id) counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export function clearRunningCache() {
+  runningCache.at = 0;
+  runningCache.value = null;
+}
+
+// Cached for 2 s; concurrent callers share one scan.
+export function getRunningCounts({ now = Date.now, compute = () => countRunningByProject(path.join(AGENT_DIR, "sessions")) } = {}) {
+  if (runningCache.value && now() - runningCache.at < RUNNING_CACHE_MS) return Promise.resolve(runningCache.value);
+  runningCache.pending ??= compute()
+    .then((value) => {
+      runningCache.value = value;
+      runningCache.at = now();
+      return value;
+    })
+    .finally(() => {
+      runningCache.pending = null;
+    });
+  return runningCache.pending;
 }
 
 // ---- Orca worktrees (read-only `orca worktree ps --json`; absent in Docker, so it degrades to available:false).
@@ -1375,7 +1469,20 @@ async function route(req, res) {
       for (const session of sessions.values()) {
         if (!latest.get(session.projectId) || latest.get(session.projectId).exited) latest.set(session.projectId, session);
       }
-      return json(res, 200, { statuses: [...latest.values()].map((session) => session.statusSummary()) });
+      return json(res, 200, { statuses: [...latest.values()].map((session) => session.statusSummary()), runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
+    }
+
+    if (pathname === "/api/activity") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const since = url.searchParams.get("since") ?? "0";
+      if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
+      return json(res, 200, { ...activityLog.since(Number(since)), now: Date.now() });
+    }
+
+    if (pathname === "/api/usage/today") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      refreshIfStale(sessionIndex);
+      return json(res, 200, { ...sessionIndex.usageOn(localDay(Date.now())), indexing: sessionIndex.lastRefresh === 0 });
     }
 
     if (pathname === "/api/projects/open-path") {

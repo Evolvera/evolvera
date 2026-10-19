@@ -276,6 +276,15 @@ function handle(command) {
       streamDemo(command);
       return;
     }
+    // Visibility QA: "silent" streams forever without another event; "silent-agent" starts a foreground Agent run, reports
+    // one progress update and goes quiet.
+    if (command.message === "silent") return;
+    if (command.message === "silent-agent") {
+      const args = { description: "Mapear rotas", subagent_type: "Explore", name: "mapeador", prompt: "mapeie" };
+      emit({ type: "tool_execution_start", toolCallId: "call_silent_agent", toolName: "Agent", args });
+      emit({ type: "tool_execution_update", toolCallId: "call_silent_agent", toolName: "Agent", args, partialResult: { content: [{ type: "text", text: "1 tool uses..." }], details: { displayName: "Explore", subagentType: "Explore", status: "running", activity: "reading…", toolUses: 1 } } });
+      return;
+    }
     if (command.message === "inspector") {
       streamInspector(command);
       return;

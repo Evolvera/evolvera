@@ -291,8 +291,12 @@
       </div>
     </dialog>
 
-    <dialog id="worktreesDialog" class="dialog dialog-palette dialog-worktrees" aria-label="Worktrees">
+    <dialog id="worktreesDialog" class="dialog dialog-palette dialog-worktrees" aria-label="Worktrees e atividade">
       <div class="palette">
+        <div class="seg-group wtv-modes" role="radiogroup" aria-label="Visão">
+          <label><input type="radio" name="wtvMode" value="worktrees" checked /><span>Worktrees</span></label>
+          <label><input type="radio" name="wtvMode" value="activity" /><span>Atividade<b id="activityBadge" class="count-badge" hidden></b></span></label>
+        </div>
         <div class="palette-input">
           <svg><use href="#i-branch" /></svg>
           <input id="worktreesInput" type="text" role="combobox" aria-expanded="true" aria-controls="worktreesList" aria-autocomplete="list" placeholder="Filtrar worktrees por nome, branch ou repositório…" aria-label="Filtrar worktrees" autocomplete="off" spellcheck="false" />

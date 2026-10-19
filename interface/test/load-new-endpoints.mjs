@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Load test for the endpoints behind worktrees/Orca and conversation states: GET /api/orca, GET /api/projects/status and
-// GET /api/projects/:id/history over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
+// Load test for the endpoints behind worktrees/Orca, conversation states and visibility: GET /api/orca, GET /api/projects/status
+// (incl. per-project running counts), GET /api/projects/:id/history, GET /api/activity (full 300-item ring) and GET /api/usage/today
+// (cost/tokens of today's sessions) over a temp sessions dir of ~700 files (some multi-MB, some sub-PI) with a tail-read state each.
 // Starts its own PI Studio on a throwaway port (PI_WEB_PORT=0) with a fake PI and a fake orca in an owned temp dir,
 // drives each endpoint with CONCURRENCY keep-alive clients for DURATION seconds, then reports throughput,
 // p50/p95/p99 latency, errors, how many orca child processes ran (the 2 s cache must bound them) and server RSS.
@@ -49,7 +50,7 @@ for (let index = 0; index < SESSION_FILES; index++) {
   const header = { type: "session", id: `s${index}`, timestamp: new Date(1_700_000_000_000 + index * 60_000).toISOString(), cwd: mine ? projects[0] : path.join(tmp, `other-${index % 40}`), ...(index % 5 === 0 ? { parentSession: "parent.jsonl" } : {}) };
   const body = [line(header), line({ type: "message", id: "u", message: { role: "user", content: `pergunta ${index}` } })];
   if (big) body.push(`${pad}\n`.repeat(2500 + (index % 7) * 500));
-  body.push(line({ type: "message", id: "a", message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: stops[index % stops.length] } }), line({ type: "custom", customType: "loop-state" }));
+  body.push(line({ type: "message", id: "a", timestamp: new Date().toISOString(), message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: stops[index % stops.length], usage: { totalTokens: 100, cost: { total: 0.01 } } } }), line({ type: "custom", customType: "loop-state" }));
   await writeFile(path.join(sessionsDir, `s-${index}.jsonl`), body.join(""));
 }
 
@@ -139,19 +140,38 @@ try {
     if (index === 0) await request("POST", `/api/projects/${opened.project.id}/command`, { token, body: JSON.stringify({ id: "load", type: "prompt", message: "demo" }) });
   }
   await request("GET", "/api/orca", { token });
+  // Fill the activity ring (300 items): each fake turn adds one "Terminou a resposta" per project.
+  for (const id of openedIds) for (let turn = 0; turn < 170; turn++) await request("POST", `/api/projects/${id}/command`, { token, body: JSON.stringify({ id: `t${turn}`, type: "prompt", message: "oi" }) });
+  const waitUntil = async (what, check, seconds = 40) => {
+    for (const deadline = performance.now() + seconds * 1000; performance.now() < deadline; await new Promise((resolve) => setTimeout(resolve, 250))) if (await check()) return;
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  const getJson = async (pathname) => JSON.parse((await request("GET", pathname, { token })).text);
+  await waitUntil("a full activity ring", async () => (await getJson("/api/activity")).items.length >= 300);
+  const activity = await getJson("/api/activity");
+  const tail = await getJson(`/api/activity?since=${activity.seq - 5}`);
+  console.log(`activity sample: ${activity.items.length} items (seq ${activity.seq}), since=seq-5 -> ${tail.items.length} items`);
+  if (tail.items.length !== 5) throw new Error("since cursor must return exactly the newer items");
+  await waitUntil("the session index", async () => !(await getJson("/api/usage/today")).indexing);
+  const usage = await getJson("/api/usage/today");
+  console.log(`usage sample: ${JSON.stringify(usage)}`);
+  if (!(usage.sessions >= SESSION_FILES && usage.tokens >= SESSION_FILES * 100 && usage.cost > 0)) throw new Error("usage/today must sum every indexed session");
+  const running = (await getJson("/api/projects/status")).runningCounts;
+  console.log(`running counts sample: ${JSON.stringify(running)}`);
+  if (!(running[openedIds[0]] >= 1)) throw new Error("runningCounts must count the in-flight conversations of the project");
   // Warm-up (JIT, sockets, caches) so the RSS baseline is the steady state, not a cold process.
   const historyPath = `/api/projects/${openedIds[0]}/history`;
   const sample = JSON.parse((await request("GET", historyPath, { token })).text).history;
   const seenStates = [...new Set(sample.map((item) => item.state))].sort();
   console.log(`history sample: ${sample.length} items, states ${seenStates.join("/")}, ${sample.filter((item) => item.isSubagent).length} sub-PI`);
   if (!sample.length || sample.some((item) => !item.state)) throw new Error("history items must carry a state");
-  for (const pathname of ["/api/orca", "/api/projects/status", historyPath]) await hammer("warm-up", pathname, token, WARMUP);
+  for (const pathname of ["/api/orca", "/api/projects/status", historyPath, "/api/activity", "/api/usage/today"]) await hammer("warm-up", pathname, token, WARMUP);
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const rssBefore = rssMb(server.pid);
   const spawnsBefore = await orcaSpawns();
   const results = [];
-  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath]]) {
+  for (const [label, pathname] of [["GET /api/orca", "/api/orca"], ["GET /api/projects/status (+ running counts)", "/api/projects/status"], [`GET /api/projects/:id/history (${SESSION_FILES} session files)`, historyPath], ["GET /api/activity (ring of 300)", "/api/activity"], [`GET /api/usage/today (${SESSION_FILES} sessions)`, "/api/usage/today"]]) {
     results.push(await hammer(label, pathname, token));
   }
   const elapsed = results.reduce((sum, item) => sum + item.seconds, 0);
