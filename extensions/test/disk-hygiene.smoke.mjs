@@ -76,6 +76,15 @@ try {
   for (const dir of [freshInner, recent, kept, inUse]) assert.ok(fs.existsSync(dir), `${path.basename(dir)} preserved`);
   const failClosed = await mod.sweepStaleTemp(tmpRoot, async (file) => { if (file === "lsof") throw new Error("no lsof"); return ""; });
   assert.deepEqual(failClosed, [], "no open-file list means nothing is removed");
+  // A failing lsof that still printed partial output must not be trusted.
+  const fakeBin = path.join(root, "bin"); fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, "lsof"), "#!/bin/sh\necho p1\nexit 1\n", { mode: 0o755 });
+  const realPath = process.env.PATH; process.env.PATH = `${fakeBin}:${realPath}`;
+  const victim = mk("victim.zzz");
+  const partial = await mod.sweepStaleTemp(tmpRoot, mod.defaultRunner);
+  process.env.PATH = realPath;
+  assert.deepEqual(partial, [], "lsof failure with partial stdout removes nothing");
+  assert.ok(fs.existsSync(victim));
   console.log("disk-hygiene smoke: PASS");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
