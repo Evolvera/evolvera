@@ -105,11 +105,12 @@ import {
   upsertMessage,
 } from "./lib.js";
 
-import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
+import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, activitySinceUrl, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
   app: $("#app"),
+  sidebar: $("#sidebar"),
   menuBtn: $("#menuBtn"),
   toggleLeft: $("#toggleLeftBtn"),
   toggleRight: $("#toggleRightBtn"),
@@ -421,6 +422,12 @@ const layout = {
 };
 
 function applyLayout() {
+  const closeLeft = layout.left !== "open" && !els.sidebar.inert && els.sidebar.contains(document.activeElement);
+  const closeRight = layout.right !== "open" && !els.panel.inert && els.panel.contains(document.activeElement);
+  els.sidebar.inert = layout.left !== "open";
+  els.panel.inert = layout.right !== "open";
+  if (closeLeft) els.toggleLeft.focus();
+  if (closeRight) els.toggleRight.focus();
   els.app.dataset.left = layout.left;
   els.app.dataset.right = layout.right;
   els.toggleLeft.setAttribute("aria-expanded", String(layout.left === "open"));
@@ -2972,6 +2979,7 @@ els.rawInput.addEventListener("keydown", (event) => {
 // ----------------------------------------------------------------- dialogs
 
 function openCustomize() {
+  els.customizeDialog.returnValue = "";
   els.prefName.value = prefs.userName || "";
   els.prefThinking.checked = Boolean(prefs.showThinking);
   els.prefTools.checked = Boolean(prefs.expandTools);
@@ -3229,7 +3237,7 @@ async function pollProjectStatus() {
 }
 
 // Activity feed: polled with the last seq seen; the first answer is the baseline, so only later items count as unseen.
-const activity = { items: [], seq: 0, seenSeq: 0, primed: false, inflight: false };
+const activity = { items: [], seq: 0, epoch: null, seenSeq: 0, primed: false, inflight: false };
 
 function updateActivityBadge() {
   const unseen = unseenActivity(activity.items, activity.seenSeq);
@@ -3240,8 +3248,9 @@ async function pollActivity() {
   if (document.hidden || activity.inflight) return;
   activity.inflight = true;
   try {
-    const data = await api(`/api/activity?since=${activity.seq}`);
+    const data = await api(activitySinceUrl(activity.seq, activity.epoch));
     clock.skew = data.now - Date.now();
+    if (data.epoch !== undefined) activity.epoch = data.epoch;
     if (data.reset) activity.items = [];
     activity.items = [...activity.items, ...data.items].slice(-ACTIVITY_LIMIT);
     activity.seq = data.seq;

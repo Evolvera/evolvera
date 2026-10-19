@@ -1853,6 +1853,11 @@ describe("visibility: stalled detection, timing, activity feed, usage", () => {
     assert.deepEqual(lib.problemsFromEvent({ type: "agent_start" }), []);
   });
 
+  test("activity cursor sends the server epoch when available and tolerates its absence", () => {
+    assert.equal(lib.activitySinceUrl(8, "run-1"), "/api/activity?since=8&epoch=run-1");
+    assert.equal(lib.activitySinceUrl(8), "/api/activity?since=8");
+  });
+
   test("activityDot / unseenActivity / activityRows", () => {
     assert.equal(lib.activityDot({ kind: "subagent_end", ok: true }), "pronto");
     assert.equal(lib.activityDot({ kind: "subagent_end", ok: false }), "erro");

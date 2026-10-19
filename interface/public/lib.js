@@ -2012,6 +2012,12 @@ export function unseenActivity(items, seenSeq) {
   return items.filter((item) => item.seq > seenSeq).length;
 }
 
+export function activitySinceUrl(seq, epoch) {
+  const params = new URLSearchParams({ since: String(seq) });
+  if (epoch !== undefined && epoch !== null && epoch !== "") params.set("epoch", String(epoch));
+  return `/api/activity?${params}`;
+}
+
 // Newest first; the filter matches project name and text, ignoring case and accents.
 export function activityRows(items, query, now = Date.now()) {
   const needle = foldText(query).trim();
