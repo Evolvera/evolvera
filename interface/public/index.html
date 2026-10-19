@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <!-- The title bar of the installed (--app) window takes this colour; it must equal the top bar background (--bg in styles.css). -->
+    <meta name="theme-color" content="#0a0a0a" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f5f5f5'/%3E%3Ctext x='16' y='24' font-size='22' font-weight='700' text-anchor='middle' fill='%230a0a0a' font-family='Segoe UI,sans-serif'%3E%CF%80%3C/text%3E%3C/svg%3E" />
     <title>PI Studio</title>
     <link rel="stylesheet" href="/styles.css" />
@@ -108,6 +110,10 @@
             </button>
             <ul id="todoList" class="todo-list"></ul>
           </section>
+          <div id="watchBar" class="watch-bar" role="status" hidden>
+            <span id="watchText" class="watch-text"></span>
+            <button id="watchContinue" class="watch-btn" type="button" disabled>Continuar aqui</button>
+          </div>
           <form id="composer" class="composer">
             <div id="attachments" class="attachments"></div>
             <textarea id="promptInput" rows="1" placeholder="Mensagem · / comandos · @ arquivos · ! shell" aria-label="Mensagem para o PI" aria-autocomplete="list" aria-controls="menu"></textarea>

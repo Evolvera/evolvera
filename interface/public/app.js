@@ -118,7 +118,7 @@ import {
 
 import { browserHistoryCurrent, browserHistoryMove, browserHistoryPush, classifyTarget, emptyBrowserHistory, formatBytes, linkAction, parseBrowserHistory, resolveSibling, targetText } from "./lib.js";
 
-import { ACTIVITY_LIMIT, SUBAGENT_TOOLS, activityRows, activitySinceUrl, agoLabel, problemsFromEvent, stallThresholds, stalledPi, subagentTiming, todayUsageRows, unseenActivity } from "./lib.js";
+import { ACTIVITY_LIMIT, activityRows, activitySinceUrl, agoLabel, conversationOwner, mergeWatchEntries, pickConversation, problemsFromEvent, stalledPi, stallThresholds, SUBAGENT_TOOLS, subagentTiming, todayUsageRows, unseenActivity, WATCH_POLL_MS, watchMessages, watchStatus } from "./lib.js";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -159,6 +159,9 @@ const els = {
   todoList: $("#todoList"),
   widgetArea: $("#widgetArea"),
   exitBanner: $("#exitBanner"),
+  watchBar: $("#watchBar"),
+  watchText: $("#watchText"),
+  watchContinue: $("#watchContinue"),
   restart: $("#restartBtn"),
   queueArea: $("#queueArea"),
   composer: $("#composer"),
@@ -324,6 +327,10 @@ const state = {
   attention: new Map(),
   settledSupported: false,
   settleTimer: null,
+  // Read-only follow of a conversation another PI is writing (see startWatch). While following, studioFile is the
+  // file the Studio's own PI has open; session.sessionFile points at the followed one (sidebar highlight).
+  watch: null,
+  studioFile: null,
 };
 
 const nodeCache = new Map();
@@ -819,7 +826,6 @@ els.projects.addEventListener("click", (event) => {
 function updateHeader() {
   const project = state.currentProject;
   els.projectTitle.textContent = project?.name || "PI Studio";
-  document.title = project ? `${project.name} · PI Studio` : "PI Studio";
   els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
   els.userName.textContent = prefs.userName || "Você";
   els.userAvatar.textContent = (prefs.userName || "?").trim().charAt(0).toUpperCase() || "?";
@@ -837,6 +843,7 @@ function updateModelButton() {
 // ---------------------------------------------------------------- projects
 
 function resetConversation() {
+  stopWatch();
   state.messages = [];
   state.runtime.clear();
   state.liveMessage = null;
@@ -949,35 +956,155 @@ async function loadProject(projectId, { cwd } = {}) {
   connectProjectEvents(project.id);
 }
 
+// A conversation another process is writing (an Orca agent's terminal, another PI) is only followed, read-only:
+// the Studio's PI never switches into a file with two writers.
 function openSession(projectId, sessionPath) {
   return runGated(state, async () => {
     if (state.currentProject?.id !== projectId) await loadProject(projectId);
-    const previousSession = { ...(state.session || {}) };
-    return withSessionRollback(async () => {
-      const id = newId();
-      const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
-      try {
-        await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
-      } catch (error) {
-        failPending(id, error);
-        throw error;
-      }
-      const response = await applied;
-      if (response.success && !response.data?.cancelled) {
-        resetConversation();
-        state.session = { ...previousSession, sessionFile: sessionPath };
-        updateHeader();
-        renderProjects();
-        renderThread();
-      }
-      return response;
-    }, () => {
-      state.session = previousSession;
-      renderProjects();
-      renderThread();
-    });
+    await refreshHistory().catch(() => {});
+    await showConversation(state.history.find((item) => samePath(item.path, sessionPath)), sessionPath);
   });
 }
+
+// Inside the session gate. `item`: the history entry (null when the file is not listed: then it is not known to be owned).
+async function showConversation(item, sessionPath, { fallback = false } = {}) {
+  if (state.watch && samePath(state.watch.path, sessionPath)) return;
+  const owner = conversationOwner({ item, agents: worktreeAgents(), fallback, studioFile: currentStudioFile(), now: serverNow() });
+  if (owner.elsewhere) return startWatch(item, { fallback });
+  return switchSession(state.currentProject.id, sessionPath);
+}
+
+// The thread and the selected file change only once PI accepted the switch: a cancelled (extension veto)
+// or failed switch leaves the current conversation on screen. The entries are re-requested after the
+// reset, since the server's own follow-up get_entries can arrive before a slow switch response.
+async function switchSession(projectId, sessionPath) {
+  const previousSession = { ...(state.session || {}) };
+  return withSessionRollback(async () => {
+    const id = newId();
+    const applied = awaitResponse(id, SESSION_SWITCH_TIMEOUT_MS);
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/switch`, { method: "POST", body: JSON.stringify({ sessionPath, id }) });
+    } catch (error) {
+      failPending(id, error);
+      throw error;
+    }
+    const response = await applied;
+    if (response.success && !response.data?.cancelled) {
+      resetConversation();
+      state.session = { ...previousSession, sessionFile: sessionPath };
+      updateHeader();
+      renderProjects();
+      renderThread();
+      sendRpc({ type: "get_entries" }).catch(() => {});
+    }
+    return response;
+  }, () => {
+    state.session = previousSession;
+    renderProjects();
+    renderThread();
+  });
+}
+
+// ---------------------------------------------------------- following (read-only)
+
+const currentStudioFile = () => (state.watch ? state.studioFile : state.session?.sessionFile ?? null);
+const orcaWorktreeOfProject = () => (orca.data?.available ? orca.data.worktrees.find((item) => samePath(item.path, state.currentProject?.cwd)) : null);
+const worktreeAgents = () => orcaWorktreeOfProject()?.agents ?? [];
+
+function startWatch(item, { fallback }) {
+  resetConversation();
+  state.studioFile = state.session?.sessionFile ?? null;
+  state.session = { ...(state.session || {}), sessionFile: item.path };
+  setRunning(false);
+  const watch = {
+    path: item.path,
+    title: item.title,
+    fallback,
+    entries: [],
+    offset: 0,
+    fileState: item.state,
+    touchedAt: item.lastActivity,
+    elsewhere: true,
+    where: orcaWorktreeOfProject() ? "orca" : "pi",
+    failures: 0,
+    inflight: false,
+    timer: setInterval(() => watchTick().catch(() => {}), WATCH_POLL_MS),
+  };
+  state.watch = watch;
+  updateHeader();
+  renderProjects();
+  renderThread();
+  updateWatchUi();
+  syncOrcaPolling();
+  return watchTick();
+}
+
+function stopWatch() {
+  const watch = state.watch;
+  if (!watch) return;
+  clearInterval(watch.timer);
+  state.watch = null;
+  if (state.session) state.session = { ...state.session, sessionFile: state.studioFile };
+  updateWatchUi();
+  syncOrcaPolling();
+}
+
+function updateWatchUi() {
+  const watch = state.watch;
+  els.watchBar.hidden = !watch;
+  if (watch) {
+    const status = watchStatus({ elsewhere: watch.elsewhere, where: watch.where });
+    els.watchText.textContent = status.text;
+    els.watchContinue.disabled = !status.canContinue;
+  }
+  applyPlaceholder();
+  updateComposer();
+}
+
+// One poll: new entries since the last offset. Skipped in a hidden page (the next visibility change polls at once).
+async function watchTick() {
+  const watch = state.watch;
+  if (!watch || watch.inflight || document.hidden) return;
+  watch.inflight = true;
+  try {
+    const data = await api(`/api/sessions/watch?path=${encodeURIComponent(watch.path)}&since=${watch.offset}`);
+    if (state.watch !== watch) return;
+    watch.failures = 0;
+    const entries = mergeWatchEntries(watch.entries, data.entries, { reset: data.reset || watch.offset === 0 });
+    watch.offset = data.offset;
+    watch.fileState = data.state;
+    watch.touchedAt = data.mtimeMs;
+    watch.elsewhere = conversationOwner({ item: { path: watch.path, title: watch.title, state: watch.fileState, lastActivity: watch.touchedAt }, agents: worktreeAgents(), fallback: watch.fallback, studioFile: state.studioFile, now: serverNow() }).elsewhere;
+    if (entries !== watch.entries) {
+      watch.entries = entries;
+      state.messages = watchMessages(entries);
+      state.subagentRecords = subagentRecords(entries);
+      applyTodo(todoFromMessages(state.messages));
+      scheduleRender();
+    }
+    updateWatchUi();
+  } catch {
+    if (state.watch !== watch) return;
+    if (++watch.failures >= 5) {
+      // Back to the Studio PI's own conversation instead of a frozen read-only view.
+      resetConversation();
+      renderThread();
+      refreshState().catch(() => {});
+      toast("Não foi possível acompanhar a conversa.", "error");
+    }
+  } finally {
+    watch.inflight = false;
+  }
+}
+
+els.watchContinue.addEventListener("click", () => {
+  const watch = state.watch;
+  if (!watch || els.watchContinue.disabled) return;
+  runGated(state, async () => {
+    await watchTick(); // last look: the other process may have started writing again
+    if (state.watch === watch && !watch.elsewhere) await switchSession(state.currentProject.id, watch.path);
+  }).catch(report);
+});
 
 async function refreshHistory({ onlyIfChanged = false } = {}) {
   const project = state.currentProject;
@@ -1127,6 +1254,7 @@ async function refreshUsageToday() {
 
 function refreshStats() {
   refreshUsageToday();
+  if (state.watch) return;
   rpcRequest({ type: "get_session_stats" })
     .then((res) => {
       state.stats = res.success ? res.data : null;
@@ -1151,6 +1279,10 @@ function handleResponse(event) {
   }
   switch (event.command) {
     case "get_state":
+      if (state.watch) {
+        state.studioFile = event.data?.sessionFile ?? null;
+        break;
+      }
       state.session = { ...(state.session || {}), ...event.data };
       setRunning(Boolean(event.data?.isStreaming));
       updateModelButton();
@@ -1158,7 +1290,7 @@ function handleResponse(event) {
       renderPanel();
       break;
     case "get_entries":
-      if (!Array.isArray(event.data?.entries)) break;
+      if (state.watch || !Array.isArray(event.data?.entries)) break;
       state.messages = reconcileEntries(entriesToMessages(event.data.entries, event.data.leafId), state.messages);
       state.subagentRecords = subagentRecords(event.data.entries);
       applyTodo(todoFromMessages(state.messages));
@@ -1198,7 +1330,9 @@ function addProblem(problem) {
   scheduleInspector("context");
 }
 
+// Events of the Studio's own PI do not touch a followed (read-only) conversation; its dialogs still reach the user.
 function handleRpc(event) {
+  if (state.watch && event.type !== "response" && event.type !== "extension_ui_request") return;
   problemsFromEvent(event).forEach(addProblem);
   switch (event.type) {
     case "response":
@@ -1946,6 +2080,36 @@ els.tablist.addEventListener("keydown", (event) => {
   selectTab(tabs[target].dataset.tab, { focus: true });
 });
 
+// Every tab keeps its label and count badge as long as they fit. Measured (so it holds for any number of tabs and any panel
+// width), the tabs give up first the icons of the unselected ones ("tight"), and only if the labels still overflow their
+// labels ("compact"). Name and count stay in title/aria-label either way.
+function fitInspectorTabs() {
+  els.tablist.classList.remove("tight", "compact");
+  for (const tab of els.tabs) {
+    const badge = tab.querySelector(".count-badge:not([hidden])");
+    const name = tab.querySelector(".insp-label").textContent;
+    const label = badge ? `${name}, ${badge.getAttribute("aria-label") || badge.textContent}` : name;
+    tab.title = label;
+    tab.setAttribute("aria-label", label);
+  }
+  const overflows = () => els.tablist.scrollWidth > els.tablist.clientWidth;
+  if (!overflows()) return;
+  els.tablist.classList.add("tight");
+  if (!overflows()) return;
+  els.tablist.classList.replace("tight", "compact");
+}
+let fitTabsQueued = false;
+function scheduleFitTabs() {
+  if (fitTabsQueued) return;
+  fitTabsQueued = true;
+  requestAnimationFrame(() => {
+    fitTabsQueued = false;
+    fitInspectorTabs();
+  });
+}
+new ResizeObserver(scheduleFitTabs).observe(els.tablist);
+new MutationObserver(scheduleFitTabs).observe(els.tablist, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden", "aria-selected"] });
+
 // Width: dragged on the panel's left edge (or arrow keys on the separator); persisted per browser.
 function applyPanelWidth() {
   els.app.style.setProperty("--iw", `${inspector.width}px`);
@@ -2497,7 +2661,7 @@ function updateComposer() {
   // A shell command needs an idle agent and a command; nothing is sent while one is running.
   const blocked = Boolean(state.bash) || (shell && (state.isStreaming || !shellCommand(value)));
   // While a project/session is still opening (state.gate) sending is allowed: submit() waits.
-  els.send.disabled = state.processExited || state.sending || !hasContent || blocked || (!state.currentProject && !state.gate);
+  els.send.disabled = state.processExited || state.sending || Boolean(state.watch) || !hasContent || blocked || (!state.currentProject && !state.gate);
   els.composer.classList.toggle("is-shell", shell);
   els.shellChip.hidden = !shell;
   els.stop.hidden = !(state.isStreaming || state.bash);
@@ -2505,14 +2669,14 @@ function updateComposer() {
   els.send.setAttribute("aria-label", shell ? "Executar" : state.isStreaming ? "Direcionar (steer)" : "Enviar");
   els.hint.textContent = composerHint(shell);
   els.hint.title = els.hint.textContent;
-  els.prompt.disabled = state.processExited;
+  els.prompt.disabled = state.processExited || Boolean(state.watch);
 }
 
 // The long placeholder (/ commands, @ files, ! shell) does not fit a phone-width composer.
 const narrowComposer = window.matchMedia("(max-width: 560px)");
 const PLACEHOLDER_LONG = els.prompt.placeholder;
 const applyPlaceholder = () => {
-  els.prompt.placeholder = narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
+  els.prompt.placeholder = state.watch ? "Somente leitura — continue aqui quando a conversa parar" : narrowComposer.matches ? "Mensagem · / @ !" : PLACEHOLDER_LONG;
 };
 narrowComposer.addEventListener("change", applyPlaceholder);
 applyPlaceholder();
@@ -2559,7 +2723,7 @@ async function addImages(files) {
 }
 
 async function submit(mode) {
-  if (state.processExited || state.sending) return;
+  if (state.processExited || state.sending || state.watch) return;
   if (els.prompt.value.trim() || state.attachments.length) ensureNotifyPermission();
   if (state.gate) {
     // Hold the text in the composer until PI finishes switching sessions, then send it.
@@ -3063,8 +3227,7 @@ function handleExtensionUi(req) {
       renderWidgets();
       break;
     case "setTitle":
-      document.title = req.title || "PI Studio";
-      break;
+      break; // the window title stays "PI Studio" (one clean bar with the app header)
     case "set_editor_text":
       els.prompt.value = req.text || "";
       autoResize();
@@ -3365,7 +3528,6 @@ function applyOrcaSettings() {
   }
   const on = orcaOn();
   els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !on;
-  els.tablist.classList.toggle("has-worktrees", on);
   els.worktreesBtn.hidden = !(on && orca.data?.available);
   updateWorktreeBadges();
   orca.uiKey = `${on}/${Boolean(orca.data?.available)}`;
@@ -3380,7 +3542,7 @@ function syncOrcaPolling() {
     enabled: orcaOn(),
     follow: settings.orcaFollow,
     // The top-bar button's running count keeps Orca polled while the button is shown.
-    tabVisible: (inspector.tab === "worktrees" && layout.right === "open") || els.worktreesDialog.open || !els.worktreesBtn.hidden,
+    tabVisible: (inspector.tab === "worktrees" && layout.right === "open") || els.worktreesDialog.open || !els.worktreesBtn.hidden || Boolean(state.watch),
     hidden: document.hidden,
   });
   if (wanted && !orca.timer) {
@@ -3412,10 +3574,19 @@ async function pollOrca() {
   followOrca();
 }
 
-function openWorktree(worktree) {
-  if (samePath(state.currentProject?.cwd, worktree.path)) return Promise.resolve();
-  if (worktree.projectId) return openProject(worktree.projectId);
-  return runGated(state, () => loadProject(null, { cwd: worktree.path }));
+// Opens the worktree's project and shows its conversation: followed read-only when an Orca agent or another PI is
+// writing it, else opened normally. `agent` (a clicked Orca agent row) picks the conversation titled like it.
+// A project that already shows a conversation is left alone unless an agent was clicked.
+function openWorktree(worktree, { agent = null } = {}) {
+  const open = samePath(state.currentProject?.cwd, worktree.path);
+  if (open && !agent && (state.watch || state.messages.length)) return Promise.resolve();
+  return runGated(state, async () => {
+    if (!open) await (worktree.projectId ? loadProject(worktree.projectId) : loadProject(null, { cwd: worktree.path }));
+    await refreshHistory().catch(() => {});
+    const status = studioPiState(projectStatus.last.get(state.currentProject.id));
+    const pick = pickConversation({ history: state.history, agents: agent ? [agent] : worktreeAgents(), liveBusy: state.isStreaming || status === "fazendo" || status === "aguardando" });
+    if (pick.item) await showConversation(pick.item, pick.item.path, { fallback: pick.kind === "latest" });
+  });
 }
 
 // Follow mode: switch to the worktree focused in Orca, unless the user is mid-sentence or answering a dialog
@@ -3587,6 +3758,7 @@ document.addEventListener("visibilitychange", () => {
     pollActivity();
     // Orca may have started since the last probe.
     if (settings.orcaEnabled !== false && orca.data?.available !== true) pollOrca();
+    watchTick().catch(() => {});
   }
   syncOrcaPolling();
   syncHistoryPolling();
@@ -3630,8 +3802,8 @@ function worktreeOverviewItem(worktree, detail, index) {
     </div>
     ${meta.length ? `<p class="sa-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join("")}</p>` : ""}
     ${detail.comment ? `<p class="wtv-comment">${esc(detail.comment)}</p>` : ""}
-    ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent) => `
-      <li class="wtv-agent">
+    ${detail.agents.length ? `<ul class="wtv-agents">${detail.agents.map((agent, index) => `
+      <li class="wtv-agent" data-agent="${index}">
         <span class="wtv-agent-head"><span class="session-state${agent.key ? ` st-${esc(agent.key)}` : ""}" aria-hidden="true"></span><span class="wtv-agent-title">${esc(agent.title)}</span><span class="sa-phase">${esc(agent.label)}</span></span>
         ${agent.message ? `<span class="wtv-msg">${esc(agent.message)}</span>` : ""}
       </li>`).join("")}</ul>` : ""}`;
@@ -3739,7 +3911,7 @@ function closeWorktrees() {
 
 els.worktreesDialog.addEventListener("close", syncOrcaPolling);
 
-function chooseWorktree(index) {
+function chooseWorktree(index, agentIndex) {
   const worktree = wtv.entries[index];
   if (!worktree) return;
   closeWorktrees();
@@ -3747,7 +3919,7 @@ function chooseWorktree(index) {
     if (state.currentProject?.id !== worktree.projectId) openProject(worktree.projectId).then(() => toast(`Projeto: ${worktree.project}`)).catch(report);
     return;
   }
-  openWorktree(worktree)
+  openWorktree(worktree, { agent: Number.isInteger(agentIndex) ? worktree.agents[agentIndex] : null })
     .then(() => toast(`Worktree: ${worktree.name}`))
     .catch(report);
 }
@@ -3776,7 +3948,8 @@ els.worktreesInput.addEventListener("keydown", (event) => {
 els.worktreesList.addEventListener("mousedown", (event) => event.preventDefault());
 els.worktreesList.addEventListener("click", (event) => {
   const option = event.target.closest(".wtv-item");
-  if (option) chooseWorktree(Number(option.dataset.index));
+  const agentRow = event.target.closest(".wtv-agent");
+  if (option) chooseWorktree(Number(option.dataset.index), agentRow ? Number(agentRow.dataset.agent) : undefined);
 });
 els.worktreesDialog.addEventListener("click", (event) => {
   if (event.target === els.worktreesDialog) closeWorktrees();

@@ -622,7 +622,10 @@ export class PiRpcSession {
     try {
       const payload = JSON.parse(line);
       this.track(payload);
-      if (payload.type === "response" && payload.command === "get_state" && payload.success) this.lastState = payload.data;
+      if (payload.type === "response" && payload.command === "get_state" && payload.success) {
+        this.lastState = payload.data;
+        if (payload.data?.sessionFile) studioFiles.add(cwdKey(payload.data.sessionFile)); // this PI has this file open (now or soon switched away from)
+      }
       this.broadcast("rpc", payload);
     } catch (error) {
       this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
@@ -1059,6 +1062,10 @@ export class SessionStateReader {
 
 const sessionStates = new SessionStateReader();
 
+// Session files the Studio's own PIs had open during this server's lifetime. A recent write to one of them came from the
+// Studio, not from another PI, so the page must not treat it as "owned elsewhere" (history items carry studioOwned).
+const studioFiles = new Set();
+
 // The project PI that is still alive, else the last one that ran (exited), else null.
 function liveSessionFor(projectId) {
   const mine = [...sessions.values()].filter((session) => session.projectId === projectId);
@@ -1142,8 +1149,91 @@ export async function listProjectHistory(project, { states = sessionStates, now 
     } catch {
       // Vanished or unreadable between listing and reading: no state rather than a failed list.
     }
-    return { ...item, state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
+    return { ...item, studioOwned: studioFiles.has(cwdKey(item.path)), state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
   }));
+}
+
+// ---- Watching a session another PI is writing (GET /api/sessions/watch). Strictly read-only: the Studio's own PI never
+// switches into such a file, the page just renders its entries and polls for the appended ones.
+export const WATCH_CAP_BYTES = 2 * 1024 * 1024;
+// A first read parses and re-serializes up to the cap: at most this many run at once, the rest queue (bounds memory under load).
+const WATCH_CONCURRENCY = 4;
+let watchActive = 0;
+const watchWaiters = [];
+
+export async function withWatchSlot(task) {
+  if (watchActive >= WATCH_CONCURRENCY) await new Promise((resolve) => watchWaiters.push(resolve));
+  watchActive++;
+  try {
+    return await task();
+  } finally {
+    watchActive--;
+    watchWaiters.shift()?.();
+  }
+}
+
+// The `path` query must be an absolute .jsonl file inside the sessions root (symlinks resolved); else 400/403/404.
+export async function resolveWatchPath(raw, sessionsRoot = path.join(AGENT_DIR, "sessions")) {
+  if (typeof raw !== "string" || !path.isAbsolute(raw) || raw.includes("\0") || !raw.toLowerCase().endsWith(".jsonl")) throw httpError(400, "Invalid session path");
+  const resolved = path.resolve(raw);
+  if (!pathInside(sessionsRoot, resolved)) throw httpError(403, "Path outside the sessions directory");
+  let real;
+  try {
+    real = await realpath(resolved);
+  } catch {
+    throw httpError(404, "Session file not found");
+  }
+  if (!pathInside(await realpath(sessionsRoot), real)) throw httpError(403, "Path outside the sessions directory");
+  if (!(await stat(real)).isFile()) throw httpError(404, "Session file not found");
+  return real;
+}
+
+// Entries appended after byte `since` (complete lines only), at most `cap` bytes per call. A first read (since 0) of a file
+// bigger than the cap starts at its tail; a cursor past the end (file replaced) restarts there too. A line that is still being
+// written is held back until it completes, except a final line without newline that already parses as a whole object.
+export async function readSessionWatch(filePath, since = 0, { cap = WATCH_CAP_BYTES, states = sessionStates, now = Date.now() } = {}) {
+  const handle = await open(filePath, "r");
+  try {
+    const info = await handle.stat();
+    const reset = since > info.size;
+    let start = reset ? 0 : since;
+    const tail = start === 0 && info.size > cap;
+    if (tail) start = info.size - cap;
+    const buffer = Buffer.alloc(Math.min(cap, info.size - start));
+    const bytesRead = buffer.length ? (await handle.read(buffer, 0, buffer.length, start)).bytesRead : 0; // nothing new: no read
+    let chunk = buffer.subarray(0, bytesRead);
+    let offset = start;
+    if (tail) {
+      const skip = chunk.indexOf(10) + 1 || chunk.length; // the cut falls mid-line: drop that fragment
+      chunk = chunk.subarray(skip);
+      offset += skip;
+    }
+    const end = chunk.lastIndexOf(10) + 1; // bytes through the last newline
+    const parse = (line) => {
+      try {
+        const entry = JSON.parse(line);
+        return isPlainObject(entry) ? entry : null;
+      } catch {
+        return null; // blank or malformed line
+      }
+    };
+    const entries = chunk.toString("utf8", 0, end).split("\n").map(parse).filter(Boolean);
+    let consumed = end;
+    if (end < chunk.length) {
+      const atEof = start + bytesRead >= info.size;
+      const unterminated = atEof ? parse(chunk.toString("utf8", end)) : null;
+      if (unterminated) {
+        entries.push(unterminated);
+        consumed = chunk.length;
+      } else if (!atEof && end === 0) {
+        consumed = chunk.length; // one line bigger than the cap: skipped (its remainder fails to parse)
+      }
+    }
+    const state = classifySessionState(await states.lastMessage(filePath, info), info.mtimeMs, now);
+    return { entries, offset: offset + consumed, size: info.size, mtimeMs: info.mtimeMs, state, reset, truncated: tail };
+  } finally {
+    await handle.close();
+  }
 }
 
 // ---- Running conversations per project (sidebar badge of projects that are not open).
@@ -1651,6 +1741,14 @@ async function route(req, res) {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       refreshIfStale(sessionIndex);
       return json(res, 200, { ...sessionIndex.usageOn(localDay(Date.now())), indexing: sessionIndex.lastRefresh === 0 });
+    }
+
+    if (pathname === "/api/sessions/watch") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const since = url.searchParams.get("since") ?? "0";
+      if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
+      const file = await resolveWatchPath(url.searchParams.get("path"));
+      return json(res, 200, await withWatchSlot(() => readSessionWatch(file, Number(since))));
     }
 
     if (pathname === "/api/projects/open-path") {

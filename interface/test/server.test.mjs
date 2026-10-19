@@ -849,6 +849,23 @@ describe("conversation states", () => {
   const stateFile = (lines, { ghostCwd = ghost, extraHeader = {}, mtime = 1_900_000_000 } = {}) =>
     sessionFile("--states--", `st-${seq++}.jsonl`, header(ghostCwd, extraHeader), mtime, lines);
 
+  test("history items flag the files the Studio's own PIs had open (live now or switched away from), and only those", async () => {
+    const mine = path.join(tmp, "studio-owned-project");
+    const own = (text) => stateFile([msg("user"), msg("assistant", { stopReason: "stop" })], { ghostCwd: mine, extraHeader: { timestamp: text } });
+    const [current, before, foreign, lonely] = await Promise.all([own("2025-02-04T00:00:00.000Z"), own("2025-02-03T00:00:00.000Z"), own("2025-02-02T00:00:00.000Z"), own("2025-02-01T00:00:00.000Z")]);
+    const pi = new server.PiRpcSession({ projectId: "owned", projectName: "owned", cwd: mine });
+    const getState = (sessionFile, extra = {}) => pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true, data: { sessionFile }, ...extra }));
+    const flags = async () => Object.fromEntries((await server.listProjectHistory({ id: "owned", cwd: mine }, { now: 1_900_000_010_000 })).map((item) => [path.basename(item.path), item.studioOwned]));
+    const names = [current, before, foreign, lonely].map((file) => path.basename(file));
+    assert.deepEqual(Object.values(await flags()), [false, false, false, false]);
+    getState(before);
+    getState(current); // switched away from `before`: it stays flagged
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: false, data: { sessionFile: foreign } }));
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true, data: {} }));
+    pi.handleStdoutLine(JSON.stringify({ type: "response", command: "get_state", success: true }));
+    assert.deepEqual(await flags(), { [names[0]]: true, [names[1]]: true, [names[2]]: false, [names[3]]: false });
+  });
+
   test("classifySessionState: every rule of the table", () => {
     const now = 10_000_000;
     const old = now - 91_000;

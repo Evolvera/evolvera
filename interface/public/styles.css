@@ -114,6 +114,7 @@ code { font-family: var(--mono); }
   justify-content: space-between;
   gap: 12px;
   padding: 0 10px;
+  background: var(--bg);
   -webkit-app-region: drag;
 }
 .topbar button { -webkit-app-region: no-drag; }
@@ -554,6 +555,11 @@ code { font-family: var(--mono); }
   font: 12.5px/1.55 var(--mono);
   white-space: pre-wrap;
 }
+.watch-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 6px 6px 6px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg-card); color: var(--muted); font-size: 12.5px; }
+.watch-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-btn { flex: none; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--text); color: #0a0a0a; font-size: 12.5px; font-weight: 600; transition: opacity 140ms var(--ease); }
+.watch-btn:disabled { background: var(--bg-active); color: var(--faint); }
+.watch-btn:not(:disabled):hover { opacity: 0.88; }
 .exit-row { display: flex; align-items: center; gap: 10px; }
 .exit-banner { flex: 1; margin-bottom: 8px; padding: 10px 14px; border-radius: var(--r); background: #1f1a0e; border: 1px solid #5a4a1c; color: #ecd9a0; font-size: 13.5px; }
 .restart-inline { display: none; margin-bottom: 8px; height: 38px; padding: 0 16px; border-radius: 10px; background: var(--text); color: #0a0a0a; font-weight: 600; font-size: 13.5px; }
@@ -659,15 +665,15 @@ code { font-family: var(--mono); }
 .panel-resizer:focus-visible { outline: none; }
 .panel-resizer:focus-visible::after { left: 3px; width: 3px; background: var(--text-2); }
 
-.insp-tabs { flex: none; display: flex; align-items: stretch; gap: 2px; height: 42px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.insp-tabs { flex: none; display: flex; align-items: stretch; gap: 0; height: 42px; padding: 0 6px; border-bottom: 1px solid var(--line); }
 .insp-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 0 6px;
   color: var(--faint);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   transition: color 140ms var(--ease);
@@ -675,16 +681,16 @@ code { font-family: var(--mono); }
 .insp-tab svg { width: 16px; height: 16px; }
 .insp-tab:hover { color: var(--text-2); }
 .insp-tab[aria-selected="true"] { color: var(--text); }
-.insp-tab::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); transform: scaleX(0); transition: transform 200ms var(--ease); }
+.insp-tab::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); transform: scaleX(0); transition: transform 200ms var(--ease); }
 .insp-tab[aria-selected="true"]::after { transform: scaleX(1); }
 .insp-tab:focus-visible { outline-offset: -6px; }
 /* Count badge: transparent pill, 1px gray border; one digit is a circle, more digits a pill. */
 .count-badge { flex: none; display: inline-grid; place-items: center; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 4px; border: 1px solid var(--line-2); border-radius: 99px; background: transparent; color: #fff; font: 600 10px/1 var(--mono); font-variant-numeric: tabular-nums; }
 .count-badge.muted { color: var(--muted); }
 .icon-btn:has(.count-badge:not([hidden])) { width: auto; padding: 0 7px; gap: 5px; grid-auto-flow: column; }
-@container insp (max-width: 430px) {
-  .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
-}
+/* Fitting ladder (see fitInspectorTabs): all icons + labels; else only the selected tab keeps its icon; else only the selected tab keeps its label. */
+.insp-tabs.tight .insp-tab:not([aria-selected="true"]) svg { display: none; }
+.insp-tabs.compact .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
 
 .insp-view { flex: 1; min-height: 0; }
 .view-scroll { overflow-y: auto; overflow-x: hidden; padding: 4px 16px 20px; }
@@ -1220,9 +1226,6 @@ html[data-motion="reduce"] .project.attn-waiting .run-dot { animation: none !imp
 .wt-flag { padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line-2); color: var(--muted); font-size: 11.5px; }
 .settings-sec { margin: 14px 0 0; }
 .switch:disabled { opacity: 0.4; cursor: not-allowed; }
-@container insp (max-width: 560px) {
-  .insp-tabs.has-worktrees .insp-tab:not([aria-selected="true"]) .insp-label { display: none; }
-}
 
 /* ------------------------------------------ conversation states + worktrees overview */
 .session-state { flex: none; width: 6px; height: 6px; border-radius: 99px; background: var(--faint); }
