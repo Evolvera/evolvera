@@ -95,6 +95,7 @@ test('Linux launcher entry is installed when install-app selects linux', async (
 });
 
 test('macOS launcher checks health before opening and owns its start/stop PID', async (t) => {
+  if (process.platform !== 'darwin') return t.skip('launcher do macOS');
   const home = await tempDir('pi-studio-launcher-');
   const bin = path.join(home, 'fake-bin');
   const calls = path.join(home, 'calls');
@@ -102,7 +103,7 @@ test('macOS launcher checks health before opening and owns its start/stop PID', 
   const starts = path.join(home, 'starts');
   await mkdir(bin);
   await writeFile(path.join(bin, 'curl'), `#!/bin/bash\n[ -f '${marker}' ] || exit 1\ncase "$*" in *api/health*) case "$*" in *X-PI-Studio-Token:*abcdef*) exit 0 ;; *) exit 1 ;; esac ;; *) printf '<meta name="pi-studio-token" content="abcdef">\\n' ;; esac\n`);
-  await writeFile(path.join(bin, 'node'), `#!/bin/bash\necho start >>'${starts}'\ntouch '${marker}'\nwhile true; do read -t 30 || true; done\n`);
+  await writeFile(path.join(bin, 'node'), `#!/bin/bash\necho start >>'${starts}'\ntouch '${marker}'\nexec sleep 86400\n`);
   await writeFile(path.join(bin, 'pi'), '#!/bin/sh\nexit 0\n');
   await writeFile(path.join(bin, 'open'), `#!/bin/bash\necho "$*" >>'${calls}'\nexit 0\n`);
   for (const name of ['curl', 'node', 'pi', 'open']) await (await import('node:fs/promises')).chmod(path.join(bin, name), 0o755);
