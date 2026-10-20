@@ -20,10 +20,30 @@ const fakeClock = () => {
   return { clock: { now: () => time, setInterval(fn) { callback = fn; return 1; }, clearInterval() { callback = undefined; clears++; } },
     tick(ms) { time += ms; callback?.(); }, get active() { return Boolean(callback); }, get clears() { return clears; } };
 };
-const context = (manager, { mode = "tui", hasUI = true } = {}) => {
+const context = (manager, { mode = "tui", hasUI = true, terminalInput = true } = {}) => {
   const calls = [];
-  const ui = { setWidget(...args) { calls.push(args); } };
-  return { ctx: { mode, hasUI, sessionManager: manager, ui }, calls };
+  const listeners = new Set();
+  let component;
+  const ui = {
+    setWidget(...args) {
+      const [key, factory] = args;
+      calls.push(args);
+      if (factory === undefined) {
+        component?.dispose?.();
+        component = undefined;
+      } else {
+        const create = factory;
+        calls[calls.length - 1][1] = (tui) => (component = create(tui));
+      }
+    },
+  };
+  if (terminalInput) {
+    ui.onTerminalInput = (handler) => {
+      listeners.add(handler);
+      return () => listeners.delete(handler);
+    };
+  }
+  return { ctx: { mode, hasUI, sessionManager: manager, ui }, calls, listeners };
 };
 
 test("startup art appears once only for the managed root TUI startup and clears on input/agent start", () => {
@@ -57,6 +77,66 @@ test("startup art appears once only for the managed root TUI startup and clears 
   beforeAgent.get("session_start")({ reason: "startup" }, second.ctx);
   beforeAgent.get("before_agent_start")({}, second.ctx);
   assert.deepEqual(second.calls.at(-1), ["startup-art-managed", undefined]);
+});
+
+test("unmodified Escape dismisses startup art without consuming input and removes only its listener", () => {
+  const manager = {};
+  const supported = ["\x1b", "\x1b[27u", "\x1b[27;1u", "\x1b[27;1:1u", "\x1b[27;1:2u", "\x1b[27;65u", "\x1b[27;193:2u", "\x1b[27:27;1u", "\x1b[27::27;129:1u", "\x1b[27;1;27~", "\x1b[27;65;27~"];
+  for (const data of supported) {
+    const fake = fakeClock();
+    const handlers = handlersFor(createStartupArtFactory({ label: "Evolvera", sessionManager: manager, color: false, animationClock: fake.clock }));
+    const root = context(manager);
+    handlers.get("session_start")({ reason: "startup" }, root.ctx);
+    const component = root.calls[0][1](terminal(44));
+    const other = () => undefined;
+    root.listeners.add(other);
+    let inputEvents = 0;
+    handlers.set("input", () => inputEvents++);
+    const [listener] = [...root.listeners].filter((handler) => handler !== other);
+    assert.equal(listener(data), undefined, JSON.stringify(data));
+    assert.equal(inputEvents, 0, "terminal observation does not synthesize extension input");
+    assert.deepEqual(root.calls.at(-1), ["startup-art-managed", undefined]);
+    assert.equal(fake.active, false);
+    assert.equal(root.listeners.has(listener), false);
+    assert.equal(root.listeners.has(other), true);
+    assert.equal(listener(data), undefined, "a retained callback cannot act after dismissal");
+    handlers.get("input")({}, root.ctx);
+    assert.equal(inputEvents, 1, "normal extension input remains independently delivered");
+    component.dispose();
+    assert.equal(root.listeners.has(other), true);
+  }
+});
+
+test("modified and unrelated terminal input leaves art mounted; other exits unsubscribe and absence is safe", () => {
+  const manager = {};
+  const rejected = ["\x1b[27;2u", "\x1b[27;3u", "\x1b[27;5u", "\x1b[27;9u", "\x1b[27;3:2u", "\x1b[27;2;27~", "\x1b[A", "\x1bx", "\x1b[200~\x1b\x1b[201~", "a", "\x1b[27;1:3u", "\x1b[27;4294967297u", "\x1b[27;4294967297;27~"];
+  const handlers = handlersFor(createStartupArtFactory({ label: "Evolvera", sessionManager: manager, color: false, animate: false }));
+  const root = context(manager);
+  handlers.get("session_start")({ reason: "startup" }, root.ctx);
+  root.calls[0][1](terminal());
+  const [listener] = root.listeners;
+  for (const data of rejected) assert.equal(listener(data), undefined, JSON.stringify(data));
+  assert.equal(root.calls.length, 1);
+  handlers.get("session_shutdown")({}, root.ctx);
+  assert.equal(root.listeners.size, 0);
+  assert.equal(listener("\x1b"), undefined, "shutdown callback is inert");
+
+  const noApi = context(manager, { terminalInput: false });
+  const noApiHandlers = handlersFor(createStartupArtFactory({ label: "Evolvera", sessionManager: manager, color: false, animate: false }));
+  noApiHandlers.get("session_start")({ reason: "startup" }, noApi.ctx);
+  noApi.calls[0][1](terminal());
+  noApiHandlers.get("input")({}, noApi.ctx);
+  assert.deepEqual(noApi.calls.at(-1), ["startup-art-managed", undefined]);
+
+  const disposeRoot = context(manager);
+  const disposeHandlers = handlersFor(createStartupArtFactory({ label: "Evolvera", sessionManager: manager, color: false, animate: false }));
+  disposeHandlers.get("session_start")({ reason: "startup" }, disposeRoot.ctx);
+  const component = disposeRoot.calls[0][1](terminal());
+  const [disposeListener] = disposeRoot.listeners;
+  component.dispose();
+  assert.equal(disposeRoot.listeners.size, 0);
+  assert.equal(disposeListener("\x1b"), undefined);
+  assert.equal(disposeRoot.calls.length, 1, "dispose does not reallocate or clear unrelated widget state");
 });
 
 test("startup animation redraws via TUI, stops on input/dispose, and never schedules for tiny or rejected roots", () => {
