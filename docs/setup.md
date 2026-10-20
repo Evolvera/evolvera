@@ -1,36 +1,36 @@
-# Guia de instalação e operação
+# Installation and Operations Guide
 
-Harness padronizado do [PI Coding Agent](https://github.com/badlogic/pi) para trabalhar no terminal e no VS Code com agentes, skills, extensões e ferramentas compartilhadas pelo time.
+A standardized [PI Coding Agent](https://github.com/badlogic/pi) harness for working in the terminal and VS Code with agents, skills, extensions, and tools shared by the team.
 
-O PI principal continua responsável pelo resultado. Ele lê o pedido e as regras do harness, decide entre agir diretamente ou delegar, coleta evidências do repositório, implementa a menor mudança suficiente e valida o resultado.
+The main PI remains responsible for the outcome. It reads the request and harness rules, decides whether to act directly or delegate, gathers repository evidence, implements the smallest sufficient change, and validates the result.
 
 ```text
-Usuário
-  → PI principal + SYSTEM.md
-    → ação direta ou agente especializado
-      → ferramentas / código / runtime
-        → validação e resultado
+User
+  → Main PI + SYSTEM.md
+    → direct action or specialized agent
+      → tools / code / runtime
+        → validation and outcome
 ```
 
-## Início rápido
+## Quick Start
 
-### Pré-requisitos
+### Prerequisites
 
 - Git;
-- acesso ao repositório privado `Evolvera/evolvera`;
-- GitHub CLI (`gh`) ou outro meio de clonar o repositório;
+- access to the private `Evolvera/evolvera` repository;
+- GitHub CLI (`gh`) or another way to clone the repository;
 - Node.js `>=22.19.0`;
-- npm disponível no `PATH`;
-- credencial para pelo menos um provider de IA.
+- npm available on `PATH`;
+- credentials for at least one AI provider.
 
-A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@1.3.0`. Os patches descritos abaixo são verificados para essa versão; versões selecionadas por override sem compatibilidade comprovada falham fechado.
+The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.3.0`. The patches described below are verified for this version; override-selected versions without proven compatibility fail closed.
 
-### Node com fnm (Linux e macOS)
+### Node with fnm (Linux and macOS)
 
-Antes de executar `./install.sh` em um shell novo, instale e persista o fnm, selecione o alvo validado e confirme o Node. O alvo localmente validado é o fnm 22.22.3:
+Before running `./install.sh` in a new shell, install and persist fnm, select the validated target, and verify Node. The locally validated target is fnm 22.22.3:
 
 ```bash
-# Adicione a saída do instalador ao shell quando solicitado
+# Add the installer's output to your shell when prompted
 curl -fsSL https://fnm.vercel.app/install | bash
 # ~/.zshrc (macOS):
 eval "$(fnm env --use-on-cd --shell zsh)"
@@ -42,9 +42,9 @@ fnm use 22.22.3
 node --version  # v22.22.3
 ```
 
-Abra um shell novo, confirme `node --version` como `v22.22.3` e só então execute `./install.sh`.
+Open a new shell, confirm `node --version` reports `v22.22.3`, and only then run `./install.sh`.
 
-### Linux e macOS
+### Linux and macOS
 
 ```bash
 gh auth login
@@ -57,11 +57,11 @@ pi
 /login
 ```
 
-#### Capturas do Windows no PI executado pelo WSL
+#### Windows Screenshots in PI Running Under WSL
 
-No Warp para Windows, `Ctrl+V` pode ser consumido pelo terminal antes de chegar ao PI no WSL. Sob WSL, o setup adiciona `Alt+V` como atalho alternativo sem remover `Ctrl+V`: use `@` + `Alt+V` para inserir o path temporário da captura feita com `Win+Shift+S`.
+In Warp for Windows, `Ctrl+V` may be consumed by the terminal before it reaches PI in WSL. Under WSL, setup adds `Alt+V` as an alternative shortcut without removing `Ctrl+V`: use `@` + `Alt+V` to insert the temporary path for a screenshot captured with `Win+Shift+S`.
 
-O `install.sh` instala `~/.pi/agent/keybindings.json` somente sob WSL e somente quando o destino ainda não existe. No macOS e no Linux nativo, o instalador não cria esse arquivo e os padrões do PI permanecem inalterados. Configurações personalizadas existentes, inclusive links simbólicos, são preservadas. Isso trata a entrega do atalho pelo terminal ao PI; não é uma correção para todo terminal.
+`install.sh` installs `~/.pi/agent/keybindings.json` only under WSL and only when the destination does not already exist. On macOS and native Linux, the installer does not create this file and PI defaults remain unchanged. Existing custom settings, including symbolic links, are preserved. This addresses passing the shortcut from the terminal to PI; it is not a fix for every terminal.
 
 ### Windows
 
@@ -70,7 +70,7 @@ gh auth login
 gh repo clone Evolvera/evolvera
 Set-Location evolvera
 
-# Se necessário:
+# If needed:
 nvm install 22.19.0
 nvm use 22.19.0
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
@@ -81,15 +81,15 @@ pi
 /login
 ```
 
-Se a política local ainda bloquear o instalador:
+If the local policy still blocks the installer:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-### Verificação do setup
+### Verify the Setup
 
-Feche e abra o terminal depois da primeira instalação. Então confirme:
+Close and reopen the terminal after the first installation. Then verify:
 
 ```bash
 pi --version
@@ -114,122 +114,122 @@ Test-Path "$HOME\.pi\agent\skills"
 Test-Path "$HOME\.pi\agent\extensions"
 ```
 
-Dentro do PI, use `/reload` depois de alterar agentes, skills, extensões ou configuração.
+In PI, use `/reload` after changing agents, skills, extensions, or configuration.
 
-## O que o instalador faz
+## What the Installer Does
 
-O checkout do repositório é a fonte versionada. O runtime do usuário fica em `~/.pi/agent` (`$HOME\.pi\agent` no Windows).
+The repository checkout is the versioned source. The user's runtime is in `~/.pi/agent` (`$HOME\.pi\agent` on Windows).
 
 Os instaladores:
 
-1. verificam Node.js `>=22.19.0`;
-2. instalam a versão configurada de `@earendil-works/pi-coding-agent`;
-3. criam os diretórios do runtime;
-4. copiam a configuração versionada para `~/.pi/agent`;
-5. copiam agentes, skills, extensões normais e temas; `extensions/plastic-memory/` não é instalado enquanto seu caminho de compactação estiver desativado;
-6. instalam somente os packages PI configurados (Goal Mode e integrações auxiliares); o template de configuração não ativa `plastic-memory` nem `pi-observational-memory`;
-7. criam `mcp.json` somente quando ele ainda não existe;
-8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados. O template define `compaction.reserveTokens: 65536` para iniciar a compactação com mais margem antes do limite de saída.
+1. check for Node.js `>=22.19.0`;
+2. install the configured version of `@earendil-works/pi-coding-agent`;
+3. create the runtime directories;
+4. copy the versioned configuration to `~/.pi/agent`;
+5. copy agents, skills, regular extensions, and themes; `extensions/plastic-memory/` is not installed while its compaction path is disabled;
+6. install only the configured PI packages (Goal Mode and helper integrations); the configuration template does not enable `plastic-memory` or `pi-observational-memory`;
+7. create `mcp.json` only if it does not already exist;
+8. write `settings.json` last, after all resources have been prepared. The template sets `compaction.reserveTokens: 65536` to begin compaction with more headroom before the output limit.
 
-### Patch de continuidade do PI 1.3.0
+### PI 1.3.0 Continuation Patch
 
-Depois do `npm install` global e antes de verificar a instalação ou ativar `settings.json`, os instaladores executam `scripts/patch-pi-threshold-cancel.mjs`. O patcher valida o nome/versão exatos, o caminho, a cardinalidade e o SHA-256 do anchor conhecido, e então altera somente o cancelamento de auto-compaction por `reason === "threshold"`: mensagens já enfileiradas podem continuar. Cancelamento por overflow, compactação manual e o caminho de sucesso permanecem inalterados.
+After the global `npm install` and before verifying the installation or activating `settings.json`, the installers run `scripts/patch-pi-threshold-cancel.mjs`. The patcher validates the exact name/version, path, cardinality, and SHA-256 of the known anchor, then changes only auto-compaction cancellation for `reason === "threshold"`: already queued messages can continue. Overflow cancellation, manual compaction, and the success path remain unchanged.
 
-Qualquer versão, conteúdo ou cardinalidade desconhecidos são recusados sem substituir o arquivo. A operação é idempotente, atômica e preserva o modo do arquivo. A verificação segura usa exclusivamente uma fixture sintética temporária e descartável:
+Unknown versions, content, or cardinalities are rejected without replacing the file. The operation is idempotent, atomic, and preserves the file mode. Safe verification uses only a temporary disposable synthetic fixture:
 
 ```bash
 node scripts/test/patch-pi-threshold-cancel.smoke.mjs
 ```
 
-O PI 1.3.0 já faz a leitura assíncrona de credenciais antes de utilizá-las e recupera cortes de contexto (`length`) pelo caminho nativo de compactação e retry. Os patches antigos `patch-pi-083-auth-load-recovery.mjs` e `patch-pi-083-context-wall-retry.mjs` não são mais executados pelos instaladores. O patch de continuidade continua necessário quando uma extensão cancela a compactação por threshold com mensagens na fila; abort explícito, overflow e falhas comuns não são retomados por ele.
+PI 1.3.0 already loads credentials asynchronously before using them and recovers context-length (`length`) cuts through the native compaction-and-retry path. The old patches `patch-pi-083-auth-load-recovery.mjs` and `patch-pi-083-context-wall-retry.mjs` are no longer run by the installers. The continuation patch remains necessary when an extension cancels threshold compaction with messages queued; it does not resume explicit aborts, overflow, or ordinary failures.
 
-### Thinking `ultra` no PI 1.3.0
+### `ultra` Thinking in PI 1.3.0
 
-Os instaladores executam `scripts/patch-pi-ultra-thinking.mjs` logo após o patch de continuidade e `scripts/patch-pi-subagents-ultra-thinking.mjs` depois de instalar `@tintinweb/pi-subagents@0.18.2`. Os patchers adicionam `ultra` às superfícies de tipo, CLI, catálogo de níveis, schema de modelos, TUI e subagentes. O valor só aparece para modelos cujo `thinkingLevelMap` declara suporte; `models.json` habilita `ultra: "ultra"` para `openai-codex/gpt-6-astra`.
+The installers run `scripts/patch-pi-ultra-thinking.mjs` immediately after the continuation patch and `scripts/patch-pi-subagents-ultra-thinking.mjs` after installing `@tintinweb/pi-subagents@0.18.2`. The patchers add `ultra` to the type, CLI, level catalog, model schema, TUI, and subagent surfaces. The value appears only for models whose `thinkingLevelMap` declares support; `models.json` enables `ultra: "ultra"` for `openai-codex/gpt-6-astra`.
 
-Na TUI, `ultra` usa duas cores opcionais, `thinkingUltra` e `thinkingUltraAlt`, alternadas a cada 350 ms. Temas antigos permanecem válidos: ambas caem para `thinkingMax` e depois `thinkingXhigh`. Os temas embutidos usam cores mais intensas que `max` e próximas entre si.
+In the TUI, `ultra` uses two optional colors, `thinkingUltra` and `thinkingUltraAlt`, alternating every 350 ms. Older themes remain valid: both fall back to `thinkingMax` and then `thinkingXhigh`. Built-in themes use colors more intense than `max` and close to each other.
 
-O patch de runtime `scripts/patch-pi-subagents-bounded-waits.mjs` limita cada execução total de subagente a 30 minutos, ou 60 minutos quando o tipo exato é `planner`; briefers e demais tipos de planner têm 30 minutos. O prazo começa quando o trabalho efetivamente inicia, não conta fila, aplica-se a execuções novas e retomadas (inclusive aninhadas) e cancela a sessão por `AbortSignal`. Timeout preserva resultado parcial e worktree para retomada manual; não há reinício automático nem opção de ambiente para elevar os limites. `bash` continua limitado a 300 segundos por padrão e até 1800 segundos explícitos; `get_subagent_result(wait: true)` continua aguardando no máximo 60 segundos sem parar o trabalho. Esses são limites independentes. O patch instala-se junto aos outros patches do pacote; reinicie o PI depois de aplicar para carregar o runtime atualizado.
+The runtime patch `scripts/patch-pi-subagents-bounded-waits.mjs` limits each subagent's total execution to 30 minutes, or 60 minutes when its exact type is `planner`; briefers and other planner types get 30 minutes. The deadline starts when work actually begins, does not count queue time, applies to new and resumed executions (including nested ones), and cancels the session through `AbortSignal`. A timeout preserves the partial result and worktree for manual resumption; there is no automatic restart or environment option to raise the limits. `bash` remains limited to 300 seconds by default and up to 1800 seconds when explicitly set; `get_subagent_result(wait: true)` continues waiting for at most 60 seconds without stopping the work. These are independent limits. The patch is installed with the other package patches; restart PI after applying it to load the updated runtime.
 
-As trocas são fail-closed por nome/versão/cardinalidade, idempotentes, atômicas por arquivo e preparadas com rollback. Validação sem recursos stateful:
+Changes fail closed by name/version/cardinality, are idempotent and atomic per file, and are prepared with rollback. Validation without stateful resources:
 
 ```bash
 node scripts/test/patch-ultra-thinking.smoke.mjs
 ```
 
-### Painéis HUD de todo e subagentes
+### Todo and Subagent HUD Panels
 
-Os instaladores executam `scripts/patch-rpiv-todo-hud.mjs` depois de instalar `@juicesharp/rpiv-todo@2.11.0` e `scripts/patch-pi-subagents-hud.mjs` depois do patch de timeouts limitados de `@tintinweb/pi-subagents@0.18.2`. Os dois redesenham os painéis acima do editor no estilo do rodapé (trilho `▌`, glifos de uma célula, barra `━` de progresso, sem conectores de árvore) usando só tokens do tema em vermelho, laranja, branco e cinza (`accent`, `warning`, `thinkingXhigh`, `text`, `muted`, `dim`, `borderMuted`). É apenas apresentação: estado, orçamento de linhas, `/todos`, modos do widget e cálculo de overflow ficam como no upstream, e o badge colorido por agente não aparece no widget. Ambos são fail-closed por nome/versão/cardinalidade, idempotentes, atômicos e compõem com os demais patches do pacote; reinicie o PI depois de aplicar. Validação em cópias descartáveis, sem tocar nos pacotes instalados:
+The installers run `scripts/patch-rpiv-todo-hud.mjs` after installing `@juicesharp/rpiv-todo@2.11.0` and `scripts/patch-pi-subagents-hud.mjs` after the bounded-timeout patch for `@tintinweb/pi-subagents@0.18.2`. Both restyle panels above the editor to match the footer (a `▌` rail, single-cell glyphs, `━` progress bar, no tree connectors), using only red, orange, white, and gray theme tokens (`accent`, `warning`, `thinkingXhigh`, `text`, `muted`, `dim`, `borderMuted`). This is presentation only: state, line budget, `/todos`, widget modes, and overflow calculation remain as upstream; the colored per-agent badge does not appear in the widget. Both fail closed by name/version/cardinality, are idempotent and atomic, and compose with the other package patches; restart PI after applying. Validate on disposable copies without touching installed packages:
 
 ```bash
 node scripts/test/patch-rpiv-todo-hud.smoke.mjs
 node scripts/test/patch-pi-subagents-hud.smoke.mjs
 ```
 
-### Login OAuth do Gemini no navegador
+### Gemini Browser OAuth Login
 
-O template instala `pi-antigravity@0.10.0`, um provedor OAuth não oficial para login Google no navegador (não requer API key). Após instalar ou atualizar, use `/reload` e `/login antigravity`, conclua o consentimento no navegador, execute `/antigravity.refresh` e consulte `/antigravity.models` para escolher um modelo anunciado pelo servidor. Isso não altera o provedor nem o modelo padrão. O Gemini 3.8 está incluído no Pro; Argon requer plano Ultra ou Enterprise.
+The template installs `pi-antigravity@0.10.0`, an unofficial OAuth provider for Google browser login (no API key required). After installing or updating, use `/reload` and `/login antigravity`, complete browser consent, run `/antigravity.refresh`, and check `/antigravity.models` to choose a model announced by the server. This does not change the provider or default model. Gemini 3.8 is included in Pro; Argon requires an Ultra or Enterprise plan.
 
-Quando a conta anunciar `gemini-4-argon`, selecione `/model antigravity/gemini-4-argon`. O override em `config/models.json` ajusta esse modelo descoberto para contexto unificado de 1.048.576 tokens e saída síncrona de 65.536, conforme a [documentação do Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon). Ele não cria um modelo ausente do catálogo, não inventa variantes de reasoning nem libera acesso no plano Pro. A disponibilidade e a resposta real precisam ser verificadas após o login.
+When the account lists `gemini-4-argon`, select `/model antigravity/gemini-4-argon`. The override in `config/models.json` adjusts this discovered model to a unified 1,048,576-token context and 65,536 synchronous output, as described in the [Argon documentation](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon). It does not create a model missing from the catalog, invent reasoning variants, or grant access on the Pro plan. Availability and the actual response must be verified after login.
 
-Este fluxo usa OAuth de terceiros, não oficial do Google. Os termos do Antigravity, cláusula 6, proíbem OAuth de terceiros e o uso pode resultar em suspensão da conta: https://antigravity.google/terms. Credenciais não devem ser versionadas no Git.
+This flow uses third-party OAuth, not an official Google flow. Antigravity's terms, section 6, prohibit third-party OAuth, and use may result in account suspension: https://antigravity.google/terms. Credentials must not be committed to Git.
 
-### Compatibilidade OAuth do Claude Fable 5.1
+### Claude Fable 5.1 OAuth Compatibility
 
-O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@1.3.0` e `@gotgenes/pi-anthropic-auth@2.0.6` ou a instalação adaptada `2.0.1` (preservada sem reinstalação), alterando somente os anchors conhecidos para reportar Claude Code `2.1.280`. Isso é necessário porque o OAuth do Opus 5.5 exige Claude Code `2.1.280+` (o Fable 5.1 exigia `2.1.251+`); o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
+The template installs `npm:@gotgenes/pi-anthropic-auth@2.0.6`. After that installation and before the final activation of `settings.json`, the installers run `scripts/patch-anthropic-client-version.mjs`. The patcher is limited to the `@earendil-works/pi-coding-agent@1.3.0` baseline and `@gotgenes/pi-anthropic-auth@2.0.6` or adapted `2.0.1` installation (preserved without reinstalling), changing only known anchors to report Claude Code `2.1.280`. This is required because Opus 5.5 OAuth requires Claude Code `2.1.280+` (Fable 5.1 required `2.1.251+`); the patch fixes PI and OAuth adapter compatibility headers and does not depend on updating the standalone CLI.
 
-Instalações que já carregam um valor escrito por uma versão anterior deste patcher (`2.1.257`) são migradas para o alvo atual com a mesma verificação de identidade, cardinalidade e rollback; qualquer outro valor continua recusado. Depois de aplicar o patch, reinicie a sessão do PI para que o módulo já carregado seja substituído.
+Installations already carrying a value written by an earlier version of this patcher (`2.1.257`) are migrated to the current target with the same identity, cardinality, and rollback checks; any other value remains rejected. After applying the patch, restart the PI session so the already-loaded module is replaced.
 
-A operação é fail-closed, idempotente, atômica por arquivo, rollback-safe entre os dois alvos e preserva o modo e os bytes fora dos anchors. Valide-a somente com a fixture descartável:
+The operation fails closed, is idempotent and atomic per file, is rollback-safe across both targets, and preserves file mode and bytes outside the anchors. Validate only with the disposable fixture:
 
 ```bash
 node scripts/test/patch-anthropic-client-version.smoke.mjs
 ```
 
-### Lag do Orca com o PI 1.2.0/1.3.0 em fullscreen
+### Orca Lag with PI 1.2.0/1.3.0 in Fullscreen
 
-No `@earendil-works/pi-coding-agent@1.2.0`, o renderer fullscreen escreve cada linha como `ESC[<linha>;1H ESC[2K <texto>`. O parser de tail do processo principal do Orca (1.4.192) descarta o `H`, mas mantém o `ESC[2K`; a coluna virtual nunca volta a 0, cada linha é preenchida com a largura acumulada das anteriores e o trim `/[ \t]+$/` fica quadrático. Isso custava ~86 ms (pior ~172 ms) do main thread do Orca por frame do PI e travava entrada/saída de todos os terminais do Orca.
+In `@earendil-works/pi-coding-agent@1.2.0`, the fullscreen renderer writes each line as `ESC[<line>;1H ESC[2K <text>`. Orca's main-process tail parser (1.4.192) drops `H` but retains `ESC[2K`; the virtual column never returns to 0, each line is filled to the cumulative width of previous lines, and trimming `/[ \t]+$/` becomes quadratic. This cost Orca's main thread ~86 ms (up to ~172 ms) per PI frame and stalled input/output for all Orca terminals.
 
-`scripts/patch-pi-tui-orca-redraw.mjs` insere `\r` antes de cada posicionamento absoluto do cursor em `pi-tui/dist/tui-alt-screen.js`. `CR` seguido de `CUP` deixa tela e cursor idênticos no terminal real (validado célula a célula com `@xterm/headless`), e o custo no Orca cai para ~0,1 ms por escrita. O patcher suporta as baselines 1.2.0 e 1.3.0 com hash exato, é idempotente, atômico e recusa conteúdo desconhecido; outras versões são ignoradas. Ambos os instaladores o executam após a instalação do PI. Sessões já abertas continuam com o runtime anterior até serem reiniciadas:
+`scripts/patch-pi-tui-orca-redraw.mjs` inserts `\r` before each absolute cursor position in `pi-tui/dist/tui-alt-screen.js`. `CR` followed by `CUP` leaves screen and cursor identical in a real terminal (validated cell-by-cell with `@xterm/headless`), and Orca cost drops to ~0.1 ms per write. The patcher supports the 1.2.0 and 1.3.0 baselines by exact hash, is idempotent and atomic, and rejects unknown content; other versions are skipped. Both installers run it after installing PI. Already-open sessions keep the previous runtime until restarted:
 
 ```bash
 node scripts/patch-pi-tui-orca-redraw.mjs
 node scripts/test/patch-pi-tui-orca-redraw.smoke.mjs
 ```
 
-### Ativação, colisões e atualização
+### Activation, Collisions, and Updates
 
-A ativação é deferred e collision-aware quando o extension é disponibilizado manualmente no runtime. Configuração `plastic-memory` válida e habilitada, sem um package OM efetivo, dá ao plastic-memory um único owner full. Configuração ausente, inválida ou desabilitada, ou a presença efetiva de `npm:pi-observational-memory`, mantém o bridge em modo context-only e não instala hooks full; não há cutover implícito. Os instaladores atuais não copiam o extension nem ativam sua configuração.
+Activation is deferred and collision-aware when the extension is manually made available in the runtime. Valid, enabled `plastic-memory` configuration with no effective OM package gives plastic-memory the sole full owner. Missing, invalid, or disabled configuration, or the effective presence of `npm:pi-observational-memory`, keeps the bridge context-only and does not install full hooks; there is no implicit cutover. Current installers do not copy the extension or activate its configuration.
 
-Ao executar novamente o instalador, os recursos versionados são preparados primeiro e a configuração ativadora é escrita por último:
+When rerunning the installer, versioned resources are prepared first and activating configuration is written last:
 
-- `settings.json`, `models.json`, `SYSTEM.md`, `subagents.json` e `pi-goal.json`;
-- agents e skills versionados;
-- arquivos de extensão no nível raiz; `extensions/plastic-memory/` é deliberadamente excluído enquanto o caminho de compactação estiver desativado;
-- temas versionados.
+- `settings.json`, `models.json`, `SYSTEM.md`, `subagents.json`, and `pi-goal.json`;
+- versioned agents and skills;
+- root-level extension files; `extensions/plastic-memory/` is deliberately excluded while the compaction path is disabled;
+- versioned themes.
 
-A configuração ativa em `~/.pi/agent/settings.json` só muda quando o instalador é executado. Arquivos ou diretórios antigos do package OM que já estejam no destino ficam inertes; o instalador não os apaga nem desinstala genericamente. A atualização não promete nem executa migração de memória.
+Active configuration in `~/.pi/agent/settings.json` changes only when the installer runs. Old OM package files or directories already at the destination remain inert; the installer does not delete them or perform a generic uninstall. The update neither promises nor performs memory migration.
 
-A extensão `native-compaction-routing.ts` roteia a compactação nativa os gatilhos manual, threshold e overflow para `openai-codex/gpt-6-luna` em `medium` (medido: ~2,5× mais rápido que `xhigh`, qualidade equivalente), sem trocar o modelo da conversa, preservando a preparação e o resultado do SDK; se o Luna falhar (ausência de modelo/autenticação, queda do provedor ou resultado inválido), o modelo principal da conversa faz a compactação, com aviso; só quando ambos falham, ou em abort, a compactação é cancelada com o histórico intacto. Depois de alterar a extensão, use `/reload`; com extensões desativadas ou a extensão ausente, a compactação nativa padrão continua responsável. O contexto público da extensão não expõe stream/retry da sessão, então essa rota usa os defaults do `compact` para esses opcionais, sem inventar um prompt, alterar configuração global ou reescrever o provider. As instruções do usuário em `/compact` são preservadas. Não ative simultaneamente outro handler que substitua a compactação, como o modo completo de Plastic Memory. A Plastic Memory também usa `openai-codex/gpt-6-luna` (`medium`); configurações explícitas antigas com `gpt-5.6-luna` são aceitas e convertidas em memória, sem editar os settings persistidos.
+The `native-compaction-routing.ts` extension routes native compaction for manual, threshold, and overflow triggers to `openai-codex/gpt-6-luna` at `medium` (measured: ~2.5× faster than `xhigh`, with equivalent quality), without changing the conversation model and while preserving SDK preparation and results. If Luna fails (missing model/authentication, provider outage, or invalid result), the conversation's main model performs compaction with a warning; only if both fail, or on abort, is compaction canceled with history intact. After changing the extension, use `/reload`; with extensions disabled or the extension absent, default native compaction remains responsible. The extension's public context does not expose the session stream/retry, so this route uses `compact` defaults for those optional arguments without inventing a prompt, changing global configuration, or rewriting the provider. User instructions in `/compact` are preserved. Do not enable another handler that replaces compaction at the same time, such as full Plastic Memory mode. Plastic Memory also uses `openai-codex/gpt-6-luna` (`medium`); old explicit `gpt-5.6-luna` settings are accepted and converted in memory, without editing persisted settings.
 
-#### Corte seguro na atualização de Flow
+#### Safe Cutover During Flow Update
 
-Durante a transição, `install.sh` (Linux/macOS) e `install.ps1` (Windows) param antes de qualquer mutação quando o checkout contém `skills/flow-orca` e o runtime ainda contém o skill legado em `~/.pi/agent/skills/flow` (no Windows, `$HOME\.pi\agent\skills\flow`). Isso evita que as duas skills sejam descobertas juntas.
+During the transition, `install.sh` (Linux/macOS) and `install.ps1` (Windows) stop before any mutation when the checkout contains `skills/flow-orca` and the runtime still contains the legacy skill at `~/.pi/agent/skills/flow` (on Windows, `$HOME\.pi\agent\skills\flow`). This prevents both skills from being discovered together.
 
-Nesse caso, preserve os dados da campanha em `.pi/flow`; eles não são o skill legado. Preserve também o diretório legado e mova-o manualmente para fora da árvore de descoberta de skills, por exemplo para uma pasta de backup fora de `~/.pi/agent/skills` (ou de `$HOME\.pi\agent\skills` no Windows). Nenhum instalador apaga ou move esse diretório automaticamente. Depois, execute novamente o instalador da sua plataforma.
+In that case, preserve campaign data in `.pi/flow`; it is not the legacy skill. Also preserve the legacy directory and move it manually outside the skill-discovery tree, for example to a backup folder outside `~/.pi/agent/skills` (or `$HOME\.pi\agent\skills` on Windows). No installer automatically deletes or moves this directory. Then rerun your platform's installer.
 
-### O que é preservado
+### What Is Preserved
 
-- autenticação local;
-- sessões e histórico;
-- arquivos sem colisão de nome no runtime;
-- `~/.pi/agent/mcp.json` quando ele já existe.
+- local authentication;
+- sessions and history;
+- runtime files without a name collision;
+- `~/.pi/agent/mcp.json` if it already exists.
 
-Isso significa que mudar `config/mcp.json` não substitui automaticamente o MCP de quem já instalou. A atualização desse arquivo deve ser feita conscientemente no runtime.
+This means changing `config/mcp.json` does not automatically replace the MCP configuration of an existing installation. Update that file deliberately in the runtime.
 
-### Diferenças de plataforma
+### Platform Differences
 
-O Windows também instala `pi-provider-kimi-code`. Os scripts usam `@earendil-works/pi-coding-agent@1.3.0` por padrão; a baseline pode ser sobrescrita explicitamente para testes controlados:
+Windows also installs `pi-provider-kimi-code`. The scripts use `@earendil-works/pi-coding-agent@1.3.0` by default; the baseline can be explicitly overridden for controlled tests:
 
 ```bash
 PI_CODING_AGENT_VERSION=1.3.0 ./install.sh
@@ -240,30 +240,30 @@ $env:PI_CODING_AGENT_VERSION = "1.3.0"
 .\install.ps1
 ```
 
-## Usar no VS Code
+## Use with VS Code
 
-Instale [PI for VS Code](https://marketplace.visualstudio.com/items?itemName=pi0.pi-vscode) pelo Marketplace.
+Install [PI for VS Code](https://marketplace.visualstudio.com/items?itemName=pi0.pi-vscode) from the Marketplace.
 
-### Primeiro uso
+### First Use
 
-1. Abra no VS Code a pasta do projeto em que o PI deve trabalhar.
-2. Abra a Command Palette.
-3. Execute **`Pi: Open`** ou use `Ctrl+Alt+3`.
-4. O PI abrirá em um terminal integrado ao lado do editor.
-5. Faça `/login` se ainda não houver provider autenticado.
-6. Envie o pedido normalmente.
+1. In VS Code, open the project folder where PI should work.
+2. Open the Command Palette.
+3. Run **`Pi: Open`** or press `Ctrl+Alt+3`.
+4. PI opens in an integrated terminal beside the editor.
+5. Run `/login` if no provider is authenticated yet.
+6. Send your request as usual.
 
-A extensão também oferece:
+The extension also provides:
 
-- **Pi: Open with File** — abre o PI com o arquivo e a posição atual;
-- **Pi: Send Selection** — envia a seleção do editor;
-- botão **PI** na status bar;
-- participante `@pi` no VS Code Chat;
-- bridge para seleção, arquivos abertos, diagnósticos, símbolos, definições, referências, hover, code actions, formatação e notificações.
+- **Pi: Open with File** — opens PI with the current file and position;
+- **Pi: Send Selection** — sends the editor selection;
+- a **PI** button in the status bar;
+- the `@pi` participant in VS Code Chat;
+- a bridge for selection, open files, diagnostics, symbols, definitions, references, hover, code actions, formatting, and notifications.
 
-### Se o VS Code não encontrar `pi`
+### If VS Code Cannot Find `pi`
 
-Descubra o caminho do executável:
+Find the executable path:
 
 ```bash
 command -v pi
@@ -273,112 +273,112 @@ command -v pi
 (Get-Command pi).Source
 ```
 
-No VS Code, configure `pi-vscode.path` com o caminho absoluto retornado e execute **Developer: Reload Window**.
+In VS Code, set `pi-vscode.path` to the returned absolute path and run **Developer: Reload Window**.
 
-### Confirmar que o bridge está funcionando
+### Confirm That the Bridge Works
 
-Abra um arquivo do projeto e peça ao PI, por exemplo:
-
-```text
-mostre os diagnósticos do arquivo aberto no VS Code
-```
-
-ou selecione um trecho e peça:
+Open a project file and ask PI, for example:
 
 ```text
-explique a seleção atual
+show the diagnostics for the file open in VS Code
 ```
 
-O PI deve conseguir usar as ferramentas `vscode_*` fornecidas pela extensão.
+or select some text and ask:
 
-> **Compatibilidade:** no `pi-vscode` 0.0.9, não use **Upgrade Pi and Packages**. Esse comando instala a família `@mariozechner/pi-coding-agent`, enquanto este harness usa o fork `@earendil-works/pi-coding-agent`. Atualize pelo repositório e execute o instalador da plataforma.
+```text
+explain the current selection
+```
 
-## Como o harness funciona
+PI should be able to use the `vscode_*` tools provided by the extension.
 
-### Superfícies principais
+> **Compatibility:** in `pi-vscode` 0.0.9, do not use **Upgrade Pi and Packages**. That command installs the `@mariozechner/pi-coding-agent` package family, while this harness uses the `@earendil-works/pi-coding-agent` fork. Update from the repository and run the installer for your platform.
 
-| Superfície | Responsabilidade |
+## How the Harness Works
+
+### Main Surfaces
+
+| Surface | Responsibility |
 |---|---|
-| `config/SYSTEM.md` | Política global, segurança, workflow e regras de roteamento instaladas como `~/.pi/agent/SYSTEM.md`. |
-| `agents/*.md` | Definições dos subagentes: modelo, thinking, ferramentas e contrato operacional. |
-| `skills/*/SKILL.md` | Procedimentos carregados quando o tipo de tarefa exige aquele workflow. |
-| `extensions/` | Comandos, ferramentas e hooks executados pelo runtime PI; os instaladores copiam apenas os arquivos flat enquanto `plastic-memory` estiver desativado. |
-| `extensions/project-memory.ts` | Bridge context-only de compatibilidade para a superfície flat de memória. |
-| `config/settings.json` | Provider/modelo padrão, thinking, tema e packages; não ativa `plastic-memory` nem o package OM. |
-| `config/models.json` | Catálogo e overrides de modelos disponíveis. |
-| `subagents.json` | Limite de concorrência dos subagentes. |
-| `config/mcp.json` | Configuração inicial de MCP; atualmente não declara nenhum servidor (`mcpServers` vazio). |
-| `.pi/` dentro de um projeto | Planos, memória, previews, recovery e outros artefatos locais daquele projeto. |
+| `config/SYSTEM.md` | Global policy, security, workflow, and routing rules installed as `~/.pi/agent/SYSTEM.md`. |
+| `agents/*.md` | Subagent definitions: model, thinking, tools, and operating contract. |
+| `skills/*/SKILL.md` | Procedures loaded when the task type requires that workflow. |
+| `extensions/` | Commands, tools, and hooks run by the PI runtime; installers copy only flat files while `plastic-memory` is disabled. |
+| `extensions/project-memory.ts` | Context-only compatibility bridge for the flat memory surface. |
+| `config/settings.json` | Default provider/model, thinking, theme, and packages; does not enable `plastic-memory` or the OM package. |
+| `config/models.json` | Available model catalog and overrides. |
+| `subagents.json` | Subagent concurrency limit. |
+| `config/mcp.json` | Initial MCP configuration; currently declares no servers (`mcpServers` is empty). |
+| `.pi/` inside a project | Plans, memory, previews, recovery, and other local artifacts for that project. |
 
-Não existe `config/AGENTS.md` neste harness. O roteamento ativo está distribuído entre `SYSTEM.md`, skills e definições de agentes.
+There is no `config/AGENTS.md` in this harness. Active routing is distributed across `SYSTEM.md`, skills, and agent definitions.
 
-### Agent, skill, extension e MCP
+### Agent, Skill, Extension, and MCP
 
-- **Agent:** executor com modelo, ferramentas e responsabilidade próprios. O PI principal delega uma missão delimitada.
-- **Skill:** manual operacional. Define quando e como executar um workflow; não é um processo separado por si só.
-- **Extension:** código TypeScript carregado pelo PI para adicionar tools, comandos ou hooks de runtime.
-- **MCP:** integração externa que expõe ferramentas por um servidor separado.
-- **System prompt:** contrato global usado pelo PI principal para decidir escopo, segurança, delegação e validação.
+- **Agent:** an executor with its own model, tools, and responsibility. The main PI delegates a bounded mission.
+- **Skill:** an operating manual. Defines when and how to run a workflow; it is not a separate process by itself.
+- **Extension:** TypeScript code loaded by PI to add tools, commands, or runtime hooks.
+- **MCP:** an external integration that exposes tools through a separate server.
+- **System prompt:** the global contract the main PI uses to decide scope, security, delegation, and validation.
 
-### Roteamento
+### Routing
 
-O usuário normalmente descreve o resultado desejado; não precisa escolher manualmente um agente. O PI decide o caminho mais leve que preserve a correção:
+Users normally describe the desired outcome; they do not need to choose an agent manually. PI chooses the lightest path that preserves correctness:
 
 ```text
-mudança trivial e alvo conhecido
-  → ação direta
+trivial change with a known target
+  → direct action
 
-investigação de codebase
+codebase investigation
   → scout
 
-mudança complexa ou cross-cutting
+complex or cross-cutting change
   → planner → builder(s)
 
-implementação delimitada
-  → builder adequado ao tipo de trabalho
+bounded implementation
+  → builder suited to the work
 
-prova independente necessária
-  → teste pós-build e/ou validator
+independent evidence required
+  → post-build test and/or validator
 
-prova de app em emulator/simulator
-  → skill app-validator: scout entende → builder mantém harness → app-validator valida device
+app evidence on an emulator/simulator
+  → app-validator skill: scout investigates → builder maintains harness → app-validator validates device
 
 website
-  → workflow específico de website ou Home Preview
+  → dedicated website workflow or Home Preview
 ```
 
-Agentes não substituem o PI principal: o orquestrador continua responsável por escopo, integração, revisão do diff, validação e entrega.
+Agents do not replace the main PI: the orchestrator remains responsible for scope, integration, diff review, validation, and delivery.
 
-### Política Anthropic
+### Anthropic Policy
 
-No modo de contexto padrão, os modelos Anthropic nativos com janela de 1M são limitados em runtime a **450K**, sem alterar `maxTokens` ou o limite de saída (Opus 5.5 mantém 128K).
+In the default context mode, native Anthropic models with a 1M window are capped at **450K** at runtime, without changing `maxTokens` or the output limit (Opus 5.5 remains at 128K).
 
-`/context-mode` abre o seletor **Padrão / High**. Também aceita `/context-mode high`, `/context-mode default` e `/context-mode status`. A extensão `extensions/context-mode.ts` é a única responsável por essa política:
+`/context-mode` opens the **Default / High** selector. It also accepts `/context-mode high`, `/context-mode default`, and `/context-mode status`. The `extensions/context-mode.ts` extension is the sole owner of this policy:
 
-- **Padrão:** preserva a janela normal efetiva de cada modelo e o teto Anthropic de 450K.
-- **High:** usa **800K** para GPT ≥ 6 e Claude ≥ 5 nos provedores `openai-codex`, `openai` e `anthropic`; os demais modelos mantêm sua janela normal.
-- **Conductor:** reduz em 30% a janela normal pós-política ou High, arredondando para baixo. Assim, 300K vira 210K, Claude nativo 1M (normal 450K) vira 315K e High 800K vira 560K. O modo `standard` restaura a janela normal; reduções não se acumulam.
-- A preferência `contextMode` é salva no `settings.json` global; o modo conductor é somente da sessão atual, determinado pela entrada de sessão `/orchestration`, e não é inferido em workers, subagentes ou sessões novas. Alterações de modo atualizam a janela ativa imediatamente.
-- A janela controla a compactação e o medidor `ctx` do rodapé; o status mostra a capacidade efetiva (`◈315K` ou `◈560K`, por exemplo), não um valor High nominal. O modo conductor também aparece como `CONDUCTOR` compacto no rodapé. A reserva de compactação continua valendo, então a janela não é inteiramente histórico livre.
+- **Default:** preserves each model's effective normal window and the Anthropic 450K cap.
+- **High:** uses **800K** for GPT ≥ 6 and Claude ≥ 5 from providers `openai-codex`, `openai`, and `anthropic`; other models retain their normal window.
+- **Conductor:** reduces the normal post-policy or High window by 30%, rounding down. Thus, 300K becomes 210K, native Claude 1M (normally 450K) becomes 315K, and High 800K becomes 560K. `standard` restores the normal window; reductions do not stack.
+- The `contextMode` preference is saved in global `settings.json`; conductor mode applies only to the current session, determined by the `/orchestration` session entry, and is not inferred in workers, subagents, or new sessions. Mode changes update the active window immediately.
+- The window controls compaction and the footer `ctx` meter; status shows effective capacity (for example, `◈315K` or `◈560K`), not a nominal High value. Conductor mode also appears as compact `CONDUCTOR` in the footer. The compaction reserve still applies, so the entire window is not available for history.
 
-High não amplia a capacidade real do provedor nem garante que toda rota aceite 800K. Mais contexto pode aumentar custo e latência; os limites de saída continuam iguais.
+High does not increase the provider's actual capacity or guarantee that every route accepts 800K. More context can increase cost and latency; output limits remain unchanged.
 
-As rotas aprovadas para Opus 5.5 são:
+Approved routes for Opus 5.5 are:
 
 - `agents/builder-design.md` — `anthropic/claude-opus-5-5`, `medium`;
 - `agents/builder-heavy-design.md` — `anthropic/claude-opus-5-5`, `high`;
 - `agents/website-designer.md` — `anthropic/claude-opus-5-5`, `xhigh`;
 - `agents/plan-briefer-fable.md` — `anthropic/claude-opus-5-5`, `high`.
 
-### Descobrir a configuração ativa
+### Discover the Active Configuration
 
-Evite manter contagens e tabelas de modelos manualmente. Consulte as definições versionadas:
+Avoid maintaining counts and model tables manually. Consult the versioned definitions:
 
 ```bash
-# Agentes disponíveis no checkout
+# Agents available in the checkout
 find agents -maxdepth 1 -type f -name '*.md' -print | sort
 
-# Modelo e thinking de cada agente
+# Each agent's model and thinking level
 for file in agents/*.md; do
   echo "--- $file"
   sed -n '1,16p' "$file" | grep -E '^(display_name|model|thinking):'
@@ -387,119 +387,119 @@ done
 # Skills
 find skills -mindepth 1 -maxdepth 1 -type d -print | sort
 
-# Extensões
+# Extensions
 find extensions -maxdepth 1 -type f -name '*.ts' -print | sort
 ```
 
-No runtime instalado, substitua os caminhos relativos por `~/.pi/agent/...`.
+In the installed runtime, replace relative paths with `~/.pi/agent/...`.
 
-## Uso diário
+## Daily Use
 
-Fale com o PI em termos do resultado e das restrições relevantes:
+Describe the outcome and relevant constraints to PI:
 
 ```text
-corrige o erro de autenticação e executa o teste afetado
+Fix the authentication error and run the affected test.
 ```
 
 ```text
-explica por que esta consulta falha quando a suíte roda em paralelo
+Explain why this query fails when the suite runs in parallel.
 ```
 
 ```text
-planeja esta integração sem alterar o contrato público atual
+Plan this integration without changing the current public contract.
 ```
 
 ```text
-implementa a task 04, valida e deixa o diff pronto para revisão
+Implement task 04, validate it, and leave the diff ready for review.
 ```
 
 ```text
-revisa este PR somente contra o escopo aprovado
+Review this PR only against the approved scope.
 ```
 
-O PI deve investigar o repositório antes de fazer perguntas factuais que o código possa responder. Ações destrutivas, deploy, force push, merge, compra ou mudanças ambíguas de segurança continuam exigindo autorização explícita.
+PI should investigate the repository before asking factual questions the code can answer. Destructive actions, deployment, force push, merge, purchases, and ambiguous security changes still require explicit authorization.
 
-### Modos de autorização
+### Authorization Modes
 
-O comportamento de execução é propriedade de runtime de `extensions/execution-mode.ts`, não de memória do chat nem de uma promessa textual do modelo. A extensão persiste a escolha e injeta automaticamente apenas o modo ativo, mais o contrato comum de continuação/autoridade, em todas as sessões PI que a carregam — inclusive prompts customizados e workers PI do Orca. Agentes customizados com `extensions: false` não recebem esse hook; seus handoffs delimitados continuam carregando modo e escopo pelo contrato de `agent-guide`/`builder`.
+Execution behavior is owned at runtime by `extensions/execution-mode.ts`, not by chat memory or a textual promise from the model. The extension persists the choice and automatically injects only the active mode, plus the shared continuation/authority contract, into every PI session that loads it—including custom prompts and Orca PI workers. Custom agents with `extensions: false` do not receive this hook; their bounded handoffs continue to carry mode and scope through the `agent-guide`/`builder` contract.
 
-Use `/execution-mode` para abrir o seletor, ou `/execution-mode <supervised|autonomous|yolo> [global|project|session]`; aliases `SUPERVISIONADO`, `AUTÔNOMO` e `AUTÔNOMO ATÉ PR` são aceitos e os valores persistidos são `supervised`, `autonomous` e `yolo`. O escopo default é `global`; precedência verificada é `session > project confiável > global > autonomous`. `/execution-mode status` e cada gravação exibem `EXECUTION_MODE={"mode":"…","source":"…"}`. O valor ausente resolve para `autonomous`; configuração inválida resolve fail-safe para `supervised` com diagnóstico sanitizado e receipt marcado `valid:false`, nunca confirmação válida para dispatch. O pin de sessão usa entradas nativas fora do contexto do modelo; numa sessão nova, o SDK grava essas entradas junto da primeira resposta do assistente. O Flow verifica o pin antes de cada dispatch, inclusive após retomada. `SYSTEM.md` (espelhado em `config/SYSTEM.md`) mantém a autoridade permanente, a segurança e o ponteiro para esse owner de runtime.
+Use `/execution-mode` to open the selector, or `/execution-mode <supervised|autonomous|yolo> [global|project|session]`; aliases `SUPERVISIONADO`, `AUTÔNOMO`, and `AUTÔNOMO ATÉ PR` are accepted, and persisted values are `supervised`, `autonomous`, and `yolo`. The default scope is `global`; verified precedence is `session > trusted project > global > autonomous`. `/execution-mode status` and each save display `EXECUTION_MODE={"mode":"…","source":"…"}`. A missing value resolves to `autonomous`; invalid configuration fails safe to `supervised` with a sanitized diagnostic and a receipt marked `valid:false`, never a valid dispatch confirmation. The session pin uses native entries outside model context; in a new session, the SDK stores those entries alongside the first assistant response. Flow checks the pin before each dispatch, including after resumption. `SYSTEM.md` (mirrored in `config/SYSTEM.md`) retains permanent authority, security, and the pointer to this runtime owner.
 
-| Modo | O que cobre | Onde para |
+| Mode | What it covers | Where it stops |
 |---|---|---|
-| `SUPERVISIONADO` | Você aprova cada estágio ou efeito proposto | Antes de cada estágio novo; comandos dentro de um estágio já aprovado não são reperguntados |
-| `AUTÔNOMO` (**default**) | Levar o resultado autorizado até o fim: evidência, trabalho no escopo, validação segura e entrega | Nenhum efeito externo final inventado; em entrega de software autorizada vai até o PR e para antes do merge |
-| `YOLO` | Autoridade de fechamento mais ampla no escopo da tarefa, incluindo merge após review independente do head SHA final e dos checks | Deploy, migração e outras operações consequentes só quando nomeadas e aprovadas à parte |
+| `SUPERVISIONADO` | You approve each proposed stage or effect | Before each new stage; commands within an already approved stage are not re-approved |
+| `AUTÔNOMO` (**default**) | Carry the authorized outcome through evidence, in-scope work, safe validation, and delivery | No invented final external effect; authorized software delivery proceeds to the PR and stops before merge |
+| `YOLO` | Broader closeout authority within task scope, including merge after independent review of the final head SHA and checks | Deployment, migration, and other consequential operations only when separately named and approved |
 
-`AUTÔNOMO` é o default quando você não pediu outro modo, e o PI não repergunta a mesma autorização enquanto ação, alvo, método, limites e evidência não mudarem — troca de fase, de ferramenta ou de agente não expira aprovação. A fronteira do PR vale só para entrega de software de verdade: pedido de explicação, revisão, plano ou rascunho termina no artefato pedido, sem PR, publicação ou envio inventados. Gates de evidência e de segurança são separados do modo: ação destrutiva, recurso não descartável, deploy, migração, credencial e teste com estado continuam exigindo os gates exatos, e nenhum modo é bypass de runtime.
+`AUTÔNOMO` is the default when you have not requested another mode. PI does not ask for the same authorization again while the action, target, method, limits, and evidence remain unchanged—changing phase, tool, or agent does not expire approval. The PR boundary applies only to actual software delivery: an explanation, review, plan, or draft request ends with the requested artifact, without inventing a PR, publication, or send. Evidence and security gates are separate from mode: destructive actions, non-disposable resources, deployment, migration, credentials, and stateful tests still require their exact gates; no mode bypasses runtime controls.
 
-### Entrega por issue com Flow Orca
+### Issue Delivery with Flow Orca
 
-A entrega de backlog → issues → PR usa uma única skill, `flow-orca`, que substitui o antigo `flow`. O PI deve carregá-la automaticamente para campanhas por issues/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome. Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo. A invocação explícita também permanece disponível:
+Backlog → issues → PR delivery uses one skill, `flow-orca`, which replaces the former `flow`. PI should load it automatically for issue/board campaigns and coordination of PI issue workers in Orca worktrees; there is no need to name it. Simple worktree creation, unsupervised handoff, and standalone explanations remain outside this workflow. Explicit invocation is also available:
 
 ```text
 /skill:flow-orca
-User: [lista] — cria as issues e toca a campanha
+User: [list] — create the issues and run the campaign
 ```
 
-No intake da campanha, o modo global já resolvido é reaproveitado (sem pergunta separada de modo), mas o PI ainda pede um grant de campanha explícito e escopado — o default sozinho não autoriza campanha:
+At campaign intake, the already-resolved global mode is reused (without a separate mode prompt), but PI still requests an explicit, scoped campaign grant—the default alone does not authorize a campaign:
 
-- a **base branch por repositório** (nada de `main` presumida; multi-repo usa uma base por repo);
-- o **modo** aplicado à campanha: `SUPERVISIONADO` aprova cada início de issue, commit, push e PR; `AUTÔNOMO` (alias legado aceito: `AUTÔNOMO ATÉ PR`) cobre agendamento, workspaces, implementação, commit, push e PR; `YOLO` acrescenta o merge, só depois de review independente do head SHA final e dos checks exigidos, e cobre deploy/migração apenas quando essas operações forem nomeadas e aprovadas à parte. `YOLO` é escopo de aprovação, nunca bypass de segurança.
+- the **base branch per repository** (never assume `main`; multi-repository campaigns use one base per repo);
+- the campaign **mode**: `SUPERVISIONADO` approves each issue start, commit, push, and PR; `AUTÔNOMO` (legacy alias accepted: `AUTÔNOMO ATÉ PR`) covers scheduling, workspaces, implementation, commit, push, and PR; `YOLO` adds merge, only after independent review of the final head SHA and required checks, and covers deployment/migration only when those operations are separately named and approved. `YOLO` is approval scope, never a security bypass.
 
-**O GitHub controla tudo.** O grant da campanha (escopo, bases, modo, teto, operações nomeadas e a proveniência da aprovação) fica numa seção `## Campaign grant` do README do próprio GitHub Project, preservando o resto do texto; as ACs, os escopos e as dependências (sempre como URL completa da issue + gate) ficam no body de cada issue; progresso, blockers e resultados ficam nos comentários. Esse registro remoto é evidência de uma aprovação que você já deu — ele não se autoriza sozinho e não desliga nenhum gate de segurança. Não existe issue de controle, backlog paralelo nem plano/DAG/estado local de entrega: a ordem de execução é derivada em memória a cada releitura do GitHub, e uma pasta `.pi/flow/` antiga vale só como histórico opcional, sem autoridade.
+**GitHub is the source of truth.** The campaign grant (scope, bases, mode, ceiling, named operations, and approval provenance) lives in a `## Campaign grant` section of the GitHub Project's own README, preserving its other text; acceptance criteria, scopes, and dependencies (always a full issue URL plus gate) live in each issue body; progress, blockers, and results live in comments. This remote record is evidence of approval you already gave—it does not authorize itself or disable any security gate. There is no control issue, parallel backlog, or local delivery plan/DAG/state: execution order is derived in memory at each GitHub reread, and an old `.pi/flow/` folder is optional history only, with no authority.
 
-Durante a campanha, cada issue recebe uma workspace do Orca, uma branch real criada por ele e uma sessão PI. Os registros Run/Task/Dispatch do Orca são supervisão de runtime de **uma tentativa** da issue admitida, nunca uma segunda lista de trabalho. O scheduler é contínuo com teto de **doze** workers PI de issue simultâneos; a vaga só volta quando aquele worker assenta com segurança — timeout ou terminal ocioso não liberam vaga. O board usa `Backlog`, `Ready`, `In progress`, `In review`, `Blocked` e `Done`; `Blocked` é aditivo em boards existentes e recebe as issues com dependência externa (credencial, acesso, decisão humana), junto com seus dependentes. Todo status é atualizado **e relido**, e `Done` exige PR com `mergedAt` real na base escolhida, checks/review, issue fechada e status relido — `worker_done`, PR aberto ou PR fechado sem merge não são `Done`. A conclusão chega pela inbox do Run e pela notificação nativa do Orca ao coordenador ocioso: sem polling nem loop de monitoramento. O aviso apenas desperta o PI, que lê o lote completo, reconcilia os IDs e confirma o Delivery; sem suporte comprovado, o retorno automático fica não verificado e a alternativa manual precisa ser explícita. Após merge/`Done` verificados e assentamento de Task/Goal/terminais, o coordenador remove a worktree descartável da issue quando a autoridade específica e os gates de identidade, conteúdo e recuperação estiverem provados; caso contrário, retém com motivo. A remoção também pode apagar a branch **local**, encerra os terminais da workspace e remove seu histórico: resultados necessários e commits recuperáveis devem estar fora dela antes. Nada de `--force`, hooks de archive, dados de usuário, recursos alheios ou limpeza como recuperação de incidente.
+During the campaign, each issue gets an Orca workspace, a real branch created by Orca, and a PI session. Orca Run/Task/Dispatch records supervise **one attempt** for an admitted issue; they are never a second work queue. The scheduler runs continuously with a ceiling of **twelve** simultaneous PI issue workers; a slot returns only when that worker settles safely—timeouts or idle terminals do not free it. The board uses `Backlog`, `Ready`, `In progress`, `In review`, `Blocked`, and `Done`; `Blocked` is additive on existing boards and receives issues with external dependencies (credentials, access, human decisions) and their dependents. Every status is updated **and reread**, and `Done` requires a PR with a real `mergedAt` on the selected base, checks/review, a closed issue, and a reread status—`worker_done`, an open PR, or a closed PR without a merge is not `Done`. Completion arrives through the Run inbox and Orca's native notification to the idle coordinator: no polling or monitoring loop. The notice only wakes PI, which reads the full batch, reconciles IDs, and confirms Delivery; without proven support, automatic return remains unverified and the manual alternative must be explicit. After verified merge/`Done` and Task/Goal/terminal settlement, the coordinator removes the disposable issue worktree only when specific authority and identity, content, and recovery gates are proven; otherwise it retains it with a reason. Removal may also delete the **local** branch, ends workspace terminals, and removes its history: required results and recoverable commits must be outside it first. No `--force`, archive hooks, user data, unrelated resources, or cleanup as incident recovery.
 
-Esta versão do harness traz a skill e a política verificadas **estaticamente** (validação de skill, smokes de contrato, mirrors e arquitetura). Nenhuma campanha live, operação Orca, mutação de GitHub ou deployment foi executada aqui: não é certificação de campanha live.
+This harness version includes the skill and policy verified **statically** (skill validation, contract smokes, mirrors, and architecture). No live campaign, Orca operation, GitHub mutation, or deployment was performed here; this is not live campaign certification.
 
-### Comandos úteis
+### Useful Commands
 
-| Comando | Uso |
+| Command | Usage |
 |---|---|
-| `/login` | Autenticar ou selecionar provider/modelo. |
-| `/reload` | Recarregar configuração, agents, skills e extensions após alterações. |
-| `/communication-mode` | Selecionar o estilo de comunicação (default, default+caveman ou caveman). |
-| `/execution-mode` | Selecionar o modo de execução (supervised, autonomous ou yolo). |
-| `/orchestration conductor` / `standard` / `status` | `conductor` transforma a sessão principal em coordenadora de sub-PIs e reduz sua janela de contexto em 30% sobre a capacidade pós-política (`default` ou `High`). `standard` restaura a janela normal. O modo é por sessão; workers, subagentes e `/new` não herdam conductor. O prompt troca só o bloco do `SYSTEM.md`; skills, memória e modo de execução continuam. Se o `SYSTEM.md` perder uma seção obrigatória, volta ao padrão com aviso. |
-| `PI_REPORT_RUN` | Em um worker Orca, defina o ID `run_…` do conductor: quando o `/goal` é aceito como concluído ou bloqueado, a extensão lê o terminal coordenador do Run (`coordinator_handle`) e digita nele uma linha `[child <worktree>] goal finished/blocked …`, acordando o conductor. Sem ID válido, não envia nada; uma falha recebe uma única nova tentativa no fim do turno. |
-| `/attention` | Gerenciar as notificações de ociosidade do agente principal. |
-| `/fast on` / `/fast eco` / `/fast ultra` / `/fast ultra-eco` / `/fast off` / `/fast eco default on\|off` | Fast fica desativado por padrão; `eco` ativa Fast apenas para subagentes OpenAI Codex elegíveis (`service_tier: "priority"`) na sessão atual. `eco default on\|off` salva a preferência global em `settings.json`, aplicada somente a futuras inicializações TUI; o padrão é `off`. `on` ativa Fast na principal e nos subagentes elegíveis; `ultra`/`ultra-eco` fazem o mesmo que `on`/`eco`, mas pedem `service_tier: "ultrafast"` quando o modelo é `gpt-6-astra` ou `gpt-6.1-sol` (únicos com Ultrafast; exige Pro $500 ou Enterprise/Edu elegível, 8× o limite incluído / 6× créditos) e Fast nos demais; `off` desativa Fast em todos. O modo escolhido sobrevive à troca de modelo: com um modelo sem Fast na principal (ex.: Claude), `on`/`ultra` seguem valendo para os subagentes elegíveis (status `⚡SUB`/`🚀SUB`). O modo explícito continua no novo chat raiz criado por `/new`; subagentes isolados permanecem no tier padrão. |
-| `/goal <critério>` | Manter um critério de conclusão entre turnos. |
-| `/goal status` | Ver o estado do Goal Mode. |
-| `/goal clear` | Encerrar o Goal Mode. |
-| `/memory:status` | Mostrar estado e modo da memória de projeto. |
-| `/memory:view` ou `/memory:view full` | Mostrar bloco de contexto injetado (resumo/índices). |
-| `/om:status` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:status`. |
-| `/om:view` ou `/om:view full` | Alias da superfície ativa atual da memória; comportamento contextual equivalente a `/memory:view`. |
+| `/login` | Authenticate or select a provider/model. |
+| `/reload` | Reload configuration, agents, skills, and extensions after changes. |
+| `/communication-mode` | Select the communication style (default, default+caveman, or caveman). |
+| `/execution-mode` | Select the execution mode (supervised, autonomous, or yolo). |
+| `/orchestration conductor` / `standard` / `status` | `conductor` turns the main session into a sub-PI coordinator and reduces its context window by 30% from post-policy capacity (`default` or `High`). `standard` restores the normal window. This is per-session; workers, subagents, and `/new` do not inherit conductor. The prompt swaps only the `SYSTEM.md` block; skills, memory, and execution mode remain. If `SYSTEM.md` loses a required section, it returns to the default with a warning. |
+| `PI_REPORT_RUN` | In an Orca worker, set the conductor's `run_…` ID: when `/goal` is accepted as complete or blocked, the extension reads the Run coordinator terminal (`coordinator_handle`) and types a `[child <worktree>] goal finished/blocked …` line into it, waking the conductor. Without a valid ID, it sends nothing; a failure gets one retry at turn end. |
+| `/attention` | Manage idle notifications for the main agent. |
+| `/fast on` / `/fast eco` / `/fast ultra` / `/fast ultra-eco` / `/fast off` / `/fast eco default on\|off` | Fast is disabled by default; `eco` enables Fast only for eligible OpenAI Codex subagents (`service_tier: "priority"`) in the current session. `eco default on\|off` saves the global preference in `settings.json`, applied only to future TUI launches; the default is `off`. `on` enables Fast for the main agent and eligible subagents; `ultra`/`ultra-eco` do the same as `on`/`eco` but request `service_tier: "ultrafast"` for `gpt-6-astra` or `gpt-6.1-sol` (the only Ultrafast models; requires Pro $500 or eligible Enterprise/Edu, 8× the included limit / 6× credits) and Fast for other models; `off` disables Fast for all. The selected mode survives model changes: with a model that lacks Fast for the main agent (e.g. Claude), `on`/`ultra` still apply to eligible subagents (status `⚡SUB`/`🚀SUB`). The explicit mode continues into the new root chat created by `/new`; isolated subagents remain on the default tier. |
+| `/goal <criterion>` | Maintain a completion criterion across turns. |
+| `/goal status` | View Goal Mode status. |
+| `/goal clear` | End Goal Mode. |
+| `/memory:status` | Show project memory status and mode. |
+| `/memory:view` or `/memory:view full` | Show the injected context block (summary/indexes). |
+| `/om:status` | Alias for the current active memory surface; context behavior equivalent to `/memory:status`. |
+| `/om:view` or `/om:view full` | Alias for the current active memory surface; context behavior equivalent to `/memory:view`. |
 
-A entrada **Acid Shellscape** combina uma paisagem ampliada, revelada por camadas e mantida em movimento ambiente, com um seletor de perfis no estilo videogame. Na TUI gerenciada, a paisagem fica entre os avisos e o editor e sai quando a conversa começa, sem ser enviada ao modelo. A arte não inclui a marca PI: somente no perfil cujo nome exibido seja `evolvera` (ignorando maiúsculas/minúsculas e espaços nas pontas) aparece uma embarcação japonesa com a marca Evolvera na bandeira. Para experimentar nesta branch, sem instalar nem acessar contas reais, use `node scripts/preview-terminal-art.mjs --select`; `--no-animation` mostra a composição completa sem movimento. Veja [design, limites e testes](../docs/terminal-art.md).
+The **Acid Shellscape** intro combines an enlarged, layered landscape with ambient motion and a video-game-style profile selector. In the managed TUI, the landscape appears between notifications and the editor and disappears when the conversation starts; it is not sent to the model. The artwork contains no PI branding: only a profile whose display name is `evolvera` (case-insensitive, with surrounding whitespace ignored) shows a Japanese ship with the Evolvera flag. To preview it on this branch without installing or accessing real accounts, run `node scripts/preview-terminal-art.mjs --select`; `--no-animation` shows the complete static composition. See [design, limitations, and tests](../docs/terminal-art.md).
 
-Durante uma resposta ativa no terminal, a extensão `working-time.ts` substitui a mensagem padrão pelo contador `Working for …`. O tempo reinicia em cada `turn_start` e é limpo em `turn_end`, então mede a resposta atual em vez da sessão inteira.
+During an active terminal response, the `working-time.ts` extension replaces the default message with a `Working for …` counter. The timer resets at each `turn_start` and is cleared at `turn_end`, so it measures the current response rather than the whole session.
 
-`todo-reconciliation.ts` injeta lembretes transitórios antes da resposta final após nova solicitação, trabalho posterior à revisão ou entrega concluída/falha de subagente iniciado pelo PI principal nesta sessão. Uma listagem/mutação bem-sucedida limpa a necessidade até novo trabalho; lista somente leitura basta se nada precisar mudar. Pode solicitar uma única rodada corretiva, o que pode acrescentar uma chamada ao modelo. Lê o último resultado `todo` da branch; nunca marca tarefas concluídas nem trata uma listagem como prova semântica. Não é veto final e modelos podem ignorar o lembrete. Use `/reload` para ativar após instalar ou alterar.
+`todo-reconciliation.ts` injects transient reminders before the final response after a new request, post-review work, or completed/failed delivery by a subagent started by the main PI in this session. A successful list/mutation clears the need until more work occurs; a read-only list is enough if nothing needs changing. It may request one corrective round, which can add a model call. It reads the branch's latest `todo` result; it never marks tasks complete or treats a listing as semantic proof. It is not a final veto, and models may ignore the reminder. Use `/reload` to activate it after installation or changes.
 
-O `/goal` é fornecido por `@narumitw/pi-goal`: mantém o estado por sessão e encerra somente pela ferramenta explícita `goal_complete` ou por `goal_blocked` com evidência. A instalação padrão não limita continuações automáticas (`continuationLimits.automaticTurns: null`), mas pausa após três turnos consecutivos sem progresso; use `/goal pause`, `/goal resume` ou `/goal clear` para controlar o ciclo.
+`/goal` is provided by `@narumitw/pi-goal`: it keeps per-session state and ends only through the explicit `goal_complete` tool or `goal_blocked` with evidence. The default installation does not limit automatic continuations (`continuationLimits.automaticTurns: null`), but pauses after three consecutive turns without progress; use `/goal pause`, `/goal resume`, or `/goal clear` to control the cycle.
 
-As operações canônicas usam `memory_recall` (ID exato `pm:p:`/`pm:c:`) e `memory_search` (filtros bounded; metadados/snippets). `/memory:status` e `/memory:view [visible|full]` mostram status/contexto, com aliases `/om:status` e `/om:view [visible|full]`. No root checked-in, `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill` e `/memory:retry` retornam `unavailable`: não publicam, não migram, não executam backfill/retry e não chamam provider.
+Canonical operations use `memory_recall` (exact `pm:p:`/`pm:c:` ID) and `memory_search` (bounded filters; metadata/snippets). `/memory:status` and `/memory:view [visible|full]` show status/context, with aliases `/om:status` and `/om:view [visible|full]`. In the checked-in root, `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill`, and `/memory:retry` return `unavailable`: they do not publish, migrate, run backfill/retry, or call a provider.
 
-A segurança semântica é conservadora: cada ciclo é um turno concluído contíguo de até aproximadamente 100k tokens, sem multipart e com no máximo uma retry automática; 10k/20k são gatilhos de inspeção. Seis ciclos fechados usam stride por identidade, compactando os dois mais antigos e preservando os quatro mais recentes. Resultado detached só aplica após `settled`/idle, sem mensagens pendentes e com guardas do host; tentativa interna inválida ou não correspondente cancela. No-match manual, threshold ou overflow preserva o fallback nativo. Isso não é alegação de qualidade live.
+Semantic safety is conservative: each cycle is one contiguous completed turn of up to approximately 100k tokens, without multipart and with at most one automatic retry; 10k/20k are inspection triggers. Six closed cycles use identity-based stride, compacting the two oldest and preserving the four most recent. A detached result is applied only after `settled`/idle, with no pending messages and with host guards; an invalid or mismatched internal attempt cancels. A manual, threshold, or overflow no-match preserves the native fallback. This is not a claim of live quality.
 
-Não use a sintaxe bare `recall(<id>)`: para projeto/chunk, use o ID exato nas ferramentas acima. `pi-observational-memory` permanece somente como compatibilidade legacy; se houver package OM efetivo, ou configuração plastic inválida/ausente/desabilitada, o plastic-memory fica bridge context-only sem hooks full. O modo flat-only permanece legado com marcador; o histórico pré-plastic fica `historical-unindexed` até backfill explícito report-first, cursor-bounded, de uma janela de turno concluído por vez, com pausa/retoma/retry e recovery-safe. O root atual não expõe seus comandos de autoridade.
+Do not use bare `recall(<id>)` syntax: for a project/chunk, use the exact ID with the tools above. `pi-observational-memory` remains for legacy compatibility only; if an effective OM package exists, or plastic configuration is invalid, missing, or disabled, plastic-memory stays a context-only bridge without full hooks. Flat-only mode remains legacy with a marker; pre-plastic history stays `historical-unindexed` until an explicit report-first, cursor-bounded backfill of one completed-turn window at a time, with pause/resume/retry and recovery safety. The current root does not expose its authority commands.
 
-## Testes
+## Tests
 
-`node scripts/run-tests.mjs` executa as suítes classificadas e informa aprovados, falhos, excluídos e não classificados; também executa `npm test` em `interface/`. Consulte o runner antes de executar: suites sem isolamento de estado comprovado não devem rodar em recursos existentes.
+`node scripts/run-tests.mjs` runs classified suites and reports passed, failed, excluded, and unclassified tests; it also runs `npm test` in `interface/`. Inspect the runner before execution: suites without proven state isolation must not run against existing resources.
 
-## Desinstalar
+## Uninstall
 
-Não existe desinstalador automático. Feche o PI e compare os arquivos instalados com este checkout antes de remover somente os recursos do harness confirmados. Preserve sessões, histórico, dados de projeto, credenciais, `mcp.json` e `keybindings.json`; o instalador não mantém um manifesto completo de propriedade. A instalação global do PI e a chave Jev, se presentes, ficam fora da árvore do harness e precisam de avaliação própria antes de qualquer remoção.
+There is no automatic uninstaller. Close PI and compare installed files with this checkout before removing only confirmed harness resources. Preserve sessions, history, project data, credentials, `mcp.json`, and `keybindings.json`; the installer does not keep a complete ownership manifest. The global PI installation and Jev key, if present, are outside the harness tree and require separate evaluation before removal.
 
-## Atualizar
+## Update
 
-Antes de atualizar, preserve mudanças locais intencionais no checkout com commit ou stash. O instalador prepara agentes, skills, extensões normais e demais recursos primeiro; remove uma cópia antiga de `extensions/plastic-memory/` e grava a configuração não ativadora por último. Assim, o caminho de compactação desativado não permanece ativo após uma atualização. O `settings.json` ativo só é substituído durante a execução do instalador.
+Before updating, preserve intentional local checkout changes with a commit or stash. The installer prepares agents, skills, regular extensions, and other resources first; removes an old copy of `extensions/plastic-memory/`; and writes the non-activating configuration last. This ensures the disabled compaction path does not remain active after an update. Active `settings.json` is replaced only while the installer runs.
 
-A atualização não remove sessões, histórico, dados append-only ou dados de projeto, e não apaga diretórios antigos de packages; arquivos OM remanescentes ficam inertes. Não há instrução de cutover ou migração nesta atualização.
+The update does not remove sessions, history, append-only data, or project data, and does not delete old package directories; remaining OM files are inert. This update provides no cutover or migration instructions.
 
 Linux/macOS:
 
@@ -519,29 +519,29 @@ git pull --ff-only
 .\install.ps1
 ```
 
-Depois, reinicie o terminal/VS Code ou use `/reload`.
+Then restart the terminal/VS Code or use `/reload`.
 
 ## Rollback
 
-### Restaurar o arquivo do PI sem o patch
+### Restore the PI File Without the Patch
 
-O patch é parte do pacote global instalado, não do checkout. Para restaurar a cópia exata não patched do host, reinstale diretamente a versão compatível, sem executar o patcher nem `install.sh`/`install.ps1` depois:
+The patch is part of the installed global package, not the checkout. To restore the host's exact unpatched copy, directly reinstall the compatible version without subsequently running the patcher or `install.sh`/`install.ps1`:
 
 ```bash
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.3.0
 ```
 
-No Windows:
+On Windows:
 
 ```powershell
 npm install -g @earendil-works/pi-coding-agent@1.3.0
 ```
 
-Essa ação altera o host e requer confirmação nova; a tarefa atual não a executou.
+This action changes the host and requires fresh confirmation; it was not performed for this task.
 
-### Rollback local para uma revisão conhecida
+### Local Rollback to a Known Revision
 
-Use um worktree temporário para não mexer nas alterações do checkout atual:
+Use a temporary worktree to avoid changing the current checkout:
 
 ```bash
 git worktree add ../evolvera-rollback <good-commit-sha>
@@ -551,13 +551,13 @@ cd ../evolvera
 git worktree remove ../evolvera-rollback
 ```
 
-No Windows, execute `install.ps1` dentro do worktree.
+On Windows, run `install.ps1` inside the worktree.
 
-Isso reinstala a revisão escolhida no runtime local sem reescrever o histórico do repositório. O rollback restaura a combinação anterior de recursos e `settings.json` por staging com configuração por último; não exige apagar sessões, histórico, dados append-only/de projeto ou diretórios de packages. Uma execução futura do instalador na branch atual aplica novamente a versão nova.
+This reinstalls the chosen revision into the local runtime without rewriting repository history. Rollback restores the previous combination of resources and `settings.json` by staging configuration last; it does not require deleting sessions, history, append-only/project data, or package directories. A future installer run on the current branch applies the newer version again.
 
-### Reverter uma mudança compartilhada
+### Revert a Shared Change
 
-Se uma alteração já foi enviada e deve ser desfeita para todos:
+If a change has already been pushed and should be undone for everyone:
 
 ```bash
 git revert <bad-commit-sha>
@@ -565,13 +565,13 @@ git push origin main
 ./install.sh
 ```
 
-Não use force push para rollback normal.
+Do not use force push for a normal rollback.
 
-### Backup local opcional
+### Optional Local Backup
 
-Antes de uma atualização sensível, é possível copiar `~/.pi/agent`. Esse backup pode conter credenciais e sessões: mantenha-o somente na máquina local e nunca faça commit.
+Before a sensitive update, you can copy `~/.pi/agent`. This backup may contain credentials and sessions: keep it only on the local machine and never commit it.
 
-## Estrutura do repositório
+## Repository Structure
 
 ```text
 .
@@ -590,30 +590,30 @@ Antes de uma atualização sensível, é possível copiar `~/.pi/agent`. Esse ba
 ├── extensions/
 │   ├── plastic-memory/
 │   ├── project-memory.ts      # bridge context-only
-│   └── *.ts                   # extensões flat legadas/atuais
+│   └── *.ts                   # legacy/current flat extensions
 ├── themes/
 ├── interface/
 └── docs/
 ```
 
-`interface/` contém o PI Studio standalone e possui documentação própria em `interface/README.md`.
+`interface/` contains PI Studio as a standalone project and has its own documentation in `interface/README.md`.
 
-## Segurança
+## Security
 
-O PI pode executar shell, editar arquivos e acessar credenciais disponíveis ao processo. Portanto:
+PI can run shell commands, edit files, and access credentials available to the process. Therefore:
 
-- abra somente projetos em que o PI está autorizado a trabalhar;
-- revise diffs antes de commit e push;
-- não coloque secrets em prompts, logs, planos ou memória do projeto;
-- não versione `auth.json`, sessões, backups ou arquivos locais sensíveis;
-- monte no Docker somente os diretórios necessários;
-- exija confirmação para operações destrutivas ou externas.
+- open only projects PI is authorized to work on;
+- review diffs before commit and push;
+- do not put secrets in prompts, logs, plans, or project memory;
+- do not version `auth.json`, sessions, backups, or sensitive local files;
+- mount only the necessary directories in Docker;
+- require confirmation for destructive or external operations.
 
 ## Troubleshooting
 
-### `pi` não é encontrado
+### `pi` Is Not Found
 
-Confirme a instalação e o `PATH`:
+Verify the installation and `PATH`:
 
 ```bash
 npm list -g --depth=0 | grep pi-coding-agent
@@ -621,7 +621,7 @@ npm config get prefix
 command -v pi
 ```
 
-No Windows:
+On Windows:
 
 ```powershell
 npm list -g --depth=0
@@ -629,11 +629,11 @@ npm config get prefix
 Get-Command pi
 ```
 
-Feche e abra o terminal após corrigir o `PATH`.
+Close and reopen the terminal after correcting `PATH`.
 
-### `EACCES: permission denied` no npm
+### `EACCES: permission denied` in npm
 
-Configure um prefixo global pertencente ao usuário:
+Configure a user-owned global prefix:
 
 ```bash
 npm config set prefix "$HOME/npm-global"
@@ -641,29 +641,29 @@ npm config set globalconfig "$HOME/npm-global/etc/npmrc"
 export PATH="$HOME/npm-global/bin:$PATH"
 ```
 
-Persista o `PATH` no arquivo de inicialização do seu shell e execute novamente o instalador.
+Persist `PATH` in your shell startup file and rerun the installer.
 
-### Alterei o harness, mas o PI continua com a versão antiga
+### I Changed the Harness, but PI Still Uses the Old Version
 
-Se a mudança foi feita no checkout:
+If the change was made in the checkout:
 
-1. execute novamente `install.sh` ou `install.ps1`;
-2. use `/reload` ou abra uma nova sessão;
-3. confirme o arquivo correspondente em `~/.pi/agent`.
+1. run `install.sh` or `install.ps1` again;
+2. use `/reload` or open a new session;
+3. verify the corresponding file in `~/.pi/agent`.
 
-Se o checkout já está localizado em `~/.pi/agent`, `/reload` ou uma nova sessão normalmente basta para arquivos carregados dinamicamente.
+If the checkout is already located at `~/.pi/agent`, `/reload` or a new session is usually enough for dynamically loaded files.
 
-### O VS Code não vê seleção ou diagnósticos
+### VS Code Cannot See the Selection or Diagnostics
 
-1. confirme que o PI foi aberto pelo comando **Pi: Open**, não por um terminal externo;
-2. mantenha um workspace e um arquivo abertos;
-3. execute **Developer: Reload Window**;
-4. confira `pi-vscode.path`;
-5. teste novamente com `vscode_get_selection` ou `vscode_get_diagnostics`.
+1. confirm PI was opened with **Pi: Open**, not from an external terminal;
+2. keep a workspace and file open;
+3. run **Developer: Reload Window**;
+4. check `pi-vscode.path`;
+5. try again with `vscode_get_selection` or `vscode_get_diagnostics`.
 
-### PI quebrou após `Upgrade Pi and Packages`
+### PI Broke After `Upgrade Pi and Packages`
 
-Reinstale o fork compatível e rode novamente o instalador do harness:
+Reinstall the compatible fork and run the harness installer again:
 
 ```bash
 npm uninstall -g @mariozechner/pi-coding-agent
@@ -679,15 +679,15 @@ npm install -g @earendil-works/pi-coding-agent@1.3.0
 .\install.ps1
 ```
 
-Depois, abra uma nova janela do terminal/VS Code e confirme `pi --version`.
+Then open a new terminal/VS Code window and verify `pi --version`.
 
-## Fontes de verdade
+## Sources of Truth
 
-Quando README e runtime divergirem, use esta ordem:
+When the README and runtime disagree, use this order:
 
-1. arquivos ativos em `agents/`, `skills/`, `extensions/` e `config/`;
-2. comportamento dos instaladores;
-3. diagnósticos e comandos executados no runtime;
-4. este README.
+1. active files in `agents/`, `skills/`, `extensions/`, and `config/`;
+2. installer behavior;
+3. diagnostics and commands run in the runtime;
+4. this README.
 
-Ao mudar agentes, modelos, skills, extensões, MCP ou instalação, atualize a documentação no mesmo commit quando a experiência de setup ou uso também mudar.
+When changing agents, models, skills, extensions, MCP, or installation, update the documentation in the same commit when the setup or usage experience also changes.
