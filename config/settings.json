@@ -10,7 +10,14 @@
     "npm:pi-alibaba-models@1.0.14",
     "npm:@narumitw/pi-goal@0.43.0",
     "npm:@juicesharp/rpiv-todo@2.11.0",
-    "npm:@gotgenes/pi-anthropic-auth@2.0.6"
+    "npm:@gotgenes/pi-anthropic-auth@2.0.6",
+    "npm:@rahularya01/pi-cursor@1.4.39",
+    {
+      "source": "npm:pi-antigravity@0.10.0",
+      "extensions": [
+        "-src/features/google-search.ts"
+      ]
+    }
   ],
   "hideThinkingBlock": false,
   "theme": "cyberpsycho",

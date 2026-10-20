@@ -4,17 +4,26 @@ import { createRequire, Module } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { patchPackageRoot } from '../patch-rpiv-todo-eta.mjs';
+import { packageRootFromArgs, patchPackageRoot } from '../patch-rpiv-todo-eta.mjs';
+import { patch as patchCanonical } from '../patch-rpiv-todo-hud.mjs';
 import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 
 // STATEFUL RESOURCE PROOF: NO_STATEFUL_RESOURCES. The package is copied to a unique OS-temp directory; all events/UI are in-memory, with no provider, network, install, or app startup.
 const installed = 'C:/Users/Miguel.N.Zane/.pi/agent/npm/node_modules/@juicesharp/rpiv-todo';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'rpiv-todo-eta-smoke-'));
+const previousPackageRoot = process.env.RPIV_TODO_PACKAGE_ROOT;
 try {
   const copy = path.join(temp, 'package');
   await cp(installed, copy, { recursive: true });
-  assert.equal(await patchPackageRoot(copy), true);
+  const first = await patchPackageRoot(copy);
+  assert.equal(typeof first, 'boolean', 'legacy API delegates to the canonical patcher');
   assert.equal(await patchPackageRoot(copy), false, 'second run is idempotent');
+  assert.equal(await patchCanonical(copy), false, 'canonical entrypoint sees the same combined package');
+  assert.equal(packageRootFromArgs(['--package-root', copy]), copy);
+  assert.throws(() => packageRootFromArgs(['--package-root', 'relative']), /absolute-dir/);
+  process.env.RPIV_TODO_PACKAGE_ROOT = copy;
+  assert.equal(packageRootFromArgs([]), copy);
+  delete process.env.RPIV_TODO_PACKAGE_ROOT;
 
   process.env.NODE_PATH = [
     'C:/Users/Miguel.N.Zane/.pi/agent/npm/node_modules',
@@ -47,7 +56,7 @@ try {
   const { default: extension } = await jiti.import(path.join(copy, 'index.ts'));
   extension(pi, () => jiti.import(path.join(copy, 'todo-overlay.ts')));
   const widgets = new Map();
-  const ui = { theme: { fg: (_color, text) => text, strikethrough: (text) => text }, setWidget(key, factory) { widgets.set(key, factory); } };
+  const ui = { theme: { fg: (_color, text) => text, bold: (text) => text, strikethrough: (text) => text }, setWidget(key, factory) { widgets.set(key, factory); } };
   const ctx = { hasUI: true, ui, sessionManager: { getSessionId: () => 'sid-smoke', getBranch: () => [] } };
   await handlers.get('session_start')({}, ctx);
   const replay = emitted.filter((e) => e.channel === 'rpiv-todo:snapshot');
@@ -71,6 +80,7 @@ try {
   assert.doesNotMatch(render(), /⏱/);
   pi.events.emit('pi-work-status:todo-eta', { sessionId: 'sid-smoke', items: { 1: { elapsedSec: 30, remainingSec: 30 } } });
   assert.match(render(), /⏱ 30s \| ~30s .*50%/);
+  assert.match(render(), /▌ ◆ Smoke task .*⏱ 30s \| ~30s .*50%/, 'ETA remains on the HUD-rendered task row');
   pi.events.emit('pi-work-status:todo-eta', { sessionId: 'sid-smoke', items: { 1: { elapsedSec: 30, remainingSec: null } } });
   assert.match(render(), /⏱ 30s \| ETA indisponível/);
   assert.doesNotMatch(render(), /ETA indisponível.*%/);
@@ -85,5 +95,7 @@ try {
   assert.equal(eta.size, 0, 'shutdown unsubscribes the ETA listener');
   console.log('rpiv-todo ETA patch smoke: PASS');
 } finally {
+  if (previousPackageRoot === undefined) delete process.env.RPIV_TODO_PACKAGE_ROOT;
+  else process.env.RPIV_TODO_PACKAGE_ROOT = previousPackageRoot;
   await rm(temp, { recursive: true, force: true });
 }

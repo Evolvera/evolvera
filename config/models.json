@@ -1,5 +1,14 @@
 {
   "providers": {
+    "antigravity": {
+      "modelOverrides": {
+        "gemini-4-argon": {
+          "name": "Gemini 4 Argon (Antigravity)",
+          "contextWindow": 1048576,
+          "maxTokens": 65536
+        }
+      }
+    },
     "minimax": {
       "models": [
         {
@@ -64,7 +73,8 @@
           "compat": {
             "forceAdaptiveThinking": true,
             "supportsStrictTools": true
-          }
+          },
+          "promptCache": { "short": 300, "long": 3600 }
         },
         {
           "id": "claude-sonnet-5-5",
@@ -88,7 +98,8 @@
           "compat": {
             "forceAdaptiveThinking": true,
             "supportsStrictTools": true
-          }
+          },
+          "promptCache": { "short": 300, "long": 3600 }
         },
         {
           "id": "claude-opus-5-5",
@@ -112,7 +123,8 @@
           "compat": {
             "forceAdaptiveThinking": true,
             "supportsStrictTools": true
-          }
+          },
+          "promptCache": { "short": 300, "long": 3600 }
         }
       ]
     },

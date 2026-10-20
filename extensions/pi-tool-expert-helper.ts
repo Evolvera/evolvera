@@ -11,6 +11,37 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+type ManagedContext = { profile: { id: string; agentDir: string }; admitUserResources(input: { resource: string; root: string }): void } | undefined;
+
+/**
+ * Plastic Memory is not installed while disabled (installers delete extensions/plastic-memory),
+ * so load its user-context guard lazily. Without the module, only an active managed user
+ * context (PI_USER_ID or the users receipt) must fail closed; ordinary sessions continue.
+ */
+async function loadManagedMemoryContext(cwd: string | undefined): Promise<ManagedContext> {
+  let mod: { managedMemoryContext(cwd?: string): ManagedContext };
+  try {
+    mod = await import("./plastic-memory/index.ts");
+  } catch {
+    if (process.env.PI_USER_ID !== undefined || Object.getOwnPropertyDescriptor(globalThis, Symbol.for("pi.users.context"))) {
+      throw new Error("managed user context cannot be verified without plastic-memory");
+    }
+    return undefined;
+  }
+  return mod.managedMemoryContext(cwd);
+}
+
+/** Report package/extension sources as strings only, without object fields or URL userinfo. */
+function publicSources(entries: unknown): string[] {
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    const source = typeof entry === "string" ? entry
+      : entry && typeof entry === "object" && typeof (entry as { source?: unknown }).source === "string" ? (entry as { source: string }).source
+      : undefined;
+    return source === undefined ? [] : [source.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, "$1")];
+  });
+}
+
 export default function (pi: ExtensionAPI) {
   // Tool: Listar ambiente PI
   pi.registerTool({
@@ -24,10 +55,22 @@ export default function (pi: ExtensionAPI) {
       ], { description: "Level of detail", default: "summary" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      let managed;
+      try {
+        managed = await loadManagedMemoryContext(typeof ctx?.cwd === "string" ? ctx.cwd : undefined);
+        if (managed) managed.admitUserResources({ resource: "pi-env-inspect", root: managed.profile.agentDir });
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: "PI environment is unavailable for this user context." }],
+          details: { status: "unavailable" },
+          isError: true,
+        };
+      }
       const home = process.env.HOME || "/Users/j.henrique";
-      const piDir = path.join(home, ".pi", "agent");
+      const piDir = managed ? managed.profile.agentDir : path.join(home, ".pi", "agent");
       
       const result: Record<string, unknown> = {};
+      if (managed) result.profile = { id: managed.profile.id, agentDir: managed.profile.agentDir };
       
       // Extensions
       const extDir = path.join(piDir, "extensions");
@@ -49,8 +92,8 @@ export default function (pi: ExtensionAPI) {
       if (fs.existsSync(settingsPath)) {
         const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
         result.settings = {
-          packages: settings.packages || [],
-          extensions: settings.extensions || [],
+          packages: publicSources(settings.packages),
+          extensions: publicSources(settings.extensions),
           defaultProvider: settings.defaultProvider,
           defaultModel: settings.defaultModel,
         };

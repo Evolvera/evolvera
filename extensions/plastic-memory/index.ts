@@ -9,6 +9,15 @@ import { makeProposalDecision, proposalQueueHead, reconstructProposalQueue } fro
 
 export type PlasticMemoryOwnerMode = "full" | "bridge";
 
+const USER_CONTEXT_KEY = Symbol.for("pi.users.context");
+
+type ManagedUserContext = {
+  profile: { id: string; agentDir: string };
+  assertOwnedWorkspace(cwd: string): unknown;
+  assertOwnedSession(request: { sessionPath: string; cwd: string }): unknown;
+  admitUserResources(request: Record<string, unknown>): unknown;
+};
+
 type JsonObject = Record<string, unknown>;
 type SettingsRead = { valid: true; value?: JsonObject } | { valid: false };
 
@@ -50,11 +59,51 @@ function agentRootFromModule(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
+function unavailableContext(): never {
+  throw new Error("managed user context is unavailable");
+}
+
+/**
+ * Returns only the registry-issued process receipt; PI_USER_ID is detection, never authority.
+ * The descriptor is inspected before its value so an accessor or replaceable slot can neither
+ * run code nor stand in for the launcher's frozen, non-configurable, non-writable receipt.
+ */
+export function managedMemoryContext(cwd?: string, sessionPath?: string): ManagedUserContext | undefined {
+  const marker = process.env.PI_USER_ID;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, USER_CONTEXT_KEY);
+  if (marker === undefined && descriptor === undefined) return undefined;
+  if (!descriptor || !("value" in descriptor) || descriptor.configurable || descriptor.writable) unavailableContext();
+  const value = descriptor.value as ManagedUserContext;
+  if (!value || typeof value !== "object" || !Object.isFrozen(value)) unavailableContext();
+  const profile = value.profile;
+  if (!profile || typeof profile !== "object" || !Object.isFrozen(profile)
+      || typeof profile.id !== "string" || profile.id.length === 0
+      || typeof profile.agentDir !== "string" || !isAbsolute(profile.agentDir)
+      || (marker !== undefined && marker !== profile.id)
+      || typeof value.assertOwnedWorkspace !== "function" || typeof value.assertOwnedSession !== "function"
+      || typeof value.admitUserResources !== "function"
+      || value.modelRuntime === null || (typeof value.modelRuntime !== "object" && typeof value.modelRuntime !== "function")) {
+    unavailableContext();
+  }
+  if (cwd !== undefined) {
+    if (typeof cwd !== "string" || !isAbsolute(cwd)) throw new Error("workspace ownership is unavailable");
+    value.assertOwnedWorkspace(resolve(cwd));
+  }
+  if (sessionPath !== undefined) {
+    if (cwd === undefined || typeof sessionPath !== "string" || !isAbsolute(sessionPath)) throw new Error("session ownership is unavailable");
+    value.assertOwnedSession({ sessionPath: resolve(sessionPath), cwd: resolve(cwd) });
+  }
+  return value;
+}
+
 export function readPlasticMemorySettings(cwd = process.cwd()): ResolvedPlasticMemorySettings {
   if (typeof cwd !== "string" || !isAbsolute(cwd)) {
     return resolvePlasticMemorySettings(undefined, undefined);
   }
-  const globalSettings = readSettingsFile(join(agentRootFromModule(), "settings.json"));
+  const managed = managedMemoryContext(cwd);
+  const root = managed?.profile.agentDir ?? agentRootFromModule();
+  if (managed) managed.admitUserResources({ resource: "memory-settings", root, cwd: resolve(cwd) });
+  const globalSettings = readSettingsFile(join(root, "settings.json"));
   const projectSettings = readSettingsFile(join(resolve(cwd), ".pi", "settings.json"));
   if (!globalSettings.valid || !projectSettings.valid) return resolvePlasticMemorySettings(undefined, undefined);
   return resolvePlasticMemorySettings(globalSettings.value, projectSettings.value);
@@ -68,9 +117,16 @@ export function resolvePlasticMemoryOwnerModeFromFiles(cwd = process.cwd()): Pla
   }
 }
 
-function currentMemoryRoot(ctx: { cwd?: unknown }): { cwd: string; memoryRoot: string } {
+function currentMemoryRoot(ctx: { cwd?: unknown; sessionManager?: { getSessionFile?: () => string } }): { cwd: string; memoryRoot: string } {
   if (typeof ctx.cwd !== "string" || !isAbsolute(ctx.cwd)) throw new Error("current project cwd is unavailable");
   const cwd = resolve(ctx.cwd);
+  const managed = managedMemoryContext(cwd);
+  if (managed) {
+    const sessionPath = ctx.sessionManager?.getSessionFile?.();
+    if (typeof sessionPath !== "string" || !isAbsolute(sessionPath)) throw new Error("current session ownership is unavailable");
+    managedMemoryContext(cwd, sessionPath);
+    managed.admitUserResources({ resource: "project-memory", cwd, memoryRoot: join(cwd, ".pi", "memory") });
+  }
   return { cwd, memoryRoot: join(cwd, ".pi", "memory") };
 }
 
@@ -84,7 +140,7 @@ function predictedProjectIdentity(cwd: string): { provenance: { root: string }; 
 }
 
 async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
-  const resolved = readPlasticMemorySettings();
+  const resolved = readPlasticMemorySettings(process.cwd());
   if (resolvePlasticMemoryOwnerModeFromResolved(resolved) !== "full") return;
 
   const [coordinatorModule, contextModule, toolsModule, commandsModule, recallModule, searchModule, runnerRuntimeModule] = await Promise.all([
@@ -105,6 +161,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     projectId: (ctx?: ExtensionContext) => {
       const cwd = ctx ? currentMemoryRoot(ctx).cwd : currentProjectCwd;
       if (!cwd) return undefined;
+      if (!ctx) managedMemoryContext(cwd, currentContext?.sessionManager?.getSessionFile?.());
       const memoryRoot = join(cwd, ".pi", "memory");
       const project = loadProject(memoryRoot);
       if (project) return project.frontMatter.id;
@@ -113,6 +170,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
     },
     projectSnapshot: () => {
       if (!currentProjectCwd) return {};
+      managedMemoryContext(currentProjectCwd, currentContext?.sessionManager?.getSessionFile?.());
       const memoryRoot = join(currentProjectCwd, ".pi", "memory");
       return assembleProjectContext(memoryRoot, { architectureRoot: memoryRoot, repositoryRoot: currentProjectCwd });
     },
@@ -131,6 +189,7 @@ async function activatePlasticMemoryExtension(pi: ExtensionAPI): Promise<void> {
   });
 
   const branchFor = (ctx: any) => {
+    currentMemoryRoot(ctx);
     if (!ctx?.sessionManager || typeof ctx.sessionManager.getBranch !== "function") throw new Error("current session branch is unavailable");
     return {
       entries: ctx.sessionManager.getBranch(),

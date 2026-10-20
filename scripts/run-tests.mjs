@@ -18,6 +18,12 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
   "ask-user.smoke.mjs", "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
+  // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
+  "anthropic-model-policy.smoke.mjs",
+  "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
+  "disk-hygiene.smoke.mjs", // git repo, fake /tmp tree and stamp only inside its owned mkdtemp, removed in finally
+  "worker-report.integration.smoke.mjs", // real Goal tool/session with faux provider and exact-root disposable state
+  "subagent-watchdog.smoke.mjs", // synthetic SDK symlink and source copy only in its owned mkdtemp, removed in finally
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "studio-steer.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
@@ -45,9 +51,15 @@ const tmpdirProprioPadrao = new Set([
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
+  // Synthetic fixture under its own mkdtemp; packageRoot is always explicit, never the live npm root.
+  "patch-pi-tui-orca-redraw.smoke.mjs",
+  "patch-pi-cursor-reasoning-effort.smoke.mjs",
   "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
+  "patch-pi-083-auth-load-recovery.smoke.mjs",
   // Writes only to owned temp copies; global package and install scripts are read-only.
   "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
+  // HUD patches: read the installed packages, patch and render only copies under their own mkdtemp (HOME redirected there).
+  "patch-rpiv-todo-hud.smoke.mjs", "patch-pi-subagents-hud.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
   // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
   "todo-reconciliation.smoke.mjs",
@@ -59,7 +71,6 @@ const tmpdirProprioPadrao = new Set([
   "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
-  "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
   // só lê config/SYSTEM.md; sem escrita, rede ou subprocessos
@@ -88,7 +99,8 @@ const semEstadoPadrao = new Set([
   // Só valida raízes de busca; o carregador consulta arquivos, sem gravar estado.
   "plastic-memory-search-root.smoke.mjs",
   "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
-  "subagent-watchdog.smoke.mjs", "github-kanban-sync.smoke.mjs",
+  "maestro.smoke.mjs", // deterministic in-memory/faux-fetch smoke; benchmark fixture and installed SDK are read-only
+  "github-kanban-sync.smoke.mjs",
   // Git e Orca são fakes injetados; resolvePiSdkRoot só lê a raiz global do npm (como anthropic-model-policy).
   "orca-worktree-visibility.smoke.mjs",
 ]);

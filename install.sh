@@ -5,6 +5,12 @@ set -e
 # Evolvera PI Setup — install.sh
 # ──────────────────────────────────────────────
 
+if [ "${1:-}" = "--prepare-usuario-entry" ]; then
+    shift
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    exec node "$SCRIPT_DIR/scripts/users/entrypoints.mjs" "$@"
+fi
+
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
@@ -81,6 +87,8 @@ info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
 npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
 node "$SCRIPT_DIR/scripts/patch-pi-083-threshold-cancel.mjs"
 info "Patch de continuidade do PI 0.83.0 verificado"
+node "$SCRIPT_DIR/scripts/patch-pi-083-auth-load-recovery.mjs"
+info "Recuperação de leitura de credenciais do PI 0.83.0 verificada"
 node "$SCRIPT_DIR/scripts/patch-pi-083-context-wall-retry.mjs"
 info "Retomada após compactação na parede de contexto verificada"
 node "$SCRIPT_DIR/scripts/patch-pi-083-ultra-thinking.mjs"
@@ -136,8 +144,10 @@ done
 # Remove retired harnesses so updates do not leave stale global commands/tools.
 rm -f "$PI_DIR/extensions/plan-heavy.ts"
 rm -f "$PI_DIR/extensions/goal-mode.ts"
-# delivery-closure was split into midrun-compaction (post-compaction resume) and continuation-reviewer.
+# delivery-closure became midrun-compaction.
 rm -f "$PI_DIR/extensions/delivery-closure.ts"
+# anthropic-context-limit became context-mode (same default 450K cap plus /context-mode high).
+rm -f "$PI_DIR/extensions/anthropic-context-limit.ts" "$PI_DIR/extensions/qwen-context-limit.ts"
 
 # Remove retired agents so updates do not leave stale routes.
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md
@@ -146,9 +156,7 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-# Maestro is a single file again; drop its old directory form (vendored tokenizer).
-rm -rf "$PI_DIR/extensions/maestro"
-# Maestro's Jev key: installed once, never overwritten, owner-only.
+# Maestro's Jev key: install once, never overwrite, owner-only.
 jev_key="$HOME/.config/jev/api_key"
 if [ -f "$SCRIPT_DIR/config/jev/api_key" ] && [ ! -e "$jev_key" ]; then
     mkdir -p "$(dirname "$jev_key")" && (umask 077; cp "$SCRIPT_DIR/config/jev/api_key" "$jev_key") && chmod 600 "$jev_key" && info "maestro: chave Jev instalada"
@@ -184,15 +192,21 @@ if command -v pi &>/dev/null; then
     if install_pi_package "npm:pi-mcp-adapter" "pi-mcp-adapter"; then :; fi
     if install_pi_package "npm:@tintinweb/pi-subagents@0.18.2" "pi-subagents"; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-ultra-thinking.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-hud.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2
     fi
     if install_pi_package "npm:pi-alibaba-models@1.0.14" "pi-alibaba-models"; then :; fi
     if install_pi_package "npm:@narumitw/pi-goal@0.43.0" "pi-goal"; then :; fi
-    if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then :; fi
-    node "$SCRIPT_DIR/scripts/patch-rpiv-todo-eta.mjs" --package-root "$PI_DIR/npm/node_modules/@juicesharp/rpiv-todo" || { echo "[!] rpiv-todo recusou o patch de ETA." >&2; exit 1; }
-    info "Patch de ETA por TODO do rpiv-todo verificado"
+    if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0" "rpiv-todo"; then
+        node "$SCRIPT_DIR/scripts/patch-rpiv-todo-hud.mjs" --package-root "$PI_DIR/npm/node_modules/@juicesharp/rpiv-todo" || { echo "[!] rpiv-todo recusou o patch combinado." >&2; exit 1; }
+        info "Patch combinado de ETA e HUD do rpiv-todo verificado"
+    else
+        echo "[!] Pulando patch de rpiv-todo: pacote não instalado." >&2
+    fi
     # rpiv-todo reads guidance from its own config; ours allows parallel in_progress items.
     case "${XDG_CONFIG_HOME:-}" in /*) todo_cfg_root="$XDG_CONFIG_HOME" ;; *) todo_cfg_root="$HOME/.config" ;; esac
     todo_cfg="$todo_cfg_root/rpiv-todo/config.json"
@@ -212,6 +226,13 @@ if command -v pi &>/dev/null; then
     else
         echo "[!] Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado." >&2
     fi
+    if install_pi_package "npm:@rahularya01/pi-cursor@1.4.39" "pi-cursor"; then
+        node "$SCRIPT_DIR/scripts/patch-pi-cursor-reasoning-effort.mjs"
+        info "Compatibilidade de reasoning effort do Cursor verificada"
+    else
+        echo "[!] Pulando patch de reasoning effort: pacote pi-cursor não instalado." >&2
+    fi
+    if install_pi_package "npm:pi-antigravity@0.10.0" "pi-antigravity"; then :; fi
     node "$SCRIPT_DIR/scripts/patch-openai-error-body.mjs"
     info "Normalização dos corpos de erro dos provedores verificada"
 fi
