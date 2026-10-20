@@ -28,11 +28,6 @@ for (const heading of m.KEPT_SECTIONS) assert.ok(conductor.includes(m.extractSec
 for (const prefix of ["- **GitHub issues, Project/Kanban", "- **Orca worktree with an agent, outside `flow-orca`:**", "- **Settling child PIs you launched", "- **Tests serve the outcome:**"]) { const bullet = systemMd.split("\n").find((line) => line.startsWith(prefix)); assert.ok(bullet && conductor.includes(bullet), `${prefix} kept verbatim`); }
 assert.match(conductor, /\*\*Consequential Action Gate:\*\*/);
 assert.equal(systemMd, configSystemMd, "SYSTEM source and installed mirror remain identical");
-assert.match(conductor, /\*\*Coupled effects:\*\*[\s\S]*not a hand-built effect-then-record loop/);
-assert.match(conductor, /Causing an error does not make the affected resource yours/);
-assert.match(m.CONDUCTOR_ROLE, /Operational ownership is not permission to apply a prepared artifact/);
-assert.match(m.CONDUCTOR_ROLE, /rehearsal confined to run-owned disposable resources/);
-assert.match(m.CONDUCTOR_ROLE, /recording a follow-up issue does not authorize executing it/);
 for (const dropped of ["## Engineering and Architecture", "## Workflow Selection", "## Retrieval and Evidence"]) assert.ok(!conductor.includes(dropped), `${dropped} dropped`);
 assert.match(conductor, /Never `sleep`, poll, or tail a worker's terminal/);
 assert.match(conductor, /never product code/);

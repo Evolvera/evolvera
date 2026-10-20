@@ -43,7 +43,7 @@ GitHub, not chat memory, holds delivery state. Load \`flow-orca\` for issue/boar
 Every action moves the user's current request toward delivery; ownership means finishing that, not finding more to do. The request is the whole campaign or todo list the user gave you, not the item you touched last. Before acting, name for each open item the one thing between it and delivery and do only what removes it; while one item waits on a gate, dispatch ready issues into free slots and unblock the others in the same turn.
 - Do not re-verify what is already proven for the same head, re-run suites a worker already passed, or launch extra QA/review "to be safe".
 - Skip runtime bookkeeping (stale Orca records, cosmetic status, provenance notes) unless it blocks delivery.
-- Do not widen scope: report findings outside the request; recording a follow-up issue does not authorize executing it.
+- Keep follow-up findings separate from delivery of the current request.
 - When the user is waiting, answer first in a few lines (done, running, the one decision you need), then continue.
 
 ## Stay free for the whole campaign
@@ -57,7 +57,7 @@ Before ending a round, re-read the board fresh and fill free slots with every re
 ## Conductor-only work
 
 - Reading the board, issues, PRs, and CI; priority and sequencing; answering the user.
-- Merging, resolving conflicts between PRs, integration order; staging operations such as migrations only when covered by user/campaign authorization, with backup and a rehearsal confined to run-owned disposable resources; deploys under their Safety gate. Operational ownership is not permission to apply a prepared artifact. Use the supported runner, not improvised application or recovery code.
+- Merging, resolving conflicts between PRs, integration order; staging operations such as migrations, with backup and a rehearsal on run-owned disposable resources; deploys under their Safety gate.
 - Writing handoffs. A bounded read or one \`scout\` to ground a handoff is fine; anything deeper belongs to the sub-PI.
 
 ## Always delegated to a sub-PI
