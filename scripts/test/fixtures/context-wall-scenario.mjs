@@ -13,7 +13,7 @@ const { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-wall-agent-'));
 try {
-  const core = faux.createFauxCore({ models: [{ id: 'wall', contextWindow: 2000, maxTokens: 500 }] });
+  const core = faux.createFauxCore({ models: [{ id: 'wall', contextWindow: 2000, maxTokens: mode === 'normal-length' ? 1 : 500 }] });
   const runtime = await ModelRuntime.create({ authPath: path.join(home, 'auth.json'), modelsPath: null });
   runtime.registerProvider(core.provider, {
     api: core.api,
@@ -61,14 +61,16 @@ try {
   await session.prompt('hello '.repeat(40));
 
   const summary = faux.fauxAssistantMessage('## Goal\nsynthetic summary');
+  // PI 1.x also summarizes the split turn; 0.83 consumes only the history summary.
+  const splitSummary = Number(JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')).version.split('.')[0]) >= 1 ? [summary] : [];
   const truncated = faux.fauxAssistantMessage('x', { stopReason: 'length' });
   const big = 'p'.repeat(4 * 1700);
   const plan = {
-    wall: { prompt: big, responses: [truncated, summary, faux.fauxAssistantMessage('RESUMED-DONE')] },
+    wall: { prompt: big, responses: [truncated, summary, ...splitSummary, faux.fauxAssistantMessage('RESUMED-DONE')] },
     // Built lazily and a few ms later: a real provider stamps the reply well after
     // compaction, while a pre-built or same-millisecond faux reply would be ignored
     // as pre-compaction usage (`timestamp <= compaction`).
-    loop: { prompt: big, responses: [truncated, summary, async () => {
+    loop: { prompt: big, responses: [truncated, summary, ...splitSummary, async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       return faux.fauxAssistantMessage('y', { stopReason: 'length' });
     }] },

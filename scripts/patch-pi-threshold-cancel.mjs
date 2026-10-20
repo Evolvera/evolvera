@@ -6,31 +6,32 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-const PACKAGE_VERSION = '0.83.0';
+const PACKAGE_VERSION = '1.3.0';
 const TARGET_RELATIVE_PATH = 'dist/core/agent-session.js';
-const UNPATCHED_ANCHOR = `                if (extensionResult?.cancel) {
-                    this._emit({
-                        type: "compaction_end",
-                        reason,
-                        result: undefined,
-                        aborted: true,
-                        willRetry: false,
-                    });
-                    return false;
-                }`;
+const UNPATCHED_ANCHOR = `                await this._emitSessionCompactFailed({
+                    reason,
+                    errorMessage,
+                    aborted,
+                    willRetry: false,
+                    fromExtension,
+                });
+            }
+            return false;
+        }
+        finally {`;
 const PATCHED_ANCHOR = UNPATCHED_ANCHOR.replace(
-  '                    return false;',
-  '                    return reason === "threshold" ? this.agent.hasQueuedMessages() : false;',
+  '            return false;',
+  '            return cancelledByExtension && reason === "threshold" && !abortController?.signal.aborted\n                ? this.agent.hasQueuedMessages()\n                : false;',
 );
-const UNPATCHED_SHA256 = 'aae8010f71636922729ad833127724d351b4883c67ad3065bfdc180a22da1ce0';
-const PATCHED_SHA256 = '2632644852ed30cf6237f384f2b3a8412fc959bf5f3c590b6c610e2e89b9e18f';
+const UNPATCHED_SHA256 = '73ea62e4eac67437d924522dc304ef231b6577baa1b73e96f755215a8dbfd324';
+const PATCHED_SHA256 = 'd01d1cef20196678d1b999b8efc342152496bde9c73d18e70ba6d9c73c3e62d7';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
 function fail(message) {
-  console.error(`Pi 0.83.0 threshold patch refused: ${message}`);
+  console.error(`Pi 1.3.0 threshold patch refused: ${message}`);
   process.exitCode = 1;
 }
 
@@ -153,7 +154,7 @@ async function main() {
     packageRoot = packageRootFromArgs(process.argv.slice(2));
     if (!packageRoot) throw new Error('global package root unavailable');
     const changed = await patch(packageRoot);
-    console.log(changed ? 'Pi 0.83.0 threshold patch applied.' : 'Pi 0.83.0 threshold patch already applied.');
+    console.log(changed ? 'Pi 1.3.0 threshold patch applied.' : 'Pi 1.3.0 threshold patch already applied.');
   } catch (error) {
     fail(error instanceof Error ? error.message : 'unknown refusal');
   }

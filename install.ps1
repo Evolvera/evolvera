@@ -26,7 +26,7 @@ $GREEN = "Green"
 $CYAN = "Cyan"
 
 $PI_CODING_AGENT_VERSION = $env:PI_CODING_AGENT_VERSION
-if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "0.83.0" }
+if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "1.3.0" }
 $MIN_NODE_VERSION = [version]"22.19.0"
 
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
@@ -119,18 +119,16 @@ if ($installedVersion -eq $PI_CODING_AGENT_VERSION) {
     npm install -g ("@earendil-works/pi-coding-agent@" + $PI_CODING_AGENT_VERSION)
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar a versao compativel do PI." }
 }
-& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-threshold-cancel.mjs")
-if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 0.83.0." }
-Info "Patch de continuidade do PI 0.83.0 verificado"
-& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-auth-load-recovery.mjs")
-if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de recuperacao de leitura de credenciais." }
-Info "Recuperacao de leitura de credenciais do PI 0.83.0 verificada"
-& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-context-wall-retry.mjs")
-if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de retomada na parede de contexto." }
-Info "Retomada apos compactacao na parede de contexto verificada"
-& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-ultra-thinking.mjs")
-if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de thinking ultra 0.83.0." }
-Info "Suporte a thinking ultra do PI 0.83.0 verificado"
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-threshold-cancel.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de continuidade 1.3.0." }
+Info "Patch de continuidade do PI 1.3.0 verificado"
+# PI 1.3.0 includes async auth loading and recoverable-length context retry upstream.
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-tui-orca-redraw.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de redraw do Orca." }
+Info "Patch de redraw do Orca verificado"
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-ultra-thinking.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de thinking ultra 1.3.0." }
+Info "Suporte a thinking ultra do PI 1.3.0 verificado"
 
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if (-not $piCmd) { throw "PI nao encontrado apos a instalacao." }

@@ -5,13 +5,28 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-const PACKAGE_VERSION = '0.83.0';
+const PACKAGE_VERSION = '1.3.0';
 const PULSE_MS = 350;
 
 const PATCHES = [
-  ['node_modules/@earendil-works/pi-ai/dist/types.d.ts',
-    'export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";',
-    'export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js',
+    'export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];',
+    'export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'THINKING_LEVELS: readonly ["minimal", "low", "medium", "high", "xhigh", "max"]',
+    'THINKING_LEVELS: readonly ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'MODEL_THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max"]',
+    'MODEL_THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max"]>',
+    'ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max"]>',
+    'ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    '    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;',
+    '    ultra: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;'],
   ['node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";'],
@@ -30,42 +45,30 @@ const PATCHES = [
   ['dist/cli/args.js',
     'Set thinking level: off, minimal, low, medium, high, xhigh, max\n  --extension',
     'Set thinking level: off, minimal, low, medium, high, xhigh, max, ultra\n  --extension'],
-  ['dist/core/model-config.js',
-    '    max: Type.Optional(ThinkingLevelMapValueSchema),\n});',
-    '    max: Type.Optional(ThinkingLevelMapValueSchema),\n    ultra: Type.Optional(ThinkingLevelMapValueSchema),\n});'],
   ['dist/modes/interactive/components/thinking-selector.js',
     '    max: "Maximum reasoning",\n};',
     '    max: "Maximum reasoning",\n    ultra: "Ultra reasoning",\n};'],
   ['dist/modes/interactive/components/settings-selector.js',
     '    max: "Maximum reasoning",\n};',
     '    max: "Maximum reasoning",\n    ultra: "Ultra reasoning",\n};'],
-  ['dist/modes/interactive/theme/theme.js',
-    '        thinkingMax: Type.Optional(ColorValueSchema),',
-    '        thinkingMax: Type.Optional(ColorValueSchema),\n        thinkingUltra: Type.Optional(ColorValueSchema),\n        thinkingUltraAlt: Type.Optional(ColorValueSchema),'],
-  ['dist/modes/interactive/theme/theme.js',
-    'return { ...colors, thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh };',
-    'return { ...colors, thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh, thinkingUltra: colors.thinkingUltra ?? colors.thinkingMax ?? colors.thinkingXhigh, thinkingUltraAlt: colors.thinkingUltraAlt ?? colors.thinkingUltra ?? colors.thinkingMax ?? colors.thinkingXhigh };'],
-  ['dist/modes/interactive/theme/theme.js',
-    'const colors = { ...fgColors, thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh };',
-    'const colors = { ...fgColors, thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh, thinkingUltra: fgColors.thinkingUltra ?? fgColors.thinkingMax ?? fgColors.thinkingXhigh, thinkingUltraAlt: fgColors.thinkingUltraAlt ?? fgColors.thinkingUltra ?? fgColors.thinkingMax ?? fgColors.thinkingXhigh };'],
+  ['dist/modes/interactive/theme/theme-tokens.d.ts',
+    '    readonly bashMode: {',
+    '    readonly thinkingUltra: { readonly slot: "foreground"; readonly description: "Thinking level border: ultra primary"; readonly fallback: "thinkingMax"; };\n    readonly thinkingUltraAlt: { readonly slot: "foreground"; readonly description: "Thinking level border: ultra pulse alternate"; readonly fallback: "thinkingUltra"; };\n    readonly bashMode: {'],
+  ['dist/modes/interactive/theme/theme-tokens.js',
+    '    bashMode: { slot: "foreground", description: "Editor border color in bash mode" },',
+    '    thinkingUltra: { slot: "foreground", description: "Thinking level border: ultra primary", fallback: "thinkingMax" },\n    thinkingUltraAlt: { slot: "foreground", description: "Thinking level border: ultra pulse alternate", fallback: "thinkingUltra" },\n    bashMode: { slot: "foreground", description: "Editor border color in bash mode" },'],
   ['dist/modes/interactive/theme/theme.js',
     '            case "max":\n                return (str) => this.fg("thinkingMax", str);',
     '            case "max":\n                return (str) => this.fg("thinkingMax", str);\n            case "ultra":\n                return (str) => this.fg(Math.floor(Date.now() / 350) % 2 === 0 ? "thinkingUltra" : "thinkingUltraAlt", str);'],
-  ['dist/modes/interactive/theme/theme.d.ts',
-    '"thinkingXhigh" | "thinkingMax" | "bashMode";',
-    '"thinkingXhigh" | "thinkingMax" | "thinkingUltra" | "thinkingUltraAlt" | "bashMode";'],
   ['dist/modes/interactive/theme/dark.json',
-    '\t\t"thinkingMax": "#ff5fff",',
-    '\t\t"thinkingMax": "#ff5fff",\n\t\t"thinkingUltra": "#ff8cff",\n\t\t"thinkingUltraAlt": "#ff5faf",'],
+    '\t\t"thinkingMax": "okhsl(20 99% 63%)",',
+    '\t\t"thinkingMax": "okhsl(20 99% 63%)",\n\t\t"thinkingUltra": "#ff8cff",\n\t\t"thinkingUltraAlt": "#ff5faf",'],
   ['dist/modes/interactive/theme/light.json',
-    '\t\t"thinkingMax": "#af005f",',
-    '\t\t"thinkingMax": "#af005f",\n\t\t"thinkingUltra": "#d00072",\n\t\t"thinkingUltraAlt": "#b8007f",'],
-  ['dist/modes/interactive/theme/theme-schema.json',
-    '\t\t\t\t"thinkingMax": {\n\t\t\t\t\t"$ref": "#/$defs/colorValue",\n\t\t\t\t\t"description": "Thinking level border: max (falls back to thinkingXhigh when omitted)"\n\t\t\t\t},',
-    '\t\t\t\t"thinkingMax": {\n\t\t\t\t\t"$ref": "#/$defs/colorValue",\n\t\t\t\t\t"description": "Thinking level border: max (falls back to thinkingXhigh when omitted)"\n\t\t\t\t},\n\t\t\t\t"thinkingUltra": {\n\t\t\t\t\t"$ref": "#/$defs/colorValue",\n\t\t\t\t\t"description": "Thinking level border: ultra primary"\n\t\t\t\t},\n\t\t\t\t"thinkingUltraAlt": {\n\t\t\t\t\t"$ref": "#/$defs/colorValue",\n\t\t\t\t\t"description": "Thinking level border: ultra pulse alternate"\n\t\t\t\t},'],
+    '\t\t"thinkingMax": "okhsl(20 98% 68%)",',
+    '\t\t"thinkingMax": "okhsl(20 98% 68%)",\n\t\t"thinkingUltra": "#d00072",\n\t\t"thinkingUltraAlt": "#b8007f",'],
   ['dist/modes/interactive/interactive-mode.js',
-    '    updateEditorBorderColor() {\n        if (this.isBashMode) {\n            this.editor.borderColor = theme.getBashModeBorderColor();\n        }\n        else {\n            const level = this.session.thinkingLevel || "off";\n            this.editor.borderColor = theme.getThinkingBorderColor(level);\n        }\n        this.ui.requestRender();\n    }',
-    '    updateEditorBorderColor() {\n        const level = this.session.thinkingLevel || "off";\n        if (this.isBashMode) {\n            this.editor.borderColor = theme.getBashModeBorderColor();\n        }\n        else {\n            this.editor.borderColor = theme.getThinkingBorderColor(level);\n        }\n        if (level === "ultra" && !this.isBashMode) {\n            if (!this.ultraPulseTimer) {\n                this.ultraPulseTimer = setInterval(() => {\n                    if (this.session.thinkingLevel !== "ultra" || this.isBashMode) {\n                        clearInterval(this.ultraPulseTimer);\n                        this.ultraPulseTimer = undefined;\n                        return;\n                    }\n                    this.editor.borderColor = theme.getThinkingBorderColor("ultra");\n                    this.ui.requestRender();\n                }, 350);\n                this.ultraPulseTimer.unref?.();\n            }\n        }\n        else if (this.ultraPulseTimer) {\n            clearInterval(this.ultraPulseTimer);\n            this.ultraPulseTimer = undefined;\n        }\n        this.ui.requestRender();\n    }'],
+    '    updateEditorBorderColor() {\n        if (this.isBashMode) {\n            this.editor.borderColor = theme.getBashModeBorderColor();\n        }\n        else {\n            const level = this.session.thinkingLevel || "off";\n            this.editor.borderColor = theme.getThinkingBorderColor(level);\n        }\n        this.activeStatusIndicator?.invalidate();\n        this.ui.requestRender();\n    }',
+    '    updateEditorBorderColor() {\n        const level = this.session.thinkingLevel || "off";\n        if (this.isBashMode) {\n            this.editor.borderColor = theme.getBashModeBorderColor();\n        }\n        else {\n            this.editor.borderColor = theme.getThinkingBorderColor(level);\n        }\n        if (level === "ultra" && !this.isBashMode) {\n            if (!this.ultraPulseTimer) {\n                this.ultraPulseTimer = setInterval(() => {\n                    if (this.session.thinkingLevel !== "ultra" || this.isBashMode) {\n                        clearInterval(this.ultraPulseTimer);\n                        this.ultraPulseTimer = undefined;\n                        return;\n                    }\n                    this.editor.borderColor = theme.getThinkingBorderColor("ultra");\n                    this.ui.requestRender();\n                }, 350);\n                this.ultraPulseTimer.unref?.();\n            }\n        }\n        else if (this.ultraPulseTimer) {\n            clearInterval(this.ultraPulseTimer);\n            this.ultraPulseTimer = undefined;\n        }\n        this.activeStatusIndicator?.invalidate();\n        this.ui.requestRender();\n    }'],
 ];
 
 function count(source, value) { return source.split(value).length - 1; }
@@ -117,8 +120,8 @@ async function patch(packageRoot, { renameFile = rename } = {}) {
   return true;
 }
 async function main() {
-  try { const changed = await patch(resolveRoot(process.argv.slice(2))); console.log(changed ? 'Pi 0.83.0 ultra-thinking patch applied.' : 'Pi 0.83.0 ultra-thinking patch already applied.'); }
-  catch (error) { console.error(`Pi 0.83.0 ultra-thinking patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
+  try { const changed = await patch(resolveRoot(process.argv.slice(2))); console.log(changed ? 'Pi 1.3.0 ultra-thinking patch applied.' : 'Pi 1.3.0 ultra-thinking patch already applied.'); }
+  catch (error) { console.error(`Pi 1.3.0 ultra-thinking patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
 export { PACKAGE_NAME, PACKAGE_VERSION, PATCHES, PULSE_MS, patch, resolveRoot };

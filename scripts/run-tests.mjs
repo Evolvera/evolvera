@@ -39,10 +39,9 @@ const tmpdirProprioPadrao = new Set([
   // Synthetic fixture under its own mkdtemp; packageRoot is always explicit, never the live npm root.
   "patch-pi-tui-orca-redraw.smoke.mjs",
   "patch-pi-cursor-reasoning-effort.smoke.mjs",
-  "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
-  "patch-pi-083-auth-load-recovery.smoke.mjs",
+  "patch-openai-error-body.smoke.mjs", "patch-pi-threshold-cancel.smoke.mjs",
   // Writes only to owned temp copies; global package and install scripts are read-only.
-  "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
+  "pi-native-recovery.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
   // HUD patches: read the installed packages, patch and render only copies under their own mkdtemp (HOME redirected there).
   "patch-rpiv-todo-hud.smoke.mjs", "patch-pi-subagents-hud.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",

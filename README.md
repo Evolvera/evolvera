@@ -23,7 +23,7 @@ Usuário
 - npm disponível no `PATH`;
 - credencial para pelo menos um provider de IA.
 
-A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@0.83.0`. O patch de continuidade descrito abaixo é compatível somente com essa versão; uma versão selecionada por override que não seja `0.83.0` faz o instalador falhar fechado.
+A baseline padrão instalada pelos scripts é `@earendil-works/pi-coding-agent@1.3.0`. Os patches descritos abaixo são verificados para essa versão; versões selecionadas por override sem compatibilidade comprovada falham fechado.
 
 ### Node com fnm (Linux e macOS)
 
@@ -131,27 +131,21 @@ Os instaladores:
 7. criam `mcp.json` somente quando ele ainda não existe;
 8. escrevem `settings.json` por último, depois de todos os recursos terem sido preparados. O template define `compaction.reserveTokens: 65536` para iniciar a compactação com mais margem antes do limite de saída.
 
-### Patch de continuidade do PI 0.83.0
+### Patch de continuidade do PI 1.3.0
 
-Depois do `npm install` global e antes de verificar a instalação ou ativar `settings.json`, os instaladores executam `scripts/patch-pi-083-threshold-cancel.mjs`. O patcher valida o nome/versão exatos, o caminho, a cardinalidade e o SHA-256 do anchor conhecido, e então altera somente o cancelamento de auto-compaction por `reason === "threshold"`: mensagens já enfileiradas podem continuar. Cancelamento por overflow, compactação manual e o caminho de sucesso permanecem inalterados.
+Depois do `npm install` global e antes de verificar a instalação ou ativar `settings.json`, os instaladores executam `scripts/patch-pi-threshold-cancel.mjs`. O patcher valida o nome/versão exatos, o caminho, a cardinalidade e o SHA-256 do anchor conhecido, e então altera somente o cancelamento de auto-compaction por `reason === "threshold"`: mensagens já enfileiradas podem continuar. Cancelamento por overflow, compactação manual e o caminho de sucesso permanecem inalterados.
 
 Qualquer versão, conteúdo ou cardinalidade desconhecidos são recusados sem substituir o arquivo. A operação é idempotente, atômica e preserva o modo do arquivo. A verificação segura usa exclusivamente uma fixture sintética temporária e descartável:
 
 ```bash
-node scripts/test/patch-pi-083-threshold-cancel.smoke.mjs
+node scripts/test/patch-pi-threshold-cancel.smoke.mjs
 ```
 
-Essa tarefa **não aplicou o patch ao PI instalado em tempo real**. A execução futura de um instalador pode aplicá-lo ao pacote global correspondente e exige confirmação nova para essa consequência; a smoke não é prova de uma campanha live.
+O PI 1.3.0 já faz a leitura assíncrona de credenciais antes de utilizá-las e recupera cortes de contexto (`length`) pelo caminho nativo de compactação e retry. Os patches antigos `patch-pi-083-auth-load-recovery.mjs` e `patch-pi-083-context-wall-retry.mjs` não são mais executados pelos instaladores. O patch de continuidade continua necessário quando uma extensão cancela a compactação por threshold com mensagens na fila; abort explícito, overflow e falhas comuns não são retomados por ele.
 
-Em seguida, `scripts/patch-pi-083-context-wall-retry.mjs` corrige a parada após compactação: quando uma execução longa chega à parede de contexto, o PI reduz `max_tokens` a 1, o provedor devolve `stopReason: "length"` e o PI 0.83.0 compactava por threshold sem retomar, exigindo uma mensagem do usuário. O patch trata esse `length` acima do limiar de compactação como overflow e reutiliza o compact-and-retry de tentativa única já existente. Um segundo corte na parede encerra com erro em vez de repetir, e respostas completas continuam com a compactação por threshold comum. A smoke roda uma `AgentSession` real sobre cópias descartáveis do pacote instalado com o provedor faux, sem rede:
+### Thinking `ultra` no PI 1.3.0
 
-```bash
-node scripts/test/patch-pi-083-context-wall-retry.smoke.mjs
-```
-
-### Thinking `ultra` no PI 0.83.0
-
-Os instaladores executam `scripts/patch-pi-083-ultra-thinking.mjs` logo após o patch de continuidade e `scripts/patch-pi-subagents-ultra-thinking.mjs` depois de instalar `@tintinweb/pi-subagents@0.18.2`. Os patchers adicionam `ultra` às superfícies de tipo, CLI, catálogo de níveis, schema de modelos, TUI e subagentes. O valor só aparece para modelos cujo `thinkingLevelMap` declara suporte; `models.json` habilita `ultra: "ultra"` para `openai-codex/gpt-6-astra`.
+Os instaladores executam `scripts/patch-pi-ultra-thinking.mjs` logo após o patch de continuidade e `scripts/patch-pi-subagents-ultra-thinking.mjs` depois de instalar `@tintinweb/pi-subagents@0.18.2`. Os patchers adicionam `ultra` às superfícies de tipo, CLI, catálogo de níveis, schema de modelos, TUI e subagentes. O valor só aparece para modelos cujo `thinkingLevelMap` declara suporte; `models.json` habilita `ultra: "ultra"` para `openai-codex/gpt-6-astra`.
 
 Na TUI, `ultra` usa duas cores opcionais, `thinkingUltra` e `thinkingUltraAlt`, alternadas a cada 350 ms. Temas antigos permanecem válidos: ambas caem para `thinkingMax` e depois `thinkingXhigh`. Os temas embutidos usam cores mais intensas que `max` e próximas entre si.
 
@@ -182,7 +176,7 @@ Este fluxo usa OAuth de terceiros, não oficial do Google. Os termos do Antigrav
 
 ### Compatibilidade OAuth do Claude Fable 5.1
 
-O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@0.83.0` e `@gotgenes/pi-anthropic-auth@2.0.6` ou a instalação adaptada `2.0.1` (preservada sem reinstalação), alterando somente os anchors conhecidos para reportar Claude Code `2.1.280`. Isso é necessário porque o OAuth do Opus 5.5 exige Claude Code `2.1.280+` (o Fable 5.1 exigia `2.1.251+`); o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
+O template instala `npm:@gotgenes/pi-anthropic-auth@2.0.6`. Depois dessa instalação, e antes da ativação final de `settings.json`, os instaladores executam `scripts/patch-anthropic-client-version.mjs`. O patcher é limitado às baselines `@earendil-works/pi-coding-agent@1.3.0` e `@gotgenes/pi-anthropic-auth@2.0.6` ou a instalação adaptada `2.0.1` (preservada sem reinstalação), alterando somente os anchors conhecidos para reportar Claude Code `2.1.280`. Isso é necessário porque o OAuth do Opus 5.5 exige Claude Code `2.1.280+` (o Fable 5.1 exigia `2.1.251+`); o patch corrige os headers de compatibilidade do PI e do adapter OAuth, não depende de atualizar o CLI standalone.
 
 Instalações que já carregam um valor escrito por uma versão anterior deste patcher (`2.1.257`) são migradas para o alvo atual com a mesma verificação de identidade, cardinalidade e rollback; qualquer outro valor continua recusado. Depois de aplicar o patch, reinicie a sessão do PI para que o módulo já carregado seja substituído.
 
@@ -192,11 +186,11 @@ A operação é fail-closed, idempotente, atômica por arquivo, rollback-safe en
 node scripts/test/patch-anthropic-client-version.smoke.mjs
 ```
 
-### Lag do Orca com o PI 1.2.0 em fullscreen
+### Lag do Orca com o PI 1.2.0/1.3.0 em fullscreen
 
 No `@earendil-works/pi-coding-agent@1.2.0`, o renderer fullscreen escreve cada linha como `ESC[<linha>;1H ESC[2K <texto>`. O parser de tail do processo principal do Orca (1.4.192) descarta o `H`, mas mantém o `ESC[2K`; a coluna virtual nunca volta a 0, cada linha é preenchida com a largura acumulada das anteriores e o trim `/[ \t]+$/` fica quadrático. Isso custava ~86 ms (pior ~172 ms) do main thread do Orca por frame do PI e travava entrada/saída de todos os terminais do Orca.
 
-`scripts/patch-pi-tui-orca-redraw.mjs` insere `\r` antes de cada posicionamento absoluto do cursor em `pi-tui/dist/tui-alt-screen.js`. `CR` seguido de `CUP` deixa tela e cursor idênticos no terminal real (validado célula a célula com `@xterm/headless`), e o custo no Orca cai para ~0,1 ms por escrita. O patcher só atua na baseline 1.2.0 com hash exato, é idempotente, atômico e recusa conteúdo desconhecido; outras versões (incluindo a 0.83.0 dos instaladores, que renderiza inline e não é afetada) são ignoradas. Após `npm install -g` da 1.2.0, rode-o de novo e reinicie as sessões do PI:
+`scripts/patch-pi-tui-orca-redraw.mjs` insere `\r` antes de cada posicionamento absoluto do cursor em `pi-tui/dist/tui-alt-screen.js`. `CR` seguido de `CUP` deixa tela e cursor idênticos no terminal real (validado célula a célula com `@xterm/headless`), e o custo no Orca cai para ~0,1 ms por escrita. O patcher suporta as baselines 1.2.0 e 1.3.0 com hash exato, é idempotente, atômico e recusa conteúdo desconhecido; outras versões são ignoradas. Ambos os instaladores o executam após a instalação do PI. Sessões já abertas continuam com o runtime anterior até serem reiniciadas:
 
 ```bash
 node scripts/patch-pi-tui-orca-redraw.mjs
@@ -235,14 +229,14 @@ Isso significa que mudar `config/mcp.json` não substitui automaticamente o MCP 
 
 ### Diferenças de plataforma
 
-O Windows também instala `pi-provider-kimi-code`. Os scripts usam `@earendil-works/pi-coding-agent@0.83.0` por padrão; a baseline pode ser sobrescrita explicitamente para testes controlados:
+O Windows também instala `pi-provider-kimi-code`. Os scripts usam `@earendil-works/pi-coding-agent@1.3.0` por padrão; a baseline pode ser sobrescrita explicitamente para testes controlados:
 
 ```bash
-PI_CODING_AGENT_VERSION=0.83.0 ./install.sh
+PI_CODING_AGENT_VERSION=1.3.0 ./install.sh
 ```
 
 ```powershell
-$env:PI_CODING_AGENT_VERSION = "0.83.0"
+$env:PI_CODING_AGENT_VERSION = "1.3.0"
 .\install.ps1
 ```
 
@@ -534,13 +528,13 @@ Depois, reinicie o terminal/VS Code ou use `/reload`.
 O patch é parte do pacote global instalado, não do checkout. Para restaurar a cópia exata não patched do host, reinstale diretamente a versão compatível, sem executar o patcher nem `install.sh`/`install.ps1` depois:
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.83.0
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.3.0
 ```
 
 No Windows:
 
 ```powershell
-npm install -g @earendil-works/pi-coding-agent@0.83.0
+npm install -g @earendil-works/pi-coding-agent@1.3.0
 ```
 
 Essa ação altera o host e requer confirmação nova; a tarefa atual não a executou.
@@ -673,7 +667,7 @@ Reinstale o fork compatível e rode novamente o instalador do harness:
 
 ```bash
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.83.0
+npm install -g @earendil-works/pi-coding-agent@1.3.0
 ./install.sh
 ```
 
@@ -681,7 +675,7 @@ Windows:
 
 ```powershell
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@0.83.0
+npm install -g @earendil-works/pi-coding-agent@1.3.0
 .\install.ps1
 ```
 

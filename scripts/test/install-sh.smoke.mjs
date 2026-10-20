@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bash = execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', ['bash'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
@@ -16,11 +16,12 @@ const realAgent = path.join(realHome, '.pi', 'agent');
 const globalModules = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g'], {
   encoding: 'utf8', shell: process.platform === 'win32',
 }).trim();
-const sdkSource = path.join(globalModules, '@earendil-works', 'pi-coding-agent');
+const sdkSource = process.env.PI_SDK_ROOT || path.join(globalModules, '@earendil-works', 'pi-coding-agent');
+const { PATCHES: ultraPatches } = await import(pathToFileURL(path.join(root, 'scripts/patch-pi-ultra-thinking.mjs')));
 const subagentsSource = path.join(realAgent, 'npm', 'node_modules', '@tintinweb', 'pi-subagents');
 const authSource = path.join(realAgent, 'npm', 'node_modules', '@gotgenes', 'pi-anthropic-auth');
 const todoSource = path.join(realAgent, 'npm', 'node_modules', '@juicesharp', 'rpiv-todo');
-const sdkFiles = [
+const sdkFiles = [...new Set([
   'package.json',
   'dist/core/agent-session.js',
   'dist/core/auth-storage.js',
@@ -33,7 +34,6 @@ const sdkFiles = [
   'dist/modes/interactive/theme/theme.d.ts',
   'dist/modes/interactive/theme/dark.json',
   'dist/modes/interactive/theme/light.json',
-  'dist/modes/interactive/theme/theme-schema.json',
   'node_modules/@earendil-works/pi-ai/package.json',
   'node_modules/@earendil-works/pi-ai/dist/types.d.ts',
   'node_modules/@earendil-works/pi-ai/dist/models.js',
@@ -41,7 +41,10 @@ const sdkFiles = [
   'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js',
   'node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.d.ts',
   'node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
-];
+  'node_modules/@earendil-works/pi-tui/package.json',
+  'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js',
+  ...ultraPatches.map(([relative]) => relative),
+])];
 const subagentsFiles = [
   'package.json', 'src/index.ts', 'dist/index.js',
   'src/abortable.ts', 'dist/abortable.js',
@@ -246,15 +249,14 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
 }
 const shellText = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
 const powershellText = fs.readFileSync(path.join(root, 'install.ps1'), 'utf8');
-const shellAuthPatch = shellText.indexOf('patch-pi-083-auth-load-recovery.mjs');
-const powershellAuthPatch = powershellText.indexOf('patch-pi-083-auth-load-recovery.mjs');
-const shellPiInstall = shellText.indexOf('npm install -g --ignore-scripts');
-const powershellPiInstall = powershellText.indexOf('npm install -g ');
-const shellCorePatch = shellText.indexOf('patch-pi-083-threshold-cancel.mjs');
-const powershellCorePatch = powershellText.indexOf('patch-pi-083-threshold-cancel.mjs');
-assert.ok(shellAuthPatch > shellCorePatch && shellCorePatch > shellPiInstall, 'shell auth patch must follow PI install/core patch');
-assert.ok(powershellAuthPatch > powershellCorePatch && powershellCorePatch > powershellPiInstall, 'PowerShell auth patch must follow PI install/core patch');
-assert.match(powershellText.slice(powershellAuthPatch), /if \(\$LASTEXITCODE -ne 0\)/);
+for (const [label, text] of [['shell', shellText], ['PowerShell', powershellText]]) {
+  assert.match(text, /1\.3\.0/, `${label}: PI baseline must be 1.3.0`);
+  const install = text.indexOf('npm install -g ');
+  for (const patch of ['patch-pi-threshold-cancel.mjs', 'patch-pi-tui-orca-redraw.mjs', 'patch-pi-ultra-thinking.mjs']) {
+    assert.ok(text.indexOf(patch) > install, `${label}: ${patch} must follow PI install`);
+  }
+  assert.doesNotMatch(text, /patch-pi-083-/, `${label}: obsolete 0.83 patchers must not run`);
+}
 const antigravityPackage = 'npm:pi-antigravity@0.10.0';
 const settingsPackages = JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).packages;
 const antigravityEntries = settingsPackages.filter((entry) => (typeof entry === 'string' ? entry : entry?.source) === antigravityPackage);
@@ -313,7 +315,7 @@ try {
     assert.ok(fs.readFileSync(path.join(installedNpm, '@tintinweb/pi-subagents', widget), 'utf8').includes('HUD presentation (Evolvera patch v1)'), `shell installer did not apply the pi-subagents HUD patch to ${widget}`);
   }
   const installedAuth = fs.readFileSync(path.join(home.fakeGlobalModules, '@earendil-works/pi-coding-agent/dist/core/auth-storage.js'), 'utf8');
-  assert.ok(installedAuth.includes('async ensureInitialized()'), 'shell installer did not patch SDK auth recovery');
+  assert.ok(installedAuth.includes('readLatestData('), 'PI 1.3 native async auth reads must remain intact');
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);

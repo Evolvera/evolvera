@@ -6,9 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
-const PI_PACKAGE_VERSION = '0.83.0';
+const PI_PACKAGE_VERSION = '1.3.0';
 const AI_PACKAGE_NAME = '@earendil-works/pi-ai';
-const AI_PACKAGE_VERSION = '0.83.0';
+const AI_PACKAGE_VERSION = '1.3.0';
 const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js';
 const CREATE_CLIENT_ANCHOR = 'function createClient(';
 const UNPATCHED_ANCHOR = `    return new OpenAI({
@@ -55,8 +55,8 @@ function piNormalizeErrorEnvelope(baseFetch) {
     };
 }
 `;
-const UNPATCHED_SHA256 = 'e5122e013f472c77b55d805cd91daff47f2a29bf68c7be0c94f904af9b8591bd';
-const PATCHED_SHA256 = 'd53631958ac16e82d95d84c872b086ff9693962cb0d491182c67d2d15e621f00';
+const UNPATCHED_SHA256 = '4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea';
+const PATCHED_SHA256 = '4868e42430a56df042461a15f8905b46053a6ad2e9c97b0d234661fd31831225';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');

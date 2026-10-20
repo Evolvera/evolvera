@@ -12,11 +12,13 @@ import { spawnSync } from 'node:child_process';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const patcherPath = path.join(root, 'scripts/patch-openai-error-body.mjs');
 const patcher = await import(pathToFileURL(patcherPath));
-const globalRoot = patcher.npmGlobalNodeModulesRoot();
-const liveTarget = path.join(globalRoot, '@earendil-works', 'pi-coding-agent', patcher.TARGET_RELATIVE_PATH);
+const sdkPackageRoot = process.env.PI_SDK_ROOT
+  ? path.resolve(process.env.PI_SDK_ROOT)
+  : path.join(patcher.npmGlobalNodeModulesRoot(), '@earendil-works', 'pi-coding-agent');
+const liveTarget = path.resolve(sdkPackageRoot, patcher.TARGET_RELATIVE_PATH);
 const live = fs.readFileSync(liveTarget);
-assert.equal(patcher.UNPATCHED_SHA256, 'e5122e013f472c77b55d805cd91daff47f2a29bf68c7be0c94f904af9b8591bd');
-assert.equal(patcher.PATCHED_SHA256, 'd53631958ac16e82d95d84c872b086ff9693962cb0d491182c67d2d15e621f00');
+assert.equal(patcher.UNPATCHED_SHA256, '4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea');
+assert.equal(patcher.PATCHED_SHA256, '4868e42430a56df042461a15f8905b46053a6ad2e9c97b0d234661fd31831225');
 
 // The live install is patched during installation, so seeding the fixture from
 // it verbatim would make this test runnable only before the first patch. Derive
@@ -79,6 +81,8 @@ function response(body, status = 402, headers = {}) {
 }
 
 try {
+  assert.equal(patcher.PI_PACKAGE_VERSION, '1.3.0');
+  assert.equal(patcher.AI_PACKAGE_VERSION, '1.3.0');
   assert.equal(patcher.TARGET_RELATIVE_PATH, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js');
   assert.deepEqual(
     patcher.packageRootFromArgs(['--pi-package-root', piRoot], () => { throw new Error('live npm root resolver used'); }),
@@ -119,10 +123,13 @@ try {
   const flat = await piNormalizeErrorEnvelope(async () => response('{"message":"x","code":"y"}', 402, {
     'content-length': '25',
     'content-encoding': 'gzip',
+    'x-provider': 'synthetic',
   }))('offline', {});
   assert.deepEqual(await flat.json(), { error: { message: 'x', code: 'y' } });
+  assert.equal(flat.status, 402);
   assert.equal(flat.headers.has('content-length'), false);
   assert.equal(flat.headers.has('content-encoding'), false);
+  assert.equal(flat.headers.get('x-provider'), 'synthetic');
 
   const envelopedBody = '{"error":{"message":"already"}}';
   const enveloped = await piNormalizeErrorEnvelope(async () => response(envelopedBody))('offline', {});
