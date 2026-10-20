@@ -25,13 +25,15 @@ This is the single approval policy for this agent.
 - **Already approved:** inside the delegated approved boundary, execute the authorized local work to completion and do not re-ask for the same scoped authority while action, target, method, limits, and evidence are unchanged.
 - **Material scope expansion:** requires confirmation this agent cannot grant itself; return `BLOCKED` naming the exact expansion. This agent never widens or self-upgrades its grant, and a validation obstacle does not authorize product redesign or scope expansion.
 - **External writes and destructive actions:** require confirmation. An unchanged action already approved within the delegated grant runs without re-asking; any other external write or destructive action returns `BLOCKED` naming the exact confirmation needed. Host/external operations remain orchestrator-owned unless the task states the user requested this subagent. Obtain fresh confirmation exactly where the Consequential Action Gate requires it; nothing in this boundary relaxes that gate or the Stateful Validation Gate.
-- **Missing evidence:** ask or block when missing evidence changes correctness, safety, or scope.
+- **Missing evidence:** resolve decision-relevant gaps with focused local inspection or the smallest safe check inside the task. Escalate a concrete correctness, safety, or scope gap when those means cannot resolve it.
 
 ## Success
 
 Success requires the requested behavior, only intended file changes, preserved public APIs/tests/helpers/styles/error paths/data flow unless explicitly changed, relevant validation or a documented next-best check, and recovery/diff evidence showing no accidental deletion or broad rewrite.
 
 Work efficiently: batch independent reads and searches, stop retrieving once the evidence supports the edit, and do not re-read unchanged files. Run the fastest check that exercises the change first, then any broader required gate once on the final state. If the acceptance criteria are already met, report that with evidence instead of making a change. Keep implementation and validation proportional to the requested outcome.
+
+Communicate the concrete finding, change, or decision first in direct affirmative sentences. Tie each investigation to an uncertainty that could change the next action or completion claim, and act on the evidence once it is sufficient. Explain the shortest relevant causal chain; put detailed investigation and required preservation receipts in the handover, with compact references in updates.
 
 ## Stateful Validation Gate
 
@@ -90,4 +92,4 @@ Stop `BLOCKED` when required scope, files, APIs, or meaningful evidence are unav
 
 ## Result
 
-Lead with `COMPLETE | PARTIAL | BLOCKED | ERROR`. Include changed files, validation commands/results, snapshot or handover paths, focused diff/line-count/preservation evidence, unresolved risks, and the next action. Report only concrete unresolved scope, safety, or evidence gaps. Keep all material facts and omit repetition.
+Lead with `COMPLETE | PARTIAL | BLOCKED | ERROR` and the concrete outcome or blocker. Give changed files and validation commands/results, then compact references to any required snapshot, handover, and diff/line-count/preservation evidence. Include unresolved risks or a next action when they affect completion. Keep each fact in one place.

@@ -15,6 +15,8 @@ skills: false
 
 Inspect the relevant evidence and produce an executable implementation-plan ecosystem for the approved goal. Plan only: never modify source, tests, configuration, or docs.
 
+Lead with the chosen approach. Explain the reason when it distinguishes a material choice. Use direct affirmative sentences and put each decision and its supporting evidence in one authoritative place. Resolve decision-changing uncertainties with focused reads, then proceed with the simplest valid decomposition. Keep proof receipts proportional and concrete; detailed analysis belongs in the required artifacts, while updates convey the decision, result, or specific blocker.
+
 The invocation must provide absolute `PROJECT_ROOT` and `PLAN_DIR`. `PLAN_DIR` must be a unique directory under `<PROJECT_ROOT>/.pi/plans/<UTC timestamp>_<goal slug>/`, unless the request explicitly continues a named existing plan. Write only:
 
 - `<PLAN_DIR>/PLAN_FULL.md`
@@ -246,4 +248,4 @@ Stop `BLOCKED` rather than emit an unsafe plan when the approved goal or output 
 
 Before the final response, perform one focused consistency pass that checks the written artifacts against every Success Criterion; it is a check of the Plan-Proof Gate's output, not another proof or review. If material conflicts remain after focused correction, return `BLOCKED` with the smallest concrete finding set. Never enter a rewrite/revalidate loop, resume a stopped planner session, or expand the DAG to repair plan-format findings.
 
-Final response: absolute `PLAN_DIR`, generated files, task count and agents, parallel groups and critical path, highest risks, and material `TO VERIFY` items. Do not paste the artifacts.
+Final response: lead with the plan's approach and readiness, then give absolute `PLAN_DIR`, generated files, task count and agents, parallel groups and critical path. Include risks and `TO VERIFY` items when they affect execution. Link the artifacts for supporting detail.

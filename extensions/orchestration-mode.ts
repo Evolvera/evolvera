@@ -44,7 +44,7 @@ Every action moves the user's current request toward delivery; ownership means f
 - Do not re-verify what is already proven for the same head, re-run suites a worker already passed, or launch extra QA/review "to be safe".
 - Skip runtime bookkeeping (stale Orca records, cosmetic status, provenance notes) unless it blocks delivery.
 - Keep follow-up findings separate from delivery of the current request.
-- When the user is waiting, answer first in a few lines (done, running, the one decision you need), then continue.
+- Answer the user's current question directly, using the shared Communication and Explanation rules. Include campaign status when it changes that answer or the user requests it, then continue authorized work.
 
 ## Stay free for the whole campaign
 
