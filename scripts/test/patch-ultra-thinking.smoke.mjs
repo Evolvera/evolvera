@@ -118,6 +118,20 @@ try {
   assert.match(read('dist/modes/interactive/theme/dark.json'), /thinkingUltraAlt/);
   assert.match(read('dist/modes/interactive/theme/light.json'), /thinkingUltraAlt/);
 
+  // Preserve the subagent ultra patch regression coverage alongside the SDK upgrade.
+  const sub = await import(pathToFileURL(path.join(repo, 'scripts/patch-pi-subagents-ultra-thinking.mjs')));
+  const subRoot = path.join(temp, 'subagents');
+  fs.mkdirSync(subRoot, { recursive: true });
+  fs.writeFileSync(path.join(subRoot, 'package.json'), JSON.stringify({ name: sub.PACKAGE_NAME, version: sub.PACKAGE_VERSION }));
+  for (const rel of sub.FILES) {
+    const target = path.join(subRoot, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, `const levels = ${sub.BEFORE};\n`);
+  }
+  assert.equal(await sub.patch(subRoot), true);
+  assert.equal(await sub.patch(subRoot), false, 'subagent patch is not idempotent');
+  for (const rel of sub.FILES) assert.match(fs.readFileSync(path.join(subRoot, rel), 'utf8'), /"max", "ultra"/);
+
   const changedFiles = [...new Set(main.PATCHES.map(([rel]) => rel))];
   const failureRoot = path.join(temp, 'failure-fixture');
   fs.cpSync(sourceRoot, failureRoot, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
