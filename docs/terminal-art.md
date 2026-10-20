@@ -108,8 +108,10 @@ A factory `scripts/users/startup-art.mjs` é registrada pelo runtime gerenciado 
 o nome da conta e o `sessionManager` raiz. Usa o widget público `aboveEditor`,
 depois do chat/avisos e antes do editor. Os quadros pedem um redesenho ao TUI, sem
 escrever diretamente em stdout. `input`, `before_agent_start`, shutdown e dispose
-encerram o movimento; o início da conversa retira o widget. Não reaparece em
-`/new`, `/reload`, fork ou troca de sessão. Não adiciona mensagens ao histórico ou
+encerram o movimento; o início da conversa retira o widget. **Esc também oculta a
+arte inicial sem enviar mensagem**, libera o listener de teclado e mantém o
+comportamento nativo da tecla. Não reaparece em `/new`, `/reload`, fork ou troca de
+sessão. Não adiciona mensagens ao histórico ou
 contexto do modelo. RPC, print e sessões que não sejam a raiz TUI não recebem a arte.
 `--no-extensions` continua desativando essa extensão interna.
 
@@ -152,7 +154,7 @@ uma sessão PI. “Create new account” é apenas uma opção visual nesse prev
 node --test --test-concurrency=5 scripts/test/terminal-art.test.mjs scripts/test/account-selector.test.mjs scripts/test/startup-art.test.mjs scripts/test/terminal-art-animation.test.mjs scripts/test/terminal-art-output.test.mjs
 ```
 
-Os **52 testes focados** passaram em aproximadamente **2,01 s**, com cinco workers
+Os **54 testes focados** passaram em aproximadamente **1,14 s**, com cinco workers
 e isolamento de processo por arquivo numa máquina com 12 CPUs lógicas. Usam
 streams/relógios em memória e leitura do fonte: `NO_STATEFUL_RESOURCES`. Cobrem
 geometria, identidade, movimento contínuo, Unicode, navegação, backpressure,
@@ -183,6 +185,11 @@ ambos encerraram com código 0 em aproximadamente 6,2 s, sem tentativa de rede.
 Os avisos permaneceram acima da cena e a primeira entrada removeu a arte. Não
 houve patch nem instalação do SDK; os hashes dos entrypoints conferidos ficaram
 iguais. Nenhum processo desses testes ficou ativo.
+
+A regressão de Esc foi observada na TUI real com um rascunho ainda não enviado:
+a arte desapareceu, o rascunho e os avisos continuaram visíveis, sem enviar mensagem
+nem acessar provedores. Os fingerprints do registro real e dos entrypoints do SDK
+permaneceram iguais; o teste usou somente um registro sintético isolado.
 
 A validação acima observa protocolo, células e PTY, não uma captura gráfica do
 Orca. Não foram exercitados Windows, macOS, outros SDKs/fontes/emuladores ou
