@@ -31,3 +31,11 @@ trust.json
 # Backups locais
 *.bak-*
 .pi/backup-settings-*.json
+
+# Private project state and products outside the Coding Agent distribution
+/.pi/
+/.scout/
+/interface/
+/research/
+/benchmark/
+/config/jev/
