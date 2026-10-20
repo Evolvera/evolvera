@@ -41,6 +41,8 @@ Before execution, compare those effects with the actual installer version and in
 
 Confirm Node.js is at least `22.19.0` before installation; both authoritative installers enforce this minimum. Do not use environment-variable version overrides as a routine update channel. Do not independently update PI to an arbitrary/latest npm version: the repository installer pins a compatible version and applies its required patches. Do not use **Upgrade Pi and Packages** in `pi-vscode` 0.0.9: it hardcodes `@mariozechner/pi-coding-agent` and may replace the required `@earendil-works/pi-coding-agent` fork.
 
+Before npm changes the executable, inspect the resolved `pi` command and any adjacent `pi-account-entry.mjs`. If the command is the already-active managed launcher, preserve its exact generated descriptors and command identity using `docs/auth-only-accounts.md`; do not assume npm preserves it. Npm can replace that wrapper with its direct SDK shim, silently skipping account selection and startup artwork even when `pi --version` succeeds. Do not activate managed accounts on an installation that did not already use them, or modify registries, credentials, sessions, PATH, or active processes.
+
 ## 4. Run the installer for the actual OS and shell
 
 Use only a shell that is actually available:
@@ -52,7 +54,7 @@ Do not invoke the Windows installer from Bash or the shell installer from PowerS
 
 ## 5. Verify and report
 
-After a successful installer run, use `/reload` if available, then open a fresh terminal and verify `pi --version` and that `pi` starts normally. A fresh terminal matters because the current process may still use the old executable/environment. If startup fails, capture only safe diagnostic details and report the failure; do not expose credentials, session contents, or unrelated user data.
+After a successful installer run, verify the resolved `pi` command still uses its previously established entry route. If npm replaced a previously verified managed wrapper, restore only that wrapper through the renderer/publication procedure in `docs/auth-only-accounts.md`, preserving the SDK referent when replacing a symlink. Verify account selection and startup artwork with a run-owned synthetic registry/HOME, never real account data as a test fixture. A direct `node <sdk>/dist/cli.js` startup or `pi --version` alone does not prove the managed entry survived. Then use `/reload` if available, open a fresh terminal and verify `pi --version` and that `pi` starts normally. A fresh terminal matters because the current process may still use the old executable/environment. If startup fails, capture only safe diagnostic details and report the failure; do not expose credentials, session contents, or unrelated user data.
 
 Report the verified repository/branch and resulting commit, installer and exit result, Node version, `pi --version`, and whether fresh startup succeeded. Clearly distinguish a successful repository update from a successful installation/startup if a later verification step fails.
 
