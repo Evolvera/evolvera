@@ -35,7 +35,7 @@ You describe the outcome. The main agent chooses whether to act directly or dele
 
 You need **Git**, **Node.js ≥22.19.0**, **npm**, and access to at least one AI provider. The default installed runtime is **`@earendil-works/pi-coding-agent@1.3.0`**.
 
-> Repository publication is still pending secret revocation and scope separation. The commands below use the current repository address; **Evolvera Coding Agent** is the proposed publication identity.
+> The public repository is [Evolvera/evolvera](https://github.com/Evolvera/evolvera), licensed under GPLv3.
 
 ### macOS / Linux
 
@@ -117,8 +117,12 @@ Account selection in the actual launcher has a separate activation process from 
 | [Terminal artwork](docs/terminal-art.md) | Visual identity, rendering, and preview. |
 | [Engineering principles](ENGINEERING.md) | Project technical conventions. |
 
-## Publication and licensing
+## License
 
-Publication is pending secret revocation and scope separation. This presentation **does not grant an open-source license** or change the licenses of third-party components. No license is asserted here.
+Copyright (C) 2026 Evolvera.
+
+Evolvera Coding Agent is free software licensed under the [GNU General Public License version 3](LICENSE). You may use, modify, and redistribute it, including for a fee. If you distribute this program or a modified version, you must provide the corresponding source under GPLv3.
+
+Third-party components keep their own licenses. See [extensions/plastic-memory/THIRD-PARTY-NOTICES.md](extensions/plastic-memory/THIRD-PARTY-NOTICES.md).
 
 <p align="center"><sub>Built by Evolvera on the PI ecosystem.</sub></p>
