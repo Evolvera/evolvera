@@ -487,38 +487,16 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Re-anchor on the final outcome after every compaction, handoff, or added instruction/, "re-anchor after compaction and handoff");
   lacks(path, /Measurements deliver numbers/, "no task-specific measurement rule");
 }
-// Testing discipline: TDD where practical stays in the global contract; proportionality never replaces regression gates.
+// Proportional testing: tests serve the outcome and never become the work.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /\*\*TDD where practical:\*\*/, "test-first stays in the global contract");
-  lacks(path, /\*\*Tests serve the outcome:\*\*/, "no proportional-testing rule that removes regression gates");
-  lacks(path, /Once that check passes, stop testing and deliver/, "tests must not stop before the regression gates pass");
+  has(path, /\*\*Tests serve the outcome:\*\*/, "tests are a means");
+  has(path, /Once that check passes, stop testing and deliver/, "stop testing once the change is proven");
+  has(path, /An unrelated pre-existing failure is reported, not fixed or chased/, "unrelated failures are not chased");
+  lacks(path, /\*\*TDD where practical:\*\*/, "no test-first mandate");
 }
-// Cumulative regression and conditional characterization baseline (principles 11/12) are mandatory delivery gates.
-has(SKILL, /^11\. \*\*Regressão cumulativa é obrigatória\*\*/m, "principle 11 must be cumulative regression");
-has(SKILL, /^12\. \*\*Caracterizar antes de alterar\*\*/m, "principle 12 must be characterization before change");
-has(SKILL, /toda issue segue test-first, cobre 100% do comportamento alterado, preserva e executa a suíte relevante já existente \(suíte completa relevante antes de PR\/merge\)/, "every issue must be test-first, fully cover changed behavior, and run the relevant suite before PR/merge");
-has(SKILL, /Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados/, "later issues must prove earlier affected flows still work");
-has(SKILL, /Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada\/em review, nunca done/, "failing, uncovered, or unrunnable tests must keep an issue out of done");
-has(SKILL, /quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização/, "uncovered existing features must get a characterization baseline first");
-has(SKILL, /Mudanças funcionais na mesma superfície dependem dessa baseline passar na base escolhida daquele repositório/, "functional changes must depend on the baseline passing on the chosen base");
-has(SKILL, /A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos/, "the baseline must preserve legitimate behavior only");
-has(SKILL, /^6\. \*\*Impacto de regressão\*\*/m, "Phase 2 issue fields must map regression impact");
-has(SKILL, /Para toda issue de código, os acceptance criteria devem incluir, quando aplicável:/, "code issues must carry the test acceptance checks");
-has(SKILL, /teste novo ou ajustado, escrito primeiro \(test-first\)[^\n]*cobre 100% do comportamento alterado/, "acceptance must require a first-written test covering the changed behavior");
-has(SKILL, /suíte de regressão direcionada aos módulos e jornadas afetados/, "acceptance must require the targeted regression suite");
-has(SKILL, /suíte padrão relevante completa do repositório \(ou uma justificativa explícita e aprovada/, "acceptance must require the full relevant suite or an approved justification");
-has(SKILL, /regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência/, "acceptance must require earlier shared-surface regressions as PR evidence");
-has(SKILL, /issue de \*\*baseline de caracterização\*\* antes das mudanças que possam afetá-la/, "backlog must schedule a baseline before changes to an uncovered feature");
-has(SKILL, /Para features existentes afetadas, a baseline de caracterização já passa na base escolhida do repositório ou há uma issue predecessora explícita/, "Definition of Ready must gate on the baseline");
-has(SKILL, /Impacto de regressão mapeado: jornadas\/contratos anteriores, testes existentes e comandos obrigatórios/, "Definition of Ready must map regression impact");
-has(SKILL, /- \[ \] regressão direcionada para jornadas, contratos e issues anteriores afetadas/, "PR validation must report targeted regression");
-has(SKILL, /- \[ \] suíte padrão relevante completa do repositório/, "PR validation must report the full relevant suite");
-has(SKILL, /Exceção estreita: contenção emergencial[^\n]*aprovação explícita do usuário[^\n]*nunca use a exceção para normalizar cobertura ausente/, "the emergency exception must stay narrow and approved");
-has(SKILL, /Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita/, "builder gate must keep required tests mandatory before done");
-lacks(SKILL, /sem espiral de testes|Baseline só quando pedida|Testes são meio: provado o comportamento, pare de testar e entregue/, "proportional-testing text that removes regression and baseline gates must stay removed");
-lacks(SKILL, /Cobertura, suíte completa e baseline de caracterização \*\*não\*\* são critério de aceite/, "coverage, full suite, and baseline must not be waived from acceptance");
-lacks(SKILL, /sem suíte completa, caça de cobertura/, "builder step must not skip the full relevant suite by default");
-lacks(SKILL, /não proponha baseline nem campanha de cobertura/, "test/CI scouting must still recommend the baseline");
+has(SKILL, /Testes são meio: provado o comportamento, pare de testar e entregue/, "flow-orca stops testing once proven");
+lacks(SKILL, /Regressão cumulativa é obrigatória/, "no cumulative-regression mandate");
+lacks(SKILL, /suíte padrão relevante do repositório/, "no default full-suite checkbox");
 // Engineering judgment is the agent's; "blocked" is reserved for the user's authority or external action.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Engineering and architecture choices[^\n]*are yours by default: settle them with KISS, DRY, YAGNI/, "engineering choices default to the agent");
@@ -658,8 +636,7 @@ for (const [pattern, message] of [
   [/sub_issues/, "native epics and sub-issues"],
   [/priority:p0/, "priority labels"],
   [/effort:xl/, "effort labels"],
-  [/baseline de caracterização/, "characterization baseline"],
-  [/Regressão cumulativa é obrigatória/, "cumulative regression"],
+  [/Não quebrar o que já funciona, sem espiral de testes/, "proportional regression"],
   [/## Phase 6 — Re-entry/, "autonomous re-entry"],
   [/review independente/, "independent issue/PR validation"],
   [/Tabela de reconciliação em memória/, "reconciliation table derived at read time"],

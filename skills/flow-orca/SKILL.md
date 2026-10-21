@@ -64,8 +64,8 @@ Entrada (lista / “segue o projeto X” / “próxima issue” / “o que dá p
 8. **1 issue = 1 workspace Orca = 1 branch real** — a branch nasce do `worktree create` do Orca a partir da **base escolhida para aquele repositório**; leia ID e branch **reais** da resposta e nunca calcule a branch pelo nome do workspace. Nunca reutilize workspace/branch de outra issue. Atualize **e releia** o Project na hora de cada transição (Ready → In progress → In review/Blocked → Done).
 9. **Teto de seis PIs de issue simultâneos** — o scheduler é contínuo e work-conserving em todos os repos/hosts da campanha; seis é teto rígido, não demanda e não meta. Dentro do teto não há limite arbitrário de 2–4 por grupo/lote: a admissão é work-conserving e limitada só por vaga livre, DoR, dependências, hazards e gates. Um único writer por workspace de issue. A vaga só volta quando aquele writer estiver **settled com segurança**; timeout, silêncio ou terminal ocioso nunca liberam vaga.
 10. **GitHub é autoridade; Orca é evidência viva de execução; cache continua cache** — precedência: **GitHub Project Status → issue/assignee + claim marker + PR → branch remota/SHA → workspaces/terminais/dispatches do Orca → `.pi/flow/` → `.pi/memory/`/chat**. Uma leitura nova substitui estado antigo. Workspace prova checkout e ligação de issue, não resultado entregue; cache, chat e idade nunca são claim, lock ou autorização de takeover. `.pi/flow/` é **histórico/cache opcional e somente-leitura, sem autoridade nenhuma**: sua ausência nunca bloqueia re-entry, e grants ou planos antigos ali guardados nunca são migrados nem publicados automaticamente.
-11. **Regressão cumulativa é obrigatória** — toda issue segue test-first, cobre 100% do comportamento alterado, preserva e executa a suíte relevante já existente (suíte completa relevante antes de PR/merge); novos testes de regressão/contrato entram na mesma entrega sempre que a mudança corrigir ou proteger comportamento. Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados. Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada/em review, nunca done.
-12. **Caracterizar antes de alterar** — quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização: catálogo de jornadas válidas, contratos, status/respostas e efeitos persistidos, com fixtures sintéticas e ambiente isolado. Mudanças funcionais na mesma superfície dependem dessa baseline passar na base escolhida daquele repositório. A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos.
+11. **Não quebrar o que já funciona, sem espiral de testes** — rode os testes existentes da área afetada; escreva teste novo só quando a mudança corrigir um bug ou criar um contrato que nenhum teste cobre, e quando for barato. Falha causada pela issue impede o done; falha pré-existente sem relação é reportada, não perseguida. Testes são meio: provado o comportamento, pare de testar e entregue.
+12. **Baseline só quando pedida** — issue de baseline de caracterização entra no backlog apenas por pedido do usuário. Sem ela, a mudança segue com os testes existentes da área; a falta de cobertura é registrada na issue, não vira trabalho extra.
 13. **Project/Kanban é obrigatório para a entrega** — ao criar issues, reusar um único GitHub Project aberto que governe o escopo ou propor um Project novo; criar, linkar repositórios e configurar o board somente após **OK explícito** para o nome, owner, repos e colunas mostrados no proposal. As colunas são `Backlog`, `Ready`, `In progress`, `In review`, `Blocked` e `Done`; `Blocked` é aditivo e preserva todos os outros status e fields já configurados. Cada issue entra como card em `Backlog`. Não criar issues soltas usando apenas labels, salvo pedido explícito. O Project é o kanban visual e a autoridade operacional; labels permanecem espelho/fallback técnico.
 14. **DAG adaptativo derivado do GitHub e work-conserving** — ordem topológica, gates, hazards e oportunidades de concorrência são **derivados em memória** a cada releitura do GitHub (dependências e gate declarados no body de cada issue), nunca de um plano local obrigatório. Nenhum arquivo local de plano/schedule/DAG/índice/estado precisa ser produzido ou reconciliado. O DAG ordena dependências, gates e oportunidades de concorrência, e nunca exige múltiplos workers. Não existe wave imutável nem barreira “todos terminam juntos”: cada assentamento seguro reabastece o scheduler dentro do teto aprovado. Concorrência só admite nós `ready` com dependências satisfeitas, write/validation scopes fundamentados, recursos exclusivos livres e workspaces Orca isoladas.
 15. **Sub-issues nativas são hierarquia, não execução** — crie uma epic/área-pai quando issues-filhas compartilham um outcome, princípios, bloqueio ou sequência macro aprovados; o critério é coerência de produto, não quantidade. A pai guarda somente visão, ordem macro e progresso nativo; cada filha mantém body, ACs, dependências e histórico completos. Apenas filhas executáveis entram no DAG, `Ready`, claim, branch ou PR. Ordem visual das sub-issues não é dependência técnica; o DAG e evidência remota continuam sendo a autoridade. Divida uma epic quando ela deixar de ter um outcome compreensível, não porque atingiu um número arbitrário de filhas. Nunca crie uma filha apenas para preencher uma epic, nem aninhe hierarquias sem necessidade comprovada.
@@ -240,7 +240,7 @@ Carregue `agent-guide` + `scout`. O coordenador aprende apenas fatos que mudam d
 | tests/ci | como validar, pipelines, quality gates |
 | existing issues | issues/PRs abertos que se sobrepõem ao backlog |
 
-Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI também deve inventariar a cobertura realmente executável por jornada (unit, integração, contrato, E2E/smoke, browser/app e manual), apontar features funcionais sem proteção e recomendar a baseline mínima antes de mudanças naquela superfície. Quando houver frontend, o inventário inclui build/typecheck/lint, smoke das rotas afetadas, falhas de rede e erros `console.error`/exceções não esperadas durante as jornadas críticas.
+Cada scout deve devolver: paths exatos, linhas, riscos, “o que NÃO está claro”. O scout de testes/CI informa como validar cada área (comandos existentes e o que eles cobrem); não proponha baseline nem campanha de cobertura.
 
 ### 1.3 Síntese local
 
@@ -289,17 +289,10 @@ Para cada item:
 3. **Acceptance criteria** (bullets testáveis)
 4. **Área do sistema** (módulos/paths do PROJECT_MAP)
 5. **Dependências**
-6. **Impacto de regressão** — jornadas, contratos, integrações e dados já existentes que a issue pode afetar; identificar a suíte/comandos que devem ser executados.
+6. **Testes da área** — quais testes existentes cobrem o que a issue toca (serão rodados antes do PR).
 7. **Tipo**: `feature` | `fix` | `chore` | `refactor` | `docs` | `infra`
 
-Para toda issue de código, os acceptance criteria devem incluir, quando aplicável:
-
-- teste novo ou ajustado, escrito primeiro (test-first), que reproduz o bug/contrato/mudança e cobre 100% do comportamento alterado;
-- suíte de regressão direcionada aos módulos e jornadas afetados;
-- suíte padrão relevante completa do repositório (ou uma justificativa explícita e aprovada para a parte que não puder rodar);
-- regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência.
-
-Se a cobertura de uma feature funcional existente for ausente ou insuficiente, o backlog deve conter uma issue de **baseline de caracterização** antes das mudanças que possam afetá-la. Essa issue deve: catalogar comportamento válido versus bugs/vulnerabilidades conhecidos; automatizar primeiro as jornadas Tier 0 (auth, dinheiro, dados críticos) e depois as jornadas core; usar banco/fixtures e providers fake; e provar que a baseline passa na base escolhida do repositório. Quando a superfície incluir frontend, a baseline também cobre build/typecheck/lint, navegação e interação das jornadas afetadas, contratos de rede e ausência de `console.error`/exceções inesperadas; avisos conhecidos só podem ser tolerados se forem documentados e tiverem issue de acompanhamento. As issues posteriores devem depender dela.
+Os acceptance criteria descrevem o comportamento observável que a issue entrega. A validação de uma issue de código é: testes existentes da área afetada, mais um teste novo só para bug corrigido ou contrato sem cobertura. Cobertura, suíte completa e baseline de caracterização **não** são critério de aceite, salvo pedido do usuário.
 
 ### Dedup e corte
 
@@ -849,8 +842,7 @@ Só promove `backlog → ready` quando **tudo** abaixo passa:
 - [ ] Não conflita com issue/PR/claim/branch/workspace já ativos no mesmo pedaço
 - [ ] Nenhuma dependência externa aberta (credencial, acesso, decisão humana, provider); se houver, vai para `Blocked`, não para `Ready`
 - [ ] Para concorrência: write scopes, recursos exclusivos e recursos de validação estão declarados e fundamentados **no body da issue**; qualquer independência desconhecida força serialização
-- [ ] Impacto de regressão mapeado: jornadas/contratos anteriores, testes existentes e comandos obrigatórios estão identificados
-- [ ] Para features existentes afetadas, a baseline de caracterização já passa na base escolhida do repositório ou há uma issue predecessora explícita que a estabelecerá
+- [ ] Testes existentes da área afetada identificados
 
 **Ready ≠ compromisso de fazer agora.** Ready = “pode ser puxado sem vergonha”.
 
@@ -1103,10 +1095,7 @@ PR_URL=$(gh pr create --head "$BRANCH" --base "$BASE" --title "<title>" --body "
 Closes #<N>
 
 ## Validation
-- [ ] teste novo/ajustado para o comportamento desta issue (test-first; 100% do comportamento alterado coberto)
-- [ ] regressão direcionada para jornadas, contratos e issues anteriores afetadas
-- [ ] suíte padrão relevante completa do repositório
-- [ ] diagnostics clean (relevant)
+- [ ] testes da área afetada (comandos e resultado)
 - [ ] review independente por `validator` (sem editar), sem blockers pendentes
 - [ ] limitações de ambiente/validação, se houver, documentadas (não marcar done sem decisão explícita)
 
@@ -1176,18 +1165,16 @@ Sempre:
 1. `agent-guide` antes de subagents
 2. Scout extra se a issue exigir entendimento novo
 3. Todo planner/scout/builder/tester usado dentro da issue recebe apenas a workspace Orca daquela issue e seu contrato de ownership; nenhum agent pode editar o checkout canônico do coordenador nem workspace alheia, e nenhum deles substitui um dispatch de issue
-4. Antes de editar, mapear o impacto de regressão: testes, contratos, jornadas e issues anteriores na mesma superfície
-5. Escrever o teste primeiro (test-first) e manter a mudança com cobertura de 100% do comportamento alterado, junto da mudança, sempre que praticável
+4. Identificar os testes existentes da área afetada
+5. Teste novo só para bug corrigido ou contrato sem cobertura, quando barato
 6. Planner quando L/complexa
-7. Antes do PR, rodar: teste novo, regressão direcionada, suíte padrão relevante completa e checks estáticos; não substituir testes por inspeção manual
+7. Antes do PR, rodar os testes da área afetada e os checks estáticos que a mudança toca; sem suíte completa, caça de cobertura ou refatoração de testes por padrão
 8. Antes de abrir **qualquer PR**, garantir um único `PASS` independente de `validator` para o head SHA final; reutilizar PASS existente desse SHA e nunca relançar por metadado opcional ou falso positivo fora da matriz
 9. Registrar comandos, resultados e parecer bounded no PR; se uma camada exigida não rodar, declarar motivo, risco e próxima ação
-10. Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita
+10. Não avançar para `done` se houver falha causada pela issue ou blocker comprovado no escopo; falha pré-existente sem relação é reportada, não perseguida
 11. Planos em `.pi/plans/` referenciando `#N`
 
-A seleção de testes deve cobrir tanto o comportamento novo quanto os contratos já entregues que compartilhem endpoint, domínio, modelo, autorização, evento, integração ou infraestrutura. Quando a feature já existia antes da mudança, a validação começa pelos testes de caracterização da baseline e compara o comportamento legítimo esperado (request, response/status, autorização e efeitos persistidos) antes e depois da alteração. Para áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), execute também a matriz de cenários adversos aplicável; testes posteriores devem continuar executando os regressivos dessas áreas.
-
-Exceção estreita: contenção emergencial que reduz exposição ativa pode preceder uma baseline completa somente com escopo mínimo, smoke test da jornada válida, rollback conhecido e aprovação explícita do usuário. A caracterização completa continua como dependência da próxima alteração funcional; nunca use a exceção para normalizar cobertura ausente.
+Em áreas de risco (auth, autorização/PII, dinheiro, webhooks, migrations, upload e deploy), o teste da área inclui os cenários adversos que a mudança toca diretamente. Provado o comportamento, pare de testar.
 
 Se o planner gerar plano grande: **mostre resumo e peça OK** antes de builders.
 
