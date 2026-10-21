@@ -3138,7 +3138,7 @@ export const REC_MIN_MS = 500;
 export const VOICE_SHORTCUTS = { title: "Voz", items: [{ keys: ["Ctrl", "Shift", "M"], label: "Gravar voz · parar e transcrever" }] };
 
 export function voiceReadEnabled(raw) {
-  return raw === "1";
+  return raw == null ? true : raw === "1";
 }
 
 export function micShortcut(event) {

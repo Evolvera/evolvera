@@ -2773,11 +2773,12 @@ describe("voice: replies read aloud", () => {
     assert.deepEqual(lib.withSpeakAction([], { supported: true, text: "olá" }).map((action) => action.id), ["speak"]);
   });
 
-  // The toggle is stored as "1"/"0"; anything else (first run, corrupt) means off. Constants stay inside the server limits.
-  test("voiceReadEnabled is on only for the stored value 1 and the constants are consistent", () => {
+  // First run defaults to reading replies aloud; only the explicit stored value "0" disables it.
+  test("voiceReadEnabled defaults to on unless explicitly disabled and the constants are consistent", () => {
     assert.equal(lib.voiceReadEnabled("1"), true);
     assert.equal(lib.voiceReadEnabled("0"), false);
-    assert.equal(lib.voiceReadEnabled(null), false);
+    assert.equal(lib.voiceReadEnabled(null), true);
+    assert.equal(lib.voiceReadEnabled(undefined), true);
     assert.equal(lib.voiceReadEnabled("yes"), false);
     assert.equal(lib.VOICE_READ_KEY, "pi-studio:voice-read");
     assert.ok(lib.REC_MAX_MS <= 120000 && lib.REC_MIN_MS > 0);
