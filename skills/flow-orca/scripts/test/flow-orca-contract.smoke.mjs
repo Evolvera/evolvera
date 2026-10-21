@@ -16,7 +16,7 @@ const SYSTEM_MIRROR = "config/SYSTEM.md";
 const EXECUTION_MODE = "extensions/execution-mode.ts";
 const MEMORY_SKILL = "skills/project-memory/SKILL.md";
 const PLANNER_SMOKE = "skills/planner/scripts/test/internal-execution-order.smoke.mjs";
-const README = "README.md";
+const README = "docs/setup.md";
 const INSTALL_SH = "install.sh";
 const INSTALL_PS1 = "install.ps1";
 const ARCH_JSON = ".pi/memory/architecture.json";
@@ -531,8 +531,8 @@ has(SKILL, /faça \*\*uma\*\* pergunta consolidada com todos os PRs prontos/, "c
 has(SKILL, /devolva o restante exato ao \*\*mesmo\*\* PI e workspace/, "incomplete campaign work goes back to the same worker");
 has(SKILL, /Bloqueio, pergunta ou aprovação pendente de um worker nunca para o fechamento, a reconciliação, o merge ou a admissão dos outros/, "one campaign blocker never stalls the others");
 has(SKILL, /Quando falta aprovação de merge, prepare todos os PRs prontos e peça-a numa única pergunta consolidada \(7\.4\); autorização explícita já dada nesta conversa para esses merges vale e não é perguntada de novo/, "7.6 merge approval reuses earlier explicit authorization");
-has(README, /carregá-la automaticamente para campanhas por issues\/board e coordenação de workers PI de issues em worktrees Orca; não é preciso citar o nome/, "README must document automatic routing");
-has(README, /Criação simples de worktree, handoff sem supervisão e explicação isolada continuam fora desse fluxo/, "README must document routing exclusions");
+has(README, /PI should load it automatically for issue\/board campaigns and coordination of PI issue workers in Orca worktrees; there is no need to name it/, "README must document automatic routing");
+has(README, /Simple worktree creation, unsupervised handoff, and standalone explanations remain outside this workflow/, "README must document routing exclusions");
 // Notification: Orca-owned pointer wake, one non-waiting check, ack after settlement, manual wait only as fallback.
 has(SKILL, /Conclusão por evento, sem polling/, "event-driven completion must be the default");
 has(SKILL, /ponteiro é \*\*só despertar\*\*, nunca `worker_done`, nem GitHub `Done`/, "pointer is wakeup only");
@@ -611,7 +611,7 @@ for (const pattern of [
   /Stale, orphan, reused, preexisting, folder-root, unproven, or non-disposable worktrees are never auto-removed/,
   /does not hold an otherwise settled worker's slot/,
 ]) has(REFERENCE, pattern, `cleanup contract missing: ${pattern.source.slice(0, 60)}`);
-has(README, /remove a worktree descartável da issue quando a autoridade específica e os gates de identidade, conteúdo e recuperação estiverem provados; caso contrário, retém com motivo/, "README must state conditional cleanup");
+has(README, /removes the disposable issue worktree only when specific authority and identity, content, and recovery gates are proven; otherwise it retains it with a reason/, "README must state conditional cleanup");
 
 // ── 10. Preserved delivery capabilities ─────────────────────────────────────
 for (const [pattern, message] of [
@@ -643,14 +643,14 @@ assert.ok(psGuard > -1 && psMutation > -1 && psGuard < psMutation, "install.ps1:
 // ── 12. User-facing documentation ───────────────────────────────────────────
 has(README, /\/skill:flow-orca/, "README must document the flow-orca command");
 has(README, /SUPERVISIONADO[\s\S]{0,400}AUTÔNOMO ATÉ PR[\s\S]{0,400}YOLO/, "README must list the three campaign modes");
-has(README, /### Modos de autorização/, "README must document the general authorization modes");
+has(README, /### Authorization Modes/, "README must document the general authorization modes");
 has(README, /`SYSTEM\.md`/, "README must point at the canonical global contract");
 has(README, /`AUTÔNOMO` \(\*\*default\*\*\)/, "README must state the global default mode");
-has(README, /por repositório/, "README must state the per-repository base choice");
-has(README, /teto de \*\*doze\*\* workers PI/, "README must state the twelve-worker ceiling");
+has(README, /per repository/, "README must state the per-repository base choice");
+has(README, /ceiling of \*\*twelve\*\* simultaneous PI issue workers/, "README must state the twelve-worker ceiling");
 has(README, /`Blocked`/, "README must mention the Blocked Project status");
 has(README, /`mergedAt`/, "README must state the merged-evidence Done rule");
-has(README, /verificação estática|estaticamente|não é certificação de campanha live|nenhuma campanha live/i, "README must keep the static-only caveat");
+has(README, /verified \*\*statically\*\*|verificação estática|estaticamente|não é certificação de campanha live|nenhuma campanha live/i, "README must keep the static-only caveat");
 
 // ── 13. Bounded architecture evidence ───────────────────────────────────────
 const architecture = JSON.parse(text.get(ARCH_JSON));
