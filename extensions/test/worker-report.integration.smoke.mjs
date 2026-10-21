@@ -9,6 +9,8 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Resolve the installed package before HOME is redirected; its manifest declares src/index.ts as the extension entry.
+const nativeGoalExtension = path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@narumitw", "pi-goal", "src", "index.ts");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "worker-report-integration-"));
 const envKeys = ["HOME", "USERPROFILE", "PI_CODING_AGENT_DIR", "PI_SDK_ROOT", "JITI_FS_CACHE", "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "NPM_CONFIG_CACHE", "PI_OFFLINE", "PI_REPORT_RUN"];
 const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
@@ -37,7 +39,7 @@ try {
   const modelCore = faux.createFauxCore({ models: [{ id: "worker-report-test", contextWindow: 32_000, maxTokens: 2_000 }] });
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: owned("synthetic-auth.json"), modelsPath: null });
   modelRuntime.registerProvider(modelCore.provider, { api: modelCore.api, streamSimple: (...args) => { providerRequests++; return modelCore.streamSimple(...args); }, apiKey: "synthetic-only", baseUrl: "http://127.0.0.1:9", models: modelCore.models.map((model) => ({ ...model })) });
-  const extensions = await loadExtensions([path.join(repoRoot, "npm/node_modules/@narumitw/pi-goal/src/goal.ts"), wrapper], process.env.PI_CODING_AGENT_DIR);
+  const extensions = await loadExtensions([nativeGoalExtension, wrapper], process.env.PI_CODING_AGENT_DIR);
   assert.equal(extensions.diagnostics?.length ?? 0, 0, "only the explicitly loaded native Goal and injected report extensions initialize cleanly");
   const resourceLoader = { getExtensions: () => extensions, getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }), getSystemPrompt: () => "Synthetic integration only.", getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, reload: async () => {} };
   const ui = { notify() {}, setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, onTerminalInput: () => () => {}, setWorkingMessage() {}, setWorkingVisible() {}, setWorkingIndicator() {}, setHiddenThinkingLabel() {}, setWidget() {}, setFooter() {}, setHeader() {}, setTitle() {}, pasteToEditor() {}, setEditorText() {}, getEditorText: () => "", addAutocompleteProvider() {}, setEditorComponent() {}, getEditorComponent: () => undefined, getAllThemes: () => [], getTheme: () => undefined, setTheme: () => ({ success: false }), getToolsExpanded: () => false, setToolsExpanded() {}, custom: async () => undefined, editor: async () => undefined };
