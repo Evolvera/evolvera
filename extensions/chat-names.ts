@@ -5,7 +5,8 @@ import { homedir } from "node:os";
 import { CURRENT_SESSION_VERSION, getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
 
-export const PREFERRED_MODEL = { provider: "openai-codex", id: "gpt-5.3-codex-spark" } as const;
+// Codex with a ChatGPT account rejects gpt-5.3-codex-spark, so the light title model is GPT-6 Luna.
+export const PREFERRED_MODEL = { provider: "openai-codex", id: "gpt-6-luna" } as const;
 const MAX_INPUT = 4000;
 const ACTIVE_MS = 10 * 60_000;
 const CONCURRENCY = 4;
@@ -39,9 +40,17 @@ function sessionInput(messages: Array<{ role?: string; content?: unknown }>): st
 }
 
 async function titleFor(input: string, ctx: Context, complete?: Complete): Promise<string | undefined> {
+  const preferred = ctx.modelRegistry.find?.(PREFERRED_MODEL.provider, PREFERRED_MODEL.id);
+  // One retry on the session model: a provider can reject the preferred model for this account.
+  for (const model of [preferred, ctx.model].filter((item, index, all): item is Model => Boolean(item) && all.indexOf(item) === index)) {
+    const title = await titleWith(model, input, ctx, complete);
+    if (title) return title;
+  }
+  return undefined;
+}
+
+async function titleWith(model: Model, input: string, ctx: Context, complete?: Complete): Promise<string | undefined> {
   try {
-    const model = ctx.modelRegistry.find?.(PREFERRED_MODEL.provider, PREFERRED_MODEL.id) ?? ctx.model;
-    if (!model) return undefined;
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth?.ok) return undefined;
     const call = complete ?? ((await import("@earendil-works/pi-ai")).completeSimple as unknown as Complete);

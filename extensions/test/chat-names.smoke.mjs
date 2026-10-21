@@ -46,11 +46,12 @@ try {
     sm.appendMessage({ role: "user", content: "ROLEbuilder: organizar relatórios do projeto", timestamp: Date.now() });
     sm.appendMessage({ role: "assistant", content: [{ type: "text", text: "Vou organizar os relatórios." }], api: "fake", provider: "fake", model: "fake", usage: {}, stopReason: "stop", timestamp: Date.now() });
     let modelUsed;
-    const f = fixture({ sessionManager: sm, registry: { find: (provider, id) => { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-5.3-codex-spark"); return { provider, id }; } }, complete: async (model) => { modelUsed = model; return { content: [{ type: "text", text: '"Organizar relatórios do projeto.\nNovo"' }] }; } });
+    const f = fixture({ sessionManager: sm, registry: { find: (provider, id) => { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return { provider, id }; } }, complete: async (model) => { modelUsed = model; return { content: [{ type: "text", text: '"Organizar relatórios do projeto.\nNovo"' }] }; } });
     await f.handlers.get("agent_settled")({}, f.ctx);
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(sm.getSessionName(), "Organizar relatórios do projeto. Novo");
-    assert.equal(modelUsed.id, "gpt-5.3-codex-spark");
+    // Expected: GPT-6 Luna. Why: Codex with a ChatGPT account rejects gpt-5.3-codex-spark (seen live), so it named nothing.
+    assert.equal(modelUsed.id, "gpt-6-luna");
     await f.handlers.get("agent_settled")({}, f.ctx);
     assert.equal(sm.getEntries().filter((entry) => entry.type === "session_info").length, 1, "only one title should be generated");
   }
@@ -77,6 +78,23 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(calls, 0);
     assert.equal(sm.getSessionName(), undefined);
+  }
+
+  // Preferred model rejected by the provider (live: Spark on a ChatGPT account) -> retry once on the session model.
+  // Expected: the title comes from the session model. Why: otherwise one unsupported model leaves every chat unnamed.
+  {
+    const sm = SessionManager.create(owned, path.join(owned, "fallback"));
+    sm.appendMessage({ role: "user", content: "Corrigir aviso do loop", timestamp: Date.now() });
+    const used = [];
+    const f = fixture({ sessionManager: sm, registry: { find: (provider, id) => ({ provider, id }) }, complete: async (model) => {
+      used.push(model.id);
+      if (model.id === "gpt-6-luna") throw new Error("model is not supported when using Codex with a ChatGPT account");
+      return { content: [{ type: "text", text: "Corrigir aviso do loop" }] };
+    } });
+    await f.handlers.get("agent_settled")({}, f.ctx);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(used, ["gpt-6-luna", "fallback"]);
+    assert.equal(sm.getSessionName(), "Corrigir aviso do loop");
   }
 
   // A failed model call leaves an unnamed session untouched so a later attempt can succeed.
