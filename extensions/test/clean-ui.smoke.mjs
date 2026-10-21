@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import test from "node:test";
+import test, { after } from "node:test";
 
 // This harness imports only a copied extension and its run-owned SDK stub. It never resolves the
 // installed SDK or reads the user's Pi configuration.
@@ -581,7 +581,7 @@ test("footer falls back to live history reads without keys and keeps dynamic chr
   assert.doesNotMatch(dynamic, /unavailable/);
 });
 
-console.log(`clean-ui isolated fixture retained at ${runRoot}`);
+after(() => rmSync(runRoot, { recursive: true, force: true }));
 
 
 test("working art has constant-width colored Unicode phases and uses the existing native indicator", async () => {

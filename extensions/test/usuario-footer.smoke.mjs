@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import test from "node:test";
+import test, { after } from "node:test";
 
 // Import copied sources with an owned SDK stub; never resolve installed SDK or user configuration.
 const runRoot = mkdtempSync(path.join(os.tmpdir(), "usuario-footer-smoke-"));
@@ -75,16 +75,16 @@ test("managed selected labels reach the existing footer at startup and new-sessi
     h.statuses.set("maestro", "routing xhigh");
     await h.startSession();
     let lines = h.render(160);
-    assert.ok(lines.join(" ").includes(`usuario ${label}`), `${label}: ${lines.join(" | ")}`);
+    assert.ok(lines.join(" ").includes(`@${label}`), `${label}: ${lines.join(" | ")}`);
     if (label === "EVOLVERA") console.log(`Rendered footer sample: ${lines.join(" | ")}`);
-    assert.match(lines.join(" "), /fast ON.*ECO/);
-    assert.match(lines.join(" "), /maestro ON.*routing xhigh/);
+    assert.match(lines.join(" "), /⚡ECO/);
+    assert.match(lines.join(" "), /MAESTRO·routing xhigh/);
     for (const width of [6, 20, 40, 80, 160]) {
       lines = h.render(width);
       assert.ok(lines.every((line) => cleanUi.cellWidth(line) <= width), `${width}: ${lines.join(" | ")}`);
     }
     await h.startSession();
-    assert.ok(h.render(160).join(" ").includes(`usuario ${label}`), "each new native session republishes the process-bound label");
+    assert.ok(h.render(160).join(" ").includes(`@${label}`), "each new native session republishes the process-bound label");
     assert.deepEqual(h.getMessages(), [], "footer must not send transcript/model messages");
     assert.deepEqual(h.controlCalls, [], "footer must not query account commands or credentials");
   }
@@ -121,4 +121,4 @@ test("headless managed sessions do not publish UI or transcript messages", async
   assert.deepEqual(h.controlCalls, []);
 });
 
-console.log(`usuario footer isolated fixture retained at ${runRoot}`);
+after(() => rmSync(runRoot, { recursive: true, force: true }));
