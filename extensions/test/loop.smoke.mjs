@@ -97,6 +97,46 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent, autoTick = false, 
   }
 }
 
+// O limite maxRuns encerra o agendamento na hora, mas a conclusão espera o último run main.
+// Esperado: nenhuma conclusão no dispatch do run N e exatamente uma após agent_settled idle.
+// Isso evita anunciar sucesso antes da resposta final realmente terminar.
+{
+  const f = fixture({ modelReply: { intervalSeconds: 1, maxRuns: 2, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: "responda" } });
+  await f.commands.loop.handler('"1s" "responda 2 vezes"', f.ctx);
+  await f.handlers.agent_settled({}, f.ctx);
+  await f.advance(1000);
+  assert.equal(f.userMsgs.length, 2);
+  const completed = () => f.notices.filter((text) => text.includes("concluído"));
+  assert.equal(f.ctl.loops.get("L1").status, "done", "o agendamento para ao atingir maxRuns");
+  assert.equal(completed().length, 0, "run final ainda está em voo");
+  await f.handlers.agent_settled({}, f.ctx);
+  assert.equal(completed().length, 1);
+  await f.handlers.agent_settled({}, f.ctx);
+  assert.equal(completed().length, 1, "não duplica a conclusão");
+}
+
+// A duração alcançada em idle deve concluir imediatamente.
+// Esperado: status done e exatamente um aviso concluído no tick de expiração.
+// Não há execução pendente para aguardar neste caso.
+{
+  const f = fixture({ modelReply: { intervalSeconds: 60, maxRuns: null, totalDurationSeconds: 1, runNow: false, dependsOnPrevious: true, task: "tarefa" } });
+  await f.commands.loop.handler('"1s" "por 1 segundo tarefa"', f.ctx);
+  await f.advance(1000);
+  assert.equal(f.ctl.loops.get("L1").status, "done");
+  assert.equal(f.notices.filter((text) => text.includes("concluído")).length, 1);
+}
+
+// Stop during the final in-flight main run must cancel the deferred notice.
+// Esperado: agent_settled após stop não emite concluído.
+// Uma execução parada não pode ser reclassificada como concluída ao liquidar.
+{
+  const f = fixture({ modelReply: { intervalSeconds: 60, maxRuns: 1, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: "tarefa" } });
+  await f.commands.loop.handler('"1s" "tarefa uma vez"', f.ctx);
+  await f.commands.loop.handler("stop L1", f.ctx);
+  await f.handlers.agent_settled({}, f.ctx);
+  assert.equal(f.notices.filter((text) => text.includes("concluído")).length, 0);
+}
+
 // 1) modelo indisponível → parser local; roda já e depois no intervalo; respeita maxRuns.
 {
   const f = fixture({ modelReply: undefined });
@@ -141,20 +181,27 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent, autoTick = false, 
   assert.equal(skipNotices().length, 1, "59 segundos após o primeiro aviso continua suprimido");
 
   first.schedule.dependsOnPrevious = false; // muda para o outro motivo, mesma instância de Loop
+  const skippedBeforeReasonChange = first.skipped;
   await f.advance(1000); // 60 segundos desde o aviso inicial
-  await new Promise((r) => setTimeout(r, 100)); // aguarda apenas a consulta Git local no diretório temporário
+  // Aguarda o fire assíncrono chegar à verificação Git local; o fake clock não avança isso.
+  for (let i = 0; i < 40 && first.skipped === skippedBeforeReasonChange; i++) await new Promise((r) => setTimeout(r, 50));
+  assert(first.skipped > skippedBeforeReasonChange, "o disparo com o motivo novo foi processado");
   assert(first.skipped > 3, "cada disparo bloqueado continua contado");
   assert.equal(skipNotices().length, 2, "o segundo aviso fica elegível aos 60 segundos, inclusive ao mudar o motivo");
   await f.advance(59_000); // janela seguinte, 59 segundos após o aviso
   assert.equal(skipNotices().length, 2, "a janela seguinte também suprime antes do limite");
   first.schedule.dependsOnPrevious = true;
+  const skippedBeforeNextWindow = first.skipped;
   await f.advance(1000);
+  // Wait for the async fire after fake time advances; otherwise the assertion can race its dispatch.
+  for (let i = 0; i < 40 && first.skipped === skippedBeforeNextWindow; i++) await new Promise((r) => setTimeout(r, 50));
+  assert(first.skipped > skippedBeforeNextWindow, "o disparo no limite foi processado");
   assert.equal(skipNotices().length, 3, "a próxima janela reabre exatamente no limite");
 
   // Um loop diferente recebe seu primeiro aviso imediatamente, sem herdar a janela de L1.
   await f.commands.loop.handler('"1s" "outro trabalho"', f.ctx);
-  await new Promise((r) => setTimeout(r, 100)); // aguarda a consulta Git local no diretório temporário
   const second = f.ctl.loops.get("L2");
+  for (let i = 0; i < 40 && second.skipped === 0; i++) await new Promise((r) => setTimeout(r, 50)); // aguarda o despacho assíncrono e a consulta Git local
   assert.equal(second.skipped, 1);
   assert.equal(f.notices.filter((text) => text.includes("/loop L2:") && text.includes("disparo ignorado")).length, 1);
 
@@ -175,7 +222,9 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent, autoTick = false, 
   await completed.commands.loop.handler('"1s" "sucesso"', completed.ctx);
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(completed.ctl.loops.get("L1").status, "done");
-  assert(completed.noticeEvents.some(({ text, type }) => type === "info" && text.includes("concluído")), "conclusão informativa não é suprimida");
+  assert.equal(completed.noticeEvents.some(({ text }) => text.includes("concluído")), false, "aguarda o último run main liquidar");
+  await completed.handlers.agent_settled({}, completed.ctx);
+  assert(completed.noticeEvents.some(({ text, type }) => type === "info" && text.includes("concluído")), "conclusão informativa é emitida após settlement");
 
   // persistência e restauração
   assert.equal(f.entries.at(-1).customType, "loop-state");
@@ -192,6 +241,9 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent, autoTick = false, 
   f.ctl.jobs.clear();
 }
 
+// Worktree final só conclui após a execução isolada completar e entregar resultado.
+// Esperado: aviso concluído ausente antes da job e presente depois; dispatch não é conclusão.
+// Isso cobre o ciclo de vida assíncrono distinto do run na sessão principal.
 // 3) loop independente enquanto outro roda → worktree paralela; commits mesclados; nunca em main.
 if (process.env.PI_WORK_STATUS_OFFLINE_ONLY !== "1") {
 {
@@ -210,11 +262,13 @@ if (process.env.PI_WORK_STATUS_OFFLINE_ONLY !== "1") {
     };
     const f = fixture({ cwd: repo, runAgent, modelReply: (text) => text.includes("TASK A")
       ? { dependent: false }
-      : { intervalSeconds: 60, maxRuns: null, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: text.includes("verifique") ? "verifique" : "crie b.txt" } });
+      : { intervalSeconds: 60, maxRuns: text.includes("crie b.txt") ? 1 : null, totalDurationSeconds: null, runNow: true, dependsOnPrevious: true, task: text.includes("verifique") ? "verifique" : "crie b.txt" } });
     await f.commands.loop.handler('"1 min" "verifique"', f.ctx);       // L1 vai para a sessão principal
     f.setIdle(false);
     await f.commands.loop.handler('"1 min" "crie b.txt"', f.ctx);      // L2 roda em paralelo
+    assert.equal(f.notices.filter((text) => text.includes("/loop L2 concluído")).length, 0, "worktree em voo ainda não concluiu");
     for (let i = 0; i < 100 && f.results.length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(f.notices.filter((text) => text.includes("/loop L2 concluído")).length, 1, "conclui após a entrega da worktree");
     assert.equal(f.results.length, 1, f.notices.join("\n"));
     assert.match(f.results[0].content, /criei b\.txt/);
     assert.match(f.results[0].content, /mesclados em `feature`/);

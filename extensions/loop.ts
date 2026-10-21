@@ -236,6 +236,7 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 	const runAgent = deps.runAgent ?? defaultRunAgent;
 	const loops = new Map<string, Loop>();
 	const lastSkipNoticeAt = new WeakMap<Loop, number>();
+	const completionNotified = new Set<string>();
 	const jobs = new Map<string, { loopId: string; runNumber: number; abort: AbortController; startedAt: number }>();
 	const firing = new Set<string>();
 	const depCache = new Map<string, boolean>();
@@ -295,14 +296,21 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 		return `/loop ${loop.id} · execução ${runNumber}${loop.schedule.maxRuns ? `/${loop.schedule.maxRuns}` : ""}`;
 	}
 
+	function notifyCompletionIfReady(loop: Loop) {
+		if (loop.status !== "done" || completionNotified.has(loop.id)) return;
+		if (mainRun === loop.id || [...jobs.values()].some((job) => job.loopId === loop.id)) return;
+		completionNotified.add(loop.id);
+		notify(`/loop ${loop.id} concluído: ${loop.runs} execução(ões), ${loop.skipped} pulada(s).`);
+	}
+
 	function finishIfDone(loop: Loop) {
 		if (loop.status !== "active") return;
 		const byRuns = loop.schedule.maxRuns !== null && loop.runs >= loop.schedule.maxRuns;
 		const byTime = loop.endsAt !== null && now() >= loop.endsAt;
 		if (byRuns || byTime) {
 			loop.status = "done";
-			notify(`/loop ${loop.id} concluído: ${loop.runs} execução(ões), ${loop.skipped} pulada(s).`);
 			save(true);
+			notifyCompletionIfReady(loop);
 		}
 	}
 
@@ -393,14 +401,18 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 			report.push(`Erro na execução paralela: ${(error as Error).message}`);
 		} finally {
 			jobs.delete(jobId);
-			if (dir && repo) {
-				await git(repo, "worktree", "remove", "--force", dir);
-				const merged = (await git(repo, "branch", "--merged", "HEAD", "--list", branch)).stdout;
-				const ahead = Number((await git(repo, "rev-list", "--count", `HEAD..${branch}`)).stdout) || 0;
-				if (merged || ahead === 0) await git(repo, "branch", "-D", branch);
+			try {
+				if (dir && repo) {
+					await git(repo, "worktree", "remove", "--force", dir);
+					const merged = (await git(repo, "branch", "--merged", "HEAD", "--list", branch)).stdout;
+					const ahead = Number((await git(repo, "rev-list", "--count", `HEAD..${branch}`)).stdout) || 0;
+					if (merged || ahead === 0) await git(repo, "branch", "-D", branch);
+				}
+			} finally {
+				if (!abort.signal.aborted) deliver(loop, runNumber, report.join("\n"));
+				notifyCompletionIfReady(loop);
 			}
 		}
-		if (!abort.signal.aborted) deliver(loop, runNumber, report.join("\n"));
 	}
 
 	async function fire(loop: Loop) {
@@ -540,7 +552,12 @@ export function registerLoop(pi: ExtensionAPI, deps: LoopDeps = {}) {
 
 	pi.on("agent_settled", async (_event, ctx) => {
 		ctxRef = ctx as unknown as Ctx;
-		if (ctx.isIdle()) mainRun = null;
+		if (ctx.isIdle()) {
+			const settledLoopId = mainRun;
+			mainRun = null;
+			const settledLoop = settledLoopId ? loops.get(settledLoopId) : undefined;
+			if (settledLoop) notifyCompletionIfReady(settledLoop);
+		}
 		updateStatus();
 	});
 
