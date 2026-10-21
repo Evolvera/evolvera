@@ -39,8 +39,8 @@ assert.equal(m.validateSchedule({ intervalSeconds: 0, task: "x" }), undefined);
 assert.equal(m.validateSchedule({ intervalSeconds: 60, task: "" }), undefined);
 
 // ── controlador ──
-function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
-  const commands = {}; const handlers = {}; const userMsgs = []; const results = []; const entries = []; const notices = []; const noticeEvents = [];
+function fixture({ modelReply, cwd = process.cwd(), runAgent, autoTick = false, hasUI = false } = {}) {
+  const commands = {}; const handlers = {}; const userMsgs = []; const results = []; const entries = []; const notices = []; const noticeEvents = []; const statuses = [];
   let clock = 1_000_000; let idle = true;
   const pi = {
     registerCommand: (n, c) => { commands[n] = c; }, on: (e, h) => { handlers[e] = h; },
@@ -48,19 +48,53 @@ function fixture({ modelReply, cwd = process.cwd(), runAgent } = {}) {
     sendMessage: (msg) => results.push(msg), appendEntry: (type, data) => entries.push({ type: "custom", customType: type, data }),
   };
   const ctx = {
-    cwd, hasUI: false, model: { provider: "fake", id: "m" }, isIdle: () => idle,
+    cwd, hasUI, model: { provider: "fake", id: "m" }, isIdle: () => idle,
     modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true }) },
-    sessionManager: { getEntries: () => entries }, ui: { notify: (t, type = "info") => { notices.push(t); noticeEvents.push({ text: t, type }); } },
+    sessionManager: { getEntries: () => entries }, ui: {
+      notify: (t, type = "info") => { notices.push(t); noticeEvents.push({ text: t, type }); },
+      setStatus: (key, text) => statuses.push({ key, text }),
+    },
   };
   const complete = async (_model, req) => {
     const text = req.messages[0].content[0].text;
     const reply = typeof modelReply === "function" ? modelReply(text) : modelReply;
     return { content: [{ type: "text", text: reply === undefined ? "no json" : JSON.stringify(reply) }] };
   };
-  const ctl = m.registerLoop(pi, { now: () => clock, complete, autoTick: false, runAgent, worktreeRoot: cwd === process.cwd() ? undefined : path.join(cwd, "..", "wt") });
-  return { commands, handlers, userMsgs, results, entries, notices, noticeEvents, ctx, ctl,
+  const ctl = m.registerLoop(pi, { now: () => clock, complete, autoTick, runAgent, worktreeRoot: cwd === process.cwd() ? undefined : path.join(cwd, "..", "wt") });
+  return { commands, handlers, userMsgs, results, entries, notices, noticeEvents, statuses, ctx, ctl,
     advance: async (ms) => { clock += ms; ctl.tick(); await new Promise((r) => setTimeout(r, 20)); },
+    advanceClock: (ms) => { clock += ms; },
     setIdle: (v) => { idle = v; } };
+}
+
+// Status de contagem regressiva atualiza em cada tick de 1 segundo enquanto o loop permanece ativo.
+{
+  const originalSetInterval = globalThis.setInterval;
+  let tickerCallback;
+  globalThis.setInterval = (callback, delay) => {
+    assert.equal(delay, 1000);
+    tickerCallback = callback;
+    return 1;
+  };
+  try {
+    const f = fixture({ modelReply: undefined, autoTick: true, hasUI: true });
+    await f.commands.loop.handler('"3 segundos" "diga oi"', f.ctx);
+    assert.equal(f.ctl.loops.get("L1").status, "active");
+    const textAtStart = f.statuses.at(-1)?.text;
+    assert.match(textAtStart, /próximo em 3s(?: · \d+ rodando)?$/);
+    assert.equal(typeof tickerCallback, "function", "o ticker de 1 segundo foi registrado");
+
+    for (let second = 1; second <= 2; second++) {
+      f.advanceClock(1000);
+      tickerCallback();
+      const current = f.statuses.at(-1)?.text;
+      assert.equal(f.ctl.loops.get("L1").status, "active");
+      assert.match(current, new RegExp(`próximo em ${3 - second}s(?: · \\d+ rodando)?$`));
+      assert.notEqual(current, textAtStart, `status deve mudar após ${second}s`);
+    }
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+  }
 }
 
 // 1) modelo indisponível → parser local; roda já e depois no intervalo; respeita maxRuns.
