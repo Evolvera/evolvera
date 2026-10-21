@@ -212,6 +212,8 @@ function assertInstalled(testCase, mcpExpected) {
     `${testCase.label}: settings.json compaction.reserveTokens`);
   const mcpAdapterPath = path.join(agent, 'mcp-adapter.json');
   assert.ok(fs.statSync(mcpAdapterPath).isFile(), `${testCase.label}: mcp-adapter.json`);
+  const legacyMcpPath = path.join(agent, 'mcp.json');
+  assert.equal(fs.existsSync(legacyMcpPath), false, `${testCase.label}: legacy mcp.json must not be overwritten or created`);
   if (mcpExpected !== null) {
     assert.deepEqual(fs.readFileSync(mcpAdapterPath), mcpExpected, `${testCase.label}: mcp-adapter.json bytes differ`);
   }

@@ -260,8 +260,8 @@ try {
   assert.match(primary.systemPrompt, /The orchestrator owns the remaining work/);
   assert.match(primaryPrompt, /interpret the latest message within the active user-authorized outcome/);
   assert.match(primaryPrompt, /a question about purpose, progress, remaining work, or available parallel work does not itself pause or narrow that delivery/);
-  assert.match(primaryPrompt, /Work you owe \([^)]*\) is listed with its next action and started in the same turn, never labeled blocked/);
-  assert.match(primaryPrompt, /An approval required for a later action \([^)]*\) does not block its already-authorized prerequisites/);
+  assert.match(primary.systemPrompt, /unfinished work you can perform is not a blocker/);
+  assert.match(primary.systemPrompt, /A later approval boundary does not suspend already-authorized prerequisites/);
   assert.match(primaryPrompt, /A standalone request for explanation, review, plan, or draft ends at that deliverable and grants no implementation/);
   assert.doesNotMatch(primaryPrompt, /\*\*Requested deliverable is the stop boundary:\*\* a request for explanation/);
   assert.match(primary.systemPrompt, /Missing evidence is unfinished work, not by itself a reason to pause/);

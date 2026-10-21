@@ -18,7 +18,6 @@ if ($PrepareUsuarioEntry) {
     else { & node @argsList }
     exit $LASTEXITCODE
 }
-
 $ErrorActionPreference = "Stop"
 
 # Colors
@@ -41,7 +40,6 @@ function Invoke-PiInstall($package) {
     & pi install $package 2>$null | Out-Host
     # $LASTEXITCODE stays global, so callers keep checking it as before.
 }
-
 # True when $target matches (ignoring line endings) a version of config/rpiv-todo/config.json in this checkout's history.
 function Test-TodoCfgPreviouslyShipped($target) {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
@@ -220,7 +218,9 @@ if (-not $sameRoot) {
         $dest = Join-Path $PI_DIR "extensions"
         Copy-Item $extensions.FullName $dest -Force
         Info ($extensions.Count.ToString() + " extensoes")
-        # Maestro's Jev key: install once, never overwrite, current user only.
+        # Maestro is a single file again; drop its old directory form (vendored tokenizer).
+        Remove-Item (Join-Path $PI_DIR "extensions\maestro") -Recurse -Force -ErrorAction SilentlyContinue
+        # Maestro's Jev key: installed once, never overwritten, current user only.
         $jevSrc = Join-Path $SCRIPT_DIR "config\jev\api_key"
         $jevKey = Join-Path $HOME ".config\jev\api_key"
         if ((Test-Path $jevSrc) -and -not (Test-Path $jevKey)) {
@@ -330,7 +330,6 @@ if ($piCmd) {
     Info "pi-antigravity..."
     Invoke-PiInstall npm:pi-antigravity@0.10.0
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-antigravity." }
-
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")
     if ($LASTEXITCODE -ne 0) { throw "A normalização dos corpos de erro dos provedores recusou o patch." }
     Info "Normalização dos corpos de erro dos provedores verificada"

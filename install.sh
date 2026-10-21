@@ -158,7 +158,9 @@ if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then
     cp "$SCRIPT_DIR"/extensions/*.ts "$PI_DIR/extensions/"
     info "$(ls "$SCRIPT_DIR"/extensions/*.ts | wc -l | tr -d ' ') extensões"
 fi
-# Maestro's Jev key: install once, never overwrite, owner-only.
+# Maestro is a single file again; drop its old directory form (vendored tokenizer).
+rm -rf "$PI_DIR/extensions/maestro"
+# Maestro's Jev key: installed once, never overwritten, owner-only.
 jev_key="$HOME/.config/jev/api_key"
 if [ -f "$SCRIPT_DIR/config/jev/api_key" ] && [ ! -e "$jev_key" ]; then
     mkdir -p "$(dirname "$jev_key")" && (umask 077; cp "$SCRIPT_DIR/config/jev/api_key" "$jev_key") && chmod 600 "$jev_key" && info "maestro: chave Jev instalada"

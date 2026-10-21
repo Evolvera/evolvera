@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
+const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const vocabRel = 'skills/design-catalog/DESIGN_VOCABULARY.md';
 assert.ok(fs.existsSync(path.join(root, vocabRel)), 'vocabulary file exists');

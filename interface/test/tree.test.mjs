@@ -1,6 +1,6 @@
 // Tree tests use only synthetic session records and injectable providers so the tree contract is deterministic and isolated.
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -143,7 +143,7 @@ test("tree coalesces concurrent refreshes and closes cleanly", async () => {
 // The authenticated HTTP route returns the composed tree and its ETag, then answers unchanged polls with 304.
 test("GET /api/tree is authenticated and serves conditional JSON", async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-tree-route-"));
-  const names = ["PI_AGENT_DIR", "PI_PROJECT_ROOTS", "PI_WEB_PI_BIN", "PI_WEB_PI_BIN_ARGS", "PI_STUDIO_ORCA_BIN", "PI_STUDIO_ORCA_BIN_ARGS", "PI_STUDIO_PS_BIN", "PI_STUDIO_PS_BIN_ARGS", "FAKE_ORCA_STATE", "FAKE_PS_STATE", "FAKE_PI_SESSION_FILE"];
+  const names = ["PI_AGENT_DIR", "PI_PROJECT_ROOTS", "PI_WEB_PI_BIN", "PI_WEB_PI_BIN_ARGS", "PI_STUDIO_ORCA_BIN", "PI_STUDIO_ORCA_BIN_ARGS", "PI_STUDIO_PS_BIN", "PI_STUDIO_PS_BIN_ARGS", "FAKE_ORCA_STATE", "FAKE_PS_STATE", "FAKE_PI_SESSION_FILE", "FAKE_PI_PID_FILE", "FAKE_PI_EXIT_FILE"];
   const prior = Object.fromEntries(names.map((key) => [key, process.env[key]]));
   let app;
   try {
@@ -175,6 +175,8 @@ test("GET /api/tree is authenticated and serves conditional JSON", async () => {
       PI_STUDIO_ORCA_BIN: process.execPath, PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.resolve("test/fake-orca.mjs")]), FAKE_ORCA_STATE: orcaState,
       PI_STUDIO_PS_BIN: process.execPath, PI_STUDIO_PS_BIN_ARGS: JSON.stringify([path.resolve("test/fake-ps.mjs")]), FAKE_PS_STATE: psState,
       FAKE_PI_SESSION_FILE: mainSession,
+      FAKE_PI_PID_FILE: path.join(tmp, "fake-pi-pids.log"),
+      FAKE_PI_EXIT_FILE: path.join(tmp, "fake-pi-exits.log"),
     });
     app = await import(`../server.mjs?tree-route-${process.pid}`);
     const server = await app.startServer(0, "127.0.0.1");
@@ -209,7 +211,29 @@ test("GET /api/tree is authenticated and serves conditional JSON", async () => {
     assert.equal(stoppedTree.title, "Título atualizado");
   } finally {
     if (app) await app.stopServer().catch(() => {});
+    let exited = false;
+    try {
+      const pids = (await readFile(path.join(tmp, "fake-pi-pids.log"), "utf8")).trim().split(/\n+/).filter(Boolean).map(Number);
+      if (pids.length === 1 && Number.isInteger(pids[0])) {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const exits = await readFile(path.join(tmp, "fake-pi-exits.log"), "utf8").catch(() => "");
+          let alive = true;
+          try { process.kill(pids[0], 0); } catch (error) { if (error.code === "ESRCH") alive = false; }
+          if (!alive) {
+            await writeFile(path.join(tmp, "fake-pi-exits.log"), `${JSON.stringify({ pid: pids[0], observedExitedAt: new Date().toISOString() })}\n`);
+            exited = true;
+            break;
+          }
+          if (exits.split(/\n+/).some((line) => {
+            try { return JSON.parse(line).pid === pids[0]; } catch { return false; }
+          })) { exited = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+    } catch {}
     for (const [key, value] of Object.entries(prior)) value === undefined ? delete process.env[key] : process.env[key] = value;
+    if (!exited) throw new Error(`Fake PI child exit was not proven; preserving fixture at ${tmp}`);
     await rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

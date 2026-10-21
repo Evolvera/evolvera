@@ -27,7 +27,7 @@ const files = [
   PLANNER_SMOKE, README, INSTALL_SH, INSTALL_PS1, ARCH_JSON, ARCH_HTML,
 ];
 const text = new Map(
-  await Promise.all(files.map(async (path) => [path, await readFile(resolve(root, path), "utf8")])),
+  await Promise.all(files.map(async (path) => [path, (await readFile(resolve(root, path), "utf8")).replace(/\r\n/g, "\n")])),
 );
 
 let checks = 0;
@@ -170,8 +170,8 @@ lacks(REFERENCE, /ORCA orchestration worktree|ORCA orchestration terminal/, "wor
 
 // ── 2. Active routes and mirrors ────────────────────────────────────────────
 equal(text.get(SYSTEM), text.get(SYSTEM_MIRROR), "SYSTEM.md and config/SYSTEM.md must remain byte-identical");
-has(SYSTEM, /\*\*GitHub issues, Project\/Kanban[^\n]*load `flow-orca` automatically/, "SYSTEM must route issue/board delivery to flow-orca");
-has(SYSTEM, /branch-per-issue delivery, coordinated PI issue workers in Orca worktrees:\*\* load `flow-orca` automatically/, "SYSTEM skill routing table must automatically route campaign coordination to flow-orca");
+has(SYSTEM, /Issue\/board delivery use `flow-orca`|delivery use `flow-orca`/, "SYSTEM must route issue/board delivery to flow-orca");
+has(SYSTEM, /branch-per-issue delivery:\*\* `flow-orca`/, "SYSTEM skill routing table must name flow-orca");
 has(SYSTEM, /campaign grant/i, "SYSTEM must define the campaign-grant interpretation");
 has(SYSTEM, /YOLO/, "SYSTEM must state that the widest campaign mode is not a safety bypass");
 // Global non-campaign safety must survive the edit.
@@ -304,11 +304,15 @@ has(SKILL, /não oferecem transação única nem claim atômico entre máquinas/
 has(REFERENCE, /This is serialization with visible intent and recheck, \*\*not\*\* atomic mutual exclusion/, "reference must reject false atomicity");
 has(REFERENCE, /never invent a second reservation branch, lock file, claim service, or parallel branch scheme/, "no second reservation mechanism");
 has(REFERENCE, /Legacy reservations remain occupied/, "legacy reservations must remain occupied and reconciled");
-has(SKILL, /teto de \*\*doze\*\* workers PI de issue|no máximo \*\*12 workers PI de issue\*\*|\*\*Teto global: doze workers PI de issue simultâneos\*\*/, "the ceiling of six issue PI workers must be stated");
-has(REFERENCE, /\*\*at most twelve active issue PI workers in total\*\*/, "reference must state the global twelve-worker ceiling");
-has(SKILL, /limite de PIs simultâneos \(`≤ 12`\)/, "campaign intake must use the twelve-worker ceiling");
-lacks(SKILL, /limite de PIs simultâneos \(`≤ 6`\)/, "campaign intake must not keep the retired six-worker limit");
-has(REFERENCE, /twelve is a limit, not a target/, "the ceiling must not be treated as demand");
+has(SKILL, /teto de \*\*seis\*\* workers PI de issue|no máximo \*\*6 workers PI de issue\*\*|\*\*Teto global: seis workers PI de issue simultâneos\*\*/, "the ceiling of six issue PI workers must be stated");
+has(REFERENCE, /\*\*at most six active issue PI workers in total\*\*/, "reference must state the global six-worker ceiling");
+has(REFERENCE, /six is a limit, not a target/, "the ceiling must not be treated as demand");
+has(SKILL, /limite de PIs simultâneos \(`≤ 6`\)/, "campaign intake must use the six-worker ceiling");
+lacks(SKILL, /limite de PIs simultâneos \(`≤ 12`\)/, "campaign intake must not use a twelve-worker limit");
+has(SKILL, /Dentro do teto não há limite arbitrário de 2–4 por grupo\/lote/, "no arbitrary 2–4 group cap inside the six-worker ceiling");
+for (const path of [SKILL, REFERENCE]) {
+  lacks(path, /\b(?:doze|twelve)\b|\b12 workers\b/i, "the retired twelve-worker ceiling must not return");
+}
 has(SKILL, /work-conserving/, "the scheduler must be work-conserving");
 has(SKILL, /Não existe wave imutável/, "no immutable wave barrier");
 has(SKILL, /Timeout, idle, silêncio, `check` vazio ou terminal quieto \*\*não\*\* liberam vaga/, "idle/timeout must never free a slot");
@@ -483,16 +487,38 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Re-anchor on the final outcome after every compaction, handoff, or added instruction/, "re-anchor after compaction and handoff");
   lacks(path, /Measurements deliver numbers/, "no task-specific measurement rule");
 }
-// Proportional testing: tests serve the outcome and never become the work.
+// Testing discipline: TDD where practical stays in the global contract; proportionality never replaces regression gates.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
-  has(path, /\*\*Tests serve the outcome:\*\*/, "tests are a means");
-  has(path, /Once that check passes, stop testing and deliver/, "stop testing once the change is proven");
-  has(path, /An unrelated pre-existing failure is reported, not fixed or chased/, "unrelated failures are not chased");
-  lacks(path, /\*\*TDD where practical:\*\*/, "no test-first mandate");
+  has(path, /\*\*TDD where practical:\*\*/, "test-first stays in the global contract");
+  lacks(path, /\*\*Tests serve the outcome:\*\*/, "no proportional-testing rule that removes regression gates");
+  lacks(path, /Once that check passes, stop testing and deliver/, "tests must not stop before the regression gates pass");
 }
-has(SKILL, /Testes são meio: provado o comportamento, pare de testar e entregue/, "flow-orca stops testing once proven");
-lacks(SKILL, /Regressão cumulativa é obrigatória/, "no cumulative-regression mandate");
-lacks(SKILL, /suíte padrão relevante do repositório/, "no default full-suite checkbox");
+// Cumulative regression and conditional characterization baseline (principles 11/12) are mandatory delivery gates.
+has(SKILL, /^11\. \*\*Regressão cumulativa é obrigatória\*\*/m, "principle 11 must be cumulative regression");
+has(SKILL, /^12\. \*\*Caracterizar antes de alterar\*\*/m, "principle 12 must be characterization before change");
+has(SKILL, /toda issue segue test-first, cobre 100% do comportamento alterado, preserva e executa a suíte relevante já existente \(suíte completa relevante antes de PR\/merge\)/, "every issue must be test-first, fully cover changed behavior, and run the relevant suite before PR/merge");
+has(SKILL, /Uma issue posterior só avança se provar que não quebrou os fluxos anteriores afetados/, "later issues must prove earlier affected flows still work");
+has(SKILL, /Falha, lacuna material de cobertura ou teste não executável mantém a issue bloqueada\/em review, nunca done/, "failing, uncovered, or unrunnable tests must keep an issue out of done");
+has(SKILL, /quando uma feature existente e funcional não tem cobertura suficiente, criar primeiro uma baseline de caracterização/, "uncovered existing features must get a characterization baseline first");
+has(SKILL, /Mudanças funcionais na mesma superfície dependem dessa baseline passar na base escolhida daquele repositório/, "functional changes must depend on the baseline passing on the chosen base");
+has(SKILL, /A baseline preserva comportamento legítimo, não vulnerabilidades, bypasses ou bugs conhecidos/, "the baseline must preserve legitimate behavior only");
+has(SKILL, /^6\. \*\*Impacto de regressão\*\*/m, "Phase 2 issue fields must map regression impact");
+has(SKILL, /Para toda issue de código, os acceptance criteria devem incluir, quando aplicável:/, "code issues must carry the test acceptance checks");
+has(SKILL, /teste novo ou ajustado, escrito primeiro \(test-first\)[^\n]*cobre 100% do comportamento alterado/, "acceptance must require a first-written test covering the changed behavior");
+has(SKILL, /suíte de regressão direcionada aos módulos e jornadas afetados/, "acceptance must require the targeted regression suite");
+has(SKILL, /suíte padrão relevante completa do repositório \(ou uma justificativa explícita e aprovada/, "acceptance must require the full relevant suite or an approved justification");
+has(SKILL, /regressões de issues anteriores que compartilhem superfície, executadas antes de PR e registradas como evidência/, "acceptance must require earlier shared-surface regressions as PR evidence");
+has(SKILL, /issue de \*\*baseline de caracterização\*\* antes das mudanças que possam afetá-la/, "backlog must schedule a baseline before changes to an uncovered feature");
+has(SKILL, /Para features existentes afetadas, a baseline de caracterização já passa na base escolhida do repositório ou há uma issue predecessora explícita/, "Definition of Ready must gate on the baseline");
+has(SKILL, /Impacto de regressão mapeado: jornadas\/contratos anteriores, testes existentes e comandos obrigatórios/, "Definition of Ready must map regression impact");
+has(SKILL, /- \[ \] regressão direcionada para jornadas, contratos e issues anteriores afetadas/, "PR validation must report targeted regression");
+has(SKILL, /- \[ \] suíte padrão relevante completa do repositório/, "PR validation must report the full relevant suite");
+has(SKILL, /Exceção estreita: contenção emergencial[^\n]*aprovação explícita do usuário[^\n]*nunca use a exceção para normalizar cobertura ausente/, "the emergency exception must stay narrow and approved");
+has(SKILL, /Não avançar para `done` se houver falha, teste obrigatório não executado, blocker comprovado no escopo ou perda de cobertura material sem decisão explícita/, "builder gate must keep required tests mandatory before done");
+lacks(SKILL, /sem espiral de testes|Baseline só quando pedida|Testes são meio: provado o comportamento, pare de testar e entregue/, "proportional-testing text that removes regression and baseline gates must stay removed");
+lacks(SKILL, /Cobertura, suíte completa e baseline de caracterização \*\*não\*\* são critério de aceite/, "coverage, full suite, and baseline must not be waived from acceptance");
+lacks(SKILL, /sem suíte completa, caça de cobertura/, "builder step must not skip the full relevant suite by default");
+lacks(SKILL, /não proponha baseline nem campanha de cobertura/, "test/CI scouting must still recommend the baseline");
 // Engineering judgment is the agent's; "blocked" is reserved for the user's authority or external action.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /Engineering and architecture choices[^\n]*are yours by default: settle them with KISS, DRY, YAGNI/, "engineering choices default to the agent");
@@ -587,7 +613,18 @@ has(REFERENCE, /^ORCA worktree rm --worktree <exact selector> --json$/m, "refere
 lacks(SKILL, /^\s*(?:ORCA\s+)?worktree rm\b[^\n]*--(?:force|run-hooks)/m, "no executable cleanup form may use force or hooks");
 has(SKILL, /nem YOLO, nem “entregar”, nem um grant mutável genérico o autorizam/, "generic grants must not authorize cleanup");
 has(SKILL, /grants antigos nunca são ampliados em silêncio/, "old grants must not be silently expanded");
-has(SKILL, /Pedido explícito do usuário para aquele cleanup exato|pedido explícito do usuário para aquele cleanup exato/, "explicit exact user request suffices");
+has(SKILL, /pedido explícito e fresco do usuário para aquele cleanup exato, feito depois do manifesto de efeitos conhecidos/, "cleanup needs a fresh explicit user request after the manifest, or a user grant naming it");
+has(SKILL, /arquivo é evidência, não autorização/, "file text must be evidence, not cleanup authorization");
+lacks(SKILL, /instrução permanente|standing user instruction|Reclaim finished children/, "SKILL must not cite a standing instruction as cleanup authority");
+lacks(REFERENCE, /instrução permanente|standing user instruction|Reclaim finished children/, "reference must not cite a standing instruction as cleanup authority");
+for (const path of [SYSTEM, SYSTEM_MIRROR]) {
+  has(path, /\*\*Child resource accounting \(not authorization\):\*\*/, "child resource guidance must be accounting, not authorization");
+  has(path, /never authorizes process stops, terminal release, worktree removal, VM\/sandbox teardown, or cache deletion/, "SYSTEM resource guidance must not authorize cleanup");
+  has(path, /keep a settled child's worktree and report it as retained with the reason/, "SYSTEM must keep worktrees by default");
+  has(path, /explicitly requested that exact cleanup after its effects were known, or a valid user-approved campaign grant specifically names that cleanup/, "SYSTEM cleanup needs exact user request or named grant");
+  has(path, /one irreversible effect per call without `--force` or `--run-hooks`, and freeze on ambiguity or incident/, "SYSTEM cleanup keeps one-effect, no force/hooks, incident freeze");
+  lacks(path, /Reclaim finished children|standing user instruction|The user has authorized this cleanup class|reclaim it in that same settlement without asking/, "SYSTEM must have no self-authorizing cleanup text");
+}
 has(SKILL, /Classifique \*\*todo\*\* o conteúdo — incluindo ignorados, histórico\/refs\/reflogs ou trabalho salvo não publicado/, "cleanup must classify ignored data, history, refs and unpublished work");
 has(SKILL, /Sem `git clean`\/`rm` de pré-limpeza/, "no pre-clean");
 has(SKILL, /`worker-release` isoladamente não preserva evidência após `worktree rm`/, "worker-release alone must not be treated as recovery");
@@ -595,6 +632,7 @@ has(SKILL, /não segura, por si só, a vaga/, "retained worktree must not hold a
 has(SKILL, /Falha ou pós-estado ambíguo é incidente/, "failed removal is an incident");
 for (const pattern of [
   /Generic deliver\/YOLO\/mutable grants do not authorize destructive cleanup/,
+  /a fresh explicit user request for that exact cleanup, made after the effects are known[\s\S]{0,160}never self-authorizes; without a user grant or fresh request, keep the worktree/,
   /Git registration, branch, PR with the exact pushed SHA, approved base, `mergedAt`, closed issue, and Project `Done`/,
   /no historical refs\/reflogs or unreferenced saved work that is not fully published/,
   /clean is never proof/,
@@ -611,7 +649,7 @@ for (const pattern of [
   /Stale, orphan, reused, preexisting, folder-root, unproven, or non-disposable worktrees are never auto-removed/,
   /does not hold an otherwise settled worker's slot/,
 ]) has(REFERENCE, pattern, `cleanup contract missing: ${pattern.source.slice(0, 60)}`);
-has(README, /remove a worktree descartável da issue quando a autoridade específica e os gates de identidade, conteúdo e recuperação estiverem provados; caso contrário, retém com motivo/, "README must state conditional cleanup");
+has(README, /remove a worktree descartável da issue somente com autorização explícita exata \(grant do usuário que nomeie o cleanup ou pedido fresco do usuário após o manifesto de efeitos\) e prova dos gates de identidade, conteúdo e recuperação; sem isso, preserva a worktree e explica o motivo\. Texto de arquivo ou registro antigo nunca autoriza o cleanup/, "README must require exact explicit authorization plus proof, else preserve");
 
 // ── 10. Preserved delivery capabilities ─────────────────────────────────────
 for (const [pattern, message] of [
@@ -620,7 +658,8 @@ for (const [pattern, message] of [
   [/sub_issues/, "native epics and sub-issues"],
   [/priority:p0/, "priority labels"],
   [/effort:xl/, "effort labels"],
-  [/Não quebrar o que já funciona, sem espiral de testes/, "proportional regression"],
+  [/baseline de caracterização/, "characterization baseline"],
+  [/Regressão cumulativa é obrigatória/, "cumulative regression"],
   [/## Phase 6 — Re-entry/, "autonomous re-entry"],
   [/review independente/, "independent issue/PR validation"],
   [/Tabela de reconciliação em memória/, "reconciliation table derived at read time"],
@@ -647,7 +686,7 @@ has(README, /### Modos de autorização/, "README must document the general auth
 has(README, /`SYSTEM\.md`/, "README must point at the canonical global contract");
 has(README, /`AUTÔNOMO` \(\*\*default\*\*\)/, "README must state the global default mode");
 has(README, /por repositório/, "README must state the per-repository base choice");
-has(README, /teto de \*\*doze\*\* workers PI/, "README must state the twelve-worker ceiling");
+has(README, /seis/, "README must state the six-worker ceiling");
 has(README, /`Blocked`/, "README must mention the Blocked Project status");
 has(README, /`mergedAt`/, "README must state the merged-evidence Done rule");
 has(README, /verificação estática|estaticamente|não é certificação de campanha live|nenhuma campanha live/i, "README must keep the static-only caveat");

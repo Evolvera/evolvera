@@ -79,7 +79,7 @@ try {
   }));
   writeFileSync(path.join(smokeDir, "lento.smoke.mjs"), 'await new Promise((resolve) => setTimeout(resolve, 800));\n');
   writeFileSync(path.join(smokeDir, ".classificacao.json"), JSON.stringify({
-    semEstado: ["um.smoke.mjs", "dois.smoke.mjs", "lento.smoke.mjs"], tmpdirProprio: [],
+    semEstado: ["um.smoke.mjs", "dois.smoke.mjs", "lento.smoke.mjs", "npm test (interface)"], tmpdirProprio: [],
   }));
   result = spawnSync(process.execPath, [runner, "--root", fakeRoot, "--timeout", "500"], {
     cwd: repoRoot, encoding: "utf8", timeout: 60_000, maxBuffer: 1024 * 1024,
@@ -96,6 +96,20 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /npm test \(interface\) \(limite 400000 ms\)/);
   assert.match(result.stdout, /Aprovados: 4/);
+
+  // The full repository suite is intentionally excluded, but a disposable fake-root suite must run only when classified.
+  writeFileSync(path.join(interfaceDir, "package.json"), JSON.stringify({
+    name: "fake-interface-unclassified", private: true, scripts: { test: 'node -e "process.exit(17)"' },
+  }));
+  writeFileSync(path.join(smokeDir, ".classificacao.json"), JSON.stringify({
+    semEstado: ["um.smoke.mjs", "dois.smoke.mjs", "lento.smoke.mjs"], tmpdirProprio: [],
+  }));
+  result = executar();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Não classificados: 1/);
+  assert.match(result.stdout, /npm test \(interface\)/);
+  assert.doesNotMatch(result.stdout, /Falha: npm test \(interface\)/);
+
   rmSync(path.join(smokeDir, "lento.smoke.mjs"));
   rmSync(interfaceDir, { recursive: true, force: true });
 

@@ -17,7 +17,6 @@ type ManagedUserContext = {
   assertOwnedSession(request: { sessionPath: string; cwd: string }): unknown;
   admitUserResources(request: Record<string, unknown>): unknown;
 };
-
 type JsonObject = Record<string, unknown>;
 type SettingsRead = { valid: true; value?: JsonObject } | { valid: false };
 
@@ -95,7 +94,6 @@ export function managedMemoryContext(cwd?: string, sessionPath?: string): Manage
   }
   return value;
 }
-
 export function readPlasticMemorySettings(cwd = process.cwd()): ResolvedPlasticMemorySettings {
   if (typeof cwd !== "string" || !isAbsolute(cwd)) {
     return resolvePlasticMemorySettings(undefined, undefined);

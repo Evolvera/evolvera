@@ -150,7 +150,8 @@ Invocation does not relax any of this.
 - **Never** touch production, staging, shared, user, or dev state, or any pre-existing data you did not create this run.
 - **Never** use as an experiment: delete, drop, truncate, reset, reseed, restore, force-push, `git clean`/`checkout --`/`reset --hard` over uncommitted work, reinstalling the main environment, or clearing caches/state that exist independently of this run.
 - **No external or live operation is delegated to a builder.** The orchestrator owns host, network, deploy, provider, and CI actions, and only with explicit user authorization.
-- **Unexpected effect on state this run does not own ⇒ `INCIDENT`:** a crash, kill, or timeout of your own run is evidence for the next hypothesis, not an incident. Otherwise stop every mutating command, freeze read-only, preserve evidence, report affected resources. No automatic cleanup, retry, rollback, restore, or reseed without fresh authorization obtained after the facts are known.
+- **Unexpected effect ⇒ `INCIDENT`:** stop every mutating command, freeze read-only, preserve evidence, report affected resources. No automatic cleanup, retry, rollback, restore, or reseed without fresh authorization obtained after the facts are known.
+- **Own work-in-progress repair is the narrow exception:** if this agent itself damages or truncates a file created by this task or explicitly authorized for edit, restore that file only from the exact last-good content available in this session and verify it. This never covers pre-existing/user/shared files, stateful resources, live systems, or content that cannot be reconstructed exactly; those remain under the INCIDENT read-only freeze.
 
 ## Mutation protocol
 

@@ -18,12 +18,9 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
   "ask-user.smoke.mjs", "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
-  // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
-  "anthropic-model-policy.smoke.mjs",
   "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
   "disk-hygiene.smoke.mjs", // git repo, fake /tmp tree and stamp only inside its owned mkdtemp, removed in finally
   "worker-report.integration.smoke.mjs", // real Goal tool/session with faux provider and exact-root disposable state
-  "subagent-watchdog.smoke.mjs", // synthetic SDK symlink and source copy only in its owned mkdtemp, removed in finally
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "studio-steer.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
@@ -33,7 +30,7 @@ const tmpdirProprioPadrao = new Set([
   // Fixture writes stay in owned mkdtemp roots; chrome-control uses a synthetic Typebox module.
   "chrome-control.smoke.mjs",
   "mcp-config.smoke.mjs",
-  // Only a fresh mkdtemp root, removed in finally; resolvePiSdkRoot only reads the global npm root (like codex-fast-mode).
+  // Only a fresh mkdtemp root, removed in finally; resolvePiSdkRoot only reads the global npm root.
   "continuation-reviewer.smoke.mjs", "write-guard.smoke.mjs",
   "plastic-memory-migration.smoke.mjs", "plastic-memory-project.smoke.mjs",
   "plastic-memory-proposal-commands.smoke.mjs",
@@ -54,11 +51,11 @@ const tmpdirProprioPadrao = new Set([
   // Synthetic fixture under its own mkdtemp; packageRoot is always explicit, never the live npm root.
   "patch-pi-tui-orca-redraw.smoke.mjs",
   "patch-pi-cursor-reasoning-effort.smoke.mjs",
-  "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
+  "patch-pi-083-threshold-cancel.smoke.mjs",
   "patch-pi-083-auth-load-recovery.smoke.mjs",
   // Writes only to owned temp copies; global package and install scripts are read-only.
   "patch-pi-083-context-wall-retry.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
-  // HUD patches: read the installed packages, patch and render only copies under their own mkdtemp (HOME redirected there).
+  // HUD patches: read installed packages, patch/render copies in owned mkdtemp (HOME redirected there).
   "patch-rpiv-todo-hud.smoke.mjs", "patch-pi-subagents-hud.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
   // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
@@ -67,10 +64,10 @@ const tmpdirProprioPadrao = new Set([
   "loop.smoke.mjs",
   // Histórico/config só no mkdtemp próprio (agentDir injetado), removido no finally; modelo é fake.
   "work-status.smoke.mjs",
-  // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
-  "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
+  // Reads repository/config and installed SDK sources; the watchdog behavior is exercised with in-memory timers and fake PI.
+  "anthropic-model-policy.smoke.mjs", "subagent-watchdog.smoke.mjs", "maestro.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
   // só lê config/SYSTEM.md; sem escrita, rede ou subprocessos
@@ -99,9 +96,8 @@ const semEstadoPadrao = new Set([
   // Só valida raízes de busca; o carregador consulta arquivos, sem gravar estado.
   "plastic-memory-search-root.smoke.mjs",
   "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
-  "maestro.smoke.mjs", // deterministic in-memory/faux-fetch smoke; benchmark fixture and installed SDK are read-only
   "github-kanban-sync.smoke.mjs",
-  // Git e Orca são fakes injetados; resolvePiSdkRoot só lê a raiz global do npm (como anthropic-model-policy).
+  // Git e Orca são fakes injetados; resolvePiSdkRoot só lê a raiz global do npm.
   "orca-worktree-visibility.smoke.mjs",
 ]);
 let tmpdirProprio = tmpdirProprioPadrao;
@@ -122,7 +118,8 @@ if (root !== repoRoot) {
 // Escrita isolada é provada nos smoke tests; estes exceções acessam dado externo.
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
-  ["patch-rpiv-todo-eta.smoke.mjs", "lê alvo instalado fora do tmpdir (caminho fixo em ~/.pi/agent) para montar fixture"],
+  ["patch-rpiv-todo-eta.smoke.mjs", "depende de pacote instalado em caminho fixo em ~/.pi/agent; classificação mantida excluída"],
+  ["npm test (interface)", "suíte completa UNKNOWN: apenas /api/tree foi provado isolado; demais testes/processos/sessões e teardown não fechados"],
 ]);
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
@@ -177,9 +174,22 @@ for (const dir of ["extensions/test", "scripts/test"]) {
 const INTERFACE_TIMEOUT_MS = 300_000;
 if (existsSync(path.join(root, "interface", "package.json"))) {
   const interfaceTest = "npm test (interface)";
-  const limite = Math.max(timeoutMs, INTERFACE_TIMEOUT_MS);
-  console.log(`\n[tmpdir próprio] npm test (interface) (limite ${limite} ms)`);
-  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32", limite);
+  // The canonical repository suite has unresolved stateful-resource boundaries; a caller-supplied
+  // fake root may run its interface test only when the run-owned classification explicitly allows it.
+  const reason = root === repoRoot ? exclusoes.get(interfaceTest) : undefined;
+  if (reason) {
+    resultados.excluidos.push(`${interfaceTest} — ${reason}`);
+  } else {
+    const classe = tmpdirProprio.has(interfaceTest) ? "tmpdir próprio"
+      : semEstado.has(interfaceTest) ? "sem estado persistente" : null;
+    if (!classe) {
+      resultados.naoClassificados.push(interfaceTest);
+    } else {
+      const limite = Math.max(timeoutMs, INTERFACE_TIMEOUT_MS);
+      console.log(`\n[${classe}] ${interfaceTest} (limite ${limite} ms)`);
+      executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32", limite);
+    }
+  }
 }
 
 console.log("\nResumo final");

@@ -106,7 +106,7 @@ assert.match(seen.at(-1).body.state, /^PREVIOUS: Quer que eu aplique\?\nUSER: si
 // 2d. Secrets: detected locally, never sent to Jev, redacted from PREVIOUS.
 for (const text of [
   "adiciona api key td_live_8d4dbdafb1e40e4a0f1873ccab93bb5e0ae683f2",
-  "apikey_2191fc30606976534b70b498dd95d656a9f7_b0c19500de3c5d884708c18526e3809d3540145ecbc889e8bd43019f159e4d97 agora testa",
+  "apikey_REDACTED_PRIVATE_API_KEY agora testa",
   "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456",
   "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
   "AKIAIOSFODNN7EXAMPLE",
