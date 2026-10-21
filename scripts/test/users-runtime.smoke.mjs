@@ -2779,10 +2779,15 @@ async function parent({ childPhase = false, interactivePhase = false, cachePhase
   } catch (error) {
     firstError ??= error;
     const termination = cleanupStarted ? [] : await stopOwned();
+    const failureCleaned = closed() && termination.length === 0;
+    if (failureCleaned) {
+      fs.rmSync(ROOT, { recursive: true, force: false });
+      assert.equal(fs.existsSync(ROOT), false);
+    }
     process.stderr.write(`FIRST_ERROR\n${firstError.stack ?? firstError}\n`);
     for (const r of records) process.stderr.write(`WORKER ${r.id} closed=${r.closed} stdinClosed=${r.stdinClosed} stdoutClosed=${r.stdoutClosed} stderrClosed=${r.stderrClosed}\n${r.stdout}\n${r.stderr}\n`);
     const finalizationUnknown = termination.some((message) => message.startsWith("OWNED_FINALIZATION_UNKNOWN"));
-    process.stderr.write(`${finalizationUnknown ? "OWNED_FINALIZATION_UNKNOWN" : "OWNED_FINALIZATION"} ${JSON.stringify(termination)} allClosed=${closed()}\n${cleanupStarted ? "INCIDENT_CLEANUP_AMBIGUOUS" : "SANDBOX_PRESERVED"} ${ROOT}\n`);
+    process.stderr.write(`${finalizationUnknown ? "OWNED_FINALIZATION_UNKNOWN" : "OWNED_FINALIZATION"} ${JSON.stringify(termination)} allClosed=${closed()}\n${cleanupStarted ? "INCIDENT_CLEANUP_AMBIGUOUS" : failureCleaned ? "SANDBOX_CLEANED" : "SANDBOX_PRESERVED"} ${ROOT}\n`);
     process.exitCode = 1;
   }
 }

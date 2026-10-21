@@ -6,11 +6,13 @@ import net from "node:net";
 import { createHash } from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadJiti, resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sdkRoot = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent";
-if (!fs.existsSync(path.join(sdkRoot, "node_modules/jiti/lib/jiti.mjs"))) throw new Error("Explicit code-only Pi SDK/jiti root is unavailable");
-const runRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "users-memory-")));
+// Resolve installed code roots before the synthetic HOME/USERPROFILE takes effect.
+const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const jitiModule = await loadJiti(import.meta.url);
+const runRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "users-memory-")));
 const fakeHome = path.join(runRoot, "home");
 const agentDir = path.join(fakeHome, ".pi", "agent");
 const moduleRoot = path.join(runRoot, "module");
@@ -52,11 +54,10 @@ try {
   fs.writeFileSync(path.join(moduleRoot, "node_modules/typebox/index.js"), 'export const Type = new Proxy({}, { get: (_target, key) => (...args) => ({ kind: String(key), args }) });');
   fs.copyFileSync(path.resolve(sourceRoot, "../skills/project-memory/scripts/validate-architecture.mjs"), path.join(moduleRoot, "skills/project-memory/scripts/validate-architecture.mjs"));
 
-  const { resolvePiSdkRoot, loadJiti } = await import("./lib/pi-sdk.mjs");
   net.Socket.prototype.connect = function deniedNetwork() { throw new Error("NETWORK_DENIED"); };
   // The installed SDK is an explicit, read-only code root; no npm lookup or live PI startup.
   assert.equal(resolvePiSdkRoot(import.meta.url), path.resolve(sdkRoot));
-  const { createJiti } = await loadJiti(import.meta.url);
+  const { createJiti } = jitiModule;
   // fsCache:false keeps transpiled output in memory, so no cache directory outside the run root is touched.
   const jiti = createJiti(import.meta.url, { moduleCache: false, fsCache: false });
   const registry = await import(pathToFileURL(path.resolve(sourceRoot, "../scripts/users/registry.mjs")).href);
@@ -175,6 +176,7 @@ try {
   process.chdir(original.cwd);
   for (const key of Object.keys(process.env)) delete process.env[key];
   Object.assign(process.env, original.env);
-  if (fs.realpathSync(runRoot) !== runRoot || path.dirname(runRoot) !== fs.realpathSync(os.tmpdir())) throw new Error("refusing cleanup: synthetic run root identity changed");
+  // Same canonical form as runRoot: realpathSync (non-native) keeps Windows 8.3 TEMP names and would never match.
+  if (fs.realpathSync.native(runRoot) !== runRoot || path.dirname(runRoot) !== fs.realpathSync.native(os.tmpdir())) throw new Error("refusing cleanup: synthetic run root identity changed");
   fs.rmSync(runRoot, { recursive: true, force: true });
 }
