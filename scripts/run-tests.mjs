@@ -64,6 +64,21 @@ const tmpdirProprioPadrao = new Set([
   "loop.smoke.mjs",
   // Histórico/config só no mkdtemp próprio (agentDir injetado), removido no finally; modelo é fake.
   "work-status.smoke.mjs",
+  // Sessões sintéticas só no mkdtemp próprio (agentDir injetado), removido no finally; modelo é fake, sem rede.
+  "chat-names.smoke.mjs",
+  // Copia o pi-subagents instalado (só leitura) para o mkdtemp próprio, aplica o patch na cópia e remove no finally.
+  "patch-pi-subagents-model-override.smoke.mjs",
+  // Fixture HOME is redirected into each mkdtemp; node:test after hooks remove the roots.
+  "clean-ui.smoke.mjs", "usuario-footer.smoke.mjs",
+  // Package/parser smoke reads installed SUB and writes only its owned temp fixture, removed in finally.
+  "orca-subagent-extension-exclusion.smoke.mjs",
+  // Users memory fixture redirects HOME and confines files to mkdtemp, removed in finally.
+  "users-memory.smoke.mjs",
+  // Synthetic patch fixtures only; every mkdtemp is removed in finally.
+  "patch-pi-083-conversation-only.smoke.mjs", "patch-pi-subagents-bounded-waits.smoke.mjs",
+  "patch-pi-subagents-deferred-nudges.smoke.mjs", "pi-subagents-deadline.smoke.mjs",
+  // Users registry/resources/subagents fixtures use run-owned sandboxes and clean them in finally.
+  "users-registry.smoke.mjs", "users-resources.smoke.mjs", "users-subagents.smoke.mjs",
 ]);
 const semEstadoPadrao = new Set([
   // Reads repository/config and installed SDK sources; the watchdog behavior is exercised with in-memory timers and fake PI.
@@ -99,6 +114,10 @@ const semEstadoPadrao = new Set([
   "github-kanban-sync.smoke.mjs",
   // Git e Orca são fakes injetados; resolvePiSdkRoot só lê a raiz global do npm.
   "orca-worktree-visibility.smoke.mjs",
+  // In-memory extension contract tests; no filesystem, network, or subprocess effects.
+  "session-usage.smoke.mjs", "text-autocomplete.smoke.mjs", "worker-report.smoke.mjs",
+  // Reads repository and installed SDK code only; state is in-memory/fake PI harness.
+  "orchestration-mode.smoke.mjs",
 ]);
 let tmpdirProprio = tmpdirProprioPadrao;
 let semEstado = semEstadoPadrao;
@@ -119,6 +138,10 @@ if (root !== repoRoot) {
 const exclusoes = new Map([
   ["patch-openai-error-body.smoke.mjs", "lê alvo instalado fora do tmpdir para montar fixture"],
   ["patch-rpiv-todo-eta.smoke.mjs", "depende de pacote instalado em caminho fixo em ~/.pi/agent; classificação mantida excluída"],
+  ["users-alibaba.smoke.mjs", "lê pacote instalado em caminho fixo C:/Users/kevin/.pi/agent; efeito fora do sandbox não fechado para esta execução"],
+  ["users-credentials.smoke.mjs", "instala guards globais e executa workers/credenciais; limites de estado/processo não demonstrados como sem estado"],
+  ["users-runtime.smoke.mjs", "lê fontes instaladas em C:/Users/kevin/.pi/agent; não reclassificar por tocar estado de usuário real"],
+  ["users-switch.smoke.mjs", "exige admissão nativa; em falha preserva namespace e processos para diagnóstico, sem cleanup automático"],
   ["npm test (interface)", "suíte completa UNKNOWN: apenas /api/tree foi provado isolado; demais testes/processos/sessões e teardown não fechados"],
 ]);
 
