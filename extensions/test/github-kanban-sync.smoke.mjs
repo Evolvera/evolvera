@@ -55,7 +55,10 @@ try {
   // First in_progress sighting syncs once, while pending/deleted and repeated same-status snapshots never trigger extra calls.
   todo(task(1, "in_progress")); await sleep(500);
   assert.equal(calls().filter((call) => call.args.some((arg) => arg.startsWith("query=query("))).length, 1);
-  todo(task(1, "in_progress"), task(2, "pending", 2), task(3, "deleted", 3)); await sleep(90);
+  // Wait for the expected second call, then settle: a fixed 90 ms raced the fake gh child spawn under load,
+  // while the settle window still proves pending/deleted/repeated snapshots add no extra call.
+  todo(task(1, "in_progress"), task(2, "pending", 2), task(3, "deleted", 3));
+  await waitFor(() => calls().length >= 2); await sleep(200);
   assert.equal(calls().length, 2);
   // An available matching status is idempotently skipped when the fake project already has that value.
   process.env.PI_KANBAN_FAKE_MODE = "already-in-status";
