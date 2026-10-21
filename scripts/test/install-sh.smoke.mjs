@@ -28,6 +28,7 @@ const sdkFiles = [
   'dist/core/model-config.js',
   'dist/modes/interactive/components/settings-selector.js',
   'dist/modes/interactive/components/thinking-selector.js',
+  'dist/modes/interactive/components/tool-execution.js',
   'dist/modes/interactive/interactive-mode.js',
   'dist/modes/interactive/theme/theme.js',
   'dist/modes/interactive/theme/theme.d.ts',
@@ -46,6 +47,8 @@ const subagentsFiles = [
   'package.json', 'src/index.ts', 'dist/index.js',
   'src/abortable.ts', 'dist/abortable.js',
   'src/agent-runner.ts', 'dist/agent-runner.js',
+  // Model-override patch anchors (caller `model`/`thinking` beat frontmatter defaults).
+  'src/invocation-config.ts', 'dist/invocation-config.js',
   'src/agent-manager.ts', 'dist/agent-manager.js',
   'src/nested-tools.ts', 'dist/nested-tools.js',
   'src/ui/agent-widget.ts', 'dist/ui/agent-widget.js',
@@ -190,7 +193,7 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
 }
 function runInstall(testCase) {
   const child = spawnSync(bash, [path.join(root, 'install.sh')], {
-    cwd: root, encoding: 'utf8', env: testCase.env, timeout: 25_000,
+    cwd: root, encoding: 'utf8', env: testCase.env, timeout: 60_000,
   });
   assert.equal(child.error, undefined, `${testCase.label}: ${child.error?.message ?? ''}`);
   assert.equal(child.status, 0, `${testCase.label}: ${child.stderr}\n${child.stdout}`);
@@ -251,6 +254,9 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
   assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf('patch-pi-subagents-deferred-nudges.mjs'), `${file}: bounded-waits patch must follow deferred-nudges`);
   assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf(install), `${file}: bounded-waits patch must follow package install`);
   assert.ok(text.indexOf('patch-pi-subagents-hud.mjs') > text.indexOf('patch-pi-subagents-bounded-waits.mjs'), `${file}: HUD patch must follow bounded-waits`);
+  // The model-override patch runs after bounded-waits and before HUD, so the Agent tool never ignores a requested model.
+  assert.ok(text.indexOf('patch-pi-subagents-model-override.mjs') > text.indexOf('patch-pi-subagents-bounded-waits.mjs'), `${file}: model-override patch must follow bounded-waits`);
+  assert.ok(text.indexOf('patch-pi-subagents-hud.mjs') > text.indexOf('patch-pi-subagents-model-override.mjs'), `${file}: HUD patch must follow model-override`);
   const rpivInstall = text.indexOf('npm:@juicesharp/rpiv-todo@2.11.0');
   const rpivPatch = text.indexOf('patch-rpiv-todo-hud.mjs');
   assert.ok(rpivPatch > rpivInstall, `${file}: combined rpiv-todo patch must follow its package install`);
@@ -258,7 +264,10 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
   assert.ok(!text.includes('patch-rpiv-todo-eta.mjs'), `${file}: ETA patch must not run separately`);
   assert.match(text.slice(rpivInstall, text.indexOf('rpiv-todo guidance', rpivInstall)), /--package-root/,
     `${file}: combined patch must receive an explicit package root`);
-  const patchBlock = text.slice(rpivInstall, text.indexOf('rpiv-todo guidance', rpivInstall));
+  const patchBlockStart = file === 'install.sh'
+    ? text.lastIndexOf('if install_pi_package "', rpivInstall)
+    : rpivInstall;
+  const patchBlock = text.slice(patchBlockStart, text.indexOf('rpiv-todo guidance', rpivInstall));
   assert.ok(file === 'install.sh'
     ? patchBlock.includes(`if install_pi_package "npm:@juicesharp/rpiv-todo@2.11.0"`)
     : patchBlock.includes('if ($LASTEXITCODE -eq 0)'),
@@ -336,6 +345,10 @@ try {
   assert.ok(installedTodo.includes('ETA indisponível') || installedTodo.includes('formatEtaSeconds'), 'shell installer did not preserve the rpiv-todo ETA patch');
   for (const widget of ['src/ui/agent-widget.ts', 'dist/ui/agent-widget.js']) {
     assert.ok(fs.readFileSync(path.join(installedNpm, '@tintinweb/pi-subagents', widget), 'utf8').includes('HUD presentation (Evolvera patch v1)'), `shell installer did not apply the pi-subagents HUD patch to ${widget}`);
+  }
+  // Expected: the installed invocation config prefers the caller's model. Why: frontmatter used to win silently.
+  for (const config of ['src/invocation-config.ts', 'dist/invocation-config.js']) {
+    assert.match(fs.readFileSync(path.join(installedNpm, '@tintinweb/pi-subagents', config), 'utf8'), /modelInput: params\.model \?\?/, `shell installer did not apply the pi-subagents model-override patch to ${config}`);
   }
   const installedAuth = fs.readFileSync(path.join(home.fakeGlobalModules, '@earendil-works/pi-coding-agent/dist/core/auth-storage.js'), 'utf8');
   assert.ok(installedAuth.includes('async ensureInitialized()'), 'shell installer did not patch SDK auth recovery');

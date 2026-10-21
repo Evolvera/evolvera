@@ -273,6 +273,8 @@ if ($piCmd) {
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de avisos adiados." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-bounded-waits.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de timeouts limitados." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-model-override.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de override de modelo." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-hud.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch visual HUD." }
     Info "Suporte a thinking ultra dos subagentes verificado"

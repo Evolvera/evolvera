@@ -155,6 +155,10 @@ Os instaladores executam `scripts/patch-pi-083-ultra-thinking.mjs` logo após o 
 
 Na TUI, `ultra` usa duas cores opcionais, `thinkingUltra` e `thinkingUltraAlt`, alternadas a cada 350 ms. Temas antigos permanecem válidos: ambas caem para `thinkingMax` e depois `thinkingXhigh`. Os temas embutidos usam cores mais intensas que `max` e próximas entre si.
 
+O patch de runtime `scripts/patch-pi-subagents-bounded-waits.mjs` limita o `bash` dos subagentes a 300 segundos por padrão; `timeout` explícito usa segundos e deve ser maior que 0 e até 1800. `get_subagent_result(wait: true)` aguarda no máximo 60 segundos: se o agente continuar enfileirado ou executando, retorna esse status sem consumir nem parar o trabalho, cuja notificação de conclusão permanece ativa. O patch instala-se junto aos outros patches do pacote; reinicie o PI depois de aplicar para carregar o runtime atualizado.
+
+O patch `scripts/patch-pi-subagents-model-override.mjs` faz a ferramenta `Agent` obedecer aos parâmetros `model` e `thinking` de quem chama: o `model:`/`thinking:` do frontmatter do agente passa a ser só o padrão. Se o modelo pedido (ou o padrão do tipo) não resolver, a ferramenta devolve erro com o modelo padrão do tipo e não inicia o agente — nunca cai em silêncio para outro modelo. `model: inherit` continua usando o modelo da sessão principal.
+
 As trocas são fail-closed por nome/versão/cardinalidade, idempotentes, atômicas por arquivo e preparadas com rollback. Validação sem recursos stateful:
 
 ```bash
