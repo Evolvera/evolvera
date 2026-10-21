@@ -40,4 +40,28 @@ assert.match(observability, /coverage/i, "coverage does not substitute for real 
 assert.match(observability, /blocker/i, "otherwise report the exact genuine blocker");
 assert.match(observability, /approval|authoriz/i, "preserve existing action-specific approval boundaries");
 assert.match(observability, /budget|spend/i, "do not infer renewed budget or additional spend authority");
-console.log("delivery-contract ok: history, deliverable, and real-journey guardrails");
+// Literal obedience: an explicit user instruction about agent count, 1:1 mapping, model, or agent type is binding.
+// Expected: the anchor exists in the orchestrator prompt and outranks routing heuristics (fronts/grouping/KISS),
+// with only Safety able to limit it and the limit reported instead of reinterpreted. Why: a Sanvera orchestrator
+// grouped ~29 tasks into 4 agents and silently ran GPT instead of the Claude Opus the user ordered.
+const obedience = section("Explicit agent instructions are literal", "Bundled requests");
+assert.match(obedience, /count|quantity|how many/i, "agent count is binding");
+assert.match(obedience, /one (agent )?per|1:1/i, "one-per-task mapping is binding");
+assert.match(obedience, /model/i, "requested model is binding");
+assert.match(obedience, /agent type/i, "requested agent type is binding");
+assert.match(obedience, /fronts?.*group|group.*fronts?/i, "it outranks front grouping");
+assert.match(obedience, /KISS|ceremony/i, "it outranks KISS / no-ceremony heuristics");
+assert.match(obedience, /Safety/, "only Safety gates may limit it");
+assert.match(obedience, /report|tell the user|say so/i, "a Safety limit is reported, not reinterpreted");
+assert.match(obedience, /effective model|label/i, "verify the effective model after launch");
+assert.equal(readFileSync(path.join(root, "SYSTEM.md"), "utf8"), system, "SYSTEM.md and config/SYSTEM.md stay identical");
+
+// agent-guide documents which agent types pin a model, so a requested model maps to the right type.
+// Expected: a table row naming builder-heavy-design with Claude Opus. Why: builder-heavy pins GPT-6.1 Sol.
+const agentGuide = readFileSync(path.join(root, "skills/agent-guide/SKILL.md"), "utf8");
+assert.match(agentGuide, /## Agent models and overrides/, "agent-guide has the model/override section");
+assert.match(agentGuide, /\|\s*`builder-heavy-design`\s*\|[^\n]*claude-opus/i, "builder-heavy-design maps to Claude Opus");
+assert.match(agentGuide, /\|\s*`builder-heavy`\s*\|[^\n]*gpt-6\.1-sol/i, "builder-heavy maps to GPT-6.1 Sol");
+assert.match(agentGuide, /literal/i, "agent-guide repeats the literal-obedience rule");
+
+console.log("delivery-contract ok: history, deliverable, real-journey, and literal-obedience guardrails");

@@ -41,6 +41,35 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 
 **Front ownership and coordinator responsiveness:** Delegate command preparation/read-only analysis and progress follow-up to suitable existing agents when that keeps the coordinator responsive. Assign an existing agent as front lead only when it reduces elapsed time or coordination; the lead may track, review, and correct work inside the reconciled scope/write set, then report results or exact blockers immediately through the handoff's approved completion channel. Escalate material unknowns, authority boundaries, and concrete blockers to the coordinator; never widen scope or take over external operations. The coordinator retains cross-front integration and external operations under their existing gates. A separate manager layer is optional, never mandatory for each trivial command; use existing agents, not a new framework or agent.
 
+## Agent models and overrides
+
+**Literal user instructions win.** When the user explicitly sets how many agents run, a 1:1 mapping (one agent per task, issue, or file), the model, or the agent type, follow it literally. It outranks the fronts, grouping, KISS, and no-ceremony heuristics above. Only a Safety gate may limit it; then run the closest literal form and tell the user the exact limit. Never reinterpret it silently. Example: "one Claude Opus per task" with 29 remaining tasks means 29 Opus agents, not 4 grouped fronts.
+
+Each agent type has a default model from its frontmatter. An explicit Agent `model` parameter overrides that default (patched by `scripts/patch-pi-subagents-model-override.mjs`). If the requested model does not resolve, the tool returns an error and starts no agent. Prefer the type whose default already is the requested model, so the type's prompt matches the model. After launch, read every agent's start label (`· <Model> · <effort>`); if any shows a different model than requested, stop it, relaunch it correctly, and tell the user.
+
+| Agent type | Default model · effort | Use when the user asks for |
+|---|---|---|
+| `builder-heavy-design` | `anthropic/claude-opus-5-5` · high | Claude Opus implementation (any task) |
+| `website-designer` | `anthropic/claude-opus-5-5` · xhigh | Claude Opus website design |
+| `website-polisher` | `anthropic/claude-opus-5-5` · medium | Claude Opus website polish |
+| `plan-briefer-fable` | `anthropic/claude-opus-5-5` · high | Claude Opus planning brief |
+| `builder-design` | `anthropic/claude-sonnet-5-5` · high | Claude Sonnet implementation |
+| `builder-heavy` | `openai-codex/gpt-6.1-sol` · medium | GPT-6.1 Sol implementation |
+| `planner`, `plan-briefer`, `deep-research-auditor`, `deep-research-data`, `website-creative`, `app-validator` | `openai-codex/gpt-6.1-sol` · high | GPT-6.1 Sol in that role |
+| `qa`, `bug-hunt` | `openai-codex/gpt-6.1-sol` · medium | GPT-6.1 Sol in that role |
+| `validator` | `openai-codex/gpt-6.1-sol` · low | GPT-6.1 Sol review |
+| `builder` | `openai-codex/gpt-6-luna` · high | GPT-6 Luna implementation |
+| `scout` | `openai-codex/gpt-6-luna` · medium | GPT-6 Luna investigation |
+| `deep-research-creative`, `-critical`, `-explorer`, `-methodical`, `-skeptical` | `openai-codex/gpt-6-luna` · xhigh | GPT-6 Luna research |
+| `plan-briefer-gpt55` | `openai-codex/gpt-5.5` · high | GPT-5.5 planning brief |
+| `builder-light` | `openai-codex/gpt-5.3-codex-spark` · medium | Codex Spark implementation |
+| `builder-home`, `validator-home`, `website-polisher-home` | `minimax/MiniMax-M3` · high | MiniMax in that role |
+| `website-home-designer`, `website-home-planner`, `seo-content-writer-home` | `zai/glm-5.2` · high | GLM in that role |
+| `seo-content-writer` | `alibaba-plan/qwen3.8-max` · medium | Qwen in that role |
+| `agent-expert`, `pi-steward` | `inherit` (main model) | the main session's model |
+
+No type pins its model: when no listed type fits the requested role, pass `model` explicitly on the closest type and verify the label.
+
 ## Orchestrator Change-Contract Gate
 
 Before any mutation—direct orchestrator edit/command, delegated builder, planner-driven execution, repair, migration, config, or external operation—the orchestrator owns reconciliation. Scouts collect evidence; planners decompose; builders execute; validators review. None may decide readiness or unresolved product meaning for the orchestrator.
