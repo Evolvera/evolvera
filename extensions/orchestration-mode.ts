@@ -17,6 +17,11 @@ export const MODE_CHANGED_EVENT = "orchestration-mode:changed";
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const STATUS_KEY = "orchestration-mode";
 export const KEPT_SECTIONS = ["Orca Workers", "Operating Contract", "Communication and Explanation", "Authorization Modes and Continuation", "Safety", "Validation and Completion", "Stop Rules"];
+const KEPT_POLICY_PREFIXES = [
+  "- **GitHub issues, Project/Kanban",
+  "- **Orca worktree with an agent, outside `flow-orca`:**",
+  "- **Settling child PIs you launched",
+];
 
 export const CONDUCTOR_ROLE = `# PI Coding Agent — Conductor mode
 
@@ -90,8 +95,9 @@ export function extractSection(prompt: string, heading: string): string | undefi
 /** The conductor prompt, or undefined when SYSTEM.md lacks a kept section (caller stays standard). */
 export function buildConductorPrompt(systemMd: string): string | undefined {
   const sections = KEPT_SECTIONS.map((heading) => extractSection(systemMd, heading));
-  if (sections.some((s) => !s)) return undefined;
-  return `${CONDUCTOR_ROLE}\n\n${sections.join("\n\n")}\n`;
+  const policyBullets = KEPT_POLICY_PREFIXES.map((prefix) => systemMd.split(/\r?\n/).find((line) => line.startsWith(prefix)));
+  if (sections.some((s) => !s) || policyBullets.some((line) => !line)) return undefined;
+  return `${CONDUCTOR_ROLE}\n\n${policyBullets.join("\n")}\n\n${sections.join("\n\n")}\n`;
 }
 
 /** Replace the SYSTEM.md block inside the assembled system prompt; undefined when not possible. */

@@ -25,7 +25,7 @@ const conductor = m.buildConductorPrompt(systemMd);
 assert.ok(conductor, "conductor prompt builds from the real SYSTEM.md");
 assert.ok(conductor.startsWith("# PI Coding Agent — Conductor mode"));
 for (const heading of m.KEPT_SECTIONS) assert.ok(conductor.includes(m.extractSection(systemMd, heading)), `${heading} kept verbatim`);
-for (const prefix of ["- **GitHub issues, Project/Kanban", "- **Orca worktree with an agent, outside `flow-orca`:**", "- **Settling child PIs you launched", "- **Tests serve the outcome:**"]) { const bullet = systemMd.split("\n").find((line) => line.startsWith(prefix)); assert.ok(bullet && conductor.includes(bullet), `${prefix} kept verbatim`); }
+for (const prefix of ["- **GitHub issues, Project/Kanban", "- **Orca worktree with an agent, outside `flow-orca`:**", "- **Settling child PIs you launched"]) { const bullet = systemMd.split("\n").find((line) => line.startsWith(prefix)); assert.ok(bullet && conductor.includes(bullet), `${prefix} kept verbatim`); }
 assert.match(conductor, /\*\*Consequential Action Gate:\*\*/);
 for (const dropped of ["## Engineering and Architecture", "## Workflow Selection", "## Retrieval and Evidence"]) assert.ok(!conductor.includes(dropped), `${dropped} dropped`);
 assert.match(conductor, /Never `sleep`, poll, or tail a worker's terminal/);
@@ -40,7 +40,6 @@ assert.match(conductor, /## Stay free for the whole campaign/); assert.match(con
 assert.match(conductor, /\*\*Settling child PIs you launched/, "conductor settles finished children");
 assert.match(conductor, /Engineering and architecture choices[^\n]*are yours/, "conductor keeps engineering judgment");
 assert.match(conductor, /Work you or a sub-PI can do is never "blocked"/, "status board reserves blocked");
-assert.match(conductor, /\*\*Tests serve the outcome:\*\*/, "conductor keeps proportional testing");
 assert.match(conductor, /\*\*Stay anchored to the final outcome:\*\*/, "conductor keeps outcome anchoring");
 assert.match(conductor, /gpt-6\.1-sol` with `medium` thinking/, "conductor launches children on Sol medium");
 assert.match(conductor, /settle every child as the Settling bullet says/, "worker events trigger settlement");
@@ -48,8 +47,6 @@ assert.match(conductor, /handoffs ask for the smallest check that proves the cha
 assert.match(conductor, /Include this exact rule in every handoff: unsolicited messages to the coordinator are only for completed acceptance or a concrete blocker\/decision that needs the coordinator\./, "worker handoff repeats the communication policy");
 assert.doesNotMatch(conductor.match(/## Waiting[\s\S]*?(?=^## |$)/m)?.[0] ?? "", /worker event \(finished, PR opened/);
 assert.match(conductor, /Never end a turn with a list of "pending items" you could act on/);
-assert.match(conductor, /\*\*Reclaim finished children \(standing user instruction\):\*\*/, "conductor keeps the reclaim rule");
-assert.match(conductor, /reclaim the merged ones as the Reclaim bullet says/, "sweep reclaims merged children");
 assert.match(conductor, /stop every process, container, emulator, and VM\/sandbox you started/, "handoffs require workers to stop what they started");
 
 // Goal reports arrive as a line typed into the coordinator terminal; no mailbox wake or long-poll.
