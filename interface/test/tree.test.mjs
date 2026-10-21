@@ -4,7 +4,21 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { createTreeService } from "../lib-server/tree.mjs";
+import { createTreeService, mapConcurrent } from "../lib-server/tree.mjs";
+
+test("mapConcurrent overlaps work within its bound and preserves input order", async () => {
+  let active = 0;
+  let maximum = 0;
+  const result = await mapConcurrent([0, 1, 2, 3, 4, 5], 2, async (value) => {
+    active++;
+    maximum = Math.max(maximum, active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+    return value * 2;
+  });
+  assert.equal(maximum, 2);
+  assert.deepEqual(result, [0, 2, 4, 6, 8, 10]);
+});
 
 // Builds a stable project/environment tree and preserves the same ETag until source data changes.
 test("tree service composes project and worktree entries with conditional versions", async () => {

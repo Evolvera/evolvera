@@ -32,6 +32,30 @@ test("parser skips malformed rows and caps large process tables", () => {
   assert.deepEqual(parseProcessTable('"ProcessId","Name"\r\n"1","node"', { platform: "win32" }), []);
 });
 
+// Both Windows CSV layouts (full Win32_Process and the short resource-only header) must: treat empty CPU times as 0,
+// drop rows with a bad pid/ppid/rss/CPU value, and stop at 50 000 rows. Expected: only valid rows, capped. Why: V8
+// sometimes omitted these never-run blocks from coverage, so the gate passed or failed by timing while they were untested.
+test("Windows CSV parsers default empty CPU times, skip invalid rows, and cap the table", () => {
+  const full = (rows) => '"ProcessId","ParentProcessId","Name","CreationDate","CommandLine","WorkingSetSize","KernelModeTime","UserModeTime"\r\n' +
+    rows.map((row) => row.map((value) => `"${value}"`).join(",")).join("\r\n");
+  const valid = ["7", "1", "", "", "", "2048", "", ""];
+  const invalid = [
+    ["x", "1", "a", "", "", "1", "0", "0"], ["8", "y", "a", "", "", "1", "0", "0"],
+    ["9", "1", "a", "", "", "big", "0", "0"], ["10", "1", "a", "", "", "-5", "0", "0"],
+    ["11", "1", "a", "", "", "1", "k", "0"], ["12", "1", "a", "", "", "1", "0", "u"],
+  ];
+  assert.deepEqual(parseProcessTable(full([valid, ...invalid]), { platform: "win32" }),
+    [{ pid: 7, ppid: 1, name: "", startedAt: null, commandLine: "", rssBytes: 2048, cpuSeconds: 0 }]);
+  assert.equal(parseProcessTable(full(Array.from({ length: 50_001 }, (_, i) => [String(i + 1), "1", "p", "", "", "1", "0", "0"])), { platform: "win32" }).length, 50_000);
+
+  // Real ConvertTo-Csv output quotes the header and every cell (parseProcessTable dispatches on `"ProcessId",`).
+  const short = (rows) => '"ProcessId","ParentProcessId","WorkingSetSize","KernelModeTime","UserModeTime"\r\n' +
+    rows.map((row) => row.map((value) => `"${value}"`).join(",")).join("\r\n");
+  assert.deepEqual(parseProcessTable(short([["7", "1", "", "", ""], ["x", "1", "1", "0", "0"], ["8", "y", "1", "0", "0"], ["9", "1", "big", "0", "0"], ["10", "1", "1", "k", "0"], ["11", "1", "1", "0", "u"]]), { platform: "win32" }),
+    [{ pid: 7, ppid: 1, name: "", startedAt: null, commandLine: "", rssBytes: 0, cpuSeconds: 0 }]);
+  assert.equal(parseProcessTable(short(Array.from({ length: 50_001 }, (_, i) => [String(i + 1), "1", "1", "0", "0"])), { platform: "win32" }).length, 50_000);
+});
+
 // Resolves one platform command and shared override, including explicit timeout configuration.
 test("command defaults include all process fields and the shared timeout override", () => {
   const win = resolveProcessTableCommand({ platform: "win32", env: {} });

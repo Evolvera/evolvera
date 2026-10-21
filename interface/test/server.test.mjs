@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, open as openFile, readFile, rm, stat, symlink, utimes, 
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
+import { escapeHtml } from "../public/lib.js";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -457,6 +458,13 @@ describe("history discovery + routes", () => {
     const page = await fetch(`${base}/`);
     token = (await page.text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
     cookie = page.headers.get("set-cookie").match(/pi-studio-token=([^;]+)/)[1];
+  });
+
+  test("root page exposes the server account username for the greeting", async () => {
+    const page = await fetch(`${base}/`);
+    const html = await page.text();
+    const accountName = html.match(/<meta name="pi-studio-account-name" content="([^"]*)">/)?.[1];
+    assert.equal(accountName, escapeHtml(os.userInfo().username));
   });
 
   test("activity response carries epoch and resets a mismatched cursor", async () => {

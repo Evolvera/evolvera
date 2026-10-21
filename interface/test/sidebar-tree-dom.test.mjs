@@ -114,7 +114,10 @@ describe("sidebar tree render", () => {
     assert.equal(byClass(main, "te-chip")[0].hidden, false);
     assert.equal(byClass(main, "te-chip")[0].textContent, "primary");
     assert.equal(byClass(main, "te-branch")[0].textContent, "master");
-    assert.equal(byClass(main, "tl-head")[0].textContent, "2 agentes");
+    const listToggle = byClass(main, "tl-head")[0];
+    assert.equal(listToggle.textContent, "2 agentes");
+    assert.equal(listToggle.parentNode, byClass(main, "te-row")[0], "the compact list toggle is inline with the environment header");
+    assert.equal(listToggle.getAttribute("aria-expanded"), "true");
     assert.equal(byClass(byKey(root, "e:p1/aux"), "te-chip")[0].hidden, true);
     const row = byKey(root, "pi:/1");
     assert.equal(byClass(row, "session-title")[0].textContent, "Titulo /1");
@@ -157,8 +160,11 @@ describe("sidebar tree render", () => {
     assert.equal(byClass(byKey(root, "p:p1"), "tp-head")[0].getAttribute("aria-expanded"), "false");
     assert.equal(byClass(byKey(root, "p:p2"), "tp-body")[0].hidden, false);
     render(data(), { expanded: new Map([["l:p1/aux", false]]) });
-    assert.equal(byClass(byKey(root, "e:p1/aux"), "tl-list")[0].hidden, true);
-    assert.equal(byClass(byKey(root, "e:p1/aux"), "tl-head")[0].getAttribute("aria-expanded"), "false");
+    const aux = byKey(root, "e:p1/aux");
+    assert.equal(byClass(aux, "tl-list")[0].hidden, true);
+    assert.equal(byClass(aux, "tl-head")[0].getAttribute("aria-expanded"), "false");
+    assert.equal(byClass(aux, "te-body")[0].hidden, false, "list collapse does not collapse the environment");
+    assert.equal(byClass(aux, "te-toggle")[0].getAttribute("aria-expanded"), "true");
   });
   // The open conversation is highlighted with aria-current, the same cue as the old list.
   test("marks the open conversation", () => {
@@ -181,7 +187,9 @@ describe("sidebar tree render", () => {
     render(data(), { extras: new Map([["p1/main", [pi("/x1"), pi("/x2")]]]) });
     assert.ok(byKey(root, "pi:/x1") && byKey(root, "pi:/x2"));
     assert.equal(byClass(byKey(root, "e:p1/main"), "session-more").length, 0);
-    assert.equal(byClass(byKey(root, "e:p1/main"), "tl-head")[0].textContent, "4 agentes");
+    const countToggle = byClass(byKey(root, "e:p1/main"), "tl-head")[0];
+    assert.equal(countToggle.textContent, "4 agentes");
+    assert.equal(countToggle.parentNode, byClass(byKey(root, "e:p1/main"), "te-row")[0]);
   });
   // The old project list shares the container: the first tree render must clear its rows once, then never again.
   test("first render clears foreign rows", () => {
@@ -546,10 +554,10 @@ describe("tree controller (storage, polling, seen, expanded)", () => {
     const h = build({ responses: [{ status: 200, data: body("v1") }] });
     h.controller.start();
     await h.flush();
-    h.controller.expandEnv("p1/main", [{ path: "/1", title: "ja", state: "pronto" }, { path: "/old", title: "Antiga", state: "pronto", lastActivity: 5 }]);
+    await h.controller.expandEnv("p1/main", [{ path: "/1", title: "ja", state: "pronto" }, { path: "/old", title: "Antiga", state: "pronto", lastActivity: 5 }]);
     assert.ok(byKey(h.root, "pi:/old"));
     assert.equal(byClass(byKey(h.root, "e:p1/main"), "session-more").length, 0);
-    assert.equal(h.controller.expandEnv("zzz/none", []), false);
+    assert.equal(await h.controller.expandEnv("zzz/none", []), false);
   });
 
   // stop() halts polling for good (page unload).

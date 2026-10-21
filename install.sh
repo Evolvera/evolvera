@@ -93,6 +93,8 @@ node "$SCRIPT_DIR/scripts/patch-pi-083-context-wall-retry.mjs"
 info "Retomada após compactação na parede de contexto verificada"
 node "$SCRIPT_DIR/scripts/patch-pi-083-ultra-thinking.mjs"
 info "Suporte a thinking ultra do PI 0.83.0 verificado"
+node "$SCRIPT_DIR/scripts/patch-pi-083-conversation-only.mjs"
+info "Visualizacao somente de conversa do PI 0.83.0 verificada"
 command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
 info "PI $PI_CODING_AGENT_VERSION instalado"
 

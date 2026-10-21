@@ -242,6 +242,13 @@ describe("formatting", () => {
     assert.equal(lib.greeting(14, "Miguel"), "Boa tarde, Miguel");
     assert.equal(lib.greeting(21, ""), "Boa noite");
   });
+  test("greetingName prefers the server account username and falls back to the preference", () => {
+    assert.equal(lib.greetingName(" Miguel.N.Zane ", "Miguel"), "Miguel.N.Zane");
+    assert.equal(lib.greeting(9, lib.greetingName("Miguel.N.Zane", "Miguel")), "Bom dia, Miguel.N.Zane");
+    assert.equal(lib.greetingName("", "Nome personalizado"), "Nome personalizado");
+    assert.equal(lib.greetingName("   ", "Nome personalizado"), "Nome personalizado");
+    assert.equal(lib.greetingName(null, "Nome personalizado"), "Nome personalizado");
+  });
   test("thinking + model labels", () => {
     assert.equal(lib.thinkingLabel("high"), "Alto");
     assert.equal(lib.thinkingLabel("custom"), "custom");

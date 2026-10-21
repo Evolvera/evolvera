@@ -142,6 +142,11 @@ export function relativeTime(value, now = Date.now()) {
   return new Date(time).toLocaleDateString("pt-BR", { day: "numeric", month: "short" });
 }
 
+export function greetingName(accountName, fallbackName) {
+  const name = typeof accountName === "string" ? accountName.trim() : "";
+  return name || fallbackName;
+}
+
 export function greeting(hour, name) {
   const salutation = hour < 5 ? "Boa noite" : hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
   return name ? `${salutation}, ${name}` : salutation;
@@ -2049,6 +2054,7 @@ export function agoLabel(value, now = Date.now()) {
 
 // Card line of a subagent run: "rodando há 2 min 3 s" or "terminou há 4 min · levou 1 min 10 s", plus the stalled marker.
 export function subagentTiming(run, now = Date.now()) {
+  if (run.phase === "waiting") return { text: "aguardando", stalled: null };
   if (run.phase === "running") return { text: `rodando há ${formatElapsed(run.elapsed)}`, stalled: run.stalled };
   const finished = run.endedAt ? finishedLabel(run.endedAt, null, now).text : "";
   const took = run.elapsed >= 1000 ? `levou ${formatElapsed(run.elapsed)}` : "";
@@ -2986,11 +2992,21 @@ function normalizePi(item, budget, depth, maxDepth) {
       stalledMs: timeOrNull(raw.stalledMs), orcaState: raw.orcaState ? String(raw.orcaState) : null,
     },
     pendingQuestions: { total: countOf(questions.total), blocking: typeof questions.blocking === "boolean" ? questions.blocking : countOf(questions.blocking) },
+    parentSession: typeof item.parentSession === "string" ? item.parentSession : null,
     lastAssistantAt: timeOrNull(item.lastAssistantAt),
     updatedAt: timeOrNull(item.updatedAt) ?? 0,
     startedAt: timeOrNull(item.startedAt) ?? 0,
     children,
+    childrenTotal: countOf(item.childrenTotal) || children.length,
+    childrenMore: countOf(item.childrenMore),
+    childrenOffset: countOf(item.childrenOffset) || children.length,
+    descendantWorking: item.descendantWorking === true,
   };
+}
+
+export function normalizeTreeChildren(items, { maxDepth = TREE_MAX_DEPTH, maxNodes = TREE_MAX_NODES } = {}) {
+  const budget = { left: maxNodes };
+  return (Array.isArray(items) ? items : []).map((item) => normalizePi(item, budget, 1, maxDepth)).filter(Boolean);
 }
 
 // Cleans a /api/tree body for rendering: malformed items are skipped, depth and node count are bounded. null = not a tree.
@@ -3026,7 +3042,8 @@ export function normalizeTree(data, { maxDepth = TREE_MAX_DEPTH, maxNodes = TREE
 function piState(item, store, now, ignoreDone) {
   let own = conversationState(item, seenAt(store, item.sessionPath), now);
   if (ignoreDone && own === "done") own = "idle";
-  return worstState([own, ...item.children.map((child) => piState(child, store, now, true))]);
+  const descendants = item.children.map((child) => piState(child, store, now, true));
+  return item.descendantWorking === true || descendants.includes("working") ? "working" : worstState([own, ...descendants]);
 }
 
 // For folders and environments: a sub-PI finishing is not news, so its "done" does not count.
@@ -3035,11 +3052,13 @@ export const aggregateState = (item, store, now) => piState(item, store, now, it
 const OWNER_TEXT = { orca: "no Orca", terminal: "no terminal", studio: "no Studio" };
 
 export function treePiRow(item, store, now = Date.now()) {
+  const ownState = conversationState(item, seenAt(store, item.sessionPath), now);
   const state = piState(item, store, now, false);
   const tooltip = [
     item.title,
     item.isSubagent ? `sub-PI${item.agentType ? ` ${item.agentType}` : ""}` : "",
     stateLabel(state),
+    (ownState === "urgent" || ownState === "attention") && state !== ownState ? stateLabel(ownState) : "",
     item.live ? OWNER_TEXT[item.live.owner] ?? "" : "",
   ].filter(Boolean).join(" · ");
   return {
@@ -3047,6 +3066,7 @@ export function treePiRow(item, store, now = Date.now()) {
     time: item.updatedAt ? relativeTime(item.updatedAt, now) : "",
     chip: item.isSubagent && item.agentType ? item.agentType : "",
     childCount: item.children.length,
+    childMore: item.childrenMore ?? 0,
   };
 }
 
@@ -3196,7 +3216,7 @@ export function micView(status, phase) {
   if (phase === "starting") return { disabled: true, pressed: false, title: "Aguardando o microfone…", live: "aguardando o microfone…" };
   if (phase === "recording") return { disabled: false, pressed: true, title: "Parar e transcrever (Ctrl+Shift+M)", live: "gravando" };
   if (phase === "transcribing") return { disabled: true, pressed: false, title: "Transcrevendo…", live: "transcrevendo…" };
-  if (status && status.available === false) {
+  if (status && status.available === false && status.state !== "off") {
     const reason = [status.reason, status.message].find((value) => typeof value === "string" && value.trim());
     return { disabled: true, pressed: false, title: reason ? reason.trim() : "Voz indisponível neste computador.", live: "" };
   }

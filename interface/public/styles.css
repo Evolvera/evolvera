@@ -270,7 +270,7 @@ code { font-family: var(--mono); }
   transition: background-color 140ms var(--ease), color 140ms var(--ease);
 }
 .session-item:hover, .session-more:hover { background: var(--bg-hover); color: var(--text); }
-.session-item.active { background: var(--bg-hover); color: var(--text); }
+.session-item.active { background: var(--bg-hover); color: var(--text); box-shadow: inset 2px 0 var(--c-blue); }
 .session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-time { flex: none; color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .session-more { color: var(--faint); font-size: 12.5px; }
@@ -586,7 +586,7 @@ code { font-family: var(--mono); }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 12px 10px 18px;
+  padding: 10px 12px 8px 18px;
   background: var(--bg-input);
   border: 1px solid #333333;
   border-radius: 16px;
@@ -639,7 +639,7 @@ code { font-family: var(--mono); }
 .attachments { display: flex; flex-wrap: wrap; gap: 8px; }
 .attachment { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 4px; border-radius: 12px; background: var(--bg-active); border: 1px solid var(--line-2); font-size: 12.5px; color: var(--text-2); }
 .attachment img { width: 34px; height: 34px; object-fit: cover; border-radius: 8px; }
-.composer-meta { display: flex; align-items: center; gap: 10px; padding: 8px 6px 0; color: var(--faint); font-size: 13.5px; min-height: 34px; }
+.composer-meta { display: flex; align-items: center; gap: 10px; padding: 6px 6px 0; color: var(--faint); font-size: 13.5px; min-height: 32px; }
 .mode-label { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .meta-spacer { flex: 1; }
@@ -1261,24 +1261,18 @@ html[data-motion="reduce"] .project.attn-waiting .run-dot { animation: none !imp
 .switch:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ------------------------------------------ conversation states + worktrees overview */
-/* The one status dot (state-indicator.js): spinner = working, blue = finished unseen, amber = asks (keeps working), red = needs you. */
+/* State marker: working uses a square spinner; urgency remains a distinct non-blinking red square. */
 .state { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: currentColor; font: 17px/1 var(--mono-term); overflow: visible; }
 .state::before { content: ""; display: block; }
-.state[data-state="working"]::before { content: "\280B"; animation: state-braille 800ms linear infinite; }
+.state[data-state="working"] { color: var(--c-blue); }
+.state[data-state="working"]::before { width: 8px; height: 8px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 2px; animation: spin 800ms linear infinite; }
 .state[data-state="done"]::before { width: 7px; height: 7px; border-radius: 99px; background: var(--c-blue); }
 .state[data-state="attention"]::before { width: 7px; height: 7px; border-radius: 99px; background: var(--c-amber); }
-.state[data-state="urgent"]::before { width: 7px; height: 7px; border-radius: 99px; background: var(--c-red); animation: state-pulse 1.6s ease-in-out infinite; }
-@keyframes state-braille {
-  0% { content: "\280B"; } 10% { content: "\2819"; } 20% { content: "\2839"; } 30% { content: "\2838"; } 40% { content: "\283C"; }
-  50% { content: "\2834"; } 60% { content: "\2826"; } 70% { content: "\2827"; } 80% { content: "\2807"; } 90% { content: "\280F"; } 100% { content: "\280B"; }
-}
-@keyframes state-pulse { 0%, 100% { box-shadow: 0 0 0 0 #e5766e66; } 50% { box-shadow: 0 0 0 4px #e5766e00; } }
+.state[data-state="urgent"]::before { width: 7px; height: 7px; border-radius: 2px; background: var(--c-red); }
 @media (prefers-reduced-motion: reduce) {
-  .state[data-state="working"]::before { content: "\283F"; animation: none !important; }
-  .state[data-state="urgent"]::before { animation: none !important; }
+  .state[data-state="working"]::before { animation: none !important; border-right-color: currentColor; }
 }
-html[data-motion="reduce"] .state[data-state="working"]::before { content: "\283F"; animation: none !important; }
-html[data-motion="reduce"] .state[data-state="urgent"]::before { animation: none !important; }
+html[data-motion="reduce"] .state[data-state="working"]::before { animation: none !important; border-right-color: currentColor; }
 .sa-head > .state, .wtv-head > .state { margin-right: -2px; }
 
 /* ------------------------------------------ sidebar tree (sidebar-tree.js) */
@@ -1315,7 +1309,7 @@ html[data-motion="reduce"] .state[data-state="urgent"]::before { animation: none
 .te-issue { flex: none; }
 .te-head .state { margin-left: auto; }
 .te-body { padding-left: 12px; }
-.tl-head { display: block; width: 100%; height: 24px; padding: 0 8px 0 18px; border-radius: 6px; color: var(--faint); font-size: 12px; line-height: 24px; }
+.tl-head { flex: none; position: relative; height: 24px; margin-right: 7px; padding: 0 6px 0 16px; border-radius: 6px; color: var(--faint); font-size: 11px; white-space: nowrap; }
 .tl-head::before { left: 5px; top: 9px; width: 4px; height: 4px; }
 .tl-head:hover { color: var(--text-2); }
 .tpi .session-item { height: 31px; padding-left: 8px; gap: 8px; }

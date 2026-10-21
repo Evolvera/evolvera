@@ -6,6 +6,16 @@ export function stripPictographs(text) {
 }
 
 function text(value) { return typeof value === "string" ? value.trim() : ""; }
+function shortLabel(value) {
+  const words = text(value).replace(/\s+/g, " ").split(" ").filter(Boolean).slice(0, 7);
+  let title = "";
+  for (const word of words) {
+    const next = title ? `${title} ${word}` : word;
+    if (next.length > 80) break;
+    title = next;
+  }
+  return title;
+}
 function obj(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
 function contentText(message) {
   const value = message?.message ?? message;
@@ -94,7 +104,7 @@ export function createTitleIndex({ readLines, statFile }) {
         const found = [...index.byAgent].find(([agentId]) => agentSuffix && agentId.startsWith(agentSuffix))?.[1];
         if (found) { args = found.args; details = found.details; }
       }
-      let title = stripPictographs(args.description) || stripPictographs(args.name);
+      let title = shortLabel(stripPictographs(args.description) || stripPictographs(args.name));
       if (!title) {
         try {
           for await (const line of readLines(childPath)) {
@@ -102,9 +112,9 @@ export function createTitleIndex({ readLines, statFile }) {
             if (childLines.length >= 100) break;
           }
         } catch { /* the child may have disappeared; retain type fallback */ }
-        title = stripPictographs(firstPrompt(childLines)).slice(0, 80);
+        title = shortLabel(stripPictographs(firstPrompt(childLines)));
       }
-      return { title: title || agentType, agentType: text(details.subagentType || args.subagent_type) || agentType };
+      return { title: shortLabel(title || agentType) || "Agente", agentType: text(details.subagentType || args.subagent_type) || agentType };
     },
   };
 }

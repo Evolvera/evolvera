@@ -151,6 +151,7 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     data(item, "path", pi.sessionPath);
     data(item, "env", envPath);
     attr(item, "title", view.tooltip);
+    attr(item, "aria-label", `${pi.title} · ${view.tooltip}`);
     dot(stateEl, view.state);
     text(title, view.title);
     text(chip, view.chip);
@@ -162,31 +163,41 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     data(menu, "title", pi.title);
     attr(menu, "aria-label", `Ações da conversa ${pi.title}`);
     const key = `s:${pi.sessionPath}`;
-    const expanded = view.childCount > 0 && open(key);
-    hide(sub, view.childCount === 0);
-    text(sub, plural(view.childCount, "sub-PI", "sub-PIs"));
+    const expanded = view.childCount + view.childMore > 0 && open(key);
+    hide(sub, view.childCount + view.childMore === 0);
+    text(sub, plural(view.childCount + view.childMore, "sub-PI", "sub-PIs"));
     data(sub, "toggle", key);
     data(sub, "default", "0");
     attr(sub, "aria-expanded", String(expanded));
     hide(children, !expanded);
-    if (expanded) reconcileChildren(children, pi.children.map((child) => ({ key: `pi:${child.sessionPath}`, kind: "pi", pi: child, projectId, envPath })), hooks);
+    if (expanded) {
+      const models = pi.children.map((child) => ({ key: `pi:${child.sessionPath}`, kind: "pi", pi: child, projectId, envPath }));
+      if (pi.childrenMore > 0) models.push({ key: `more:${pi.sessionPath}`, kind: "child-more", path: pi.sessionPath, count: pi.childrenMore });
+      else if (pi.childrenLimited) models.push({ key: `limit:${pi.sessionPath}`, kind: "child-limit" });
+      reconcileChildren(children, models, hooks);
+    }
   }
 
-  function createMore() {
-    return make("button", "session-more", { "data-action": "tree-more" });
+  function createMore(model) {
+    return make("button", "session-more", { "data-action": model.kind === "child-more" ? "tree-child-more" : "tree-more" });
   }
 
   function updateMore(node, model) {
     data(node, "key", model.key);
-    text(node, `Mostrar mais (${model.count})`);
+    text(node, model.kind === "child-limit" ? "Limite de 3.000 sessões atingido" : model.kind === "child-more" ? `Mostrar mais subagentes (${model.count})` : `Mostrar mais (${model.count})`);
+    if (model.kind === "child-limit") { attr(node, "disabled", ""); return; }
+    if (model.kind === "child-more") {
+      data(node, "path", model.path);
+      return;
+    }
     data(node, "project", model.projectId);
     data(node, "path", model.envPath);
     data(node, "extra", model.extraKey);
   }
 
   const hooks = {
-    create: (model) => (model.kind === "more" ? createMore() : createPi()),
-    update: (node, model) => (model.kind === "more" ? updateMore(node, model) : updatePi(node, model)),
+    create: (model) => (model.kind === "more" || model.kind === "child-more" || model.kind === "child-limit" ? createMore(model) : createPi()),
+    update: (node, model) => (model.kind === "more" || model.kind === "child-more" || model.kind === "child-limit" ? updateMore(node, model) : updatePi(node, model)),
   };
 
   // ---- environment
@@ -195,9 +206,9 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     const row = make("div", "te-row");
     const head = make("button", "te-head", { "data-action": "tree-env" });
     head.append(make("span", "te-name"), make("span", "te-chip"), make("span", "te-branch"), make("span", "te-issue"), make("span", "state"));
-    row.append(make("button", "te-toggle", { "data-action": "tree-toggle" }), head);
+    row.append(make("button", "te-toggle", { "data-action": "tree-toggle" }), head, make("button", "tl-head", { "data-action": "tree-toggle" }));
     const body = make("div", "te-body");
-    body.append(make("button", "tl-head", { "data-action": "tree-toggle" }), make("div", "tl-list"));
+    body.append(make("div", "tl-list"));
     node.append(row, body);
     return node;
   }
@@ -208,10 +219,9 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     const view = treeEnvRow(env, ctx.store, ctx.now);
     const projectId = ctx.projectIdFor(env.path, project.id);
     const envKey = `e:${project.id}/${env.key}`;
-    const listKey = `l:${project.id}/${env.key}`;
     data(node, "key", model.key);
     const [row, body] = node.children;
-    const [toggle, head] = row.children;
+    const [toggle, head, listHead] = row.children;
     const [name, chip, branch, issue, stateEl] = head.children;
     const envOpen = open(envKey);
     data(toggle, "toggle", envKey);
@@ -231,8 +241,7 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     hide(issue, !view.issue);
     dot(stateEl, view.state);
     hide(body, !envOpen);
-    if (!envOpen) return;
-    const [listHead, list] = body.children;
+    const listKey = `l:${project.id}/${env.key}`;
     const total = env.pis.length + extras.length;
     const listOpen = open(listKey);
     hide(listHead, total === 0);
@@ -240,6 +249,8 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
     data(listHead, "toggle", listKey);
     data(listHead, "default", "1");
     attr(listHead, "aria-expanded", String(listOpen));
+    if (!envOpen) return;
+    const [list] = body.children;
     hide(list, !listOpen && total > 0);
     const models = [...env.pis, ...extras].map((pi) => ({ key: `pi:${pi.sessionPath}`, kind: "pi", pi, projectId, envPath: env.path }));
     if (view.more > 0 && !ctx.extras.has(`${project.id}/${env.key}`)) models.push({ key: "more", kind: "more", count: view.more, projectId, envPath: env.path, extraKey: `${project.id}/${env.key}` });

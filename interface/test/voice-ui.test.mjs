@@ -132,6 +132,17 @@ describe("voice.js: microphone", () => {
     assert.equal(els.micBtn.hidden, false);
   });
 
+  // The worker is lazy: state=off means it can start on transcription, so it must not block the first recording.
+  test("init keeps the mic enabled while the lazy worker is stopped", async () => {
+    setup({ status: { available: false, state: "off" } });
+    await voice.init();
+    assert.equal(els.micBtn.disabled, false);
+    els.micBtn.fire("click");
+    await flush();
+    assert.equal(voice.phase(), "recording");
+    assert.equal(recorders.length, 1);
+  });
+
   // When the Python side cannot run, the mic is disabled and the tooltip says why (no stack trace, no silent failure).
   test("init disables the mic with the server reason when available is false", async () => {
     setup({ status: { available: false, reason: "faster-whisper não instalado." } });

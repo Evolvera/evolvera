@@ -1,5 +1,5 @@
-// The one status dot: <span class="state" data-state="working|done|attention|urgent|idle">.
-// working is a braille spinner animated by CSS alone (no timers); see ".state" in styles.css.
+// The status marker: <span class="state" data-state="working|done|attention|urgent|idle">.
+// Working uses a square spinner animated by CSS alone (no timers); see ".state" in styles.css.
 import { escapeHtml, stateLabel } from "./lib.js";
 
 const STATES = new Set(["working", "done", "attention", "urgent", "idle"]);

@@ -99,6 +99,7 @@ import {
   formatElapsed,
   formatTokens,
   greeting,
+  greetingName,
   isFileChange,
   isLongText,
   modelLabel,
@@ -283,6 +284,7 @@ const els = {
 };
 
 const PREFS_KEY = "pi-studio:prefs";
+const accountName = document.querySelector('meta[name="pi-studio-account-name"]')?.content;
 const prefs = { userName: "Miguel", showThinking: false, expandTools: false, left: "open", right: "open" };
 try {
   Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}"));
@@ -430,12 +432,28 @@ async function fetchTree({ etag, signal }) {
   return { status: 200, data: await response.json() };
 }
 
+async function fetchTreeChildren(parent, offset) {
+  const query = new URLSearchParams({ parent, offset: String(offset) });
+  const response = await fetch(`/api/tree?${query}`, { cache: "no-store", headers: { "x-pi-studio-token": apiToken } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function fetchTreeAncestors(session) {
+  const query = new URLSearchParams({ session });
+  const response = await fetch(`/api/tree?${query}`, { cache: "no-store", headers: { "x-pi-studio-token": apiToken } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
 const tree = createTreeController({
   root: els.projects,
   doc: document,
   icon: (name, cls = "") => svg(name, cls),
   storage: localStorage,
   fetchTree,
+  fetchChildren: fetchTreeChildren,
+  fetchAncestors: fetchTreeAncestors,
   isHidden: () => document.hidden,
   getView: () => ({
     currentPath: state.session?.sessionFile ?? null,
@@ -446,6 +464,7 @@ const tree = createTreeController({
   beforeRender: () => markOpenSeen({ render: false }),
   onChange: () => {
     updateHeaderState();
+    scheduleInspector("subagents");
     if (!tree.active()) renderProjects();
   },
 });
@@ -474,7 +493,7 @@ async function showMoreSessions({ extra, path }) {
     await openWorktree({ path, name: basename(path) });
     history = state.history;
   }
-  tree.expandEnv(extra, history);
+  await tree.expandEnv(extra, history);
 }
 
 // Voice (public/voice.js): mic in the composer and replies read aloud. Hooks below: message actions, agent_end, submit, settings.
@@ -1121,6 +1140,8 @@ els.projects.addEventListener("click", (event) => {
     openWorktree({ path: target.dataset.path, name: target.dataset.name, projectId: projectIdForPath(target.dataset.path) }).catch(report);
   } else if (action === "tree-more") {
     showMoreSessions(target.dataset).catch(report);
+  } else if (action === "tree-child-more") {
+    tree.loadChildren(target.dataset.path).catch(report);
   } else if (action === "session-menu") {
     openSessionMenu(target);
   }
@@ -1238,6 +1259,7 @@ async function loadProject(projectId, { cwd } = {}) {
     ? await api("/api/projects/open-path", { method: "POST", body: JSON.stringify({ cwd }), timeoutMs: SESSION_SWITCH_TIMEOUT_MS })
     : await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: "{}", timeoutMs: SESSION_SWITCH_TIMEOUT_MS });
   setExited(false);
+  resetConversation();
   if (state.currentProject?.id && state.currentProject.id !== project.id) {
     detachProjectRequests(state.pending, state.currentProject.id);
     state.compactingProjects.delete(state.currentProject.id);
@@ -1260,7 +1282,6 @@ async function loadProject(projectId, { cwd } = {}) {
   const known = state.projects.find((item) => item.id === project.id);
   if (known) Object.assign(known, { activeSessionId: session?.id || known.activeSessionId });
   else state.projects.unshift(project);
-  resetConversation();
   updateHeader();
   updateModelButton();
   renderProjects();
@@ -1820,7 +1841,7 @@ function emptyState() {
   node.className = "empty";
   const project = state.currentProject;
   node.innerHTML = `
-    <h1>${esc(greeting(new Date().getHours(), prefs.userName))}</h1>
+    <h1>${esc(greeting(new Date().getHours(), greetingName(accountName, prefs.userName)))}</h1>
     <p>${project ? `${esc(project.name)}` : "Escolha um projeto na barra lateral para começar."}</p>`;
   return node;
 }
@@ -2414,7 +2435,7 @@ function scheduleInspector(...tabs) {
 const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees, sidechat: () => sideChat.render() };
 
 function renderInspector() {
-  const runs = currentSubagents();
+  const runs = selectedSubagents();
   updateSubBadge(runs);
   tasksPanel.updateBadge(runs);
   if (layout.right !== "open" || !inspector.dirty.has(inspector.tab)) return;
@@ -2654,10 +2675,50 @@ els.term.addEventListener("click", (event) => {
 
 // --- Subagents: one card per Agent tool call (pi-subagents), live tail + expandable transcript.
 
-const SUB_PHASE = { running: "rodando", done: "concluído", error: "erro" };
+const SUB_PHASE = { running: "rodando", waiting: "aguardando", done: "concluído", error: "erro" };
+const shortTaskLabel = (value) => String(value || "Agente").replace(/\s+/g, " ").trim().split(" ").filter(Boolean).slice(0, 7).join(" ") || "Agente";
 
 function currentSubagents() {
   return collectSubagents(state.messages, state.runtime, state.subagentRecords, Date.now(), projectStatus.stall.subagentMs);
+}
+
+function selectedSubagents() {
+  const current = currentSubagents();
+  const selectedPath = state.session?.sessionFile;
+  const root = tree.rootFor(selectedPath);
+  if (!root) {
+    if (selectedPath) tree.resolveRoot(selectedPath).then((resolved) => {
+      if (!resolved) return;
+      scheduleInspector("subagents");
+      return tree.loadDescendants(resolved.sessionPath);
+    }).catch(report);
+    return current;
+  }
+  tree.loadDescendants(root.sessionPath).catch(report);
+  const descendants = tree.descendants(root.sessionPath);
+  if (!descendants.length) return current;
+  const enriched = new Map();
+  const descendantPaths = new Set(descendants.map((item) => item.sessionPath.toLowerCase()));
+  for (const run of current) {
+    const item = subagentSession({ run, history: state.history, parentFile: selectedPath });
+    if (item?.path && descendantPaths.has(item.path.toLowerCase())) enriched.set(item.path.toLowerCase(), run);
+  }
+  const grouped = descendants.map((item) => {
+    const semanticState = tree.stateOf(item.sessionPath);
+    return enriched.get(item.sessionPath.toLowerCase()) ?? {
+      key: `tree:${item.sessionPath}`, agentId: item.sessionId, name: "", title: item.title,
+      type: item.agentType || "", description: item.title,
+      model: "", stats: [], sections: [], tail: [],
+      status: item.raw?.error ? "error" : semanticState === "working" || semanticState === "attention" ? "running" : semanticState === "urgent" ? "waiting" : "completed",
+      phase: item.raw?.error ? "error" : semanticState === "urgent" ? "waiting" : semanticState === "working" || semanticState === "attention" ? "running" : "done",
+      indicatorState: semanticState === "urgent" ? "urgent" : semanticState === "attention" ? "attention" : null,
+      elapsed: Math.max(0, Date.now() - (item.startedAt || Date.now())), background: false, stalled: false,
+    };
+  });
+  return [...grouped, ...current.filter((run) => {
+    const item = subagentSession({ run, history: state.history, parentFile: selectedPath });
+    return !item?.path || !descendantPaths.has(item.path.toLowerCase());
+  })];
 }
 
 // Count badges (pure counting lives in lib.js): hidden at 0, otherwise the number with a tooltip/aria label.
@@ -2700,9 +2761,9 @@ function subCard(run, open) {
   const meta = [run.model && !run.stats.includes(run.model) ? run.model : "", ...run.stats, run.background ? "segundo plano" : ""].filter(Boolean);
   const sections = run.sections.map((section) => `<section class="sa-sec"><h4>${esc(section.label)}</h4><pre>${esc(truncate(section.text, 60000))}</pre></section>`).join("");
   node.innerHTML = `
-    <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}">
-      ${stateHtml(timing.stalled ? "attention" : subagentIndicator(run.phase))}
-      <span class="sa-title">${svg(subagentFamilyIcon(run), "sa-ico")}<strong>${esc(run.title)}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
+    <button type="button" class="sa-head" data-sa="${esc(run.key)}" aria-expanded="${open}" aria-label="${esc(`${run.title}: ${run.indicatorState === "urgent" ? "precisa de você" : run.indicatorState === "attention" ? "atenção" : SUB_PHASE[run.phase]}`)}">
+      ${stateHtml(timing.stalled ? "attention" : run.indicatorState ?? subagentIndicator(run.phase))}
+      <span class="sa-title">${svg(subagentFamilyIcon(run), "sa-ico")}<strong title="${esc(run.title)}">${esc(shortTaskLabel(run.title))}</strong>${subtitle ? `<span class="sa-type">${esc(subtitle)}</span>` : ""}</span>
       <span class="sa-state"><span class="sa-phase">${esc(SUB_PHASE[run.phase])}</span><span class="sa-time">${esc(formatElapsed(run.elapsed))}</span></span>
       ${svg("i-chevron-right", "sa-chev")}
     </button>
@@ -2715,9 +2776,9 @@ function subCard(run, open) {
 }
 
 function renderSubagents() {
-  const runs = currentSubagents();
+  const runs = selectedSubagents();
   updateSubBadge(runs);
-  const counts = { running: 0, done: 0, error: 0 };
+  const counts = { running: 0, waiting: 0, done: 0, error: 0 };
   for (const run of runs) counts[run.phase]++;
   const extension = [state.statuses.get("subagents"), ...[...state.widgets.values()].flat()].filter(Boolean);
   const nodes = [];
@@ -2726,7 +2787,7 @@ function renderSubagents() {
   if (head.sig !== headSig) {
     head.node.className = "sa-summary";
     head.node.innerHTML = runs.length
-      ? `<p class="sa-counts"><span><b>${counts.running}</b> rodando</span><span><b>${counts.done}</b> ${counts.done === 1 ? "concluído" : "concluídos"}</span>${counts.error ? `<span class="bad"><b>${counts.error}</b> com erro</span>` : ""}</p>`
+      ? `<p class="sa-counts"><span><b>${counts.running}</b> rodando</span>${counts.waiting ? `<span><b>${counts.waiting}</b> aguardando</span>` : ""}<span><b>${counts.done}</b> ${counts.done === 1 ? "concluído" : "concluídos"}</span>${counts.error ? `<span class="bad"><b>${counts.error}</b> com erro</span>` : ""}</p>`
       : "";
     if (extension.length) head.node.innerHTML += `<div class="sa-ext" aria-label="Status da extensão">${extension.map((line) => `<span>${esc(line)}</span>`).join("")}</div>`;
     head.sig = headSig;
@@ -2895,6 +2956,7 @@ function fastView() {
 }
 
 function fastSectionHtml() {
+  if (state.watch) return `<section class="insp-sec fast-sec"><h3 class="sec-title">Velocidade</h3><p class="sec-hint">Modo indisponível para conversa acompanhada.</p></section>`;
   if (!fastAvailable()) return "";
   const view = fastView();
   const radios = view.options.map((option) => `<label title="${esc(option.reason)}"><input type="radio" name="fastMode" value="${option.mode}"${option.selected ? " checked" : ""}${option.disabled ? " disabled" : ""} /><span>${esc(option.label)}</span></label>`).join("");
@@ -2906,7 +2968,7 @@ function fastSectionHtml() {
 }
 
 function renderFastChip() {
-  const chip = fastAvailable() ? fastView().chip : null;
+  const chip = fastAvailable() && !state.watch ? fastView().chip : null;
   els.fastChip.hidden = !chip;
   if (chip) {
     els.fastChip.textContent = chip.label;
@@ -2939,7 +3001,7 @@ function revertFast(pending, reason) {
 }
 
 async function sendFast(pending, option) {
-  if (fast.pending !== pending) return;
+  if (state.watch || fast.pending !== pending) return;
   pending.sent = true;
   pending.timer = setTimeout(() => revertFast(pending), FAST_CONFIRM_MS);
   try {
@@ -2952,6 +3014,7 @@ async function sendFast(pending, option) {
 
 // Shows the choice at once and sends it shortly after, so arrowing through the radios sends only the last one.
 function chooseFast(option) {
+  if (state.watch) return;
   clearTimeout(fast.pending?.timer);
   if (option.mode === fastFromStatus(state.statuses.get(FAST_STATUS_KEY)).mode && !fast.pending?.sent) {
     fast.pending = null;
@@ -2964,7 +3027,7 @@ function chooseFast(option) {
 }
 
 function fastPaletteActions() {
-  if (!fastAvailable()) return [];
+  if (!fastAvailable() || state.watch) return [];
   const view = fastView();
   return [["Fast: ligar", "on"], ["Fast: desligar", "off"], ["Fast: eco", "eco"], ["Fast: ultra", "ultra"]].map(([label, flag]) => {
     const option = view.options.find((candidate) => candidate.flag === flag);
@@ -4062,9 +4125,9 @@ async function pollOrca() {
 // writing it, else opened normally. `agent` (a clicked Orca agent row) picks the conversation titled like it.
 // A project that already shows a conversation is left alone unless an agent was clicked.
 function openWorktree(worktree, { agent = null } = {}) {
-  const open = samePath(state.currentProject?.cwd, worktree.path);
-  if (open && !agent && (state.watch || state.messages.length)) return Promise.resolve();
   return runGated(state, async () => {
+    const open = samePath(state.currentProject?.cwd, worktree.path);
+    if (open && !agent && (state.watch || state.messages.length)) return;
     if (!open) await (worktree.projectId ? loadProject(worktree.projectId) : loadProject(null, { cwd: worktree.path }));
     await refreshHistory().catch(() => {});
     const status = studioPiState(projectStatus.last.get(state.currentProject.id));

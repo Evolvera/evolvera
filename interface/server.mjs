@@ -5,7 +5,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { createReadStream, existsSync } from "node:fs";
 import { access, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { availableParallelism, homedir } from "node:os";
+import { availableParallelism, homedir, userInfo } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pipeline } from "node:stream";
@@ -15,8 +15,8 @@ import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
 import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
 import { buildSidePrompt, createSideRegistry, sideArgs, sideCommand } from "./lib-server/side-chat.mjs";
 import { createTitleIndex } from "./lib-server/session-titles.mjs";
-import { createTreeService } from "./lib-server/tree.mjs";
-import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { createTreeService, mapConcurrent } from "./lib-server/tree.mjs";
+import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, escapeHtml, foldText, localDay, newActivityTracker, normalizeOrca, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
 import { voice } from "./lib-server/voice.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +25,7 @@ const DEFAULT_HOST = process.env.PI_WEB_HOST || "127.0.0.1";
 const DEFAULT_PORT = Number.parseInt(process.env.PI_WEB_PORT || "4123", 10);
 let listeningPort = DEFAULT_PORT;
 const apiToken = randomBytes(32).toString("hex");
+const SERVER_ACCOUNT_USERNAME = userInfo().username;
 const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
 const MAX_BODY_BYTES = 30 * 1024 * 1024;
 const HISTORY_LIMIT = 800;
@@ -1622,30 +1623,33 @@ async function treeSessionRecords() {
   if (treeRecordsPending) return treeRecordsPending;
   treeRecordsPending = (async () => {
   const root = path.join(AGENT_DIR, "sessions");
-  const records = [];
+  const files = [];
   for (const directory of await readdirSafe(root)) {
     if (!directory.isDirectory()) continue;
     const dir = path.join(root, directory.name);
     const directoryInfo = await statTreeFile(dir);
     for (const entry of await readdirSafe(dir)) {
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const file = path.join(dir, entry.name);
-      try {
-        const info = await stat(file);
-        const header = await sessionHeader(file, { directoryMtimeMs: directoryInfo?.mtimeMs });
-        if (header?.type !== "session" || typeof header.cwd !== "string") continue;
-        const last = await sessionStates.lastMessage(file, info);
-        const classified = classifySessionState(last, info.mtimeMs);
-        let parentInfo = null;
-        if (header.parentSession) parentInfo = await statTreeFile(header.parentSession);
-        const title = await memoizedTreeTitle(treeTitleCache, file, info, parentInfo, async () => header.parentSession
-          ? treeTitles.subagentTitle(file, header, await cachedSessionName(file, info))
-          : (await scanSession(file)).title);
-        records.push({ path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null });
-      } catch { /* malformed or disappearing session records are skipped */ }
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push({ file: path.join(dir, entry.name), directoryMtimeMs: directoryInfo?.mtimeMs });
     }
   }
-  return records;
+  const records = await mapConcurrent(files, 16, async ({ file, directoryMtimeMs }) => {
+    try {
+      const info = await stat(file);
+      const header = await sessionHeader(file, { directoryMtimeMs });
+      if (header?.type !== "session" || typeof header.cwd !== "string") return null;
+      const last = await sessionStates.lastMessage(file, info);
+      const classified = classifySessionState(last, info.mtimeMs);
+      let parentInfo = null;
+      if (header.parentSession) parentInfo = await statTreeFile(header.parentSession);
+      const title = await memoizedTreeTitle(treeTitleCache, file, info, parentInfo, async () => header.parentSession
+        ? treeTitles.subagentTitle(file, header, await cachedSessionName(file, info))
+        : (await scanSession(file)).title);
+      return { path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null };
+    } catch { /* malformed or disappearing session records are skipped */
+      return null;
+    }
+  });
+  return records.filter((record) => record !== null);
   })();
   try { return await treeRecordsPending; } finally { treeRecordsPending = null; }
 }
@@ -2194,7 +2198,7 @@ function authorizeApiRequest(req, pathname, rawRoute = false) {
 
 async function serveFrontend(req, res) {
   const html = (await readFile(path.join(PUBLIC_DIR, "index.html"), "utf8"))
-    .replace("</head>", `<meta name="pi-studio-token" content="${apiToken}"></head>`);
+    .replace("</head>", `<meta name="pi-studio-token" content="${apiToken}"><meta name="pi-studio-account-name" content="${escapeHtml(SERVER_ACCOUNT_USERNAME)}"></head>`);
   const body = Buffer.from(html);
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
@@ -2285,6 +2289,23 @@ async function route(req, res) {
       catch (error) { return json(res, error.status || 503, { error: error.status === 429 ? "O serviço de transcrição está ocupado. Tente novamente." : error.message?.includes("Tempo limite") ? "A transcrição excedeu o tempo limite." : "Transcrição local indisponível. Verifique o Python e o modelo local." }); }
     }
     if (req.method === "GET" && pathname === "/api/tree") {
+      if (url.searchParams.has("session")) {
+        if (url.searchParams.has("parent") || url.searchParams.has("offset")) return json(res, 400, { error: "Invalid tree query." });
+        const session = url.searchParams.get("session");
+        if (!session) return json(res, 400, { error: "A session path is required." });
+        const chain = await treeService.getSessionChain(session);
+        if (!chain) return json(res, 404, { error: "Conversation not found." });
+        return json(res, 200, chain);
+      }
+      if (url.searchParams.has("parent")) {
+        const parent = url.searchParams.get("parent");
+        const rawOffset = url.searchParams.get("offset") ?? "0";
+        if (!parent || !/^(0|[1-9]\d*)$/.test(rawOffset) || !Number.isSafeInteger(Number(rawOffset))) return json(res, 400, { error: "Invalid child page." });
+        const page = await treeService.getChildren(parent, Number(rawOffset));
+        if (!page) return json(res, 404, { error: "Conversation not found." });
+        return json(res, 200, page);
+      }
+      if (url.searchParams.has("offset")) return json(res, 400, { error: "A parent conversation is required." });
       const tree = await treeService.get(req.headers["if-none-match"] ?? null);
       if (tree.notModified) { res.writeHead(304, { etag: tree.version, "cache-control": "no-store" }); return res.end(); }
       const { notModified, ...body } = tree;

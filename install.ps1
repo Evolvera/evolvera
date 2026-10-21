@@ -131,6 +131,9 @@ Info "Retomada apos compactacao na parede de contexto verificada"
 & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-ultra-thinking.mjs")
 if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de thinking ultra 0.83.0." }
 Info "Suporte a thinking ultra do PI 0.83.0 verificado"
+& node (Join-Path $SCRIPT_DIR "scripts\patch-pi-083-conversation-only.mjs")
+if ($LASTEXITCODE -ne 0) { throw "A versao instalada do PI recusou o patch de visualizacao somente de conversa 0.83.0." }
+Info "Visualizacao somente de conversa do PI 0.83.0 verificada"
 
 $piCmd = Get-Command pi -ErrorAction SilentlyContinue
 if (-not $piCmd) { throw "PI nao encontrado apos a instalacao." }
