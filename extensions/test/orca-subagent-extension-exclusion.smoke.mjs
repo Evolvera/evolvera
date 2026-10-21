@@ -3,11 +3,16 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { loadJiti, resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 
+// Resolve global installations before any test fixture can redirect HOME or USERPROFILE.
+const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const { createJiti } = await loadJiti(import.meta.url);
 const agentHome = process.env.PI_CODING_AGENT_DIR ?? path.join(homedir(), ".pi", "agent");
 const packageDist = path.join(agentHome, "npm", "node_modules", "@tintinweb", "pi-subagents", "dist");
-const { extensionCanonicalNames, parseExtensionsSpec } = await import(pathToFileURL(path.join(packageDist, "agent-runner.js")));
-const { parseAgentFrontmatter } = await import(pathToFileURL(path.join(packageDist, "custom-agents.js")));
+const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
+const { extensionCanonicalNames, parseExtensionsSpec } = await jiti.import(path.join(packageDist, "agent-runner.js"));
+const { parseAgentFrontmatter } = await jiti.import(path.join(packageDist, "custom-agents.js"));
 const temp = mkdtempSync(path.join(tmpdir(), "orca-subagent-extension-exclusion-"));
 
 function parseAgent(extensions) {

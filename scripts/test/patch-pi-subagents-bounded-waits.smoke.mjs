@@ -4,13 +4,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
+import { loadJiti, resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const smokeStartedAt = Date.now();
 const patcher = await import(pathToFileURL(path.join(root, 'scripts/patch-pi-subagents-bounded-waits.mjs')));
 const installed = patcher.resolveRoot([]);
 const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const { createJiti } = await loadJiti(import.meta.url);
+const jiti = createJiti(import.meta.url, { alias: { '@earendil-works/pi-coding-agent': path.join(sdkRoot, 'dist/index.js') } });
 const { createBashToolDefinition } = await import(pathToFileURL(path.join(sdkRoot, 'dist/core/tools/bash.js')));
 const sdkApi = await import(pathToFileURL(path.join(sdkRoot, 'dist/index.js')));
 assert.equal(typeof sdkApi.createBashToolDefinition, 'function', 'public SDK index exports the definition factory');
@@ -184,7 +186,7 @@ try {
   const sdkSessionSource = fs.readFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'), 'utf8');
   assert.match(sdkSessionSource, /allCustomTools[\s\S]*?\.filter\(\(tool\) => isAllowedTool\(tool\.definition\.name\)\)/);
   assert.match(sdkSessionSource, /definitionRegistry\.set\(tool\.definition\.name/);
-  const { createBoundedBashTool } = await import(pathToFileURL(path.join(fixture, 'dist/agent-runner.js')) + `?runtime=${Date.now()}`);
+  const { createBoundedBashTool } = await jiti.import(path.join(fixture, 'dist/agent-runner.js'));
   const cwd = path.join(temp, 'bash-cwd'); fs.mkdirSync(cwd);
   const shellPath = process.platform === 'win32'
     ? execFileSync('where.exe', ['bash.exe'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0]
