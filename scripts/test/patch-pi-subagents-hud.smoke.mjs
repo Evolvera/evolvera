@@ -81,16 +81,16 @@ try {
   assert.deepEqual(targets.map((rel) => fs.readFileSync(path.join(rollback, rel))), rollbackBefore, 'failed commit was not rolled back');
 
   // 3. Render the patched widget (src and dist) against the upstream widget, with fake and real themes.
-  const agentRoot = path.dirname(path.dirname(installed)); // .../npm/node_modules
-  const piTui = path.join(agentRoot, '@earendil-works', 'pi-tui');
-  const sdk = path.join(resolvePiSdkRoot(import.meta.url), 'dist', 'index.js');
+  const sdkRoot = resolvePiSdkRoot(import.meta.url);
+  const piTui = path.join(sdkRoot, 'node_modules', '@earendil-works', 'pi-tui');
+  const sdk = path.join(sdkRoot, 'dist', 'index.js');
   const { visibleWidth } = await createJitiFor(import.meta.url, {}).import(path.join(piTui, 'dist', 'index.js'));
   const realTheme = await loadRealTheme(root);
 
   async function load(packageRoot, rel) {
     const jiti = createJitiFor(import.meta.url, { '@earendil-works/pi-tui': piTui, '@earendil-works/pi-coding-agent': sdk });
     // One entry module, so the widget and the registry the test fills are the same module instance.
-    const types = rel.startsWith('src/') ? './src/agent-types.ts' : './dist/agent-types.js';
+    const types = rel.startsWith('src/') ? './src/agent-types.js' : './dist/agent-types.js';
     const entry = path.join(packageRoot, `hud-entry-${rel.startsWith('src/') ? 'src' : 'dist'}.ts`);
     fs.writeFileSync(entry, `export * from "./${rel}";\nexport { registerAgents } from "${types}";\n`);
     const widgetModule = await jiti.import(entry);
