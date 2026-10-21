@@ -53,7 +53,10 @@ assert.match(obedience, /fronts?.*group|group.*fronts?/i, "it outranks front gro
 assert.match(obedience, /KISS|ceremony/i, "it outranks KISS / no-ceremony heuristics");
 assert.match(obedience, /Safety/, "only Safety gates may limit it");
 assert.match(obedience, /report|tell the user|say so/i, "a Safety limit is reported, not reinterpreted");
-assert.match(obedience, /effective model|label/i, "verify the effective model after launch");
+assert.match(obedience, /effective model line/i, "verify the effective model line after launch");
+// Live run: an overridden scout showed "Scout · GPT-6 Luna · medium" as its name while the effective line said
+// "gpt-5.3 codex spark"; the name suffix is the type default, so the rule must point at the effective line.
+assert.match(obedience, /type'?s default/i, "the display-name suffix is only the type's default");
 assert.equal(readFileSync(path.join(root, "SYSTEM.md"), "utf8"), system, "SYSTEM.md and config/SYSTEM.md stay identical");
 
 // agent-guide documents which agent types pin a model, so a requested model maps to the right type.
@@ -63,5 +66,6 @@ assert.match(agentGuide, /## Agent models and overrides/, "agent-guide has the m
 assert.match(agentGuide, /\|\s*`builder-heavy-design`\s*\|[^\n]*claude-opus/i, "builder-heavy-design maps to Claude Opus");
 assert.match(agentGuide, /\|\s*`builder-heavy`\s*\|[^\n]*gpt-6\.1-sol/i, "builder-heavy maps to GPT-6.1 Sol");
 assert.match(agentGuide, /literal/i, "agent-guide repeats the literal-obedience rule");
+assert.match(agentGuide, /effective model line/i, "agent-guide points at the effective model line, not the display name");
 
 console.log("delivery-contract ok: history, deliverable, real-journey, and literal-obedience guardrails");
