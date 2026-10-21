@@ -25,7 +25,8 @@ try {
   assert.equal(plainEnv.TMPDIR, undefined);
   const env = { PI_REPORT_RUN: "run_abc123" };
   const scratch = mod.setupWorkerScratch(repo, env);
-  assert.equal(fs.realpathSync(scratch), fs.realpathSync(path.join(repo, ".tmp")));
+  // Windows TEMP can use an 8.3 short path while git returns the canonical long path.
+  assert.equal(fs.realpathSync.native(scratch), fs.realpathSync.native(path.join(repo, ".tmp")));
   assert.equal(env.TMPDIR, scratch); assert.equal(env.TMP, scratch); assert.equal(env.TEMP, scratch);
   fs.writeFileSync(path.join(scratch, "junk"), "x");
   assert.equal(execFileSync("git", ["-C", repo, "status", "--porcelain"], { encoding: "utf8" }), "", ".tmp is git-excluded");
@@ -48,7 +49,8 @@ try {
   assert.equal(call("orca worktree create --repo x --name y --json"), undefined, "enough disk allows new workers");
   fs.statfsSync = realStatfs;
 
-  // 3. Janitor: removes only stale, unused, non-kept dirs.
+  // 3. Janitor: removes only stale, unused, non-kept dirs. It requires a POSIX uid.
+  if (process.getuid?.() !== undefined) {
   const tmpRoot = path.join(root, "tmp");
   fs.mkdirSync(tmpRoot);
   const old = (Date.now() - 3 * 24 * 3600_000) / 1000;
@@ -85,6 +87,7 @@ try {
   process.env.PATH = realPath;
   assert.deepEqual(partial, [], "lsof failure with partial stdout removes nothing");
   assert.ok(fs.existsSync(victim));
+  }
   console.log("disk-hygiene smoke: PASS");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
