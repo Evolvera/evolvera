@@ -20,7 +20,8 @@ import {
   uploadMime,
 } from "./lib.js";
 
-const UPLOAD_TIMEOUT_MS = 90000;
+// Covers the 120s cold worker startup, 60s request budget, and 10s network margin.
+const UPLOAD_TIMEOUT_MS = 190000;
 const TICK_MS = 250;
 
 // els: { micBtn, micLive, micLabel, micTimer, micLevel, speakStop }; composer: { read() -> {value,start,end}, write(value, cursor) }.

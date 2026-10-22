@@ -132,6 +132,23 @@ describe("voice.js: microphone", () => {
     assert.equal(els.micBtn.hidden, false);
   });
 
+  test("transcription uses a timeout that covers cold worker startup and upload", async (t) => {
+    let timeoutMs;
+    t.mock.method(AbortSignal, "timeout", (ms) => {
+      timeoutMs = ms;
+      return new AbortController().signal;
+    });
+    await voice.init();
+    els.micBtn.fire("click");
+    await flush();
+    clock.t += 2000;
+    els.micBtn.fire("click");
+    await flush();
+    const upload = fetches.find((call) => call.url === "/api/voice/transcribe");
+    assert.equal(timeoutMs, 190000);
+    assert.ok(upload.options.signal instanceof AbortSignal);
+  });
+
   // The worker is lazy: state=off means it can start on transcription, so it must not block the first recording.
   test("init keeps the mic enabled while the lazy worker is stopped", async () => {
     setup({ status: { available: false, state: "off" } });
