@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Long-lived line-delimited JSON worker for local faster-whisper transcription."""
+import importlib.metadata
 import json
 import os
 import struct
@@ -13,9 +14,33 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=False), flush=True)
 
 
+_dll_directory_handles = []
+
+
+def register_cuda_dll_directories():
+    if sys.platform != "win32":
+        return
+    packages = (
+        ("nvidia-cublas-cu12", "nvidia/cublas/bin"),
+        ("nvidia-cudnn-cu12", "nvidia/cudnn/bin"),
+    )
+    for package, directory in packages:
+        try:
+            dll_dir = importlib.metadata.distribution(package).locate_file(directory)
+            if not os.path.isdir(dll_dir):
+                continue
+            dll_dir = os.fspath(dll_dir)
+            if dll_dir not in os.environ.get("PATH", "").split(os.pathsep):
+                os.environ["PATH"] = os.pathsep.join(filter(None, (dll_dir, os.environ.get("PATH", ""))))
+            _dll_directory_handles.append(os.add_dll_directory(dll_dir))
+        except (importlib.metadata.PackageNotFoundError, OSError, ImportError):
+            continue
+
+
 def load_model():
     # Never fall back to a model download; Studio is explicitly local-only.
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    register_cuda_dll_directories()
     from faster_whisper import WhisperModel
 
     model_name = os.environ.get("PI_STUDIO_WHISPER_MODEL", "small")

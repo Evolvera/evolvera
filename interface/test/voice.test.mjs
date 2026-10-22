@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { access, mkdtemp, rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { createVoiceService, resolveWorkerCommand } from "../lib-server/voice.mjs";
@@ -13,6 +14,129 @@ test("resolves worker executable and arguments for each supported launch mode", 
   assert.deepEqual(resolveWorkerCommand({ PI_STUDIO_PYTHON: "python-custom" }, "win32", "worker.py"), { command: "python-custom", args: ["worker.py"] });
   assert.deepEqual(resolveWorkerCommand({}, "win32", "worker.py"), { command: "py", args: ["-3.14", "worker.py"] });
   assert.deepEqual(resolveWorkerCommand({}, "linux", "worker.py"), { command: "python3", args: ["worker.py"] });
+});
+
+// CUDA wheel DLL discovery is process-local and optional; all paths below are synthetic.
+test("registers optional NVIDIA wheel DLL directories only on Windows before importing Whisper", async (t) => {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-voice-python-"));
+  const script = String.raw`
+import ast, dis, importlib.metadata, inspect, json, os, runpy, sys, types
+worker_path, root = sys.argv[1:]
+ns = runpy.run_path(worker_path)
+class Dist:
+    def __init__(self, path): self.path = path
+    def locate_file(self, name): return os.path.join(root, self.path)
+original_distribution = importlib.metadata.distribution
+available = {"nvidia-cublas-cu12": "nvidia/cublas/bin", "nvidia-cudnn-cu12": "nvidia/cudnn/bin"}
+registered, handles = [], []
+for rel in available.values(): os.makedirs(os.path.join(root, rel), exist_ok=True)
+target = ns["register_cuda_dll_directories"].__code__
+source_lines, source_start = inspect.getsourcelines(ns["register_cuda_dll_directories"])
+function_ast = ast.parse("".join(source_lines)).body[0]
+ifs = [node for node in ast.walk(function_ast) if isinstance(node, ast.If)]
+ifs = [(node.lineno + source_start - 1, node.body[0].lineno + source_start - 1, node.end_lineno + source_start) for node in ifs]
+observed_lines, observed_arcs = set(), set()
+def traced_register():
+    previous = {}
+    def trace(frame, event, arg):
+        if frame.f_code is target and event == "line":
+            observed_lines.add(frame.f_lineno)
+            if frame in previous: observed_arcs.add((previous[frame], frame.f_lineno))
+            previous[frame] = frame.f_lineno
+        elif frame.f_code is target and event == "return": previous.pop(frame, None)
+        return trace
+    sys.settrace(trace)
+    try: ns["register_cuda_dll_directories"]()
+    finally: sys.settrace(None)
+def distribution(name):
+    if name not in available: raise importlib.metadata.PackageNotFoundError(name)
+    return Dist(available[name])
+importlib.metadata.distribution = distribution
+os.add_dll_directory = lambda directory: (registered.append(directory), handles.append(object()))[1]
+original_path = os.environ.get("PATH", "")
+os.environ["PATH"] = original_path
+sys.platform = "win32"
+traced_register()
+assert len(registered) == 2 and all(os.path.isdir(p) for p in registered), registered
+assert all(p in os.environ["PATH"].split(os.pathsep) for p in registered)
+# handles remain held by the worker module, keeping registrations alive.
+assert len(ns["_dll_directory_handles"]) == 2
+# Whisper import occurs after the path setup and can observe the process-local PATH.
+seen = []
+def whisper_import(name, *args, **kwargs):
+    if name == "faster_whisper":
+        seen.append(os.environ["PATH"])
+        return types.SimpleNamespace(WhisperModel=lambda *a, **k: object())
+    return original_import(name, *args, **kwargs)
+original_import = __import__
+import builtins
+builtins.__import__ = whisper_import
+try: ns["load_model"]()
+finally: builtins.__import__ = original_import
+assert seen and all(p in seen[0] for p in registered)
+# Existing PATH entries are not duplicated on repeated worker setup.
+expected_path = os.environ["PATH"]
+registered.clear()
+traced_register()
+assert os.environ["PATH"] == expected_path
+# An empty PATH is prepended cleanly, without a leading separator.
+os.environ["PATH"] = ""
+traced_register()
+assert all(p in os.environ["PATH"].split(os.pathsep) for p in registered)
+assert not os.environ["PATH"].startswith(os.pathsep)
+# Installed metadata pointing to a missing bin directory is ignored.
+importlib.metadata.distribution = lambda name: Dist("missing/bin")
+registered.clear(); os.environ["PATH"] = original_path
+traced_register()
+assert registered == [] and os.environ["PATH"] == original_path
+# Metadata lookup errors are optional; add_dll_directory OSError is also contained.
+def os_error_distribution(name): return Dist(available[name])
+importlib.metadata.distribution = os_error_distribution
+os.add_dll_directory = lambda directory: (_ for _ in ()).throw(OSError("synthetic DLL registration failure"))
+os.environ["PATH"] = ""
+traced_register()
+assert os.environ["PATH"] and not os.environ["PATH"].startswith(os.pathsep)
+# Metadata I/O errors are also optional and contained.
+importlib.metadata.distribution = lambda name: (_ for _ in ()).throw(OSError("synthetic metadata failure"))
+os.environ["PATH"] = original_path
+traced_register()
+assert os.environ["PATH"] == original_path
+# Missing wheel distributions are harmless; Windows registration remains empty.
+importlib.metadata.distribution = lambda name: (_ for _ in ()).throw(importlib.metadata.PackageNotFoundError(name))
+os.environ["PATH"] = original_path
+registered.clear(); ns["_dll_directory_handles"].clear()
+traced_register()
+assert registered == [] and os.environ["PATH"] == original_path
+# Non-Windows is unchanged and does not perform discovery.
+sys.platform = "linux"
+importlib.metadata.distribution = lambda name: (_ for _ in ()).throw(AssertionError("unexpected metadata lookup"))
+traced_register()
+assert os.environ["PATH"] == original_path
+# Trace proves both edges of every helper if-condition and every executable line.
+for line, true_line, false_line in ifs:
+    assert (line, true_line) in observed_arcs, (line, true_line, observed_arcs)
+    assert (line, false_line) in observed_arcs, (line, false_line, observed_arcs)
+executable_lines = {line for _, line in dis.findlinestarts(target) if line is not None and line > target.co_firstlineno}
+missing_lines = executable_lines - observed_lines
+assert not missing_lines, ("uncovered helper lines", sorted(missing_lines))
+print(json.dumps({"helperLines": len(executable_lines), "coveredLines": len(executable_lines - missing_lines), "ifArcs": len(ifs) * 2, "coveredIfArcs": sum((line, edge) in observed_arcs for line, true_line, false_line in ifs for edge in (true_line, false_line))}))
+# Missing optional packages do not prevent the existing CPU fallback.
+sys.platform = "linux"
+class FakeModel:
+    def __init__(self, name, device, compute_type):
+        if device == "cuda": raise RuntimeError("CUDA unavailable")
+    def transcribe(self, *a, **k): return [], types.SimpleNamespace(language="pt", duration=0)
+fake = types.ModuleType("faster_whisper"); fake.WhisperModel = FakeModel
+sys.modules["faster_whisper"] = fake
+_, device, _ = ns["load_model"]()
+assert device == "cpu"
+`;
+  try {
+    const python = process.platform === "win32" ? ["py", ["-3.14"]] : ["python3", []];
+    const result = spawnSync(python[0], [...python[1], "-c", script, path.resolve("voice/transcribe_worker.py"), tmp], { encoding: "utf8", timeout: 10000, windowsHide: true });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    t.diagnostic(result.stdout.trim());
+  } finally { await rm(tmp, { recursive: true, force: true }); }
 });
 
 // Lazy startup keeps a successful worker warm until explicitly stopped.
@@ -75,6 +199,23 @@ test("stops a worker that finishes starting during shutdown", async () => {
   await pending;
   await stopping;
   assert.equal(stopped, true);
+});
+
+// The readiness device supplied by the worker survives the protocol handshake.
+test("preserves readiness device metadata", async () => {
+  const oldCommand = process.env.PI_STUDIO_VOICE_WORKER_CMD;
+  const oldMode = process.env.PI_STUDIO_FAKE_VOICE_MODE;
+  process.env.PI_STUDIO_VOICE_WORKER_CMD = JSON.stringify([path.resolve("voice/fake_worker.mjs")]);
+  process.env.PI_STUDIO_FAKE_VOICE_MODE = "result-no-device";
+  const service = createVoiceService({ idleMs: 100000 });
+  try {
+    await service.transcribe("metadata");
+    assert.equal(service.status().device, "fake");
+  } finally {
+    await service.stop();
+    if (oldCommand === undefined) delete process.env.PI_STUDIO_VOICE_WORKER_CMD; else process.env.PI_STUDIO_VOICE_WORKER_CMD = oldCommand;
+    if (oldMode === undefined) delete process.env.PI_STUDIO_FAKE_VOICE_MODE; else process.env.PI_STUDIO_FAKE_VOICE_MODE = oldMode;
+  }
 });
 
 // Missing worker and response device metadata falls back safely without inventing a device.

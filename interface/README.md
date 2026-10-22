@@ -111,6 +111,16 @@ Ou use `pi-studio amphipod` se a pasta `interface` já estiver no PATH. Opcional
 - **Página isolada do Studio**: o HTML aberto roda em `<iframe sandbox="allow-scripts allow-forms">` (sem `allow-same-origin`, origem opaca: sem `localStorage`, cookie, token nem acesso ao Studio) e todo arquivo sai com `Content-Security-Policy: sandbox` e `X-Content-Type-Options: nosniff`. Como esse frame não leva o token, ele lê por `/api/projects/:id/raw/<cap>/<caminho>`, em que `<cap>` é um HMAC (derivado do token da execução) só de leitura e só deste projeto; assim `style.css` e `app.js` relativos funcionam. Essa é a única rota que aceita `Origin: null`; o caminho passa pela mesma resolução e pelas mesmas recusas.
 - `localhost` de outra porta carrega em frame com `allow-same-origin` (é outra origem); o endereço do próprio Studio nunca abre aqui.
 
+## Transcrição local
+
+A transcrição usa `faster-whisper` local e não envia áudio a serviços externos. No Windows, se o CUDA local falhar por DLLs NVIDIA ausentes, instale os wheels oficiais NVIDIA no mesmo Python usado pelo Studio (por padrão, Python 3.14):
+
+```powershell
+py -3.14 -m pip install nvidia-cublas-cu12==12.4.5.8 nvidia-cudnn-cu12==9.1.1.17
+```
+
+O worker localiza os diretórios `nvidia/cublas/bin` e `nvidia/cudnn/bin` pelos metadados desses pacotes e os registra no `PATH`/carregador de DLL somente para o próprio processo, antes de importar o Whisper. Não é necessário alterar o `PATH` do Windows. Sem os pacotes, a transcrição continua disponível pelo fallback local de CPU.
+
 ## Segurança
 
 Mantenha local. O PI pode executar shell, editar arquivos e acessar credenciais disponíveis ao processo. No Docker, monte só os diretórios de projeto que você quer expor.

@@ -118,7 +118,6 @@ async function startWorker(startupTimeoutMs) {
     },
     async stop() { lines.close(); if (!exited) { child.kill(); await once(child, "exit").catch(() => {}); } },
   };
-  instance.device = "unknown";
   return instance;
 }
 
