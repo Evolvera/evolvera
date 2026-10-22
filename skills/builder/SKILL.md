@@ -231,7 +231,7 @@ Run serially when:
 - deployment, provider, network, staging/production, reload, rollback, or another external side effect is involved;
 - validation from one task determines the next.
 
-Do not split work that shares a write set, a contract, or a validation resource. Independent parts with their own write sets run on separate builders at the same time, and an outcome too large for one builder is cut along its areas; use isolated worktrees when parallel branches or validation resources require them.
+Do not split work that shares a write set or a contract. Independent parts with their own write sets run on separate builders at the same time, and an outcome too large for one builder is cut along its areas.
 
 ## Prompt Quality Checklist
 
