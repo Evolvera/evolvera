@@ -88,7 +88,7 @@ export function resolveWorkerCommand(env = process.env, platform = process.platf
 async function startWorker(startupTimeoutMs) {
   const launch = resolveWorkerCommand();
   const { command, args } = launch;
-  const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } });
   const lines = createInterface({ input: child.stdout });
   const pending = new Map();
   let readyResolve;

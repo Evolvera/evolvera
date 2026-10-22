@@ -201,6 +201,37 @@ test("stops a worker that finishes starting during shutdown", async () => {
   assert.equal(stopped, true);
 });
 
+// The worker inherits the parent environment while enforcing UTF-8 for its line protocol.
+test("forces UTF-8 worker environment and preserves Portuguese protocol text", async () => {
+  const oldCommand = process.env.PI_STUDIO_VOICE_WORKER_CMD;
+  const oldEncoding = process.env.PYTHONIOENCODING;
+  const oldUtf8 = process.env.PYTHONUTF8;
+  process.env.PI_STUDIO_VOICE_WORKER_CMD = JSON.stringify(["-e", `
+    const readline = require("node:readline");
+    process.stdout.write(JSON.stringify({ ready: true }) + "\\n");
+    readline.createInterface({ input: process.stdin }).on("line", (line) => {
+      const { id } = JSON.parse(line);
+      process.stdout.write(JSON.stringify({ id, text: "A transcrição não pôde ser concluída; há palavras em português.", encoding: process.env.PYTHONIOENCODING, utf8: process.env.PYTHONUTF8 }) + "\\n");
+    });
+  `]);
+  process.env.PYTHONIOENCODING = "cp1252";
+  process.env.PYTHONUTF8 = "0";
+  const service = createVoiceService({ idleMs: 100000 });
+  try {
+    const result = await service.transcribe("portuguese");
+    assert.equal(result.text, "A transcrição não pôde ser concluída; há palavras em português.");
+    assert.equal(result.encoding, "utf-8");
+    assert.equal(result.utf8, "1");
+    assert.equal(process.env.PYTHONIOENCODING, "cp1252");
+    assert.equal(process.env.PYTHONUTF8, "0");
+  } finally {
+    await service.stop();
+    if (oldCommand === undefined) delete process.env.PI_STUDIO_VOICE_WORKER_CMD; else process.env.PI_STUDIO_VOICE_WORKER_CMD = oldCommand;
+    if (oldEncoding === undefined) delete process.env.PYTHONIOENCODING; else process.env.PYTHONIOENCODING = oldEncoding;
+    if (oldUtf8 === undefined) delete process.env.PYTHONUTF8; else process.env.PYTHONUTF8 = oldUtf8;
+  }
+});
+
 // The readiness device supplied by the worker survives the protocol handshake.
 test("preserves readiness device metadata", async () => {
   const oldCommand = process.env.PI_STUDIO_VOICE_WORKER_CMD;
