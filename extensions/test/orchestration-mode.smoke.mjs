@@ -86,21 +86,31 @@ const broken = systemMd.replace("## Safety\n", "## Safety rules\n");
 assert.equal(m.buildConductorPrompt(broken), undefined);
 assert.equal(m.applyConductor(broken + tail, broken), undefined);
 
-// Extension wiring with a fake PI.
+// Extension wiring with a fake PI. The mock thinking runtime mirrors PI: a level change emits
+// `thinking_level_select` back into the extension, so conductor reentrancy is exercised for real.
 const handlers = new Map(); const commands = new Map(); const entries = []; const notices = []; const statuses = []; const emitted = [];
+let thinkingLevel = "high"; const thinkingCalls = [];
+const ctx = {
+  sessionManager: { getBranch: () => entries },
+  ui: { notify: (message, type) => notices.push({ message, type }), setStatus: (key, text) => statuses.push({ key, text }) },
+};
 m.default({
   on: (name, fn) => handlers.set(name, fn),
   registerCommand: (name, def) => commands.set(name, def),
   appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
   events: { emit: (name, data) => emitted.push({ name, data }) },
+  getThinkingLevel: () => thinkingLevel,
+  setThinkingLevel: (level) => {
+    thinkingCalls.push(level);
+    if (level === thinkingLevel) return;
+    const previousLevel = thinkingLevel; thinkingLevel = level;
+    handlers.get("thinking_level_select")?.({ type: "thinking_level_select", level, previousLevel }, ctx);
+  },
 });
-const ctx = {
-  sessionManager: { getBranch: () => entries },
-  ui: { notify: (message, type) => notices.push({ message, type }), setStatus: (key, text) => statuses.push({ key, text }) },
-};
 const start = (customPrompt, systemPrompt) => handlers.get("before_agent_start")({ systemPrompt, systemPromptOptions: { customPrompt } }, ctx);
 
 assert.equal(await start(systemMd, assembled), undefined, "standard by default");
+assert.equal(thinkingCalls.length, 0, "standard sessions never touch thinking effort");
 await commands.get("orchestration").handler("conductor", ctx);
 assert.equal(statuses.at(-1).text, "🎼 CONDUCTOR");
 assert.equal(emitted.at(-1).name, m.MODE_CHANGED_EVENT);
@@ -117,5 +127,54 @@ assert.equal(await start(systemMd, assembled), undefined, "back to standard");
 await commands.get("orchestration").handler("bogus", ctx);
 assert.match(notices.at(-1).message, /Uso: \/orchestration/);
 assert.equal(m.readSessionMode([]), "standard", "new sessions start standard");
+
+// Conductor pins reasoning to medium; leaving conductor never rewrites the session effort back.
+thinkingLevel = "high";
+await commands.get("orchestration").handler("conductor", ctx);
+assert.equal(thinkingLevel, "medium", "entering conductor pins medium");
+assert.equal(thinkingCalls.at(-1), "medium");
+// Raising effort while conductor is reset, and the reentrant select event does not loop.
+const pinnedCalls = thinkingCalls.length;
+thinkingLevel = "xhigh";
+await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "xhigh", previousLevel: "medium" }, ctx);
+assert.equal(thinkingLevel, "medium", "a manual xhigh selection is reset to medium");
+thinkingLevel = "high";
+await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "high", previousLevel: "medium" }, ctx);
+assert.equal(thinkingLevel, "medium", "a manual high selection is reset to medium");
+thinkingLevel = "low";
+await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "low", previousLevel: "medium" }, ctx);
+assert.equal(thinkingLevel, "medium", "a lower or off selection is reset to medium too");
+assert.ok(thinkingCalls.length - pinnedCalls <= 4, `reset stays finite (${thinkingCalls.length - pinnedCalls} calls)`);
+// Model change, session resume and the next turn all repin.
+thinkingLevel = "high";
+await handlers.get("model_select")({ type: "model_select", source: "set" }, ctx);
+assert.equal(thinkingLevel, "medium", "model change repins medium");
+thinkingLevel = "high";
+await handlers.get("session_start")({ type: "session_start", reason: "resume" }, ctx);
+assert.equal(thinkingLevel, "medium", "session resume repins medium");
+assert.equal(statuses.at(-1).text, "🎼 CONDUCTOR");
+thinkingLevel = "high";
+assert.deepEqual(await start(systemMd, assembled), { systemPrompt: conductor + tail }, "next turn keeps the conductor prompt");
+assert.equal(thinkingLevel, "medium", "next turn repins medium");
+// Standard sessions are never forced and can hold a higher effort.
+await commands.get("orchestration").handler("standard", ctx);
+const standardCalls = thinkingCalls.length;
+thinkingLevel = "high";
+await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "high", previousLevel: "medium" }, ctx);
+assert.equal(thinkingLevel, "high", "standard keeps a user-selected high effort");
+assert.equal(thinkingCalls.length, standardCalls, "standard never sets a thinking level");
+assert.equal(await start(systemMd, assembled), undefined, "standard keeps the standard prompt");
+assert.equal(thinkingLevel, "high");
+// A worker or new session with an empty branch inherits neither the prompt nor the pin.
+const workerEntries = []; const workerStatuses = [];
+const workerCtx = { sessionManager: { getBranch: () => workerEntries }, ui: { notify: () => {}, setStatus: (key, text) => workerStatuses.push({ key, text }) } };
+thinkingLevel = "xhigh";
+const workerCalls = thinkingCalls.length;
+await handlers.get("session_start")({ type: "session_start", reason: "startup" }, workerCtx);
+await handlers.get("model_select")({ type: "model_select", source: "set" }, workerCtx);
+assert.equal(await handlers.get("before_agent_start")({ systemPrompt: assembled, systemPromptOptions: { customPrompt: systemMd } }, workerCtx), undefined, "worker keeps the standard prompt");
+assert.equal(thinkingLevel, "xhigh", "a worker with an empty branch keeps its own effort");
+assert.equal(thinkingCalls.length, workerCalls, "workers are never pinned");
+assert.equal(workerStatuses.at(-1).text, undefined);
 
 console.log(`orchestration-mode smoke: PASS (conductor prompt ${conductor.length} chars vs SYSTEM.md ${systemMd.length})`);

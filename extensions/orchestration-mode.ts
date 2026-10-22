@@ -8,6 +8,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
  * SYSTEM.md sections, so they keep one source of truth. If any of them cannot be found, the
  * session stays on the standard prompt (fail-safe).
  * Session-scoped: Orca workers, subagents and new sessions keep the standard prompt.
+ * Conductor sessions also pin the thinking level to `medium`: coordination does not need deeper
+ * reasoning, and the pin is re-applied on every turn, session resume and model change, so it resets
+ * any different selection. Nothing is written to settings, so standard sessions and workers keep
+ * their own effort.
  */
 
 export const ORCHESTRATION_MODES = ["standard", "conductor"] as const;
@@ -16,6 +20,7 @@ export const SESSION_ENTRY_TYPE = "orchestration-mode";
 export const MODE_CHANGED_EVENT = "orchestration-mode:changed";
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const STATUS_KEY = "orchestration-mode";
+const PINNED_THINKING = "medium";
 export const KEPT_SECTIONS = ["Orca Workers", "Operating Contract", "Communication and Explanation", "Authorization Modes and Continuation", "Safety", "Validation and Completion", "Stop Rules"];
 
 export const CONDUCTOR_ROLE = `# PI Coding Agent — Conductor mode
@@ -126,6 +131,17 @@ function showStatus(ctx: Ctx, mode: OrchestrationMode): void {
   ctx.ui?.setStatus?.(STATUS_KEY, mode === "conductor" ? "🎼 CONDUCTOR" : undefined);
 }
 
+/**
+ * Pin conductor sessions to `medium` effort. The runtime reports our own set back as a
+ * `thinking_level_select` event, so the current-level check (not a flag) is what makes that
+ * reentrant call a no-op.
+ */
+function pinThinking(pi: ExtensionAPI, ctx: Ctx): void {
+  if (currentMode(ctx) !== "conductor") return;
+  if (pi.getThinkingLevel() === PINNED_THINKING) return;
+  pi.setThinkingLevel(PINNED_THINKING);
+}
+
 export default function orchestrationMode(pi: ExtensionAPI): void {
   let warned = false;
 
@@ -146,19 +162,32 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
         pi.appendEntry(SESSION_ENTRY_TYPE, { mode: action });
         pi.events.emit(MODE_CHANGED_EVENT, { ctx });
         warned = false;
+        pinThinking(pi, ctx);
       }
       const mode = currentMode(ctx);
       showStatus(ctx, mode);
       ctx.ui.notify(mode === "conductor"
-        ? "Orchestration: CONDUCTOR nesta sessão. Este PI só coordena sub-PIs; vale a partir da próxima mensagem."
+        ? "Orchestration: CONDUCTOR nesta sessão. Este PI só coordena sub-PIs e mantém o reasoning fixo em medium; vale a partir da próxima mensagem."
         : "Orchestration: STANDARD (system prompt padrão do PI).", "info");
     },
   });
 
-  pi.on("session_start", async (_event, ctx) => { warned = false; showStatus(ctx as Ctx, currentMode(ctx as Ctx)); });
+  pi.on("session_start", async (_event, rawCtx) => {
+    const ctx = rawCtx as Ctx;
+    warned = false;
+    pinThinking(pi, ctx);
+    showStatus(ctx, currentMode(ctx));
+  });
+
+  pi.on("model_select", async (_event, rawCtx) => { pinThinking(pi, rawCtx as Ctx); });
+
+  pi.on("thinking_level_select", async (event, rawCtx) => {
+    if (event.level !== PINNED_THINKING) pinThinking(pi, rawCtx as Ctx);
+  });
 
   pi.on("before_agent_start", async (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
+    pinThinking(pi, ctx);
     const customPrompt = event.systemPromptOptions?.customPrompt;
     if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) return;
     if (currentMode(ctx) !== "conductor") return;
