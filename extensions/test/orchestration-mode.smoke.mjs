@@ -43,7 +43,7 @@ assert.match(conductor, /Engineering and architecture choices[^\n]*are yours/, "
 assert.match(conductor, /Work you or a sub-PI can do is never "blocked"/, "status board reserves blocked");
 assert.match(conductor, /\*\*Tests serve the outcome:\*\*/, "conductor keeps proportional testing");
 assert.match(conductor, /\*\*Stay anchored to the final outcome:\*\*/, "conductor keeps outcome anchoring");
-assert.match(conductor, /gpt-6-luna` with `high` thinking/, "conductor launches children on Luna high");
+assert.match(conductor, /gpt-6\.1-sol` with `medium` thinking/, "conductor launches children on Sol medium");
 assert.match(conductor, /settle every child as the Settling bullet says/, "worker events trigger settlement");
 assert.match(conductor, /handoffs ask for the smallest check that proves the change/, "handoffs do not demand test spirals");
 assert.match(conductor, /Include this exact rule in every handoff: unsolicited messages to the coordinator are only for completed acceptance or a concrete blocker\/decision that needs the coordinator\./, "worker handoff repeats the communication policy");
