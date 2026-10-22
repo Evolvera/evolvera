@@ -186,6 +186,25 @@ try {
   assert.equal(ctx.model.contextWindow, 800_000, "same-model replacement is corrected before requests");
   assert.equal(statuses.get("context-mode"), "800K");
 
+  // A conductor child (PI_REPORT_RUN) starts on the default window even though High is saved, and never saves.
+  mod.writeContextMode(settingsPath, "high");
+  assert.equal(mod.isConductorChild({}), false);
+  assert.equal(mod.isConductorChild({ PI_REPORT_RUN: "bogus" }), false);
+  assert.equal(mod.isConductorChild({ PI_REPORT_RUN: "run_abc123" }), true);
+  const previousRun = process.env.PI_REPORT_RUN;
+  process.env.PI_REPORT_RUN = "run_abc123";
+  try {
+    const childCtx = { model: { provider: "openai-codex", id: "gpt-6.1-sol", contextWindow: 300_000 }, hasUI: true, ui: ctx.ui };
+    await handlers.get("session_start")({}, childCtx);
+    assert.equal(childCtx.model.contextWindow, 300_000, "conductor child ignores the saved High preference");
+    await commands.get("context-mode").handler("default", childCtx);
+    assert.equal(mod.readContextMode(settingsPath), "high", "a conductor child never rewrites the saved preference");
+  } finally {
+    if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun;
+  }
+  await handlers.get("session_start")({}, ctx);
+  assert.equal(ctx.model.contextWindow, 800_000, "the user's own session still reads High");
+
   choice = undefined;
   await commands.get("context-mode").handler("", ctx);
   assert.equal(mod.readContextMode(settingsPath), "high", "cancelling picker preserves saved preference");

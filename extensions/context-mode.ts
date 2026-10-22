@@ -6,6 +6,7 @@ import { currentMode, MODE_CHANGED_EVENT } from "./orchestration-mode";
 // Owns the runtime context window. Normal capacity policy is applied first; conductor sessions
 // use 70% of that effective window. maxTokens and provider capacity stay unchanged.
 // The contextMode preference remains global, while conductor status is read from this session's branch.
+// Workers launched by a conductor (PI_REPORT_RUN) start on the default window and never save a preference.
 
 export type ContextMode = "default" | "high";
 export const CONTEXT_MODES: readonly ContextMode[] = ["default", "high"];
@@ -107,11 +108,20 @@ function applyToSession(ctx: ExtensionContext, mode: ContextMode): void {
   ctx.ui?.setStatus?.(STATUS_KEY, showCapacity && effective ? `${Math.round(effective / 1000)}K` : undefined);
 }
 
+const RUN_ID_PATTERN = /^run_[A-Za-z0-9]+$/;
+
+/** An Orca worker PI is launched by a conductor with PI_REPORT_RUN set; it is a separate process. */
+export function isConductorChild(env: NodeJS.ProcessEnv = process.env): boolean {
+  return typeof env.PI_REPORT_RUN === "string" && RUN_ID_PATTERN.test(env.PI_REPORT_RUN);
+}
+
 export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(getAgentDir(), "settings.json")) {
   let mode: ContextMode = "default";
 
+  // Children created by a conductor always start on the default window; the saved High
+  // preference belongs to the user's own sessions. They never write that preference either.
   pi.on("session_start", async (_event, ctx) => {
-    mode = readContextMode(settingsPath());
+    mode = isConductorChild() ? "default" : readContextMode(settingsPath());
     applyToSession(ctx, mode);
   });
 
@@ -152,7 +162,7 @@ export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(
         return;
       }
       try {
-        writeContextMode(settingsPath(), requested);
+        if (!isConductorChild()) writeContextMode(settingsPath(), requested);
       } catch (error) {
         ctx.ui.notify(`Could not save context mode: ${(error as Error).message}`, "error");
         return;
