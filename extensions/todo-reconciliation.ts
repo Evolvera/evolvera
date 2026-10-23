@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// Only the main session gets the todo hint. Subagents may still hold the tool, but an advisory
-// about bookkeeping is noise inside their own bounded task.
+// The duplicate-read guard applies to the main session only; no advisory text is injected anywhere.
 const ELIGIBLE_PROMPTS = ["# PI Coding Agent"];
 const REMINDER_TYPE = "todo-reconciliation-reminder";
 const LEGACY_TYPES = new Set([REMINDER_TYPE, "todo-reconciliation-repair"]);
@@ -60,17 +59,11 @@ function queryKey(action: string, input: Record<string, unknown>): string {
 export function registerTodoReconciliation(pi: ExtensionAPI) {
   let primary = false;
   let sessionId: string | undefined;
-  let reminderAvailable = false;
-  let reminderUsed = false;
-  let todoSnapshotSeen = false;
   let readSnapshot: string | undefined;
   let readKeys = new Set<string>();
   let requestInitialized = false;
 
-  const resetRequest = (hasPrompt: boolean) => {
-    reminderAvailable = hasPrompt;
-    reminderUsed = false;
-    todoSnapshotSeen = false;
+  const resetRequest = () => {
     readSnapshot = undefined;
     readKeys = new Set();
   };
@@ -90,7 +83,7 @@ export function registerTodoReconciliation(pi: ExtensionAPI) {
     const text = typeof prompt === "string" ? prompt.trimStart() : "";
     primary = ELIGIBLE_PROMPTS.some((prefix) => text.startsWith(prefix));
     if (newSession || !requestInitialized) {
-      resetRequest(Boolean(event.prompt));
+      resetRequest();
       requestInitialized = true;
     }
   });
@@ -118,7 +111,6 @@ export function registerTodoReconciliation(pi: ExtensionAPI) {
   pi.on("tool_result", async (event, ctx) => {
     if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo")) return;
     if (successfulTodo(event)) {
-      todoSnapshotSeen = true;
       syncSnapshot(event.details);
       const action = event.details.action;
       if (action === "list" || action === "get") readKeys.add(queryKey(action, event.details.params ?? {}));
@@ -126,34 +118,26 @@ export function registerTodoReconciliation(pi: ExtensionAPI) {
     // Unrelated work never rearms a reminder or read.
   });
 
-  pi.on("context", async (event, ctx) => {
+  // Legacy advisory messages stay filtered from context; no new reminder is ever added.
+  pi.on("context", async (event) => {
     const messages = event.messages.filter((message) => !(message.role === "custom" && LEGACY_TYPES.has(String(message.customType))));
-    if (!primary || ctx.mode !== "tui" || !pi.getActiveTools().includes("todo")) {
-      return messages.length === event.messages.length ? undefined : { messages };
-    }
-    const branch = branchSnapshot(ctx as Context);
-    if (!reminderAvailable || reminderUsed || todoSnapshotSeen || !openTaskCount(branch.latest)) {
-      return messages.length === event.messages.length ? undefined : { messages };
-    }
-    reminderUsed = true;
-    const reminder = "Todo reconciliation is optional. Use the current task snapshot only if relevant to the user's request; do not interrupt or replace the requested work to reconcile bookkeeping. Do not infer task completion.";
-    return { messages: [...messages, { role: "custom", customType: REMINDER_TYPE, content: [{ type: "text", text: reminder }], display: false, timestamp: Date.now() }] };
+    return messages.length === event.messages.length ? undefined : { messages };
   });
 
   pi.on("session_start", async (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
     primary = false;
-    resetRequest(false);
+    resetRequest();
     requestInitialized = false;
   });
   pi.on("session_tree", async () => {
-    resetRequest(false);
+    resetRequest();
     requestInitialized = true;
   });
   pi.on("session_shutdown", async () => {
     primary = false;
     sessionId = undefined;
-    resetRequest(false);
+    resetRequest();
     requestInitialized = false;
   });
 }

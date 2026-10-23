@@ -49,7 +49,7 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
   const startup = fixture();
   await startup.handlers.get("session_start")({}, startup.ctx);
   await startup.beforeStart("initial startup request");
-  assert.equal((await startup.context()).messages.length, 2, "initial startup prompt counts even without an input event");
+  assert.equal(await startup.context(), undefined, "no advisory is ever injected");
   await startup.handlers.get("input")({ source: "extension", text: "internal continuation" }, startup.ctx);
   await startup.beforeStart("internal continuation");
   assert.equal(await startup.context(), undefined, "internal extension continuation does not rearm startup advisory");
@@ -58,14 +58,12 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
   const f = fixture(); await f.start();
   const old = [{ role: "user", content: [{ type: "text", text: "original" }] }, { role: "custom", customType: "todo-reconciliation-repair", content: [{ type: "text", text: "Do not do implementation" }] }, { role: "custom", customType: "todo-reconciliation-reminder", content: [{ type: "text", text: "old instruction" }] }];
   const context = await f.context(old);
-  assert.equal(context.messages.length, 2, "legacy repair is removed while the one advisory may be added");
+  assert.equal(context.messages.length, 1, "legacy advisory and repair messages are removed and nothing is added");
   assert.equal(context.messages.filter((message) => message.customType === "todo-reconciliation-repair").length, 0, "legacy instruction is filtered");
   assert.equal(old.length, 3, "filtering leaves the original provider/transcript message array unchanged");
   assert.equal(f.entries.length, 1, "context filtering does not mutate stored branch");
-  const reminder = context; assert.equal(reminder.messages.length, 2);
-  assert.match(reminder.messages[1].content[0].text, /optional/);
-  assert.doesNotMatch(reminder.messages[1].content[0].text, /HOSTILE|ignore previous|Reconcile the entire/);
-  assert.equal(await f.context(), undefined, "one reminder maximum across reused/provider contexts");
+  assert.equal(context.messages[0].role, "user", "only the original user message survives filtering");
+  assert.equal(await f.context(), undefined, "clean context needs no rewrite");
   assert.equal(await f.toolCall("list", { action: "list" }), undefined, "first read executes");
   await f.tool("todo", "list");
   for (let i = 0; i < 25; i++) assert.equal((await f.toolCall("list", { action: "list" }))?.block, true);
@@ -73,7 +71,7 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
   assert.equal((await f.toolCall("list", { action: "list" }))?.block, true);
   assert.equal((await f.toolCall("list", { action: "list", status: "pending" }))?.block, undefined);
   assert.equal((await f.toolCall("get", { action: "get", id: 1 }))?.block, undefined);
-  await f.tool("bash", ""); assert.equal(await f.context(), undefined, "unrelated results do not rearm advisory");
+  await f.tool("bash", ""); assert.equal(await f.context(), undefined, "unrelated results never add an advisory");
 }
 {
   const f = fixture(); await f.start();
@@ -106,12 +104,12 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
 }
 {
   const f = fixture(); await f.start(); await f.tool("bash", "");
-  assert.equal((await f.context()).messages.length, 2); assert.equal(await f.context(), undefined);
-  await f.newRequest(); assert.equal((await f.context()).messages.length, 2, "new external request resets reminder budget");
+  assert.equal(await f.context(), undefined); assert.equal(await f.context(), undefined);
+  await f.newRequest(); assert.equal(await f.context(), undefined, "a new request never adds an advisory");
   for (const action of ["get", "list", "create", "update", "delete", "clear"]) {
-    await f.newRequest(); await f.tool("todo", action); assert.equal(await f.context(), undefined, `successful ${action} snapshot suppresses reminder for request`);
+    await f.newRequest(); await f.tool("todo", action); assert.equal(await f.context(), undefined, `successful ${action} never triggers an advisory`);
   }
-  await f.newRequest(); assert.equal((await f.context()).messages.length, 2);
+  await f.newRequest(); assert.equal(await f.context(), undefined);
   await f.handlers.get("session_tree")({}, f.ctx); assert.equal(await f.context(), undefined, "tree lifecycle resets request-local state without rearming old request");
   await f.handlers.get("session_start")({}, f.ctx); assert.equal((await f.toolCall("list", { action: "list" }))?.block, undefined, "session lifecycle resets duplicate guard");
   const specialist = fixture({ primary: false }); await specialist.start(); assert.equal(await specialist.toolCall("list", { action: "list" }), undefined); assert.equal(await specialist.context(), undefined);
