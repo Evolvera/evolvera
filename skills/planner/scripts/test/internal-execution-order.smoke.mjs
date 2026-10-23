@@ -95,10 +95,10 @@ assert.match(
 
 requireMatch(flowPath, /Internal Execution Order bridge/i, "missing Flow bridge");
 requireMatch(flowPath, /TILL-DO_<task-id>\.md[\s\S]{0,100}TODO_<task-id>\.md/i, "Flow must preserve both lifecycle artifacts");
-requireMatch(flowPath, /(apenas dentro|only within)[^.\n]*workspace Orca[^.\n]*(nunca|never)[^.\n]*checkout canônico/i, "artifacts must remain inside the issue's Orca workspace and never the canonical checkout");
-requireMatch(flowPath, /nunca os converta[^.\n]*Flow\/GitHub/i, "artifacts must not become Flow/GitHub state");
+requireMatch(flowPath, /All issue execution takes place inside a workspace created by Orca[\s\S]{0,200}?(?:never|not)[\s\S]{0,40}?worker workspace/i, "artifacts must remain inside the issue's Orca workspace and never the canonical checkout");
+requireMatch(flowPath, /does not maintain a local delivery plan[^.\n]*|never become[^.\n]*Flow\/GitHub/i, "artifacts must not become Flow/GitHub state");
 requireMatch(flowPath, /nem os inclua no commit|not[^.\n]*commit/i, "artifacts must not be committed by default");
-requireMatch(flowPath, /bloqueado[^.\n]*não cria TODO[^.\n]*mutação de fonte/i, "blocked readiness must prevent TODO and source mutation");
+requireMatch(flowPath, /blocked TILL-DO does not create TODO or permit source mutation/i, "blocked readiness must prevent TODO and source mutation");
 
 const tillDo = texts.get("templates/builder/TILL-DO.md");
 for (const gate of ["Authority / baseline", "Contract / scope", "Validation / resources", "Recovery / stop"]) {

@@ -1,16 +1,16 @@
-# APIs Externas — {project-name}
+# External APIs — {project-name}
 
-<!-- Adicione APIs abaixo -->
+<!-- Add APIs below -->
 
-<!-- ## Nome da API
+<!-- ## API Name
 - **Base URL**: https://api.example.com
 - **Auth**: Bearer token / API Key / OAuth2
 - **Rate limit**: X req/min
-- **Quirks**: (gotchas, limitações conhecidas)
+- **Quirks**: (gotchas, known limitations)
 - **Docs**: https://docs.example.com
-- **Status**: Ativo / Descontinuado / Rate limitado
-- **Custo**: Gratuito / Pago (X$/1k calls)
+- **Status**: Active / Discontinued / Rate-limited
+- **Cost**: Free / Paid (X$/1k calls)
 -->
 
-## Notas
+## Notes
 - ...

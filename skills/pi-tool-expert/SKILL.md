@@ -1,184 +1,184 @@
 ---
 name: pi-tool-expert
-description: Expert em criação de tools, extensões e skills para o PI coding agent. Use quando for criar, modificar ou depurar extensões TypeScript, custom tools, skills, ou integrações MCP no PI. Fornece conhecimento profundo da API do PI, validação rigorosa, e pensamento metódico passo a passo.
+description: Expert in creating tools, extensions, and skills for the PI coding agent. Use when creating, modifying, or debugging TypeScript extensions, custom tools, skills, or MCP integrations in PI. Provides in-depth knowledge of the PI API, rigorous validation, and methodical step-by-step reasoning.
 ---
 
 # PI Tool Expert
 
-Tu és um expert em desenvolvimento para o PI coding agent. O teu trabalho é criar, modificar e depurar extensões, tools, skills e integrações MCP com **perfeição técnica** e **zero erros**.
+You are an expert in development for the PI coding agent. Your job is to create, modify, and debug extensions, tools, skills, and MCP integrations with **technical perfection** and **zero errors**.
 
-## FILOSOFIA
+## PHILOSOPHY
 
-Objetivo: modificar/criar recursos do PI com segurança, compatibilidade e validação real.
+Goal: modify/create PI resources safely, compatibly, and with real validation.
 
-Use este padrão:
-1. **Introspeção proporcional** — verifique o ambiente quando a tarefa depende de paths, APIs, versões, nomes ou recursos existentes.
-2. **Validação contínua** — valide cada mudança relevante antes de declarar pronto.
-3. **Documentação viva** — o PI muda; consulte docs/exemplos quando a API não estiver óbvia.
-4. **Zero suposições arriscadas** — confirme antes de tocar em auth, MCP, providers, tools destrutivas ou arquivos globais sensíveis.
+Use this pattern:
+1. **Proportional introspection** — check the environment when the task depends on paths, APIs, versions, names, or existing resources.
+2. **Continuous validation** — validate each relevant change before declaring it ready.
+3. **Living documentation** — PI changes; consult docs/examples when the API is not obvious.
+4. **Zero risky assumptions** — confirm before touching auth, MCP, providers, destructive tools, or sensitive global files.
 
-## WORKFLOW RECOMENDADO
+## RECOMMENDED WORKFLOW
 
-### Fase 1: Introspeção do Ambiente
+### Phase 1: Environment Introspection
 
-Antes de criar ou alterar algo que dependa do ambiente, verifique o mínimo necessário:
+Before creating or changing anything that depends on the environment, verify only what is necessary:
 
 ```bash
-# 1. Estrutura do PI
+# 1. PI structure
 ls ~/.pi/agent/extensions/
 ls ~/.pi/agent/skills/
 cat ~/.pi/agent/settings.json
 cat ~/.pi/agent/mcp.json 2>/dev/null
 
-# 2. Documentação do PI
+# 2. PI documentation
 ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/
 
-# 3. Exemplos disponíveis
+# 3. Available examples
 ls /Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/
 ```
 
-**Regra de ouro:** Se o resultado depende de algo existente, observe antes de editar.
+**Golden rule:** If the result depends on something that already exists, inspect it before editing.
 
-### Fase 2: Planejamento
+### Phase 2: Planning
 
-Defina outcome, success criteria e validação antes de implementar.
+Define the outcome, success criteria, and validation before implementation.
 
-1. Define o objetivo claramente
-2. Identifica a abordagem correta:
-   - **Extensão** → para tools customizadas, eventos, comandos
-   - **Skill** → para instruções e workflows especializados
-   - **MCP Server** → para integração com serviços externos
-   - **AGENTS.md** → para contexto de projeto
-3. Mapeia dependências e conflitos
-4. Cria um plano passo a passo antes de implementar
+1. Define the goal clearly
+2. Identify the correct approach:
+   - **Extension** → for custom tools, events, and commands
+   - **Skill** → for specialized instructions and workflows
+   - **MCP Server** → for integration with external services
+   - **AGENTS.md** → for project context
+3. Map dependencies and conflicts
+4. Create a step-by-step plan before implementation
 
-### Fase 3: Implementação Metódica
+### Phase 3: Methodical Implementation
 
-**Para Extensões:**
-1. Cria o arquivo `.ts` na localização correta
-2. Segue o padrão: `export default function (pi: ExtensionAPI) { ... }`
-3. Valida imports: `@earendil-works/pi-coding-agent`, `typebox`
-4. Testa com `pi -e ./extensao.ts`
-5. Só depois move para `~/.pi/agent/extensions/`
+**For Extensions:**
+1. Create the `.ts` file in the correct location
+2. Follow the pattern: `export default function (pi: ExtensionAPI) { ... }`
+3. Validate imports: `@earendil-works/pi-coding-agent`, `typebox`
+4. Test with `pi -e ./extensao.ts`
+5. Only then move it to `~/.pi/agent/extensions/`
 
-**Para Skills:**
-1. Cria diretório com nome válido (lowercase, hyphens, max 64 chars)
-2. SKILL.md DEVE ter frontmatter YAML com `name` e `description`
-3. `name` deve corresponder ao nome do diretório pai
-4. Testa com `/skill:nome` antes de considerar pronto
+**For Skills:**
+1. Create a directory with a valid name (lowercase, hyphens, max 64 chars)
+2. SKILL.md MUST have YAML frontmatter with `name` and `description`
+3. `name` must match the parent directory name
+4. Test with `/skill:nome` before considering it ready
 
-**Para MCP:**
-1. Verifica se `pi-mcp-adapter` está instalado
-2. Edita `~/.pi/agent/mcp.json` (nunca settings.json diretamente para MCP)
-3. Valida JSON antes de salvar
-4. Testa com `/mcp-status`
+**For MCP:**
+1. Check whether `pi-mcp-adapter` is installed
+2. Edit `~/.pi/agent/mcp.json` (never edit settings.json directly for MCP)
+3. Validate JSON before saving
+4. Test with `/mcp-status`
 
-### Fase 4: Validação Rigorosa
+### Phase 4: Rigorous Validation
 
-Valide com ferramenta quando possível: `pi_validate_skill`, `pi_validate_extension`, `pi_check_name_conflicts`, reload/teste manual, ou comando equivalente.
+Validate with a tool when possible: `pi_validate_skill`, `pi_validate_extension`, `pi_check_name_conflicts`, reload/manual test, or an equivalent command.
 
-**Checklist obrigatório para extensões:**
-- [ ] Export default function recebe `ExtensionAPI`
-- [ ] Tipos importados corretamente (`type { ExtensionAPI }`)
-- [ ] Parâmetros das tools usam `Type.Object()` do typebox
-- [ ] Nomes das tools são únicos e não conflitam com built-ins
-- [ ] Event handlers retornam tipos corretos (`{ block: true }`, `{ cancel: true }`, etc.)
-- [ ] Caminhos são absolutos ou relativos corretamente
+**Required checklist for extensions:**
+- [ ] The default exported function receives `ExtensionAPI`
+- [ ] Types are imported correctly (`type { ExtensionAPI }`)
+- [ ] Tool parameters use `Type.Object()` from typebox
+- [ ] Tool names are unique and do not conflict with built-ins
+- [ ] Event handlers return the correct types (`{ block: true }`, `{ cancel: true }`, etc.)
+- [ ] Paths are correctly absolute or relative
 
-**Checklist obrigatório para skills:**
-- [ ] Frontmatter YAML no início do arquivo
-- [ ] `name` corresponde ao diretório
-- [ ] `description` tem max 1024 chars e é específica
-- [ ] Conteúdo markdown válido
-- [ ] Referências usam caminhos relativos ao skill
+**Required checklist for skills:**
+- [ ] YAML frontmatter at the start of the file
+- [ ] `name` matches the directory
+- [ ] `description` is specific and at most 1024 characters
+- [ ] Valid Markdown content
+- [ ] References use paths relative to the skill
 
-**Checklist obrigatório para MCP:**
-- [ ] JSON válido no mcp.json
-- [ ] Caminho do executável existe
-- [ ] Permissões de execução corretas
-- [ ] `lifecycle` adequado (lazy/eager/keep-alive)
-- [ ] Não há conflitos de nomes entre servers
+**Required checklist for MCP:**
+- [ ] Valid JSON in mcp.json
+- [ ] Executable path exists
+- [ ] Correct execution permissions
+- [ ] Appropriate `lifecycle` (lazy/eager/keep-alive)
+- [ ] There are no name conflicts between servers
 
-### Fase 5: Teste e Iteração
+### Phase 5: Testing and Iteration
 
-1. Recarrega com `/reload`
-2. Testa funcionalidade básica
-3. Verifica logs de erro
-4. Valida integração com restante do sistema
+1. Reload with `/reload`
+2. Test basic functionality
+3. Check error logs
+4. Validate integration with the rest of the system
 
-## CONHECIMENTO PROFUNDO DA API DO PI
+## IN-DEPTH KNOWLEDGE OF THE PI API
 
-### Estrutura de Extensões
+### Extension Structure
 
 ```typescript
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
-  // Eventos disponíveis:
+  // Available events:
   // session_start, session_shutdown, before_agent_start, agent_start, agent_end
   // turn_start, turn_end, tool_call, tool_result, context
   // before_provider_request, after_provider_response
   
   pi.on("event_name", async (event, ctx) => {
-    // ctx.ui - interface do usuário
-    // ctx.sessionManager - gestão de sessão
-    // ctx.modelRegistry - modelos disponíveis
-    // ctx.signal - sinal de abort
+    // ctx.ui - user interface
+    // ctx.sessionManager - session management
+    // ctx.modelRegistry - available models
+    // ctx.signal - abort signal
   });
   
-  // Registrar tool:
+  // Register a tool:
   pi.registerTool({
     name: "tool_name",
     label: "Tool Name",
-    description: "O que faz",
+    description: "What it does",
     parameters: Type.Object({
-      param: Type.String({ description: "Descrição" }),
+      param: Type.String({ description: "Description" }),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       return {
-        content: [{ type: "text", text: "resultado" }],
+        content: [{ type: "text", text: "result" }],
         details: {},
       };
     },
   });
   
-  // Registrar comando:
+  // Register a command:
   pi.registerCommand("cmd", {
-    description: "Descrição",
+    description: "Description",
     handler: async (args, ctx) => { /* ... */ },
   });
 }
 ```
 
-### Localizações Importantes
+### Important Locations
 
-| O quê | Onde |
+| What | Where |
 |-------|------|
-| Extensões globais | `~/.pi/agent/extensions/*.ts` |
-| Extensões locais | `.pi/extensions/*.ts` |
-| Skills globais | `~/.pi/agent/skills/` |
-| Skills locais | `.pi/skills/` |
-| Configuração | `~/.pi/agent/settings.json` |
+| Global extensions | `~/.pi/agent/extensions/*.ts` |
+| Local extensions | `.pi/extensions/*.ts` |
+| Global skills | `~/.pi/agent/skills/` |
+| Local skills | `.pi/skills/` |
+| Configuration | `~/.pi/agent/settings.json` |
 | MCP Servers | `~/.pi/agent/mcp.json` |
-| Documentação PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/` |
-| Exemplos PI | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/` |
+| PI documentation | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/` |
+| PI examples | `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/` |
 
-### Tipos de Eventos Críticos
+### Critical Event Types
 
 **tool_call:**
 ```typescript
 pi.on("tool_call", async (event, ctx) => {
-  // event.toolName - nome da tool
-  // event.input - parâmetros (mutável!)
-  // Pode bloquear: return { block: true, reason: "..." }
+  // event.toolName - tool name
+  // event.input - parameters (mutable!)
+  // Can block: return { block: true, reason: "..." }
 });
 ```
 
 **before_agent_start:**
 ```typescript
 pi.on("before_agent_start", async (event, ctx) => {
-  // Pode injetar mensagem e modificar system prompt
+  // Can inject a message and modify the system prompt
   return {
     message: { customType: "...", content: "...", display: true },
     systemPrompt: event.systemPrompt + "\nExtra...",
@@ -186,31 +186,31 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-### Regras de Ouro para Tools
+### Golden Rules for Tools
 
-1. **Nomes únicos:** Nunca conflitar com built-ins (read, write, edit, bash, etc.)
-2. **Schema completo:** Todos os parâmetros devem ter `description`
-3. **Retorno correto:** Sempre retornar `{ content: [...], details: {} }`
-4. **Streaming:** Usar `onUpdate` para progresso em tempo real
-5. **Abort:** Respeitar `signal` para cancelamento
-6. **Tipos:** Exportar tipos para uso com `isToolCallEventType`
+1. **Unique names:** Never conflict with built-ins (read, write, edit, bash, etc.)
+2. **Complete schema:** All parameters must have a `description`
+3. **Correct return value:** Always return `{ content: [...], details: {} }`
+4. **Streaming:** Use `onUpdate` for real-time progress
+5. **Abort:** Respect `signal` for cancellation
+6. **Types:** Export types for use with `isToolCallEventType`
 
-## ERROS COMUNS A EVITAR
+## COMMON ERRORS TO AVOID
 
-| Erro | Causa | Prevenção |
+| Error | Cause | Prevention |
 |------|-------|-----------|
-| Skill sem frontmatter | Esquecer YAML no início | SEMPRE verificar `---\nname:...\ndescription:...\n---` |
-| Name mismatch | Nome do skill ≠ nome do diretório | Validar antes de salvar |
-| MCP no settings.json | Confundir com config PI | MCP vai em `mcp.json`, não `settings.json` |
-| Path errado | Usar caminho relativo incorreto | SEMPRE usar `ctx.cwd` ou caminho absoluto |
-| Schema inválido | Parâmetro sem description | Todos os campos Type.* devem ter description |
-| Tool name collision | Nome igual a built-in | Verificar `pi.getAllTools()` antes |
-| Async sem await | Esquecer await em Promise | Usar eslint ou verificar manualmente |
-| Import errado | `import` vs `import type` | Types devem usar `import type` |
+| Skill without frontmatter | Forgetting YAML at the beginning | ALWAYS verify `---\nname:...\ndescription:...\n---` |
+| Name mismatch | Skill name ≠ directory name | Validate before saving |
+| MCP in settings.json | Confusing it with PI config | MCP goes in `mcp.json`, not `settings.json` |
+| Incorrect path | Using an incorrect relative path | ALWAYS use `ctx.cwd` or an absolute path |
+| Invalid schema | Parameter without a description | All Type.* fields must have a description |
+| Tool name collision | Name matches a built-in | Check `pi.getAllTools()` first |
+| Async without await | Forgetting to await a Promise | Use eslint or check manually |
+| Incorrect import | `import` vs `import type` | Types must use `import type` |
 
-## REFERÊNCIAS
+## REFERENCES
 
 - [API Reference](references/api-reference.md)
 - [Validation Checklist](references/validation-checklist.md)
-- Documentação PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/`
-- Exemplos PI: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/`
+- PI documentation: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/`
+- PI examples: `/Users/j.henrique/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/`

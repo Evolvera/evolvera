@@ -1,100 +1,100 @@
 ---
 name: project-memory
-description: "Memória persistente por projeto com chunks Markdown autoritativos, arquitetura normalizada em JSON e projeções determinísticas injetadas no runtime."
+description: "Persistent per-project memory with authoritative Markdown chunks, normalized JSON architecture, and deterministic projections injected at runtime."
 ---
 
 === PROJECT-MEMORY PROTOCOL ===
 
-## LOCALIZAÇÃO
-Toda memória de projeto fica em: `{cwd}/.pi/memory/`
+## LOCATION
+All project memory is stored in: `{cwd}/.pi/memory/`
 
-> **Nota**: A pasta `.pi/` na raiz do projeto é o diretório padronizado para **todos** os artefatos dos agentes:
-> - `.pi/plans/` — planos persistentes (planner, designer, content-writer, polisher)
-> - `.pi/build/` — checklists temporários de execução (TILL-DO.md, TODO.md)
-> - `.pi/validate/` — artefatos de validação (REVIEW.md, FIX_REQUIRED.md)
-> - `.pi/memory/` — memória persistente do projeto (este skill)
-> - `.pi/flow/` — histórico local **opcional** e somente-leitura da entrega, de propriedade do skill `flow-orca`; nada ali é autoridade e sua ausência nunca bloqueia retomada
+> **Note**: The `.pi/` folder at the project root is the standard directory for **all** agent artifacts:
+> - `.pi/plans/` — persistent plans (planner, designer, content-writer, polisher)
+> - `.pi/build/` — temporary execution checklists (TILL-DO.md, TODO.md)
+> - `.pi/validate/` — validation artifacts (REVIEW.md, FIX_REQUIRED.md)
+> - `.pi/memory/` — persistent project memory (this skill)
+> - `.pi/flow/` — **optional**, read-only local delivery history owned by the `flow-orca` skill; nothing there is authoritative, and its absence never blocks resumption
 >
-> `.pi/memory/` registra contexto e conhecimento genérico; não possui claims nem o estado de entrega. Para entrega, o estado atual do GitHub sempre prevalece (grant no README do Project, bodies das issues, comentários e Project Status), seguido da evidência viva de workspaces/terminais do Orca; ambos prevalecem sobre `.pi/flow/`, `.pi/memory/` e contexto de chat. Ausência ou desatualização desses caches nunca autoriza recriar backlog, assumir issue, criar workspace ou sobrescrever estado remoto.
+> `.pi/memory/` stores context and general knowledge; it contains neither claims nor delivery state. For delivery, the current GitHub state always takes precedence (grant in the Project README, issue bodies, comments, and Project Status), followed by live evidence from Orca workspaces/terminals; both take precedence over `.pi/flow/`, `.pi/memory/`, and chat context. The absence or staleness of these caches never authorizes recreating a backlog, claiming an issue, creating a workspace, or overwriting remote state.
 
-| Arquivo | Descrição |
+| File | Description |
 |---------|-----------|
-| `_summary.md` | Resumo humano compacto injetado no contexto (bounded: root 8k). Derivado de chunks canônicos, sem substituir a fonte com full-text de sessão. |
-| `setup.md` | Como rodar, buildar, testar, deploy. Scripts, dependências, runtime. |
-| `bugs.md` | Bugs conhecidos com status [ATIVO]/[RESOLVIDO]. Workarounds e fixes. |
-| `architecture.md` | Narrativa humana durável: padrão, limites, estrutura e lições arquiteturais; não duplica as tabelas normalizadas. |
-| `architecture.json` | Fonte de verdade estruturada e normalizada para agentes; registros têm IDs estáveis e evidência exata relativa ao repositório. |
-| `architecture.html` | Visão humana self-contained gerada de `architecture.json`; nunca editar manualmente nem usar como autoridade. |
-| `env.md` | Variáveis de ambiente obrigatórias e opcionais. Secrets como [REDACTED]. |
-| `api-external.md` | APIs de terceiros, rate limits, quirks. |
-| `decisions.md` | Decisões técnicas. Decisão + alternativas + motivo. |
+| `_summary.md` | Compact human-readable summary injected into context (bounded: root 8k). Derived from canonical chunks, without replacing the source with full session text. |
+| `setup.md` | How to run, build, test, and deploy. Scripts, dependencies, runtime. |
+| `bugs.md` | Known bugs with status [ACTIVE]/[RESOLVED]. Workarounds and fixes. |
+| `architecture.md` | Durable human-readable narrative: patterns, boundaries, structure, and architectural lessons; does not duplicate the normalized tables. |
+| `architecture.json` | Structured and normalized source of truth for agents; records have stable IDs and exact repository-relative evidence. |
+| `architecture.html` | Self-contained human-readable view generated from `architecture.json`; never edit manually or use as an authority. |
+| `env.md` | Required and optional environment variables. Secrets as [REDACTED]. |
+| `api-external.md` | Third-party APIs, rate limits, quirks. |
+| `decisions.md` | Technical decisions. Decision + alternatives + rationale. |
 
 ---
 
-## REGRA 1 — INÍCIO DE SESSÃO (AUTOMÁTICO VIA EXTENSION)
+## RULE 1 — SESSION START (AUTOMATIC VIA EXTENSION)
 
-A extensão `project-memory.ts` e a superfície `plastic-memory` injetam, em `before_agent_start`, um contexto projetado com:
-- resumo raiz (bounded 8k),
-- índice ativo de chunk (bounded 4k),
-- índice opcional de arquitetura (bounded 4k).
+The `project-memory.ts` extension and `plastic-memory` surface inject a projected context in `before_agent_start` containing:
+- root summary (bounded 8k),
+- active chunk index (bounded 4k),
+- optional architecture index (bounded 4k).
 
-Essas projeções são derivadas, não substituem fatos e não implicam varredura completa de projeto.
+These projections are derived, do not replace facts, and do not imply a full project scan.
 
-A memória pode operar em três modos:
-- **canonical**: memória canônica com projection surface;
-- **legacy-flat**: fallback legado (`_summary.md` + índice legado);
-- **uninitialized**: sem memória inicializada.
+Memory can operate in three modes:
+- **canonical**: canonical memory with a projection surface;
+- **legacy-flat**: legacy fallback (`_summary.md` + legacy index);
+- **uninitialized**: no initialized memory.
 
-Compatibilidade operacional: em ambiente legado com `pi-observational-memory` ativo, `project-memory` permanece bridge/context-only e não força corte de propriedade aqui.
+Operational compatibility: in a legacy environment with `pi-observational-memory` active, `project-memory` remains bridge/context-only and does not force an ownership cutover here.
 
-Se `.pi/memory/` estiver ausente, não trate ausência como confirmação de projeto novo.
+If `.pi/memory/` is absent, do not treat its absence as confirmation that this is a new project.
 
-**Exceção de entrega:** quando a intenção atual for continuar board/issues/PRs via skill `flow-orca`, o re-entry completo daquela skill acontece primeiro. Memória ausente não significa projeto novo quando o GitHub já contém board, issues, branches ou PRs, ou quando o Orca já tem workspaces da campanha. Só depois da reconciliação remota crie/atualize memória, se isso ainda for necessário; nunca deixe memória bloquear retomada do WIP remoto.
-
----
-
-## REGRA 2 — INICIALIZAÇÃO ALVO (NÃO É RESCAN GLOBAL)
-
-Se `.pi/memory/` não existe no projeto atual:
-
-1. Crie o diretório: `mkdir -p .pi/memory/`.
-2. Copie somente os templates necessários (`cp ~/.pi/agent/skills/project-memory/templates/* .pi/memory/`).
-3. Para bootstrap explícito, use no máximo **3 scouts em paralelo**, cada um com prompt delimitado (setup, arquitetura/APIs, env/bugs/decisões), apenas para dados faltantes; não imponha leitura integral do repositório.
-
-**Scout A — Setup, Infra & Config:** scripts, dependências, runtime, testes e hooks críticos.
-
-**Scout B — Architecture & APIs:** evidência arquitetural normalizada com IDs e relações, sem inventar fluxos.
-
-**Scout C — Env, Bugs & Decisões:** variáveis de ambiente, decisões técnicas, riscos e inconsistências relevantes.
-
-4. Faça bootstrap pontual com builder/ajuste direto apenas nos arquivos e seções necessárias, por uma publicação canônica explicitamente suportada. No root atualmente verificado, a superfície de publicação/provider não está instalada; as ações de autoridade informam `unavailable`.
-5. Atualize projeções derivadas (`_summary.md` e índices) somente como parte dessa publicação canônica explícita e depois dos artefatos-alvo; o runtime pode reconstruir projeções bounded em memória, sem escrever.
-6. Não faça rescan global, não reescreva o resumo inteiro de forma autônoma e não sobrescreva arquitetura sem evidência nova.
-
-Se `.pi/memory/` já existe, mas `architecture.json` está ausente:
-- não trate o projeto como novo;
-- preserve Markdown e o estado remoto do GitHub;
-- inicialize arquitetura apenas quando houver mudança material e caminho explícito suportado.
+**Delivery exception:** when the current intent is to continue board/issues/PRs via the `flow-orca` skill, that skill’s full re-entry happens first. Missing memory does not mean this is a new project when GitHub already contains a board, issues, branches, or PRs, or when Orca already has campaign workspaces. Only create/update memory after remote reconciliation, if still necessary; never let memory block resumption of remote WIP.
 
 ---
 
-## REGRA 3 — MAPA ARQUITETURAL INCREMENTAL (JSON + HTML)
+## RULE 2 — TARGETED INITIALIZATION (NOT A GLOBAL RESCAN)
 
-Quando ativo o proprietário plástico, a operação usa os papéis `observer`, `reflector`, `compactor` e `project-promoter` no modelo `openai-codex/gpt-6-luna` com `medium`. Os gatilhos 10k/20k são bordas de inspeção, não cadência. Cada ciclo usa um snapshot contíguo de turno concluído, com limite aproximado de 100k tokens; não há multipart: a conclusão é semântica e exata. Há no máximo uma retry automática. A compactação usa identidade: seis ciclos completos formam o stride, compacta os dois mais antigos e preserva os quatro mais recentes. Resultado detached só aplica quando o host está settled/idle, sem mensagens pendentes, e passa as guardas de branch/identity; tentativa interna inválida ou não correspondente cancela, e um no-match manual/threshold/overflow mantém o fallback nativo. Não alegue qualidade live.
+If `.pi/memory/` does not exist in the current project:
 
-Backfill e publicação são operações explícitas: `backfill` começa por relatório sem escrita, usa cursor bounded, uma janela de turno concluído por vez, pausa/retoma e retry explícito; não corre automaticamente. No root atualmente verificado, as ações de autoridade expostas (`propose`, `accept`, `migrate`, `backfill`, `retry`) retornam `unavailable`, pois não há provider-backed worker nem caminho de publicação provider-to-canonical.
+1. Create the directory: `mkdir -p .pi/memory/`.
+2. Copy only the required templates (`cp ~/.pi/agent/skills/project-memory/templates/* .pi/memory/`).
+3. For explicit bootstrap, use at most **3 scouts in parallel**, each with a scoped prompt (setup, architecture/APIs, env/bugs/decisions), only for missing data; do not require reading the entire repository.
 
-Markdown canônico de projeto/chunk continua sendo a autoridade para fatos e lições narrativas humanas. O JSON é uma camada aditiva, normalizada e agent-facing; o HTML é sempre derivado do JSON e nunca é entrada de agentes. A saída de `project-promoter` é somente proposta: aceitação exige evidência atual e um caminho canônico explicitamente suportado; não há publicação autônoma.
+**Scout A — Setup, Infrastructure & Config:** scripts, dependencies, runtime, tests, and critical hooks.
 
-Atualize `architecture.json` somente quando houver mudança material em arquitetura, fluxo, evidência ou gap — não a cada edição de código. Antes de mutar:
-- Compare `snapshot.sourceHead` com o Git atual; mismatch é `POSSIBLY_STALE`, não prova de erro. Verifique a evidência afetada antes de alterar registros.
-- Derive o fechamento dos artefatos afetados a partir dos `evidence.path`/`evidenceIds`; preserve IDs estáveis e registros não afetados.
-- Atualize ou remova relações e passos de fluxo atomicamente, para que nenhuma referência fique dangling. Se a fonte não sustenta uma afirmação, marque-a `unknown`/gap `open` em vez de inventar.
-- Atualize `sourceHead`, `lastVerifiedAt`, `scope` e confiança conforme a evidência real; não grave status transitório de entrega.
+**Scout B — Architecture & APIs:** normalized architectural evidence with IDs and relationships; do not invent flows.
 
-Checkpoint obrigatório: atualizar a narrativa Markdown necessária e o JSON, validar o JSON, renderizar o HTML e só depois atualizar `_summary.md`. Se a validação falhar, não renderize nem aceite HTML; reporte o erro explicitamente. Nunca use o HTML para reconstruir ou substituir o JSON.
+**Scout C — Env, Bugs & Decisions:** environment variables, technical decisions, risks, and relevant inconsistencies.
 
-Comandos, executados na raiz do projeto e resolvidos relativamente ao diretório desta skill:
+4. Perform targeted bootstrap with a builder/direct edits only in the necessary files and sections, through an explicitly supported canonical publication path. In the currently verified root, the publication/provider surface is not installed; authority actions report `unavailable`.
+5. Update derived projections (`_summary.md` and indexes) only as part of that explicit canonical publication and after the target artifacts; the runtime can rebuild bounded projections in memory without writing.
+6. Do not perform a global rescan, independently rewrite the entire summary, or overwrite architecture without new evidence.
+
+If `.pi/memory/` already exists, but `architecture.json` is absent:
+- do not treat the project as new;
+- preserve Markdown and the remote GitHub state;
+- initialize architecture only when there is a material change and an explicitly supported path.
+
+---
+
+## RULE 3 — INCREMENTAL ARCHITECTURE MAP (JSON + HTML)
+
+When the plastic owner is active, the operation uses the roles `observer`, `reflector`, `compactor`, and `project-promoter` with `medium` on `openai-codex/gpt-6-luna`. The 10k/20k triggers are inspection boundaries, not a cadence. Each cycle uses a contiguous snapshot of a completed turn, with an approximate limit of 100k tokens; there is no multipart: completion is semantic and exact. There is at most one automatic retry. Compaction uses identity: six complete cycles form a stride, compacting the two oldest and preserving the four newest. A detached result is applied only when the host is settled/idle, there are no pending messages, and branch/identity guards pass; an invalid or mismatched internal attempt is canceled, while a manual/threshold/overflow no-match retains the native fallback. Do not claim live quality.
+
+Backfill and publication are explicit operations: `backfill` starts with a no-write report, uses a bounded cursor, one completed-turn window at a time, explicit pause/resume and retry; it does not run automatically. In the currently verified root, the exposed authority actions (`propose`, `accept`, `migrate`, `backfill`, `retry`) return `unavailable`, because there is no provider-backed worker or provider-to-canonical publication path.
+
+Canonical project/chunk Markdown remains authoritative for facts and human-readable lessons. JSON is an additive, normalized, agent-facing layer; HTML is always derived from JSON and is never agent input. The output of `project-promoter` is proposal-only: acceptance requires current evidence and an explicitly supported canonical path; there is no autonomous publication.
+
+Update `architecture.json` only when there is a material change in architecture, flows, evidence, or gaps — not on every code edit. Before mutating:
+- Compare `snapshot.sourceHead` with the current Git state; a mismatch is `POSSIBLY_STALE`, not proof of an error. Verify affected evidence before changing records.
+- Derive the affected artifact set from `evidence.path`/`evidenceIds`; preserve stable IDs and unaffected records.
+- Update or remove relationships and flow steps atomically so no references are dangling. If the source does not support a claim, mark it `unknown`/gap `open` instead of inventing it.
+- Update `sourceHead`, `lastVerifiedAt`, `scope`, and confidence according to actual evidence; do not record transient delivery status.
+
+Required checkpoint: update the required Markdown narrative and JSON, validate the JSON, render the HTML, and only then update `_summary.md`. If validation fails, do not render or accept the HTML; report the error explicitly. Never use HTML to reconstruct or replace JSON.
+
+Commands, run from the project root and resolved relative to this skill directory:
 ```sh
 PI_AGENT_DIR="${PI_AGENT_DIR:-$HOME/.pi/agent}"
 SKILL_DIR="$PI_AGENT_DIR/skills/project-memory"
@@ -102,105 +102,104 @@ node "$SKILL_DIR/scripts/validate-architecture.mjs" .pi/memory/architecture.json
 node "$SKILL_DIR/scripts/render-architecture.mjs" .pi/memory/architecture.json .pi/memory/architecture.html
 ```
 
-## REGRA 4 — SAVE (adicionar nova informação)
+## RULE 4 — SAVE (add new information)
 
-Quando descobrir algo novo durante o trabalho:
-1. Determine qual arquivo `.md` é o correto e monte o conteúdo da nova entrada.
-2. Edite somente a seção necessária; atualize `_summary.md`/índices apenas se o caminho explícito de publicação canônica suportar essa atualização bounded.
-3. Mantenha formato consistente: heading + bullets + data + evidência.
-4. Não faça varredura ou sobrescrita global sem alteração semântica concreta.
+When you discover something new during work:
+1. Determine which `.md` file is correct and draft the new entry.
+2. Edit only the necessary section; update `_summary.md`/indexes only if the explicit canonical publication path supports this bounded update.
+3. Keep the format consistent: heading + bullets + date + evidence.
+4. Do not perform a global scan or overwrite without a concrete semantic change.
 
-**Quando salvar automaticamente:**
-- Bug fix concluído → `bugs.md`
-- Incidente de deploy/recovery/rollback confirmado → `bugs.md` + `setup.md`
-- Nova feature que altera arquitetura → `architecture.md`
-- Mudança em scripts/config → `setup.md`
-- Decisão técnica tomada → `decisions.md`
-- Descoberta de quirk de API → `api-external.md`
-- Mudança em variáveis de ambiente → `env.md`
+**When to save automatically:**
+- Completed bug fix → `bugs.md`
+- Confirmed deploy/recovery/rollback incident → `bugs.md` + `setup.md`
+- New feature that changes architecture → `architecture.md`
+- Change to scripts/config → `setup.md`
+- Technical decision made → `decisions.md`
+- API quirk discovered → `api-external.md`
+- Change to environment variables → `env.md`
 
-**Lição operacional mínima:** registre apenas fatos duráveis: sintoma, causa raiz comprovada, suposição errada, sequência correta, pré-requisitos, smoke pós-operação, rollback e arquivos/comandos relevantes. Antes de repetir deploy, migration ou recovery, consulte essa entrada e confirme contra o estado atual. Nunca grave valores secretos, output sensível bruto, estado transitório do board/PR, conjecturas ou narrativa do chat; use `[REDACTED]` e mantenha GitHub/host/repo atuais como autoridade.
-
----
-
-## REGRA 5 — EDIT (atualizar informação existente)
-
-Quando algo mudar que afeta memória já salva:
-1. Identifique seção específica e arquivo alvo.
-2. Atualize apenas o necessário.
-3. Atualize a projeção derivada bounded somente se o caminho explícito de publicação canônica suportar essa atualização; caso contrário, preserve os derivados e registre a lacuna.
-
-Exemplos de quando editar:
-- Bug foi resolvido → atualiza status para [RESOLVIDO] em `bugs.md`
-- Arquitetura mudou → atualiza seção em `architecture.md`
-- Decisão foi revertida → atualiza em `decisions.md`
-- Setup mudou (novo script, nova dep) → atualiza `setup.md`
+**Minimum operational lesson:** record only durable facts: symptom, proven root cause, incorrect assumption, correct sequence, prerequisites, post-operation smoke test, rollback, and relevant files/commands. Before repeating a deploy, migration, or recovery, consult this entry and verify against the current state. Never record secret values, raw sensitive output, transient board/PR state, conjecture, or chat narrative; use `[REDACTED]` and keep the current GitHub/host/repository state authoritative.
 
 ---
 
-## REGRA 6 — DELETE (remover informação obsoleta)
+## RULE 5 — EDIT (update existing information)
 
-Quando memória não é mais relevante:
-1. Determine a seção/exemplar correto para remoção.
-2. Remova apenas o trecho relevante.
-3. Atualize projeções derivadas somente se a remoção fizer parte de uma publicação canônica explícita e suportada; caso contrário, preserve-as e registre a lacuna.
+When something changes that affects saved memory:
+1. Identify the specific section and target file.
+2. Update only what is necessary.
+3. Update the bounded derived projection only if the explicit canonical publication path supports this update; otherwise, preserve the derived files and record the gap.
 
----
-
-## REGRA 7 — REGENERAÇÃO DO `_summary.md`
-
-Atualize `_summary.md` e índices somente quando a memória canônica tiver sido publicada por um caminho explícito suportado, e apenas com contexto bounded. Se a projeção estiver inconsistente, o runtime pode reconstruí-la em memória; não faça uma reescrita autônoma do resumo nem reconstrua HTML/JSON a partir de uma projeção.
-
-- NÃO re-injete na sessão atual — a sessão já tem contexto da conversa
-- A próxima sessão usará a projeção publicada, quando houver
+Examples of when to edit:
+- Bug was resolved → update status to [RESOLVED] in `bugs.md`
+- Architecture changed → update the section in `architecture.md`
+- Decision was reversed → update it in `decisions.md`
+- Setup changed (new script, new dependency) → update `setup.md`
 
 ---
 
-## REGRA 8 — BUSCA E SUPERFÍCIES DE RECUPERAÇÃO
+## RULE 6 — DELETE (remove obsolete information)
 
-Use superfícies de memória explícitas e pontuais:
-
-- `memory_recall` (ID exato): `pm:p:` para projeto ou `pm:c:` para chunk; lê o Markdown canônico e retorna estado/evidência.
-- `memory_search` (filtros bounded): `text`, `tag`, `tags`, `category`, `status`, `confidence`, `limit`; retorna metadados/snippets, não navegação de transcript nem corpos completos.
-- `/memory:status` e `/memory:view [visible|full]` para estado e contexto atual.
-- `/om:status` e `/om:view [visible|full]` como aliases de compatibilidade.
-- `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill`, `/memory:retry` na superfície atualmente verificada retornam `unavailable`; não presumem publicação, migração, backfill ou provider.
-
-Não use uma chamada textual bare de `recall` nem assuma função sem ID. Para arquitetura, valide `architecture.json` (IDs/evidence/path) e as evidências reais antes de decisão material; `architecture.html` é somente view derivada. Em legado flat, preserve o marcador de compatibilidade e não trate o resumo como chunks canônicos.
-
-No codebase, use `scout` para lacunas reais. Quando achado relevante, aplique SAVE/EDIT no caminho canônico apenas se existir o caminho explícito suportado.
-
-Use busca antes de decisão arquitetural, debugging complexo ou pedido de memória específica.
-
+When memory is no longer relevant:
+1. Identify the correct section/example to remove.
+2. Remove only the relevant passage.
+3. Update derived projections only if the removal is part of an explicit, supported canonical publication; otherwise, preserve them and record the gap.
 
 ---
 
-## REGRA 9 — CHECKLIST OBRIGATÓRIO (antes de enviar resposta)
+## RULE 7 — REGENERATE `_summary.md`
 
-Execute mentalmente antes de CADA resposta:
+Update `_summary.md` and indexes only when canonical memory has been published through an explicitly supported path, and only with bounded context. If the projection is inconsistent, the runtime can rebuild it in memory; do not independently rewrite the summary or reconstruct HTML/JSON from a projection.
+
+- Do NOT reinject into the current session — the session already has conversation context
+- The next session will use the published projection, if available
+
+---
+
+## RULE 8 — SEARCH AND RETRIEVAL SURFACES
+
+Use explicit, targeted memory surfaces:
+
+- `memory_recall` (exact ID): `pm:p:` for a project or `pm:c:` for a chunk; reads canonical Markdown and returns state/evidence.
+- `memory_search` (bounded filters): `text`, `tag`, `tags`, `category`, `status`, `confidence`, `limit`; returns metadata/snippets, not transcript navigation or full bodies.
+- `/memory:status` and `/memory:view [visible|full]` for current state and context.
+- `/om:status` and `/om:view [visible|full]` as compatibility aliases.
+- `/memory:propose`, `/memory:accept`, `/memory:migrate`, `/memory:backfill`, `/memory:retry` on the currently verified surface return `unavailable`; do not assume publication, migration, backfill, or a provider.
+
+Do not use a bare textual `recall` call or assume a function without an ID. For architecture, validate `architecture.json` (IDs/evidence/path) and actual evidence before a material decision; `architecture.html` is a derived view only. In legacy-flat mode, preserve the compatibility marker and do not treat the summary as canonical chunks.
+
+In the codebase, use `scout` for real gaps. When you find something relevant, apply SAVE/EDIT to the canonical path only if an explicitly supported path exists.
+
+Search before making an architectural decision, doing complex debugging, or handling a specific memory request.
+
+---
+
+## RULE 9 — REQUIRED CHECKLIST (before sending a response)
+
+Run through this mentally before EVERY response:
 ```
-[ ] Eu executei alguma ação que gerou ou alterou conhecimento do projeto?
-[ ] Registrei no arquivo `.md` correto e atualizei projeções (`_summary.md`/índices) somente se um caminho canônico explícito suportou a publicação bounded?
-[ ] Se houve mudança arquitetural/material, validei `architecture.json` e gerei `architecture.html` antes de qualquer projeção publicada?
-[ ] Preservei GitHub (e a evidência viva do Orca) como autoridade de entrega e segui a regra de evidência?
-[ ] Evitei scan global automático e comandos/recall sem id explícito?
-[ ] Considerei delegar para builder se a operação for ampla?
+[ ] Did I take any action that generated or changed project knowledge?
+[ ] Did I record it in the correct `.md` file and update projections (`_summary.md`/indexes) only if an explicit canonical path supported bounded publication?
+[ ] If there was an architectural/material change, did I validate `architecture.json` and generate `architecture.html` before publishing any projection?
+[ ] Did I preserve GitHub (and Orca’s live evidence) as delivery authority and follow the evidence rule?
+[ ] Did I avoid automatic global scans and commands/recall without an explicit ID?
+[ ] Did I consider delegating to a builder if the operation is broad?
 ```
 
 ---
 
-## REGRA 10 — FORMATO DAS ENTRADAS
+## RULE 10 — ENTRY FORMAT
 
-Cada entrada em um arquivo `.md` deve seguir:
+Each entry in a `.md` file must follow:
 ```markdown
-## Título Descritivo da Entrada
-- **Data**: YYYY-MM-DD
-- **Detalhe 1**: descrição
-- **Detalhe 2**: descrição
-- **Arquivos relacionados**: path/to/file1, path/to/file2
+## Descriptive Entry Title
+- **Date**: YYYY-MM-DD
+- **Detail 1**: description
+- **Detail 2**: description
+- **Related files**: path/to/file1, path/to/file2
 ```
 
-- `bugs.md`: use status [ATIVO] ou [RESOLVIDO]
-- `decisions.md`: Decisão + Alternativas consideradas + Motivo da escolha
-- `architecture.md`: inclua diagramas mermaid quando relevante
-- `env.md`: secrets como [REDACTED]
+- `bugs.md`: use status [ACTIVE] or [RESOLVED]
+- `decisions.md`: Decision + Alternatives considered + Rationale
+- `architecture.md`: include Mermaid diagrams when relevant
+- `env.md`: secrets as [REDACTED]

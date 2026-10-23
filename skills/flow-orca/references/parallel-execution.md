@@ -310,7 +310,7 @@ A locked, orphan, stale-candidate, or incident-frozen resource is reported with 
 ```md
 ## Flow Orca concurrent resume — OWNER/REPO
 - Verified at: <UTC>
-- Mode: <SUPERVISIONADO | AUTÔNOMO (alias legado: AUTÔNOMO ATÉ PR) | YOLO>; base per repo: <repo → base>
+- Mode: <SUPERVISIONADO | AUTÔNOMO (legacy alias: AUTÔNOMO ATÉ PR) | YOLO>; base per repo: <repo → base>
 - Ceiling 6; approved concurrency: <N>; active issue PI workers: <N>
 - Project/board authority: <owner/number>
 - Coordinator checkout: branch@SHA; clean|dirty (owned paths summarized)

@@ -1,23 +1,23 @@
-# Env & Config — {project-name}
+# Environment & Config — {project-name}
 
-## Variáveis Obrigatórias
-- `VAR_NAME`: descrição (obrigatório)
+## Required Variables
+- `VAR_NAME`: description (required)
 - ...
 
-## Variáveis Opcionais
-- `VAR_NAME`: descrição (default: valor)
+## Optional Variables
+- `VAR_NAME`: description (default: value)
 
-## Arquivos de Configuração
+## Configuration Files
 - `config/`: ...
 - `.env.example`: ...
 
-## Ambientes
-- **dev**: Configurações de desenvolvimento
-- **staging**: Configurações de staging
-- **prod**: Configurações de produção
+## Environments
+- **dev**: Development settings
+- **staging**: Staging settings
+- **prod**: Production settings
 
 ## Secrets
-> ⚠️ NUNCA commitar secrets. Use .env.local ou gerenciador de secrets.
+> ⚠️ NEVER commit secrets. Use .env.local or a secrets manager.
 
-## Notas
+## Notes
 - ...

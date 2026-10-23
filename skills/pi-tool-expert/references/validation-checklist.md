@@ -2,77 +2,77 @@
 
 ## Pre-Implementation
 
-- [ ] Verificar ambiente: `ls ~/.pi/agent/extensions/`, `ls ~/.pi/agent/skills/`, `cat ~/.pi/agent/settings.json`
-- [ ] Identificar abordagem correta (extensão vs skill vs MCP vs AGENTS.md)
-- [ ] Verificar conflitos de nomes
-- [ ] Definir objetivo claro
+- [ ] Verify the environment: `ls ~/.pi/agent/extensions/`, `ls ~/.pi/agent/skills/`, `cat ~/.pi/agent/settings.json`
+- [ ] Identify the correct approach (extension vs. skill vs. MCP vs. AGENTS.md)
+- [ ] Check for name conflicts
+- [ ] Define a clear goal
 
 ## Extension Validation
 
 ### Structure
-- [ ] Arquivo `.ts` ou `index.ts` em diretório
-- [ ] Export default function recebe `ExtensionAPI`
-- [ ] Usa `import type` para tipos
-- [ ] Sem erros de TypeScript
+- [ ] `.ts` or `index.ts` file in a directory
+- [ ] The default exported function receives `ExtensionAPI`
+- [ ] Use `import type` for types
+- [ ] No TypeScript errors
 
 ### Tools
-- [ ] `name` é único (verificar com `pi.getAllTools()`)
-- [ ] `name` não conflita com built-ins (read, write, edit, bash, webfetch, websearch, mcp_*, etc.)
-- [ ] `label` é descritivo
-- [ ] `description` é clara e completa
-- [ ] `parameters` usa TypeBox com descriptions em todos os campos
-- [ ] `execute` retorna `{ content: [...], details: {} }`
-- [ ] `execute` lida com erros (try/catch ou validação)
-- [ ] Usa `onUpdate` para streaming quando apropriado
-- [ ] Respeita `signal` para abort
+- [ ] `name` is unique (check with `pi.getAllTools()`)
+- [ ] `name` does not conflict with built-ins (read, write, edit, bash, webfetch, websearch, mcp_*, etc.)
+- [ ] `label` is descriptive
+- [ ] `description` is clear and complete
+- [ ] `parameters` uses TypeBox with descriptions for every field
+- [ ] `execute` returns `{ content: [...], details: {} }`
+- [ ] `execute` handles errors (try/catch or validation)
+- [ ] Use `onUpdate` for streaming when appropriate
+- [ ] Respect `signal` for aborts
 
 ### Events
-- [ ] Handler tem assinatura correta `(event, ctx) =>`
-- [ ] Retorno condiz com evento (`{ block: true }`, `{ cancel: true }`, etc.)
-- [ ] Não modifica event.input sem validação (tool_call)
-- [ ] Não esquece de retornar quando necessário
+- [ ] Handler has the correct signature `(event, ctx) =>`
+- [ ] Return value matches the event (`{ block: true }`, `{ cancel: true }`, etc.)
+- [ ] Do not modify event.input without validation (tool_call)
+- [ ] Do not forget to return when required
 
 ### Commands
-- [ ] Nome é único
-- [ ] Handler assíncrono
-- [ ] Usa `ctx.ui` para interação
+- [ ] Name is unique
+- [ ] Handler is asynchronous
+- [ ] Use `ctx.ui` for interaction
 
 ## Skill Validation
 
 ### Frontmatter
-- [ ] YAML no início: `---\nname: ...\ndescription: ...\n---`
-- [ ] `name` corresponde ao diretório pai
+- [ ] YAML at the beginning: `---\nname: ...\ndescription: ...\n---`
+- [ ] `name` matches the parent directory
 - [ ] `name`: lowercase, hyphens, max 64 chars
-- [ ] `description`: max 1024 chars, específica
-- [ ] Sem campos inválidos
+- [ ] `description`: max 1024 characters, specific
+- [ ] No invalid fields
 
 ### Content
-- [ ] Markdown válido
-- [ ] Referências usam caminhos relativos ao skill
-- [ ] Scripts têm permissão de execução (chmod +x)
-- [ ] Comandos são testáveis
+- [ ] Valid Markdown
+- [ ] References use paths relative to the skill
+- [ ] Scripts have execute permission (chmod +x)
+- [ ] Commands are testable
 
 ## MCP Validation
 
 ### Configuration
-- [ ] JSON válido em `~/.pi/agent/mcp.json`
-- [ ] Cada server tem nome único
-- [ ] `command` existe e é executável
-- [ ] `args` são corretos
-- [ ] `lifecycle` é um dos: lazy, eager, keep-alive
-- [ ] `env` usa `${VAR}` para interpolação
+- [ ] Valid JSON in `~/.pi/agent/mcp.json`
+- [ ] Each server has a unique name
+- [ ] `command` exists and is executable
+- [ ] `args` are correct
+- [ ] `lifecycle` is one of: lazy, eager, keep-alive
+- [ ] `env` uses `${VAR}` for interpolation
 
 ### Testing
-- [ ] `/mcp-status` mostra servidor
-- [ ] Ferramentas aparecem em `/mcp-list`
-- [ ] Nomes prefixados corretamente (`mcp_server_tool`)
-- [ ] Sem conflitos com outras tools
+- [ ] `/mcp-status` shows the server
+- [ ] Tools appear in `/mcp-list`
+- [ ] Names are correctly prefixed (`mcp_server_tool`)
+- [ ] No conflicts with other tools
 
 ## Post-Implementation
 
-- [ ] `/reload` funciona sem erros
-- [ ] Skill aparece em `/skill:name`
-- [ ] Tools aparecem na lista
-- [ ] Funcionalidade básica testada
-- [ ] Logs verificados por erros
-- [ ] Integração com restante do sistema validada
+- [ ] `/reload` works without errors
+- [ ] Skill appears in `/skill:name`
+- [ ] Tools appear in the list
+- [ ] Basic functionality tested
+- [ ] Logs checked for errors
+- [ ] Integration with the rest of the system validated
