@@ -32,6 +32,20 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
 }
 
 {
+  // builder-heavy runs a long multi-runtime task and now carries the todo list; every other
+  // specialist agent keeps its own prompt and never receives the hint.
+  const heavy = fixture();
+  await heavy.start();
+  await heavy.handlers.get("before_agent_start")({ prompt: "long task", systemPromptOptions: { customPrompt: "# Builder Heavy — Correctness and Integration Executor\n" } }, heavy.ctx);
+  assert.equal((await heavy.context()).messages.length, 2, "builder-heavy receives the one optional advisory");
+}
+{
+  const specialist = fixture();
+  await specialist.start();
+  await specialist.handlers.get("before_agent_start")({ prompt: "task", systemPromptOptions: { customPrompt: "# Builder — Normal-Risk Task Executor\n" } }, specialist.ctx);
+  assert.equal(await specialist.context(), undefined, "other specialists never receive the hint");
+}
+{
   const startup = fixture();
   await startup.handlers.get("session_start")({}, startup.ctx);
   await startup.beforeStart("initial startup request");
