@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// Sessions that get the todo hint: the main agent, and builder-heavy, whose long multi-runtime
-// tasks benefit from an explicit list. Every other agent keeps its own prompt and no hint.
-const ELIGIBLE_PROMPTS = ["# PI Coding Agent", "# Builder Heavy"];
+// Only the main session gets the todo hint. Subagents may still hold the tool, but an advisory
+// about bookkeeping is noise inside their own bounded task.
+const ELIGIBLE_PROMPTS = ["# PI Coding Agent"];
 const REMINDER_TYPE = "todo-reconciliation-reminder";
 const LEGACY_TYPES = new Set([REMINDER_TYPE, "todo-reconciliation-repair"]);
 

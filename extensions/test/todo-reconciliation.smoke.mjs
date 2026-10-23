@@ -37,7 +37,7 @@ function fixture({ tasks = [{ id: 1, status: "pending", subject: "HOSTILE title 
   const heavy = fixture();
   await heavy.start();
   await heavy.handlers.get("before_agent_start")({ prompt: "long task", systemPromptOptions: { customPrompt: "# Builder Heavy — Correctness and Integration Executor\n" } }, heavy.ctx);
-  assert.equal((await heavy.context()).messages.length, 2, "builder-heavy receives the one optional advisory");
+  assert.equal(await heavy.context(), undefined, "subagents never receive the bookkeeping advisory");
 }
 {
   const specialist = fixture();
