@@ -17,7 +17,9 @@ const READ_TOOLS = new Set(["read", "grep", "find", "ls", "jina_read"]);
 // Shell reads count; anything that changes state or talks to git/gh/the package manager does not.
 const BASH_READ = /^\s*(?:cat|sed\s+-n|head|tail|rg|grep|find|ls|curl|wget|awk)\b/;
 const URL = /https?:\/\/[^\s)`'"\\\]<>]+/g;
-const PATH = /(?:[\w.@-]+\/)+[\w.@-]+\.[A-Za-z0-9]+/g;
+// A file path ends in a short extension and is not followed by more path, so a directory such as
+// /Users/j.henrique is never treated as a cited file.
+const PATH = /(?:[\w.@-]+\/)+[\w@-][\w.@-]*\.[A-Za-z0-9]{1,6}(?![\w/.@-])/g;
 const HARNESS_FILE = /\/\.pi\/agent\/(?:skills|agents)\//;
 
 type Running = { id: string; type: string; description: string };

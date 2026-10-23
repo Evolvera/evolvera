@@ -52,4 +52,7 @@ await hooks.get("input")({ source: "interactive", text: "next ask" });
 assert.equal(await call("read", { path: "src/api/server.js" }), undefined, "a new request clears cited sources");
 events.get("subagents:completed")({ id: "unknown", result: "src/api/server.js" });
 assert.equal(await call("read", { path: "src/api/server.js" }), undefined, "only this session's research reports count");
+// Directories and home paths are never cited files (regression: /Users/j.henrique was blocked).
+assert.deepEqual([...m.citedTargets("Found /Users/j.henrique/.config/evolvera and /Users/j.henrique/EVOLVERA/Rally.").paths], []);
+assert.deepEqual([...m.citedTargets("see deploy/compose.yml and src/api/server.js:12").paths], ["deploy/compose.yml", "src/api/server.js"]);
 console.log("delegated-research-guard smoke: PASS");
