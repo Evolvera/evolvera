@@ -108,6 +108,7 @@ m.default({
   },
 });
 const start = (customPrompt, systemPrompt) => handlers.get("before_agent_start")({ systemPrompt, systemPromptOptions: { customPrompt } }, ctx);
+const nextTurn = async () => start(systemMd, assembled);
 
 assert.equal(await start(systemMd, assembled), undefined, "standard by default");
 assert.equal(thinkingCalls.length, 0, "standard sessions never touch thinking effort");
@@ -128,39 +129,32 @@ await commands.get("orchestration").handler("bogus", ctx);
 assert.match(notices.at(-1).message, /Uso: \/orchestration/);
 assert.equal(m.readSessionMode([]), "standard", "new sessions start standard");
 
-// Conductor pins reasoning to medium; leaving conductor never rewrites the session effort back.
+// Conductor starts on medium effort and stops fighting a choice made afterwards.
 thinkingLevel = "high";
 await commands.get("orchestration").handler("conductor", ctx);
-assert.equal(thinkingLevel, "medium", "entering conductor pins medium");
+assert.equal(thinkingLevel, "medium", "entering conductor starts on medium");
 assert.equal(thinkingCalls.at(-1), "medium");
-// Raising effort while conductor is reset, and the reentrant select event does not loop.
 const pinnedCalls = thinkingCalls.length;
 thinkingLevel = "xhigh";
-await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "xhigh", previousLevel: "medium" }, ctx);
-assert.equal(thinkingLevel, "medium", "a manual xhigh selection is reset to medium");
-thinkingLevel = "high";
-await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "high", previousLevel: "medium" }, ctx);
-assert.equal(thinkingLevel, "medium", "a manual high selection is reset to medium");
-thinkingLevel = "low";
-await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "low", previousLevel: "medium" }, ctx);
-assert.equal(thinkingLevel, "medium", "a lower or off selection is reset to medium too");
-assert.ok(thinkingCalls.length - pinnedCalls <= 4, `reset stays finite (${thinkingCalls.length - pinnedCalls} calls)`);
-// Model change, session resume and the next turn all repin.
+await nextTurn();
+assert.equal(thinkingLevel, "xhigh", "a higher effort chosen afterwards is respected");
+thinkingLevel = "off";
+await nextTurn();
+assert.equal(thinkingLevel, "off", "a lower effort chosen afterwards is respected");
+assert.equal(thinkingCalls.length, pinnedCalls, "no hidden reset happens after the pin");
+// Model change and session resume bring the conductor back to medium.
 thinkingLevel = "high";
 await handlers.get("model_select")({ type: "model_select", source: "set" }, ctx);
-assert.equal(thinkingLevel, "medium", "model change repins medium");
+assert.equal(thinkingLevel, "medium", "model change returns to medium");
 thinkingLevel = "high";
 await handlers.get("session_start")({ type: "session_start", reason: "resume" }, ctx);
-assert.equal(thinkingLevel, "medium", "session resume repins medium");
+assert.equal(thinkingLevel, "medium", "session resume returns to medium");
 assert.equal(statuses.at(-1).text, "🎼 CONDUCTOR");
-thinkingLevel = "high";
-assert.deepEqual(await start(systemMd, assembled), { systemPrompt: conductor + tail }, "next turn keeps the conductor prompt");
-assert.equal(thinkingLevel, "medium", "next turn repins medium");
 // Standard sessions are never forced and can hold a higher effort.
 await commands.get("orchestration").handler("standard", ctx);
 const standardCalls = thinkingCalls.length;
 thinkingLevel = "high";
-await handlers.get("thinking_level_select")({ type: "thinking_level_select", level: "high", previousLevel: "medium" }, ctx);
+await nextTurn();
 assert.equal(thinkingLevel, "high", "standard keeps a user-selected high effort");
 assert.equal(thinkingCalls.length, standardCalls, "standard never sets a thinking level");
 assert.equal(await start(systemMd, assembled), undefined, "standard keeps the standard prompt");

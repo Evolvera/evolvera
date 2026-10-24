@@ -8,9 +8,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
  * SYSTEM.md sections, so they keep one source of truth. If any of them cannot be found, the
  * session stays on the standard prompt (fail-safe).
  * Session-scoped: Orca workers, subagents and new sessions keep the standard prompt.
- * Conductor sessions also pin the thinking level to `medium`: coordination does not need deeper
- * reasoning, and the pin is re-applied on every turn, session resume and model change, so it resets
- * any different selection. Nothing is written to settings, so standard sessions and workers keep
+ * Conductor sessions start on `medium` effort: coordination does not need deeper reasoning. The level
+ * is set when conductor starts, on a resumed session and on a model change; a level the user picks
+ * afterwards is respected. Nothing is written to settings, so standard sessions and workers keep
  * their own effort.
  */
 
@@ -181,13 +181,9 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
 
   pi.on("model_select", async (_event, rawCtx) => { pinThinking(pi, rawCtx as Ctx); });
 
-  pi.on("thinking_level_select", async (event, rawCtx) => {
-    if (event.level !== PINNED_THINKING) pinThinking(pi, rawCtx as Ctx);
-  });
 
   pi.on("before_agent_start", async (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
-    pinThinking(pi, ctx);
     const customPrompt = event.systemPromptOptions?.customPrompt;
     if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) return;
     if (currentMode(ctx) !== "conductor") return;
