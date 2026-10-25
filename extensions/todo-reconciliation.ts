@@ -4,6 +4,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const ELIGIBLE_PROMPTS = ["# PI Coding Agent"];
 const REMINDER_TYPE = "todo-reconciliation-reminder";
 const LEGACY_TYPES = new Set([REMINDER_TYPE, "todo-reconciliation-repair"]);
+// The exact sentence older versions injected; copies can survive inside quoted messages and summaries.
+const LEGACY_SENTENCE = /Todo reconciliation is optional\.[\s\S]{0,400}?Do not infer task completion\.\s*/g;
 
 type TodoDetails = { action?: string; params?: Record<string, unknown>; tasks?: unknown[]; nextId?: number; error?: unknown };
 type SessionEntry = { type?: string; id?: string; message?: { role?: string; toolName?: string; isError?: boolean; details?: unknown } };
@@ -118,10 +120,27 @@ export function registerTodoReconciliation(pi: ExtensionAPI) {
     // Unrelated work never rearms a reminder or read.
   });
 
-  // Legacy advisory messages stay filtered from context; no new reminder is ever added.
+  // Legacy advisory text is scrubbed everywhere it can still live: custom messages from older
+  // versions, and copies the model quoted into ordinary messages or a compaction summary.
   pi.on("context", async (event) => {
+    let changed = false;
     const messages = event.messages.filter((message) => !(message.role === "custom" && LEGACY_TYPES.has(String(message.customType))));
-    return messages.length === event.messages.length ? undefined : { messages };
+    if (messages.length !== event.messages.length) changed = true;
+    const scrubbed = messages.map((message) => {
+      if (!Array.isArray(message.content)) return message;
+      let touched = false;
+      const content = message.content.map((part) => {
+        if (!part || part.type !== "text" || typeof part.text !== "string") return part;
+        const text = part.text.replace(LEGACY_SENTENCE, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+        if (text === part.text) return part;
+        touched = true;
+        return { ...part, text };
+      });
+      if (!touched) return message;
+      changed = true;
+      return { ...message, content };
+    });
+    return changed ? { messages: scrubbed } : undefined;
   });
 
   pi.on("session_start", async (_event, ctx) => {

@@ -23,6 +23,10 @@ const STATUS_KEY = "orchestration-mode";
 const PINNED_THINKING = "medium";
 export const KEPT_SECTIONS = ["Orca Workers", "Operating Contract", "Communication and Explanation", "Authorization Modes and Continuation", "Safety", "Validation and Completion", "Stop Rules"];
 
+export const CONDUCTOR_PRECEDENCE = `## Precedence in this mode
+
+The sections below are the standard contract, written for a session that does the work itself. In conductor mode they still bind you, with one substitution that wins wherever they conflict: "do the next step" means dispatch it. Reading code to learn behaviour, measuring pixels or logs, reproducing a failure, running commands in a loop, and investigating a system are sub-PI work, not yours—even when it feels faster to do it now. You run only a quick lookup (one file or one command), integration, and the final check of what a sub-PI delivered. If you catch yourself measuring, grepping through a repository, or debugging, stop and send it to a scout or the owning worker.`;
+
 export const CONDUCTOR_ROLE = `# PI Coding Agent — Conductor mode
 
 ## Role
@@ -96,7 +100,7 @@ export function extractSection(prompt: string, heading: string): string | undefi
 export function buildConductorPrompt(systemMd: string): string | undefined {
   const sections = KEPT_SECTIONS.map((heading) => extractSection(systemMd, heading));
   if (sections.some((s) => !s)) return undefined;
-  return `${CONDUCTOR_ROLE}\n\n${sections.join("\n\n")}\n`;
+  return `${CONDUCTOR_ROLE}\n\n${sections.join("\n\n")}\n\n${CONDUCTOR_PRECEDENCE}\n`;
 }
 
 /** Replace the SYSTEM.md block inside the assembled system prompt; undefined when not possible. */
