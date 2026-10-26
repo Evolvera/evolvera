@@ -25,6 +25,7 @@
         {
           "id": "deepseek-v4.1-flash-fast",
           "name": "DeepSeek V4.1 Flash 1017",
+          "reasoning": true,
           "contextWindow": 1048576,
           "maxTokens": 262144
         },

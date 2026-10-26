@@ -171,7 +171,7 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
       const mode = currentMode(ctx);
       showStatus(ctx, mode);
       ctx.ui.notify(mode === "conductor"
-        ? "Orchestration: CONDUCTOR nesta sessão. Este PI só coordena sub-PIs e mantém o reasoning fixo em medium; vale a partir da próxima mensagem."
+        ? "Orchestration: CONDUCTOR nesta sessão. Este PI só coordena sub-PIs; o modelo e o effort continuam os que você escolher. Vale a partir da próxima mensagem."
         : "Orchestration: STANDARD (system prompt padrão do PI).", "info");
     },
   });
