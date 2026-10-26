@@ -1,6 +1,6 @@
 ---
 name: deep-research
-description: Deep external research workflow. Use for research questions that need multi-angle web evidence; launches five perspective researchers in parallel and selectively adds a Sol high structured-data analyst only when official data ETL materially improves the answer, then the deep-research-auditor consolidates one final cited report that the orchestrator relays directly to the user.
+description: Deep external research workflow. Use for research questions that need multi-angle web evidence; launches five perspective researchers in parallel and selectively adds a Terra high structured-data analyst only when official data ETL materially improves the answer, then the deep-research-auditor consolidates one final cited report that the orchestrator relays directly to the user.
 ---
 
 # Deep Research — Five Perspectives, Optional Data Analyst, One Auditor
@@ -8,7 +8,7 @@ description: Deep external research workflow. Use for research questions that ne
 ```text
 research question
   → 5 perspective researchers in parallel (creative, critical, explorer, methodical, skeptical)
-  → optional Sol high data analyst in the same parallel wave when structured data is material
+  → optional Terra high data analyst in the same parallel wave when structured data is material
   → deep-research-auditor: adjudicates evidence + contradictions, writes the final cited report
   → orchestrator relays the auditor's report directly
 ```
@@ -52,7 +52,7 @@ ETL_DIR=<RESEARCH_DIR>/etl
 
 Pass absolute `PROJECT_ROOT`, `RESEARCH_DIR`, and `ETL_DIR` to `deep-research-data`. `ETL_DIR` is the data analyst's only authorized persistent write set. It must be new/empty and the data agent must create exactly `pipeline.py`, `derived.json`, and `manifest.json` there when structured data is successfully used. It still returns one YAML findings document; the orchestrator saves that response as `findings/data.yaml`. The data analyst never writes the narrative final report.
 
-The five perspective researchers may use compact temporary ETL when structured evidence materially improves their assigned angle. The optional `data` analyst is the Sol high specialist for official public APIs/datasets and acts as an evidence-bound data analyst: explicitly ask it to build the **Data → Information → Knowledge** chain. It must retrieve the smallest necessary data slice, normalize and define the information layer, verify methodology/units/periods, create/re-run the ETL package, and produce only decision-relevant knowledge conclusions with finding IDs, `derived.json` selectors, transformation, comparison/baseline when used, confidence, interpretation boundary, and caveats. It must distinguish measurement, comparison, inference, and recommendation; correlation never establishes causation. Perspective-researcher ETL remains temporary. The data specialist may persist only its three ETL artifacts in supplied `ETL_DIR`. All retrieval is read-only public `GET`/`HEAD`, with unique `mktemp -d` scratch under `${TMPDIR:-/tmp}`, no credentials/project data/package installs, no writes beyond declared ETL artifacts and scratch, and no bypassing access controls or rate limits.
+The five perspective researchers may use compact temporary ETL when structured evidence materially improves their assigned angle. The optional `data` analyst is the Terra high specialist for official public APIs/datasets and acts as an evidence-bound data analyst: explicitly ask it to build the **Data → Information → Knowledge** chain. It must retrieve the smallest necessary data slice, normalize and define the information layer, verify methodology/units/periods, create/re-run the ETL package, and produce only decision-relevant knowledge conclusions with finding IDs, `derived.json` selectors, transformation, comparison/baseline when used, confidence, interpretation boundary, and caveats. It must distinguish measurement, comparison, inference, and recommendation; correlation never establishes causation. Perspective-researcher ETL remains temporary. The data specialist may persist only its three ETL artifacts in supplied `ETL_DIR`. All retrieval is read-only public `GET`/`HEAD`, with unique `mktemp -d` scratch under `${TMPDIR:-/tmp}`, no credentials/project data/package installs, no writes beyond declared ETL artifacts and scratch, and no bypassing access controls or rate limits.
 
 ## 3. Consolidate with the Auditor
 

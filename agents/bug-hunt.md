@@ -1,9 +1,9 @@
 ---
 name: bug-hunt
-description: "Read-only bug hunter. Finds real defects of any kind—logic, data, state, concurrency, contracts, error handling, security, performance, UI, config, tests—with or without a symptom/hint, and returns cited, falsification-checked findings with reproduction and fix direction. Prefer parallel shards by region or lens. Model: openai-codex/gpt-6.1-sol medium."
-display_name: 🐞 Bug Hunt · GPT-6.1 Sol · medium
+description: "Read-only bug hunter. Finds real defects of any kind—logic, data, state, concurrency, contracts, error handling, security, performance, UI, config, tests—with or without a symptom/hint, and returns cited, falsification-checked findings with reproduction and fix direction. Prefer parallel shards by region or lens. Model: openai-codex/gpt-6.1-terra medium."
+display_name: 🐞 Bug Hunt · GPT-6.1 Terra · medium
 tools: read, grep, find, ls, bash
-model: openai-codex/gpt-6.1-sol
+model: openai-codex/gpt-6.1-terra
 thinking: medium
 max_turns: 90
 lifecycle: lazy
