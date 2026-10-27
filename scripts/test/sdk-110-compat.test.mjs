@@ -10,8 +10,8 @@ import { transformMainSource, transformMigrationsSource } from "../users/sdk-cli
 import { transformModelConfigSource, transformModelRuntimeSource } from "../users/sdk-auth-source.mjs";
 import { prepareSdkStage } from "../users/sdk-stage.mjs";
 
-const roots = Object.fromEntries(Object.entries({ "1.0.1": process.env.SDK_101_ROOT, "1.1.0": process.env.SDK_110_ROOT, "1.2.0": process.env.SDK_120_ROOT, "1.3.0": process.env.SDK_130_ROOT }).filter(([, root]) => root));
-const missing = ["1.2.0", "1.3.0"].filter((version) => !roots[version]);
+const roots = Object.fromEntries(Object.entries({ "1.0.1": process.env.SDK_101_ROOT, "1.1.0": process.env.SDK_110_ROOT, "1.2.0": process.env.SDK_120_ROOT, "1.3.0": process.env.SDK_130_ROOT, "1.4.0": process.env.SDK_140_ROOT }).filter(([, root]) => root));
+const missing = ["1.2.0", "1.3.0", "1.4.0"].filter((version) => !roots[version]);
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 const files = ["dist/main.js", "dist/migrations.js", "dist/core/model-runtime.js", "dist/core/model-config.js"];
 const transforms = {
@@ -27,7 +27,7 @@ const verifySyntax = (file) => {
   assert.equal(result.status, 0, `${file}\n${result.stderr}`);
 };
 
-test("1.0.1 through 1.3.0 pinned transforms preserve auth/runtime/resource invariants", { skip: missing.length ? `provide ${missing.map((version) => `SDK_${version.replaceAll(".", "")}_ROOT`).join(" and ")} fixture paths; missing ${missing.join(", ")}` : false }, async () => {
+test("1.0.1 through 1.4.0 pinned transforms preserve auth/runtime/resource invariants", { skip: missing.length ? `provide ${missing.map((version) => `SDK_${version.replaceAll(".", "")}_ROOT`).join(" and ")} fixture paths; missing ${missing.join(", ")}` : false }, async () => {
   const before = {};
   const prepared = {};
   const expectedPins = {
@@ -59,6 +59,13 @@ test("1.0.1 through 1.3.0 pinned transforms preserve auth/runtime/resource invar
       "dist/core/model-runtime.js": "578b742bea061fed029b8e139c6c0bcfe31e60665e9c0c6a08769761ef169dfd",
       "dist/core/model-config.js": "602795a0db074909e325e65c6b34c9120d0d2eb39f678e453a5ceffbbb37984b",
     },
+    "1.4.0": {
+      "package.json": "df6883685382d6a914e5797232744c26579fe7db5576ea0e9c859d018ca2d54e",
+      "dist/main.js": "08b91f9eb3adf9a5027c18732d1e4de70999bd15c445b65cb0ddd0cd68f2746b",
+      "dist/migrations.js": "8514d2573b028baeba60635498a1c5f129a602abd203ea5c37a63df2eea3fb6b",
+      "dist/core/model-runtime.js": "44d8017928eff6721d5a56b4e71f98bcafb124f5aa6e7d3f016491e11fcf6461",
+      "dist/core/model-config.js": "b4ecb1165c328fdb5f8b767519f2b632c31737f86d0ce1d7a05959e7c8354d93",
+    },
   };
   for (const [version, root] of Object.entries(roots)) {
     const metadata = JSON.parse(readSdk(root, "package.json"));
@@ -79,13 +86,13 @@ test("1.0.1 through 1.3.0 pinned transforms preserve auth/runtime/resource invar
     assert.match(prepared[version]["dist/core/model-runtime.js"], /createModels\(\{ credentials, modelsStore, authContext: this\.authContext \}\)/);
     assert.match(prepared[version]["dist/core/model-runtime.js"], /this\.accountConfigPolicy\?\.filterConfig/);
     assert.match(prepared[version]["dist/core/model-runtime.js"], /this\.accountConfigPolicy\.filterRegistration\(config\)/);
-    if (version === "1.2.0" || version === "1.3.0") assert.match(prepared[version]["dist/core/model-config.js"], /typeof transform === "function" \? transform\(parsed\.providers\) : parsed\.providers/);
+    if (version === "1.2.0" || version === "1.3.0" || version === "1.4.0") assert.match(prepared[version]["dist/core/model-config.js"], /typeof transform === "function" \? transform\(parsed\.providers\) : parsed\.providers/);
     else assert.match(prepared[version]["dist/core/model-config.js"], /typeof transform === "function" \? transform\(config\.providers\) : config\.providers/);
     if (version === "1.1.0") {
       assert.match(prepared[version]["dist/main.js"], /disabledBuiltinExtensions: parsed\.noMcp \? \["mcp"\] : undefined/);
       assert.match(readSdk(root, "dist/core/model-runtime.js"), /assertClassifierInputSupported\(model, context\)/);
       assert.match(readSdk(root, "dist/core/model-config.js"), /samplingParamsByThinkingLevel/);
-    } else if (version === "1.2.0" || version === "1.3.0") {
+    } else if (version === "1.2.0" || version === "1.3.0" || version === "1.4.0") {
       assert.match(prepared[version]["dist/main.js"], /disabledBuiltinExtensions: parsed\.noMcp \? \["mcp"\] : undefined/);
       assert.match(readSdk(root, "dist/core/model-runtime.js"), /personalizeOpenRouterCatalog/);
       assert.match(prepared[version]["dist/core/model-runtime.js"], /accountConfigPolicy\.wrapModelsStore\(modelsStore\)/);
@@ -106,7 +113,7 @@ test("1.0.1 through 1.3.0 pinned transforms preserve auth/runtime/resource invar
   }
 });
 
-test("1.0.1 through 1.3.0 create fresh pinned stages and reject unknown/tampered inputs before output", { skip: missing.length ? `provide verified fixture paths; missing ${missing.join(", ")}` : false }, async () => {
+test("1.0.1 through 1.4.0 create fresh pinned stages and reject unknown/tampered inputs before output", { skip: missing.length ? `provide verified fixture paths; missing ${missing.join(", ")}` : false }, async () => {
   const protectedSources = {};
   for (const version of Object.keys(roots)) {
     const packageRoot = path.resolve(roots[version]);
@@ -125,7 +132,7 @@ test("1.0.1 through 1.3.0 create fresh pinned stages and reject unknown/tampered
     assert.ok(manifest.imports.some((edge) => edge.staged && edge.target === "dist/core/model-runtime.js"));
     assert.ok(manifest.imports.some((edge) => !edge.staged && edge.specifier === "@earendil-works/pi-ai"));
     assert.ok(readFileSync(path.join(stageRoot, "dist/main.js"), "utf8").includes(pathToFileURL(path.join(stageRoot, "dist/core/model-runtime.js")).href));
-    if (version === "1.2.0" || version === "1.3.0") {
+    if (version === "1.2.0" || version === "1.3.0" || version === "1.4.0") {
       for (const specifier of ["@earendil-works/pi-ai/providers/openrouter", "@earendil-works/pi-ai/providers/compat-schema", "@earendil-works/pi-ai/providers/model-schema"]) {
         assert.ok(manifest.imports.some((edge) => edge.specifier === specifier), `approved ${specifier} import`);
       }

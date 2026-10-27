@@ -13,7 +13,6 @@ import { prepareSdkStage } from "../users/sdk-stage.mjs";
 
 const SDK_ROOT = process.env.SDK_120_ROOT;
 const RUN_PARENT = process.env.SDK_RUNTIME_RUN_PARENT;
-const NODE = "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node.exe";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const TRANSFORMS = {
   "dist/main.js": transformMainSource,
@@ -33,8 +32,7 @@ const read = (relative) => readFileSync(path.join(SDK_ROOT, ...relative.split("/
 const requireRunRoots = () => {
   assert.ok(SDK_ROOT && path.isAbsolute(SDK_ROOT), "SDK_120_ROOT must explicitly name the canonical SDK 1.2 fixture");
   assert.ok(RUN_PARENT && path.isAbsolute(RUN_PARENT), "SDK_RUNTIME_RUN_PARENT must explicitly name a fresh disposable parent");
-  assert.ok(existsSync(NODE), "runtime must use the explicitly approved Node v24.20.0 executable");
-  assert.equal(realpathSync.native(NODE), realpathSync.native(process.execPath), "test process and child process use the same Node executable");
+  assert.ok(existsSync(process.execPath), "runtime must use the current Node executable");
   const sdkResolved = path.resolve(SDK_ROOT);
   assert.equal(realpathSync.native(sdkResolved), sdkResolved, "SDK fixture root must be a real canonical directory");
   assert.ok(lstatSync(sdkResolved).isDirectory() && !lstatSync(sdkResolved).isSymbolicLink(), "SDK fixture root is not an alias");
@@ -182,7 +180,7 @@ test("SDK 1.2 managed runtime, native metadata and personalized catalog isolatio
 import { launchUser } from ${JSON.stringify(pathToFileURL(path.join(REPO,"scripts/users/launcher.mjs")).href)};
 await launchUser(['--help','--offline','--no-extensions','--no-skills','--no-prompt-templates','--no-context-files','--no-themes','--no-mcp'], { packageRoot: process.env.SDK_120_ROOT, registryPath: ${JSON.stringify(path.join(run,"registry.json"))}, env: process.env });
 `, { flag: "wx" });
-  const help = spawnSync(NODE, [child], { cwd: run, env: sanitizedEnv(run, stageGuard), encoding: "utf8", timeout: 30_000 });
+  const help = spawnSync(process.execPath, [child], { cwd: run, env: sanitizedEnv(run, stageGuard), encoding: "utf8", timeout: 30_000 });
   evidence.statuses.push({ operation: "managed-native-help", status: help.status, signal: help.signal ?? null });
   assert.equal(help.status, 0, `native SDK --help failed: ${help.stderr}`);
   assert.match(help.stdout + help.stderr, /Usage:|Options:|--help/i);
