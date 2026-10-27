@@ -132,12 +132,10 @@ async function assertSource(packageRoot, relative, expected) {
   return bytes;
 }
 
-/** Importing this module is inert. This function reads pinned package text and writes one fresh code-only stage. */
-export async function prepareSdkStage({ packageRoot, stageRoot, transforms }) {
-  if (!packageRoot || !stageRoot || !transforms || typeof transforms !== "object") throw new TypeError("packageRoot, stageRoot and pure transforms are required");
-  packageRoot = path.resolve(packageRoot); stageRoot = path.resolve(stageRoot);
-  if (within(packageRoot, stageRoot) || within(stageRoot, packageRoot)) throw new Error("source and stage paths overlap");
-  if (Object.keys(transforms).sort().join("\n") !== [...SOURCES].sort().join("\n") || Object.values(transforms).some((fn) => typeof fn !== "function")) throw new Error("exactly four named pure source transforms are required");
+/** Read-only validation of a supported SDK package and its pinned dependencies and source files. */
+export async function validateSdkPackage(packageRoot) {
+  if (!packageRoot) throw new TypeError("packageRoot is required");
+  packageRoot = path.resolve(packageRoot);
   await realDirChain(packageRoot);
   const metadataPath = path.join(packageRoot, "package.json");
   const metadataStat = await lstat(metadataPath);
@@ -163,12 +161,25 @@ export async function prepareSdkStage({ packageRoot, stageRoot, transforms }) {
     dependencyPins[name] = { version: dependencyMetadata.version, packageJsonSha256: hash(dependencyMetadataBytes), targets: expected.targets };
   }
   const original = {};
-  const transformed = {};
-  const sourcePins = {};
-  sourcePins["package.json"] = hash(await assertSource(packageRoot, "package.json", sourceHashes["package.json"]));
+  const sourcePins = { "package.json": hash(await assertSource(packageRoot, "package.json", sourceHashes["package.json"])) };
   for (const file of SOURCES) {
     const bytes = await assertSource(packageRoot, file, sourceHashes[file]);
     original[file] = bytes.toString("utf8"); sourcePins[file] = hash(bytes);
+  }
+  return { packageRoot, metadata, version, packageRoots, dependencyPins, approvedPackages, original, sourcePins };
+}
+
+/** Importing this module is inert. This function reads pinned package text and writes one fresh code-only stage. */
+export async function prepareSdkStage({ packageRoot, stageRoot, transforms }) {
+  if (!packageRoot || !stageRoot || !transforms || typeof transforms !== "object") throw new TypeError("packageRoot, stageRoot and pure transforms are required");
+  packageRoot = path.resolve(packageRoot); stageRoot = path.resolve(stageRoot);
+  if (within(packageRoot, stageRoot) || within(stageRoot, packageRoot)) throw new Error("source and stage paths overlap");
+  if (Object.keys(transforms).sort().join("\n") !== [...SOURCES].sort().join("\n") || Object.values(transforms).some((fn) => typeof fn !== "function")) throw new Error("exactly four named pure source transforms are required");
+  const verified = await validateSdkPackage(packageRoot);
+  packageRoot = verified.packageRoot;
+  const { metadata, version, packageRoots, dependencyPins, approvedPackages, original, sourcePins } = verified;
+  const transformed = {};
+  for (const file of SOURCES) {
     const result = transforms[file](original[file]);
     if (typeof result !== "string" || !result.length) throw new Error(`transform must return source text: ${file}`);
     transformed[file] = result;

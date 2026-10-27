@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { validateSdkPackage } from "./sdk-stage.mjs";
 
 const DEFAULT_LAUNCHER = fileURLToPath(new URL("./launcher.mjs", import.meta.url));
 const PATH_FIELDS = ["binDir", "nodePath", "launcherPath", "sdkRoot"];
@@ -54,6 +55,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!allowed.has(flag) || Object.hasOwn(options, names[flag]) || i + 1 >= process.argv.length || process.argv[i + 1].startsWith("--")) fail("unknown, duplicate, or missing flag value");
       options[names[flag]] = process.argv[i + 1];
     }
+    await validateSdkPackage(options.sdkRoot);
     process.stdout.write(`${JSON.stringify(renderPiEntrypoints(options))}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
