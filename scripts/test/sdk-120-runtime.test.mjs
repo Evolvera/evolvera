@@ -128,7 +128,7 @@ function sanitizedEnv(root, guard, extra = {}) {
   const system = process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
   return {
     SystemRoot: system, WINDIR: system,
-    PATH: [path.dirname(NODE), path.join(system, "System32")].join(path.delimiter),
+    PATH: [path.dirname(process.execPath), path.join(system, "System32")].join(path.delimiter),
     HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: path.join(root, "pi"),
     TMP: root, TEMP: root, JITI_CACHE_DIR: path.join(root, "jiti"),
     PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1",
@@ -153,7 +153,7 @@ test("SDK 1.2 managed runtime, native metadata and personalized catalog isolatio
   assert.equal(manifest.package.version, "1.2.0");
   assert.equal(manifest.evaluation, "none; transformed SDK source was not imported or evaluated");
   evidence.sdkStage = { sourcePins: manifest.sourcePins, dependencyPins: manifest.dependencyPins, outputs: manifest.outputs };
-  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts")];
+  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/ui"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts")];
   const stageGuard = writeGuard(run, publicSourceRoots.concat(SDK_ROOT));
   const isolatedEnv = sanitizedEnv(run, stageGuard);
   for (const key of Object.keys(process.env)) delete process.env[key];

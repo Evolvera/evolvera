@@ -20,8 +20,13 @@ import { PACKAGE_NAME, PACKAGE_VERSION, stageSubagentsProfileCompatibility } fro
 import { createAdmittedSettingsManager } from "../users/settings.mjs";
 import { buildAdmittedLoaderOptions } from "../users/resources.mjs";
 
-const LIVE_SOURCE = "C:/Users/kevin/.pi/agent/npm/node_modules/@tintinweb/pi-subagents";
-const sdk = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent/dist/core/sdk.d.ts";
+const SDK_ROOT = process.env.SDK_140_ROOT ?? process.env.PI_SDK_ROOT;
+const LIVE_SOURCE = process.env.PI_SUBAGENTS_ROOT;
+assert.ok(SDK_ROOT && path.isAbsolute(SDK_ROOT), "PI_SDK_ROOT or SDK_140_ROOT must explicitly name the canonical SDK 1.4 package root");
+assert.ok(LIVE_SOURCE && path.isAbsolute(LIVE_SOURCE), "PI_SUBAGENTS_ROOT must explicitly name the canonical pi-subagents source root");
+assert.equal(fs.realpathSync.native(SDK_ROOT), path.resolve(SDK_ROOT), "SDK source root must be canonical");
+assert.equal(fs.realpathSync.native(LIVE_SOURCE), path.resolve(LIVE_SOURCE), "pi-subagents source root must be canonical");
+const sdk = path.join(SDK_ROOT, "dist/core/sdk.d.ts");
 const script = fileURLToPath(import.meta.url);
 const required = ["src/agent-runner.ts", "src/agent-manager.ts", "src/index.ts", "src/memory.ts", "src/output-file.ts", "src/schedule-store.ts", "src/custom-agents.ts"];
 let commonAgentRoot;
@@ -31,13 +36,13 @@ const poisonResourceReads = [];
 function installResourceGuards(runRoot) {
   const root = fs.realpathSync.native(runRoot);
   assert.equal(root, path.resolve(runRoot), "run root must be canonical");
-  const sdkDeclaredRoot = path.resolve("C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent");
+  const sdkDeclaredRoot = path.resolve(SDK_ROOT);
   const declaredCodeRoots = [path.resolve(path.dirname(script), ".."), path.resolve(path.dirname(script), "../../agents"), sdkDeclaredRoot, ...["pi-agent-core", "pi-tui", "pi-ai"].map((name) => path.join(sdkDeclaredRoot, "node_modules", "@earendil-works", name)), path.resolve(LIVE_SOURCE)];
   const codeRoots = [...new Set([...declaredCodeRoots, ...declaredCodeRoots.map((code) => fs.realpathSync.native(code))])];
   const liveSubRoots = [path.resolve(LIVE_SOURCE), fs.realpathSync.native(LIVE_SOURCE)];
   const sdkSubRoots = [declaredCodeRoots[2], fs.realpathSync.native(declaredCodeRoots[2])];
   const sdkRoot = fs.realpathSync.native(declaredCodeRoots[2]);
-  const protectedRoots = [path.resolve("C:/Users/kevin/.pi"), path.resolve("C:/Users/kevin/.agents"), path.resolve("C:/Users/kevin/Documents/Pi/.pi")];
+  const protectedRoots = [path.join(originalEnv.HOME ?? os.homedir(), ".pi"), path.join(originalEnv.HOME ?? os.homedir(), ".agents"), path.resolve(path.dirname(script), "../../.pi")];
   const inside = (base, candidate) => { const rel = path.relative(base, candidate); return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)); };
   const attempts = { protected: 0, network: 0, child: 0, outside: 0, keyring: 0 };
   const outsideDetails = [];
@@ -47,7 +52,7 @@ function installResourceGuards(runRoot) {
   const rawLstat = fs.lstatSync;
   const rawRealpath = fs.realpathSync.native;
   const markerPaths = new Set();
-  const missingCodeProbes = new Set(["agent/dist/index.js", "tui/dist/index.js", "ai/dist/compat.js", "ai/dist/oauth.js", "ai/dist/providers/all.js"].map((relative) => path.join(path.dirname(sdkRoot), ...relative.split("/"))));
+  const missingCodeProbes = new Set(["agent/dist/index.js", "tui/dist/index.js", "ai/dist/compat.js", "ai/dist/oauth.js", "ai/dist/providers/all.js"].map((relative) => path.join(sdkRoot, "node_modules", "@earendil-works", ...relative.split("/"))));
   for (let dir = path.dirname(root); ; dir = path.dirname(dir)) {
     for (const marker of [".pi", path.join(".pi", "memory"), ".agents", "AGENTS.md", "CLAUDE.md"]) markerPaths.add(path.resolve(dir, marker));
     if (path.dirname(dir) === dir) break;
@@ -263,9 +268,9 @@ try {
   assert.deepEqual(resourceGuards.attempts, { protected: 0, network: 0, child: 0, outside: 0, keyring: 0 });
 
   // Runtime-backed state journeys use the transformed modules with an uncached Jiti loader.
-  const jitiPath = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs";
+  const jitiPath = path.join(SDK_ROOT, "node_modules/jiti/lib/jiti.mjs");
   const { createJiti } = await import(pathToFileURL(jitiPath).href);
-  const sdkRuntime = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+  const sdkRuntime = path.join(SDK_ROOT, "dist/index.js");
   assert.ok(fs.statSync(sdkRuntime).isFile(), "public SDK runtime package must exist");
   process.env.PI_USER_ID = owner.id;
   process.env.PI_CODING_AGENT_DIR = agentDir;
