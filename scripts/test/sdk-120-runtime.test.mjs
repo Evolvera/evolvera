@@ -153,7 +153,7 @@ test("SDK 1.2 managed runtime, native metadata and personalized catalog isolatio
   assert.equal(manifest.package.version, "1.2.0");
   assert.equal(manifest.evaluation, "none; transformed SDK source was not imported or evaluated");
   evidence.sdkStage = { sourcePins: manifest.sourcePins, dependencyPins: manifest.dependencyPins, outputs: manifest.outputs };
-  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/ui"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts")];
+  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/ui"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts"), path.join(REPO, "extensions/session-usage.ts")];
   const stageGuard = writeGuard(run, publicSourceRoots.concat(SDK_ROOT));
   const isolatedEnv = sanitizedEnv(run, stageGuard);
   for (const key of Object.keys(process.env)) delete process.env[key];
@@ -335,7 +335,7 @@ await launchUser(['--help','--offline','--no-extensions','--no-skills','--no-pro
   assert.equal(evidence.windowsCleanupSourcePostcheck, windowsCleanupSourceHash, "native cleanup implementation remained unchanged");
   assert.equal(accountCreates.join(","), "alpha,beta", "cross-account process binding fails before beta store construction; separate beta factory succeeds");
   assert.deepEqual(evidence.egressAttempts, [], "all guarded egress types, including Socket.prototype.connect and DNS, remain unused");
-  assert.deepEqual(evidence.blockedSdkCleanupAttempts, [{ kind: "fs-write-rmSync", target: quarantineCleanupPath }], "SDK 1.2's documented Windows startup quarantine cleanup is blocked before touching the fixture node_modules tree");
+  assert.deepEqual(evidence.blockedSdkCleanupAttempts, process.platform === "win32" ? [{ kind: "fs-write-rmSync", target: quarantineCleanupPath }] : [], "only Windows attempts native startup quarantine cleanup; the fixture node_modules tree stays protected");
   assert.deepEqual(evidence.filesystemViolations, [], "no other filesystem access or mutation escaped the run/public-read boundary");
   assert.ok(!guardEvents.some((event) => event.kind === "fs-unproven-fd"), "no unproven non-standard file descriptor was used");
 });
