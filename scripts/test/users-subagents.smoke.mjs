@@ -52,7 +52,7 @@ function installResourceGuards(runRoot) {
   const rawLstat = fs.lstatSync;
   const rawRealpath = fs.realpathSync.native;
   const markerPaths = new Set();
-  const missingCodeProbes = new Set(["agent/dist/index.js", "tui/dist/index.js", "ai/dist/compat.js", "ai/dist/oauth.js", "ai/dist/providers/all.js"].map((relative) => path.join(sdkRoot, "node_modules", "@earendil-works", ...relative.split("/"))));
+  const missingCodeProbes = new Set(["agent/dist/index.js", "tui/dist/index.js", "ai/dist/compat.js", "ai/dist/models.js", "ai/dist/oauth.js", "ai/dist/providers/all.js"].map((relative) => path.join(path.dirname(sdkRoot), ...relative.split("/"))));
   for (let dir = path.dirname(root); ; dir = path.dirname(dir)) {
     for (const marker of [".pi", path.join(".pi", "memory"), ".agents", "AGENTS.md", "CLAUDE.md"]) markerPaths.add(path.resolve(dir, marker));
     if (path.dirname(dir) === dir) break;
@@ -296,9 +296,24 @@ try {
     assertOwnedWorkspace(owner, request.cwd);
     assertOwnedWorkspace(owner, request.configCwd);
     const resourceRequest = { cliPaths: request.cliPaths, contextPaths: request.contextPaths, homeDir: request.homeDir };
-    const settingsManager = createAdmittedSettingsManager(sdkExports, profile, {
-      cwd: request.configCwd, settingsOptions: { projectTrusted: true }, resourceRequest,
-    });
+    let settingsManager;
+    const originalLoad = Module._load;
+    const sdkRequire = createRequire(sdkRuntime);
+    const fixtureLoad = function (requestName, ...args) {
+      if (requestName === "proper-lockfile") {
+        Module._load = originalLoad;
+        try { return sdkRequire(requestName); } finally { Module._load = fixtureLoad; }
+      }
+      return originalLoad.call(this, requestName, ...args);
+    };
+    Module._load = fixtureLoad;
+    try {
+      settingsManager = createAdmittedSettingsManager(sdkExports, profile, {
+        cwd: request.configCwd, settingsOptions: { projectTrusted: true }, resourceRequest,
+      });
+    } finally {
+      Module._load = originalLoad;
+    }
     const admitted = buildAdmittedLoaderOptions(profile, {
       cwd: request.configCwd,
       settings: settingsManager.getGlobalSettings(),
@@ -317,10 +332,12 @@ try {
       modelRuntime: parentRuntime,
     }), writable: false, configurable: false,
   });
-  const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": sdkRuntime } });
+  // Match the native SDK loader's compatibility alias for legacy extension schemas.
+  const hostAliases = { "@earendil-works/pi-coding-agent": sdkRuntime, "@sinclair/typebox": path.join(SDK_ROOT, "node_modules/typebox/build/index.mjs") };
+  const jiti = createJiti(import.meta.url, { fsCache: false, alias: hostAliases });
   const agentTypesPath = sandbox.dir("discovery-agent-types.js");
   fs.writeFileSync(agentTypesPath, 'export const BUILTIN_TOOL_NAMES=["read","write","edit","bash"];\n');
-  const discoveryJiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": sdkRuntime, "./agent-types.js": agentTypesPath } });
+  const discoveryJiti = createJiti(import.meta.url, { fsCache: false, alias: { ...hostAliases, "./agent-types.js": agentTypesPath } });
   const customAgents = await discoveryJiti.import(path.join(staged.packageRoot, "src/custom-agents.ts"));
   commonAgentRoot = commonAgents;
   assert.equal(fs.existsSync(path.join(agentDir, "agents")), false, "profile A global agents root starts empty");
@@ -453,7 +470,7 @@ try {
     "prompts.js": `export const buildAgentPrompt=()=>"synthetic system prompt";`,
     "skill-loader.js": `export const preloadSkills=()=>{globalThis.__childPreloads=(globalThis.__childPreloads||0)+1; return [];};`,
   };
-  const aliases = { "@earendil-works/pi-coding-agent": sdkRuntime };
+  const aliases = { ...hostAliases };
   for (const [name, contents] of Object.entries(stubs)) {
     const file = path.join(fakeRoot, name);
     fs.writeFileSync(file, contents);

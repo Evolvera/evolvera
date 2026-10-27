@@ -165,7 +165,11 @@ function adaptManager(s) {
   s = one(s, '    return record;\n  }\n\n  /**\n   * Start a background resume run:', '    return record;\n    } finally { this.usersSettling--; }\n  }\n\n  /**\n   * Start a background resume run:', "inline resume latch until owned-child settlement returns");
   s = one(s, '  private startResume(\n    id: string,', '  private startResume(\n    id: string,', "background resume method cardinality");
   s = one(s, '  ) {\n    if (!record.session) return;\n\n    record.status = "running";', '  ) {\n    this.assertUsersDispatchAllowed();\n    if (!record.session) return;\n\n    record.status = "running";', "background resume dispatch fence");
-  s = one(s, '    const settle = () => {\n      detachParentSignal?.();', '    const settle = () => {\n      this.usersSettling++;\n      try {\n      detachParentSignal?.();', "background resume settlement latch begins before results/queue delivery");
+  // The bounded-waits patch adds deadline cleanup before signal detachment; keep both exact shapes fenced.
+  const resumeSettleStart = s.includes("    const settle = () => {\n      clearDeadline();\n      detachParentSignal?.();")
+    ? "    const settle = () => {\n      clearDeadline();\n      detachParentSignal?.();"
+    : "    const settle = () => {\n      detachParentSignal?.();";
+  s = one(s, resumeSettleStart, resumeSettleStart.replace("const settle = () => {\n", "const settle = () => {\n      this.usersSettling++;\n      try {\n"), "background resume settlement latch begins before results/queue delivery");
   s = one(s, '      this.drainQueue();\n    };\n\n    const promise = resumeAgent(record.session, prompt, {', '      this.drainQueue();\n      } finally { this.usersSettling--; }\n    };\n\n    const promise = resumeAgent(record.session, prompt, {', "background resume settlement latch ends after delivery");
   s = one(s, 'const baseCwd = customCwd ?? ctx.cwd;\n\n    // Worktree isolation:',
     `const baseCwd = customCwd ?? ctx.cwd;
