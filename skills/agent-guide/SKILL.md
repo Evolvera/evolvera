@@ -104,7 +104,7 @@ Agent({
 
 ## bug-hunt — Bug Discovery
 
-Read-only defect finder on GPT-6.1 Terra medium. Where `scout` explains how a system works, `bug-hunt` looks for where it is wrong. Every finding comes back with `path:line` causal-chain evidence, a refutation attempt, `CONFIRMED | LIKELY | SUSPECT` confidence, severity, reproduction steps, and a fix direction. It never edits code or runs project code; it returns the exact reproduction for you to run under the stateful-resource gate.
+Read-only defect finder on GPT-6.1 Sol medium. Where `scout` explains how a system works, `bug-hunt` looks for where it is wrong. Every finding comes back with `path:line` causal-chain evidence, a refutation attempt, `CONFIRMED | LIKELY | SUSPECT` confidence, severity, reproduction steps, and a fix direction. It never edits code or runs project code; it returns the exact reproduction for you to run under the stateful-resource gate.
 
 **When to use:**
 - **Hinted:** a symptom, error, log, failing or flaky test, user report, or suspect commit range whose root cause is unknown. Pass the raw evidence verbatim; the hunter confirms or refutes the hint.
