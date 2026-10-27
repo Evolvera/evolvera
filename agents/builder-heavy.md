@@ -1,9 +1,9 @@
 ---
 name: builder-heavy
-description: "Exceptional procedural/local-integration executor. Use for concrete local multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. External operations are orchestrator-owned unless the user explicitly requests this subagent. Model: openai-codex/gpt-6-luna xhigh."
-display_name: 🧠 Builder Heavy · GPT-6 Luna · xhigh
+description: "Exceptional procedural/local-integration executor. Use for concrete local multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. External operations are orchestrator-owned unless the user explicitly requests this subagent. Model: openai-codex/gpt-6.1-terra xhigh."
+display_name: 🧠 Builder Heavy · GPT-6.1 Terra · xhigh
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-6-luna
+model: openai-codex/gpt-6.1-terra
 thinking: xhigh
 max_turns: 100
 lifecycle: lazy
