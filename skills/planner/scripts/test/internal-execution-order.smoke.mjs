@@ -47,7 +47,7 @@ requireMatch("agents/builder-light.md", /^model: openai-codex\/gpt-6-luna$/m, "b
 requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light must remain medium effort");
 requireMatch("agents/builder.md", /^model: openai-codex\/gpt-6-luna$/m, "builder must use Luna");
 requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
-requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6-luna$/m, "builder-heavy must use Luna");
+requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6\.1-terra$/m, "builder-heavy must use Terra");
 requireMatch("agents/builder-heavy.md", /^thinking: xhigh$/m, "builder-heavy must use xhigh effort");
 
 for (const path of plannerFiles) {

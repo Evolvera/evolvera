@@ -350,6 +350,6 @@ assert.match(read("README.md"), /450K/);
 const agentGuide = read("skills/agent-guide/SKILL.md");
 assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Sonnet 5\.5 high\) \|/);
 assert.match(agentGuide, /\| Heavy Design \| `builder-heavy-design` \| Exceptional design tier \(Claude Opus 5\.5 high\) \|/);
-assert.match(agentGuide, /\| Heavy \| `builder-heavy` \| Exceptional local-integration\/correctness tier \(GPT-6 Luna xhigh\) \|/);
+assert.match(agentGuide, /\| Heavy \| `builder-heavy` \| Exceptional local-integration\/correctness tier \(GPT-6\.1 Terra xhigh\) \|/);
 
 console.log("anthropic-model-policy smoke: PASS");
