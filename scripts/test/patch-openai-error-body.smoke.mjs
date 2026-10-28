@@ -12,35 +12,35 @@ import { spawnSync } from 'node:child_process';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const patcherPath = path.join(root, 'scripts/patch-openai-error-body.mjs');
 const patcher = await import(pathToFileURL(patcherPath));
-const sdkPackageRoot = process.env.PI_SDK_ROOT
-  ? path.resolve(process.env.PI_SDK_ROOT)
-  : path.join(patcher.npmGlobalNodeModulesRoot(), '@earendil-works', 'pi-coding-agent');
-const liveTarget = path.resolve(sdkPackageRoot, patcher.TARGET_RELATIVE_PATH);
-const live = fs.readFileSync(liveTarget);
-assert.equal(patcher.UNPATCHED_SHA256, '4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea');
-assert.equal(patcher.PATCHED_SHA256, '4868e42430a56df042461a15f8905b46053a6ad2e9c97b0d234661fd31831225');
+assert.ok(process.env.PI_SDK_ROOT, 'PI_SDK_ROOT must name the approved copied SDK fixture');
+const sdkPackageRoot = path.resolve(process.env.PI_SDK_ROOT);
+const copiedTarget = path.resolve(sdkPackageRoot, patcher.TARGET_RELATIVE_PATH);
+const copiedBytes = fs.readFileSync(copiedTarget);
+const piMetadata = JSON.parse(fs.readFileSync(path.join(sdkPackageRoot, 'package.json'), 'utf8'));
+const aiMetadata = JSON.parse(fs.readFileSync(path.join(sdkPackageRoot, 'node_modules/@earendil-works/pi-ai/package.json'), 'utf8'));
+assert.equal(piMetadata.version, aiMetadata.version, 'SDK package pair mismatch');
+const versionHashes = patcher.VERSIONED_HASHES[piMetadata.version];
+assert.ok(versionHashes, `unsupported copied SDK version: ${piMetadata.version}`);
 
-// The live install is patched during installation, so seeding the fixture from
-// it verbatim would make this test runnable only before the first patch. Derive
-// the unpatched baseline deterministically from either state and prove the
-// derivation by hash, keeping the fixture byte-exact without vendoring a copy.
+// The copied SDK target may be pristine or already patched; derive only an exact
+// pinned pristine baseline, never from an installed shared SDK.
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
-const liveSha = sha256(live);
+const copiedSha = sha256(copiedBytes);
 let baseline;
-if (liveSha === patcher.UNPATCHED_SHA256) {
-  baseline = live;
-} else if (liveSha === patcher.PATCHED_SHA256) {
+if (copiedSha === versionHashes.unpatched) {
+  baseline = copiedBytes;
+} else if (copiedSha === versionHashes.patched) {
   baseline = Buffer.from(
-    live
+    copiedBytes
       .toString('utf8')
       .replace(patcher.HELPER, '')
       .replace(patcher.PATCHED_ANCHOR, patcher.UNPATCHED_ANCHOR),
     'utf8',
   );
 } else {
-  throw new Error('live target matches neither the pinned unpatched nor the pinned patched SHA256');
+  throw new Error('copied target matches neither the pinned unpatched nor the pinned patched SHA256');
 }
-assert.equal(sha256(baseline), patcher.UNPATCHED_SHA256, 'derived baseline does not match the pinned unpatched SHA256');
+assert.equal(sha256(baseline), versionHashes.unpatched, 'derived baseline does not match the pinned unpatched SHA256');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-openai-error-body-'));
 const piRoot = path.join(temp, 'pi-coding-agent');
 const target = path.join(piRoot, patcher.TARGET_RELATIVE_PATH);
@@ -50,10 +50,10 @@ function writePackage(packageRoot, name, version) {
   fs.writeFileSync(path.join(packageRoot, 'package.json'), `${JSON.stringify({ name, version, type: 'module' })}\n`);
 }
 
-function createFixture(source = baseline) {
+function createFixture(source = baseline, { piVersion = piMetadata.version, aiVersion = aiMetadata.version } = {}) {
   fs.rmSync(piRoot, { recursive: true, force: true });
-  writePackage(piRoot, patcher.PI_PACKAGE_NAME, patcher.PI_PACKAGE_VERSION);
-  writePackage(path.join(piRoot, 'node_modules', '@earendil-works', 'pi-ai'), patcher.AI_PACKAGE_NAME, patcher.AI_PACKAGE_VERSION);
+  writePackage(piRoot, patcher.PI_PACKAGE_NAME, piVersion);
+  writePackage(path.join(piRoot, 'node_modules', '@earendil-works', 'pi-ai'), patcher.AI_PACKAGE_NAME, aiVersion);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, source);
   fs.chmodSync(target, 0o744);
@@ -81,13 +81,19 @@ function response(body, status = 402, headers = {}) {
 }
 
 try {
-  assert.equal(patcher.PI_PACKAGE_VERSION, '1.3.0');
-  assert.equal(patcher.AI_PACKAGE_VERSION, '1.3.0');
+  assert.ok(['1.3.0', '1.4.0'].includes(piMetadata.version));
+  assert.equal(piMetadata.version, aiMetadata.version);
   assert.equal(patcher.TARGET_RELATIVE_PATH, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js');
   assert.deepEqual(
     patcher.packageRootFromArgs(['--pi-package-root', piRoot], () => { throw new Error('live npm root resolver used'); }),
     piRoot,
   );
+
+  createFixture(baseline, { aiVersion: piMetadata.version === '1.3.0' ? '1.4.0' : '1.3.0' });
+  const mismatchedPair = fs.readFileSync(target);
+  const mismatch = runPatcher();
+  assert.notEqual(mismatch.status, 0, 'mismatched PI/pi-ai versions were accepted');
+  assert.deepEqual(fs.readFileSync(target), mismatchedPair, 'mismatched package pair changed target');
 
   createFixture();
   const before = fs.readFileSync(target);

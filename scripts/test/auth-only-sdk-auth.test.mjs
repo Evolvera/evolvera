@@ -15,7 +15,8 @@ import {
 } from "../users/sdk-auth-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const sdkRoot = "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent";
+const sdkRoot = process.env.SDK_101_ROOT;
+assert.ok(sdkRoot && path.isAbsolute(sdkRoot), "SDK_101_ROOT must explicitly name the canonical SDK 1.0.1 fixture");
 const sdkPins = [
   ["package.json", "fa487897918283976006d8c4f450772a9c90b9674f2a19d5f01e3ab9af35ce8f"],
   ["dist/main.js", "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db"],

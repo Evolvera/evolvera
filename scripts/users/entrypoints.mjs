@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { validateSdkPackage } from "./sdk-stage.mjs";
 
 const DEFAULT_LAUNCHER = fileURLToPath(new URL("./launcher.mjs", import.meta.url));
 const PATH_FIELDS = ["binDir", "nodePath", "launcherPath", "sdkRoot"];
@@ -25,7 +26,7 @@ export function renderPiEntrypoints({ binDir, nodePath = process.execPath, launc
   const paths = Object.fromEntries(PATH_FIELDS.map((key) => [key, validatePath(key === "nodePath" ? nodePath : key === "launcherPath" ? launcherPath : key === "sdkRoot" ? sdkRoot : binDir, key, platform)]));
   const join = platform === "win32" ? path.win32.join : path.posix.join;
   const bootstrapPath = join(paths.binDir, "pi-account-entry.mjs");
-  const bootstrap = `import { launchUser } from ${JSON.stringify(pathToFileURL(paths.launcherPath, { windows: platform === "win32" }).href)};\n\nlaunchUser(process.argv.slice(2), { packageRoot: ${JSON.stringify(paths.sdkRoot)} }).catch((error) => {\n  const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{1,80}$/.test(error.code) ? error.code : "USER_LAUNCH_FAILED";\n  process.stderr.write(code + "\\n");\n  process.exitCode = 1;\n});\n`;
+  const bootstrap = `import { launchUser } from ${JSON.stringify(pathToFileURL(paths.launcherPath, { windows: platform === "win32" }).href)};\n\nlaunchUser(process.argv.slice(2), { packageRoot: ${JSON.stringify(paths.sdkRoot)} }).catch((error) => {\n  const code = typeof error?.code === "string" && /^[A-Z][A-Z0-9_]{1,80}$/.test(error.code) ? error.code : "USER_LAUNCH_FAILED";\n  process.stderr.write(code + "\\n");\n  if (process.env.PI_DEBUG !== undefined && typeof error?.message === "string") process.stderr.write(error.message + "\\n");\n  process.exitCode = 1;\n});\n`;
   let entries;
   if (platform === "win32") {
     const node = paths.nodePath;
@@ -54,6 +55,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (!allowed.has(flag) || Object.hasOwn(options, names[flag]) || i + 1 >= process.argv.length || process.argv[i + 1].startsWith("--")) fail("unknown, duplicate, or missing flag value");
       options[names[flag]] = process.argv[i + 1];
     }
+    await validateSdkPackage(options.sdkRoot);
     process.stdout.write(`${JSON.stringify(renderPiEntrypoints(options))}\n`);
   } catch (error) {
     process.stderr.write(`${error.message}\n`);

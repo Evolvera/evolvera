@@ -23,7 +23,7 @@ User
 - npm available on `PATH`;
 - credentials for at least one AI provider.
 
-The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.3.0`. The patches described below are verified for this version; override-selected versions without proven compatibility fail closed.
+The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.4.0`. The patches described below are verified for this version; override-selected versions without proven compatibility fail closed.
 
 ### Node with fnm (Linux and macOS)
 
@@ -131,7 +131,7 @@ Os instaladores:
 7. create `mcp.json` only if it does not already exist;
 8. write `settings.json` last, after all resources have been prepared. The template sets `compaction.reserveTokens: 65536` to begin compaction with more headroom before the output limit.
 
-### PI 1.3.0 Continuation Patch
+### PI 1.3.0/1.4.0 Continuation Patch
 
 After the global `npm install` and before verifying the installation or activating `settings.json`, the installers run `scripts/patch-pi-threshold-cancel.mjs`. The patcher validates the exact name/version, path, cardinality, and SHA-256 of the known anchor, then changes only auto-compaction cancellation for `reason === "threshold"`: already queued messages can continue. Overflow cancellation, manual compaction, and the success path remain unchanged.
 
@@ -143,7 +143,7 @@ node scripts/test/patch-pi-threshold-cancel.smoke.mjs
 
 PI 1.3.0 already loads credentials asynchronously before using them and recovers context-length (`length`) cuts through the native compaction-and-retry path. The old patches `patch-pi-083-auth-load-recovery.mjs` and `patch-pi-083-context-wall-retry.mjs` are no longer run by the installers. The continuation patch remains necessary when an extension cancels threshold compaction with messages queued; it does not resume explicit aborts, overflow, or ordinary failures.
 
-### `ultra` Thinking in PI 1.3.0
+### `ultra` Thinking in PI 1.3.0/1.4.0
 
 The installers run `scripts/patch-pi-ultra-thinking.mjs` immediately after the continuation patch and `scripts/patch-pi-subagents-ultra-thinking.mjs` after installing `@tintinweb/pi-subagents@0.18.2`. The patchers add `ultra` to the type, CLI, level catalog, model schema, TUI, and subagent surfaces. The value appears only for models whose `thinkingLevelMap` declares support; `models.json` enables `ultra: "ultra"` for `openai-codex/gpt-6-astra`.
 
@@ -176,7 +176,7 @@ This flow uses third-party OAuth, not an official Google flow. Antigravity's ter
 
 ### Claude Fable 5.1 OAuth Compatibility
 
-The template installs `npm:@gotgenes/pi-anthropic-auth@2.0.6`. After that installation and before the final activation of `settings.json`, the installers run `scripts/patch-anthropic-client-version.mjs`. The patcher is limited to the `@earendil-works/pi-coding-agent@1.3.0` baseline and `@gotgenes/pi-anthropic-auth@2.0.6` or adapted `2.0.1` installation (preserved without reinstalling), changing only known anchors to report Claude Code `2.1.280`. This is required because Opus 5.5 OAuth requires Claude Code `2.1.280+` (Fable 5.1 required `2.1.251+`); the patch fixes PI and OAuth adapter compatibility headers and does not depend on updating the standalone CLI.
+The template installs `npm:@gotgenes/pi-anthropic-auth@2.0.6`. After that installation and before the final activation of `settings.json`, the installers run `scripts/patch-anthropic-client-version.mjs`. The patcher is limited to the `@earendil-works/pi-coding-agent@1.3.0` and `1.4.0` baselines and `@gotgenes/pi-anthropic-auth@2.0.6` or adapted `2.0.1` installation (preserved without reinstalling), changing only known anchors to report Claude Code `2.1.280`. This is required because Opus 5.5 OAuth requires Claude Code `2.1.280+` (Fable 5.1 required `2.1.251+`); the patch fixes PI and OAuth adapter compatibility headers and does not depend on updating the standalone CLI.
 
 Installations already carrying a value written by an earlier version of this patcher (`2.1.257`) are migrated to the current target with the same identity, cardinality, and rollback checks; any other value remains rejected. After applying the patch, restart the PI session so the already-loaded module is replaced.
 
@@ -186,11 +186,11 @@ The operation fails closed, is idempotent and atomic per file, is rollback-safe 
 node scripts/test/patch-anthropic-client-version.smoke.mjs
 ```
 
-### Orca Lag with PI 1.2.0/1.3.0 in Fullscreen
+### Orca Lag with PI 1.2.0/1.3.0/1.4.0 in Fullscreen
 
 In `@earendil-works/pi-coding-agent@1.2.0`, the fullscreen renderer writes each line as `ESC[<line>;1H ESC[2K <text>`. Orca's main-process tail parser (1.4.192) drops `H` but retains `ESC[2K`; the virtual column never returns to 0, each line is filled to the cumulative width of previous lines, and trimming `/[ \t]+$/` becomes quadratic. This cost Orca's main thread ~86 ms (up to ~172 ms) per PI frame and stalled input/output for all Orca terminals.
 
-`scripts/patch-pi-tui-orca-redraw.mjs` inserts `\r` before each absolute cursor position in `pi-tui/dist/tui-alt-screen.js`. `CR` followed by `CUP` leaves screen and cursor identical in a real terminal (validated cell-by-cell with `@xterm/headless`), and Orca cost drops to ~0.1 ms per write. The patcher supports the 1.2.0 and 1.3.0 baselines by exact hash, is idempotent and atomic, and rejects unknown content; other versions are skipped. Both installers run it after installing PI. Already-open sessions keep the previous runtime until restarted:
+`scripts/patch-pi-tui-orca-redraw.mjs` inserts `\r` before each absolute cursor position in `pi-tui/dist/tui-alt-screen.js`. `CR` followed by `CUP` leaves screen and cursor identical in a real terminal (validated cell-by-cell with `@xterm/headless`), and Orca cost drops to ~0.1 ms per write. The patcher supports the 1.2.0, 1.3.0, and 1.4.0 baselines by exact hash, is idempotent and atomic, and rejects unknown content; other versions are skipped. Both installers run it after installing PI. Already-open sessions keep the previous runtime until restarted:
 
 ```bash
 node scripts/patch-pi-tui-orca-redraw.mjs
@@ -229,14 +229,14 @@ This means changing `config/mcp.json` does not automatically replace the MCP con
 
 ### Platform Differences
 
-Windows also installs `pi-provider-kimi-code`. The scripts use `@earendil-works/pi-coding-agent@1.3.0` by default; the baseline can be explicitly overridden for controlled tests:
+Windows also installs `pi-provider-kimi-code`. The scripts use `@earendil-works/pi-coding-agent@1.4.0` by default; the baseline can be explicitly overridden for controlled tests:
 
 ```bash
-PI_CODING_AGENT_VERSION=1.3.0 ./install.sh
+PI_CODING_AGENT_VERSION=1.4.0 ./install.sh
 ```
 
 ```powershell
-$env:PI_CODING_AGENT_VERSION = "1.3.0"
+$env:PI_CODING_AGENT_VERSION = "1.4.0"
 .\install.ps1
 ```
 
@@ -291,7 +291,7 @@ explain the current selection
 
 PI should be able to use the `vscode_*` tools provided by the extension.
 
-> **Compatibility:** in `pi-vscode` 0.0.9, do not use **Upgrade Pi and Packages**. That command installs the `@mariozechner/pi-coding-agent` package family, while this harness uses the `@earendil-works/pi-coding-agent` fork. Update from the repository and run the installer for your platform.
+> **Compatibility:** in `pi-vscode` 0.0.9, do not use **Upgrade Pi and Packages**. That command installs the `@mariozechner/pi-coding-agent` package family, while this harness uses the `@earendil-works/pi-coding-agent` fork. Use the [safe-update skill](../skills/self-update/SKILL.md), which stages the compatible fork and harness together; do not use the installer as an update fallback.
 
 ## How the Harness Works
 
@@ -497,44 +497,28 @@ There is no automatic uninstaller. Close PI and compare installed files with thi
 
 ## Update
 
-Before updating, preserve intentional local checkout changes with a commit or stash. The installer prepares agents, skills, regular extensions, and other resources first; removes an old copy of `extensions/plastic-memory/`; and writes the non-activating configuration last. This ensures the disabled compaction path does not remain active after an update. Active `settings.json` is replaced only while the installer runs.
+Ask PI to update safely, or invoke `/skill:self-update`. The [self-update skill](../skills/self-update/SKILL.md) is the authoritative procedure for existing installations on Linux, macOS, WSL, and Windows. It preserves local commits and dirty work, prepares a separate candidate for the repository, SDK, package updates, patches, extensions, and assets, and activates only a validated, matching set. It does not run the installers as the routine update path or as a fallback.
 
-The update does not remove sessions, history, append-only data, or project data, and does not delete old package directories; remaining OM files are inert. This update provides no cutover or migration instructions.
+The native commands have narrower effects: `pi update` updates the application, `pi update --extensions` updates packages, and `pi update --all` updates both. None independently updates the Evolvera checkout and assets or proves managed-launcher compatibility. The skill does not override these CLI commands, and they have no native check/dry-run option.
 
-Linux/macOS:
-
-```bash
-cd evolvera
-git status --short
-git pull --ff-only
-./install.sh
-```
-
-Windows:
-
-```powershell
-Set-Location evolvera
-git status --short
-git pull --ff-only
-.\install.ps1
-```
-
-Then restart the terminal/VS Code or use `/reload`.
+Keep credentials, accounts, registries, sessions, custom settings, and active processes out of candidate tests. Verify a fresh managed invocation, account selection, and startup artwork with synthetic data before switching targets; `pi --version` alone is insufficient. Do not automatically `/reload` changed SDK code into a running process. If any required compatibility proof is missing, retain the previous working target and report the gap. Retired-memory cleanup and data migration are not implicit update steps.
 
 ## Rollback
 
 ### Restore the PI File Without the Patch
 
+The commands below are explicit host repair operations, not the routine update or managed-entry rollback procedure. If account selection uses a managed entry, follow the safe-update recovery procedure instead: generic npm reinstallation can replace its shim and must not overwrite an SDK used by a running process.
+
 The patch is part of the installed global package, not the checkout. To restore the host's exact unpatched copy, directly reinstall the compatible version without subsequently running the patcher or `install.sh`/`install.ps1`:
 
 ```bash
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.3.0
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.4.0
 ```
 
 On Windows:
 
 ```powershell
-npm install -g @earendil-works/pi-coding-agent@1.3.0
+npm install -g @earendil-works/pi-coding-agent@1.4.0
 ```
 
 This action changes the host and requires fresh confirmation; it was not performed for this task.
@@ -663,11 +647,11 @@ If the checkout is already located at `~/.pi/agent`, `/reload` or a new session 
 
 ### PI Broke After `Upgrade Pi and Packages`
 
-Reinstall the compatible fork and run the harness installer again:
+First inspect the resolved command, package prefix, and managed-entry identity through the [safe-update skill](../skills/self-update/SKILL.md). Preserve existing credentials and sessions. The following manual repair applies only after confirming a bare, non-managed installation and the effects on that exact prefix; it is not an automatic fallback. Reinstall the compatible fork and run the harness installer again:
 
 ```bash
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@1.3.0
+npm install -g @earendil-works/pi-coding-agent@1.4.0
 ./install.sh
 ```
 
@@ -675,7 +659,7 @@ Windows:
 
 ```powershell
 npm uninstall -g @mariozechner/pi-coding-agent
-npm install -g @earendil-works/pi-coding-agent@1.3.0
+npm install -g @earendil-works/pi-coding-agent@1.4.0
 .\install.ps1
 ```
 

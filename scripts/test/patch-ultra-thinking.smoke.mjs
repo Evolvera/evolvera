@@ -16,7 +16,7 @@ for (const key of Object.keys(process.env)) {
 const piRoot = path.join(temp, 'pi-coding-agent');
 const sourceMeta = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8'));
 assert.equal(sourceMeta.name, main.PACKAGE_NAME);
-assert.equal(sourceMeta.version, main.PACKAGE_VERSION);
+assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes(sourceMeta.version));
 
 function normalizeOwnedCopy(packageRoot) {
   const grouped = new Map();
@@ -151,7 +151,7 @@ try {
   await assert.rejects(main.patch(piRoot), /anchor cardinality mismatch/);
   for (const [rel, bytes] of beforeRefusal) assert.deepEqual(fs.readFileSync(path.join(piRoot, rel)), bytes, `${rel}: refusal mutated fixture`);
 
-  console.log('patch-ultra-thinking smoke: PASS (owned PI 1.3.0 fixture)');
+  console.log(`patch-ultra-thinking smoke: PASS (owned PI ${sourceMeta.version} fixture)`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

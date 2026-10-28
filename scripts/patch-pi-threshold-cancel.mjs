@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PACKAGE_VERSION = '1.3.0';
+const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0']);
 const TARGET_RELATIVE_PATH = 'dist/core/agent-session.js';
 const UNPATCHED_ANCHOR = `                await this._emitSessionCompactFailed({
                     reason,
@@ -31,7 +32,7 @@ function sha256(value) {
 }
 
 function fail(message) {
-  console.error(`Pi 1.3.0 threshold patch refused: ${message}`);
+  console.error(`Pi threshold patch refused: ${message}`);
   process.exitCode = 1;
 }
 
@@ -77,7 +78,7 @@ async function readPackage(packageRoot) {
   } catch {
     throw new Error('package metadata unavailable');
   }
-  if (metadata.name !== PACKAGE_NAME || metadata.version !== PACKAGE_VERSION) {
+  if (metadata.name !== PACKAGE_NAME || !SUPPORTED_PACKAGE_VERSIONS.includes(metadata.version)) {
     throw new Error('package identity mismatch');
   }
 }
@@ -154,7 +155,7 @@ async function main() {
     packageRoot = packageRootFromArgs(process.argv.slice(2));
     if (!packageRoot) throw new Error('global package root unavailable');
     const changed = await patch(packageRoot);
-    console.log(changed ? 'Pi 1.3.0 threshold patch applied.' : 'Pi 1.3.0 threshold patch already applied.');
+    console.log(changed ? 'Pi threshold patch applied.' : 'Pi threshold patch already applied.');
   } catch (error) {
     fail(error instanceof Error ? error.message : 'unknown refusal');
   }
@@ -167,6 +168,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 export {
   PACKAGE_NAME,
   PACKAGE_VERSION,
+  SUPPORTED_PACKAGE_VERSIONS,
   TARGET_RELATIVE_PATH,
   UNPATCHED_ANCHOR,
   PATCHED_ANCHOR,
