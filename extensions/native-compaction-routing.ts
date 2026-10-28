@@ -73,48 +73,53 @@ function isValidCompactionResult(value: unknown): value is CompactionResult {
     && result.tokensBefore >= 0;
 }
 
-async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext) {
+type CompactionModel = NonNullable<ExtensionContext["model"]>;
+type ThinkingLevel = Parameters<typeof compact>[6];
+
+/** One summarization attempt; undefined on any failure so the caller can fall back. */
+async function tryCompact(event: SessionBeforeCompactEvent, ctx: ExtensionContext, model: CompactionModel, thinking: ThinkingLevel): Promise<CompactionResult | undefined> {
+  try {
+    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+    if (!auth.ok || !auth.apiKey || event.signal.aborted) return undefined;
+    // The public extension context does not expose the session stream function,
+    // retry policy, or retry callbacks. Leave those optional compact() arguments
+    // unset rather than mutating SDK globals or reaching into private session state.
+    const result = await compact(event.preparation, model, auth.apiKey, auth.headers, event.customInstructions, event.signal, thinking, undefined, auth.env);
+    return !event.signal.aborted && isValidCompactionResult(result) ? result : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Luna summarizes first. If Luna is unavailable or fails (for example an
+ * OpenAI outage), the conversation's own model summarizes instead with the
+ * session's thinking level; only when both fail is compaction cancelled.
+ */
+async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext, sessionThinking: () => ThinkingLevel | undefined = () => undefined) {
   try {
     if (isStaleCrossProviderThreshold(event, ctx)) return { cancel: true };
-
     if (event.signal.aborted) {
       notifyFailure(ctx);
       return { cancel: true };
     }
 
-    const model = ctx.modelRegistry.find(NATIVE_COMPACTION_PROVIDER, NATIVE_COMPACTION_MODEL);
-    if (!model) {
-      notifyFailure(ctx);
-      return { cancel: true };
+    const luna = ctx.modelRegistry.find(NATIVE_COMPACTION_PROVIDER, NATIVE_COMPACTION_MODEL);
+    const primary = luna ? await tryCompact(event, ctx, luna, NATIVE_COMPACTION_THINKING_LEVEL) : undefined;
+    if (primary) return { compaction: primary };
+
+    const main = ctx.model;
+    const mainIsLuna = main?.provider === NATIVE_COMPACTION_PROVIDER && main?.id === NATIVE_COMPACTION_MODEL;
+    if (main && !mainIsLuna && !event.signal.aborted) {
+      const fallback = await tryCompact(event, ctx, main, sessionThinking() ?? NATIVE_COMPACTION_THINKING_LEVEL);
+      if (fallback) {
+        try { ctx.ui.notify(`Luna indisponível; compactação feita com ${main.id}.`, "info"); } catch { /* notice is best effort */ }
+        return { compaction: fallback };
+      }
     }
 
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok || !auth.apiKey) {
-      notifyFailure(ctx);
-      return { cancel: true };
-    }
-
-    // The public extension context does not expose the session stream function,
-    // retry policy, or retry callbacks. Leave those optional compact() arguments
-    // unset rather than mutating SDK globals or reaching into private session state.
-    const result = await compact(
-      event.preparation,
-      model,
-      auth.apiKey,
-      auth.headers,
-      event.customInstructions,
-      event.signal,
-      NATIVE_COMPACTION_THINKING_LEVEL,
-      undefined,
-      auth.env,
-    );
-
-    if (event.signal.aborted || !isValidCompactionResult(result)) {
-      notifyFailure(ctx);
-      return { cancel: true };
-    }
-
-    return { compaction: result };
+    notifyFailure(ctx);
+    return { cancel: true };
   } catch {
     notifyFailure(ctx);
     return { cancel: true };
@@ -122,5 +127,6 @@ async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: Exte
 }
 
 export default function nativeCompactionRoutingExtension(pi: ExtensionAPI): void {
-  pi.on("session_before_compact", routeNativeCompaction);
+  const getThinking = (pi as { getThinkingLevel?: () => ThinkingLevel }).getThinkingLevel;
+  pi.on("session_before_compact", (event, ctx) => routeNativeCompaction(event, ctx, () => getThinking?.call(pi)));
 }

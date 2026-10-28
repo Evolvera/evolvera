@@ -314,10 +314,10 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | Step | Skills to Load |
 |------|---------------|
 | Strategy Intake | This skill; no agent required. |
-| website-creative (optional post-design) | `/skill:creative-catalog` then `/skill:creative-toolkit`; official toolkit URLs only via `jina_read` for shortlisted tools. |
-| website-designer | `/skill:design-catalog` for brand references; owns baseline motion and the Creative Opportunity Map. |
+| website-creative (optional post-design) | `/skill:creative-catalog` then `/skill:creative-toolkit`; official toolkit URLs only via `jina_read` for shortlisted tools. State the chosen mechanic with its `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` term name. |
+| website-designer | `/skill:design-catalog` for brand references; owns baseline motion and the Creative Opportunity Map. Reads `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` before baseline decisions and records a `## Design Vocabulary Selection` table in DESIGN_PLAN.md. |
 | seo-content-writer | Reads WEBSITE_BRIEF.md and DESIGN_PLAN.md. |
-| planner | `/skill:website-stack` for tech conventions. |
-| builder-design / builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. |
-| website-polisher | `/skill:design-catalog` for design system consistency. |
+| planner | `/skill:website-stack` for tech conventions. Carry the DESIGN_PLAN.md Design Vocabulary Selection terms (exact names, see `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`) into builder tasks. |
+| builder-design / builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. Design builders implement the named terms per `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. |
+| website-polisher | `/skill:design-catalog` for design system consistency; audits against the selected terms in `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` ("term X specified, Y implemented"). |
 | validator | No skill needed. |

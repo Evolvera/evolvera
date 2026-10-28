@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bash = execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', ['bash'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0];
@@ -16,12 +16,15 @@ const realAgent = path.join(realHome, '.pi', 'agent');
 const globalModules = execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g'], {
   encoding: 'utf8', shell: process.platform === 'win32',
 }).trim();
-const sdkSource = path.join(globalModules, '@earendil-works', 'pi-coding-agent');
+const sdkSource = process.env.PI_SDK_ROOT || path.join(globalModules, '@earendil-works', 'pi-coding-agent');
+const { PATCHES: ultraPatches } = await import(pathToFileURL(path.join(root, 'scripts/patch-pi-ultra-thinking.mjs')));
 const subagentsSource = path.join(realAgent, 'npm', 'node_modules', '@tintinweb', 'pi-subagents');
 const authSource = path.join(realAgent, 'npm', 'node_modules', '@gotgenes', 'pi-anthropic-auth');
-const sdkFiles = [
+const todoSource = path.join(realAgent, 'npm', 'node_modules', '@juicesharp', 'rpiv-todo');
+const sdkFiles = [...new Set([
   'package.json',
   'dist/core/agent-session.js',
+  'dist/core/auth-storage.js',
   'dist/cli/args.js',
   'dist/core/model-config.js',
   'dist/modes/interactive/components/settings-selector.js',
@@ -31,7 +34,6 @@ const sdkFiles = [
   'dist/modes/interactive/theme/theme.d.ts',
   'dist/modes/interactive/theme/dark.json',
   'dist/modes/interactive/theme/light.json',
-  'dist/modes/interactive/theme/theme-schema.json',
   'node_modules/@earendil-works/pi-ai/package.json',
   'node_modules/@earendil-works/pi-ai/dist/types.d.ts',
   'node_modules/@earendil-works/pi-ai/dist/models.js',
@@ -39,13 +41,25 @@ const sdkFiles = [
   'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js',
   'node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.d.ts',
   'node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
+  'node_modules/@earendil-works/pi-tui/package.json',
+  'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js',
+  ...ultraPatches.map(([relative]) => relative),
+])];
+const subagentsFiles = [
+  'package.json', 'src/index.ts', 'dist/index.js',
+  'src/abortable.ts', 'dist/abortable.js',
+  'src/agent-runner.ts', 'dist/agent-runner.js',
+  'src/agent-manager.ts', 'dist/agent-manager.js',
+  'src/nested-tools.ts', 'dist/nested-tools.js',
+  'src/ui/agent-widget.ts', 'dist/ui/agent-widget.js',
 ];
-const subagentsFiles = ['package.json', 'src/index.ts', 'dist/index.js'];
+const todoFiles = ['package.json', 'todo-overlay.ts', 'view/format.ts'];
 const authFiles = ['package.json', 'src/constants.ts'];
 const sourceInputs = [
   ...sdkFiles.map((relative) => path.join(sdkSource, relative)),
   ...subagentsFiles.map((relative) => path.join(subagentsSource, relative)),
   ...authFiles.map((relative) => path.join(authSource, relative)),
+  ...todoFiles.map((relative) => path.join(todoSource, relative)),
 ];
 // Snapshot only installer/patcher write surfaces in the real home. Deliberately
 // exclude sessions, logs, and runtime memory: the active PI session writes there.
@@ -55,7 +69,7 @@ const agentWriteTargets = [
   ...[
     '@tintinweb/pi-subagents', '@gotgenes/pi-anthropic-auth',
     'pi-mcp-adapter', 'pi-alibaba-models', '@narumitw/pi-goal',
-    '@juicesharp/rpiv-todo',
+    '@juicesharp/rpiv-todo', '@rahularya01/pi-cursor',
   ].map((name) => path.join(realAgent, 'npm', 'node_modules', name)),
 ];
 const realWriteTargets = [
@@ -112,11 +126,21 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   const fakeSdk = path.join(fakeGlobalModules, '@earendil-works', 'pi-coding-agent');
   const fakeSubagents = path.join(parent, 'fixtures', 'pi-subagents');
   const fakeAuth = path.join(parent, 'fixtures', 'pi-anthropic-auth');
+  const fakeTodo = path.join(parent, 'fixtures', 'rpiv-todo');
+  const fakeCursor = path.join(parent, 'fixtures', 'pi-cursor');
   const fakeBin = path.join(parent, 'bin');
   fs.mkdirSync(fakeBin, { recursive: true });
   copyPackage(sdkSource, fakeSdk, sdkFiles);
   copyPackage(subagentsSource, fakeSubagents, subagentsFiles);
   copyPackage(authSource, fakeAuth, authFiles);
+  copyPackage(todoSource, fakeTodo, todoFiles);
+  fs.mkdirSync(path.join(fakeCursor, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(fakeCursor, 'package.json'), JSON.stringify({ name: '@rahularya01/pi-cursor', version: '1.4.39' }) + '\n');
+  fs.writeFileSync(path.join(fakeCursor, 'dist/index.js'), [
+    'synthetic Cursor fixture',
+    'function _u(e){if(e.parameters.some(t=>t.id==="reasoning"))return "reasoning";if(e.parameters.some(t=>t.id==="effort"))return "effort"}',
+    'var ku=/^(cursor-)?grok-4\\.7(-max)?$/',
+  ].join('\n') + '\n');
   for (const command of ['pi', 'npm']) {
     const source = path.join(root, 'scripts', 'test', 'fixtures', command);
     const destination = path.join(fakeBin, command);
@@ -124,6 +148,12 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     fs.chmodSync(destination, 0o755);
   }
   fs.copyFileSync(path.join(root, 'scripts/test/fixtures/npm.cmd'), path.join(fakeBin, 'npm.cmd'));
+  const fakePi = path.join(fakeBin, 'pi');
+  const piStub = fs.readFileSync(fakePi, 'utf8').replace('esac\n', `  "install npm:@rahularya01/pi-cursor@1.4.39")\n    mkdir -p "$HOME/.pi/agent/npm/node_modules/@rahularya01"\n    cp -R "$FAKE_CURSOR_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@rahularya01/pi-cursor"\n    ;;\nesac\n`);
+  assert.notEqual(piStub, fs.readFileSync(fakePi, 'utf8'), 'fake pi stub did not accept Cursor fixture case');
+  const todoStub = piStub.replace('esac\n', `  "install npm:@juicesharp/rpiv-todo@2.11.0")\n    mkdir -p "$HOME/.pi/agent/npm/node_modules/@juicesharp"\n    cp -R "$FAKE_TODO_FIXTURE" "$HOME/.pi/agent/npm/node_modules/@juicesharp/rpiv-todo"\n    ;;\nesac\n`);
+  assert.notEqual(todoStub, piStub, 'fake pi stub did not accept rpiv-todo fixture case');
+  fs.writeFileSync(fakePi, todoStub);
   const log = path.join(parent, 'install.log');
   // Poison inherited destination selectors so this smoke catches accidental
   // fallback to the caller's PI/npm configuration.
@@ -147,6 +177,8 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
     FAKE_NPM_ROOT: fakeGlobalModules,
     FAKE_SUBAGENTS_FIXTURE: fakeSubagents,
     FAKE_AUTH_FIXTURE: fakeAuth,
+    FAKE_CURSOR_FIXTURE: fakeCursor,
+    FAKE_TODO_FIXTURE: fakeTodo,
     PI_CODING_AGENT_DIR: path.join(home, '.pi', 'agent'),
   };
   delete env.WSL_DISTRO_NAME;
@@ -167,7 +199,7 @@ function assertInstalled(testCase, mcpExpected) {
   const agent = path.join(testCase.home, '.pi', 'agent');
   for (const name of ['agents', 'skills', 'extensions']) assert.ok(fs.statSync(path.join(agent, name)).isDirectory(), `${testCase.label}: ${name}`);
   assert.ok(fs.existsSync(path.join(agent, 'agents', 'scout.md')), `${testCase.label}: agents/scout.md`);
-  assert.ok(fs.existsSync(path.join(agent, 'skills', 'copy-thief', 'SKILL.md')), `${testCase.label}: skills/copy-thief/SKILL.md`);
+  assert.ok(fs.existsSync(path.join(agent, 'skills', 'self-update', 'SKILL.md')), `${testCase.label}: skills/self-update/SKILL.md`);
   assert.ok(fs.existsSync(path.join(agent, 'extensions', 'execution-mode.ts')), `${testCase.label}: extensions/execution-mode.ts`);
   const settingsPath = path.join(agent, 'settings.json');
   assert.ok(fs.statSync(settingsPath).isFile(), `${testCase.label}: settings.json`);
@@ -208,6 +240,45 @@ function runPreflight(testCase) {
   }
 }
 
+for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.2'], ['install.ps1', 'npm:@tintinweb/pi-subagents@0.18.2']]) {
+  const text = fs.readFileSync(path.join(root, file), 'utf8');
+  assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf('patch-pi-subagents-deferred-nudges.mjs'), `${file}: bounded-waits patch must follow deferred-nudges`);
+  assert.ok(text.indexOf('patch-pi-subagents-bounded-waits.mjs') > text.indexOf(install), `${file}: bounded-waits patch must follow package install`);
+  assert.ok(text.indexOf('patch-pi-subagents-hud.mjs') > text.indexOf('patch-pi-subagents-bounded-waits.mjs'), `${file}: HUD patch must follow bounded-waits`);
+  assert.ok(text.indexOf('patch-rpiv-todo-hud.mjs') > text.indexOf('npm:@juicesharp/rpiv-todo@2.11.0'), `${file}: rpiv-todo HUD patch must follow its package install`);
+}
+const shellText = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
+const powershellText = fs.readFileSync(path.join(root, 'install.ps1'), 'utf8');
+for (const [label, text] of [['shell', shellText], ['PowerShell', powershellText]]) {
+  assert.match(text, /PI_CODING_AGENT_VERSION.*1\.4\.0/, `${label}: PI default must be 1.4.0`);
+  const install = text.indexOf('npm install -g ');
+  for (const patch of ['patch-pi-threshold-cancel.mjs', 'patch-pi-tui-orca-redraw.mjs', 'patch-pi-ultra-thinking.mjs']) {
+    assert.ok(text.indexOf(patch) > install, `${label}: ${patch} must follow PI install`);
+  }
+  assert.doesNotMatch(text, /patch-pi-083-/, `${label}: obsolete 0.83 patchers must not run`);
+}
+const antigravityPackage = 'npm:pi-antigravity@0.10.0';
+const settingsPackages = JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).packages;
+const antigravityEntries = settingsPackages.filter((entry) => (typeof entry === 'string' ? entry : entry?.source) === antigravityPackage);
+assert.equal(antigravityEntries.length, 1, 'config/settings.json must include pi-antigravity exactly once');
+assert.deepEqual(antigravityEntries[0].extensions, ['-src/features/google-search.ts'],
+  'google_search stays unregistered: research uses jina_read/MCP, not Antigravity credentials');
+assert.ok(shellText.includes(`install_pi_package "${antigravityPackage}" "pi-antigravity"`),
+  'install.sh must install pinned pi-antigravity');
+assert.ok(powershellText.includes(`Invoke-PiInstall ${antigravityPackage}`),
+  'install.ps1 must install pinned pi-antigravity');
+const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
+const cursorPatcher = 'patch-pi-cursor-reasoning-effort.mjs';
+const shellCursorInstall = shellText.indexOf(`if install_pi_package "${cursorPackage}"`);
+const shellCursorPatch = shellText.indexOf(cursorPatcher);
+const powershellCursorInstall = powershellText.indexOf(`Invoke-PiInstall ${cursorPackage}`);
+const powershellCursorPatch = powershellText.indexOf(cursorPatcher);
+assert.ok(shellCursorInstall >= 0 && shellCursorPatch > shellCursorInstall, 'install.sh must patch Cursor after pinned install');
+assert.match(shellText.slice(shellCursorInstall, shellCursorPatch), /then\s*$/m);
+assert.match(shellText.slice(shellCursorInstall, shellText.indexOf('\n    fi\n', shellCursorInstall)), /Pulando patch de reasoning effort/u);
+assert.ok(powershellCursorInstall >= 0 && powershellCursorPatch > powershellCursorInstall, 'install.ps1 must patch Cursor after pinned install');
+assert.match(powershellText.slice(powershellCursorInstall, powershellCursorPatch), /\$LASTEXITCODE -ne 0/);
+
 // STATEFUL RESOURCE PROOF: this unique mkdtemp owns HOME, USERPROFILE, XDG_CONFIG_HOME,
 // fake npm-global, fixtures, and logs. Bash resolves fake pi/npm first on PATH; the fake
 // npm root -g reports the tmpdir root. PI_* destination overrides and npm_config_*
@@ -232,6 +303,19 @@ try {
   const cleanOutput = runInstall(home);
   assertInstalled(home, fs.readFileSync(path.join(root, 'config/mcp.json')));
   assert.ok(cleanOutput.includes('Setup completo!'), 'clean install should still report full success');
+  assert.ok(fs.readFileSync(home.log, 'utf8').split(/\r?\n/).includes(`install ${antigravityPackage}`),
+    'shell installer must invoke the pinned pi-antigravity command');
+  const installedCursor = path.join(home.home, '.pi/agent/npm/node_modules/@rahularya01/pi-cursor/dist/index.js');
+  const installedCursorSource = fs.readFileSync(installedCursor, 'utf8');
+  assert.ok(installedCursorSource.includes('return "reasoning_effort"'), 'shell installer did not patch synthetic Cursor package');
+  assert.ok(installedCursorSource.includes('grok-4\\.7(?:-\\d+[km])?(-max)?'), 'shell installer did not patch contextual Grok matcher');
+  const installedNpm = path.join(home.home, '.pi/agent/npm/node_modules');
+  assert.ok(fs.readFileSync(path.join(installedNpm, '@juicesharp/rpiv-todo/todo-overlay.ts'), 'utf8').includes('HUD presentation (Evolvera patch v1)'), 'shell installer did not apply the rpiv-todo HUD patch');
+  for (const widget of ['src/ui/agent-widget.ts', 'dist/ui/agent-widget.js']) {
+    assert.ok(fs.readFileSync(path.join(installedNpm, '@tintinweb/pi-subagents', widget), 'utf8').includes('HUD presentation (Evolvera patch v1)'), `shell installer did not apply the pi-subagents HUD patch to ${widget}`);
+  }
+  const installedAuth = fs.readFileSync(path.join(home.fakeGlobalModules, '@earendil-works/pi-coding-agent/dist/core/auth-storage.js'), 'utf8');
+  assert.ok(installedAuth.includes('readLatestData('), 'PI 1.3 native async auth reads must remain intact');
   const mcpPath = path.join(home.home, '.pi', 'agent', 'mcp.json');
   const expected = Buffer.from('{"preserve-me":true}\n');
   fs.writeFileSync(mcpPath, expected);
@@ -251,11 +335,19 @@ try {
   assert.equal(fs.existsSync(path.join(home.home, '.pi', 'agent', 'npm', 'node_modules', '@tintinweb', 'pi-subagents')), false,
     'pi-subagents package must remain absent after simulated install failure');
   assertInstalled(home, expected);
+
+  const cursorPackage = 'npm:@rahularya01/pi-cursor@1.4.39';
+  const installedCursorRoot = path.join(home.home, '.pi/agent/npm/node_modules/@rahularya01/pi-cursor');
+  fs.rmSync(installedCursorRoot, { recursive: true, force: true });
+  home.env.FAKE_PI_FAIL = cursorPackage;
+  home.env.FAKE_PI_FAIL_REASON = 'synthetic Cursor install failure';
+  const cursorFailure = runInstall(home);
+  assert.ok(cursorFailure.includes('Pulando patch de reasoning effort: pacote pi-cursor não instalado.'),
+    'Cursor patch must be skipped visibly when pinned package install fails');
+  assert.equal(fs.existsSync(installedCursorRoot), false, 'failed Cursor package must remain absent');
 } finally {
   fs.rmSync(home.parent, { recursive: true, force: true });
 }
 
-// BUG CONHECIDO #12: falhas de `pi install` ainda são ocultadas nesta baseline;
-// a issue #12 altera esse comportamento e acrescentará a asserção com FAKE_PI_FAIL.
 assert.deepEqual(snapshotTargets(), realTargetsBefore, 'CA2: destinos reais de install/patch mudaram');
 console.log(`install-sh smoke: PASS (DISPOSABLE_VERIFIED; bash=${bash})`);

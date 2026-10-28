@@ -14,8 +14,7 @@ const sandbox = mkdtempSync(path.join(tmpdir(), "communication-style-smoke-"));
 
 assert.equal(systemPrompt, mirroredSystemPrompt, "SYSTEM mirrors must remain byte-identical");
 assert.match(systemPrompt, /When closing a completed change for the user, explain the outcome naturally/);
-assert.match(systemPrompt, /Include a concise `Before → Now` behavioral\/contract contrast/);
-assert.match(systemPrompt, /contrast is additive context, never a replacement for the complete outcome explanation/);
+assert.match(systemPrompt, /Use a before\/after contrast when it explains the change more clearly, integrating it into the outcome explanation/);
 
 function writeJson(file, value) {
   mkdirSync(path.dirname(file), { recursive: true });
@@ -49,8 +48,8 @@ try {
   for (const mode of mod.COMMUNICATION_MODES) {
     const instruction = mod.communicationInstruction(mode);
     assert.equal((instruction.match(/COMMUNICATION CONTRACT — ALL MODES/g) ?? []).length, 1);
-    assert.match(instruction, /Lead with the conclusion/);
-    assert.match(instruction, /Final reports state intentional changes/);
+    assert.match(instruction, /Apply the SYSTEM communication rules/);
+    assert.match(instruction, /A completed-work report gives the outcome and validation/);
   }
   assert.match(mod.communicationInstruction("default"), /COMMUNICATION MODE: DEFAULT/);
   assert.match(mod.communicationInstruction("default+caveman"), /Resumo caveman:/);

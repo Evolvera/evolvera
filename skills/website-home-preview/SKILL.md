@@ -124,6 +124,7 @@ Requirements:
 - Write .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md
 - Create exactly 3 high-quality design directions and a recommended direction.
 - Use design-catalog references when useful.
+- Read ~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md before design decisions; in each option include a `## Design Vocabulary Selection` table (Field | Term | Fit | Rejected alternative | Guardrail) using exact term names.
 - Scope is only one Home Page, not a full site.
 - No human approval. Make labeled assumptions if details are missing.
 - Design for premium trust: clear first impression, no DIY/template energy, restrained typography/colors, purposeful visuals, clear CTA.
@@ -211,6 +212,7 @@ Read .pi/previews/<slug>/HOME_DESIGN_OPTIONS.md and .pi/previews/<slug>/HOME_CON
 Requirements:
 - If the optional post-design .pi/previews/<slug>/HOME_CREATIVE_DIRECTION.md exists, read it after HOME_DESIGN_OPTIONS.md and carry only its mapped additive mechanics into HOME_PLAN.md and TASK_builder-home.md. Preserve named design anchors, reduced-motion/static fallback, keyboard/DOM access, mobile/touch behavior, normal scroll, native-only Home constraints, and performance budget; report DESIGN_CONFLICT instead of redesigning.
 - Choose or fuse the best design direction without asking the user.
+- Read ~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md; record the final fused `## Design Vocabulary Selection` table in HOME_PLAN.md and carry the exact term names into TASK_builder-home.md.
 - Use HOME_CONTENT_PLAN.md as the source of truth for copy.
 - Write .pi/previews/<slug>/HOME_PLAN.md
 - Write .pi/previews/<slug>/TASK_builder-home.md for the dedicated builder-home agent.
@@ -292,6 +294,7 @@ Read:
 - .pi/previews/<slug>/HOME_CONTENT_PLAN.md
 - .pi/previews/<slug>/HOME_PLAN.md
 - .pi/previews/<slug>/index.html
+- ~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md (audit against HOME_PLAN.md's Design Vocabulary Selection; report "term X specified, Y implemented")
 - .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md if present
 - .pi/previews/<slug>/screenshots/portrait.png if image reading is supported
 - .pi/previews/<slug>/screenshots/landscape.png if image reading is supported
@@ -326,7 +329,7 @@ Apply the polish fixes from .pi/previews/<slug>/HOME_POLISH_PLAN.md.
 
 Hard constraints:
 - Modify only .pi/previews/<slug>/index.html
-- Do not create any extra files.
+- Create no other files except the validation screenshots under .pi/previews/<slug>/screenshots/ refreshed below.
 - Apply only fixes with exact old_string/new_string replacements, or equivalent minimal edits if exact strings drifted.
 - Preserve the original HOME_PLAN.md and HOME_CONTENT_PLAN.md intent.
 - Re-run the validation commands from .pi/previews/<slug>/TASK_builder-home.md after changes, including `node /Users/j.henrique/.pi/agent/skills/website-home-preview/scripts/validate-home-asset-provenance.mjs .pi/previews/<slug>/index.html`.

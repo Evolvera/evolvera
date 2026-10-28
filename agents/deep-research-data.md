@@ -1,15 +1,16 @@
 ---
 name: deep-research-data
-description: "Deep Research - Data analyst. Selectively retrieves, normalizes, and verifies public structured data from official APIs, datasets, and downloadable files using reproducible ETL artifacts. Returns cited YAML findings plus an ETL package for the deep-research auditor. Model: openai-codex/gpt-6-sol high."
-display_name: 📊 DR Data · GPT-6 Sol · high
+description: "Deep Research - Data analyst. Selectively retrieves, normalizes, and verifies public structured data from official APIs, datasets, and downloadable files using reproducible ETL artifacts. Returns cited YAML findings plus an ETL package for the deep-research auditor. Model: openai-codex/gpt-6.1-terra high."
+display_name: 📊 DR Data · GPT-6.1 Terra · high
 tools: jina_read, bash, write, read
-model: openai-codex/gpt-6-sol
+model: openai-codex/gpt-6.1-terra
 thinking: high
 max_turns: 70
 lifecycle: lazy
 prompt_mode: replace
 extensions: true
 isolated: false
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 ## Role and outcome

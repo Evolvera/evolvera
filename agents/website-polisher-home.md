@@ -12,6 +12,7 @@ prompt_mode: replace
 inherit_context: false
 extensions: true
 skills: true
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Website Polisher Home — Static Preview Visual Audit
@@ -31,6 +32,7 @@ Audit one preview directory only:
 - `.pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md`
 - `.pi/previews/<slug>/screenshots/portrait.png`
 - `.pi/previews/<slug>/screenshots/landscape.png`
+- `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` and HOME_PLAN.md's `## Design Vocabulary Selection`: audit against the selected terms, report mismatches as "term X specified, Y implemented", and propose fixes using vocabulary term names.
 
 Write only:
 
@@ -92,6 +94,7 @@ Audit:
 Check:
 
 - hover, focus-visible, active, and disabled states where applicable;
+- **Hover reveal (emphasis):** favor Hover reveal motion, above all on second-order elements (secondary actions, metadata, captions, previews, arrow affordances), so primary content stays calm and the detail animates in on hover with a short ease-out opacity plus small translate/scale/clip. Never put primary content, CTAs, or required information behind hover: reveal also on `:focus-visible`/`:focus-within`, show the detail by default on touch (`@media (hover: none)`), cause no layout shift, and make reduced motion instant or opacity-only. Flag second-order elements that are static where a Hover reveal would clarify hierarchy, and any hover-only content.
 - touch targets at least 44×44px;
 - semantic headings/landmarks;
 - meaningful alt text and accessible names;

@@ -43,12 +43,12 @@ assert.equal(
 );
 requireMatch("SYSTEM.md", /internal order[\s\S]{0,180}TILL-DO[\s\S]{0,180}(before|prior to)[\s\S]{0,80}TODO[\s\S]{0,80}(editing|source)/i, "missing concise global readiness rule");
 requireMatch("SYSTEM.md", /simple tasks[^.\n]*artifact-free/i, "simple tasks must remain artifact-free by default");
-requireMatch("agents/builder-light.md", /^model: openai-codex\/gpt-5\.3-codex-spark$/m, "builder-light must use Spark medium");
+requireMatch("agents/builder-light.md", /^model: openai-codex\/gpt-6-luna$/m, "builder-light must use GPT-6 Luna medium");
 requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light must remain medium effort");
 requireMatch("agents/builder.md", /^model: openai-codex\/gpt-6-luna$/m, "builder must use Luna");
 requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
-requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6-luna$/m, "builder-heavy must use Luna");
-requireMatch("agents/builder-heavy.md", /^thinking: max$/m, "builder-heavy must use max effort");
+requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6\.1-terra$/m, "builder-heavy must use Terra");
+requireMatch("agents/builder-heavy.md", /^thinking: xhigh$/m, "builder-heavy must use xhigh effort");
 
 for (const path of plannerFiles) {
   requireMatch(path, /Internal Execution Order/i, "missing ordered-task contract");
@@ -95,10 +95,10 @@ assert.match(
 
 requireMatch(flowPath, /Internal Execution Order bridge/i, "missing Flow bridge");
 requireMatch(flowPath, /TILL-DO_<task-id>\.md[\s\S]{0,100}TODO_<task-id>\.md/i, "Flow must preserve both lifecycle artifacts");
-requireMatch(flowPath, /(apenas dentro|only within)[^.\n]*workspace Orca[^.\n]*(nunca|never)[^.\n]*checkout canônico/i, "artifacts must remain inside the issue's Orca workspace and never the canonical checkout");
-requireMatch(flowPath, /nunca os converta[^.\n]*Flow\/GitHub/i, "artifacts must not become Flow/GitHub state");
+requireMatch(flowPath, /All issue execution takes place inside a workspace created by Orca[\s\S]{0,200}?(?:never|not)[\s\S]{0,40}?worker workspace/i, "artifacts must remain inside the issue's Orca workspace and never the canonical checkout");
+requireMatch(flowPath, /does not maintain a local delivery plan[^.\n]*|never become[^.\n]*Flow\/GitHub/i, "artifacts must not become Flow/GitHub state");
 requireMatch(flowPath, /nem os inclua no commit|not[^.\n]*commit/i, "artifacts must not be committed by default");
-requireMatch(flowPath, /bloqueado[^.\n]*não cria TODO[^.\n]*mutação de fonte/i, "blocked readiness must prevent TODO and source mutation");
+requireMatch(flowPath, /blocked TILL-DO does not create TODO or permit source mutation/i, "blocked readiness must prevent TODO and source mutation");
 
 const tillDo = texts.get("templates/builder/TILL-DO.md");
 for (const gate of ["Authority / baseline", "Contract / scope", "Validation / resources", "Recovery / stop"]) {

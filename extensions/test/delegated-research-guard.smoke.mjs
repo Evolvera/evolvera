@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const { createJiti } = createRequire(import.meta.url)(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cjs"));
+const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
+const m = await jiti.import(path.join(root, "extensions/delegated-research-guard.ts"));
+
+const hooks = new Map(); const events = new Map();
+m.default({ on: (n, f) => hooks.set(n, f), events: { on: (n, f) => events.set(n, f) } });
+await hooks.get("before_agent_start")({ systemPromptOptions: { customPrompt: "# PI Coding Agent\n..." } });
+const read = (toolName, input = {}) => hooks.get("tool_result")({ toolName, input, content: [{ type: "text", text: "body" }], isError: false });
+
+assert.equal(await read("read", { path: "a" }), undefined, "no reminder without a running subagent");
+events.get("subagents:started")({ id: "s1", type: "scout", description: "Map deploy" });
+const hit = await read("read", { path: "deploy/compose.yml" });
+assert.match(hit.content.at(-1).text, /scout "Map deploy" is still researching/);
+assert.equal(hit.content[0].text, "body", "original result kept");
+assert.ok(await read("bash", { command: "git status; cat deploy/Dockerfile" }), "shell reads count");
+assert.equal(await read("bash", { command: "git commit -m x && git push" }), undefined, "git is not a research read");
+assert.equal(await read("edit", { path: "x" }), undefined, "edits are untouched");
+events.get("subagents:started")({ id: "b1", type: "builder", description: "Implement" });
+events.get("subagents:completed")({ id: "s1" });
+assert.equal(await read("read", { path: "a" }), undefined, "builders do not open the window, completion closes it");
+events.get("subagents:started")({ id: "g1", type: "general-purpose", description: "Read docs" });
+assert.ok(await read("jina_read", { url: "https://x" }), "web reads count for general-purpose research");
+events.get("subagents:failed")({ id: "g1" });
+assert.equal(await read("jina_read", { url: "https://x" }), undefined, "failure closes the window");
+await hooks.get("before_agent_start")({ systemPromptOptions: { customPrompt: "# Builder\n" } });
+events.get("subagents:started")({ id: "s2", type: "scout", description: "x" });
+assert.equal(await read("read", { path: "a" }), undefined, "subagent sessions are never reminded");
+// After a report: reads of sources it cited are noted, others are not; a new request clears it.
+events.get("subagents:completed")({ id: "s2" });
+await hooks.get("before_agent_start")({ systemPromptOptions: { customPrompt: "# PI Coding Agent\n..." } });
+events.get("subagents:started")({ id: "g2", type: "general-purpose", description: "Docs" });
+events.get("subagents:completed")({ id: "g2", result: "See https://api-docs.deepseek.com/guides/thinking_mode/ and src/api/server.js:12." });
+const call = (toolName, input = {}) => hooks.get("tool_call")({ toolName, input });
+const first = await call("jina_read", { url: "https://api-docs.deepseek.com/guides/thinking_mode" });
+assert.equal(first.block, true, "first re-read of a cited source is blocked");
+assert.match(first.reason, /request it again and it will go through/);
+assert.equal(await call("jina_read", { url: "https://api-docs.deepseek.com/guides/thinking_mode" }), undefined, "asking again goes through");
+assert.equal((await call("read", { path: "/abs/repo/src/api/server.js" })).block, true, "absolute path matches a cited relative path");
+assert.equal(await call("jina_read", { url: "https://api-docs.deepseek.com/guides/tool_calls" }), undefined, "uncited sources stay free");
+assert.equal(await call("read", { path: "src/other.js" }), undefined);
+assert.equal(await call("edit", { path: "src/api/server.js" }), undefined, "edits of cited files are never blocked");
+assert.equal(await read("read", { path: "/Users/x/.pi/agent/skills/builder/SKILL.md" }), undefined, "harness files never get notes");
+await hooks.get("input")({ source: "interactive", text: "next ask" });
+assert.equal(await call("read", { path: "src/api/server.js" }), undefined, "a new request clears cited sources");
+events.get("subagents:completed")({ id: "unknown", result: "src/api/server.js" });
+assert.equal(await call("read", { path: "src/api/server.js" }), undefined, "only this session's research reports count");
+// Directories and home paths are never cited files (regression: /Users/j.henrique was blocked).
+assert.deepEqual([...m.citedTargets("Found /Users/j.henrique/.config/evolvera and /Users/j.henrique/EVOLVERA/Rally.").paths], []);
+assert.deepEqual([...m.citedTargets("see deploy/compose.yml and src/api/server.js:12").paths], ["deploy/compose.yml", "src/api/server.js"]);
+console.log("delegated-research-guard smoke: PASS");

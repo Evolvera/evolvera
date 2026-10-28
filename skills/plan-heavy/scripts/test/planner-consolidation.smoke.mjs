@@ -1,17 +1,6 @@
 import assert from "node:assert/strict";
-import {
-  access,
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-} from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,22 +11,22 @@ const finalDescription = "Plan-heavy final synthesis";
 await assert.rejects(access(removedAgent, constants.F_OK), "duplicate final planner agent must remain removed");
 
 const read = (relativePath) => readFile(path.join(root, relativePath), "utf8");
-const [planner, planHeavy, plannerSkill, system, systemMirror, watchdog] = await Promise.all([
+const [planner, planHeavy, plannerSkill, system, systemMirror, deadlinePatcher] = await Promise.all([
   read("agents/planner.md"),
   read("skills/plan-heavy/SKILL.md"),
   read("skills/planner/SKILL.md"),
   read("SYSTEM.md"),
   read("config/SYSTEM.md"),
-  read("extensions/subagent-watchdog.ts"),
+  read("scripts/patch-pi-subagents-bounded-waits.mjs"),
 ]);
 
-// Routing authority: normal planner follows frontmatter (Astra/medium); plan-heavy final
-// synthesis explicitly overrides effort to Astra/high. Static contract regression.
-assert.match(planner, /^model: openai-codex\/gpt-6-astra$/m);
-assert.match(planner, /^thinking: medium$/m);
-assert.match(planner, /^display_name: .*GPT-6 Astra · medium$/m);
-assert.match(planner, /Model: openai-codex\/gpt-6-astra medium\./);
-assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-sol|thinking:\s*(?:low|high|xhigh|max)\b/i, "planner frontmatter must carry no stale Sol/low/high/xhigh/max routing");
+// Routing authority: normal planner follows frontmatter (GPT-6.1 Sol/high); plan-heavy final
+// synthesis explicitly overrides to Astra/high. Static contract regression.
+assert.match(planner, /^model: openai-codex\/gpt-6\.1-sol$/m);
+assert.match(planner, /^thinking: high$/m);
+assert.match(planner, /^display_name: .*GPT-6\.1 Sol · high$/m);
+assert.match(planner, /Model: openai-codex\/gpt-6\.1-sol high\./);
+assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|gpt-6-sol|thinking:\s*(?:low|medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/6 Sol/low/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
@@ -74,9 +63,13 @@ assert.match(
 );
 assert.match(plannerSkill, /no hardcoded model or effort override/i);
 
-assert.match(watchdog, /const TARGET_AGENT = "planner"/);
-assert.match(watchdog, new RegExp(`const PLAN_HEAVY_DESCRIPTION = "${finalDescription}"`));
-assert.match(watchdog, /isPlanHeavyPlanner\(event\.type, event\.description\)/);
+assert.match(deadlinePatcher, /DEFAULT_AGENT_TIMEOUT_MS = 30 \* 60_000/);
+assert.match(deadlinePatcher, /PLANNER_TIMEOUT_MS = 60 \* 60_000/);
+assert.match(deadlinePatcher, /record\.type === "planner" \? PLANNER_TIMEOUT_MS/);
+assert.match(deadlinePatcher, /activeAttempts\.has\(id\)/);
+assert.match(deadlinePatcher, /signal: controller\.signal/);
+assert.match(deadlinePatcher, /record\.error !== ATTEMPT_TIMEOUT_REASON/);
+assert.doesNotMatch(planHeavy, /watchdog|watchdog remains scoped/i);
 
 async function collectActiveFiles(relativeDir) {
   const base = path.join(root, relativeDir);
@@ -106,61 +99,6 @@ for (const file of activeFiles) {
   assert.doesNotMatch(text, new RegExp(`\\b${staleAgentName}\\b`, "i"), `${path.relative(root, file)} has a stale agent route`);
 }
 
-const sandbox = await mkdtemp(path.join(tmpdir(), "planner-consolidation-smoke-"));
-const managerKey = Symbol.for("pi-subagents:manager");
-try {
-  const packageRoot = path.resolve(root, "../../npm-global/lib/node_modules/@earendil-works/pi-coding-agent");
-  const scopeDir = path.join(sandbox, "node_modules", "@earendil-works");
-  await mkdir(scopeDir, { recursive: true });
-  await symlink(packageRoot, path.join(scopeDir, "pi-coding-agent"), "dir");
-  const extensionCopy = path.join(sandbox, "subagent-watchdog.ts");
-  await cp(path.join(root, "extensions", "subagent-watchdog.ts"), extensionCopy);
-  const require = createRequire(import.meta.url);
-  const jitiPath = path.resolve(
-    root,
-    "../../npm-global/lib/node_modules/@tintinweb/pi-subagents/node_modules/jiti/lib/jiti.cjs",
-  );
-  const { createJiti } = require(jitiPath);
-  // STATEFUL RESOURCE PROOF: jiti's default `fsCache: true` writes a transpile cache into
-  // `node_modules/.cache/jiti` or `{TMP_DIR}/jiti` (jiti/lib/types.d.ts), which is not owned by this
-  // run. Disabling both caches keeps every write inside the run-created mkdtemp sandbox.
-  const jiti = createJiti(import.meta.url, { fsCache: false, moduleCache: false });
-  const mod = await jiti.import(extensionCopy);
-
-  assert.equal(mod.isPlanHeavyPlanner("planner", finalDescription), true);
-  assert.equal(mod.isPlanHeavyPlanner("planner", "Normal plan"), false);
-  assert.equal(mod.isPlanHeavyPlanner(staleAgentName, finalDescription), false);
-
-  const handlers = new Map();
-  const busHandlers = new Map();
-  const pi = {
-    appendEntry() {},
-    events: {
-      emit() {},
-      on(name, handler) {
-        busHandlers.set(name, handler);
-        return () => busHandlers.delete(name);
-      },
-    },
-    on(name, handler) {
-      handlers.set(name, handler);
-    },
-  };
-  mod.default(pi);
-  assert.ok(handlers.has("tool_call"));
-
-  let record = { type: "planner", description: finalDescription };
-  globalThis[managerKey] = { getRecord: () => record };
-  const blocked = await handlers.get("tool_call")({ toolName: "Agent", input: { resume: "plan-heavy-id" } });
-  assert.equal(blocked?.block, true);
-  assert.match(blocked?.reason ?? "", /Start a fresh planner run/);
-
-  record = { type: "planner", description: "Normal plan" };
-  const allowed = await handlers.get("tool_call")({ toolName: "Agent", input: { resume: "normal-id" } });
-  assert.equal(allowed, undefined, "normal planner resume behavior must remain unchanged");
-} finally {
-  delete globalThis[managerKey];
-  await rm(sandbox, { recursive: true, force: true });
-}
+await assert.rejects(access(path.join(root, "extensions/subagent-watchdog.ts"), constants.F_OK));
 
 console.log("planner consolidation smoke: PASS");

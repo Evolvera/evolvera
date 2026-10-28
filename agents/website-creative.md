@@ -1,9 +1,9 @@
 ---
 name: website-creative
-description: "Optional post-design creative director. Reads the approved design artifact, strategy brief, creative catalog, and creative-toolkit contract; selects a mapped additive interaction direction and writes one CREATIVE_DIRECTION addendum. Never rewrites design authority, writes copy, or plans implementation. Model: openai-codex/gpt-6-sol high."
-display_name: 🎬 Website Creative Director · GPT-6 Sol · high
+description: "Optional post-design creative director. Reads the approved design artifact, strategy brief, creative catalog, and creative-toolkit contract; selects a mapped additive interaction direction and writes one CREATIVE_DIRECTION addendum. Never rewrites design authority, writes copy, or plans implementation. Model: openai-codex/gpt-6.1-terra high."
+display_name: 🎬 Website Creative Director · GPT-6.1 Terra · high
 tools: read, grep, find, ls, bash, write, jina_read
-model: openai-codex/gpt-6-sol
+model: openai-codex/gpt-6.1-terra
 thinking: high
 max_turns: 50
 lifecycle: lazy
@@ -11,6 +11,7 @@ prompt_mode: replace
 inherit_context: false
 extensions: true
 skills: true
+exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---
 
 # Website Creative Director — Content-Fit Art Direction
@@ -83,6 +84,7 @@ what the interaction makes the user believe without changing the design system.
 - Dominant: [pattern or "none — restrained baseline"] + mapped existing zone
 - Accent 1 / Accent 2 (optional): pattern + mapped existing zone + confined role
 Never more than one dominant and two accents.
+State each chosen mechanic with its `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` term name (Scroll Behavior, Motion & Transitions, Typography) alongside its creative-catalog slug, e.g. Parallax → `parallax-depth`; creative-catalog/toolkit process is unchanged.
 
 ## 5. Mapped Intervention Table
 | Existing page/section/component | Design anchor | Pattern | Purpose class (orientation | continuity | state feedback | emphasis | narrative) | User/brand purpose | Additive behavior | Protected behavior preserved |

@@ -11,6 +11,12 @@ Builder is a delegated implementation family. Use `builder-light`, `builder`, `b
 
 Delegate implementation without overloading yourself, while preserving quality through narrow scope and explicit validation.
 
+## Keep the Task Small
+
+Hand off the smallest sufficient outcome, preserved capabilities, and observable acceptance—not an ambitious implementation menu. Every added mechanism needs a direct requirement or unavoidable verified constraint. Validation friction does not authorize product redesign, and resuming a task never waives the existing scope or workload limit.
+
+Keep validation proportional: inspect actual effects and choose the simplest safe, in-scope method. Resolve routine reversible details without permission questions; use run-owned resources when isolation is required. Labels and regenerability never waive the stateful-resource gate. Escalate only a concrete scope, safety, or evidence gap that cannot be resolved inside the approved boundary.
+
 ## Commit Scope
 
 Normally, one writing builder call maps to one selective commit: a cohesive SoC outcome with its write set and validation. The orchestrator commits after verification. Split or use planner only when real ownership, validation, rollback, or dependency boundaries make that clearer; review-only validators do not commit.
@@ -40,13 +46,13 @@ The cap applies to every tier, including `builder-heavy` and `builder-heavy-desi
 
 | Agent | Use When | Avoid When |
 |---|---|---|
-| `builder-light` | Spark medium deterministic tier: the task plus visible code fully determine the change (clear anchor, established pattern, exact validation): mechanical/multi-spot edits, small utilities, focused tests, tooling/scripts, exact pattern-following config/docs, reproduced local bug fixes. Multi-file is fine only for one mechanical concern with a bounded write set. | implicit cross-module contracts, broad code search, subtle state/lifecycle/concurrency, serialization compatibility, auth/data-flow judgment, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
+| `builder-light` | GPT-6 Luna medium deterministic tier: the task plus visible code fully determine the change (clear anchor, established pattern, exact validation): mechanical/multi-spot edits, small utilities, focused tests, tooling/scripts, exact pattern-following config/docs, reproduced local bug fixes. Multi-file is fine only for one mechanical concern with a bounded write set. | implicit cross-module contracts, broad code search, subtle state/lifecycle/concurrency, serialization compatibility, auth/data-flow judgment, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
 | `builder` | Luna high default for normal bounded implementation: code, APIs, tests, tooling, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance where ordinary module/API contracts must be understood. | relation/rule/declarative semantic modeling, visual judgment, or explicitly external/exceptional runtime work |
 | `builder-design` | Direct normal-complexity design tier: frontend/UI work, routine design-system application, plus bounded state/relation behavior, policy/rule composition, selector semantics, and reversible structural conversions with a clear oracle. | procedural API/streaming/lifecycle/serialization integration, high-risk operational correctness, formal/numerical work, advanced visual craft, or vague scope |
 | `builder-heavy` | Exceptional local multi-runtime coordination or bounded non-frontend work with concrete targets, a stated invariant/acceptance oracle, and evidence of exceptional formal/numerical/scientific/round-trip/adversarial difficulty. Host/SSH/deploy/network/provider/reload/rollback operations stay with the orchestrator unless the user explicitly asks for a subagent. | ordinary local code, auth/payment, migrations, config, shared files, multi-file changes, broad planning, or vague scope |
 | `builder-heavy-design` | Direct exceptional design tier for visual work or complex semantic/declarative tasks: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations. | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, vague scope, or normal tasks fitting `builder-design` |
 
-Route `builder-light` by determinism, not size: it is Spark medium and should execute only when the correct edit is fully determined by the task plus visible code. If broad search, implicit contracts, subtle semantics, ambiguity, or normal module/API understanding is needed, `builder` is the default. Choose a design tier only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for exceptional local multi-runtime integration or bounded non-frontend formal/numerical/scientific/compound-invariant work with an explicit oracle; host/external operations are executed by the orchestrator unless the user explicitly requests a subagent. Never select by backend, risk, auth/payment, migration, config, shared, or multi-file labels. Use design tiers when visual judgment or local semantic/declarative modeling dominates.
+Route `builder-light` by determinism, not size: it is GPT-6 Luna medium and should execute only when the correct edit is fully determined by the task plus visible code. If broad search, implicit contracts, subtle semantics, ambiguity, or normal module/API understanding is needed, `builder` is the default. Choose a design tier only for a local semantic/declarative model with a clear oracle. Select `builder-heavy` only for exceptional local multi-runtime integration or bounded non-frontend formal/numerical/scientific/compound-invariant work with an explicit oracle; host/external operations are executed by the orchestrator unless the user explicitly requests a subagent. Never select by backend, risk, auth/payment, migration, config, shared, or multi-file labels. Use design tiers when visual judgment or local semantic/declarative modeling dominates.
 
 A decision, verdict, classification, evidence index, or source-of-truth artifact needs separate `validator` review only for a named consequential escape risk. Static locally-decidable changes close with producer proof plus orchestrator diff review; file authority or importance alone selects neither `validator` nor `builder-heavy`.
 
@@ -105,12 +111,12 @@ Use only when the current task explicitly names an active `PLAN_DIR`/task file. 
 2. Select tasks with dependencies satisfied: writing dependencies need checkpoint hashes; review-only validator dependencies need a recorded `PASS`.
 3. Before launching any writing task, verify its `Proof` workload receipt shows at most two complex fronts, with two only when tightly coupled; more is `BLOCKED: BUILDER_COMPLEXITY_LIMIT` before delegation. Before launching a task with more than 20 declared changed paths or three or more semantic regions, also verify its `Proof` contains a grounded Wide-Task Receipt. It must show compatibility seams/cuts attempted and either a safe split or exact checkpoint evidence for atomicity. Missing or generic claims such as coupling, one typecheck/checkpoint, internal phases, or stronger model are `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`; never let one builder absorb an unproven wide scope.
 4. Require pre-edit recovery snapshots only where the schedule/task marks them: shared/large/preservation-critical files, dirty-file overlap, or destructive transformations. Clean tracked files rely on the selective checkpoint commit as the rollback boundary.
-5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. Prefer groups of 2–4; do not start one member and wait while another independent member is already ready.
+5. At each wave, compute all ready tasks, choose the largest safe group whose full write sets, recovery/build artifacts, validation resources, and external effects are disjoint, and launch that group concurrently in one orchestration message. 2–4 is a coordination preference, not a cap; do not start one member and wait while another independent member is already ready. Launch all safe, ready authoring together up to available capacity and do not leave independent ready work idle.
 6. Run dependent groups serially. A linked `validator` task runs only after its producer builder checkpoint; downstream work waits for `PASS`.
 7. After each builder, read the handover/status artifact, inspect the actual focused diff, and verify validation.
 8. If a writing task is COMPLETE and verified, create a checkpoint commit immediately with selective staging for only that task's target files plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts. Exclude transient TILL-DO/TODO files unless the task explicitly requires them tracked. Record the commit hash in `SCHEDULE.md`.
 9. For a review-only validator task, invoke `validator` with the exact producer checkpoint, changed surface, risk hypothesis, reconciled planning contract, and task validation contract. Record `PASS | BLOCKED` in the schedule/log; do not create an empty commit. `BLOCKED` pauses dependents. If the finding reveals a contract/semantic conflict or repair would remove/degrade an existing capability, return to orchestrator re-grounding/user decision—not a repair builder. Only an already-authorized bounded implementation defect returns to a builder, then reruns the same gate.
-10. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit; restore from the task's recovery snapshot or block for manual recovery.
+10. If diff review shows accidental deletion, broad rewrite, weakened tests, changed characterization oracle, removed handler/journey, or unrelated churn, do not commit. Revert only that task's own edits to its target files from the recovery snapshot or git, preserving pre-existing changes; if the damage reaches other files or state, or its origin is unclear, stop and treat it as an incident for read-only diagnosis.
 
 Example:
 
@@ -161,11 +167,7 @@ CONSTRAINTS
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
-- Keep concerns separated; do not mix unrelated cleanup/refactors/docs/config with this task
-- Reuse existing helpers before adding new ones; do not create a new abstraction before the third proven repetition unless existing architecture clearly requires it
-- Keep the solution simple/readable; avoid speculative flags, dependencies, APIs, or extension points
-- Add/update comments or docs only for non-obvious invariants, tricky logic, failure behavior, or operational usage
-- For behavior changes, prefer a failing/targeted test first or identify the existing test that covers the behavior
+- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI/DYC defaults, so do not restate them]
 - Do not touch files outside TARGET FILES unless blocked and reported
 - Treat every `NOT TO DO` item as a hard boundary; if success requires violating one, stop `BLOCKED` and report the exact conflict rather than expanding scope
 
@@ -179,7 +181,7 @@ CHECKPOINT
 After successful validation, orchestrator will commit only TARGET FILES plus explicitly tracked `.pi/build` deliverables and relevant `.pi/recovery` artifacts for this task. Transient TILL-DO/TODO files remain uncommitted unless this task explicitly requires them tracked.
 
 STOP RULES
-- Stop and report BLOCKED if required files are missing, tests cannot be run for environment reasons, or the requested change conflicts with existing behavior.
+- Stop and report BLOCKED if required files are missing or evidence required by the acceptance criteria cannot be obtained safely. First resolve routine environment obstacles within scope; when a non-required check cannot run, use the next best check and report the gap.
 - If task/gate semantics would remove or degrade an observed existing capability not explicitly classified CHANGE/REMOVE, report `BLOCKED: CONTRACT_CONFLICT`; do not edit production code or redefine tests.
 - Do not expand scope to adjacent improvements.
 ```
@@ -211,11 +213,11 @@ Every delegated prompt containing a potentially stateful command must include `S
 
 ## Parallelization
 
-Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. One goes direct; 2–5 clear units may use focused builders; more than ~5, or uncertain ownership/dependencies, is a strong signal to return to the planner skill so it can optimize the critical path once. This is a heuristic, not a cap.
+Before focused delegation, forecast coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. Commit count is a coordination hint, never an executor or cost proxy. Trivial known changes/lookups and already-ordered external operations stay direct; for substantial bounded implementation, prefer a suitable existing builder when expected parent work replaced exceeds handoff, integration, and likely rework overhead, even for one commit. Preserve 2–5 clear units as focused-delegation heuristic and more than ~5 as a strong planner signal when coordination is material. This is not a cap.
 
 For one coherent non-wide outcome, default to one builder within the two-complex-front admission limit; a large homogeneous or mechanical batch may stay one builder after proportional proof. A direct or planner-driven assignment with more than 20 declared changed paths or three or more semantic regions must first pass the Wide-Task Parallelization Gate: seek repository-supported compatibility seams and safe fan-out; if it remains atomic, require the exact Wide-Task Receipt. Internal phases or a stronger model do not satisfy this gate.
 
-Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, or configuration surface—with focused tests traveling alongside the production slice they verify. At each wave, launch all safe ready members together rather than serially dispatching independent work. Typical safe groups are 2–4; launch a later group only when remaining tasks were blocked on a dependency, not to fill slots.
+Parallelize independent implementation slices by SoC—component/module, API endpoint, domain consumer, UI surface, configuration surface, or test authoring—with production tests traveling with their concern by default. All safe, ready authoring is launched together, not just scouting; capacity is a ceiling, not a target. Parallel test authoring is permitted only after the observable contract is settled, with disjoint full test/implementation write sets, isolated validation resources, and no dependence on unresolved implementation choices. Execute implementation-dependent tests only against the ready combined producer checkpoint; syntax-only or blocked tests never establish acceptance. Do not create independently invalid test-only planner tasks or weaken checkpoint validity; focused contributors may form one coherent combined checkpoint when separately authored results cannot pass alone. Serialize real prerequisites, contract transitions, shared writes/resources, or external effects; a shared unchanged settled interface alone is not a dependency.
 
 Run builders in parallel only when:
 - full write sets are disjoint, including registries, manifests, lockfiles, generated/recovery/build artifacts, and shared configuration;
@@ -224,12 +226,12 @@ Run builders in parallel only when:
 - each task has exact targets, independent recovery/commit scope, and validation.
 
 Run serially when:
-- any source, registry, config, lockfile, migration, shared type/API contract, validation resource, or external environment overlaps;
+- any source, registry, config, lockfile, migration, shared writable type/API file, unsettled contract transition, validation resource, or external environment overlaps; a read-only consumer of an unchanged settled interface does not by itself force serial work;
 - task B depends on task A or its validator `PASS`;
 - deployment, provider, network, staging/production, reload, rollback, or another external side effect is involved;
 - validation from one task determines the next.
 
-Do not parallelize merely to fill slots. Prefer a smaller number of coherent, independently verifiable builders over overlapping work; use isolated worktrees when parallel branches require them.
+Do not split work that shares a write set or a contract. Independent parts with their own write sets run on separate builders at the same time, and an outcome too large for one builder is cut along its areas.
 
 ## Prompt Quality Checklist
 
@@ -241,7 +243,7 @@ Before spawning builder, verify:
 - [ ] Target files are listed.
 - [ ] Constraints/out-of-scope are explicit.
 - [ ] Preservation constraints are explicit: affected existing capabilities are classified PRESERVE/CHANGE/REMOVE, and no test oracle may be rewritten to conceal an unapproved regression.
-- [ ] Engineering constraints are explicit: SoC boundary, DYC needs, DRY/Rule-of-Three decision, KISS/YAGNI limits, and TDD/test-first expectation.
+- [ ] Task-specific engineering constraints are explicit; general defaults the builder agent already carries are not restated.
 - [ ] Pre-edit recovery snapshots are required where the task marks them (shared/large/preservation-critical, dirty overlap, destructive transforms).
 - [ ] Validation command/check is included.
 - [ ] Every potentially stateful validation has `STATEFUL RESOURCE PROOF`; `UNKNOWN` or pre-existing data means the command will not run.
@@ -251,22 +253,25 @@ Before spawning builder, verify:
 - [ ] Task is small enough for a delegated model; if it declares more than 20 changed paths or spans three or more semantic regions, its grounded Wide-Task Receipt proves the split or exact atomicity, otherwise stop `BLOCKED: WIDE_TASK_DECOMPOSITION_UNPROVEN`.
 - [ ] If using `builder-light`, the correct change is fully determined by the task plus visible code (anchor, pattern, exact validation), every API/package/symbol can be verified narrowly, no broad discovery/contract judgment is required, and any frontend change is a tiny exact mechanical tweak.
 - [ ] If using `builder-design`, task is bounded and either has concrete visual criteria or a clear normal-complexity semantic/declarative oracle (state/relation, policy/rule, selector, reversible structure).
-- [ ] If using `builder-heavy`, task is bounded and dominated by an explicit external/host operation, exceptional live multi-runtime coordination, or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
+- [ ] If using `builder-heavy`, task is bounded and dominated by exceptional local multi-runtime coordination or intrinsic exceptional formal/numerical/scientific/round-trip/adversarial complexity with a known invariant/acceptance oracle; an external/host operation qualifies only when the user explicitly asked a subagent to perform it. If targets or oracle are unknown, scout/planner first; visual work uses the design tiers.
 - [ ] If using `builder-heavy-design`, task is bounded and either exceptionally design-sensitive with grounded visual criteria or complex semantic/declarative work with a clear state/relation/rule/grammar/structure oracle.
 
-If more than two boxes are missing, do more prep or implement directly.
+Every applicable box must be satisfied before launch; mark a conditional box not applicable only with a reason. A missing box means more prep or direct implementation, never a launch that skips it.
 
 ## Result Handling
 
 After a producer builder finishes:
-- treat `COMPLETE` as ready for integration/testing, not automatic closure of the user's outcome;
-- inspect actual diff, not just its summary;
+- treat `COMPLETE` as ready for integration/testing, not automatic closure of the user's outcome; the writing builder owns implementation, focused validation, and in-scope corrections through acceptance;
+- inspect actual diff and exact-head proof, not just its summary; verify decisive anchors and integration delta rather than blanket re-investigation, with focused rereads for contradictions or quality gaps;
+- return concrete local defects to the same builder; do not write the same files in parallel. Take over/reroute only if the owner is unavailable, genuinely blocked, capability-mismatched, or a known trivial repair is clearly cheaper/faster, and explicitly reassign ownership first;
+- separate contract/safety decisions from engineering repairs; preserve two-failure re-grounding and proper tier escalation;
 - check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;
+- takeover or reroute never bypasses a safety, authorization, or scope gate; explicitly reassign ownership first and take over only for an unavailable owner, genuine blockage/capability mismatch, or a clearly cheaper known trivial fix;
 - decide proportionately whether producer evidence closes the outcome: without a PR, static/mechanical work with deterministic proof plus orchestrator diff review is closed—do not add QA or validator merely because the file is a system prompt, agent, skill, config, policy, or source of truth; run an obvious deterministic integration check directly only after the stateful-resource gate proves it safe; when independent edge/error, integration, browser, or runtime proof materially improves confidence, load `testing`, select `CORE` or `FULL`, and launch one fresh dedicated `qa` session against the exact checkpoint; a validator runs only for an already-linked named escape risk or final PR gate;
-- if builder returns empty/no-op, retry once with a smaller prompt or switch model;
+- if builder returns empty or reports no change, first check the current state against acceptance: if it is already satisfied, close with that evidence; otherwise identify the cause and retry once only with a concrete correction (missing context, smaller scope, or a better-suited tier);
 - if it fails twice or caused destructive churn, stop delegating and diagnose before continuing.
 
 ## Examples
@@ -293,6 +298,9 @@ TARGET FILES
 - src/utils/parser.ts — MODIFY null handling only
 - src/utils/parser.test.ts — MODIFY/ADD focused test if missing
 
+NOT TO DO
+- No change to other parser behavior, exports, or files; stop BLOCKED if the fix needs one.
+
 VALIDATION
 Run: npm test -- src/utils/parser.test.ts
 
@@ -317,6 +325,6 @@ Agent({ subagent_type: "builder-light", run_in_background: true, description: "P
 | One builder for UI + API + DB | Split by concern and dependencies |
 | No validation command | Include targeted test or explain why none exists |
 | Broad refactor request | Use planner first |
-| Subtle state/lifecycle/compat work routed to `builder-light` | Route Spark by determinism, not size: use `builder`, or `builder-heavy` when the task is bounded but operationally complex |
+| Subtle state/lifecycle/compat work routed to `builder-light` | Route the light tier by determinism, not size: use `builder`, or `builder-heavy` when the task is bounded but operationally complex |
 | A light tier allowed to infer APIs/packages/contracts | Require grep/package verification before implementation |
 | Trusting builder summary only | Check diff and diagnostics |

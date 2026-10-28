@@ -1,483 +1,483 @@
-# Guia de Produção para Fine-Tuning de Extração Semântica de Broker
+# Production Guide for Broker Semantic Extraction Fine-Tuning
 
-**Data do documento:** 2026-07-22  
-**Status:** guia de pesquisa e decisão; não é autorização de deploy, execução de ordens, abertura de GENERALIZATION ou mutação de APIs externas.
+**Document date:** 2026-07-22
+**Status:** research and decision guide; not authorization to deploy, execute orders, open GENERALIZATION, or mutate external APIs.
 
-> **Veredito executivo — pare de ajustar o 0,8B atual.** O próximo movimento correto não é trocar learning rate, rank, prompt ou número de épocas. É fechar primeiro os gates de dados, rótulos e proveniência: auditar a cobertura real, adjudicar rótulos críticos, provar independência entre geradores e splits, e congelar um pool futuro-real. O Task97 é estruturalmente válido, porém semanticamente inseguro e reprovado; portanto não pode ser implantado. O 0,8B só volta à experimentação em G5, uma vez concluídos G0–G4. Escalar capacidade antes disso não distingue ausência de evidência de insuficiência do modelo.
+> **Executive verdict — stop tuning the current 0.8B.** The correct next move is not to change the learning rate, rank, prompt, or number of epochs. First close the data, label, and provenance gates: audit actual coverage, adjudicate critical labels, prove independence across generators and splits, and freeze a future-real pool. Task97 is structurally valid but semantically unsafe and rejected; therefore, it cannot be deployed. The 0.8B returns to experimentation only at G5, after G0–G4 are complete. Scaling capacity before then does not distinguish lack of evidence from model insufficiency.
 
 ## Executive Summary
 
-**FACT — resultado atual.** O Task97 treinou uma base fresca Qwen3.5-0.8B com LoRA BF16, `r=8`, `alpha=16`, learning rate `1e-5`, seed `17`, contexto medido até o contrato de `1984` tokens e `3537` atualizações. Com XGrammar, a saída foi válida em `100/100`, sem saída inválida e sem atingir o cap. Isso não foi suficiente: a acurácia operacional full foi `0,18`, a exatidão de evento `0,59`, a exatidão de ação aproximadamente `0,229`, a exatidão de ação guardada `0`, houve `41` linhas de falsa ação, `38` falsos EXIT e `18` seletores ampliados. O gate passou como `false`. A conclusão de produção é inequívoca: o candidato falha e não pode ser implantado.
+**FACT — current result.** Task97 trained a fresh Qwen3.5-0.8B base with LoRA BF16, `r=8`, `alpha=16`, learning rate `1e-5`, seed `17`, context measured against the `1984`-token contract, and `3537` updates. With XGrammar, output was valid in `100/100` cases, with no invalid output and no cap hit. This was not sufficient: full operational accuracy was `0,18`, event exactness `0,59`, action exactness approximately `0,229`, guarded-action exactness `0`; there were `41` false-action rows, `38` false EXITs, and `18` broadened selectors. The gate passed as `false`. The production conclusion is unequivocal: the candidate fails and cannot be deployed.
 
-**FACT — o que o resultado não significa.** O Task96 foi apenas um smoke test de runtime, sem modelo carregado, treino ou predições: verificou `100/100` correspondências esperadas, `5/5` bases válidas e rejeitou `11/11` probes inválidos. Ele demonstra um fechamento técnico do decoder naquela execução, não capacidade semântica do modelo. Também é facto que o runner atual usa rótulos com perda somente na completion e faz uma geração determinística por linha. Assim, “o prompt foi perdido na loss” não é um diagnóstico suportado; o runner não deve ser falsamente acusado de perda dos tokens do prompt.
+**FACT — what the result does not mean.** Task96 was only a runtime smoke test, with no model loaded, training, or predictions: it verified `100/100` expected matches, `5/5` valid bases, and rejected `11/11` invalid probes. It demonstrates technical decoder closure in that run, not semantic model capability. It is also a fact that the current runner uses labels with loss only on the completion and performs one deterministic generation per row. Thus, “the prompt was lost in the loss” is not a supported diagnosis; the runner must not be falsely accused of losing prompt tokens.
 
-**FACT + INFERENCE qualificada — diagnóstico forense.** O V58 mostra uma hipótese forte de cobertura insuficiente: há `3.585` linhas real/source e apenas cinco sintéticas no TRAIN; entre `374` boards reais, `372` são SIGNAL e apenas um é UPDATE. Células críticas reais, incluindo composição de ações, boards com EXIT, guardas e múltiplas ações, estão vazias ou extremamente esparsas; a maior parte da cobertura crítica sintética está concentrada nessas cinco linhas. Os dados indicam uma causa de cobertura e prior, mas não provam que ela seja a causa única. Qualidade dos rótulos, independência dos geradores, capacidade do 0,8B e distribuição de inferência continuam UNKNOWN.
+**FACT + qualified INFERENCE — forensic diagnosis.** V58 presents a strong hypothesis of insufficient coverage: TRAIN contains `3.585` real/source rows and only five synthetic rows; among `374` real boards, `372` are SIGNAL and only one is UPDATE. Critical real cells, including action composition, boards with EXIT, guards, and multiple actions, are empty or extremely sparse; most synthetic critical coverage is concentrated in those five rows. The data indicate a coverage and prior cause, but do not prove it is the sole cause. Label quality, generator independence, 0.8B capacity, and inference distribution remain UNKNOWN.
 
-**POLÍTICA DE DECISÃO.** O programa segue G0–G9: (G0) congelar e rejeitar Task97; (G1) auditoria privada de cobertura e rótulos; (G2) provar split, independência de gerador e pool futuro-real; (G3) construir TRAIN canônico, real-heavy, com sintéticos independentemente autorizados e negativos pareados; (G4) estabelecer um teto offline humano/teacher forte, com adjudicação humana; (G5) retreinar uma única vez o 0,8B sob o contrato limpo; (G6) somente se os gates de dados estiverem limpos e persistir uma lacuna de capacidade, comparar primeiro um modelo denso instruct de aproximadamente 4B e depois aproximadamente 8B, sempre com exatamente os mesmos dados, prompt, schema e decoder; (G7) replicar; (G8) abrir uma única vez GENERALIZATION e um holdout real suficientemente dimensionado; (G9) executar shadow futuro-real sem ordens, deixando qualquer canary para autorização explícita posterior.
+**DECISION POLICY.** The program follows G0–G9: (G0) freeze and reject Task97; (G1) private coverage and label audit; (G2) prove the split, generator independence, and future-real pool; (G3) build canonical, real-heavy TRAIN with independently authorized synthetics and matched negatives; (G4) establish a strong offline human/teacher ceiling, with human adjudication; (G5) retrain the 0.8B once under the clean contract; (G6) only if data gates are clean and a capacity gap persists, first compare a dense instruct model of approximately 4B and then approximately 8B, always with exactly the same data, prompt, schema, and decoder; (G7) replicate; (G8) open GENERALIZATION once and use a sufficiently sized real holdout; (G9) run future-real shadow without orders, leaving any canary for later explicit authorization.
 
-**LIMITAÇÃO MATERIAL.** “Perfeito” será definido aqui como ausência de erro observada em um produto congelado, com exact match operacional e gates de segurança satisfeitos. Isso nunca equivale a perfeição universal. Mesmo zero falhas em `100` exemplos independentes dá, a 95% unilateral, limite superior de erro de aproximadamente `2,95%`; além disso, rows correlacionadas, shift temporal, erro humano de anotação e contaminação tornam a interpretação mais fraca. NIST recomenda conjuntos realistas, representativos, metodologia documentada e resultados desagregados por segmentos, não um número isolado [6]. O resultado desta pesquisa é uma disciplina para tornar falsificável a próxima decisão, não uma promessa de acurácia futura.
+**MATERIAL LIMITATION.** “Perfect” is defined here as no observed errors on a frozen product, with operational exact match and safety gates satisfied. This never amounts to universal perfection. Even zero failures in `100` independent examples gives a one-sided 95% upper error bound of approximately `2,95%`; moreover, correlated rows, temporal shift, human annotation error, and contamination weaken the interpretation. NIST recommends realistic, representative datasets, documented methodology, and results disaggregated by segment, not a single number [6]. The result of this research is a discipline for making the next decision falsifiable, not a promise of future accuracy.
 
-**NÃO AUTORIZA.** Este guia não autoriza abrir GENERALIZATION, promover modelo, executar broker, enviar ordens, mutar Google APIs, publicar dados privados ou reutilizar adapters, predições, mensagens, símbolos, identificadores ou segredos. O harness continua dono de identidade, estado, risco e execução.
+**NOT AUTHORIZATION.** This guide does not authorize opening GENERALIZATION, promoting a model, operating a broker, sending orders, mutating Google APIs, publishing private data, or reusing adapters, predictions, messages, symbols, identifiers, or secrets. The harness remains the owner of identity, state, risk, and execution.
 
-## 1. Escopo, definição de “perfeito” e vocabulário de evidência
+## 1. Scope, definition of “perfect,” and evidence vocabulary
 
-### 1.1 Objetivo exato
+### 1.1 Exact objective
 
-O produto é um extrator semântico privado para uma única chamada de `generate` por entrada. Ele recebe a mensagem corrente e o contexto permitido pelo contrato e emite um único objeto JSON final em inglês, com chaves e enums definidos pelo schema imutável. A saída é uma representação operacional de intenção, não uma ordem de broker e não uma fonte de verdade sobre conta, posição ou risco.
+The product is a private semantic extractor that makes a single `generate` call per input. It receives the current message and the context permitted by the contract, and emits a single final JSON object in English, with keys and enums defined by the immutable schema. The output is an operational representation of intent, not a broker order and not a source of truth about account, position, or risk.
 
-O alvo é simultaneamente:
+The target must simultaneously:
 
-1. compreender a intenção autorizável da mensagem corrente;
-2. manter literalidade, escopo, ordem, guardas e evidência textual;
-3. não transformar comentário, histórico, citação, contexto pai ou hipótese em ação;
-4. representar `NO_ACTION` quando os factos são úteis mas não autorizam ação;
-5. respeitar exatamente o schema, sem pós-processamento que masque erro;
-6. entregar ao harness informação suficiente, sem entregar decisões que pertencem a ele.
+1. understand the authorizable intent of the current message;
+2. preserve literal wording, scope, order, guards, and textual evidence;
+3. not turn commentary, history, quotations, parent context, or hypotheses into actions;
+4. represent `NO_ACTION` when facts are useful but do not authorize action;
+5. follow the schema exactly, without post-processing that masks errors;
+6. provide the harness with sufficient information without making decisions that belong to it.
 
-### 1.2 O que “perfeito” pode e não pode significar
+### 1.2 What “perfect” can and cannot mean
 
-**FACT DE MEDIÇÃO.** Para um dataset congelado, “perfeito observado” significa: cada exemplo recebe um objeto que passa o parse estrito, passa o Draft 2020-12 original, coincide com o alvo canônico no exact match operacional e não produz falsa ação, falso EXIT ou ampliação de selector. Componentes como evento, literal ou guard podem explicar falhas, mas não substituem o exact match.
+**MEASUREMENT FACT.** For a frozen dataset, “observed perfection” means that every example receives an object that passes strict parsing, passes the original Draft 2020-12 schema, matches the canonical target on operational exact match, and produces no false action, false EXIT, or selector broadening. Components such as event, literal, or guard may explain failures, but do not replace exact match.
 
-**INFERENCE DE QUALIDADE.** Esse conceito é útil como gate de release de um produto finito. Ele permite dizer “não observamos erro neste produto, sob esta configuração e este protocolo”, desde que o produto seja independente, seus denominadores sejam publicados e sua proveniência esteja congelada. Não permite dizer “o modelo é universalmente perfeito”.
+**QUALITY INFERENCE.** This concept is useful as a release gate for a finite product. It supports saying “we observed no errors on this product, under this configuration and protocol,” provided the product is independent, its denominators are published, and its provenance is frozen. It does not support saying “the model is universally perfect.”
 
-A perfeição universal é impossível de estabelecer por quatro razões:
+Universal perfection cannot be established for four reasons:
 
-- **População aberta:** mensagens futuras podem conter linguagem, composição, ruído, canal ou regime que não existe na amostra.
-- **Dependência amostral:** várias mensagens podem ser variações do mesmo thread, autor, template ou episódio; o `n` nominal superestima evidência.
-- **Rótulos não são observação perfeita:** humanos podem discordar, o contexto pode ser insuficiente e o schema pode não representar uma distinção semântica. A anotação precisa revelar incerteza, não escondê-la.
-- **O sistema muda ao redor do modelo:** tokenizer, versão do decoder, chat template, harness, fontes e distribuição operacional podem mudar. O risco de laboratório pode diferir do risco em operação real [6].
+- **Open population:** future messages may contain language, composition, noise, channels, or regimes absent from the sample.
+- **Sample dependence:** multiple messages may be variations of the same thread, author, template, or episode; nominal `n` overstates the evidence.
+- **Labels are not perfect observations:** humans may disagree, context may be insufficient, and the schema may not represent a semantic distinction. Annotation must reveal uncertainty, not hide it.
+- **The system around the model changes:** tokenizer, decoder version, chat template, harness, sources, and operational distribution may change. Laboratory risk may differ from real-world operational risk [6].
 
-“Perfeito” também não significa que a saída seja verdadeira sobre o mundo externo. JSON Schema define asserções e anotações sobre instâncias; validação do objeto não verifica saldo, identidade da posição, corretagem ou realidade de um preço [9]. XGrammar restringe estrutura, não factualidade ou semântica da tarefa [11].
+“Perfect” also does not mean that the output is true about the external world. JSON Schema defines assertions and annotations about instances; validating the object does not verify balance, position identity, brokerage, or whether a price is real [9]. XGrammar constrains structure, not factuality or task semantics [11].
 
-### 1.3 Marcação obrigatória
+### 1.3 Required labeling
 
-Toda afirmação deste guia usa uma das três classes:
+Every claim in this guide uses one of three classes:
 
-- **FACT:** observado no artefato do projeto ou suportado diretamente pela fonte publicada citada.
-- **INFERENCE:** conclusão de trabalho derivada dos factos; tem caveat explícito e deve ser testada.
-- **UNKNOWN:** não resolvido pelos artefatos; não pode ser apresentado como facto nem usado para justificar escala.
+- **FACT:** observed in a project artifact or directly supported by the cited published source.
+- **INFERENCE:** working conclusion derived from facts; it has an explicit caveat and must be tested.
+- **UNKNOWN:** unresolved by the artifacts; it cannot be presented as fact or used to justify scaling.
 
-Quando uma recomendação é política do produto, ela é marcada como **POLÍTICA DO PROJETO**. Uma política pode ser mais conservadora que a literatura e não deve ser descrita como resultado publicado.
+When a recommendation is product policy, it is marked **PROJECT POLICY**. A policy may be more conservative than the literature and must not be described as a published result.
 
-## 2. Diagnóstico forense atual
+## 2. Current forensic diagnosis
 
-### 2.1 Task97: estrutura aprovada, semântica reprovada
+### 2.1 Task97: structure passed, semantics failed
 
-| Item | Resultado | Classe | Consequência |
+| Item | Result | Class | Consequence |
 |---|---:|---|---|
-| Base | fresca, Qwen3.5-0.8B | FACT do projeto | evita confundir herança de adapter com treino atual |
-| LoRA | BF16, `r=8`, `alpha=16`, dropout `0` | FACT do projeto | é a configuração auditada, não uma recomendação universal |
-| Otimização | LR `1e-5`, seed `17`, `3537` updates | FACT do projeto | não autoriza concluir que LR/capacidade são causa |
-| Decoder | XGrammar `0.1.32`, cap `0` | FACT do projeto | gate estrutural/runtime positivo nesta execução |
-| JSON/schema válido | `100/100`; inválido `0` | FACT do projeto | pré-condição, não qualidade semântica |
-| Evento exact | `0,59` | FACT do projeto | erro de classificação semântica relevante |
-| Operacional full exact | `0,18` | FACT do projeto | falha de produto |
-| Ação exact | aproximadamente `0,229` | FACT do projeto | falha de extração acionável |
-| Guarded action | `0` | FACT do projeto | célula crítica sem evidência de competência |
-| Falsa ação / falso EXIT | `41` / `38` | FACT do projeto | bloqueio de segurança |
-| Selector ampliado | `18` | FACT do projeto | violação de escopo/literalidade |
+| Base | fresh, Qwen3.5-0.8B | project FACT | avoids confusing adapter inheritance with current training |
+| LoRA | BF16, `r=8`, `alpha=16`, dropout `0` | project FACT | this is the audited configuration, not a universal recommendation |
+| Optimization | LR `1e-5`, seed `17`, `3537` updates | project FACT | does not authorize concluding that LR/capacity is the cause |
+| Decoder | XGrammar `0.1.32`, cap `0` | project FACT | positive structural/runtime gate in this run |
+| Valid JSON/schema | `100/100`; invalid `0` | project FACT | precondition, not semantic quality |
+| Event exact | `0,59` | project FACT | material semantic classification error |
+| Full operational exact | `0,18` | project FACT | product failure |
+| Action exact | approximately `0,229` | project FACT | actionable extraction failure |
+| Guarded action | `0` | project FACT | critical cell with no evidence of competence |
+| False action / false EXIT | `41` / `38` | project FACT | safety blocker |
+| Broadened selector | `18` | project FACT | scope/literalness violation |
 
-**Conclusão:** `valid=100%` não compensa `operational=0,18` nem falhas de segurança. Não há base para selecionar Task97, abrir GENERALIZATION ou testar execução.
+**Conclusion:** `valid=100%` does not compensate for `operational=0,18` or safety failures. There is no basis for selecting Task97, opening GENERALIZATION, or testing execution.
 
-### 2.2 Task96: smoke, não modelo
+### 2.2 Task96: smoke test, not a model
 
-O Task96 teve `status=PASS` para o smoke técnico, com zero updates, zero losses e zero modelo treinado ou carregado. O runner aceitou `5/5` bases válidas, encontrou `100/100` correspondências esperadas e rejeitou `11/11` valores inválidos. **FACT:** esse é um resultado do decoder e do fechamento de runtime, não uma medição de extração. Não se deve misturar Task96 com um benchmark de modelo nem usar `100/100` como evidência de semântica.
+Task96 had `status=PASS` for the technical smoke test, with zero updates, zero losses, and no model trained or loaded. The runner accepted `5/5` valid bases, found `100/100` expected matches, and rejected `11/11` invalid values. **FACT:** this is a decoder and runtime-closure result, not an extraction measurement. Task96 must not be conflated with a model benchmark, and `100/100` must not be used as semantic evidence.
 
-### 2.3 O runner e a hipótese incorreta de perda do prompt
+### 2.3 The runner and the incorrect prompt-loss hypothesis
 
-**FACT:** o caminho de treino em `train_unsloth_qwen35_08b_v62.py` renderiza prompt e completion usando o chat template exato, verifica a fronteira tokenizada, rejeita truncamento, mascara os tokens do prompt com `-100` e calcula a loss causal somente nos tokens não mascarados da completion. O caminho de inferência constrói a entrada corrente, chama `model.generate` uma vez por row, com `do_sample=False`, e decodifica apenas os tokens novos.
+**FACT:** the training path in `train_unsloth_qwen35_08b_v62.py` renders the prompt and completion using the exact chat template, verifies the tokenized boundary, rejects truncation, masks prompt tokens with `-100`, and computes causal loss only on the unmasked completion tokens. The inference path constructs the current input, calls `model.generate` once per row with `do_sample=False`, and decodes only the new tokens.
 
-**POLÍTICA DO PROJETO:** manter completion-only loss. A entrada deve continuar sendo prompt; a saída canônica deve continuar sendo a única completion supervisionada. Testes unitários devem verificar a máscara, mas não se deve “corrigir” uma falha semântica alegando prompt-token loss sem evidência de violação. O que continua UNKNOWN é a suficiência de capacidade, a qualidade de labels, a composição dos dados e a estabilidade CUDA em configurações futuras.
+**PROJECT POLICY:** keep completion-only loss. The input must remain the prompt; the canonical output must remain the only supervised completion. Unit tests should verify the mask, but a semantic failure must not be “fixed” by claiming prompt-token loss without evidence of a violation. What remains UNKNOWN is capacity sufficiency, label quality, data composition, and CUDA stability in future configurations.
 
-**FACT:** o preflight mede o envelope completo sem `truncation=True`, confere a fronteira e aborta se houver risco. Isso é uma proteção de treino, não uma prova de que o envelope futuro de produção nunca será maior. A cada versão, executar zero-truncation preflight no conjunto real de referência e no envelope operacional medido.
+**FACT:** the preflight measures the complete envelope without `truncation=True`, checks the boundary, and aborts if there is a risk. This is a training safeguard, not proof that the future production envelope will never be larger. For each version, run a zero-truncation preflight on the real reference set and measured operational envelope.
 
-### 2.4 Cobertura V58: evidência forte, causa ainda não provada
+### 2.4 V58 coverage: strong evidence, cause not yet proven
 
-O V58 é uma análise agregada e não publica texto privado, símbolos, predições ou envelopes. Seus factos principais são:
+V58 is an aggregate analysis and does not publish private text, symbols, predictions, or envelopes. Its main facts are:
 
-- TRAIN tem `3.590` rows: `3.585` real/source e cinco sintéticas.
-- Entre `374` boards real/source, `372` são SIGNAL, um é UPDATE e um é NO_ACTION.
-- Existem zero exemplos real/source de board com partial+breakeven na combinação crítica; as poucas ocorrências desse board vêm de sintéticos.
-- A tabela crítica reporta zero real para board partial+BE nas posições first/middle/last, board guarded, board full EXIT, duas atualizações acionáveis mais proxy neutro e composição de partial+BE com EXIT separado.
-- Para o cell board partial+BE com proxy não correspondido/distractor, o TRAIN tem `0 real + 3 sintéticos` e o DEVELOPMENT demanda um caso singleton.
-- Há `264` controles real/source não-board partial+breakeven, mas isso não substitui boards reais; a composição e o contexto importam.
+- TRAIN has `3.590` rows: `3.585` real/source and five synthetic.
+- Among `374` real/source boards, `372` are SIGNAL, one is UPDATE, and one is NO_ACTION.
+- There are zero real/source examples of boards with partial+breakeven in the critical combination; the few occurrences of this board come from synthetics.
+- The critical table reports zero real examples for board partial+BE in first/middle/last positions, guarded board, full EXIT board, two actionable updates plus neutral proxy, and composition of partial+BE with separate EXIT.
+- For the board partial+BE cell with unmatched proxy/distractor, TRAIN has `0 real + 3 synthetic` and DEVELOPMENT requires a singleton case.
+- There are `264` real/source non-board partial+breakeven controls, but these do not replace real boards; composition and context matter.
 
-**INFERENCE:** o prior de treino pode ensinar que board é quase sempre SIGNAL e que combinações críticas são sintéticas. Isso explica plausivelmente supressão de ações e falhas de composição. **Não é prova de causa única.** O parser de cobertura é deliberadamente conservador e seu baixo mapeamento não permite concluir que linhas não mapeadas sejam neutras. Label quality, generator/source independence, capacidade e inferência permanecem gates abertos.
+**INFERENCE:** the training prior may teach that a board is almost always SIGNAL and that critical combinations are synthetic. This plausibly explains action suppression and composition failures. **It is not proof of a single cause.** The coverage parser is deliberately conservative, and its low mapping rate does not allow concluding that unmapped rows are neutral. Label quality, generator/source independence, capacity, and inference remain open gates.
 
-### 2.5 DEVELOPMENT, GENERALIZATION e adaptatividade
+### 2.5 DEVELOPMENT, GENERALIZATION, and adaptivity
 
-**FACT:** DEVELOPMENT é adaptativo: foi usado para decisões e análises anteriores. Logo, um resultado nele é regressão/desenvolvimento, não generalização independente. **FACT:** GENERALIZATION100 está em estado freeze-only e não foi aberta pelo candidato Task97; a ausência de avaliação do candidato não é um sucesso nem um fracasso estatístico.
+**FACT:** DEVELOPMENT is adaptive: it was used for prior decisions and analyses. Therefore, a result on it is regression/development evidence, not independent generalization. **FACT:** GENERALIZATION100 is freeze-only and was not opened by candidate Task97; the absence of candidate evaluation is neither success nor statistical failure.
 
-**POLÍTICA:** manter GENERALIZATION fechada até que código, prompt, schema, dados, modelo, decoder, thresholds e seeds pré-registrados estejam congelados. Uma vez aberta, usá-la uma única vez por candidato final. Um futuro holdout temporal, por origem e por thread, amostrado de mensagens reais ainda não usadas é obrigatório; uma suite sintética nunca o substitui.
+**POLICY:** keep GENERALIZATION closed until code, prompt, schema, data, model, decoder, thresholds, and preregistered seeds are frozen. Once opened, use it only once per final candidate. A future holdout sampled from unused real messages and disjoint by time, source, and thread is mandatory; a synthetic suite never replaces it.
 
-### 2.6 Diagnóstico concorrente
+### 2.6 Competing diagnoses
 
-| Hipótese | Evidência a favor | O que ainda falta | Decisão atual |
+| Hypothesis | Supporting evidence | What is still missing | Current decision |
 |---|---|---|---|
-| Problema de dados/cobertura | boards reais quase só SIGNAL; cells críticos vazios | auditoria privada e ablação causal | G1–G3 primeiro |
-| Problema de rótulo | misturas históricas, contexto e contrato podem divergir | dupla anotação, adjudicação e ledger | G1/G4 |
-| Problema de independência | variantes sintéticas podem compartilhar família/template | fingerprints semânticos e autor independente | G2/G3 |
-| Problema de capacidade | 0,8B pode falhar em composição após dados limpos | ceiling limpo e comparação controlada | só G6 |
-| Problema de optimizer | seed/CUDA e loss não predizem exactness | uma família por vez, replicação | não fazer busca agora |
-| Problema decoder/runtime | schema root e integração podem falhar sem constraint | probes diferenciais e runtime exato | Task96 positivo; regressão contínua |
+| Data/coverage problem | real boards are almost all SIGNAL; critical cells are empty | private audit and causal ablation | G1–G3 first |
+| Label problem | historical mixes, context, and contract may diverge | double annotation, adjudication, and ledger | G1/G4 |
+| Independence problem | synthetic variants may share a family/template | semantic fingerprints and independent authorship | G2/G3 |
+| Capacity problem | 0.8B may fail on composition after data are clean | clean ceiling and controlled comparison | G6 only |
+| Optimizer problem | seed/CUDA and loss do not predict exactness | one family at a time, replication | do not search now |
+| Decoder/runtime problem | root schema and integration may fail without constraints | differential probes and exact runtime | Task96 positive; continuous regression |
 
-## 3. Contrato de produto e arquitetura alvo
+## 3. Product contract and target architecture
 
-### 3.1 Contrato não negociável
+### 3.1 Non-negotiable contract
 
-A arquitetura alvo é:
+The target architecture is:
 
 ```text
-mensagem privada recebida
+private incoming message
         |
-        +--> ingestão/harness: thread, reply, tempo, identidade, posição, risco, conta
+        +--> ingestion/harness: thread, reply, time, identity, position, risk, account
         |
-        +--> contexto permitido: current_message + parent/root somente para resolver instrumento/lado
+        +--> permitted context: current_message + parent/root only to resolve instrument/side
         |
-        +--> uma chamada LLM generate, com decoder restrito
+        +--> one LLM generate call, with constrained decoder
         |
-        +--> um único objeto JSON final em inglês
+        +--> a single final JSON object in English
         |
-        +--> parse estrito + Draft 2020-12 original
+        +--> strict parse + original Draft 2020-12
         |
-        +--> harness aplica estado, risco, quantidade, símbolo de broker, idempotência
+        +--> harness applies state, risk, quantity, broker symbol, idempotency
         |
-        +--> execução somente por política externa e autorização explícita
+        +--> execution only under external policy and explicit authorization
 ```
 
-**POLÍTICA DO PROJETO:** uma entrada recebe exatamente uma chamada de `generate`, sem retry, reparo, extração de substring, segunda chamada, modelo auxiliar em runtime ou preenchimento de default. Se o resultado não for uma instância completa e estritamente válida, falha fechadamente e não vira ordem.
+**PROJECT POLICY:** an input receives exactly one `generate` call, with no retry, repair, substring extraction, second call, auxiliary runtime model, or default filling. If the result is not a complete, strictly valid instance, it fails closed and does not become an order.
 
-O modelo:
+The model:
 
-- interpreta apenas `current_message` para decidir se existe ação;
-- pode usar parent/root para resolver instrumento ou lado quando o contrato permitir;
-- preserva literais, typos e abreviações em vez de normalizar criativamente;
-- não inventa instrumento, lado, preço, percentual, guard, quantidade ou evidência;
-- emite ação somente quando há evidência suficiente no current message e no contexto permitido;
-- deixa factos não operacionais sem ação: factos não utilizados devem resultar em `NO_ACTION` conforme o schema;
-- para `PARTIAL_CLOSE` sem amount especificado, usa `amount:SOME` conforme o contrato, nunca inventa uma quantidade;
-- considera literal de fechamento total mais forte que linguagem de proteção/realização parcial quando o contrato assim define;
-- trata blocos multi-asset independentemente, sem ampliar selector de um bloco para outro.
+- interprets only `current_message` to decide whether an action exists;
+- may use parent/root to resolve instrument or side when the contract permits;
+- preserves literals, typos, and abbreviations rather than creatively normalizing them;
+- does not invent an instrument, side, price, percentage, guard, quantity, or evidence;
+- emits an action only when sufficient evidence exists in the current message and permitted context;
+- leaves non-operational facts without action: unused facts must result in `NO_ACTION` according to the schema;
+- for `PARTIAL_CLOSE` with no specified amount, uses `amount:SOME` as required by the contract and never invents a quantity;
+- treats an explicit full-close literal as stronger than protection/partial-realization language when the contract so defines;
+- handles multi-asset blocks independently, without broadening one block’s selector to another.
 
-O harness, nunca o modelo, possui:
+The harness, never the model, owns:
 
-- resolução de thread e reply;
-- identidade de trade e estado da posição;
-- risco, quantity e account;
-- broker symbol, leverage e qualquer normalização de execução;
-- idempotência, deduplicação de ordem, autorização e envio ao broker;
-- validação final de permissões, limites e consistência com a conta.
+- thread and reply resolution;
+- trade identity and position state;
+- risk, quantity, and account;
+- broker symbol, leverage, and any execution normalization;
+- idempotency, order deduplication, authorization, and broker submission;
+- final validation of permissions, limits, and account consistency.
 
-O modelo nunca escolhe `trade_id`, risco, quantidade, conta, broker symbol, leverage ou execução. Esses campos, se existirem no sistema mais amplo, são preenchidos ou validados pelo harness e não devem ser ensinados como decisão livre do LLM.
+The model never chooses `trade_id`, risk, quantity, account, broker symbol, leverage, or execution. These fields, if present in the broader system, are populated or validated by the harness and must not be taught as free decisions for the LLM.
 
-### 3.2 Facto versus inferência na decomposição
+### 3.2 Fact versus inference in the decomposition
 
-**FACT:** uma saída estruturalmente válida pode ser semanticamente errada. **INFERENCE:** separar o LLM da execução reduz o blast radius de uma interpretação, mas não elimina o risco de falsa ação; a gate operacional ainda deve reprovar qualquer ação indevida. **POLÍTICA:** nenhuma camada downstream pode “consertar” um JSON inválido para fazê-lo parecer uma geração bem-sucedida. A recusa fechada e a revisão humana são preferíveis a uma ordem inventada.
+**FACT:** a structurally valid output can be semantically wrong. **INFERENCE:** separating the LLM from execution reduces the blast radius of an interpretation, but does not eliminate false-action risk; the operational gate must still reject any improper action. **POLICY:** no downstream layer may “fix” invalid JSON to make it look like a successful generation. Fail-closed rejection and human review are preferable to an invented order.
 
-O contexto deve ser compacto. A literatura “Lost in the Middle” encontrou degradação quando a informação relevante fica no meio de contextos longos [14]. Como estado e risco pertencem ao harness, não adicionar narrativas, cálculos ou histórico desnecessário ao prompt para compensar um modelo fraco. Testar posição da evidência, mas não aumentar contexto sem medir truncamento, latência e exactness.
+Context should be compact. The “Lost in the Middle” literature found degradation when relevant information appears in the middle of long contexts [14]. Since state and risk belong to the harness, do not add narratives, calculations, or unnecessary history to the prompt to compensate for a weak model. Test evidence position, but do not increase context without measuring truncation, latency, and exactness.
 
-## 4. Aquisição de dados, proveniência e splits
+## 4. Data acquisition, provenance, and splits
 
-### 4.1 Fonte e privacidade
+### 4.1 Source and privacy
 
-**POLÍTICA DO PROJETO:** dados de mensagens permanecem privados. O dataset de trabalho deve registrar, em ambiente privado e com controle de acesso, proveniência suficiente para auditoria: período, origem, canal, thread, mensagem corrente, relação de reply, edição, anotador, versão de guideline, estado de adjudicação e hashes. O relatório público contém somente agregados, matrizes, contagens e caminhos de evidência já públicos no repositório. Não copiar mensagens, predições, símbolos, envelopes, IDs ou segredos para documentação, tickets ou experiment receipts públicos.
+**PROJECT POLICY:** message data remains private. The working dataset must record, in a private access-controlled environment, sufficient provenance for auditing: period, source, channel, thread, current message, reply relationship, edits, annotator, guideline version, adjudication status, and hashes. The public report contains only aggregates, matrices, counts, and evidence paths already public in the repository. Do not copy messages, predictions, symbols, envelopes, IDs, or secrets into public documentation, tickets, or experiment receipts.
 
-A documentação de dataset deve registrar composição, processo de coleta, usos recomendados e características operacionais [8]. A coleta deve preservar os bytes necessários para distinguir:
+Dataset documentation should record composition, collection process, recommended uses, and operational characteristics [8]. Collection must preserve the bytes needed to distinguish:
 
-- mensagem corrente de parent/root;
-- mensagem original de edição;
-- comentário, citação, histórico ou relato de execução;
-- um thread de várias ações de episódios independentes;
-- texto que contém uma palavra operacional mas não autoriza operação.
+- the current message from parent/root;
+- the original message from an edit;
+- commentary, quotation, history, or execution report;
+- a thread containing multiple actions from independent episodes;
+- text containing an operational word that does not authorize an operation.
 
-Apagar ou normalizar essa distinção antes da anotação cria UNKNOWN irrecuperável. Normalização de execução, por outro lado, é do harness e não deve ser feita no alvo do LLM.
+Erasing or normalizing these distinctions before annotation creates irrecoverable UNKNOWNs. Execution normalization, by contrast, belongs to the harness and must not be performed in the LLM target.
 
-### 4.2 Unidade de split: thread primeiro
+### 4.2 Split unit: thread first
 
-**POLÍTICA DO PROJETO:** o grupo indivisível de split é o thread/episódio, não a row. Todas as mensagens do mesmo thread, reply chain, evento de edição e template semântico ligado devem pertencer ao mesmo split. Se uma mensagem corrente depende de parent/root, o grupo contém a cadeia relevante. Não basta hash-deduplicate rows isoladas: isso permite que contexto ou formulação irmã atravesse TRAIN e teste.
+**PROJECT POLICY:** the indivisible split group is the thread/episode, not the row. All messages in the same thread, reply chain, edit event, and linked semantic template must belong to the same split. If a current message depends on parent/root, the group includes the relevant chain. Hash-deduplicating isolated rows is insufficient: that allows context or sibling phrasing to cross between TRAIN and test.
 
-Cada grupo recebe campos de controle privados:
+Each group receives private control fields:
 
-| Campo | Obrigatório | Uso |
+| Field | Required | Use |
 |---|---|---|
-| `thread_group` | sim | impedir vazamento entre splits |
-| intervalo temporal | sim | separar passado de futuro |
-| origem/canal/família editorial | sim | testar independência |
-| estado de edição | sim | evitar duplicata semântica |
-| fingerprint de template | sim | remover near-duplicates |
-| regime/condição operacional | quando disponível | desagregar shift |
-| anotação e versão da guideline | sim | rastrear rótulo |
+| `thread_group` | yes | prevent leakage across splits |
+| time interval | yes | separate past from future |
+| source/channel/editorial family | yes | test independence |
+| edit state | yes | avoid semantic duplicates |
+| template fingerprint | yes | remove near-duplicates |
+| regime/operational condition | when available | disaggregate shift |
+| annotation and guideline version | yes | trace the label |
 
-Os nomes são campos de controle, não saídas do modelo. Sua publicação deve permanecer agregada.
+These names are control fields, not model outputs. Any reporting must remain aggregated.
 
-### 4.3 Quatro separações necessárias
+### 4.3 Four required partitions
 
-1. **TRAIN:** real-heavy, com todos os grupos de treino e sintéticos explicitamente marcados.
-2. **DEVELOPMENT:** congelado antes de cada família de experimento; pode ser adaptativo, portanto serve para seleção e regressão.
-3. **GENERALIZATION:** temporal/source/thread-disjoint, freeze-only, aberto uma vez depois da configuração travada.
-4. **Future-real shadow:** pool posterior, real e independente de todos os artefatos anteriores, decodificado sem ordens; se aberto e usado para tuning, deixa de ser final e deve ser substituído.
+1. **TRAIN:** real-heavy, with all training groups and synthetics explicitly marked.
+2. **DEVELOPMENT:** frozen before each experiment family; it may be adaptive, so it serves selection and regression.
+3. **GENERALIZATION:** temporal/source/thread-disjoint, freeze-only, opened once after configuration freeze.
+4. **Future-real shadow:** a later, real pool independent of all prior artifacts, decoded without orders; if opened and used for tuning, it is no longer final and must be replaced.
 
-A divisão deve separar tempo e origem sempre que houver volume suficiente. Um random split pode ser relatório auxiliar, nunca a única evidência. Uma divisão temporal isolada pode ainda compartilhar o mesmo autor ou template; por isso é necessário o eixo de origem. Uma divisão por origem isolada pode misturar futuro no TRAIN; por isso é necessário o eixo temporal. A unidade thread evita vazamento de contexto.
+The split should separate time and source whenever there is sufficient volume. A random split may be a supplementary report, never the sole evidence. A temporal split alone may still share an author or template, which is why the source axis is needed. A source-only split may mix future data into TRAIN, which is why the temporal axis is needed. The thread unit prevents context leakage.
 
-### 4.4 Real futuro e representatividade
+### 4.4 Future-real data and representativeness
 
-**FACT:** GENERALIZATION100 é freeze-only e unopened pelo Task97. **UNKNOWN:** sua independência linguística, representatividade de produção e independência do gerador não são provadas apenas pelo nome do produto. **POLÍTICA:** construir um future-real pool com seleção determinada antes de olhar rótulos; registrar janela de coleta, canais/origens, regimes e contagens por slice; adjudicar labels sob contrato inalterado; congelar hash e manifest. Não usar DEVELOPMENT wording, predições ou exemplos derivados dele.
+**FACT:** GENERALIZATION100 is freeze-only and was not opened by Task97. **UNKNOWN:** its linguistic independence, production representativeness, and generator independence are not proven by the product name alone. **POLICY:** build a future-real pool with selection determined before inspecting labels; record the collection window, channels/sources, regimes, and counts by slice; adjudicate labels under the unchanged contract; freeze the hash and manifest. Do not use DEVELOPMENT wording, predictions, or examples derived from it.
 
-A amostra deve conter oportunidades para mensagens de ação e não ação, mas não se deve fabricar uma distribuição “bonita” e depois chamá-la de produção. Manter dois relatórios: (a) suite balanceada para detectar células raras; (b) avaliação calibrada ao prior de produção. A primeira revela defeitos; a segunda estima carga operacional. Nenhuma substitui a outra.
+The sample should include opportunities for both action and non-action messages, but do not manufacture a “nice” distribution and then call it production data. Maintain two reports: (a) a balanced suite to detect rare cells; (b) an evaluation calibrated to the production prior. The first reveals defects; the second estimates operational load. Neither replaces the other.
 
-## 5. Anotação e adjudicação
+## 5. Annotation and adjudication
 
-### 5.1 O alvo canônico
+### 5.1 The canonical target
 
-Cada row deve ser anotada a partir do texto completo permitido e do contrato, sem inferir fatos que só o broker ou o harness conhece. O alvo canônico precisa registrar, em ambiente privado:
+Each row must be annotated from the complete permitted text and the contract, without inferring facts known only to the broker or harness. In a private environment, the canonical target must record:
 
-- se a mensagem corrente autoriza alguma ação;
-- operação/evento e sequência de ações;
+- whether the current message authorizes any action;
+- operation/event and action sequence;
 - quais evidências vêm de current, parent ou root;
-- instrumento e lado somente quando grounded no escopo permitido;
-- literais exatos: números, percentuais, preço, guard e abreviações;
-- current versus histórico, intenção versus resultado, comando versus citação;
-- ação parcial, total ou nenhuma; amount `SOME` apenas quando a especificação determina;
-- escopo por bloco e ordem de ações;
-- ambiguidade, insuficiência de contexto e necessidade de abstention prevista pelo schema.
+- instrument and side only when grounded in the permitted scope;
+- exact literals: numbers, percentages, price, guard, and abbreviations;
+- current versus historical, intent versus outcome, command versus quotation;
+- partial action, full action, or none; amount `SOME` only when specified by the contract;
+- scope per block and action order;
+- ambiguity, insufficient context, and need for abstention as provided by the schema.
 
-Se a mensagem não fornece vínculo de posição, não inventar. Rotular como irresolúvel ou como a representação de abstention que o schema já prevê. A resolução de trade identity, estado e quantity só ocorre no harness.
+If the message does not provide a position link, do not invent one. Label it as irresolvable or use the abstention representation already provided by the schema. Trade identity, state, and quantity are resolved only in the harness.
 
-### 5.2 Protocolo em duas passagens
+### 5.2 Two-pass protocol
 
-**POLÍTICA RECOMENDADA:** cada caso crítico recebe anotação independente de dois anotadores. Primeiro, cada um produz o alvo e marca evidências; depois, um adjudicador revisa apenas os casos em desacordo e uma amostra de acordos. A finalidade não é criar uma estatística ornamental de concordância, mas localizar guideline ambígua e rótulos que excedem o texto.
+**RECOMMENDED POLICY:** each critical case receives independent annotations from two annotators. First, each produces the target and marks evidence; then an adjudicator reviews only disagreements and a sample of agreements. The purpose is not to create an ornamental agreement statistic, but to locate ambiguous guidelines and labels that exceed the text.
 
-O adjudicador deve decidir em ordem:
+The adjudicator should decide in this order:
 
-1. a mensagem corrente contém uma instrução ou somente comentário/facto?
-2. há negação, condicional, citação, histórico ou resultado passado?
-3. há uma ou várias ações e qual é a ordem?
-4. cada campo está grounded em texto permitido?
-5. parent/root resolve somente o que a política permite?
-6. a saída deve ser `NO_ACTION` por falta de evidência?
-7. o schema expressa a distinção sem inventar default?
+1. Does the current message contain an instruction or only commentary/fact?
+2. Is there negation, a condition, a quotation, history, or a past outcome?
+3. Are there one or multiple actions, and in what order?
+4. Is each field grounded in permitted text?
+5. Does parent/root resolve only what policy permits?
+6. Should the output be `NO_ACTION` due to insufficient evidence?
+7. Does the schema express the distinction without inventing a default?
 
-Guardar o desacordo original, a razão da decisão e a versão da guideline. Casos sem resolução não entram silenciosamente como rótulo “conveniente”; entram em quarentena ou numa categoria explicitamente admitida pelo schema.
+Preserve the original disagreement, the reason for the decision, and the guideline version. Unresolved cases must not silently enter as a “convenient” label; quarantine them or use a category explicitly supported by the schema.
 
-### 5.3 Teto humano/teacher forte
+### 5.3 Strong human/teacher ceiling
 
-G4 estabelece um ceiling offline: humanos treinados e, se usado, um teacher forte propõem saídas no mesmo schema; a decisão final é humana e adjudicada. Teacher ou regra é uma fonte de candidatos, não ground truth. Comparar:
+G4 establishes an offline ceiling: trained humans and, if used, a strong teacher propose outputs in the same schema; the final decision is human and adjudicated. A teacher or rule is a source of candidates, not ground truth. Compare:
 
 - anotador individual;
 - consenso humano;
 - teacher forte revisado;
 - modelo candidato.
 
-Se humanos discordam de forma material numa slice, não se pode usar o score do modelo como se o alvo fosse exato. Revisar guideline, ampliar contexto permitido ou marcar ambiguidade. Um teacher pode ajudar a cobrir paráfrases, mas resultados de instruction tuning sintético em outras tarefas não garantem rótulos financeiros corretos [12][13].
+If humans materially disagree on a slice, the model score cannot be used as if the target were exact. Revise the guideline, expand permitted context, or mark ambiguity. A teacher may help cover paraphrases, but synthetic instruction-tuning results on other tasks do not guarantee correct financial labels [12][13].
 
-### 5.4 Pares contrafactuais e hard negatives
+### 5.4 Counterfactual pairs and hard negatives
 
-**FACT publicado:** contraexemplos aumentados por humanos podem alterar uma propriedade mínima para inverter o rótulo sem perder coerência [17]. **INFERENCE:** usar isso como probe de invariância, não como prova de generalização. Criar pares em que uma mudança mínima altera apenas o campo alvo: ação para não ação, EXIT total para partial, selector amplo para escopo estreito, guard presente para ausente. Cada par é revisado por humano; nunca copiar DEVELOPMENT wording.
+**Published FACT:** human-augmented counterexamples can change a minimal property to invert the label without losing coherence [17]. **INFERENCE:** use this as an invariance probe, not proof of generalization. Create pairs in which a minimal change alters only the target field: action to no action, full EXIT to partial, broad selector to narrow scope, guard present to absent. Each pair is human-reviewed; never copy DEVELOPMENT wording.
 
-Hard negatives devem vir de casos reais de falsa ação: “EXIT” em histórico, “action” em comentário, status legado/adaptativo sem comando, citação de instrução insegura ou linguagem de resultado passado. Cada negativo precisa de um positivo pareado quando possível. O objetivo é reduzir dependência lexical, sem ensinar uma lista de palavras como regra.
+Hard negatives should come from real false-action cases: “EXIT” in history, “action” in commentary, legacy/adaptive status without a command, a quotation of an unsafe instruction, or past-outcome language. Each negative should have a matched positive when possible. The goal is to reduce lexical dependence without teaching a list of words as a rule.
 
-## 6. Matriz de cobertura semântica
+## 6. Semantic coverage matrix
 
-A matriz é uma ferramenta de desenho de dados e testes, não uma prova de suficiência. Exigir que cada célula tenha um denominador conhecido e registrar `real`, `synthetic`, `development`, `generalization` e `shadow` separadamente.
+The matrix is a data and test design tool, not proof of sufficiency. Require a known denominator for every cell and record `real`, `synthetic`, `development`, `generalization`, and `shadow` separately.
 
-| Dimensão | Slices mínimas | Por que é crítica |
+| Dimension | Minimum slices | Why it is critical |
 |---|---|---|
-| Operação | SIGNAL/OPEN, UPDATE, EXIT total, EXIT parcial, NO_ACTION | separa evento de ação |
-| Escopo | current, parent/root resolvendo campo, omitido | impede ação originada fora do current |
-| Polaridade | afirmativa, negada, condicional, citação, histórica | reduz falsa ação e falso EXIT |
-| Composição | uma ação, duas independentes, ação + neutro, EXIT + partial | testa atomicidade e ordem |
-| Guard | stop, target, breakeven, condição composta e ausência | célula de segurança |
-| Literalidade | typo, abreviação, preço, percentual, quantidade não especificada | impede invenção/normalização |
-| Seleção | escopo estreito, selector explícito, distractor e linha não correspondida | mede broadening |
-| Posição | evidência no início, meio, fim; board multi-line | testa atenção posicional |
-| Fonte | origem/channel/thread nunca visto | mede independência |
-| Tempo | passado, presente, futuro, editado | evita confundir resultado com comando |
-| Comprimento | curto, mediano, envelope máximo | detecta truncamento e Lost in the Middle |
-| Ambiguidade | contexto suficiente, insuficiente e contraditório | calibra abstention |
+| Operation | SIGNAL/OPEN, UPDATE, full EXIT, partial EXIT, NO_ACTION | separates event from action |
+| Scope | current, parent/root resolving a field, omitted | prevents action originating outside current |
+| Polarity | affirmative, negated, conditional, quotation, historical | reduces false action and false EXIT |
+| Composition | one action, two independent actions, action + neutral, EXIT + partial | tests atomicity and order |
+| Guard | stop, target, breakeven, compound condition, and absence | safety cell |
+| Literalness | typo, abbreviation, price, percentage, unspecified quantity | prevents invention/normalization |
+| Selection | narrow scope, explicit selector, distractor, and unmatched row | measures broadening |
+| Position | evidence at beginning, middle, end; multi-line board | tests positional attention |
+| Source | unseen source/channel/thread | measures independence |
+| Time | past, present, future, edited | prevents confusing outcome with command |
+| Length | short, medium, maximum envelope | detects truncation and Lost in the Middle |
+| Ambiguity | sufficient, insufficient, and contradictory context | calibrates abstention |
 
-### 6.1 Leitura da matriz V58
+### 6.1 Reading the V58 matrix
 
-A cobertura agregada conhecida deve ser preservada como diagnóstico:
+Known aggregate coverage must be preserved as a diagnostic:
 
-| Célula crítica | Real/source TRAIN | Sintético TRAIN | DEVELOPMENT |
+| Critical cell | Real/source TRAIN | Synthetic TRAIN | DEVELOPMENT |
 |---|---:|---:|---:|
-| Board partial+BE com distractor | 0 | 3 | 1 |
-| Board partial+BE na primeira posição | 0 | 3 | 1 |
-| Board partial+BE na posição do meio | 0 | 0 | 0 |
-| Board partial+BE na última posição | 0 | 1 | 0 |
+| Board partial+BE with distractor | 0 | 3 | 1 |
+| Board partial+BE in first position | 0 | 3 | 1 |
+| Board partial+BE in middle position | 0 | 0 | 0 |
+| Board partial+BE in last position | 0 | 1 | 0 |
 | Board two-action + proxy neutro | 0 | 0 | 0 |
 | Board partial+BE separado de EXIT total | 0 | 0 | 0 |
 | Board guarded | 0 | 0 | 0 |
 | Board EXIT total | 0 | 0 | 0 |
 | Board partial | 1 | 4 | 1 |
-| Control não-board partial+BE | 264 | 0 | 5 |
+| Non-board partial+BE control | 264 | 0 | 5 |
 
-**FACT:** os cinco sintéticos não cobrem middle, EXIT, guarded ou duas ações mais neutro. **INFERENCE:** adicionar apenas mais variações cosméticas do mesmo gerador não fecha a matriz. **POLÍTICA:** células críticas reais são não negociáveis para qualquer claim de prontidão; sintéticos podem criar probes e reduzir lacunas, mas nunca provar que o sistema aprendeu a linguagem real.
+**FACT:** the five synthetics do not cover middle, EXIT, guarded, or two actions plus neutral. **INFERENCE:** adding only cosmetic variations from the same generator does not close the matrix. **POLICY:** critical real cells are non-negotiable for any readiness claim; synthetics can create probes and reduce gaps, but never prove that the system learned real language.
 
-A matriz deve incluir matched negatives: para cada ação relevante, um caso que mantém vocabulário e muda apenas o status para comentário, histórico, negação ou não autorização. Isso é especialmente necessário para false-action e false-EXIT. O balanceamento da suite de avaliação não deve ser confundido com o prior de produção; ambos devem ser publicados.
+The matrix must include matched negatives: for each relevant action, a case that preserves the vocabulary and changes only the status to commentary, history, negation, or lack of authorization. This is especially necessary for false-action and false-EXIT. Evaluation-suite balancing must not be confused with the production prior; both should be reported.
 
-### 6.2 Cobertura de origem e gerador
+### 6.2 Source and generator coverage
 
-Uma linha com hash novo não é necessariamente independente. V6.1 já mostrou que três variantes do mesmo gerador podem reutilizar clauses, wrappers, literais e estrutura. **POLÍTICA:** TRAIN, DEVELOPMENT e GENERALIZATION devem ter famílias de autoria/geração independentes, catálogos semânticos separados, estilos e ordenações variados. A auditoria remove wrappers e referências antes do fingerprint semântico; testa near duplicates, template overlap e compartilhamento de cláusulas. A independência deve ser demonstrada pelo processo e pela auditoria, não inferida de hash.
+A row with a new hash is not necessarily independent. V6.1 already showed that three variants from the same generator can reuse clauses, wrappers, literals, and structure. **POLICY:** TRAIN, DEVELOPMENT, and GENERALIZATION must have independent authorship/generation families, separate semantic catalogs, and varied styles and orderings. The audit removes wrappers and references before semantic fingerprinting; it tests near duplicates, template overlap, and clause sharing. Independence must be demonstrated by the process and audit, not inferred from a hash.
 
-## 7. Política de dados sintéticos
+## 7. Synthetic data policy
 
-### 7.1 O que sintético pode fazer
+### 7.1 What synthetic data can do
 
-**FACT publicado:** Self-Instruct relata benefício de instruções sintéticas filtradas por invalidade e similaridade em seus experimentos, mas isso não é demonstração de extração financeira [12]. Dados gerados por teacher forte também podem ajudar instruction tuning em tarefas descritas nos respectivos trabalhos [13].
+**Published FACT:** Self-Instruct reports benefits from synthetic instructions filtered for invalidity and similarity in its experiments, but this is not a demonstration of financial extraction [12]. Data generated by a strong teacher may also help instruction tuning on tasks described in the respective papers [13].
 
-**POLÍTICA:** sintéticos servem para:
+**POLICY:** synthetic data serves to:
 
-- preencher uma célula já identificada como ausente;
-- gerar contrastes mínimos e matched negatives;
-- explorar posições first/middle/last, guardas, composição e referências;
-- criar probes de propriedade e regressão;
-- tornar explícito um caso raro que será depois conferido contra dados reais.
+- fill a cell already identified as missing;
+- generate minimal contrasts and matched negatives;
+- explore first/middle/last positions, guards, composition, and references;
+- create property and regression probes;
+- make a rare case explicit for later verification against real data.
 
-Sintético deve conter provenance `source=synthetic`, família de gerador, versão de guideline e revisão. Nunca entra em relatório como evidência de comportamento real.
+Synthetic data must include provenance `source=synthetic`, generator family, guideline version, and review status. It must never appear in a report as evidence of real behavior.
 
-### 7.2 O que sintético não pode fazer
+### 7.2 What synthetic data cannot do
 
-Não aceitar automaticamente porque valida no schema. Não produzir rótulos a partir de DEVELOPMENT. Não usar um gerador comum para TRAIN e GENERALIZATION. Não preencher uma matriz toda sintética e chamá-la de cobertura real. Não duplicar a mesma célula três vezes e chamar isso de três exemplos independentes. Não deixar a proporção de `NO_ACTION` artificial dominar o prior sem uma hipótese registrada.
+Do not accept data automatically because it validates against the schema. Do not produce labels from DEVELOPMENT. Do not use a shared generator for TRAIN and GENERALIZATION. Do not fill an entire matrix with synthetic data and call it real coverage. Do not duplicate the same cell three times and call them three independent examples. Do not let an artificial `NO_ACTION` proportion dominate the prior without a recorded hypothesis.
 
-A matriz V6.1 tinha `150` positivos e `150` NO_ACTION sintéticos, aproximadamente `50%` NO_ACTION, enquanto o histórico V5.8 era aproximadamente `25%`. **FACT:** a mudança coincidiu com retenção de ações positivas pior, sem provar causalidade isolada. **INFERENCE:** peso de polaridade e retenção histórica precisam de ablação. O runner permite peso de completion para positives sintéticos, mas o peso deve ser escolhido antes da avaliação, não ajustado após ver o resultado.
+The V6.1 matrix had `150` positive and `150` synthetic NO_ACTION examples, approximately `50%` NO_ACTION, while the V5.8 history was approximately `25%`. **FACT:** the change coincided with worse retention of positive actions, without proving isolated causality. **INFERENCE:** polarity weighting and historical retention require ablation. The runner allows completion weighting for synthetic positives, but the weight must be chosen before evaluation, not adjusted after seeing the result.
 
-### 7.3 Mistura e calibração
+### 7.3 Mixing and calibration
 
-**STARTING HYPOTHESIS, não facto universal:** começar com exposição balanceada das cells raras durante aprendizagem, mantendo reais como maioria efetiva e synthetics marcados; em seguida calibrar para o prior de produção num produto separado. Não há proporção ótima publicada para Telegram trading extraction. Testar real-only, sintético controlado, mistura real-heavy e peso de positivos em famílias de até três execuções. O resultado deve reportar tanto suite balanceada quanto prior de produção.
+**STARTING HYPOTHESIS, not a universal fact:** begin with balanced exposure to rare cells during learning, while keeping real data as the effective majority and synthetics labeled; then calibrate to the production prior on a separate product. No optimal proportion has been published for Telegram trading extraction. Test real-only, controlled synthetic, real-heavy mixture, and positive weighting in families of up to three runs. Report both the balanced suite and the production prior.
 
-## 8. Serialização canônica e prevenção de leakage
+## 8. Canonical serialization and leakage prevention
 
-### 8.1 Serialização
+### 8.1 Serialization
 
-O alvo deve ser um único objeto JSON canônico, sem texto explicativo, em inglês JSON e enums. Definir e versionar uma ordem de chaves estável, representação de números, escaping Unicode, tratamento de `null` versus campo ausente e formato de arrays. A ordem não muda a semântica do JSON, mas uma serialização estável reduz ruído de loss e torna hash/receipts reprodutíveis. O parser deve rejeitar chave duplicada; o Draft 2020-12 observa que comportamento de documento com chave duplicada é indefinido e detalhes lexicais não são o escopo da validação [9].
+The target must be a single canonical JSON object, with no explanatory text, using English JSON keys and enums. Define and version a stable key order, number representation, Unicode escaping, handling of `null` versus missing fields, and array format. Order does not change JSON semantics, but stable serialization reduces loss noise and makes hashes/receipts reproducible. The parser must reject duplicate keys; Draft 2020-12 notes that document behavior with duplicate keys is undefined and lexical details are outside the scope of validation [9].
 
-**POLÍTICA:** a canonicalização de comparação ocorre depois de parse estrito e antes do exact match, sem apagar uma diferença semântica. Não reordenar ou preencher campos para resgatar uma previsão inválida. O alvo de treino e a saída avaliada passam pela mesma serialização canônica. O schema original permanece congelado; qualquer gramática compilada é derivada e tem hash próprio.
+**POLICY:** comparison canonicalization occurs after strict parsing and before exact match, without erasing a semantic difference. Do not reorder or fill fields to rescue an invalid prediction. The training target and evaluated output use the same canonical serialization. The original schema remains frozen; any compiled grammar is derived and has its own hash.
 
 ### 8.2 Leakage ledger
 
-Antes de cada treino, gerar um ledger privado que verifique:
+Before each training run, generate a private ledger that verifies:
 
 - zero exact reuse de envelope/corrente de DEVELOPMENT;
-- zero texto de predição em TRAIN;
+- zero prediction text in TRAIN;
 - zero acesso a GENERALIZATION e shadow;
 - zero thread group cruzando split;
-- zero near duplicate acima do limiar decidido antes da inspeção;
-- zero cláusula crítica compartilhada entre gerador de TRAIN e GENERALIZATION;
-- zero alvo de avaliação usado como exemplo de prompt;
-- hash de código, schema, prompt, tokenizer, dataset, lineage e modelo;
+- zero near-duplicates above the threshold decided before inspection;
+- zero critical clauses shared between the TRAIN and GENERALIZATION generators;
+- zero evaluation targets used as prompt examples;
+- hashes for code, schema, prompt, tokenizer, dataset, lineage, and model;
 - ausência de truncamento;
-- proteção de acesso owner-only.
+- owner-only access protection.
 
-Literals de domínio isolados não são leakage; texto integral, estrutura envelope e formulação próxima podem ser. O ledger deve produzir agregados públicos, preservando evidência detalhada em local privado.
+Isolated domain literals are not leakage; complete text, envelope structure, and similar phrasing may be. The ledger should produce public aggregates while preserving detailed evidence in a private location.
 
-## 9. Escada de capacidade
+## 9. Capacity ladder
 
-A escada é causal apenas se dados e rótulos estiverem limpos. Não existe evidência suficiente para declarar que 0,8B é definitivamente a raiz atual.
+The ladder is causal only if data and labels are clean. There is insufficient evidence to declare that 0.8B is definitively the current root cause.
 
 ### G5 — retreino controlado do 0,8B
 
-Retreinar uma única configuração Qwen3.5-0.8B sob o dataset canônico, real-heavy e splits fechados. Manter completion-only loss, chat template/EOS exatos, uma geração determinística, schema original e decoder aprovado. A configuração histórica Task97 é um ponto de comparação, não uma prescrição de que seus hiperparâmetros sejam ótimos. Medir sem truncamento e reportar loss apenas como diagnóstico.
+Retrain one Qwen3.5-0.8B configuration on the canonical, real-heavy dataset and closed splits. Keep completion-only loss, exact chat template/EOS, one deterministic generation, the original schema, and the approved decoder. The historical Task97 configuration is a comparison point, not a prescription that its hyperparameters are optimal. Measure without truncation and report loss only as a diagnostic.
 
-### G6 — aproximadamente 4B, só após gate de dados
+### G6 — approximately 4B, only after the data gate
 
-Se, com rótulos adjudicados, cells reais presentes, geradores independentes, decoder correto e zero problemas de distribuição, o 0,8B ainda falhar em composição, coreferência ou guardas, comparar um único candidato denso instruct aproximadamente 4B. Manter exatamente o mesmo TRAIN, prompt, schema, tokenizer/contrato de saída, budget de geração e avaliação. Fazer benchmark local de VRAM, OOM, prefill, decode e p50/p95 antes de treino completo. Nenhum fit de GPU é afirmado neste guia.
+If the 0.8B still fails on composition, coreference, or guards with adjudicated labels, real cells present, independent generators, a correct decoder, and zero distribution problems, compare one dense instruct candidate of approximately 4B. Keep exactly the same TRAIN, prompt, schema, tokenizer/output contract, generation budget, and evaluation. Benchmark local VRAM, OOM, prefill, decode, and p50/p95 before full training. This guide makes no GPU-fit claim.
 
-QLoRA pode ser usado como tratamento de viabilidade de memória, pois treina adapters através de um modelo base quantizado congelado [5]. Isso não é uma suposição de melhora de acurácia. As alegações de fornecedor sobre VRAM e velocidade não substituem medição local [19].
+QLoRA may be used as a memory-feasibility treatment because it trains adapters through a frozen quantized base model [5]. This does not assume an accuracy improvement. Vendor claims about VRAM and speed do not replace local measurement [19].
 
 ### G7 — aproximadamente 8B, se o 4B ainda for insuficiente
 
-Somente se 4B passar pelos gates de dados e runtime, mas mantiver uma falha de capacidade reproduzível, testar aproximadamente 8B com o mesmo contrato. Não mudar simultaneamente mix, prompt, decoder, seed ou schema. Se 8B melhorar média mas piorar false-action, false-EXIT, literal ou guard, rejeitar.
+Only if 4B passes the data and runtime gates but retains a reproducible capacity failure, test approximately 8B under the same contract. Do not simultaneously change the mix, prompt, decoder, seed, or schema. If 8B improves the average but worsens false-action, false-EXIT, literal, or guard performance, reject it.
 
 ### Regras da escada
 
-- Não subir degrau para compensar label error ou coverage EMPTY.
-- Não alegar que maior é melhor por InstructGPT: o resultado publicado é de instruction following amplo e envolve etapas de demonstração/preferência, não esta extração determinística [13].
-- Não inventar card, VRAM exata ou capacidade do checkpoint Qwen3.5-0.8B.
-- Rank maior pode aumentar capacidade treinável, mas também overfit e não cria exemplos ausentes [3].
-- Selecionar pelo vetor operacional e pela replicação, nunca por loss menor.
+- Do not move up a tier to compensate for label error or EMPTY coverage.
+- Do not claim that larger is better based on InstructGPT: the published result concerns broad instruction following and involves demonstration/preference stages, not this deterministic extraction [13].
+- Do not invent a card, exact VRAM, or capacity for the Qwen3.5-0.8B checkpoint.
+- Higher rank may increase trainable capacity, but may also overfit and does not create missing examples [3].
+- Select using the operational vector and replication, never lower loss.
 
-## 10. Receita de treinamento aprovada
+## 10. Approved training recipe
 
-### 10.1 Base fixa
+### 10.1 Fixed foundation
 
-**POLÍTICA:** SFT é o método inicial adequado para ensinar respostas corretas em formato fixo e tarefas de classificação/extraction [1]. O dataset é prompt-completion: prompt contém somente o contexto permitido; completion contém o objeto final. TRL documenta loss apenas na completion para prompt-completion [2].
+**POLICY:** SFT is an appropriate initial method for teaching correct responses in a fixed format and classification/extraction tasks [1]. The dataset is prompt-completion: the prompt contains only permitted context; the completion contains the final object. TRL documents loss only on the completion for prompt-completion [2].
 
-A receita mínima é:
+The minimum recipe is:
 
-1. validar schema e canonical serializer antes do treino;
-2. validar lineage de cada occurrence e hash do row;
-3. renderizar com o chat template exato do modelo;
-4. verificar EOS alinhado ao template; TRL alerta que modelos Qwen precisam dessa compatibilidade para terminar corretamente [2];
-5. tokenizar sem truncamento e abortar se qualquer row exceder contexto;
-6. mascarar prompt com `-100`, deixando completion ativa;
-7. fazer SFT com LoRA/PEFT para ablações rápidas; LoRA congela pesos base e treina matrizes low-rank [4];
-8. registrar updates, losses, config, seeds, hashes e receipt;
-9. avaliar sem modificar prompt, alvo ou saída;
-10. salvar adapter privadamente, com acesso owner-only, sem incluí-lo neste guia.
+1. validate the schema and canonical serializer before training;
+2. validate the lineage of every occurrence and row hash;
+3. render with the model's exact chat template;
+4. verify EOS alignment with the template; TRL warns that Qwen models require this compatibility to terminate correctly [2];
+5. tokenize without truncation and abort if any row exceeds context;
+6. mask the prompt with `-100`, leaving the completion active;
+7. run SFT with LoRA/PEFT for rapid ablations; LoRA freezes base weights and trains low-rank matrices [4];
+8. record updates, losses, config, seeds, hashes, and receipt;
+9. evaluate without modifying the prompt, target, or output;
+10. save the adapter privately with owner-only access; do not include it in this guide.
 
-### 10.2 Loss e hiperparâmetros
+### 10.2 Loss and hyperparameters
 
-Manter completion-only. Se houver weights de rows sintéticos, aplicá-los somente aos tokens ativos da completion, nunca ao prompt. O denominator ativo deve ser registrado. Testar a implementação com uma row mínima e uma máscara conhecida.
+Keep completion-only loss. If synthetic-row weights are used, apply them only to active completion tokens, never the prompt. Record the active denominator. Test the implementation with a minimal row and a known mask.
 
-**POLÍTICA:** um family experiment muda uma variável: data retention/weight, mistura/polaridade, diversidade, learning rate, scheduler, rank/target modules, epoch rule, prompt ou modelo. Não cruzar famílias. Até três runs por família são um limite de busca do projeto, não uma lei estatística. Seeds adicionais só quando pré-registradas para estimar variância; não selecionar a mais conveniente.
+**POLICY:** one experiment family changes one variable: data retention/weight, mix/polarity, diversity, learning rate, scheduler, rank/target modules, epoch rule, prompt, or model. Do not combine families. Up to three runs per family is a project search limit, not a statistical law. Use additional seeds only when preregistered to estimate variance; do not select the most convenient.
 
-Não usar train loss como proxy de qualidade. O histórico local mostra uma configuração com loss menor e regressão semântica; isso é evidência direta contra o proxy, não uma teoria de otimização geral. Reportar loss junto de exact match, safety e slices.
+Do not use train loss as a quality proxy. Local history shows a configuration with lower loss and semantic regression; this is direct evidence against the proxy, not a general optimization theory. Report loss alongside exact match, safety, and slices.
 
-### 10.3 Contexto, EOS e geração
+### 10.3 Context, EOS, and generation
 
-O chat template é artefato do modelo e deve ser hash-bound. Testar `enable_thinking=False` como baseline do runner atual, porque o contrato exige uma saída final e uma chamada; um modo de raciocínio adicionaria tokens e superfície de vazamento. Se um candidato usar outro modo, isso é uma variável registrada e precisa de medição. Não inserir chain-of-thought no schema, no dataset ou no relatório.
+The chat template is a model artifact and must be hash-bound. Test `enable_thinking=False` as the current runner baseline because the contract requires one final output and one call; a reasoning mode would add tokens and leakage surface. If a candidate uses another mode, record it as a variable and measure it. Do not insert chain-of-thought into the schema, dataset, or report.
 
-A geração deve ser determinística, sem sampling, uma chamada e um objeto. `max_new_tokens` é cap de segurança, não motivo para aceitar truncamento. Se cap for atingido, registrar falha e não tentar outra chamada.
+Generation must be deterministic, without sampling, with one call and one object. `max_new_tokens` is a safety cap, not a reason to accept truncation. If the cap is hit, record a failure and do not try another call.
 
 ### 10.4 DPO/RL
 
-Não usar DPO, RL ou preference optimization antes de um baseline SFT semanticamente competente e de dados de preferência adjudicados. DPO é descrito como uma loss de preferência simples em seus trabalhos, mas a evidência é de alinhamento geral, não de extração financeira [20]. Um par “saída aceita versus saída rejeitada” só é útil depois de verificar que a preferência é semântica e grounded. Preference training não corrige ground truth ausente nem autoriza relaxar o schema.
+Do not use DPO, RL, or preference optimization before a semantically competent SFT baseline and adjudicated preference data exist. DPO is described in its papers as a simple preference loss, but the evidence concerns general alignment, not financial extraction [20]. An “accepted output versus rejected output” pair is useful only after verifying that the preference is semantic and grounded. Preference training does not correct missing ground truth or authorize relaxing the schema.
 
-### 10.5 Model card e data card
+### 10.5 Model card and data card
 
-Cada candidato deve ter um **model card** privado e uma projeção agregada: finalidade e não-finalidade; base e revisão; precisão/quantização; LoRA e treino; prompt, schema, tokenizer e decoder hash-bound; datasets e splits; métricas por slice; limites conhecidos; incidentes; latência/VRAM local; licença; status de promoção, shadow e rollback. Declarar explicitamente que não escolhe trade identity, risco, quantity, account, broker symbol, leverage ou execution.
+Each candidate must have a private **model card** and an aggregated projection: intended and unintended uses; base and revision; precision/quantization; LoRA and training; hash-bound prompt, schema, tokenizer, and decoder; datasets and splits; metrics by slice; known limitations; incidents; local latency/VRAM; license; promotion, shadow, and rollback status. Explicitly state that it does not choose trade identity, risk, quantity, account, broker symbol, leverage, or execution.
 
-Cada produto de dados deve ter **data card**: motivação; composição real/synthetic; período e origem agregados; política de thread split; anotação/adjudicação; coverage matrix; near-duplicate e leakage audit; incerteza de labels; usos recomendados e proibidos; retenção, privacidade e permissões; hashes; e regra de substituição quando GENERALIZATION ou shadow são abertos. Nenhum card inclui mensagem, predição, símbolo, ID, label privado, adapter ou segredo. Datasheet recomenda documentar composição, coleta e usos [8].
+Each data product must have a **data card**: motivation; real/synthetic composition; aggregated period and source; thread-split policy; annotation/adjudication; coverage matrix; near-duplicate and leakage audit; label uncertainty; recommended and prohibited uses; retention, privacy, and permissions; hashes; and a replacement rule when GENERALIZATION or shadow is opened. No card includes a message, prediction, symbol, ID, private label, adapter, or secret. Datasheets recommends documenting composition, collection, and uses [8].
 
-## 11. Protocolo experimental e DAG de decisão
+## 11. Experimental protocol and decision DAG
 
-### 11.1 Contrato de receipt
+### 11.1 Receipt contract
 
-Todo experimento deve ser pré-registrado com:
+Every experiment must be preregistered with:
 
 ```text
-ID e data:
-FACT / INFERENCE da hipótese:
-Uma única variável alterada:
+ID and date:
+FACT / INFERENCE for the hypothesis:
+Single variable changed:
 Constantes preservadas:
 Dataset, lineage, prompt, schema, tokenizer, modelo e decoder:
-Split usado para seleção:
+Split used for selection:
 Seed(s) e motivo:
-Configuração de treino e geração:
+Training and generation configuration:
 Preflight de tokens e cap:
-Métricas primárias e slices:
-Gates de segurança:
-Critério de avanço/rejeição:
-Orçamento restante da família:
+Primary metrics and slices:
+Safety gates:
+Advance/reject criterion:
+Remaining family budget:
 Resultado agregado, receipt e SHA256:
-Decisão e próxima ação:
+Decision and next action:
 ```
 
-A receipt nunca contém mensagem privada, predição bruta, símbolos, IDs, secrets ou adapter. Uma receipt pública contém somente agregados e hashes autorizados.
+A receipt never contains a private message, raw prediction, symbols, IDs, secrets, or adapter. A public receipt contains only authorized aggregates and hashes.
 
-### 11.2 Template de receipt final
+### 11.2 Final receipt template
 
 ```text
 Status: COMPLETE | BLOCKED | REJECTED | ADVANCES
-Atualização/erro/cap: agregados por split e slice
+Updates/errors/cap: aggregates by split and slice
 Exactness e safety: numeradores, denominadores, bounds
-Runtime: versão, schema/grammar hash, latência, VRAM
-Reprodução: resultado e divergências
-Decisão: conservar, rejeitar ou avançar; justificativa
+Runtime: version, schema/grammar hash, latency, VRAM
+Reproduction: result and divergences
+Decision: retain, reject, or advance; rationale
 ```
 
-O pré-registro vem antes da execução; a receipt vem depois. Nunca preencher uma receipt retroativamente para transformar uma exploração adaptativa em experimento causal.
+Preregistration comes before execution; the receipt comes after. Never fill in a receipt retroactively to turn adaptive exploration into a causal experiment.
 
 ### 11.3 DAG
 
@@ -486,191 +486,191 @@ G0 congelar/rejeitar Task97
         |
 G1 auditoria privada de coverage + labels
         |
-G2 splits thread/time/source + independence + futuro-real
+G2 thread/time/source splits + independence + future-real
         |
-G3 TRAIN canônico real-heavy + synthetic independente + matched negatives
+G3 canonical real-heavy TRAIN + independent synthetic data + matched negatives
         |
 G4 ceiling humano/teacher forte offline, human-adjudicated
         |
-G5 uma configuração limpa do 0,8B
+G5 one clean 0.8B configuration
         |
-        +--> falha por dados/rótulo/runtime --> corrigir o gate correspondente, não escalar
+        +--> data/label/runtime failure --> fix the corresponding gate, do not scale
         |
-        +--> zero-invalid mas semântica ainda baixa, evidência limpa
+        +--> zero-invalid but semantics remain poor, clean evidence
                        |
-                 G6 comparar ~4B, mesmo contrato
+                 G6 compare ~4B, same contract
                        |
-                 ainda incapaz? --> G7 ~8B, mesmo contrato
+                 still insufficient? --> G7 ~8B, same contract
                        |
-                 selecionado --> replicação exata
+                 selected --> exact replication
                        |
-                 G8 abrir uma vez GENERALIZATION + holdout real dimensionado
+                 G8 open GENERALIZATION once + adequately sized real holdout
                        |
-                 aprovado --> G9 shadow futuro-real, sem ordens
+                 approved --> G9 future-real shadow, no orders
                        |
-                 só depois de revisão e autorização explícita --> canary possível
+                 only after review and explicit authorization --> possible canary
 ```
 
-### 11.4 G0–G9 executável
+### 11.4 Executable G0–G9
 
-**G0 — freeze/reject.** Marcar Task97 como candidato falho; conservar evidência agregada; não abrir GENERALIZATION; não promover e não treinar contra o resultado.
+**G0 — freeze/reject.** Mark Task97 as a failed candidate; preserve aggregate evidence; do not open GENERALIZATION, promote, or train against the result.
 
-**G1 — audit.** Auditar ocorrência, contrato histórico, mistura `current/parent/root`, rótulos, fields grounded, ambiguidade, duplicata e cells críticas. Quarentenar desacordos; não reescrever silenciosamente real data.
+**G1 — audit.** Audit occurrences, historical contract, `current/parent/root` mix, labels, grounded fields, ambiguity, duplicates, and critical cells. Quarantine disagreements; do not silently rewrite real data.
 
-**G2 — independence.** Construir splits por thread, tempo e origem; provar que gerador e autor de GENERALIZATION não compartilham catálogo/cláusula com TRAIN/DEVELOPMENT; separar um pool futuro-real antes de ver labels.
+**G2 — independence.** Build splits by thread, time, and source; prove that the GENERALIZATION generator and author do not share a catalog/clause with TRAIN/DEVELOPMENT; separate a future-real pool before viewing labels.
 
-**G3 — clean data.** Construir TRAIN com real crítico não negociável, sintéticos tagueados independentemente, matched positives/negatives e serializer único. Balancear rare cells sem alegar que o balanceamento é produção.
+**G3 — clean data.** Build TRAIN with non-negotiable critical real data, independently tagged synthetics, matched positives/negatives, and one serializer. Balance rare cells without claiming that the balance reflects production.
 
-**G4 — ceiling.** Human/teacher forte gera referência offline; adjudicar conflitos; medir ceiling por slice e registrar onde o próprio contrato é ambíguo.
+**G4 — ceiling.** A strong human/teacher generates an offline reference; adjudicate conflicts; measure the ceiling by slice and record where the contract itself is ambiguous.
 
-**G5 — 0,8B.** Uma execução limpa, com exatamente o runner e o contrato. Aceitar somente se semanticamente competente e sem falha de safety.
+**G5 — 0.8B.** One clean run with exactly the same runner and contract. Accept only if semantically competent and free of safety failures.
 
-**G6 — 4B.** Só se G5 falhar com evidência limpa de capacidade; benchmark local primeiro; mesmo tudo restante.
+**G6 — 4B.** Only if G5 fails with clean evidence of a capacity limitation; benchmark locally first; keep everything else the same.
 
-**G7 — 8B.** Só se o 4B falhar pela mesma limitação reproduzível; nenhuma promessa de ganho.
+**G7 — 8B.** Only if 4B fails for the same reproducible limitation; no promise of improvement.
 
-**G8 — final evidence.** Selecionar, replicar, congelar, abrir GENERALIZATION uma vez e avaliar um real holdout com denominadores suficientes. O resultado continua sendo evidência amostral.
+**G8 — final evidence.** Select, replicate, freeze, open GENERALIZATION once, and evaluate a real holdout with sufficient denominators. The result remains sample evidence.
 
-**G9 — shadow.** Rodar futuro-real sem enviar ordens; comparar com humanos/harness legado; registrar incidentes e drift. O canary requer autorização explícita, política de execução e kill switch independente.
+**G9 — shadow.** Run on future-real data without sending orders; compare with humans/the legacy harness; record incidents and drift. Canary requires explicit authorization, an execution policy, and an independent kill switch.
 
-### 11.5 Matriz de decisão de causa
+### 11.5 Cause decision matrix
 
-| Padrão observado | Problema mais provável | Teste confirmatório | Ação | O que não fazer |
+| Observed pattern | Most likely problem | Confirmatory test | Action | What not to do |
 |---|---|---|---|---|
-| célula crítica EMPTY/real zero | dados/cobertura | adicionar real source-disjoint e learning curve | G1–G3 | aumentar rank |
-| humanos discordam ou campo não está no texto | label/contrato | dupla anotação e adjudicação | guideline/quarentena | treinar rótulo inventado |
-| synthetic score alto, real holdout baixo | generator/independência | real-only versus mix, family-disjoint | reescrever geradores | chamar synthetic de prova |
-| dados limpos, erros reproduzíveis em composição/guard | capacidade | mesma receita em ~4B | G6 | declarar 0.8B raiz antes |
-| variação entre mesmas configs | optimizer/runtime | replicação e deterministic controls | estabilizar/medir | cherry-pick seed |
-| invalid/oneOf/cap/EOS | decoder/runtime | probes diferenciais, tokenizer e schema hash | corrigir runtime | parser repair/retry |
-| schema 100%, semantic baixo | conteúdo/dados/capacidade | full exact e slices | voltar a dados/ceiling | usar validade como proxy |
+| critical cell EMPTY/zero real | data/coverage | add source-disjoint real data and learning curve | G1–G3 | increase rank |
+| humans disagree or field is absent from the text | label/contract | double annotation and adjudication | guideline/quarantine | train on an invented label |
+| high synthetic score, low real holdout | generator/independence | real-only versus mix, family-disjoint | rewrite generators | call synthetic data proof |
+| clean data, reproducible composition/guard errors | capacity | same recipe on ~4B | G6 | declare 0.8B the root cause prematurely |
+| variation across identical configs | optimizer/runtime | replication and deterministic controls | stabilize/measure | cherry-pick a seed |
+| invalid/oneOf/cap/EOS | decoder/runtime | differential probes, tokenizer, and schema hash | fix runtime | parser repair/retry |
+| schema 100%, low semantic score | content/data/capacity | full exact and slices | return to data/ceiling | use validity as proxy |
 
-A matriz produz hipótese, não causalidade automática. Toda conclusão forte requer mudar uma variável e repetir em split não adaptativo.
+The matrix produces a hypothesis, not automatic causality. Every strong conclusion requires changing one variable and repeating on a non-adaptive split.
 
-## 12. Decodificação restrita e contrato de runtime
+## 12. Constrained decoding and runtime contract
 
-### 12.1 Dois gates distintos
+### 12.1 Two distinct gates
 
-**FACT publicado:** XGrammar declara constrained decoding para correção estrutural [11]. **FACT do projeto:** XGrammar `0.1.32` produziu `100/100` válidos e zero cap no Task97, enquanto semântica falhou. **INFERENCE:** estrutura é necessária, mas não suficiente; manter gates separados:
+**Published FACT:** XGrammar states that constrained decoding provides structural correctness [11]. **Project FACT:** XGrammar `0.1.32` produced `100/100` valid outputs and zero cap hits in Task97, while semantics failed. **INFERENCE:** structure is necessary but insufficient; maintain separate gates:
 
-1. estrutural: output completo, parse estrito, sem duplicata, estado aceitante, validação no Draft 2020-12 original;
-2. semântico-operacional: exact match, grounding, ação, segurança, literalidade, escopo, ordem e slices.
+1. structural: complete output, strict parse, no duplicates, accepting state, validation against the original Draft 2020-12 schema;
+2. semantic-operational: exact match, grounding, action, safety, literalness, scope, order, and slices.
 
-O schema Draft 2020-12 original é imutável e único validador final. A gramática compilada para XGrammar é um artefato de decoding. Sua equivalência deve ser testada diferencialmente, nunca presumida. Não relaxar `oneOf`, enums, required, arrays, referências ou limites para fazer uma saída passar.
+The original Draft 2020-12 schema is immutable and the sole final validator. The grammar compiled for XGrammar is a decoding artifact. Its equivalence must be tested differentially, never assumed. Do not relax `oneOf`, enums, required fields, arrays, references, or limits to make an output pass.
 
-### 12.2 Uma chamada, uma saída, falha fechada
+### 12.2 One call, one output, fail closed
 
-O runtime aprovado é:
+The approved runtime is:
 
-1. carregar modelo, processor, tokenizer e schema com hashes;
-2. compilar o decoder antes de gerar;
-3. renderizar somente o prompt permitido e obter generation prompt;
-4. fazer uma chamada `generate` com máscara de grammar a cada passo;
-5. aceitar EOS somente se o estado da grammar for aceitante;
-6. rejeitar cap, JSON parcial, texto extra, chave duplicada, parse frouxo ou schema inválido;
-7. validar o texto completo no Draft 2020-12 original;
-8. encaminhar o objeto ao harness, que ainda aplica todas as políticas.
+1. load the model, processor, tokenizer, and schema with hashes;
+2. compile the decoder before generation;
+3. render only the permitted prompt and obtain the generation prompt;
+4. make one `generate` call with a grammar mask at every step;
+5. accept EOS only if the grammar state is accepting;
+6. reject cap hits, partial JSON, extra text, duplicate keys, loose parsing, or invalid schema;
+7. validate the complete text against the original Draft 2020-12 schema;
+8. pass the object to the harness, which still applies all policies.
 
-Proibidos: retirar fences, procurar substring JSON, corrigir aspas, fazer parser repair, preencher defaults, normalizar campos ausentes, retry automático, segundo modelo ou segunda chamada. Uma saída rejeitada é uma falha mensurável. XGrammar não transforma uma intenção errada em correta.
+Prohibited: removing fences, searching for a JSON substring, fixing quotes, parser repair, filling defaults, normalizing missing fields, automatic retry, a second model, or a second call. A rejected output is a measurable failure. XGrammar does not turn an incorrect intent into a correct one.
 
-### 12.3 Suíte de release do decoder
+### 12.3 Decoder release suite
 
-Para cada mudança de XGrammar, Transformers, tokenizer, modelo, schema ou processor, executar probes válidos e inválidos:
+For every change to XGrammar, Transformers, tokenizer, model, schema, or processor, run valid and invalid probes:
 
-- cada ramo de unions aninhadas e ramos sobrepostos;
-- required ausente, propriedade extra, enum/const errado e tipo errado;
-- null versus ausente;
-- arrays nos limites;
-- Unicode escapado e números nas bordas;
-- `$ref`/recursão aplicáveis;
-- chave duplicada;
-- JSON truncado e EOS cedo;
-- cap um token antes e depois do fechamento válido.
+- each branch of nested unions and overlapping branches;
+- missing required field, extra property, incorrect enum/const, and incorrect type;
+- null versus absent;
+- arrays at the boundaries;
+- escaped Unicode and boundary numbers;
+- applicable `$ref`/recursion;
+- duplicate key;
+- truncated JSON and early EOS;
+- cap one token before and after valid closure.
 
-Registrar contagens, motivo de parada, número de tokens, estado aceitante, hash do schema original e compilado e resultado do validador original. LM Format Enforcer `0.11.3` foi reportado como unsound para unions aninhadas neste caso; não usar para o schema sem nova suíte de aprovação. Essa conclusão é limitada ao caso testado, não uma condenação universal de versões futuras.
+Record counts, stop reason, token count, accepting state, hashes of the original and compiled schemas, and the original validator's result. LM Format Enforcer `0.11.3` was reported as unsound for nested unions in this case; do not use it for the schema without a new approval suite. This conclusion is limited to the tested case, not a universal condemnation of future versions.
 
-O Transformers documenta que `LogitsProcessor` altera scores durante `generate` e que beam search pode exigir normalização posterior [10]. Como o produto exige geração determinística de uma chamada, evitar combinações desnecessárias de beam/warper. Se alguma configuração mudar, testar a ordem efetiva da máscara e do processor.
+Transformers documents that `LogitsProcessor` alters scores during `generate` and that beam search may require subsequent normalization [10]. Since the product requires deterministic generation in one call, avoid unnecessary combinations of beam/warper. If any configuration changes, test the effective order of the mask and processor.
 
-## 13. Avaliação, severidade e estatística
+## 13. Evaluation, severity, and statistics
 
-### 13.1 Autoridade das métricas
+### 13.1 Metric authority
 
-**Métrica de autoridade:** operational full exact, isto é, o objeto inteiro coincide com o alvo canônico e passa todos os gates. Componentes diagnosticam; não podem esconder falha de safety.
+**Authoritative metric:** full operational exact, meaning the entire object matches the canonical target and passes all gates. Components are diagnostic; they cannot hide a safety failure.
 
-| Família | Métrica | Severidade |
+| Family | Metric | Severity |
 |---|---|---|
-| Estrutural | parse, schema-valid, estado aceitante, cap, duplicata | bloqueadora quando falha |
-| Evento | event exact/F1 e matriz de confusão | alta |
-| Operacional | full exact e sequência exata | crítica |
-| Ação | precision, recall, F1; action-set exact | crítica |
-| Segurança | false-action, false-EXIT, selector broadened | bloqueadora |
-| Literal | preço, percentual, typo, abreviação, amount | alta |
-| Guard | presença, tipo, valor e vínculo | crítica |
-| Grounding | current versus parent/root e evidência de campo | crítica |
-| Composição | atomicidade, ordem e ações independentes | crítica |
-| Seletiva | abstention/NO_ACTION, coverage e risco condicional | política de segurança |
+| Structural | parse, schema-valid, accepting state, cap, duplicates | blocking on failure |
+| Event | event exact/F1 and confusion matrix | high |
+| Operational | full exact and exact sequence | critical |
+| Action | precision, recall, F1; action-set exact | critical |
+| Safety | false-action, false-EXIT, selector broadened | blocking |
+| Literal | price, percentage, typo, abbreviation, amount | high |
+| Guard | presence, type, value, and linkage | critical |
+| Grounding | current versus parent/root and field evidence | critical |
+| Composition | atomicity, order, and independent actions | critical |
+| Selective | abstention/NO_ACTION, coverage, and conditional risk | safety policy |
 | Runtime | p50/p95 end-to-end, prefill/decode, VRAM, OOM, cap | release |
 
-Action precision/recall/F1 são úteis, mas uma alta média pode ocultar um falso EXIT. Reportar exact match por campo, mas nunca substituir a saída integral. O sistema deve reportar quantos casos eram elegíveis para cada métrica; sem denominador, `0/0` não é zero erro.
+Action precision/recall/F1 are useful, but a high average can hide a false EXIT. Report exact match by field, but never replace whole-output exactness. The system must report how many cases were eligible for each metric; without a denominator, `0/0` is not zero errors.
 
-### 13.2 Slices obrigatórias
+### 13.2 Required slices
 
-Para cada métrica e gate, publicar `n`, numerador, denominador e intervalo quando aplicável por:
+For each metric and gate, report `n`, numerator, denominator, and interval when applicable, by:
 
 - role/event: SIGNAL, UPDATE, EXIT, NO_ACTION;
 - mode: current, parent, root, omitted;
-- polarity: afirmativa, negada, condicional, citação, histórico;
-- fonte, canal, thread family e janela temporal agregadas;
-- curta/longa e posição inicial/meio/final;
-- board de uma ou várias linhas;
+- polarity: affirmative, negated, conditional, quotation, historical;
+- aggregated source, channel, thread family, and time window;
+- short/long and beginning/middle/end position;
+- one- or multi-line board;
 - single/multi-action;
-- guard presente/ausente e tipo de guard;
-- literal explícito/omisso/typo;
+- guard present/absent and guard type;
+- literal explicit/omitted/typo;
 - real versus synthetic;
 - ambiguous/clear;
-- oportunidade de falsa ação e oportunidade de falso EXIT.
+- false-action and false-EXIT opportunities.
 
-Célula vazia é `UNKNOWN`, não zero. Uma slice com uma observação não sustenta `Alta`. A suite de cobertura é deliberadamente balanceada; o relatório de produção usa adicionalmente prior real, sem apagar a suite diagnóstica.
+An empty cell is `UNKNOWN`, not zero. A slice with one observation does not support `High` confidence. The coverage suite is deliberately balanced; the production report additionally uses the real prior without removing the diagnostic suite.
 
 ### 13.3 Selective abstention
 
-**FACT publicado:** selective classification permite trocar coverage por menor risco usando reject option [15]. **INFERENCE:** se o schema já oferece uma representação segura de não ação/insuficiência, calibrar abstention no DEVELOPMENT para reduzir false-action e false-EXIT, e medir o custo em recall. Não criar campo novo nem relaxar schema.
+**Published FACT:** selective classification allows trading coverage for lower risk using a reject option [15]. **INFERENCE:** if the schema already provides a safe representation of no action/insufficient evidence, calibrate abstention on DEVELOPMENT to reduce false-action and false-EXIT, and measure the recall cost. Do not create a new field or relax the schema.
 
-**POLÍTICA:** abstention não pode mascarar incompetência: reportar coverage, risco condicional, recall de ações obrigatórias e distribuição por slice. Se o modelo simplesmente converte toda ação em NO_ACTION, false-action cai mas o produto falha por omissão. O gate deve exigir piso de cobertura/recall predefinido e zero observações de safety violation no produto correspondente. Não escolher threshold depois de abrir GENERALIZATION.
+**POLICY:** abstention must not mask incompetence: report coverage, conditional risk, recall of required actions, and distribution by slice. If the model simply converts every action to NO_ACTION, false-action falls but the product fails by omission. The gate must require a predefined coverage/recall floor and zero observed safety violations on the corresponding product. Do not choose a threshold after opening GENERALIZATION.
 
-### 13.4 Teste de cobertura e propriedades
+### 13.4 Coverage and property testing
 
-Coverage-driven testing foi proposto para revelar comportamentos raros que datasets rotulados manuais podem não cobrir [16]. Aqui o equivalente é uma matriz semântica de texto, não alegação de neuron coverage. Gerar offline transformações label-preserving e label-changing, revisar amostras humanas e verificar:
+Coverage-driven testing has been proposed to reveal rare behaviors that manually labeled datasets may not cover [16]. Here, the equivalent is a semantic text matrix, not a claim of neuron coverage. Generate label-preserving and label-changing transformations offline, review human samples, and verify:
 
-- mudanças irrelevantes não alteram o objeto;
-- negação/temporalidade alteram somente o alvo esperado;
-- adicionar linha neutra não amplia ação de outra linha;
-- mover evidência entre início/meio/fim preserva semântica;
-- parent/root resolve campo mas não cria evento;
-- uma ação parcial sem amount continua `SOME`;
-- selector não inclui distractor.
+- irrelevant changes do not alter the object;
+- negation/temporality alter only the expected target;
+- adding a neutral line does not broaden another line's action;
+- moving evidence between beginning/middle/end preserves semantics;
+- parent/root resolves a field but does not create an event;
+- a partial action without an amount remains `SOME`;
+- the selector does not include a distractor.
 
-Uma violação é diagnóstico, não necessariamente erro do dataset; revisar a relação metamórfica com humano.
+A violation is diagnostic, not necessarily a dataset error; review the metamorphic relation with a human.
 
-### 13.5 Latência e memória
+### 13.5 Latency and memory
 
-Medir no hardware local efetivamente usado, sem extrapolar alegações de fornecedor: prefill tokens/s, decode tokens/s, p50/p95 da chamada completa, pico de VRAM, OOM, cap hit e custo de compilação. Comparar exatamente o mesmo prompt e tamanho de saída entre candidatos. Um modelo que melhora semanticamente mas viola p95, estabilidade ou isolamento não passa o runtime gate. Nenhuma afirmação de que determinado modelo cabe na GPU é feita antes do benchmark local.
+Measure on the actual local hardware used, without extrapolating vendor claims: prefill tokens/s, decode tokens/s, p50/p95 for the full call, peak VRAM, OOM, cap hits, and compilation cost. Compare exactly the same prompt and output size across candidates. A model that improves semantically but violates p95, stability, or isolation does not pass the runtime gate. No claim that a given model fits on the GPU is made before the local benchmark.
 
-## 14. Limites de confiança e amostra
+## 14. Confidence and sample limits
 
-Para zero falhas observadas em `n` ensaios independentes Bernoulli, o limite superior unilateral de erro a 95% é:
+For zero observed failures in `n` independent Bernoulli trials, the one-sided 95% upper error bound is:
 
 ```text
 upper_error = 1 - 0,05^(1/n)
 ```
 
-Para planejar um gate de zero falhas com erro verdadeiro alvo `t`, resolver:
+To plan a zero-failure gate with target true error `t`, solve:
 
 ```text
 n >= ceil( ln(0,05) / ln(1 - t) )
 ```
 
-| Erro alvo máximo | n mínimo, zero falhas, unilateral 95% |
+| Maximum target error | Minimum n, zero failures, one-sided 95% |
 |---:|---:|
 | 1% | 299 |
 | 0,5% | 598 |
@@ -678,244 +678,244 @@ n >= ceil( ln(0,05) / ln(1 - t) )
 | 0,05% | 5.990 |
 | 0,01% | 29.956 |
 
-**FACT estatístico:** métodos binomiais exatos são apropriados quando há poucos failures ou amostra pequena [7]. **INFERENCE:** `0/100` não significa erro verdadeiro zero; sob as hipóteses ideais, o limite é aproximadamente `2,95%`. `0/1.000` é aproximadamente `0,30%` a 95%. Para uma slice rara com `n=10`, `0/10` ainda permite limite superior de cerca de `25,9%`.
+**Statistical FACT:** exact binomial methods are appropriate when there are few failures or a small sample [7]. **INFERENCE:** `0/100` does not mean zero true error; under ideal assumptions, the bound is approximately `2,95%`. `0/1.000` is approximately `0,30%` at 95%. For a rare slice with `n=10`, `0/10` still allows an upper bound of about `25,9%`.
 
-Assumptions obrigatórias: oportunidades independentes, mesma população alvo, definição correta de erro e label sem erro. Rows do mesmo thread, autor ou template são correlacionadas; o denominador nominal deve ser acompanhado do número de grupos independentes ou de uma análise de effective sample size. Distribuição temporal futura pode não ser IID. Se a slice contém apenas uma parte das rows capaz de gerar falsa ação, usar o denominador de oportunidades de falsa ação, não o total geral.
+Required assumptions: independent opportunities, the same target population, a correct error definition, and error-free labels. Rows from the same thread, author, or template are correlated; the nominal denominator must be accompanied by the number of independent groups or an effective-sample-size analysis. The future temporal distribution may not be IID. If only some rows in a slice can produce a false action, use the denominator of false-action opportunities, not the overall total.
 
-Para failures não zero, usar intervalo binomial exato ou método pré-registrado; não escolher Wilson, normal ou bootstrap depois de ver o resultado. Reportar intervalos por slice. “Alta confiança” exige pelo menos duas fontes independentes para uma afirmação publicada quando aplicável, e neste projeto exige também evidência operacional independente; uma única suite adaptativa não merece o rótulo.
+For nonzero failures, use an exact binomial interval or a preregistered method; do not choose Wilson, normal, or bootstrap after seeing the result. Report intervals by slice. “High confidence” requires at least two independent sources for a published claim when applicable, and in this project also requires independent operational evidence; a single adaptive suite does not merit that label.
 
-## 15. Promoção, replicação, shadow, canary e rollback
+## 15. Promotion, replication, shadow, canary, and rollback
 
-### 15.1 Gate de candidato
+### 15.1 Candidate gate
 
-Um candidato só pode avançar se, no produto de desenvolvimento selecionado antes de GENERALIZATION:
+A candidate may advance only if, on the development product selected before GENERALIZATION:
 
-- schema-valid e parse estrito sem falha;
-- operational full exact atingir a meta pré-registrada;
-- false-action, false-EXIT e broadened selector permanecerem zero observado;
-- todas as slices críticas tiverem denominador adequado e não houver cell crítica UNKNOWN escondida;
-- não houver truncamento ou cap;
-- a configuração e hashes estiverem completos;
-- não houver regressão no histórico de regressão permitido.
+- schema-valid with strict parsing and no failures;
+- full operational exact meets the preregistered target;
+- false-action, false-EXIT, and broadened selector remain at zero observed;
+- all critical slices have adequate denominators and no critical UNKNOWN cell is hidden;
+- there is no truncation or cap hit;
+- configuration and hashes are complete;
+- there is no regression in the permitted regression history.
 
-Como o atual Task97 tem `41` falsas ações, `38` falsos EXIT e `18` broadened, não passa.
+Since current Task97 has `41` false actions, `38` false EXITs, and `18` broadened selectors, it does not pass.
 
-### 15.2 Replicação
+### 15.2 Replication
 
-Reexecutar a configuração congelada em workspace novo, com os mesmos bytes, seed e decoder. Comparar vetor inteiro, safety, loss e taxonomy agregada. Se CUDA apresentar nondeterminism, pré-registrar a regra de replicação/maioria; nunca escolher uma execução favorável. Uma replicação que falha rebaixa a confiança e bloqueia shadow até nova hipótese e novo registro.
+Rerun the frozen configuration in a new workspace, with the same bytes, seed, and decoder. Compare the full vector, safety, loss, and aggregate taxonomy. If CUDA exhibits nondeterminism, preregister the replication/majority rule; never select a favorable run. A failed replication lowers confidence and blocks shadow pending a new hypothesis and registration.
 
-### 15.3 GENERALIZATION e holdout
+### 15.3 GENERALIZATION and holdout
 
-Congelar código, prompt, schema, modelo, tokenizer, decoder, thresholds e lista de seeds antes de abrir GENERALIZATION. Abrir uma vez. Nenhum failure de GENERALIZATION pode ser convertido em novo treino e continuar sendo a mesma evidência. Para outra tentativa final, construir um novo produto independente.
+Freeze code, prompt, schema, model, tokenizer, decoder, thresholds, and seed list before opening GENERALIZATION. Open it once. No GENERALIZATION failure can be turned into new training while remaining the same evidence. For another final attempt, build a new independent product.
 
-Amostra de `100` pode funcionar como smoke/regression, mas não como prova estatística de baixa taxa rara. O futuro-real holdout deve ser suficientemente dimensionado de acordo com a taxa de safety que se pretende excluir, usando a tabela e denominadores por oportunidade.
+A sample of `100` may work as a smoke/regression test, but not as statistical proof of a low rare-event rate. The future-real holdout must be sized sufficiently for the safety rate one intends to rule out, using the table and opportunity denominators.
 
-### 15.4 Shadow sem ordens
+### 15.4 Shadow without orders
 
-G9 roda em paralelo, sem mutação de estado de broker e sem enviar ordens. Comparar saída do extrator com decisões humanas/harness legado, com adjudicação posterior. Monitorar:
+G9 runs in parallel, without mutating broker state or sending orders. Compare extractor output with human/legacy-harness decisions, with subsequent adjudication. Monitor:
 
 - schema invalid, cap, parser exception e abstention;
-- falsa ação e falso EXIT descobertos na revisão;
+- false actions and false EXITs discovered during review;
 - selector broadening, literal e guard;
-- drift de classe, origem, comprimento e posição;
+- drift in class, source, length, and position;
 - latência, VRAM, fila e timeouts;
-- incidentes e divergências de contrato;
-- qualquer conteúdo privado nos logs.
+- incidents and contract divergences;
+- any private content in logs.
 
-O shadow só pode ser chamado “futuro-real” com ledger de exclusão de TRAIN/DEV/GENERALIZATION e data de coleta. Não usar seus resultados adaptativamente sem invalidar a finalidade final.
+Shadow may be called “future-real” only with a ledger excluding TRAIN/DEV/GENERALIZATION and a collection date. Do not use its results adaptively without invalidating its final-evidence purpose.
 
-### 15.5 Canary e rollback
+### 15.5 Canary and rollback
 
-Canary não é consequência automática de shadow. Requer decisão explícita posterior, revisão de risco, kill switch, idempotência e limites do harness. O LLM não recebe autorização de execução. Rollback deve ser selecionar a última configuração privada aprovada pelo harness e desligar o candidato; não deve depender de um segundo modelo ou reparo. Critérios de rollback pré-registrados incluem qualquer falsa ação confirmada, falso EXIT, broadening, schema failure, drift material, p95/VRAM fora do budget ou incidente de privacidade.
+Canary is not an automatic consequence of shadow. It requires a later explicit decision, risk review, kill switch, idempotency, and harness limits. The LLM receives no execution authorization. Rollback must select the last private configuration approved by the harness and disable the candidate; it must not depend on a second model or repair. Preregistered rollback criteria include any confirmed false action, false EXIT, broadening, schema failure, material drift, p95/VRAM outside budget, or privacy incident.
 
 ## 16. Anti-pattern blacklist
 
-1. **Ajustar o 0,8B atual imediatamente:** bloqueado; dados e labels ainda não fecharam.
-2. **Dizer que schema-valid 100/100 é semântica perfeita:** falso.
+1. **Tune the current 0.8B immediately:** blocked; data and labels are not yet closed.
+2. **Claim that schema-valid 100/100 means perfect semantics:** false.
 3. **Usar Task96 smoke como accuracy:** falso.
-4. **Diagnosticar prompt-token loss sem teste de máscara:** falso; runner já faz completion-only.
-5. **Abrir GENERALIZATION para escolher uma config:** proibido.
-6. **Treinar em wording de DEVELOPMENT ou em predição anterior:** leakage.
-7. **Criar sintético no mesmo gerador de TRAIN e chamar holdout independente:** inválido.
-8. **Usar hash disjunto como prova de independência linguística:** insuficiente.
-9. **Aumentar rank para preencher cell real vazia:** sem nexo causal.
-10. **Declarar 0,8B como causa antes de G4/G5:** não suportado.
-11. **Usar loss menor como qualidade:** contrariado pela evidência local.
-12. **Usar random row split em vez de thread/time/source split:** vazamento provável.
-13. **Preencher default, inventar lado/instrumento, normalizar typo ou ampliar selector:** viola contrato.
-14. **Pós-processar JSON parcial, extrair substring ou reparar parser:** invalida o gate.
-15. **Retry ou segunda chamada para obter JSON:** viola one-call.
-16. **Enviar estado, risco, account, quantity ou símbolo de broker para decisão do modelo:** arquitetura errada.
-17. **Permitir parent/root disparar ação:** viola current-message-only.
-18. **Chamar `NO_ACTION` universal de segurança:** omissão operacional também é falha.
-19. **Usar um teacher como verdade sem adjudicação:** rótulo potencialmente errado.
-20. **Rodar DPO/RL antes de SFT semanticamente competente:** prematuro.
-21. **Usar claims de VRAM de vendor como benchmark local:** não verificado.
-22. **Somar todos os tokens de rows correlacionadas como n independente:** intervalo enganoso.
-23. **Publicar mensagens, símbolos, IDs, predições, adapters ou paths privados:** proibido.
-24. **Mutar schema para transformar previsão em acerto:** proibido.
-25. **Fazer canary apenas porque um benchmark deu 100/100:** insuficiente.
+4. **Diagnose prompt-token loss without testing the mask:** false; the runner already uses completion-only loss.
+5. **Open GENERALIZATION to choose a config:** prohibited.
+6. **Train on DEVELOPMENT wording or a prior prediction:** leakage.
+7. **Create synthetic data with the same TRAIN generator and call it an independent holdout:** invalid.
+8. **Use disjoint hashes as proof of linguistic independence:** insufficient.
+9. **Increase rank to fill an empty real cell:** no causal basis.
+10. **Declare 0.8B the cause before G4/G5:** unsupported.
+11. **Use lower loss as a quality measure:** contradicted by local evidence.
+12. **Use a random row split instead of thread/time/source split:** likely leakage.
+13. **Fill defaults, invent a side/instrument, normalize a typo, or broaden a selector:** violates the contract.
+14. **Post-process partial JSON, extract a substring, or repair the parser:** invalidates the gate.
+15. **Retry or make a second call to obtain JSON:** violates the one-call contract.
+16. **Send state, risk, account, quantity, or broker symbol for the model to decide:** wrong architecture.
+17. **Allow parent/root to trigger an action:** violates current-message-only.
+18. **Call universal `NO_ACTION` safe:** operational omission is also a failure.
+19. **Use a teacher as truth without adjudication:** potentially incorrect label.
+20. **Run DPO/RL before semantically competent SFT:** premature.
+21. **Use vendor VRAM claims as a local benchmark:** unverified.
+22. **Count all tokens from correlated rows as independent n:** misleading interval.
+23. **Publish messages, symbols, IDs, predictions, adapters, or private paths:** prohibited.
+24. **Mutate the schema to turn a prediction into a correct answer:** prohibited.
+25. **Run a canary merely because a benchmark scored 100/100:** insufficient.
 
-## 17. Checklist imediato ordenado
+## 17. Ordered immediate checklist
 
-### G0 — hoje
+### G0 — today
 
-- [ ] Marcar Task97 como reprovado; preservar receipt agregada.
-- [ ] Não promover, não executar, não abrir GENERALIZATION.
-- [ ] Separar semantic gate de runtime smoke Task96.
-- [ ] Confirmar que a máscara completion-only e uma geração por row permanecem no runner.
+- [ ] Mark Task97 as failed; preserve the aggregate receipt.
+- [ ] Do not promote, execute, or open GENERALIZATION.
+- [ ] Separate the semantic gate from the Task96 runtime smoke test.
+- [ ] Confirm that the completion-only mask and one generation per row remain in the runner.
 
-### G1 — auditoria privada
+### G1 — private audit
 
-- [ ] Gerar cobertura por operação, guard, composição, posição e grounding.
-- [ ] Revisar contrato histórico, rows ambíguas e misturas current/parent/root.
-- [ ] Fazer dupla anotação e adjudicação dos critical cells e falhas históricas.
-- [ ] Criar ledger de near duplicates, edição, thread e leakage.
+- [ ] Generate coverage by operation, guard, composition, position, and grounding.
+- [ ] Review the historical contract, ambiguous rows, and current/parent/root mixes.
+- [ ] Double-annotate and adjudicate critical cells and historical failures.
+- [ ] Create a ledger for near duplicates, edits, threads, and leakage.
 
-### G2 — independência
+### G2 — independence
 
-- [ ] Agrupar por thread/episódio.
-- [ ] Separar tempo, fonte, canal e família editorial.
-- [ ] Provar geradores e catálogos distintos para TRAIN/DEV/GENERALIZATION.
-- [ ] Selecionar e congelar futuro-real antes de inspecionar labels.
+- [ ] Group by thread/episode.
+- [ ] Separate time, source, channel, and editorial family.
+- [ ] Prove distinct generators and catalogs for TRAIN/DEV/GENERALIZATION.
+- [ ] Select and freeze future-real data before inspecting labels.
 
-### G3 — dados
+### G3 — data
 
-- [ ] Adicionar real critical cells, incluindo board, guarded, EXIT e multi-action.
-- [ ] Criar matched negatives reais quando possível.
-- [ ] Taggear cada sintético e auditar humanos nos casos de impacto.
-- [ ] Fixar serializer, prompt, schema e lineage.
-- [ ] Calibrar mistura balanceada versus prior de produção como hipóteses separadas.
+- [ ] Add real critical cells, including board, guarded, EXIT, and multi-action examples.
+- [ ] Create real matched negatives when possible.
+- [ ] Tag each synthetic example and conduct human audits for impactful cases.
+- [ ] Freeze the serializer, prompt, schema, and lineage.
+- [ ] Calibrate balanced mixture versus production prior as separate hypotheses.
 
 ### G4 — ceiling
 
-- [ ] Medir teto humano/teacher em suite offline adjudicada.
-- [ ] Resolver ou quarentenar desacordos.
-- [ ] Definir metas de segurança e coverage antes de treino.
+- [ ] Measure the human/teacher ceiling on an adjudicated offline suite.
+- [ ] Resolve or quarantine disagreements.
+- [ ] Define safety and coverage targets before training.
 
-### G5–G7 — modelo
+### G5–G7 — model
 
-- [ ] Retreinar uma vez o 0,8B com contrato limpo.
-- [ ] Se falha semântica persistir com dados limpos, benchmark local do ~4B.
-- [ ] Só então considerar ~8B.
-- [ ] Usar QLoRA apenas como tratamento de feasibility; medir qualidade separadamente.
-- [ ] Manter prompt/schema/decoder/splits iguais entre degraus.
+- [ ] Retrain the 0.8B once under the clean contract.
+- [ ] If semantic failure persists with clean data, locally benchmark ~4B.
+- [ ] Only then consider ~8B.
+- [ ] Use QLoRA only as a feasibility treatment; measure quality separately.
+- [ ] Keep prompt/schema/decoder/splits identical across tiers.
 
-### G8–G9 — evidência e operação
+### G8–G9 — evidence and operation
 
-- [ ] Replicar configuração selecionada em workspace novo.
-- [ ] Congelar e abrir GENERALIZATION uma única vez.
-- [ ] Avaliar holdout real com n e slices adequados.
-- [ ] Rodar shadow futuro-real sem ordens.
-- [ ] Revisar monitoramento, kill switch e rollback.
-- [ ] Pedir autorização explícita antes de qualquer canary; este documento não concede autorização.
+- [ ] Replicate the selected configuration in a new workspace.
+- [ ] Freeze and open GENERALIZATION exactly once.
+- [ ] Evaluate the real holdout with adequate n and slices.
+- [ ] Run future-real shadow without orders.
+- [ ] Review monitoring, kill switch, and rollback.
+- [ ] Obtain explicit authorization before any canary; this document grants no such authorization.
 
 ## 18. Stop rules
 
-Parar e marcar `BLOCKED_NEEDS_USER_DECISION` quando:
+Stop and mark `BLOCKED_NEEDS_USER_DECISION` when:
 
-- a família pré-registrada esgotar o orçamento sem melhoria Pareto;
-- duas execuções regressarem sem nova hipótese respaldada;
-- a continuação exigir mudar schema, significado de label, current-message boundary ou harness ownership;
-- não houver pool futuro-real sem sobreposição;
-- houver failure de segurança, mesmo com schema válido;
-- houver truncamento, cap, decoder não equivalente ou EOS não aceitante;
-- a replicação não reproduzir o resultado;
-- a avaliação exigir abrir sealed ou GENERALIZATION adaptativamente;
-- houver necessidade de credencial, deploy, execução destrutiva ou mutação de API externa.
+- the preregistered family exhausts its budget without Pareto improvement;
+- two runs regress without a new supported hypothesis;
+- continuation requires changing the schema, label meaning, current-message boundary, or harness ownership;
+- there is no non-overlapping future-real pool;
+- there is a safety failure, even with a valid schema;
+- there is truncation, a cap hit, a non-equivalent decoder, or non-accepting EOS;
+- replication does not reproduce the result;
+- evaluation requires adaptively opening the sealed set or GENERALIZATION;
+- credentials, deployment, destructive execution, or external API mutation are required.
 
-Stop rules também valem positivamente: não continuar procurando ganho em média quando as gates críticas já falharam; não converter uma falha descoberta no mesmo benchmark em treino e depois apresentá-la como validação independente.
+Stop rules also apply affirmatively: do not keep seeking average gains when critical gates have already failed; do not turn a failure found on the same benchmark into training data and then present it as independent validation.
 
 ## 19. Definition of Done
 
-O trabalho só está concluído para uma decisão de produção quando todos os itens forem verdadeiros:
+Work is complete for a production decision only when all items are true:
 
-- [ ] Task97 permanece rejeitado e a causa não foi exagerada além da evidência.
-- [ ] Cobertura real, labels e ambiguidade foram auditados e adjudicados.
-- [ ] Thread, tempo, origem e generator independence foram provados por ledger.
-- [ ] TRAIN canônico é real-heavy; sintéticos são taggeados, filtrados e nunca tratados como prova.
-- [ ] Critical cells reais não estão vazias para a claim feita.
-- [ ] DEVELOPMENT é explicitamente adaptativo.
-- [ ] GENERALIZATION está fechada até a configuração final e é aberta no máximo uma vez por candidato.
-- [ ] Existe holdout future-real source/thread/time-disjoint com amostra e denominadores adequados.
-- [ ] Ceiling humano/teacher foi medido com adjudicação.
-- [ ] SFT completion-only, chat template/EOS e zero truncation foram testados.
-- [ ] Uma chamada `generate` por input e um único objeto JSON final foram demonstrados.
-- [ ] Schema Draft 2020-12 original é imutável e validação final ocorre nele.
-- [ ] XGrammar/decoder passou probes diferenciais; não existe reparo, retry ou segunda chamada.
-- [ ] Exact match operacional é a autoridade; componentes e slices estão publicados com n.
-- [ ] False-action, false-EXIT e broadened têm gates específicos e zero observado no produto exigido.
-- [ ] Limites binomiais, IID assumptions e correlação estão documentados.
-- [ ] Configuração foi replicada em workspace independente.
-- [ ] Latência, VRAM, OOM, cap e logs foram medidos localmente.
-- [ ] Shadow futuro-real passou sem qualquer ordem.
-- [ ] Harness continua dono de identidade, estado, risco, quantidade, conta, símbolo, leverage, idempotência e execução.
-- [ ] Rollback e kill switch foram ensaiados.
-- [ ] Não há mensagens, predições, símbolos, IDs, labels privados, adapters ou segredos no material público.
-- [ ] Uma autorização separada foi obtida para qualquer canary; sem ela, não há deploy.
+- [ ] Task97 remains rejected, and the cause has not been overstated beyond the evidence.
+- [ ] Real coverage, labels, and ambiguity have been audited and adjudicated.
+- [ ] Thread, time, source, and generator independence have been proven by a ledger.
+- [ ] Canonical TRAIN is real-heavy; synthetics are tagged, filtered, and never treated as proof.
+- [ ] Real critical cells are not empty for the claim being made.
+- [ ] DEVELOPMENT is explicitly adaptive.
+- [ ] GENERALIZATION stays closed until the final configuration and is opened at most once per candidate.
+- [ ] A future-real holdout exists that is source/thread/time-disjoint, with adequate sample size and denominators.
+- [ ] The human/teacher ceiling has been measured with adjudication.
+- [ ] SFT completion-only, chat template/EOS, and zero truncation have been tested.
+- [ ] One `generate` call per input and a single final JSON object have been demonstrated.
+- [ ] The original Draft 2020-12 schema is immutable, and final validation uses it.
+- [ ] XGrammar/decoder passed differential probes; there is no repair, retry, or second call.
+- [ ] Operational exact match is authoritative; components and slices are reported with n.
+- [ ] False-action, false-EXIT, and broadened selectors have specific gates and zero observed cases on the required product.
+- [ ] Binomial bounds, IID assumptions, and correlation are documented.
+- [ ] The configuration has been replicated in an independent workspace.
+- [ ] Latency, VRAM, OOM, cap, and logs have been measured locally.
+- [ ] Future-real shadow completed without any order.
+- [ ] The harness remains the owner of identity, state, risk, quantity, account, symbol, leverage, idempotency, and execution.
+- [ ] Rollback and kill switch have been rehearsed.
+- [ ] No messages, predictions, symbols, IDs, private labels, adapters, or secrets appear in public materials.
+- [ ] Separate authorization was obtained for any canary; without it, there is no deployment.
 
 ## 20. One-page operating protocol
 
-**Objetivo:** extrair semanticamente uma mensagem privada, uma vez, para um JSON final, sem delegar execução ao modelo.
+**Objective:** semantically extract a private message once into final JSON, without delegating execution to the model.
 
-**Antes de treinar:** congelar schema original, serializer, prompt, chat template, tokenizer e decoder; agrupar threads; separar tempo/origem; auditar labels; construir matriz crítica real; congelar DEVELOPMENT e GENERALIZATION; reservar future-real shadow.
+**Before training:** freeze the original schema, serializer, prompt, chat template, tokenizer, and decoder; group threads; separate by time/source; audit labels; build the critical real-data matrix; freeze DEVELOPMENT and GENERALIZATION; reserve future-real shadow.
 
-**Treino:** SFT prompt-completion, loss somente na completion, EOS exato, zero truncation, LoRA para velocidade experimental, uma variável por família, no máximo três runs por família, receipt e hashes. Não usar loss como score.
+**Training:** SFT prompt-completion, loss only on the completion, exact EOS, zero truncation, LoRA for experimental speed, one variable per family, at most three runs per family, receipt and hashes. Do not use loss as a score.
 
-**Dados:** reais têm prioridade; synthetic é apenas complemento taggeado; usar matched negatives, counterfactuals humanos e hard negatives; não usar DEVELOPMENT/predições; calibrar balanceamento sem assumir proporção ótima.
+**Data:** real data takes priority; synthetic data is only a tagged supplement; use matched negatives, human counterfactuals, and hard negatives; do not use DEVELOPMENT/predictions; calibrate balancing without assuming an optimal proportion.
 
-**Runtime:** uma chamada `generate`; `do_sample=False`; XGrammar apenas como restritor estrutural; EOS somente em estado aceitante; parse estrito; Draft 2020-12 original; rejeitar cap, duplicata, texto extra e qualquer JSON incompleto; sem parser repair, substring, default, retry ou segunda chamada.
+**Runtime:** one `generate` call; `do_sample=False`; XGrammar only as a structural constraint; EOS only in an accepting state; strict parsing; original Draft 2020-12 schema; reject cap hits, duplicates, extra text, and any incomplete JSON; no parser repair, substring extraction, defaults, retry, or second call.
 
-**Métricas:** full operational exact é autoridade. Reportar schema, evento, ação PRF, false-action, false-EXIT, broadened, literal, guard, ordering, grounding, abstention, slices por role/mode/polarity/source/length/position e p50/p95/VRAM. Sempre incluir numerador, denominador e intervalo.
+**Metrics:** full operational exact is authoritative. Report schema, event, action PRF, false-action, false-EXIT, broadened selector, literal, guard, ordering, grounding, abstention, slices by role/mode/polarity/source/length/position, and p50/p95/VRAM. Always include numerator, denominator, and interval.
 
-**Decisão:** se coverage/label/independence falhar, voltar a G1–G4. Só depois testar 0,8B; se ainda houver ceiling de capacidade, ~4B e depois ~8B sob contrato idêntico. Replicar antes de GENERALIZATION. Abrir GENERALIZATION uma vez; depois shadow future-real sem ordens. Canary somente após autorização explícita.
+**Decision:** if coverage/label/independence fails, return to G1–G4. Test 0.8B only afterward; if a capacity ceiling remains, test ~4B and then ~8B under an identical contract. Replicate before GENERALIZATION. Open GENERALIZATION once; then run future-real shadow without orders. Canary only after explicit authorization.
 
-**Saída segura:** uma falha é rejeição/abstenção, nunca uma ordem inventada. O harness valida estado, risco e execução. Este protocolo não autoriza GENERALIZATION, deploy, broker execution ou Google API mutation.
+**Safe output:** a failure means rejection/abstention, never an invented order. The harness validates state, risk, and execution. This protocol does not authorize GENERALIZATION, deployment, broker execution, or Google API mutation.
 
-## 21. Fontes e referências
+## 21. Sources and references
 
-As fontes web abaixo foram acessadas em 2026-07-22 durante a pesquisa. A data de acesso é distinta da data de publicação/conteúdo. Qualidade e escopo indicam o peso da evidência; claims de fornecedor e extrapolações entre tarefas foram enfraquecidos no texto.
+The web sources below were accessed on 2026-07-22 during the research. Access date differs from publication/content date. Quality and scope indicate evidential weight; vendor claims and cross-task extrapolations were qualified in the text.
 
-| [n] | Fonte direta | Tipo e data de conteúdo/publicação | Acesso e qualidade |
+| [n] | Direct source | Type and content/publication date | Access and quality |
 |---:|---|---|---|
-| [1] | [OpenAI — Fine-tuning / Model optimization](https://platform.openai.com/docs/guides/fine-tuning) | documentação oficial; conteúdo consultado em 2026-07-22 | acessada por Jina Reader em 2026-07-22; forte para SFT/eval loop, não para suficiência deste dataset |
-| [2] | [Hugging Face TRL — SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) | documentação oficial; versão consultada com conteúdo datado de 2025-09-10 | Jina Reader, 2026-07-22; forte para prompt-completion, masks e EOS, depende da versão/runtime |
-| [3] | [Hugging Face PEFT — LoRA reference](https://huggingface.co/docs/peft/main/en/package_reference/lora) | documentação oficial; sem data de conteúdo fornecida | Jina Reader, 2026-07-22; apoio metodológico, não garantia de acurácia |
-| [4] | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) | artigo de pesquisa; submetido 2021-06-17, versão citada 2021-10-16 | metadata/abstract acessados em 2026-07-22; evidência primária, tarefas não são este extrator |
-| [5] | [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314) | artigo de pesquisa; 2023-05-24 | metadata/abstract acessados em 2026-07-22; forte para viabilidade estudada, não assume ganho de qualidade |
-| [6] | [NIST AI Risk Management Framework 1.0](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf) | framework oficial; 2023-01 | PDF acessado em 2026-07-22; forte para representatividade, risco, monitoramento e intervenção |
-| [7] | [NIST Statistical Handbook — Exact confidence limits](https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm) | handbook estatístico oficial; sem data fornecida | página acessada em 2026-07-22; forte para método binomial exato |
-| [8] | [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) | artigo de pesquisa; versão/publicação consultada 2021-12-01 | página/abstract acessados em 2026-07-22; forte para documentação, não valida os labels do projeto |
-| [9] | [JSON Schema Draft 2020-12 Core](https://json-schema.org/draft/2020-12/json-schema-core) | especificação; 2022-06 | conteúdo acessado em 2026-07-22; autoridade normativa para o modelo de dados, não para verdade externa |
-| [10] | [Hugging Face Transformers — generation utilities](https://huggingface.co/docs/transformers/main/en/internal/generation_utils) | documentação oficial; sem data fornecida | acessada em 2026-07-22; forte para integração documentada de logits processors |
-| [11] | [XGrammar README oficial](https://raw.githubusercontent.com/mlc-ai/xgrammar/main/README.md) | README de repositório oficial; sem data fornecida | acessado em 2026-07-22; claim do próprio projeto, limitado a estrutura |
-| [12] | [Self-Instruct: Aligning Language Models with Self-Generated Instructions](https://arxiv.org/abs/2212.10560) | preprint/artigo ACL; 2022-12-20 | abstract acessado em 2026-07-22; evidência útil, mas não específica de trading |
-| [13] | [Training language models to follow instructions with human feedback](https://arxiv.org/abs/2203.02155) | artigo de pesquisa; 2022-03-07 | abstract acessado em 2026-07-22; cross-task, usado com confiança moderada |
-| [14] | [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | TACL/artigo; submetido 2023-07-06, conteúdo consultado 2023-11-22 | abstract acessado em 2026-07-22; forte como alerta de posição, não como lei para este modelo |
-| [15] | [Selective Classification for Deep Neural Networks](https://arxiv.org/abs/1705.08500) | preprint; 2017-05-23 | abstract acessado em 2026-07-22; método de reject option, não threshold pronto |
-| [16] | [DeepXplore: Automated Whitebox Testing of Deep Learning Systems](https://arxiv.org/abs/1705.06640) | paper SOSP/preprint; 2017-05-18 | abstract acessado em 2026-07-22; inspiração para cobertura/differential testing offline |
-| [17] | [Learning the Difference that Makes a Difference with Counterfactually-Augmented Data](https://arxiv.org/abs/1909.12434) | paper ICLR; 2019-09-26 | abstract acessado em 2026-07-22; suporte para edição mínima humana, tarefa diferente |
-| [18] | [Qwen3-0.6B model card](https://huggingface.co/Qwen/Qwen3-0.6B) | card oficial Qwen; 2025 | acessado em 2026-07-22; refere-se a Qwen3-0.6B, não ao checkpoint exato Qwen3.5-0.8B |
-| [19] | [Unsloth — Qwen3 fine-tuning](https://docs.unsloth.ai/basics/qwen3-how-to-run-and-fine-tune) | documentação de fornecedor; sem data fornecida | acessada em 2026-07-22; baixa para claims de VRAM/velocidade, exige benchmark local |
-| [20] | [Direct Preference Optimization](https://arxiv.org/abs/2305.18290) | preprint; 2023-05-29 | abstract acessado em 2026-07-22; apoio para conceito de preference loss, não para este produto |
-| [21] | [Google ML Crash Course — Overfitting](https://developers.google.com/machine-learning/crash-course/overfitting/overfitting) | documentação educacional; conteúdo datado de 2025-12-03 | acessada em 2026-07-22; apoio para independência/generalização, não validação do projeto |
+| [1] | [OpenAI — Fine-tuning / Model optimization](https://platform.openai.com/docs/guides/fine-tuning) | official documentation; content consulted 2026-07-22 | accessed via Jina Reader on 2026-07-22; strong for SFT/evaluation loop, not for sufficiency of this dataset |
+| [2] | [Hugging Face TRL — SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) | official documentation; consulted version with content dated 2025-09-10 | Jina Reader, 2026-07-22; strong for prompt-completion, masks, and EOS; depends on version/runtime |
+| [3] | [Hugging Face PEFT — LoRA reference](https://huggingface.co/docs/peft/main/en/package_reference/lora) | official documentation; no content date provided | Jina Reader, 2026-07-22; methodological support, not an accuracy guarantee |
+| [4] | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) | research paper; submitted 2021-06-17, cited version 2021-10-16 | metadata/abstract accessed 2026-07-22; primary evidence, but tasks differ from this extractor |
+| [5] | [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314) | research paper; 2023-05-24 | metadata/abstract accessed 2026-07-22; strong for studied feasibility, does not assume a quality gain |
+| [6] | [NIST AI Risk Management Framework 1.0](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf) | official framework; 2023-01 | PDF accessed 2026-07-22; strong for representativeness, risk, monitoring, and intervention |
+| [7] | [NIST Statistical Handbook — Exact confidence limits](https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm) | official statistical handbook; no date provided | page accessed 2026-07-22; strong for exact binomial method |
+| [8] | [Datasheets for Datasets](https://arxiv.org/abs/1803.09010) | research paper; version/publication consulted 2021-12-01 | page/abstract accessed 2026-07-22; strong for documentation, does not validate project labels |
+| [9] | [JSON Schema Draft 2020-12 Core](https://json-schema.org/draft/2020-12/json-schema-core) | specification; 2022-06 | content accessed 2026-07-22; normative authority for the data model, not external truth |
+| [10] | [Hugging Face Transformers — generation utilities](https://huggingface.co/docs/transformers/main/en/internal/generation_utils) | official documentation; no date provided | accessed 2026-07-22; strong for documented logits-processor integration |
+| [11] | [Official XGrammar README](https://raw.githubusercontent.com/mlc-ai/xgrammar/main/README.md) | official repository README; no date provided | accessed 2026-07-22; project claim, limited to structure |
+| [12] | [Self-Instruct: Aligning Language Models with Self-Generated Instructions](https://arxiv.org/abs/2212.10560) | preprint/ACL paper; 2022-12-20 | abstract accessed 2026-07-22; useful evidence, but not trading-specific |
+| [13] | [Training language models to follow instructions with human feedback](https://arxiv.org/abs/2203.02155) | research paper; 2022-03-07 | abstract accessed 2026-07-22; cross-task, used with moderate confidence |
+| [14] | [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172) | TACL/paper; submitted 2023-07-06, content consulted 2023-11-22 | abstract accessed 2026-07-22; strong as a positional warning, not a law for this model |
+| [15] | [Selective Classification for Deep Neural Networks](https://arxiv.org/abs/1705.08500) | preprint; 2017-05-23 | abstract accessed 2026-07-22; reject-option method, not a ready-made threshold |
+| [16] | [DeepXplore: Automated Whitebox Testing of Deep Learning Systems](https://arxiv.org/abs/1705.06640) | SOSP paper/preprint; 2017-05-18 | abstract accessed 2026-07-22; inspiration for offline coverage/differential testing |
+| [17] | [Learning the Difference that Makes a Difference with Counterfactually-Augmented Data](https://arxiv.org/abs/1909.12434) | ICLR paper; 2019-09-26 | abstract accessed 2026-07-22; supports minimal human edits, different task |
+| [18] | [Qwen3-0.6B model card](https://huggingface.co/Qwen/Qwen3-0.6B) | official Qwen card; 2025 | accessed 2026-07-22; refers to Qwen3-0.6B, not the exact Qwen3.5-0.8B checkpoint |
+| [19] | [Unsloth — Qwen3 fine-tuning](https://docs.unsloth.ai/basics/qwen3-how-to-run-and-fine-tune) | vendor documentation; no date provided | accessed 2026-07-22; low confidence for VRAM/speed claims, requires local benchmark |
+| [20] | [Direct Preference Optimization](https://arxiv.org/abs/2305.18290) | preprint; 2023-05-29 | abstract accessed 2026-07-22; supports the preference-loss concept, not this product |
+| [21] | [Google ML Crash Course — Overfitting](https://developers.google.com/machine-learning/crash-course/overfitting/overfitting) | educational documentation; content dated 2025-12-03 | accessed 2026-07-22; supports independence/generalization, not project validation |
 
-**Falhas de recuperação relevantes:** fontes tentadas sobre imbalance, reproducibility, metamorphic testing, weak-to-strong distillation e algumas páginas de modelo/infra receberam HTTP 429 ou 404. Nenhum claim dependente delas foi apresentado como facto. A literatura publicada sustenta componentes do método; não especifica a mistura ótima, learning rate ótimo, tamanho ótimo ou capacidade suficiente para este extrator.
+**Relevant retrieval failures:** attempted sources on imbalance, reproducibility, metamorphic testing, weak-to-strong distillation, and some model/infrastructure pages returned HTTP 429 or 404. No claim dependent on them was presented as fact. Published literature supports components of the method; it does not specify the optimal mixture, learning rate, size, or sufficient capacity for this extractor.
 
-## Apêndice A — Evidência local do projeto
+## Appendix A — Local project evidence
 
-Este apêndice separa evidência do projeto de bibliografia publicada. Os caminhos são artefatos agregados do repositório; nenhuma mensagem privada, predição, símbolo, ID, adapter ou segredo é reproduzido.
+This appendix separates project evidence from published literature. The paths are aggregated repository artifacts; no private message, prediction, symbol, ID, adapter, or secret is reproduced.
 
-### A.1 Task97 e Task96
+### A.1 Task97 and Task96
 
-| Evidência | Caminho exato | Leitura agregada | SHA256 do manifest |
+| Evidence | Exact path | Aggregate reading | Manifest SHA256 |
 |---|---|---|---|
-| Task97 fresh model run | `.pi/build/broker_semantic_v62_task_97_checkpoint/completion_manifest.json` | Qwen3.5-0.8B fresco; BF16 LoRA; XGrammar; métricas semanticamente reprovadas | `078d6b4a7996492b166bd89e829c22930e1d8a059e1ad7e0882df02c76ad9f52` |
-| Task96 runtime smoke | `.pi/build/broker_semantic_v62_task_96_checkpoint/completion_manifest.json` | sem modelo/treino/predições; runtime smoke `100/100`, bases `5/5`, inválidos `11/11` | `9fad1b16e943774389efb9ef76379cd096cb97b5d03a25c8c0ae840e95d2222a` |
+| Task97 fresh model run | `.pi/build/broker_semantic_v62_task_97_checkpoint/completion_manifest.json` | fresh Qwen3.5-0.8B; BF16 LoRA; XGrammar; semantic metrics failed | `078d6b4a7996492b166bd89e829c22930e1d8a059e1ad7e0882df02c76ad9f52` |
+| Task96 runtime smoke | `.pi/build/broker_semantic_v62_task_96_checkpoint/completion_manifest.json` | no model/training/predictions; runtime smoke `100/100`, bases `5/5`, invalid `11/11` | `9fad1b16e943774389efb9ef76379cd096cb97b5d03a25c8c0ae840e95d2222a` |
 
-O Task97 manifest registra `gate_passed=false`, `invalid_count=0`, `cap_hit_count=0`, `completed_updates=3537`, `loss_count=3537` e o vetor de métricas usado na seção 2. O Task96 manifest registra zero updates/losses/prediction rows e `no_model_training_generation=true`. Esses são agregados de execução, não exemplos de saída.
+The Task97 manifest records `gate_passed=false`, `invalid_count=0`, `cap_hit_count=0`, `completed_updates=3537`, `loss_count=3537`, and the metric vector used in section 2. The Task96 manifest records zero updates/losses/prediction rows and `no_model_training_generation=true`. These are execution aggregates, not output examples.
 
-### A.2 Coverage e generalização
+### A.2 Coverage and generalization
 
 - `.pi/build/broker_semantic_v62_task_97_checkpoint/completion_manifest.json`
 - `.pi/build/broker_semantic_v62_task_96_checkpoint/completion_manifest.json`
@@ -925,39 +925,39 @@ O Task97 manifest registra `gate_passed=false`, `invalid_count=0`, `cap_hit_coun
 - `runtime/datasets/broker_semantic_v62/freeze/manifest.json`
 - `runtime/datasets/broker_semantic_v62/candidates/H0_CAL/manifest.json`
 
-O freeze manifest marca DEVELOPMENT como `DEVELOPMENT_ONLY` e GENERALIZATION como `FREEZE_ONLY`; o candidato H0_CAL lista GENERALIZATION com zero rows no produto candidato. Isso sustenta a afirmação de que o candidato não abriu GENERALIZATION; não sustenta qualquer claim de desempenho nela.
+The freeze manifest marks DEVELOPMENT as `DEVELOPMENT_ONLY` and GENERALIZATION as `FREEZE_ONLY`; candidate H0_CAL lists GENERALIZATION with zero rows in the candidate product. This supports the claim that the candidate did not open GENERALIZATION; it does not support any performance claim on it.
 
-### A.3 Runner e limites de reprodução
+### A.3 Runner and reproducibility limits
 
 - `src/auto_trader/local_lora/train_unsloth_qwen35_08b_v62.py`
 
-O caminho relevante verifica chat template e EOS, mede token readiness sem truncamento, cria labels `-100` para prompt e labels ativas para completion, treina com batch/accumulation fixos da execução auditada e chama `model.generate` uma vez para cada row. O decoder é aplicado como `LogitsProcessor`; a saída completa é validada no avaliador do projeto. A existência desse caminho não prova deterministicidade CUDA universal: a documentação local registra controles de determinismo que podem não estar todos ativados. Por isso replicação é gate.
+The relevant path verifies the chat template and EOS, measures token readiness without truncation, creates `-100` labels for the prompt and active labels for the completion, trains with the audited run’s fixed batch/accumulation, and calls `model.generate` once for each row. The decoder is applied as a `LogitsProcessor`; the complete output is validated by the project evaluator. The existence of this path does not prove universal CUDA determinism: local documentation records determinism controls that may not all be enabled. Replication is therefore a gate.
 
-### A.4 Evidência local anterior usada como contexto, não como alvo adaptativo
+### A.4 Earlier local evidence used as context, not as an adaptive target
 
 - `docs/broker_semantic_research/V58_DATASET_COVERAGE_MATRIX.md`
 - `docs/broker_semantic_v61/GENERALIZATION_ANALYSIS_AND_ACTION_PLAN.md`
 - `docs/broker_semantic_research/QWEN08B_E1_PRODUCTION_PROTOCOL.md`
 
-O V58 declara expressamente que seus counts são investigação, não prova de suficiência. A análise v6.1 registra que DEVELOPMENT foi adaptativo, que variants do mesmo gerador não demonstram independência linguística e que o shadow estava `BLOCKED_NO_PROVEN_CLEAN_POOL`. O protocolo Qwen08B registra gates de no truncation, safety zero, replication, shadow e sealed explicitamente fechado. Este guia preserva essas limitações.
+V58 explicitly states that its counts are investigative, not proof of sufficiency. The v6.1 analysis records that DEVELOPMENT was adaptive, that variants from the same generator do not demonstrate linguistic independence, and that shadow was `BLOCKED_NO_PROVEN_CLEAN_POOL`. The Qwen08B protocol records gates for no truncation, zero safety errors, replication, shadow, and an explicitly closed sealed set. This guide preserves those limitations.
 
-## Apêndice: Metodologia
+## Appendix: Methodology
 
-Foram reconciliados cinco artefatos YAML de Fase 1 sobre foundations de fine-tuning, ciência de avaliação, structured output, estratégia de dados/modelos e métodos experimentais, além dos manifests e documentos locais listados no Apêndice A. A coleta web ocorreu em 2026-07-22. Factos publicados foram mantidos no escopo da fonte; resultados de vendor foram enfraquecidos; extrapolações cross-task foram marcadas como INFERENCE. Não houve nova pesquisa de dados privados nem inspeção de mensagens ou predições.
+Five Phase 1 YAML artifacts were reconciled, covering fine-tuning foundations, evaluation science, structured output, data/model strategy, and experimental methods, along with the manifests and local documents listed in Appendix A. Web research was conducted on 2026-07-22. Published facts were kept within the source’s scope; vendor results were qualified; cross-task extrapolations were marked INFERENCE. No new private-data research or inspection of messages or predictions was performed.
 
-A confiança geral deste guia é **Média-Alta para o veredito imediato e Média para a receita ótima**. O veredito imediato tem convergência entre manifesto Task97, auditoria de cobertura, protocolo e evidência de runtime: candidato semanticamente reprovado e não implantável. A receita ótima permanece desconhecida porque faltam adjudicação completa, denominadores por slice, um pool futuro-real independente e uma comparação causal depois dos gates. Consequentemente, nenhum número de rows, proporção synthetic, learning rate, rank, epoch ou tamanho de modelo novo é apresentado como garantia.
+Overall confidence in this guide is **Medium-High for the immediate verdict and Medium for the optimal recipe**. The immediate verdict is supported by converging Task97 manifest, coverage audit, protocol, and runtime evidence: the candidate failed semantically and cannot be deployed. The optimal recipe remains unknown because complete adjudication, denominators by slice, an independent future-real pool, and a causal comparison after the gates are missing. Consequently, no number of rows, synthetic proportion, learning rate, rank, epoch count, or new model size is presented as a guarantee.
 
-A metodologia de decisão é conservadora:
+The decision methodology is conservative:
 
-1. separar facto de inferência e desconhecido;
-2. reconciliar cada claim com fonte, data, independência, confiança e caveat;
-3. tratar exact match operacional como autoridade;
-4. manter schema e harness contracts imutáveis;
-5. exigir source/thread/time independence;
-6. usar intervalos binomiais e denominadores por slice;
-7. mudar uma variável por família;
-8. replicar antes de qualquer abertura final;
-9. testar shadow sem ordens;
-10. parar quando a evidência não autorizar o passo seguinte.
+1. separate fact from inference and unknown;
+2. reconcile every claim with its source, date, independence, confidence, and caveat;
+3. treat operational exact match as authoritative;
+4. keep schema and harness contracts immutable;
+5. require source/thread/time independence;
+6. use binomial intervals and denominators by slice;
+7. change one variable per family;
+8. replicate before any final opening;
+9. test shadow without orders;
+10. stop when the evidence does not authorize the next step.
 
-Este documento é um guia de produção de pesquisa. Ele não autoriza abrir GENERALIZATION, deploy, broker execution, canary ou Google API mutations.
+This document is a research production guide. It does not authorize opening GENERALIZATION, deployment, broker execution, canary, or Google API mutations.

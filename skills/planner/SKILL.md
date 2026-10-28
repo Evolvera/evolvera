@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Use for any planning request or when deciding whether planning is needed. Chooses pre-plan/direct execution, normal planner by default, or rare plan-heavy escalation.
+description: Use when the user asks for a plan, or when new code still to be written spans several dependent commits. Not for operations on finished artifacts (merge/integrate PRs, push, install, deploy, reload, rollback) or single bounded changes; do those directly. Chooses pre-plan/direct execution, normal planner, or rare plan-heavy escalation.
 ---
 
 # Planner Skill — Choose, Plan, Execute
@@ -21,11 +21,11 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 
 Before selecting a route, mentally forecast the smallest coherent selective commits: each has one outcome, write set, validation result, and rollback boundary. This is not a task quota or user-facing ceremony.
 
-- **1 commit:** direct tools or one focused builder.
-- **2–5 clear commits:** load the builder skill; use focused delegation and parallelize only disjoint SoC slices when the coordination overhead is lower than serial execution.
+- Commit count is a coordination hint, never an executor or cost proxy. Trivial known changes/lookups and already-ordered external operations stay direct. For substantial bounded implementation, prefer a suitable existing builder when expected parent work replaced exceeds handoff, integration, and likely rework overhead, even for one commit.
+- **2–5 clear commits:** load the builder skill; use focused delegation and parallelize disjoint SoC slices when the expected benefit exceeds coordination overhead.
 - **More than ~5 commits:** normal planner is preferred, because it can create the dependency graph once and reduce wall-clock time through safe parallel groups.
 
-Override the count when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; stay direct when several edits are mechanically one coherent commit. Importance alone does not require planning. High-impact but bounded deploy, staging, SSH, security, nginx/Plesk, ACME, CI, provider, reload, or rollback work normally uses a concise pre-plan or normal planner, then `builder-heavy` plus selective validation.
+Override commit-count heuristics when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; otherwise route based on triviality and expected work replaced versus handoff/integration/rework, not commit count. Importance alone does not require planning. The forecast counts code still to be written, not operations on finished artifacts: merging or integrating existing PRs/branches, pushing, rerunning an installer, deploying an approved build, reload, or rollback is direct orchestrator work however many artifacts it touches—never planner, plan-heavy, a scout wave, or a builder. When the user directly orders such an operation, perform it now; resolve mechanical conflicts yourself and stop only for a semantic conflict or a named safety gate.
 
 ### Bundled-request decision
 
@@ -175,7 +175,7 @@ Apply engineering principles as decisions, not boilerplate:
 - DRY/Rule of Three: reuse existing helpers; no new abstraction before three proven repetitions or an architectural requirement.
 - KISS/YAGNI: smallest readable in-scope solution; no speculative dependency, API, flag, migration, extension point, cleanup, or future-proofing.
 - DYC: document only non-obvious decisions, invariants, failure/rollback behavior, or operations.
-- TDD where practical: targeted regression/characterization test before behavior changes, or the closest focused validation with its limitation.
+- Tests serve the outcome: the cheapest check that proves each behavior change, with a new test where it guards a fixed bug or uncovered risky logic (money, permissions, security, data loss, parsing, or user-visible state); producer tests travel with their production concern by default. Parallel test authoring is allowed after the observable contract is settled when full implementation/test write sets are disjoint, resources are isolated, and no unresolved implementation choice affects the tests. Test authoring may contribute to one coherent combined producer checkpoint when separately authored outputs cannot pass alone; never manufacture an independently invalid test-only planner task or weaken checkpoint validity. Implementation-dependent acceptance tests run only against the ready combined producer checkpoint; syntax-only or blocked tests do not establish COMPLETE. No planned coverage, baselines, or suite-wide runs unless the user asked.
 
 ## 6. Routing and Validation
 
@@ -195,8 +195,7 @@ Add a linked `validator` task only when a specific producer has a named credible
 
 Before builders, read `SCHEDULE.md` and task contracts once; ask for user review only when implementation scope, cost, or risk is not already approved. Treat the plan as one executable contract. If a task is materially incomplete, apply the failed-plan stop rule below before any builder resumes; never ground or improve tasks with a planner between execution steps.
 
-- Run dependencies serially.
-- At each wave, compute all ready tasks and launch the largest safe independent group, normally 2–4, together in one orchestration message according to the builder skill; do not wait on one task while another disjoint ready task could run.
+- Run real dependencies serially. At each wave, launch all safe, ready authoring—including eligible test authors—together in one orchestration message; capacity is a ceiling, not a target. Serialize only unsettled contract transitions, real prerequisites, shared writes/resources, or external effects. A shared unchanged settled interface alone is not a dependency. Any combined producer checkpoint must independently satisfy existing checkpoint validity and acceptance rules.
 - Create recovery snapshots only when the task/schedule requires them: shared, large, preservation-critical, dirty-overlap, or destructive targets; clean tracked files rely on the selective checkpoint commit.
 - Before each writing task, inspect its `Proof` against the actual task file and schedule. Reject execution if an acceptance path or deterministic gate depends on an undeclared artifact, unresolved relationship, or later restoration, or if the workload receipt shows more than two complex fronts; an over-limit task is rejected before delegation, and a builder may not grow scope into a new complex front.
 - After each verified writing task, create exactly one selective commit and record its hash.

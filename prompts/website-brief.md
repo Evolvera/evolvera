@@ -5,11 +5,11 @@ argument-hint: "[project-name]"
 
 # Website Briefing Template
 
-Preencha este formulário para que a chain de agentes possa construir seu website. Quanto mais detalhes, melhor o resultado.
+Fill out this form so the agent chain can build your website. The more detail you provide, the better the result.
 
 ---
 
-## 1. Informações da Empresa
+## 1. Company Information
 
 - **Nome da empresa/marca**: _______________
 - **Segmento/Nicho**: _______________
@@ -18,30 +18,30 @@ Preencha este formulário para que a chain de agentes possa construir seu websit
 
 ---
 
-## 2. Objetivo do Site
+## 2. Website Goal
 
-- **O que o visitante deve fazer ao acessar?** (comprar, contatar, se cadastrar, ler, etc.)
-- **Público-alvo**: _______________
-- **Chamada principal desejada (CTA)**: "Quero um site..." / "Cadastre-se" / "Compre agora" / etc.
+- **What should visitors do when they arrive?** (buy, contact you, sign up, read, etc.)
+- **Target audience**: _______________
+- **Desired primary call to action (CTA)**: "Quero um site..." / "Cadastre-se" / "Compre agora" / etc.
 
 ---
 
-## 3. Estrutura do Menu
+## 3. Menu Structure
 
-Liste as páginas desejadas (marque com ✅ ou ❌):
+List the desired pages (mark with ✅ or ❌):
 
 - [ ] **Home** (página inicial)
-- [ ] **Sobre** (quem somos)
-- [ ] **Serviços/Produtos** (o que oferece)
-- [ ] **Portfólio/Trabalhos** (casos anteriores)
-- [ ] **Blog** (conteúdos/articles)
-- [ ] **FAQ** (perguntas frequentes)
-- [ ] **Contato** (formulário/informações)
+- [ ] **About** (who we are)
+- [ ] **Services/Products** (what you offer)
+- [ ] **Portfolio/Work** (previous projects)
+- [ ] **Blog** (content/articles)
+- [ ] **FAQ** (frequently asked questions)
+- [ ] **Contact** (form/information)
 - [ ] **Outra**: _______________
 
 ---
 
-## 4. Conteúdo
+## 4. Content
 
 - **Textos**: [ ] Já tenho textos prontos | [ ] Tenho rascunhos | [ ] Preciso que criem
 - **Fotos/Imagens**: [ ] Já tenho | [ ] Preciso de banco de imagens (Unsplash) | [ ] Quero ilustrações
@@ -50,9 +50,9 @@ Liste as páginas desejadas (marque com ✅ ou ❌):
 
 ---
 
-## 5. Funcionalidades
+## 5. Features
 
-Marque as funcionalidades desejadas:
+Mark the desired features:
 
 - [ ] **WhatsApp flutuante** (botão de chat)
 - [ ] **Formulário de contato** (com validação)
@@ -69,39 +69,39 @@ Marque as funcionalidades desejadas:
 
 ---
 
-## 6. Identidade Visual
+## 6. Visual Identity
 
 - **Cores** (se já definidas):
   - Primária: _______ (hex, nome ou descrição)
   - Secundária: _______
   - Acento: _______
   - Background: _______
-- **Estilo desejado**: [ ] Minimalista | [ ] Premium/Luxo | [ ] Playful/Colorido | [ ] Corporativo | [ ] Criativo | [ ] Dark mode | [ ] Não tenho certeza
-- **Sites de referência**: Algum site que você gosta e quer algo parecido?
+- **Desired style**: [ ] Minimalista | [ ] Premium/Luxo | [ ] Playful/Colorido | [ ] Corporativo | [ ] Criativo | [ ] Dark mode | [ ] Não tenho certeza
+- **Reference websites**: Are there any websites you like and want something similar to?
   - _______________
   - _______________
-- **Tipografia preferida** (opcional): _______________
+- **Preferred typography** (optional): _______________
 
 ---
 
-## 7. Informações Técnicas
+## 7. Technical Information
 
 - **Domínio**: Já tem? [ ] Sim → _______________ | [ ] Não, vou registrar
-- **Idioma do site**: [ ] Português | [ ] Inglês | [ ] Outro: _______
-- **Plataforma atual** (se já tem site): _______________
+- **Website language**: [ ] Português | [ ] Inglês | [ ] Outro: _______
+- **Current platform** (if you already have a website): _______________
 
 ---
 
-## 8. Prazo e Orçamento
+## 8. Timeline and Budget
 
-> ⚠️ **Nota**: Esta seção é para seu registro. Os agentes não consideram prazo/orçamento em suas decisões de design ou implementação.
+> ⚠️ **Note**: This section is for your records. Agents do not consider timeline/budget in their design or implementation decisions.
 
 - **Prazo desejado**: _______________
 - **Orçamento estimado**: _______________
 
 ---
 
-## Observações Adicionais
+## Additional Notes
 
 _______________
 _______________
@@ -109,13 +109,13 @@ _______________
 
 ---
 
-Quando o briefing estiver completo, acione a chain de agentes:
+When the brief is complete, trigger the agent chain:
 
-1. O **Website Designer** analisará suas respostas e escolherá referências de design premium (Stripe, Linear, Apple, etc.)
-2. O **Builder** implementará o site completo em branch isolada
-3. O **Validator** verificará qualidade (compilação, tipos, acessibilidade)
-4. O **Website Polisher** refinará cada detalhe visual e de UX
-5. O **Builder** aplicará as correções finais
-6. O **Validator** fará a aprovação final
+1. The **Website Designer** will analyze your answers and choose premium design references (Stripe, Linear, Apple, etc.)
+2. The **Builder** will implement the complete website in an isolated branch
+3. The **Validator** will verify quality (build, types, accessibility)
+4. The **Website Polisher** will refine every visual and UX detail
+5. The **Builder** will apply the final fixes
+6. The **Validator** will give final approval
 
-Resultado: um website moderno, responsivo, com dark mode, SEO-friendly, e pronto para deploy na Vercel.
+Result: a modern, responsive website with dark mode, SEO-friendly, and ready to deploy on Vercel.

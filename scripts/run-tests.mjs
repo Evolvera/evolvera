@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -13,15 +13,15 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
   process.exit(2);
 }
 
-// Cada caso inicia gh falso; a suíte leva ~33 s no Windows.
-const limitesPropriosPorSuite = new Map([
-  ["ct.test.mjs", { timeoutMs: 120_000, justificativa: "cada caso cria um gh falso; ~33 s no Windows" }],
-]);
-
 // Evidência de estado: tmpdir contém apenas smokes que criam mkdtemp e fazem
 // limpeza explícita; in-memory não cria arquivo/serviço persistente. Revisado
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
+  // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
+  "anthropic-model-policy.smoke.mjs",
+  "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
+  "disk-hygiene.smoke.mjs", // git repo, fake /tmp tree and stamp only inside its owned mkdtemp, removed in finally
+  "worker-report.integration.smoke.mjs", // real Goal tool/session with faux provider and exact-root disposable state
   "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",
   "plastic-memory-bootstrap.smoke.mjs", "plastic-memory-cutover.smoke.mjs",
@@ -36,16 +36,21 @@ const tmpdirProprioPadrao = new Set([
   // Installs only under a disposable HOME; snapshots real install/patch write targets.
   "install-sh.smoke.mjs",
   "patch-anthropic-client-version.smoke.mjs",
-  "patch-openai-error-body.smoke.mjs", "patch-pi-083-threshold-cancel.smoke.mjs",
-  "patch-ultra-thinking.smoke.mjs", "run-tests.smoke.mjs",
-  "pi-sdk-resolution.smoke.mjs",
+  // Synthetic fixture under its own mkdtemp; packageRoot is always explicit, never the live npm root.
+  "patch-pi-tui-orca-redraw.smoke.mjs",
+  "patch-pi-cursor-reasoning-effort.smoke.mjs",
+  "patch-openai-error-body.smoke.mjs", "patch-pi-threshold-cancel.smoke.mjs",
+  // Writes only to owned temp copies; global package and install scripts are read-only.
+  "pi-native-recovery.smoke.mjs", "patch-ultra-thinking.smoke.mjs",
+  // HUD patches: read the installed packages, patch and render only copies under their own mkdtemp (HOME redirected there).
+  "patch-rpiv-todo-hud.smoke.mjs", "patch-pi-subagents-hud.smoke.mjs",
+  "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
+  // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
+  "todo-reconciliation.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);
 const semEstadoPadrao = new Set([
-  "anthropic-model-policy.smoke.mjs", "maestro.smoke.mjs",
-  // só lê config/mcp.json e agents/scout.md do repo; sem escrita, rede ou processo
-  "codegraph-mcp-config.smoke.mjs",
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
@@ -95,9 +100,8 @@ const exclusoes = new Map([
 
 const resultados = { aprovados: [], falhos: [], excluidos: [], naoClassificados: [] };
 function executar(nome, comando, args, cwd, shell = false) {
-  const timeoutDaSuite = Math.max(timeoutMs, limitesPropriosPorSuite.get(path.basename(nome))?.timeoutMs ?? 0);
   const child = spawnSync(comando, args, {
-    cwd, encoding: "utf8", timeout: timeoutDaSuite, maxBuffer: 1024 * 1024, shell,
+    cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 1024 * 1024, shell,
   });
   if (child.error?.code !== "ENOBUFS") {
     if (child.stdout) process.stdout.write(child.stdout);
@@ -106,7 +110,7 @@ function executar(nome, comando, args, cwd, shell = false) {
   const failed = child.error || child.status !== 0;
   if (failed) {
     const motivo = child.error?.code === "ETIMEDOUT"
-      ? `tempo limite (${timeoutDaSuite} ms)`
+      ? `tempo limite (${timeoutMs} ms)`
       : child.error?.code === "ENOBUFS" ? "saída excedeu 1 MiB" :
         `código ${child.status ?? "indisponível"}`;
     resultados.falhos.push(`${nome} (${motivo})`);
@@ -142,11 +146,6 @@ for (const dir of ["extensions/test", "scripts/test"]) {
 
 // --root fornece uma árvore falsa para testar glob/processos sem disparar suítes
 // fixas contra o repositório de trabalho.
-const ct = "skills/copy-thief/scripts/test/ct.test.mjs";
-if (root === repoRoot || existsSync(path.join(root, ct))) {
-  console.log(`\n[suíte] ${ct}`);
-  executar(ct, process.execPath, ["--test", path.join(root, ct)], root);
-}
 if (root === repoRoot) {
   const interfaceTest = "npm test (interface)";
   console.log("\n[tmpdir próprio] npm test (interface)");

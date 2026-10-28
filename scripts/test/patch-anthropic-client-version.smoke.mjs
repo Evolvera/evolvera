@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,6 +12,10 @@ import { trySymlinkFile } from '../../extensions/test/lib/test-symlink.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const patcherPath = path.join(root, 'scripts/patch-anthropic-client-version.mjs');
 const patcher = await import(pathToFileURL(patcherPath));
+assert.ok(process.env.PI_SDK_ROOT, 'PI_SDK_ROOT must name the approved copied SDK fixture');
+const sdkRoot = path.resolve(process.env.PI_SDK_ROOT);
+const sdkMetadata = JSON.parse(fs.readFileSync(path.join(sdkRoot, 'package.json'), 'utf8'));
+const sdkPiTarget = fs.readFileSync(path.join(sdkRoot, patcher.PI_TARGET_RELATIVE_PATH));
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-anthropic-client-version-'));
 const piRoot = path.join(temp, 'pi-coding-agent');
 const authRoot = path.join(temp, 'pi-anthropic-auth');
@@ -132,6 +137,19 @@ try {
     patcher.authPackageRootFromEnvironment({}, '/synthetic/home'),
     path.join('/synthetic/home', '.pi', 'agent', 'npm', 'node_modules', '@gotgenes', 'pi-anthropic-auth'),
   );
+
+  assert.equal(sdkMetadata.version, '1.4.0');
+  assert.equal(patcher.PI_140_NATIVE_SHA256, createHash('sha256').update(sdkPiTarget).digest('hex'));
+  createFixture({ piVersion: sdkMetadata.version, piSource: sdkPiTarget.toString('utf8') });
+  const nativePiBefore = fs.readFileSync(piTarget);
+  const nativeAuthBefore = fs.readFileSync(authTarget);
+  const nativeFirst = runPatcher();
+  assert.equal(nativeFirst.status, 0, nativeFirst.stderr);
+  assert.deepEqual(fs.readFileSync(piTarget), nativePiBefore, 'native PI 1.4 client version was rewritten');
+  assert.deepEqual(fs.readFileSync(authTarget), expectedReplacement(
+    nativeAuthBefore.toString('utf8'), patcher.AUTH_UNPATCHED_ANCHOR, patcher.AUTH_PATCHED_ANCHOR,
+  ));
+  assert.equal(runPatcher().status, 0, 'native PI 1.4 rerun was not idempotent');
 
   createFixture();
   const piBefore = fs.readFileSync(piTarget);
@@ -265,7 +283,7 @@ try {
     'shell auth install must guard its dependent patch before final settings activation');
   assert.match(shell.slice(shellAuthElse), /Pulando patch de compatibilidade OAuth: pacote pi-anthropic-auth não instalado/u);
   assert.doesNotMatch(shell.slice(shellAuth, shellPatch), /\|\| true/);
-  const powershellAuth = powershell.indexOf('& pi install npm:@gotgenes/pi-anthropic-auth@2.0.6');
+  const powershellAuth = powershell.indexOf('Invoke-PiInstall npm:@gotgenes/pi-anthropic-auth@2.0.6');
   const powershellPatch = powershell.indexOf('& node (Join-Path $SCRIPT_DIR "scripts\\patch-anthropic-client-version.mjs")');
   const powershellSettings = powershell.indexOf('settings.json');
   assert.ok(powershellAuth >= 0 && powershellPatch > powershellAuth && powershellSettings > powershellPatch, 'PowerShell auth/patch/settings order changed');

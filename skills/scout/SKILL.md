@@ -160,6 +160,18 @@ Continue searching only when:
 
 Do not keep searching to improve phrasing or collect nonessential examples. Absence of evidence is not evidence of absence unless the searched scope is appropriate and stated.
 
+### Finite Inventory Receipt (conditional)
+
+Only for explicitly finite inventory/audit/classification missions, the orchestrator supplies the independently source/config-derived expected stable IDs. Keep normal Markdown reporting, and append one fenced JSON block with this shape:
+
+```json
+{"status":"COMPLETE","items":[{"id":"stable-id","classification":"mission-specific value","evidence":["path:line or command/citation"],"gap":null}]}
+```
+
+`status` is `COMPLETE` or `PARTIAL`; `items` contains each expected ID exactly once, with no unexpected IDs. IDs are nonblank strings; classification is a nonblank mission-specific string; evidence is an array of nonblank citation/command strings; `gap` is `null` or a nonblank reason. `UNKNOWN` requires a nonblank gap. Known/resolved items require nonempty evidence. Any `UNKNOWN` or nonempty gap is unresolved and therefore cannot support `COMPLETE`; keep unresolved items explicit and explain why they were not inspected. The receipt does not itself certify evidence meaning, expected-universe validity, classification correctness, or safety.
+
+Scouts remain read-only: include JSON inline in the response; do not write files or execute the checker. The orchestrator may materialize run-owned temporary JSON (`expected.json` is a JSON array of unique nonblank string IDs) and run `node <absolute-scout-skill-dir>/scripts/check-inventory.mjs <expected.json> <receipt.json>` before synthesis/resume. Resolve that absolute directory from the loaded scout SKILL path; global versus project-local skill resolution determines which directory applies. If it fails, return only concrete failed IDs or a malformed counterexample to the same scout for focused correction, not a relaunch of the broad mission. Preserve the two-failure-without-new-hypothesis stop rule; never waive ordinary missing-evidence or safety checks.
+
 ### Dependency Graph (conditional)
 
 When the mission requires architecture/dependency/call-flow evidence, or when imports/exports are central to the answer, build and return a dependency graph:

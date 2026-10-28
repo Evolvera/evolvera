@@ -1,5 +1,50 @@
 {
   "providers": {
+    "refuseless": {
+      "baseUrl": "https://api.refuseless.com/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "glm-5.3-abliterated",
+          "name": "GLM 5.3 Abliterated",
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        },
+        {
+          "id": "glm-5.3-flash-abliterated",
+          "name": "GLM 5.3 Flash Abliterated",
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        },
+        {
+          "id": "deepseek-v4.1-flash-abliterated",
+          "name": "DeepSeek V4.1 Flash 1017 Abliterated",
+          "contextWindow": 1048576,
+          "maxTokens": 130000
+        },
+        {
+          "id": "deepseek-v4.1-flash-fast",
+          "name": "DeepSeek V4.1 Flash 1017",
+          "contextWindow": 1048576,
+          "maxTokens": 262144
+        },
+        {
+          "id": "minimax-m3.1-flash",
+          "name": "Minimax M3.1 Flash",
+          "contextWindow": 1048576,
+          "maxTokens": 512000
+        }
+      ]
+    },
+    "antigravity": {
+      "modelOverrides": {
+        "gemini-4-argon": {
+          "name": "Gemini 4 Argon (Antigravity)",
+          "contextWindow": 1048576,
+          "maxTokens": 65536
+        }
+      }
+    },
     "minimax": {
       "models": [
         {
@@ -64,7 +109,33 @@
           "compat": {
             "forceAdaptiveThinking": true,
             "supportsStrictTools": true
-          }
+          },
+          "promptCache": { "short": 300, "long": 3600 }
+        },
+        {
+          "id": "claude-sonnet-5-5",
+          "name": "Claude Sonnet 5.5",
+          "api": "anthropic-messages",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 450000,
+          "maxTokens": 128000,
+          "cost": {
+            "input": 2,
+            "output": 10,
+            "cacheRead": 0.2,
+            "cacheWrite": 2.5
+          },
+          "compat": {
+            "forceAdaptiveThinking": true,
+            "supportsStrictTools": true
+          },
+          "promptCache": { "short": 300, "long": 3600 }
         },
         {
           "id": "claude-opus-5-5",
@@ -88,7 +159,8 @@
           "compat": {
             "forceAdaptiveThinking": true,
             "supportsStrictTools": true
-          }
+          },
+          "promptCache": { "short": 300, "long": 3600 }
         }
       ]
     },
@@ -116,6 +188,68 @@
     },
     "openai-codex": {
       "models": [
+        {
+          "api": "openai-codex-responses",
+          "baseUrl": "https://chatgpt.com/backend-api",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": ["text", "image"],
+          "contextWindow": 300000,
+          "maxTokens": 128000,
+          "id": "gpt-6.1-sol",
+          "name": "GPT-6.1 Sol",
+          "cost": {
+            "input": 2,
+            "output": 10,
+            "cacheRead": 0.1,
+            "cacheWrite": 2.5
+          }
+        },
+        {
+          "api": "openai-codex-responses",
+          "baseUrl": "https://chatgpt.com/backend-api",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 300000,
+          "maxTokens": 128000,
+          "id": "gpt-6.1-terra",
+          "name": "GPT-6.1 Terra",
+          "cost": {
+            "input": 1,
+            "output": 5,
+            "cacheRead": 0.05,
+            "cacheWrite": 1.25,
+            "tiers": [
+              {
+                "inputTokensAbove": 272000,
+                "input": 2,
+                "output": 7.5,
+                "cacheRead": 0.1,
+                "cacheWrite": 2.5
+              }
+            ]
+          }
+        },
         {
           "api": "openai-codex-responses",
           "baseUrl": "https://chatgpt.com/backend-api",
