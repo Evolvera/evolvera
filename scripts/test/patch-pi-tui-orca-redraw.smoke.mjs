@@ -52,7 +52,7 @@ try {
   assert.throws(() => patcher.patchSource(pristine.replace('buffer += `\\x1b[${row + 1};1H\\x1b[2K`;\n', '')), /anchor count mismatch/);
 
   // Pristine -> patched, mode preserved; second run is a no-op on both supported PI releases.
-  for (const version of ['1.2.0', '1.3.0']) {
+  for (const version of ['1.2.0', '1.3.0', '1.4.0']) {
     const ok = fixture(`ok-${version}`, { piVersion: version, tuiVersion: version });
     const originalMode = fs.statSync(ok.target).mode & 0o777;
     assert.deepEqual(await patcher.applyPatch({ packageRoot: ok.packageRoot, pins }), { status: 'patched', target: ok.target });
@@ -76,7 +76,7 @@ try {
   }
 
   // Check the real published 1.2.0 and 1.3.0 files in temporary copies; never patch either SDK root.
-  for (const [version, sdkRoot] of [['1.2.0', process.env.SDK_120_ROOT], ['1.3.0', process.env.SDK_130_ROOT]]) {
+  for (const [version, sdkRoot] of [['1.2.0', process.env.SDK_120_ROOT], ['1.3.0', process.env.SDK_130_ROOT], ['1.4.0', process.env.SDK_140_ROOT]]) {
     if (!sdkRoot) continue;
     const sdkMetadata = JSON.parse(fs.readFileSync(path.join(sdkRoot, 'package.json'), 'utf8'));
     const tuiRoot = path.join(sdkRoot, 'node_modules', ...patcher.TUI_PACKAGE_NAME.split('/'));
@@ -85,11 +85,11 @@ try {
     assert.equal(sdkMetadata.version, version);
     assert.equal(JSON.parse(fs.readFileSync(path.join(tuiRoot, 'package.json'), 'utf8')).version, version);
     const originalHash = sha256(source);
-    assert.ok([patcher.UNPATCHED_SHA256, patcher.PATCHED_SHA256].includes(originalHash), `published ${version} source matches a known pin`);
+    assert.ok([patcher.VERSIONED_PINS[version].unpatched, patcher.VERSIONED_PINS[version].patched].includes(originalHash), `published ${version} source matches a known pin`);
     const copied = fixture(`published-${version}`, { piVersion: version, tuiVersion: version, source });
-    const expectedStatus = originalHash === patcher.PATCHED_SHA256 ? 'already-patched' : 'patched';
+    const expectedStatus = originalHash === patcher.VERSIONED_PINS[version].patched ? 'already-patched' : 'patched';
     assert.deepEqual(await patcher.applyPatch({ packageRoot: copied.packageRoot }), { status: expectedStatus, target: copied.target });
-    assert.equal(sha256(fs.readFileSync(copied.target)), patcher.PATCHED_SHA256);
+    assert.equal(sha256(fs.readFileSync(copied.target)), patcher.VERSIONED_PINS[version].patched);
     assert.equal(sha256(fs.readFileSync(sourcePath)), originalHash, `published ${version} source remains unchanged`);
   }
 

@@ -27,7 +27,7 @@ if [ -d "$SCRIPT_DIR/skills/flow-orca" ] && [ -d "$PI_DIR/skills/flow" ]; then
     exit 1
 fi
 
-PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.3.0}"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.4.0}"
 MIN_NODE_VERSION="22.19.0"
 same_root=false
 
@@ -86,12 +86,12 @@ info "Node $(node --version) compatível"
 info "Garantindo @earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION..."
 npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@$PI_CODING_AGENT_VERSION"
 node "$SCRIPT_DIR/scripts/patch-pi-threshold-cancel.mjs"
-info "Patch de continuidade do PI 1.3.0 verificado"
-# PI 1.3.0 includes async auth loading and recoverable-length context retry upstream.
+info "Patch de continuidade do PI $PI_CODING_AGENT_VERSION verificado"
+# PI 1.3.0 and 1.4.0 include async auth loading and recoverable-length context retry upstream.
 node "$SCRIPT_DIR/scripts/patch-pi-tui-orca-redraw.mjs"
 info "Patch de redraw do Orca verificado"
 node "$SCRIPT_DIR/scripts/patch-pi-ultra-thinking.mjs"
-info "Suporte a thinking ultra do PI 1.3.0 verificado"
+info "Suporte a thinking ultra do PI $PI_CODING_AGENT_VERSION verificado"
 command -v pi &>/dev/null || { echo "PI não encontrado após a instalação." >&2; exit 1; }
 info "PI $PI_CODING_AGENT_VERSION instalado"
 

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_PACKAGE_VERSION = '1.3.0';
+const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
 const AUTH_PACKAGE_NAME = '@gotgenes/pi-anthropic-auth';
 const AUTH_PACKAGE_VERSION = '2.0.6';
 // Preserve the installed adapted 2.0.1 instead of reinstalling its OAuth path.
@@ -20,6 +21,7 @@ const AUTH_UNPATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.206";';
 const AUTH_PATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.280";';
 const PI_UNPATCHED_SHA256 = 'af2514d6f1a4a4f4e92499c9ff996b5f12792e882cdf55a7687aa09aed7b9a9e';
 const PI_PATCHED_SHA256 = 'eaa26ecdb63f379a96b5bc556bda397fa8d747ea6a3aa94922656f1496fcce41';
+const PI_140_NATIVE_SHA256 = '360298eff89e8c517c213880088db33c93b56ba737c91e885b22e7e125ca5d55';
 const AUTH_UNPATCHED_SHA256 = 'e327b67cd75d719f06910db06468f9b39fd03e657b5fb593555ca6e4cbe349f8';
 const AUTH_PATCHED_SHA256 = 'bfbe5a011ae42f04765567d4b177f164a048eaca33f3d89043fa0672360691c3';
 /**
@@ -134,10 +136,11 @@ async function readPackage(packageRoot, expectedName, expectedVersion) {
   if (metadata.name !== expectedName || !versions.includes(metadata.version)) {
     throw new Error(`package identity mismatch for ${expectedName}`);
   }
+  return metadata.version;
 }
 
 async function prepareTarget({
-  packageRoot, relativePath, unpatchedAnchor, patchedAnchor, unpatchedSha256, patchedSha256,
+  packageRoot, relativePath, piVersion, unpatchedAnchor, patchedAnchor, unpatchedSha256, patchedSha256,
   supersededAnchors = [],
 }) {
   const targetPath = path.join(packageRoot, relativePath);
@@ -153,6 +156,13 @@ async function prepareTarget({
   }
 
   const source = decodeUtf8(original);
+  if (relativePath === PI_TARGET_RELATIVE_PATH && piVersion === '1.4.0') {
+    if (sha256(original) !== PI_140_NATIVE_SHA256 || countOccurrences(source, PI_PATCHED_ANCHOR) !== 1) {
+      throw new Error(`native PI 1.4 target digest/anchor mismatch: ${relativePath}`);
+    }
+    return { targetPath, original, mode: targetStat.mode & 0o7777, output: original, changed: false,
+      unpatchedAnchor, patchedAnchor };
+  }
   // Exactly one known client-version anchor may appear, exactly once: a
   // pristine install, one this patcher wrote earlier, or the current target.
   const sourceAnchors = [{ anchor: unpatchedAnchor, sha256: unpatchedSha256 }, ...supersededAnchors];
@@ -241,8 +251,8 @@ async function verifyTarget(target, expectedBytes) {
 }
 
 async function patchPackageRoots(piPackageRoot, authPackageRoot, { renameFile = rename } = {}) {
-  await Promise.all([
-    readPackage(piPackageRoot, PI_PACKAGE_NAME, PI_PACKAGE_VERSION),
+  const [piVersion] = await Promise.all([
+    readPackage(piPackageRoot, PI_PACKAGE_NAME, PI_SUPPORTED_VERSIONS),
     readPackage(authPackageRoot, AUTH_PACKAGE_NAME, AUTH_SUPPORTED_VERSIONS),
   ]);
 
@@ -251,6 +261,7 @@ async function patchPackageRoots(piPackageRoot, authPackageRoot, { renameFile = 
     prepareTarget({
       packageRoot: piPackageRoot,
       relativePath: PI_TARGET_RELATIVE_PATH,
+      piVersion,
       unpatchedAnchor: PI_UNPATCHED_ANCHOR,
       patchedAnchor: PI_PATCHED_ANCHOR,
       unpatchedSha256: PI_UNPATCHED_SHA256,
@@ -338,6 +349,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 export {
   PI_PACKAGE_NAME,
   PI_PACKAGE_VERSION,
+  PI_SUPPORTED_VERSIONS,
+  PI_140_NATIVE_SHA256,
   AUTH_PACKAGE_NAME,
   AUTH_PACKAGE_VERSION,
   PI_TARGET_RELATIVE_PATH,

@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_PACKAGE_VERSION = '1.3.0';
+const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
 const AI_PACKAGE_NAME = '@earendil-works/pi-ai';
 const AI_PACKAGE_VERSION = '1.3.0';
+const AI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
 const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js';
 const CREATE_CLIENT_ANCHOR = 'function createClient(';
 const UNPATCHED_ANCHOR = `    return new OpenAI({
@@ -57,6 +59,13 @@ function piNormalizeErrorEnvelope(baseFetch) {
 `;
 const UNPATCHED_SHA256 = '4b3875e5ec18c5e2d06ce12409feb2554563fd2c392a5c1773af968b265e2bea';
 const PATCHED_SHA256 = '4868e42430a56df042461a15f8905b46053a6ad2e9c97b0d234661fd31831225';
+const VERSIONED_HASHES = {
+  '1.3.0': { unpatched: UNPATCHED_SHA256, patched: PATCHED_SHA256 },
+  '1.4.0': {
+    unpatched: '106eb312121137abbe9ad8050e2c9baa1ea27315233c7b8bee8c7820c8b3a6cf',
+    patched: '96fa22a1e0334ed2cf5f520af664417b1a99307e1731ad8eaf7d53d96e06cac8',
+  },
+};
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -128,15 +137,21 @@ async function readPackage(packageRoot, expectedName, expectedVersion) {
   if (!packageStat.isDirectory() || !metadataStat.isFile()) {
     throw new Error(`package metadata has unsafe type: ${expectedName}`);
   }
-  if (metadata.name !== expectedName || metadata.version !== expectedVersion) {
+  const versions = Array.isArray(expectedVersion) ? expectedVersion : [expectedVersion];
+  if (metadata.name !== expectedName || !versions.includes(metadata.version)) {
     throw new Error(`package identity/version mismatch for ${expectedName}; re-verify the anchor before patching`);
   }
+  return metadata.version;
 }
 
 async function prepareTarget(packageRoot) {
-  await readPackage(packageRoot, PI_PACKAGE_NAME, PI_PACKAGE_VERSION);
+  const piVersion = await readPackage(packageRoot, PI_PACKAGE_NAME, PI_SUPPORTED_VERSIONS);
   const aiPackageRoot = path.join(packageRoot, 'node_modules', '@earendil-works', 'pi-ai');
-  await readPackage(aiPackageRoot, AI_PACKAGE_NAME, AI_PACKAGE_VERSION);
+  const aiVersion = await readPackage(aiPackageRoot, AI_PACKAGE_NAME, AI_SUPPORTED_VERSIONS);
+  if (piVersion !== aiVersion || !VERSIONED_HASHES[piVersion]) {
+    throw new Error('PI/pi-ai package versions are not a supported pair');
+  }
+  const { unpatched: unpatchedSha256, patched: patchedSha256 } = VERSIONED_HASHES[piVersion];
 
   const targetPath = path.join(packageRoot, TARGET_RELATIVE_PATH);
   let original;
@@ -154,13 +169,13 @@ async function prepareTarget(packageRoot) {
   const currentSha256 = sha256(original);
   const unpatchedCount = countOccurrences(source, UNPATCHED_ANCHOR);
   const patchedCount = countOccurrences(source, PATCHED_ANCHOR);
-  if (currentSha256 === PATCHED_SHA256) {
+  if (currentSha256 === patchedSha256) {
     if (unpatchedCount !== 0 || patchedCount !== 1) {
       throw new Error(`patched SHA/anchor mismatch: ${TARGET_RELATIVE_PATH}`);
     }
     return { targetPath, original, output: original, mode: targetStat.mode & 0o7777, changed: false };
   }
-  if (currentSha256 !== UNPATCHED_SHA256) {
+  if (currentSha256 !== unpatchedSha256) {
     throw new Error(`unexpected target SHA; re-verify the anchor before patching: ${TARGET_RELATIVE_PATH}`);
   }
   if (unpatchedCount !== 1 || patchedCount !== 0 || countOccurrences(source, CREATE_CLIENT_ANCHOR) !== 1) {
@@ -177,7 +192,7 @@ async function prepareTarget(packageRoot) {
   );
   if (output.equals(original) || countOccurrences(output.toString('utf8'), UNPATCHED_ANCHOR) !== 0
       || countOccurrences(output.toString('utf8'), PATCHED_ANCHOR) !== 1
-      || sha256(output) !== PATCHED_SHA256
+      || sha256(output) !== patchedSha256
       || anchorIndex < createClientIndex) {
     throw new Error(`patched output verification failed: ${TARGET_RELATIVE_PATH}`);
   }
@@ -265,8 +280,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 export {
   AI_PACKAGE_NAME,
   AI_PACKAGE_VERSION,
+  AI_SUPPORTED_VERSIONS,
   PI_PACKAGE_NAME,
   PI_PACKAGE_VERSION,
+  PI_SUPPORTED_VERSIONS,
+  VERSIONED_HASHES,
   TARGET_RELATIVE_PATH,
   UNPATCHED_ANCHOR,
   PATCHED_ANCHOR,

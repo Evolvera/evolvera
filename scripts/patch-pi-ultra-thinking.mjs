@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PACKAGE_VERSION = '1.3.0';
+const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0']);
 const PULSE_MS = 350;
 
 const PATCHES = [
@@ -87,7 +88,7 @@ async function stage(target, bytes, mode) {
 }
 async function patch(packageRoot, { renameFile = rename } = {}) {
   const meta = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
-  if (meta.name !== PACKAGE_NAME || meta.version !== PACKAGE_VERSION) throw new Error('package identity mismatch');
+  if (meta.name !== PACKAGE_NAME || !SUPPORTED_PACKAGE_VERSIONS.includes(meta.version)) throw new Error('package identity mismatch');
   const grouped = new Map();
   for (const [rel, before, after] of PATCHES) {
     const list = grouped.get(rel) ?? []; list.push({ before, after }); grouped.set(rel, list);
@@ -120,8 +121,8 @@ async function patch(packageRoot, { renameFile = rename } = {}) {
   return true;
 }
 async function main() {
-  try { const changed = await patch(resolveRoot(process.argv.slice(2))); console.log(changed ? 'Pi 1.3.0 ultra-thinking patch applied.' : 'Pi 1.3.0 ultra-thinking patch already applied.'); }
-  catch (error) { console.error(`Pi 1.3.0 ultra-thinking patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
+  try { const changed = await patch(resolveRoot(process.argv.slice(2))); console.log(changed ? 'Pi ultra-thinking patch applied.' : 'Pi ultra-thinking patch already applied.'); }
+  catch (error) { console.error(`Pi ultra-thinking patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { PACKAGE_NAME, PACKAGE_VERSION, PATCHES, PULSE_MS, patch, resolveRoot };
+export { PACKAGE_NAME, PACKAGE_VERSION, SUPPORTED_PACKAGE_VERSIONS, PATCHES, PULSE_MS, patch, resolveRoot };

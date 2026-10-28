@@ -13,7 +13,7 @@
  * screen and cursor identical (CUP overrides the column; no cell is printed in between), while
  * Orca's parser resets its column to 0, so the per-frame cost drops to ~0.2 ms.
  *
- * Fail-closed: only the exact pristine source file published in 1.2.0/1.3.0 is patched; an already-patched file is a no-op;
+ * Fail-closed: only exact pristine source files published in supported releases are patched; an already-patched file is a no-op;
  * any other content is refused without writing.
  */
 import { createHash } from 'node:crypto';
@@ -26,10 +26,18 @@ export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 export const PI_PACKAGE_VERSION = '1.2.0';
 export const TUI_PACKAGE_NAME = '@earendil-works/pi-tui';
 export const TUI_PACKAGE_VERSION = '1.2.0';
-export const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.2.0', '1.3.0']);
+export const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.2.0', '1.3.0', '1.4.0']);
 export const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js';
 export const UNPATCHED_SHA256 = 'aa0b953c0158357d20a1d6f868cd4d7b667fd6646848a788ffded9808c9ef720';
 export const PATCHED_SHA256 = '4266c1e4239c8b39d17b9b62e3421b349b81c928244ad32f70786db30ec60ce0';
+export const VERSIONED_PINS = Object.freeze({
+  '1.2.0': { unpatched: UNPATCHED_SHA256, patched: PATCHED_SHA256 },
+  '1.3.0': { unpatched: UNPATCHED_SHA256, patched: PATCHED_SHA256 },
+  '1.4.0': {
+    unpatched: 'ea5f52dc983f60c4354c674bd19f0d296fda8b5fa86185d4a4bdf0343b1ff92b',
+    patched: 'ae1456234e4b6008af27ccaaf14888f83bf0f99d88cdccd8469d5e9c2157ce01',
+  },
+});
 
 // Literal source text (the file contains the two-character escape `\x1b`, not ESC).
 export const REPLACEMENTS = [
@@ -68,12 +76,14 @@ function defaultPackageRoot() {
 }
 
 /** Returns { status: 'patched' | 'already-patched' | 'skipped', reason?, target? }. Throws on unknown content. */
-export async function applyPatch({ packageRoot = defaultPackageRoot(), pins = { unpatched: UNPATCHED_SHA256, patched: PATCHED_SHA256 } } = {}) {
+export async function applyPatch({ packageRoot = defaultPackageRoot(), pins } = {}) {
   const piVersion = await readPackageVersion(packageRoot, PI_PACKAGE_NAME);
   if (!SUPPORTED_PACKAGE_VERSIONS.includes(piVersion)) return { status: 'skipped', reason: `${PI_PACKAGE_NAME}@${piVersion} is unsupported` };
   const tuiRoot = path.join(packageRoot, 'node_modules', ...TUI_PACKAGE_NAME.split('/'));
   const tuiVersion = await readPackageVersion(tuiRoot, TUI_PACKAGE_NAME);
   if (!SUPPORTED_PACKAGE_VERSIONS.includes(tuiVersion) || tuiVersion !== piVersion) return { status: 'skipped', reason: `${TUI_PACKAGE_NAME}@${tuiVersion} is unsupported for ${PI_PACKAGE_NAME}@${piVersion}` };
+
+  pins ??= VERSIONED_PINS[piVersion];
 
   const target = path.join(packageRoot, ...TARGET_RELATIVE_PATH.split('/'));
   const stat = await lstat(target);
