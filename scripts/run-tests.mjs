@@ -17,6 +17,8 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 // limpeza explícita; in-memory não cria arquivo/serviço persistente. Revisado
 // grep dirigido em home/HOME/.pi/rede/listen/spawn/escritas para todos os nomes.
 const tmpdirProprioPadrao = new Set([
+  // Picked from MiguelNevesZane: each smoke owns a fresh mkdtemp root removed in finally; models/agents are fakes.
+  "continuation-reviewer.smoke.mjs", "bash-timeout.smoke.mjs", "msys-slash-restore.smoke.mjs", "loop.smoke.mjs",
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
   "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
