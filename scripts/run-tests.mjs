@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,8 @@ if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
 const tmpdirProprioPadrao = new Set([
   // Picked from MiguelNevesZane: each smoke owns a fresh mkdtemp root removed in finally; models/agents are fakes.
   "bash-timeout.smoke.mjs", "msys-slash-restore.smoke.mjs", "loop.smoke.mjs",
+  "studio-steer.smoke.mjs", // fake subagent manager on globalThis; extension copy in its own mkdtemp
+  "sync-studio.smoke.mjs", // synthetic upstream/local git repos and extraction only inside its owned mkdtemp
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
   "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
@@ -150,8 +152,14 @@ for (const dir of ["extensions/test", "scripts/test"]) {
 // fixas contra o repositório de trabalho.
 if (root === repoRoot) {
   const interfaceTest = "npm test (interface)";
-  console.log("\n[tmpdir próprio] npm test (interface)");
-  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
+  if (existsSync(path.join(root, "interface", "package.json"))) {
+    console.log("\n[tmpdir próprio] npm test (interface)");
+    executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
+  } else {
+    // /interface/ fica fora desta distribuição (.gitignore); scripts/studio/sync-studio.mjs roda essa suíte
+    // no commit fixado antes de instalar o Studio.
+    resultados.excluidos.push(`${interfaceTest} — interface/ ausente; testada por scripts/studio/sync-studio.mjs`);
+  }
 }
 
 console.log("\nResumo final");
