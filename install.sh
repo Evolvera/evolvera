@@ -239,6 +239,20 @@ else
     info "origem e destino iguais - settings.json preservado"
 fi
 
+# ── PI Studio (opcional) ──────────────────────
+# O Studio vem do commit fixado em config/studio-source.json (branch MiguelNevesZane), não desta árvore.
+# EVOLVERA_STUDIO=1 instala; se já estiver instalado, atualiza sempre, para o atalho não ficar numa versão velha.
+if [ "${EVOLVERA_STUDIO:-}" = 1 ] || [ -f "$PI_DIR/studio/server.mjs" ]; then
+    step "PI Studio"
+    studio_args=("$SCRIPT_DIR/scripts/studio/sync-studio.mjs" --pi-dir "$PI_DIR")
+    [ -f "$PI_DIR/studio/server.mjs" ] || studio_args+=(--shortcuts)
+    if node "${studio_args[@]}"; then
+        info "PI Studio no commit fixado"
+    else
+        echo "[!] PI Studio não foi atualizado (o PI acima segue instalado). Veja a mensagem acima." >&2
+    fi
+fi
+
 # ── Done ──────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

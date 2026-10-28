@@ -3,6 +3,7 @@
 
 param(
     [switch]$PrepareUsuarioEntry,
+    [switch]$Studio,
     [string]$UsuarioBinDir,
     [string]$UsuarioSdkRoot,
     [string]$UsuarioNodePath
@@ -331,6 +332,21 @@ if (-not $sameRoot) {
     Info "settings.json"
 } else {
     Info "origem e destino iguais - settings.json preservado"
+}
+
+# -- PI Studio (opcional) ---------------------------------
+# O Studio vem do commit fixado em config/studio-source.json (branch MiguelNevesZane), nao desta arvore.
+# Instala com -Studio; se ja estiver instalado, atualiza sempre, para o atalho nao ficar preso numa versao velha.
+$studioDir = Join-Path $PI_DIR "studio"
+$studioInstalled = Test-Path -LiteralPath (Join-Path $studioDir "server.mjs")
+if ($Studio -or $studioInstalled) {
+    Step "PI Studio"
+    $studioArgs = @((Join-Path $SCRIPT_DIR "scripts\studio\sync-studio.mjs"), "--pi-dir", $PI_DIR)
+    if (-not $studioInstalled) { $studioArgs += "--shortcuts" }
+    # Mesmo cuidado de Invoke-PiInstall: stderr do npm test nao pode virar NativeCommandError no PS 5.1.
+    & { $ErrorActionPreference = "Continue"; & node @studioArgs }
+    if ($LASTEXITCODE -eq 0) { Info "PI Studio no commit fixado" }
+    else { Write-Host "[!] PI Studio nao foi atualizado (o PI acima segue instalado). Veja a mensagem acima." -ForegroundColor Yellow }
 }
 
 # -- Done -------------------------------------------------
