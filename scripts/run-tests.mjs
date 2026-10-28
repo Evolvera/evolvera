@@ -20,6 +20,7 @@ const tmpdirProprioPadrao = new Set([
   // Picked from MiguelNevesZane: each smoke owns a fresh mkdtemp root removed in finally; models/agents are fakes.
   "bash-timeout.smoke.mjs", "msys-slash-restore.smoke.mjs", "loop.smoke.mjs",
   "studio-steer.smoke.mjs", // fake subagent manager on globalThis; extension copy in its own mkdtemp
+  "provider-login-check.smoke.mjs", // agent files in its own mkdtemp; in-memory fake model registry
   "sync-studio.smoke.mjs", // synthetic upstream/local git repos and extraction only inside its owned mkdtemp
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
