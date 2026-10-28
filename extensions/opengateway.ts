@@ -101,14 +101,23 @@ async function fetchModels(signal: AbortSignal, hasCachedModels: boolean): Promi
 }
 
 export default function (pi: ExtensionAPI): void {
+  // SDK refresh recomposes this seed before checking cancellation. Keep its
+  // projection aligned with the native store, without sharing mutable seeds.
+  const seedModels = [...fallbackModels];
+  const updateSeedModels = (models: readonly ProviderModelConfig[]): void => {
+    seedModels.splice(0, seedModels.length, ...models);
+  };
   pi.registerProvider(PROVIDER, {
     name: "OpenGateway",
     baseUrl: BASE_URL,
     authHeader: true,
-    models: fallbackModels,
+    models: seedModels,
     refreshModels: async (context) => {
       const stored = cachedModels(context.stored);
-      if (!context.allowNetwork || context.signal.aborted) return stored.length ? stored : fallbackModels;
+      if (!context.allowNetwork || context.signal.aborted) {
+        if (stored.length) updateSeedModels(stored);
+        return stored.length ? stored : fallbackModels;
+      }
       const models = await fetchModels(context.signal, stored.length > 0);
       await context.publish({
         persist: {
@@ -116,6 +125,7 @@ export default function (pi: ExtensionAPI): void {
           checkedAt: Date.now(),
         },
       });
+      updateSeedModels(models);
       return models;
     },
   });

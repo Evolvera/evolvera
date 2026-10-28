@@ -113,6 +113,18 @@ try {
   assert.equal(events.at(-1).type, "done", JSON.stringify(events.at(-1)));
   assert.equal(events.at(-1).message.content[0].text, "offline-smoke-ok");
 
+  const fetchCountBeforeOffline = calls.length;
+  refresh = await runtime.refresh({ providers: ["opengateway"], allowNetwork: false, force: true });
+  assert.equal(calls.length, fetchCountBeforeOffline, "an offline cached refresh does not fetch");
+  assert.deepEqual(runtime.getModels("opengateway").map((entry) => entry.id).sort(), ids, "an offline refresh preserves the discovered catalog");
+
+  const fetchCountBeforeAbort = calls.length;
+  const aborted = new AbortController();
+  aborted.abort();
+  refresh = await runtime.refresh({ providers: ["opengateway"], allowNetwork: true, force: true, signal: aborted.signal });
+  assert.equal(calls.length, fetchCountBeforeAbort, "a pre-aborted cached refresh does not fetch");
+  assert.deepEqual(runtime.getModels("opengateway").map((entry) => entry.id).sort(), ids, "a pre-aborted refresh preserves the discovered catalog");
+
   catalogUnavailable = true;
   refresh = await runtime.refresh({ providers: ["opengateway"], allowNetwork: true, force: true });
   assert.equal(refresh.errors.has("opengateway"), true, "a later catalog failure is reported rather than hidden");
