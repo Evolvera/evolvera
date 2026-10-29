@@ -23,7 +23,8 @@ const protectedPins = {
   "scripts/patch-pi-101-interactive-activity.mjs": "e47429c2e2c20393cc57fa561b897ad126d0008994ca36d75779d7a0b9e1f48f",
   "scripts/test/patch-pi-101-interactive-activity.smoke.mjs": "075f4e8450f97560d60d00be20cd91e45808306ce40beccb09f42be577ca4423",
 };
-const sdkRootPublished = "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent";
+const sdkRootPublished = process.env.SDK_101_ROOT;
+assert.ok(sdkRootPublished && path.isAbsolute(sdkRootPublished), "SDK_101_ROOT must explicitly name the canonical SDK 1.0.1 fixture");
 const sdkPins = {
   "package.json": "fa487897918283976006d8c4f450772a9c90b9674f2a19d5f01e3ab9af35ce8f",
   "dist/main.js": "060521b0b81f91948d8ded9139e423e5d0c9e6808a45c81750cc30519de4d2db",
@@ -239,14 +240,14 @@ test("executable preserves native exit status and reports only finite rejected e
   const invocation = launcherSource.slice(start, end).trim();
   for (const status of [undefined, 0, 1, 2]) {
     const errors = [];
-    const nativeProcess = { exitCode: status, stderr: { write: (text) => errors.push(text) } };
+    const nativeProcess = { env: {}, exitCode: status, stderr: { write: (text) => errors.push(text) } };
     await vm.runInNewContext(invocation, { launchUser: async () => undefined, process: nativeProcess }, { timeout: 1000 });
     assert.equal(nativeProcess.exitCode, status, `native status ${status} must not be overwritten`);
     assert.deepEqual(errors, []);
   }
   for (const [code, expected] of [["ACCOUNT_SELECTION_REQUIRED", "ACCOUNT_SELECTION_REQUIRED"], ["private-path/or-secret", "USER_LAUNCH_FAILED"]]) {
     const errors = [];
-    const nativeProcess = { exitCode: undefined, stderr: { write: (text) => errors.push(text) } };
+    const nativeProcess = { env: {}, exitCode: undefined, stderr: { write: (text) => errors.push(text) } };
     await vm.runInNewContext(invocation, { launchUser: async () => { throw { code }; }, process: nativeProcess }, { timeout: 1000 });
     assert.equal(nativeProcess.exitCode, 1);
     assert.deepEqual(errors, [`${expected}\n`]);

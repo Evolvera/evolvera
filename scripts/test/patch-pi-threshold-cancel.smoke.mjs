@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 const root = path.resolve(import.meta.dirname, '../..');
 const patcher = path.join(root, 'scripts/patch-pi-threshold-cancel.mjs');
 const sdkRoot = process.env.PI_SDK_ROOT;
-assert.ok(sdkRoot && path.isAbsolute(sdkRoot), 'PI_SDK_ROOT must name the pristine 1.3.0 SDK');
+assert.ok(sdkRoot && path.isAbsolute(sdkRoot), 'PI_SDK_ROOT must name the approved SDK fixture');
 const disposableRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-pi-threshold-'));
 const fixtureRoot = path.join(disposableRoot, 'package');
 const target = path.join(fixtureRoot, 'dist/core/agent-session.js');
@@ -17,7 +17,7 @@ const source = fs.readFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'))
 const packageJson = path.join(sdkRoot, 'package.json');
 const metadata = JSON.parse(fs.readFileSync(packageJson, 'utf8'));
 assert.equal(metadata.name, '@earendil-works/pi-coding-agent');
-assert.equal(metadata.version, '1.3.0');
+assert.ok(['1.3.0', '1.4.0'].includes(metadata.version));
 fs.mkdirSync(path.dirname(target), { recursive: true });
 fs.copyFileSync(path.join(sdkRoot, 'package.json'), path.join(fixtureRoot, 'package.json'));
 fs.copyFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'), target);
@@ -25,7 +25,7 @@ fs.copyFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'), target);
 const patcherApi = await import(pathToFileURL(patcher));
 const {
   UNPATCHED_ANCHOR, PATCHED_ANCHOR, UNPATCHED_SHA256, PATCHED_SHA256,
-  PACKAGE_VERSION, npmInvocation, npmGlobalNodeModulesRoot, packageRootFromArgs,
+  PACKAGE_VERSION, SUPPORTED_PACKAGE_VERSIONS, npmInvocation, npmGlobalNodeModulesRoot, packageRootFromArgs,
 } = patcherApi;
 function runPatcher() {
   return spawnSync(process.execPath, [patcher, '--package-root', fixtureRoot], {
@@ -49,6 +49,7 @@ function evaluateCatch({ cancelledByExtension, reason, aborted, queued }) {
 
 try {
   assert.equal(PACKAGE_VERSION, '1.3.0');
+  assert.deepEqual(SUPPORTED_PACKAGE_VERSIONS, ['1.3.0', '1.4.0']);
   assert.equal(createHash('sha256').update(UNPATCHED_ANCHOR).digest('hex'), UNPATCHED_SHA256);
   assert.equal(createHash('sha256').update(PATCHED_ANCHOR).digest('hex'), PATCHED_SHA256);
   assert.equal(packageRootFromArgs(['--package-root', fixtureRoot]), fixtureRoot);

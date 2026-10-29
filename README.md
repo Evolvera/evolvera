@@ -33,7 +33,7 @@ You describe the outcome. The main agent chooses whether to act directly or dele
 
 ## Get started
 
-You need **Git**, **Node.js ≥22.19.0**, **npm**, and access to at least one AI provider. The default installed runtime is **`@earendil-works/pi-coding-agent@1.3.0`**.
+You need **Git**, **Node.js ≥22.19.0**, **npm**, and access to at least one AI provider. The default installed runtime is **`@earendil-works/pi-coding-agent@1.4.0`**.
 
 > The public repository is [Evolvera/evolvera](https://github.com/Evolvera/evolvera), licensed under GPLv3.
 
@@ -55,9 +55,15 @@ Set-Location evolvera
 pi
 ```
 
-In your first session, use **`/login`** to authenticate with your provider.
+In your first session, use **`/login`** to authenticate with your provider. **OpenGateway** uses the native secret API-key flow: log in with your own key on the intended account, without OAuth. [OpenGateway setup →](docs/opengateway.md)
 
 The [installation guide](docs/setup.md#quick-start) covers Node/fnm, Windows, WSL, and setup verification. It also explains what the installers update and preserve.
+
+### Update an existing installation
+
+Ask PI to update safely, or invoke **`/skill:self-update`**. The [safe-update skill](skills/self-update/SKILL.md) reconciles the checkout, SDK, packages, extensions, and assets in an isolated candidate before activation. It preserves the working target when compatibility cannot be verified; routine updates do not run the installers.
+
+Native `pi update` updates the application, `pi update --extensions` updates packages, and `pi update --all` updates both. These commands alone do **not** update or validate the Evolvera checkout and assets; they are not intercepted by the skill.
 
 ## From request to delivery
 
@@ -114,6 +120,8 @@ Account selection in the actual launcher has a separate activation process from 
 | :--- | :--- |
 | [Installation and operation](docs/setup.md) | Full setup, updates, daily use, compatibility, and troubleshooting. |
 | [Accounts and sessions](docs/auth-only-accounts.md) | Managed launcher, credentials, and per-session account binding. |
+| [OpenGateway](docs/opengateway.md) | Native API-key login, model discovery, and protocol compatibility. |
+| [Safe updates](skills/self-update/SKILL.md) | Isolated preparation, compatibility checks, activation, and recovery boundaries. |
 | [Terminal artwork](docs/terminal-art.md) | Visual identity, rendering, and preview. |
 | [Engineering principles](ENGINEERING.md) | Project technical conventions. |
 

@@ -13,7 +13,6 @@ import { prepareSdkStage } from "../users/sdk-stage.mjs";
 
 const SDK_ROOT = process.env.SDK_120_ROOT;
 const RUN_PARENT = process.env.SDK_RUNTIME_RUN_PARENT;
-const NODE = "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node.exe";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const TRANSFORMS = {
   "dist/main.js": transformMainSource,
@@ -33,8 +32,7 @@ const read = (relative) => readFileSync(path.join(SDK_ROOT, ...relative.split("/
 const requireRunRoots = () => {
   assert.ok(SDK_ROOT && path.isAbsolute(SDK_ROOT), "SDK_120_ROOT must explicitly name the canonical SDK 1.2 fixture");
   assert.ok(RUN_PARENT && path.isAbsolute(RUN_PARENT), "SDK_RUNTIME_RUN_PARENT must explicitly name a fresh disposable parent");
-  assert.ok(existsSync(NODE), "runtime must use the explicitly approved Node v24.20.0 executable");
-  assert.equal(realpathSync.native(NODE), realpathSync.native(process.execPath), "test process and child process use the same Node executable");
+  assert.ok(existsSync(process.execPath), "runtime must use the current Node executable");
   const sdkResolved = path.resolve(SDK_ROOT);
   assert.equal(realpathSync.native(sdkResolved), sdkResolved, "SDK fixture root must be a real canonical directory");
   assert.ok(lstatSync(sdkResolved).isDirectory() && !lstatSync(sdkResolved).isSymbolicLink(), "SDK fixture root is not an alias");
@@ -130,7 +128,7 @@ function sanitizedEnv(root, guard, extra = {}) {
   const system = process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows";
   return {
     SystemRoot: system, WINDIR: system,
-    PATH: [path.dirname(NODE), path.join(system, "System32")].join(path.delimiter),
+    PATH: [path.dirname(process.execPath), path.join(system, "System32")].join(path.delimiter),
     HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: path.join(root, "pi"),
     TMP: root, TEMP: root, JITI_CACHE_DIR: path.join(root, "jiti"),
     PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1",
@@ -155,7 +153,7 @@ test("SDK 1.2 managed runtime, native metadata and personalized catalog isolatio
   assert.equal(manifest.package.version, "1.2.0");
   assert.equal(manifest.evaluation, "none; transformed SDK source was not imported or evaluated");
   evidence.sdkStage = { sourcePins: manifest.sourcePins, dependencyPins: manifest.dependencyPins, outputs: manifest.outputs };
-  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts")];
+  const publicSourceRoots = [path.join(REPO, "scripts/users"), path.join(REPO, "scripts/ui"), path.join(REPO, "scripts/compat/alibaba-users.mjs"), path.join(REPO, "extensions/usuario.ts"), path.join(REPO, "extensions/session-usage.ts")];
   const stageGuard = writeGuard(run, publicSourceRoots.concat(SDK_ROOT));
   const isolatedEnv = sanitizedEnv(run, stageGuard);
   for (const key of Object.keys(process.env)) delete process.env[key];
@@ -182,7 +180,7 @@ test("SDK 1.2 managed runtime, native metadata and personalized catalog isolatio
 import { launchUser } from ${JSON.stringify(pathToFileURL(path.join(REPO,"scripts/users/launcher.mjs")).href)};
 await launchUser(['--help','--offline','--no-extensions','--no-skills','--no-prompt-templates','--no-context-files','--no-themes','--no-mcp'], { packageRoot: process.env.SDK_120_ROOT, registryPath: ${JSON.stringify(path.join(run,"registry.json"))}, env: process.env });
 `, { flag: "wx" });
-  const help = spawnSync(NODE, [child], { cwd: run, env: sanitizedEnv(run, stageGuard), encoding: "utf8", timeout: 30_000 });
+  const help = spawnSync(process.execPath, [child], { cwd: run, env: sanitizedEnv(run, stageGuard), encoding: "utf8", timeout: 30_000 });
   evidence.statuses.push({ operation: "managed-native-help", status: help.status, signal: help.signal ?? null });
   assert.equal(help.status, 0, `native SDK --help failed: ${help.stderr}`);
   assert.match(help.stdout + help.stderr, /Usage:|Options:|--help/i);
@@ -337,7 +335,7 @@ await launchUser(['--help','--offline','--no-extensions','--no-skills','--no-pro
   assert.equal(evidence.windowsCleanupSourcePostcheck, windowsCleanupSourceHash, "native cleanup implementation remained unchanged");
   assert.equal(accountCreates.join(","), "alpha,beta", "cross-account process binding fails before beta store construction; separate beta factory succeeds");
   assert.deepEqual(evidence.egressAttempts, [], "all guarded egress types, including Socket.prototype.connect and DNS, remain unused");
-  assert.deepEqual(evidence.blockedSdkCleanupAttempts, [{ kind: "fs-write-rmSync", target: quarantineCleanupPath }], "SDK 1.2's documented Windows startup quarantine cleanup is blocked before touching the fixture node_modules tree");
+  assert.deepEqual(evidence.blockedSdkCleanupAttempts, process.platform === "win32" ? [{ kind: "fs-write-rmSync", target: quarantineCleanupPath }] : [], "only Windows attempts native startup quarantine cleanup; the fixture node_modules tree stays protected");
   assert.deepEqual(evidence.filesystemViolations, [], "no other filesystem access or mutation escaped the run/public-read boundary");
   assert.ok(!guardEvents.some((event) => event.kind === "fs-unproven-fd"), "no unproven non-standard file descriptor was used");
 });

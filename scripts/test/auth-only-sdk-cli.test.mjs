@@ -9,7 +9,8 @@ import { pathToFileURL } from "node:url";
 import { transformMainSource, transformMigrationsSource } from "../users/sdk-cli-source.mjs";
 import { prepareSdkStage } from "../users/sdk-stage.mjs";
 
-const sdkRoot = "C:/Users/kevin/AppData/Local/nvm/v24.20.0/node_modules/@earendil-works/pi-coding-agent";
+const sdkRoot = process.env.SDK_101_ROOT;
+assert.ok(sdkRoot && path.isAbsolute(sdkRoot), "SDK_101_ROOT must explicitly name the canonical SDK 1.0.1 fixture");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const protectedPins = {
   "scripts/patch-pi-101-interactive-activity.mjs": "e47429c2e2c20393cc57fa561b897ad126d0008994ca36d75779d7a0b9e1f48f",
