@@ -35,6 +35,9 @@ try {
   assert.deepEqual(m.listMembers(dir).map((x) => x.name).sort(), ["backend", "lead"]);
   assert.deepEqual(m.recipients("lead", "backend", m.listMembers(dir)), ["lead"]);
   assert.deepEqual(m.recipients("all", "lead", m.listMembers(dir)), ["backend"]);
+  // A recipient silent for over a minute is flagged; fresh and unknown names are not.
+  const roster = [{ name: "front", role: "member", cwd: "x", pid: 1, updatedAt: 0 }, { name: "back", role: "member", cwd: "y", pid: 2, updatedAt: 590_000 }];
+  assert.deepEqual(m.silentMembers(roster, ["front", "back", "novo"], 600_000), ["front (sem sinal há 10 min)"]);
   for (const bad of ["../x", "..", ".", "a/b", "a\\b", "C:x", ""]) {
     assert.deepEqual(m.recipients(bad, "lead", m.listMembers(dir)), [], `recipient ${JSON.stringify(bad)} is refused`);
     assert.throws(() => m.deliver(dir, { id: "e", from: "x", to: bad, text: "t", at: 1 }), /invalid team recipient/);

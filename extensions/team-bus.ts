@@ -66,6 +66,18 @@ export function listMembers(dir: string): Member[] {
   });
 }
 
+/**
+ * Recipients whose heartbeat (every POLL_MS while alive) is older than `limitMs`: the session probably stopped, so
+ * mail to it only piles up. A benchmark lead sent 35 messages to a member that had died in its first minute.
+ */
+export function silentMembers(members: Member[], names: string[], now: number, limitMs = 60_000): string[] {
+  return names.flatMap((name) => {
+    const member = members.find((m) => m.name === name);
+    if (!member || now - member.updatedAt <= limitMs) return [];
+    return [`${name} (sem sinal há ${Math.round((now - member.updatedAt) / 60_000)} min)`];
+  });
+}
+
 /** Resolves "lead" and "all" to member names; unknown names are kept so a late joiner still gets the mail. */
 export function recipients(to: string, from: string, members: Member[]): string[] {
   if (to === "all") return members.map((m) => m.name).filter((n) => n !== from && isSafeName(n));
@@ -193,12 +205,15 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
       const key = `${targets.join(",")}::${text}`;
       if (Date.now() - (recent.get(key) ?? 0) < DUPLICATE_WINDOW_MS) return reply("Mensagem idêntica enviada há menos de 1 minuto; não reenviada.");
       recent.set(key, Date.now());
-      const lead = listMembers(dir).find((m) => m.role === "lead")?.name;
+      const members = listMembers(dir);
+      const lead = members.find((m) => m.role === "lead")?.name;
       for (const to of targets) {
         deliver(dir, { id: Math.random().toString(36).slice(2, 10), from: me.name, to, text, at: Date.now() });
         if (to === lead) wroteToLead = true;
       }
-      return reply(`Enviado para ${targets.join(", ")}.`);
+      const silent = silentMembers(members, targets, Date.now());
+      const warning = silent.length ? ` Atenção: ${silent.join(", ")}; a sessão pode ter parado e a mensagem só fica na caixa. Confira com team_list e, se parou, faça essa parte você ou abra outra sessão.` : "";
+      return reply(`Enviado para ${targets.join(", ")}.${warning}`);
     },
   });
 
