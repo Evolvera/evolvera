@@ -330,6 +330,9 @@ if ($piCmd) {
 if (-not $sameRoot) {
     Copy-Item (Join-Path $SCRIPT_DIR "config\settings.json") (Join-Path $PI_DIR "settings.json") -Force
     Info "settings.json"
+    # O PI so procura o Git Bash em %ProgramFiles%; com o Git em outro disco ele cai no bash do WSL e nenhum comando roda.
+    & node (Join-Path $SCRIPT_DIR "scripts\set-shell-path.mjs") $PI_DIR
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao configurar o shellPath do PI." }
 } else {
     Info "origem e destino iguais - settings.json preservado"
 }

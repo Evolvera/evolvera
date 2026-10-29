@@ -61,6 +61,7 @@ const tmpdirProprioPadrao = new Set([
 const semEstadoPadrao = new Set([
   // só lê config/settings.json do repo; sem escrita, rede ou processo
   "config-settings.smoke.mjs",
+  "set-shell-path.smoke.mjs", // decisões puras com verificação de arquivo injetada
   "plastic-memory-acknowledge.smoke.mjs", "plastic-memory-apply-cut.smoke.mjs",
   "plastic-memory-binding.smoke.mjs", "plastic-memory-chunking.smoke.mjs",
   "plastic-memory-compaction.smoke.mjs",
