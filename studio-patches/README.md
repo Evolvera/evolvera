@@ -22,7 +22,9 @@ Os bytes ficam exatos (`.gitattributes` marca `*.patch` como `-text`), então o 
 
 | `0003-vorcaro.patch` | Vorcaro, a inteligência Master (`Alt+V`): resumo persistido de cada sessão dos últimos 7 dias, um PI lateral somente leitura que responde sobre tudo, quadro (aguardando você, fazendo, a fazer, feito) com progresso e avisos, e envio de um pedido como `/goal` com checklist de aceite para a sessão escolhida, só depois do clique, com o estado de cada pedido acompanhado no quadro. Testes em `test/vorcaro.test.mjs`. |
 
-Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`. Vorcaro: `docs/studio-orca/vorcaro.md`.
+| `0004-ambientes.patch` | Ambientes como na barra lateral do app Claude: você cria um ambiente (nome e, se quiser, uma pasta existente; sem pasta, o Studio cria `PI Ambientes\<nome>` na sua pasta de usuário) e ele vira uma caixa no topo da barra, com as conversas dentro e forks e subagentes aninhados sob a conversa de origem. As pastas que o Studio achou sozinho ficam em "Outras pastas", recolhido. Atalho fixo no topo: "Vorcaro, a inteligência Master". Remover um ambiente nunca apaga a pasta nem as conversas. Testes em `test/ambientes.test.mjs`. |
+
+Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`. Vorcaro: `docs/studio-orca/vorcaro.md`. Ambientes: `docs/studio-orca/ambientes.md`.
 
 ## Como mudar um patch
 
