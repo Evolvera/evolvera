@@ -896,7 +896,7 @@ const CLAUDE_PROJECTS_DIR = process.env.PI_STUDIO_CLAUDE_DIR ?? path.join(proces
 const STUDIO_HIDDEN_FILE = path.join(AGENT_DIR, "pi-studio-data", "vorcaro-ignorar.json");
 const studioHidden = () => hiddenFolders(STUDIO_HIDDEN_FILE);
 const vorcaroIndex = createDigestIndex({
-  sources: [{ root: path.join(AGENT_DIR, "sessions"), scan: scanDigest }, ...(CLAUDE_PROJECTS_DIR ? [{ root: CLAUDE_PROJECTS_DIR, scan: scanClaudeDigest }] : [])],
+  sources: [{ root: path.join(AGENT_DIR, "sessions"), scan: scanDigest }, ...(CLAUDE_PROJECTS_DIR ? [{ root: CLAUDE_PROJECTS_DIR, scan: scanClaudeDigest, enabled: async () => (await readMirrorConfig(path.join(AGENT_DIR, "pi-studio-data", "vorcaro-config.json"))).claudeCode }] : [])],
   storeFile: path.join(VORCARO_DIR, "vorcaro-digests.json"),
   ignoreFile: path.join(VORCARO_DIR, "vorcaro-ignorar.json"),
   days: VORCARO_INDEX_DAYS,

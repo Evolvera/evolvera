@@ -3,7 +3,7 @@
 // the person moving a card there is read back and shown, never taken as "done" (done needs Vorcaro's own verification).
 //
 // Config (pi-studio-data/vorcaro-config.json), all optional:
-//   { "orca": { "auto": true }, "github": { "owner": "<login or org>", "project": <number>, "conta": "<gh account>" } }
+//   { "orca": { "auto": true }, "claudeCode": true, "github": { "owner": "<login or org>", "project": <number>, "conta": "<gh account>" } }
 // No "github" block = no GitHub mirror. "conta" pins the gh account (gh auth token --user <conta>), so a different
 // active account in gh never receives the writes.
 import { readFile } from "node:fs/promises";
@@ -16,7 +16,8 @@ export async function readMirrorConfig(file) {
   const owner = typeof github?.owner === "string" && /^[A-Za-z0-9-]{1,39}$/.test(github.owner) ? github.owner : null;
   const project = Number.isInteger(github?.project) && github.project > 0 ? github.project : null;
   const conta = typeof github?.conta === "string" && /^[A-Za-z0-9-]{1,39}$/.test(github.conta) ? github.conta : null;
-  return { orcaAuto: value.orca?.auto !== false, github: owner && project ? { owner, project, conta } : null };
+  // "claudeCode": false leaves Claude Code's sessions out of the Studio (sidebar, board, Vorcaro).
+  return { orcaAuto: value.orca?.auto !== false, claudeCode: value.claudeCode !== false, github: owner && project ? { owner, project, conta } : null };
 }
 
 // ---- Orca: the demand's phase as a column of Orca's board (defaults: todo, in-progress, in-review, completed).

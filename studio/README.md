@@ -23,4 +23,4 @@ O instalador para tudo se achar arquivo com cara de segredo (`.env`, `auth.json`
 
 ## Dados da pessoa, fora do código
 
-Ficam em `~/.pi/agent/pi-studio-data/` e nunca entram no repositório: `vorcaro-foto.png` (a foto do Vorcaro), `studio-icone.ico` (ícone do atalho), `vorcaro-config.json` (Orca e GitHub Projects), `vorcaro-ignorar.json` (pastas que somem da lateral e do Vorcaro), demandas, arquivo e conversas do Vorcaro.
+Ficam em `~/.pi/agent/pi-studio-data/` e nunca entram no repositório: `vorcaro-foto.png` (a foto do Vorcaro), `studio-icone.ico` (ícone do atalho), `vorcaro-config.json` (Orca, GitHub Projects e `"claudeCode": false` para o Studio não ler as sessões do Claude Code), `vorcaro-ignorar.json` (pastas que somem da lateral e do Vorcaro), demandas, arquivo e conversas do Vorcaro.

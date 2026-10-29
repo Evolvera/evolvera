@@ -431,6 +431,8 @@ export function createDigestIndex({ sessionsRoot, storeFile, ignoreFile, extraIg
     const seen = new Set();
     let changed = false;
     for (const source of sources) {
+      // A source can be switched off at runtime (`enabled`); its sessions then leave the index on this refresh.
+      if (source.enabled && !(await source.enabled())) continue;
       let dirs = [];
       try { dirs = await readdir(source.root, { withFileTypes: true }); } catch { dirs = []; }
       for (const dir of dirs) {

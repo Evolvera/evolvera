@@ -16,10 +16,10 @@ const digest = (name, cwd, extra = {}) => ({ path: path.join(tmp, `${name}.jsonl
 
 describe("config", () => {
   test("no file: Orca on, no GitHub; a GitHub block needs owner and project; bad values are ignored", async () => {
-    assert.deepEqual(await readMirrorConfig(path.join(tmp, "nada.json")), { orcaAuto: true, github: null });
+    assert.deepEqual(await readMirrorConfig(path.join(tmp, "nada.json")), { orcaAuto: true, claudeCode: true, github: null });
     const file = path.join(tmp, "config.json");
-    await writeFile(file, JSON.stringify({ orca: { auto: false }, github: { owner: "NatiamG", project: 2, conta: "NatiamG" } }));
-    assert.deepEqual(await readMirrorConfig(file), { orcaAuto: false, github: { owner: "NatiamG", project: 2, conta: "NatiamG" } });
+    await writeFile(file, JSON.stringify({ orca: { auto: false }, claudeCode: false, github: { owner: "NatiamG", project: 2, conta: "NatiamG" } }));
+    assert.deepEqual(await readMirrorConfig(file), { orcaAuto: false, claudeCode: false, github: { owner: "NatiamG", project: 2, conta: "NatiamG" } });
     await writeFile(file, JSON.stringify({ github: { owner: "a b", project: 2 } }));
     assert.equal((await readMirrorConfig(file)).github, null);
     await writeFile(file, JSON.stringify({ github: { owner: "x", project: "2" } }));
@@ -197,7 +197,7 @@ describe("model accounts and sidebar", async () => {
   test("a config saved with a BOM (Notepad, PowerShell 5.1) still reads", async () => {
     const file = path.join(tmp, "bom.json");
     await writeFile(file, "\uFEFF" + JSON.stringify({ orca: { auto: false }, github: { owner: "NatiamG", project: 2 } }));
-    assert.deepEqual(await readMirrorConfig(file), { orcaAuto: false, github: { owner: "NatiamG", project: 2, conta: null } });
+    assert.deepEqual(await readMirrorConfig(file), { orcaAuto: false, claudeCode: true, github: { owner: "NatiamG", project: 2, conta: null } });
   });
 
   test("models by account: connected selectable, a disconnected login locked, accounts without models listed locked", () => {
@@ -220,5 +220,22 @@ describe("model accounts and sidebar", async () => {
     const hidden = await hiddenFolders(ignoreFile);
     assert.ok(insideIgnored(path.join(tmp, "bench", "run", "work"), hidden));
     assert.ok(!insideIgnored(cwd, hidden));
+  });
+});
+
+describe("sources that can be switched off", async () => {
+  const { createDigestIndex } = await import("../lib-server/vorcaro.mjs");
+  const { mkdir } = await import("node:fs/promises");
+  test("a disabled source is not read, and its sessions leave the index on the next refresh", async () => {
+    const root = path.join(tmp, "fonte");
+    await mkdir(path.join(root, "proj"), { recursive: true });
+    await writeFile(path.join(root, "proj", "s.jsonl"), "{}");
+    let on = true;
+    let scans = 0;
+    const index = createDigestIndex({ sources: [{ root, enabled: async () => on, scan: async (file) => { scans++; return { path: file, cwd: tmp, title: "s", lastActivity: Date.now(), openItems: [], doneItems: 0 }; } }] });
+    assert.equal((await index.refresh()).length, 1);
+    on = false;
+    assert.equal((await index.refresh()).length, 0);
+    assert.equal(scans, 1, "nothing is scanned while it is off");
   });
 });
