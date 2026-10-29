@@ -18,7 +18,9 @@ Os bytes ficam exatos (`.gitattributes` marca `*.patch` como `-text`), então o 
 |---|---|
 | `0001-desempenho-e-orca.patch` | Leitura da lista de processos no Windows com um PowerShell persistente; árvore de conversas sem normalizar caminho por par projeto e sessão, e sem reler sessões paradas a cada 2 s; Orca fechado em cache de 15 s; árvore aceita Orca de até 10 s e lista de processos de até 15 s; Orca consultado a cada 15 s quando só o selo da barra precisa dele. No Orca: coluna do quadro e botão "Abrir PI no Orca" em cada worktree da visão geral. Testes novos em `test/orca-write.test.mjs` e nos arquivos de teste já existentes. |
 
-Medições e método: `docs/studio-orca/desempenho.md`.
+| `0002-conversa-simples.patch` | Conversa simples por padrão: só respostas e o trabalho em frases curtas ("Mexeu em pix.ts e checkout.ts. Rodou os testes: passaram"), raciocínio e diffs num clique; cada delegação vira uma troca entre agentes (quem pediu, o que voltou, estado, modelo, tempo e custo); painel da direita abre na equipe; paleta VeroNati (preto real, texto grafite, verde sálvia), tipo mínimo de 12px e frases sem travessão. A opção "Detalhes técnicos na conversa" nas configurações volta ao modo antigo. Testes em `test/simple-view.test.mjs`. |
+
+Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`.
 
 ## Como mudar um patch
 
