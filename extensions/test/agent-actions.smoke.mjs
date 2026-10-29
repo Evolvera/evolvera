@@ -58,6 +58,13 @@ try {
   assert.equal(badInterval.isError, true);
   const declined = await tools.get("schedule_loop").execute("5b", { interval: "10min", prompt: "p" }, undefined, undefined, { hasUI: true, ui: { confirm: async () => false } });
   assert.match(declined.content[0].text, /não confirmou/);
+  const tooLong = await tools.get("schedule_loop").execute("5c", { interval: "10min", prompt: "x".repeat(m.LOOP_PROMPT_MAX + 1) });
+  assert.equal(tooLong.isError, true, "loop prompts longer than the confirmation can show are refused");
+  let shown = "";
+  await tools.get("schedule_loop").execute("5d", { interval: "", prompt: "revise o kanban a cada 10 min" }, undefined, undefined, { hasUI: true, ui: { confirm: async (_t, msg) => { shown = msg; return false; } } });
+  assert.match(shown, /Prompt completo:
+revise o kanban a cada 10 min/);
+  assert.match(shown, /lido do texto abaixo/);
   const before = sent.length;
   assert.equal(sent.length, before, "nothing dispatched without confirmation");
   await tools.get("schedule_loop").execute("5", { interval: "10min", prompt: 'revise o "kanban"' });

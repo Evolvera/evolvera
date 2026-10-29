@@ -17,6 +17,7 @@ import { Type } from "typebox";
 
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const GOAL_MAX = 4_000;
+export const LOOP_PROMPT_MAX = 600;
 
 /** Curated triggers: words in the user's request that mean a skill must be opened before work starts. */
 export const SKILL_TRIGGERS: Record<string, RegExp> = {
@@ -152,9 +153,13 @@ export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir())
       const interval = String(params.interval ?? "").trim();
       if (!prompt) return text("Prompt vazio.", true);
       if (!validInterval(interval)) return text(`Intervalo inválido: "${interval}". Use algo como "10min", "1h 30min" ou "".`, true);
+      if (prompt.length > LOOP_PROMPT_MAX) return text(`Prompt do loop com ${prompt.length} caracteres; o limite para loops iniciados pelo modelo é ${LOOP_PROMPT_MAX}, para que a confirmação mostre tudo.`, true);
       // A loop keeps running after this turn, so a human confirms it whenever there is a UI to ask.
       const ui = (ctx as { hasUI?: boolean; ui?: { confirm?: (t: string, m: string) => Promise<boolean> } } | undefined);
-      if (ui?.hasUI && ui.ui?.confirm && !(await ui.ui.confirm("Agendar loop?", `${interval || "(intervalo no texto)"} · ${prompt.slice(0, 300)}`))) {
+      if (ui?.hasUI && ui.ui?.confirm && !(await ui.ui.confirm("Agendar loop?", `Intervalo: ${interval || "lido do texto abaixo pelo /loop"}
+
+Prompt completo:
+${prompt}`))) {
         return text("O usuário não confirmou o loop; nada foi agendado.");
       }
       dispatch(`/loop ${quote(interval)} ${quote(prompt)}`);
