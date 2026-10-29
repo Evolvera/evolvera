@@ -35,6 +35,14 @@ try {
   assert.deepEqual(m.listMembers(dir).map((x) => x.name).sort(), ["backend", "lead"]);
   assert.deepEqual(m.recipients("lead", "backend", m.listMembers(dir)), ["lead"]);
   assert.deepEqual(m.recipients("all", "lead", m.listMembers(dir)), ["backend"]);
+  for (const bad of ["../x", "..", ".", "a/b", "a\\b", "C:x", ""]) {
+    assert.deepEqual(m.recipients(bad, "lead", m.listMembers(dir)), [], `recipient ${JSON.stringify(bad)} is refused`);
+    assert.throws(() => m.deliver(dir, { id: "e", from: "x", to: bad, text: "t", at: 1 }), /invalid team recipient/);
+  }
+  const escape = await back.tools.get("team_send").execute("e", { to: "../../outside", message: "oi" });
+  assert.equal(escape.isError, true, "team_send refuses a path-like recipient");
+  assert.equal(fs.existsSync(path.join(tmp, "outside")), false);
+  assert.equal(m.teamFromEnv({ PI_TEAM: "..", PI_TEAM_NAME: "x" }), undefined);
 
   const r1 = await back.tools.get("team_send").execute("1", { to: "lead", message: "Contrato da API mudou: GET /chats agora pagina por cursor." });
   assert.match(r1.content[0].text, /Enviado para lead/);

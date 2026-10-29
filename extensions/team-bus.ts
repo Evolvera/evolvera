@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -24,10 +24,15 @@ const JOINED = Symbol.for("evolvera.team-bus.joined");
 export type TeamMessage = { id: string; from: string; to: string; text: string; at: number };
 export type Member = { name: string; role: string; cwd: string; pid: number; updatedAt: number };
 
+/** Team and member names become folder names, so they must be plain names: no separators, no "." or "..". */
+export function isSafeName(value: string | undefined): value is string {
+  return typeof value === "string" && /^[\w.-]+$/.test(value) && value !== "." && value !== "..";
+}
+
 export function teamFromEnv(env: Record<string, string | undefined> = process.env): { team: string; name: string; role: string } | undefined {
   const team = env.PI_TEAM?.trim();
   const name = env.PI_TEAM_NAME?.trim();
-  if (!team || !name || !/^[\w.-]+$/.test(team) || !/^[\w.-]+$/.test(name)) return undefined;
+  if (!isSafeName(team) || !isSafeName(name)) return undefined;
   return { team, name, role: env.PI_TEAM_ROLE?.trim() === "lead" ? "lead" : "member" };
 }
 
@@ -51,13 +56,18 @@ export function listMembers(dir: string): Member[] {
 
 /** Resolves "lead" and "all" to member names; unknown names are kept so a late joiner still gets the mail. */
 export function recipients(to: string, from: string, members: Member[]): string[] {
-  if (to === "all") return members.map((m) => m.name).filter((n) => n !== from);
-  if (to === "lead") return members.filter((m) => m.role === "lead").map((m) => m.name);
-  return [to];
+  if (to === "all") return members.map((m) => m.name).filter((n) => n !== from && isSafeName(n));
+  if (to === "lead") return members.filter((m) => m.role === "lead").map((m) => m.name).filter(isSafeName);
+  return isSafeName(to) ? [to] : [];
 }
 
 export function deliver(dir: string, msg: TeamMessage): void {
-  const inbox = join(dir, "inbox", msg.to);
+  const inboxRoot = resolve(dir, "inbox");
+  const inbox = resolve(inboxRoot, msg.to);
+  const rel = relative(inboxRoot, inbox);
+  if (!isSafeName(msg.to) || !rel || rel.startsWith("..") || resolve(inboxRoot, rel) !== inbox) {
+    throw new Error(`invalid team recipient: ${JSON.stringify(msg.to)}`);
+  }
   mkdirSync(inbox, { recursive: true });
   writeAtomic(join(inbox, `${msg.at}-${msg.id}.json`), JSON.stringify(msg));
 }
