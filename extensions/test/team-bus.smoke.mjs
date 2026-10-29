@@ -108,5 +108,14 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
+// A heartbeat that cannot be written (locked or missing folder) must not throw out of the timer.
+{
+  const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), "team-bus-hb-"));
+  const h = host();
+  m.default(h.api, { PI_TEAM: "hb", PI_TEAM_NAME: "solo" }, tmp2);
+  fs.rmSync(path.join(m.teamDir(tmp2, "hb"), "members"), { recursive: true, force: true });
+  await new Promise((r) => setTimeout(r, 2_600)); // one poll tick with the members folder gone
+  fs.rmSync(tmp2, { recursive: true, force: true });
+}
 console.log("team-bus smoke: PASS");
 process.exit(0);

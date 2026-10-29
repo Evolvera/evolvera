@@ -40,10 +40,18 @@ export function teamDir(root: string, team: string): string {
   return join(root, "teams", team);
 }
 
+// On Windows a rename over a file another member is reading fails with EPERM/EBUSY; retry briefly.
 function writeAtomic(path: string, text: string): void {
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
-  renameSync(tmp, path);
+  for (let attempt = 0; ; attempt++) {
+    try { renameSync(tmp, path); return; } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= 4 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) { rmSync(tmp, { force: true }); throw error; }
+      const until = Date.now() + 25 * (attempt + 1);
+      while (Date.now() < until) { /* short synchronous backoff */ }
+    }
+  }
 }
 
 export function listMembers(dir: string): Member[] {
@@ -112,7 +120,10 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
   mkdirSync(join(dir, "members"), { recursive: true });
   mkdirSync(join(dir, "inbox", me.name), { recursive: true });
   let state = "idle";
-  const heartbeat = () => writeAtomic(memberFile, JSON.stringify({ name: me.name, role: me.role, cwd: process.cwd(), pid: process.pid, updatedAt: Date.now(), state }));
+  // Presence is best effort: a failed heartbeat must never take the session down.
+  const heartbeat = () => {
+    try { writeAtomic(memberFile, JSON.stringify({ name: me.name, role: me.role, cwd: process.cwd(), pid: process.pid, updatedAt: Date.now(), state })); } catch { /* next tick retries */ }
+  };
   heartbeat();
 
   let wroteToLead = false;
@@ -133,8 +144,9 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
       for (const msg of messages) deliver(dir, msg); // put them back for the next attempt
     }
   };
-  try { watch(join(dir, "inbox", me.name), () => check()).unref?.(); } catch { /* the poll below still delivers */ }
-  setInterval(() => { check(); heartbeat(); }, POLL_MS).unref();
+  const safeCheck = () => { try { check(); } catch { /* a bad message file or a busy disk must not crash PI */ } };
+  try { watch(join(dir, "inbox", me.name), () => safeCheck()).unref?.(); } catch { /* the poll below still delivers */ }
+  setInterval(() => { safeCheck(); heartbeat(); }, POLL_MS).unref();
 
   pi.registerTool({
     name: "team_send",
