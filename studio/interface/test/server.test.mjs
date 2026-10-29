@@ -1355,6 +1355,18 @@ describe("navegador: project files and the capability route", () => {
     assert.equal((await api("/api/projects/nope/file?path=a")).status, 404);
   });
 
+  test("office preview and reveal are project routes: inside the project only, a broken file answers 422", async () => {
+    await writeFile(path.join(siteDir, "quebrado.docx"), "not a zip");
+    const broken = await api(`/api/projects/${project.id}/office?path=quebrado.docx`);
+    assert.equal(broken.status, 422);
+    assert.match((await broken.json()).error, /ZIP/);
+    assert.equal((await api(`/api/projects/${project.id}/office?path=${encodeURIComponent(path.join(outsideDir, "x.docx"))}`)).status, 403);
+    const post = (body) => fetch(`${base}/api/projects/${project.id}/reveal`, { method: "POST", headers: headers({ "content-type": "application/json" }), body: JSON.stringify(body) });
+    assert.equal((await post({ mode: "folder" })).status, 400, "a path is required");
+    assert.equal((await post({ path: path.join(outsideDir, "x.txt"), mode: "open" })).status, 403, "nothing outside the project is opened");
+    assert.equal((await post({ path: "nao-existe.pdf", mode: "open" })).status, 404);
+  });
+
   test("the file route streams bytes with the right type and the hardening headers", async () => {
     const png = await file("path=pic.png");
     assert.equal(png.status, 200);

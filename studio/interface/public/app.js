@@ -106,6 +106,8 @@ import {
   normalizeModels,
   plural,
   relativeTime,
+  parseDelimited,
+  guessDelimiter,
   gitWorktreeView,
   prView,
   modelMenuGroups,
@@ -490,10 +492,11 @@ async function fetchTreeChildren(parent, offset) {
 async function fetchTreeAncestors(session) {
   const query = new URLSearchParams({ session });
   const response = await fetch(`/api/tree?${query}`, { cache: "no-store", headers: { "x-pi-studio-token": apiToken } });
-  // A conversation not yet written to disk (a new one, Vorcaro's) has no chain: not found, not an error toast.
+  // A conversation not yet written to disk (a new one, Vorcaro's) has no chain yet: the server says { missing: true }.
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  const body = await response.json();
+  return body?.missing ? null : body;
 }
 
 const tree = createTreeController({
@@ -5373,6 +5376,8 @@ const browserEls = {
   forward: $("#browserForward"),
   reload: $("#browserReload"),
   outside: $("#browserOutside"),
+  app: $("#browserApp"),
+  folder: $("#browserFolder"),
   stage: $("#browserStage"),
 };
 const BROWSER_KEY_PREFIX = "pi-studio:browser:";
@@ -5439,6 +5444,22 @@ function setBrowserOutside(url) {
   browserEls.outside.disabled = !url;
 }
 
+// A project file on the stage can also go to the OS: its default app, or selected in the Explorer.
+function setBrowserFile(filePath) {
+  browser.filePath = filePath || null;
+  browserEls.app.hidden = !filePath;
+  browserEls.folder.hidden = !filePath;
+}
+async function revealBrowserFile(mode) {
+  if (!browser.filePath || !state.currentProject) return;
+  try {
+    await api(`/api/projects/${encodeURIComponent(state.currentProject.id)}/reveal`, { method: "POST", body: JSON.stringify({ path: browser.filePath, mode }) });
+    toast(mode === "folder" ? "Abrindo a pasta no Explorer" : "Abrindo no app do Windows");
+  } catch (error) { report(error); }
+}
+browserEls.app.addEventListener("click", () => revealBrowserFile("open"));
+browserEls.folder.addEventListener("click", () => revealBrowserFile("folder"));
+
 function openBrowserOutside() {
   if (browser.outsideUrl) window.open(browser.outsideUrl, "_blank", "noopener,noreferrer");
 }
@@ -5466,6 +5487,62 @@ function browserCard(icon, title, text, actions = []) {
 }
 
 const OUTSIDE_ACTION = { label: "Abrir fora", run: openBrowserOutside };
+const APP_ACTION = { label: "Abrir no app", run: () => revealBrowserFile("open") };
+
+function tableView(rows, { header = true, note = "" } = {}) {
+  const holder = el("div", "browser-table");
+  const table = document.createElement("table");
+  rows.forEach((cells, index) => {
+    const tr = document.createElement("tr");
+    for (const cell of cells) tr.append(el(header && index === 0 ? "th" : "td", "", cell));
+    table.append(tr);
+  });
+  holder.append(table);
+  if (note) holder.append(el("p", "browser-note", note));
+  return holder;
+}
+
+function officeView(preview) {
+  if (preview.kind === "xlsx") {
+    const holder = el("div", "browser-office");
+    const tabs = el("div", "office-tabs");
+    const body = el("div", "office-body");
+    const show = (index) => {
+      const sheet = preview.sheets[index];
+      for (const [i, button] of [...tabs.children].entries()) button.setAttribute("aria-selected", String(i === index));
+      body.replaceChildren(sheet.rows.length ? tableView(sheet.rows, { note: sheet.truncatedRows ? "Mostrando as primeiras 300 linhas. Abra no app para ver tudo." : "" }) : el("p", "browser-note", "Aba vazia."));
+    };
+    preview.sheets.forEach((sheet, index) => {
+      const button = el("button", "office-tab", sheet.name || `Aba ${index + 1}`);
+      button.type = "button";
+      button.addEventListener("click", () => show(index));
+      tabs.append(button);
+    });
+    holder.append(tabs, body);
+    if (preview.moreSheets) holder.append(el("p", "browser-note", `Mais ${preview.moreSheets} abas: abra no app para ver.`));
+    if (preview.sheets.length) show(0);
+    return holder;
+  }
+  const doc = el("article", "browser-doc office-doc");
+  if (preview.kind === "docx") {
+    for (const block of preview.blocks) {
+      if (block.type === "table") doc.append(tableView(block.rows, { header: false }));
+      else doc.append(el(block.type === "heading" ? `h${Math.min(4, block.level + 1)}` : "p", "", block.text));
+    }
+  } else {
+    preview.slides.forEach((slide, index) => {
+      const card = el("section", "office-slide");
+      card.append(el("span", "office-slide-n", `Slide ${index + 1}`), el("h3", "", slide.title || "Sem título"));
+      if (slide.lines.length) {
+        const list = document.createElement("ul");
+        for (const line of slide.lines) list.append(el("li", "", line));
+        card.append(list);
+      }
+      doc.append(card);
+    });
+  }
+  return doc;
+}
 
 function browserFrame(src, title, sandbox) {
   const frame = el("iframe", "browser-frame");
@@ -5518,8 +5595,19 @@ async function browserFileView(info) {
       if (note) holder.append(el("p", "browser-note", note));
       return holder;
     }
+    case "table": {
+      const { text, note } = await browserText(info);
+      const { rows, truncated } = parseDelimited(text, info.name.toLowerCase().endsWith(".tsv") ? "\t" : guessDelimiter(text.split(/\r?\n/, 1)[0]));
+      return tableView(rows, { note: [note, truncated ? "Mostrando as primeiras 500 linhas." : ""].filter(Boolean).join(" ") });
+    }
+    case "office": {
+      const res = await fetch(`/api/projects/${encodeURIComponent(state.currentProject.id)}/office?path=${encodeURIComponent(info.path)}`, { headers: { "x-pi-studio-token": apiToken } });
+      const preview = await res.json();
+      if (!res.ok) return browserCard("i-file", info.name, preview.error || `HTTP ${res.status}`, [APP_ACTION]);
+      return officeView(preview);
+    }
     default:
-      return browserCard("i-file", info.name, `${formatBytes(info.size)} · este tipo de arquivo não tem visualização aqui.`, [OUTSIDE_ACTION]);
+      return browserCard("i-file", info.name, `${formatBytes(info.size)} · sem visualização aqui; abra no app do Windows.`, [APP_ACTION, OUTSIDE_ACTION]);
   }
 }
 
@@ -5530,6 +5618,7 @@ async function showBrowserFile(target, seq) {
     const info = await browserFileInfo(target.path);
     if (seq !== browser.seq) return;
     setBrowserOutside(new URL(info.raw, location.origin).href);
+    setBrowserFile(info.path);
     const view = await browserFileView(info);
     if (seq === browser.seq) stage.replaceChildren(view);
   } catch (error) {
@@ -5543,6 +5632,7 @@ function showBrowserPage(target, seq) {
   // allow-same-origin is safe here only because classifyTarget never lets Studio's own origin through.
   const frame = browserFrame(target.url, target.label, `allow-scripts allow-forms ${local ? "" : "allow-popups "}allow-same-origin`);
   setBrowserOutside(target.url);
+  setBrowserFile(null);
   stage.replaceChildren(frame);
   if (local) return;
   // Most sites refuse to be framed and the browser gives no signal for it: say so, and fall back to a card if nothing loads.

@@ -18,6 +18,7 @@ import { createTeamReader } from "./lib-server/teams.mjs";
 import { CONDUCTOR_BUDGET, continuationMessage, createAudit, digestFor, isOpenDemand, nextStep, runVerification } from "./lib-server/vorcaro-conductor.mjs";
 import { createGithubMirror, createOrcaMirror, readMirrorConfig } from "./lib-server/vorcaro-mirror.mjs";
 import { createCache, createShellRunner, githubRepoFromUrl, githubSummary, gitWorktrees } from "./lib-server/devtools.mjs";
+import { officePreview } from "./lib-server/office.mjs";
 import { VORCARO_INDEX_DAYS, boardFilters, filterBoard, listConversations, readConversation } from "./lib-server/vorcaro.mjs";
 import { autoArchivable, boardChanges, buildBoard, changesMarkdown, claudeSidebar, hiddenFolders, insideIgnored, isArchived, seenSnapshot, buildVorcaroPrompt, createArchive, createDigestIndex, digestColumn, digestsMarkdown, goalMessage, organizationMarkdown, organizeProjects, readSessionDetail, scanClaudeDigest, scanDigest, validateAction } from "./lib-server/vorcaro.mjs";
 import { createAmbientes } from "./lib-server/ambientes.mjs";
@@ -1139,7 +1140,7 @@ async function openVorcaro(key = "vorcaro") {
   const archived = await vorcaroArchive.read();
   const onBoard = digests.filter((digest) => !isArchived(archived, digest.path));
   const changes = changesMarkdown(boardChanges(onBoard, await readSeen()));
-  await writeFile(VORCARO_DIGESTS_FILE, [changes, organizationMarkdown(organizeProjects(onBoard)), digestsMarkdown(digests, { days: VORCARO_INDEX_DAYS })].filter(Boolean).join("\n"), "utf8");
+  await writeFile(VORCARO_DIGESTS_FILE, [changes, organizationMarkdown(organizeProjects(onBoard)), digestsMarkdown(digests, { days: VORCARO_INDEX_DAYS, archived, columnOf: (digest) => digestColumn(digest, vorcaroLive().get(digest.path) ?? null) })].filter(Boolean).join("\n"), "utf8");
   const raw = String(key ?? "vorcaro");
   let resume = null;
   let registryKey = /^vorcaro(?::new:[\w-]{1,64})?$/.test(raw) ? raw : null;
@@ -2465,6 +2466,18 @@ async function resolveProjectFile(project, requested) {
   return { real, rel: path.relative(rootReal, real).split(path.sep).join("/"), size: info.size, mtimeMs: info.mtimeMs };
 }
 
+// Windows: explorer.exe opens a file with its default app, or with /select shows it in its folder. The path comes from
+// resolveProjectFile (real, inside the project) and is passed verbatim inside quotes, which a Windows path cannot contain.
+export function systemOpenCommand(file, mode, platform = process.platform) {
+  if (platform === "win32") return { bin: "explorer.exe", args: [mode === "folder" ? `/select,"${file}"` : `"${file}"`], verbatim: true };
+  if (platform === "darwin") return { bin: "open", args: mode === "folder" ? ["-R", file] : [file], verbatim: false };
+  return { bin: "xdg-open", args: [mode === "folder" ? path.dirname(file) : file], verbatim: false };
+}
+function openWithSystem(file, mode) {
+  const command = systemOpenCommand(file, mode);
+  spawn(command.bin, command.args, { detached: true, stdio: "ignore", windowsHide: false, windowsVerbatimArguments: command.verbatim }).on("error", () => {}).unref();
+}
+
 function fileDescriptor(project, { real, rel, size, mtimeMs }) {
   const { kind, mime } = fileInfo(real);
   const raw = `/api/projects/${encodeURIComponent(project.id)}/raw/${rawCapability(project.id)}/${rel.split("/").map(encodeURIComponent).join("/")}`;
@@ -2717,7 +2730,7 @@ async function serveStatic(req, res, pathname) {
 }
 
 function parseProjectRoute(pathname) {
-  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files|file))?$/);
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files|file|office|reveal))?$/);
   if (!match) return null;
   return { projectId: decodeURIComponent(match[1]), action: match[2] };
 }
@@ -2765,7 +2778,8 @@ async function route(req, res) {
         const session = url.searchParams.get("session");
         if (!session) return json(res, 400, { error: "A session path is required." });
         const chain = await treeService.getSessionChain(session);
-        if (!chain) return json(res, 404, { error: "Conversation not found." });
+        // A conversation PI has not written yet (it writes on the first message) is not an error: no chain yet.
+        if (!chain) return json(res, 200, { missing: true });
         return json(res, 200, chain);
       }
       if (url.searchParams.has("parent")) {
@@ -3032,6 +3046,24 @@ async function route(req, res) {
       if (req.method === "GET" && action === "files") {
         const files = await listProjectFiles(project.cwd);
         return json(res, 200, { files: rankFiles(files, url.searchParams.get("q") || "", FILE_RESULT_LIMIT) });
+      }
+
+      // Office files (.xlsx, .docx, .pptx) as a preview the page can draw (lib-server/office.mjs).
+      if (req.method === "GET" && action === "office") {
+        const found = await resolveProjectFile(project, url.searchParams.get("path"));
+        try {
+          return json(res, 200, officePreview(found.real, await readFile(found.real)));
+        } catch (error) {
+          return json(res, 422, { error: error.message });
+        }
+      }
+
+      // A project file opened by the OS: in its default app (Excel, Word, the PDF reader) or selected in its folder.
+      if (req.method === "POST" && action === "reveal") {
+        const body = await readJsonBody(req);
+        const found = await resolveProjectFile(project, body?.path);
+        openWithSystem(found.real, body?.mode === "folder" ? "folder" : "open");
+        return json(res, 200, { ok: true });
       }
 
       if (req.method === "GET" && action === "file") {

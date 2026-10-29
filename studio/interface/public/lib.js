@@ -216,6 +216,11 @@ export function renderInline(source) {
   text = text.replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/g, (url) =>
     hold(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`),
   );
+  // A file path written as plain text ("D:\proj\saidas\vendas.xlsx", "saidas/relatorio.pdf") opens in the Studio too,
+  // when its type is one the Navegador shows; a trailing period or comma stays out of the link.
+  text = text.replace(/(?<![\w`\\/.-])((?:[A-Za-z]:[\\/]|\.{1,2}\/|[\w-]+\/)(?:[^\s<>"|?*`\u0000]*[\\/])?[^\s<>"|?*`\\/\u0000]+\.[A-Za-z0-9]{1,6})(?=$|[\s<>"),;:!?]|\.(?:\s|$))/g, (match, filePath) =>
+    isOpenablePath(filePath) ? hold(pathLink(filePath, escapeHtml(filePath))) : match,
+  );
 
   let html = escapeHtml(text);
   html = html
@@ -2282,13 +2287,17 @@ const FILE_TYPE_TABLE = [
   ["pdf", "application/pdf", "pdf"],
   ["html", "text/html; charset=utf-8", "html htm"],
   ["markdown", "text/markdown; charset=utf-8", "md markdown mdx"],
+  ["table", "text/csv; charset=utf-8", "csv"], ["table", "text/tab-separated-values; charset=utf-8", "tsv"],
+  ["office", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"], ["office", "application/vnd.ms-excel.sheet.macroEnabled.12", "xlsm"],
+  ["office", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
+  ["office", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"],
   ["audio", "audio/mpeg", "mp3"], ["audio", "audio/wav", "wav"], ["audio", "audio/ogg", "ogg oga"], ["audio", "audio/mp4", "m4a"],
   ["audio", "audio/flac", "flac"], ["audio", "audio/aac", "aac"],
   ["video", "video/mp4", "mp4 m4v"], ["video", "video/webm", "webm"], ["video", "video/ogg", "ogv"], ["video", "video/quicktime", "mov"],
   // Scripts/styles keep their real MIME so a previewed page can load them under X-Content-Type-Options: nosniff.
   ["text", "text/javascript; charset=utf-8", "js mjs cjs jsx"], ["text", "text/css; charset=utf-8", "css"],
   ["text", "application/json; charset=utf-8", "json jsonc map"], ["text", "application/xml; charset=utf-8", "xml"],
-  ["text", "text/plain; charset=utf-8", "txt log csv tsv yaml yml toml ini env ts tsx scss less py rb go rs java kt c h cpp hpp cs php sh bash zsh ps1 bat cmd sql lock gitignore editorconfig vue svelte"],
+  ["text", "text/plain; charset=utf-8", "txt log yaml yml toml ini env ts tsx scss less py rb go rs java kt c h cpp hpp cs php sh bash zsh ps1 bat cmd sql lock gitignore editorconfig vue svelte"],
   ["other", "font/woff2", "woff2"], ["other", "font/woff", "woff"], ["other", "font/ttf", "ttf"], ["other", "font/otf", "otf"], ["other", "application/wasm", "wasm"],
 ];
 const FILE_TYPES = new Map(FILE_TYPE_TABLE.flatMap(([kind, mime, exts]) => exts.split(" ").map((ext) => [ext, { kind, mime }])));
@@ -2360,7 +2369,7 @@ export function targetText(target) {
 }
 
 // Paths worth linking inside a message: a known file type; a bare name only for documents/media (not `console.log`).
-const BARE_LINK_KINDS = new Set(["image", "pdf", "html", "markdown", "audio", "video"]);
+const BARE_LINK_KINDS = new Set(["image", "pdf", "html", "markdown", "audio", "video", "table", "office"]);
 export function isOpenablePath(text) {
   const target = classifyTarget(text);
   if (target.type !== "file" || target.kind === "other" || /\s/.test(target.path)) return false;
@@ -3553,4 +3562,36 @@ export function prView(pr) {
   const parts = [checks.passed ? `${checks.passed} ok` : "", checks.failed ? `${checks.failed} falhou` : "", checks.pending ? `${checks.pending} rodando` : ""].filter(Boolean);
   const review = { APPROVED: "aprovado", CHANGES_REQUESTED: "pede mudanças", REVIEW_REQUIRED: "aguarda revisão" }[pr.review] ?? "";
   return { tone: checks.failed ? "bad" : checks.pending ? "work" : parts.length ? "ok" : "idle", checks: parts.join(" · ") || "sem checks", state: pr.draft ? "rascunho" : review };
+}
+
+// CSV/TSV text -> rows of cells (quotes, doubled quotes and line breaks inside quotes), at most `maxRows` rows.
+export function parseDelimited(text, delimiter = ",", maxRows = 500) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  const source = String(text ?? "").replace(/^\uFEFF/, "");
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index];
+    if (quoted) {
+      if (char === '"' && source[index + 1] === '"') { cell += '"'; index++; }
+      else if (char === '"') quoted = false;
+      else cell += char;
+    } else if (char === '"' && cell === "") quoted = true;
+    else if (char === delimiter) { row.push(cell); cell = ""; }
+    else if (char === "\n" || char === "\r") {
+      if (char === "\r" && source[index + 1] === "\n") index++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+      if (rows.length >= maxRows) return { rows, truncated: index < source.length - 1 };
+    } else cell += char;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return { rows, truncated: false };
+}
+
+// The delimiter of a CSV line: the one among ; , and tab that splits the header the most (Excel in pt-BR saves with ;).
+export function guessDelimiter(firstLine, fallback = ",") {
+  const counts = [";", ",", "\t"].map((char) => [char, String(firstLine ?? "").split(char).length - 1]);
+  const [best, count] = counts.sort((a, b) => b[1] - a[1])[0];
+  return count ? best : fallback;
 }

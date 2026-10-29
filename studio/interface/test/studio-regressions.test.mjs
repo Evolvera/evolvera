@@ -350,12 +350,15 @@ test("GET /api/tree serves authenticated child pages and complete ancestor chain
     assert.equal(chainResponse.status, 200);
     assert.deepEqual((await chainResponse.json()).chain.map((item) => item.sessionPath), [mainSession, childPaths[0], grandchildPaths[0]]);
 
-    // Invalid selectors/offsets fail as client errors; valid but absent paths remain not-found responses.
+    // Invalid selectors/offsets fail as client errors; an absent parent is not found.
     assert.equal((await fetch(queryUrl({ parent: mainSession, offset: "-1" }), { headers: auth })).status, 400);
     assert.equal((await fetch(queryUrl({ offset: "0" }), { headers: auth })).status, 400);
     assert.equal((await fetch(queryUrl({ session: "" }), { headers: auth })).status, 400);
     assert.equal((await fetch(queryUrl({ parent: path.join(sessionDir, "unknown.jsonl") }), { headers: auth })).status, 404);
-    assert.equal((await fetch(queryUrl({ session: path.join(sessionDir, "unknown.jsonl") }), { headers: auth })).status, 404);
+    // A session file not written yet (PI writes on the first message) answers { missing: true }, not an error.
+    const unknown = await fetch(queryUrl({ session: path.join(sessionDir, "unknown.jsonl") }), { headers: auth });
+    assert.equal(unknown.status, 200);
+    assert.deepEqual(await unknown.json(), { missing: true });
   } finally {
     if (app && started) {
       await app.stopServer().catch(() => {});

@@ -2253,7 +2253,10 @@ html[data-vc-photo] .vc-btn::before { content: ""; flex: none; width: 20px; heig
 .vc-mirrors span { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border: 1px dashed var(--line-2); border-radius: 999px; color: var(--muted); font: 500 12px/1 var(--font); }
 
 /* ---- sidebar: the person's Claude Code sessions (read-only, open Vorcaro's pop-out) */
-.claude-side { display: grid; gap: 2px; margin-bottom: 6px; }
+/* bounded with its own scroll: the Ambientes list and the footer always keep their room in the sidebar */
+.claude-side { flex: 0 1 auto; display: flex; flex-direction: column; gap: 2px; min-height: 0; max-height: 46%; margin: 0 -6px 6px 0; padding-right: 6px; overflow-y: auto; overscroll-behavior: contain; }
+.claude-side > .side-heading { position: sticky; top: 0; z-index: 1; background: var(--bg-side); }
+.claude-side + .side-heading + .projects { min-height: 140px; }
 .claude-group > summary { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 10px; border-radius: 8px; color: var(--text-2); font: 600 13px/1.2 var(--font); cursor: pointer; list-style: none; }
 .claude-group > summary::-webkit-details-marker { display: none; }
 .claude-group > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); transform: rotate(-45deg); transition: transform 180ms var(--ease-vero); }
@@ -2318,3 +2321,23 @@ html[data-vc-photo] .vc-btn::before { content: ""; flex: none; width: 20px; heig
 .shell-cwd::after { content: " $"; color: #6e6e6e; }
 .shell-input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; border: 1px solid #262626; border-radius: 7px; background: #111; color: #e8e8e8; font: 12.5px/1 var(--mono-term); }
 .shell-input:focus { outline: none; border-color: #3d6b56; }
+
+/* the brand mark at the top of the sidebar is Vorcaro too, when his picture exists */
+html[data-vc-photo] .brand-mark { background: var(--vc-photo) 64% 29% / auto 116% no-repeat; color: transparent; box-shadow: 0 0 0 1px var(--line-2); }
+
+/* ---- Navegador: CSV/TSV and spreadsheets as tables, Word and PowerPoint as readable previews */
+.browser-table { flex: 1; min-height: 0; overflow: auto; padding: 0 0 8px; }
+.browser-table table { border-collapse: collapse; font: 12.5px/1.4 var(--font); font-variant-numeric: tabular-nums; }
+.browser-table th, .browser-table td { max-width: 320px; padding: 4px 9px; border: 1px solid var(--line); overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.browser-table th { position: sticky; top: 0; z-index: 1; background: var(--bg-active); font-weight: 600; }
+.browser-table tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-hover) 60%, transparent); }
+.browser-office { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.office-tabs { flex: none; display: flex; gap: 2px; padding: 6px 8px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.office-tab { height: 24px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); font: 600 12px/1 var(--font); white-space: nowrap; cursor: pointer; }
+.office-tab[aria-selected="true"] { border-color: var(--line-2); background: var(--bg-card); color: var(--text); }
+.office-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px; }
+.office-doc table { margin: 8px 0; }
+.office-slide { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-card); }
+.office-slide-n { color: var(--faint); font: 600 12px/1 var(--font); }
+.office-slide h3 { margin: 4px 0 6px; font: 700 15px/1.3 var(--font); }
+.office-slide ul { margin: 0; padding-left: 18px; color: var(--text-2); }
