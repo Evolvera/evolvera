@@ -59,15 +59,78 @@ names.forEach(([name, branch, column, task, agentState], i) => {
   for (const line of lines.slice(1)) { line.parentId = parent; parent = line.id; }
   writeFileSync(file,`${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
 }
-// The answer every fake PI gives (shows Vorcaro's summary and one proposed action).
+// A team-bus team led from painel-financeiro: three child sessions in sibling worktrees, their logs and the messages
+// between them (the stage draws the tree and the mail column from these files). Heartbeats are refreshed every 30 s,
+// like live members, so the team does not go stale while screenshots are taken.
+const teamDir = path.join(agent, "teams", "painel-fechamento");
+{
+  const lead = path.join(roots, "painel-financeiro");
+  const members = [
+    { name: "lead", role: "lead", cwd: lead, state: "working" },
+    { name: "saldo", role: "member", cwd: `${lead}-saldo`, state: "idle" },
+    { name: "graficos", role: "member", cwd: `${lead}-graficos`, state: "working" },
+    { name: "revisor", role: "member", cwd: `${lead}-revisor`, state: "idle" },
+  ];
+  mkdirSync(path.join(teamDir, "members"), { recursive: true });
+  mkdirSync(path.join(teamDir, "logs"), { recursive: true });
+  const beat = () => { for (const member of members) writeFileSync(path.join(teamDir, "members", `${member.name}.json`), JSON.stringify({ ...member, pid: 1, updatedAt: Date.now() })); };
+  beat();
+  setInterval(beat, 30_000).unref();
+  const at = (s) => now - 420_000 + s * 1000;
+  const answer = (s, text, cost, model = "gpt-6.1-sol", thinkingLevel = "medium") => ({ type: "message_end", message: { role: "assistant", model, thinkingLevel, timestamp: at(s), usage: { cost: { total: cost } }, content: [{ type: "text", text }] } });
+  const logs = {
+    saldo: [{ type: "agent_start" }, { type: "tool_execution_start", toolCallId: "s1", toolName: "read", args: { path: "src/saldo.ts" } }, { type: "tool_execution_end", toolCallId: "s1" },
+      { type: "tool_execution_start", toolCallId: "s2", toolName: "bash", args: { command: "npm test -- saldo" } }, { type: "tool_execution_end", toolCallId: "s2" },
+      answer(140, "O saldo inicial de setembro agora sai do extrato importado, não do mês anterior. Os 18 testes do saldo passaram e commitei na branch team/saldo.", 0.042), { type: "agent_end" }],
+    graficos: [{ type: "agent_start" }, answer(60, "Vou montar o gráfico de entradas e saídas com as cores do painel.", 0.011, "claude-opus-5-5", "high"),
+      { type: "tool_execution_start", toolCallId: "g1", toolName: "edit", args: { path: "src/telas/GraficoFluxo.tsx" } }],
+    revisor: [{ type: "agent_start" }, { type: "tool_execution_start", toolCallId: "r1", toolName: "grep", args: { pattern: "fechamento", path: "src" } }, { type: "tool_execution_end", toolCallId: "r1" },
+      answer(210, "Revisei o saldo: está certo. Achei um arredondamento no fechamento de setembro (centavos somados duas vezes). Corrijo agora ou fica com o lead?", 0.019, "gpt-6.1-sol", "high"), { type: "agent_end" }],
+  };
+  for (const [name, events] of Object.entries(logs)) writeFileSync(path.join(teamDir, "logs", `${name}.jsonl`), `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
+  const mail = [
+    [5, "lead", "saldo", "Corrija o saldo inicial de setembro a partir do extrato importado. Commit na sua branch e me avise."],
+    [8, "lead", "graficos", "Monte o gráfico de entradas e saídas do mês no painel, com as cores do tema."],
+    [12, "lead", "revisor", "Revise o saldo e o fechamento de setembro quando o saldo terminar."],
+    [141, "saldo", "lead", "Saldo inicial corrigido a partir do extrato. 18 testes passando, commit na team/saldo."],
+    [212, "revisor", "lead", "Achei um arredondamento no fechamento de setembro. Corrijo ou fica com você?"],
+  ];
+  writeFileSync(path.join(teamDir, "messages.jsonl"), `${mail.map(([s, from, to, preview]) => JSON.stringify({ at: at(s), from, to, preview })).join("\n")}\n`);
+}
+// Vorcaro v1: two requests it already followed (one verified by its own `npm test`, one waiting on a decision) and their
+// audit trail, so the board shows the conductor's work without running anything.
+{
+  const data = path.join(agent, "pi-studio-data");
+  mkdirSync(data, { recursive: true });
+  const loja = path.join(roots, "loja-online");
+  const agenda = path.join(roots, "app-agenda");
+  const sent = now - 50 * 60_000;
+  const demands = [
+    { id: "dm-pix", createdAt: sent, projectId: "x", project: "loja-online", cwd: loja, objetivo: "Testes do checkout com Pix passando", checklist: ["npm test passa", "Pix aparece no confirmar"], verify: ["npm test"], phase: "feito", continuations: 1, lastContinuationAt: sent + 20 * 60_000, sessionId: "s-pix", sessionFile: path.join(agent, "sessions", "--loja-online--", "loja-online-1.jsonl"),
+      verification: { at: sent + 40 * 60_000, ok: true, results: [{ command: "npm test", ok: true, exit: 0, output: "Tests: 42 passed" }] } },
+    { id: "dm-agenda", createdAt: now - 25 * 60_000, projectId: "y", project: "app-agenda", cwd: agenda, objetivo: "Lembrete diário pelo WhatsApp no horário padrão", checklist: ["Horário padrão configurável", "Teste do agendador passando"], verify: ["npm test"], phase: "aguardando", continuations: 0, sessionId: "s-agenda", sessionFile: path.join(agent, "sessions", "--app-agenda--", "app-agenda-0.jsonl"),
+      block: { kind: "decision", question: "Os lembretes saem pelo WhatsApp. Qual horário padrão você prefere: 9h ou 18h?" } },
+  ];
+  writeFileSync(path.join(data, "vorcaro-demandas.json"), JSON.stringify(demands));
+  const audit = [
+    [sent, "dm-pix", "dispatched", "user", { project: "loja-online" }], [sent + 18 * 60_000, "dm-pix", "verify_result", "vorcaro", { ok: false }],
+    [sent + 20 * 60_000, "dm-pix", "continuation_sent", "vorcaro", { attempt: 1 }], [sent + 40 * 60_000, "dm-pix", "verify_result", "vorcaro", { ok: true }], [sent + 40 * 60_000, "dm-pix", "done", "vorcaro", {}],
+    [now - 25 * 60_000, "dm-agenda", "dispatched", "user", {}], [now - 12 * 60_000, "dm-agenda", "blocked", "vorcaro", { block: { kind: "decision" } }],
+  ];
+  writeFileSync(path.join(data, "vorcaro-auditoria.jsonl"), `${audit.map(([at, demandId, type, actor, d]) => JSON.stringify({ at, demandId, type, actor, data: d })).join("\n")}\n`);
+}
+// The answer every fake PI gives (shows Vorcaro's summary with cited sources and one proposed action). The refs follow
+// digestRef in lib-server/vorcaro.mjs (a hash of the session file).
+const ref = (file) => { let hash = 5381; for (const char of file) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0; return `s${hash.toString(36)}`; };
+const sessionFile = (project, name) => path.join(agent, "sessions", `--${project}--`, `${name}.jsonl`);
 const replyFile = path.join(temp, "reply.md");
-const action = { acao: "enviar", projeto: path.join(roots, "painel-financeiro"), sessao: "", objetivo: "Fechar a correção do fluxo de caixa de setembro", checklist: ["Fechamento de setembro confere com o extrato", "Gráfico de entradas e saídas aparece no painel", "Testes do painel passando"], instrucoes: "Retome os itens abertos da lista de tarefas e verifique cada um antes de concluir." };
+const action = { acao: "enviar", projeto: path.join(roots, "painel-financeiro"), sessao: "", objetivo: "Fechar a correção do fluxo de caixa de setembro", checklist: ["Fechamento de setembro confere com o extrato", "Gráfico de entradas e saídas aparece no painel", "Testes do painel passando"], instrucoes: "Retome os itens abertos da lista de tarefas e verifique cada um antes de concluir.", verificar: ["npm test"] };
 writeFileSync(replyFile, [
   "Nos últimos dias você tocou 3 frentes:",
   "",
-  "- **Checkout com Pix** (loja-online): fazendo, 2 de 4 itens, objetivo ativo. O builder está na tela do QR.",
-  "- **Lembretes por WhatsApp** (app-agenda): parado esperando você escolher o horário padrão (9h ou 18h).",
-  "- **Fluxo de caixa** (painel-financeiro): 2 itens abertos e nada rodando.",
+  `- **Checkout com Pix** (loja-online): fazendo, 2 de 4 itens, objetivo ativo. O builder está na tela do QR [fonte: ${ref(sessionFile("loja-online", "rich-checkout"))}].`,
+  `- **Lembretes por WhatsApp** (app-agenda): parado esperando você escolher o horário padrão, 9h ou 18h [fonte: ${ref(sessionFile("app-agenda", "app-agenda-0"))}].`,
+  `- **Fluxo de caixa** (painel-financeiro): 2 itens abertos e nada rodando [fonte: ${ref(sessionFile("painel-financeiro", "painel-financeiro-0"))}].`,
   "",
   "Sugiro responder o app-agenda e mandar o painel-financeiro terminar. Preparei o pedido:",
   "",
