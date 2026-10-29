@@ -126,6 +126,9 @@ try {
     const r = await solo.tools.get("team_start").execute("s", { name: bad, task: "t" });
     assert.equal(r.isError, true, `child name ${JSON.stringify(bad)} is refused`);
   }
+  const declined = await solo.tools.get("team_start").execute("s", { name: "docs", task: "t" }, undefined, undefined, { hasUI: true, ui: { confirm: async () => false } });
+  assert.match(declined.content[0].text, /não autorizou/, "the user can refuse child sessions");
+  assert.equal(fs.existsSync(path.join(tmp3, "teams")), false, "nothing is created when refused");
   const empty = await solo.tools.get("team_start").execute("s", { name: "docs", task: "  " });
   assert.equal(empty.isError, true, "a child needs a task");
   const notInTeam = await solo.tools.get("team_send").execute("s", { to: "lead", message: "oi" });

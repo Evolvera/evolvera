@@ -138,6 +138,7 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
   let wroteToLead = false;
   const recent = new Map<string, number>();
   const children = new Map<string, Child>();
+  let consented = false;
   const reply = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], details: {}, ...(isError ? { isError: true } : {}) });
 
   const heartbeat = () => {
@@ -222,13 +223,21 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
       task: Type.String({ description: "Self-contained brief: goal, files it owns, acceptance, how to test, what not to touch" }),
       worktree: Type.Optional(Type.Boolean({ description: "Own git worktree (default true when in a repository)" })),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       const name = String(params.name ?? "").trim();
       const task = String(params.task ?? "").trim();
       if (!isSafeName(name) || name === "lead") return reply('Nome inválido: use letras, números, "-" ou "_" (e não "lead").', true);
       if (!task) return reply("Tarefa vazia.", true);
       if (children.has(name)) return reply(`Já existe uma sessão filha "${name}".`, true);
       if (children.size >= MAX_CHILDREN) return reply(`Limite de ${MAX_CHILDREN} sessões filhas atingido; encerre uma com team_stop.`, true);
+      // Child sessions act with this session's authority, so the user consents once per session when there is a UI.
+      const ui = ctx as { hasUI?: boolean; ui?: { confirm?: (t: string, m: string) => Promise<boolean> } } | undefined;
+      if (!consented && ui?.hasUI && ui.ui?.confirm) {
+        if (!(await ui.ui.confirm("Abrir sessões filhas?", `Esta sessão quer abrir a sessão filha "${name}" (e outras, até ${MAX_CHILDREN}) para trabalhar em paralelo, cada uma numa worktree própria.\n\nTarefa:\n${task.slice(0, 1_200)}`))) {
+          return reply("O usuário não autorizou abrir sessões filhas.");
+        }
+      }
+      consented = true;
       if (!me && !activate({ team: `s-${Date.now().toString(36)}`, name: "lead", role: "lead" })) return reply("Não foi possível abrir o time.", true);
       ready = true; // joined mid-run: the child's replies must be delivered from now on
       running = true;
@@ -247,7 +256,9 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
         }
       }
       const cli = process.argv[1];
-      const proc = spawn(process.execPath, [cli, "--mode", "rpc", "--approve"], {
+      // A child trusts project-local .pi files only if this session was itself started trusting them.
+      const trust = process.argv.includes("--approve") || process.argv.includes("-a") ? "--approve" : "--no-approve";
+      const proc = spawn(process.execPath, [cli, "--mode", "rpc", trust], {
         cwd, windowsHide: true, stdio: ["pipe", "pipe", "ignore"],
         env: { ...process.env, PI_TEAM: me!.team, PI_TEAM_NAME: name, PI_TEAM_ROLE: "member", PI_TEAM_PARENT: me!.name },
       });
