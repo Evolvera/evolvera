@@ -22,7 +22,7 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, deadlinePatcher] 
 
 // Routing authority: normal planner follows frontmatter (GPT-6.1 Sol/high); plan-heavy final
 // synthesis explicitly overrides to Astra/high. Static contract regression.
-assert.match(planner, /^model: openai-codex\/gpt-6\.1-sol$/m);
+assert.match(planner, /^model: fallback\/sol$/m);
 assert.match(planner, /^thinking: high$/m);
 assert.match(planner, /^display_name: .*GPT-6\.1 Sol · high$/m);
 assert.match(planner, /Model: openai-codex\/gpt-6\.1-sol high\./);

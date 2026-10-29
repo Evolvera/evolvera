@@ -22,6 +22,21 @@ export const NATIVE_COMPACTION_THINKING_LEVEL = "medium" as const;
  * so a real overflow on the new model still recovers normally.
  */
 export const ANTHROPIC_TO_OPENAI_THRESHOLD = 450_000;
+const ROUTED_MODEL_EVENT = "model-fallback:routed";
+const VIRTUAL_ROUTER_PROVIDER = "fallback";
+type RoutedPhysicalModel = { provider: string; modelId: string };
+
+function readRoutedModel(payload: unknown): RoutedPhysicalModel | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const { provider, modelId } = payload as { provider?: unknown; modelId?: unknown };
+  if (typeof provider !== "string" || !provider || typeof modelId !== "string" || !modelId) return undefined;
+  return { provider, modelId };
+}
+
+function effectiveDispatchModel(selected: { provider: string; id: string } | undefined, routed: RoutedPhysicalModel | undefined) {
+  if (selected?.provider !== VIRTUAL_ROUTER_PROVIDER || !routed) return selected;
+  return { provider: routed.provider, id: routed.modelId };
+}
 
 type BranchEntry = { type?: string; message?: { role?: string; provider?: string; model?: string; stopReason?: string; usage?: Record<string, number> } };
 
@@ -38,16 +53,17 @@ export function lastUsageSource(entries: unknown[]): { provider?: string; model?
   return undefined;
 }
 
-export function isStaleCrossProviderThreshold(event: SessionBeforeCompactEvent, ctx: ExtensionContext): boolean {
+export function isStaleCrossProviderThreshold(event: SessionBeforeCompactEvent, ctx: ExtensionContext, routedModel?: RoutedPhysicalModel): boolean {
   const source = lastUsageSource(event.branchEntries ?? []);
+  const dispatchModel = effectiveDispatchModel(ctx.model, routedModel);
   const claudeVersion = source?.provider === "anthropic"
     ? /^claude-[a-z]+-(\d+)-(\d+)(?:-|$)/.exec(source.model ?? "")
     : null;
   const major = claudeVersion ? Number(claudeVersion[1]) : 0;
   const minor = claudeVersion ? Number(claudeVersion[2]) : 0;
   return event.reason === "threshold"
-    && (ctx.model?.provider === "openai" || ctx.model?.provider === "openai-codex")
-    && /^gpt-\d+(?:[.-]|$)/.test(ctx.model.id)
+    && (dispatchModel?.provider === "openai" || dispatchModel?.provider === "openai-codex")
+    && /^gpt-\d+(?:[.-]|$)/.test(dispatchModel.id)
     && claudeVersion !== null
     && (major > 4 || (major === 4 && minor >= 8))
     && (event.preparation?.tokensBefore ?? 0) <= ANTHROPIC_TO_OPENAI_THRESHOLD;
@@ -96,9 +112,9 @@ async function tryCompact(event: SessionBeforeCompactEvent, ctx: ExtensionContex
  * OpenAI outage), the conversation's own model summarizes instead with the
  * session's thinking level; only when both fail is compaction cancelled.
  */
-async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext, sessionThinking: () => ThinkingLevel | undefined = () => undefined) {
+async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext, sessionThinking: () => ThinkingLevel | undefined = () => undefined, routedModel?: RoutedPhysicalModel) {
   try {
-    if (isStaleCrossProviderThreshold(event, ctx)) return { cancel: true };
+    if (isStaleCrossProviderThreshold(event, ctx, routedModel)) return { cancel: true };
     if (event.signal.aborted) {
       notifyFailure(ctx);
       return { cancel: true };
@@ -127,6 +143,8 @@ async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: Exte
 }
 
 export default function nativeCompactionRoutingExtension(pi: ExtensionAPI): void {
+  let routedModel: RoutedPhysicalModel | undefined;
+  pi.events?.on?.(ROUTED_MODEL_EVENT, (data: unknown) => { routedModel = readRoutedModel(data); });
   const getThinking = (pi as { getThinkingLevel?: () => ThinkingLevel }).getThinkingLevel;
-  pi.on("session_before_compact", (event, ctx) => routeNativeCompaction(event, ctx, () => getThinking?.call(pi)));
+  pi.on("session_before_compact", (event, ctx) => routeNativeCompaction(event, ctx, () => getThinking?.call(pi), routedModel));
 }

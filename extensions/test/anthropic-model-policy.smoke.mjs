@@ -229,6 +229,28 @@ try {
 const modelsConfig = JSON.parse(read("config/models.json"));
 const runtimeModelsConfig = JSON.parse(read("models.json"));
 assert.deepEqual(runtimeModelsConfig, modelsConfig);
+const haiku55 = modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-haiku-5-5");
+assert.deepEqual(haiku55, {
+  id: "claude-haiku-5-5",
+  name: "Claude Haiku 5.5",
+  api: "anthropic-messages",
+  reasoning: true,
+  thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
+  input: ["text", "image"],
+  contextWindow: 1_000_000,
+  maxTokens: 128_000,
+  cost: {
+    input: 0.1,
+    output: 0.5,
+    cacheRead: 0.01,
+    cacheWrite: 0.125,
+    tiers: [{ inputTokensAbove: 100_000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 }],
+  },
+  compat: { forceAdaptiveThinking: true, supportsStrictTools: true },
+  promptCache: { short: 300, long: 3600 },
+});
+assert.equal(modelsConfig.providers.refuseless.models.find(({ id }) => id === "deepseek-v4.1-flash-fast").reasoning, true);
+
 const fable51 = modelsConfig.providers.anthropic.models.find(({ id }) => id === "claude-fable-5-1");
 assert.deepEqual(fable51, {
   id: "claude-fable-5-1",
@@ -298,6 +320,31 @@ for (const model of gpt56CodexModels) {
   assert.equal(model.thinkingLevelMap.max, "max", `${model.id} must expose max reasoning effort`);
 }
 
+const fallbackAgentRoutes = {
+  "agents/scout.md": "fallback/luna",
+  "agents/builder-light.md": "fallback/luna",
+  "agents/general-purpose.md": "fallback/luna",
+  "agents/deep-research-creative.md": "fallback/luna",
+  "agents/deep-research-critical.md": "fallback/luna",
+  "agents/deep-research-explorer.md": "fallback/luna",
+  "agents/deep-research-methodical.md": "fallback/luna",
+  "agents/deep-research-skeptical.md": "fallback/luna",
+  "agents/builder.md": "fallback/builder",
+  "agents/builder-heavy.md": "fallback/heavy",
+  "agents/planner.md": "fallback/sol",
+  "agents/plan-briefer.md": "fallback/sol",
+  "agents/bug-hunt.md": "fallback/sol",
+  "agents/app-validator.md": "fallback/terra",
+  "agents/qa.md": "fallback/terra",
+  "agents/validator.md": "fallback/terra",
+  "agents/deep-research-auditor.md": "fallback/terra",
+  "agents/deep-research-data.md": "fallback/terra",
+  "agents/website-creative.md": "fallback/terra",
+};
+for (const [relativePath, model] of Object.entries(fallbackAgentRoutes)) {
+  assert.ok(read(relativePath).split("---", 3)[1].split("\n").some((line) => line.trim() === `model: ${model}`));
+}
+
 const expectedRoutes = {
   "agents/builder-design.md": { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", thinking: "high" },
   "agents/builder-heavy-design.md": { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", thinking: "xhigh" },
@@ -329,7 +376,7 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.match(frontmatter, new RegExp(`^model: ${model.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, "m"));
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
-assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6\.1-terra$/m);
+assert.match(read("agents/builder-heavy.md"), /^model: fallback\/heavy$/m);
 assert.match(read("agents/builder-heavy.md"), /^thinking: medium$/m);
 assert.match(read("agents/builder-heavy.md"), /Model: openai-codex\/gpt-6\.1-terra medium\./);
 assert.match(read("agents/builder-heavy.md"), /GPT-6\.1 Terra · medium/);
