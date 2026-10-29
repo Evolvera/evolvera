@@ -217,7 +217,7 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
   pi.registerTool({
     name: "team_start",
     label: "Team Start",
-    description: `Open a live child PI session for an independent part of the work, in its own git worktree (sibling folder, branch team/<name>), and send it its task. This session becomes the team lead; talk to the child with team_send, it reports back when done or idle (with its git status). Use only for parts that can run in parallel with their own files; at most ${MAX_CHILDREN} children. Stop it with team_stop when its work is merged.`,
+    description: `Open a live child PI session for an independent part of the work, in its own git worktree (sibling folder, branch team/<name>), and send it its task. This session becomes the team lead; talk to the child with team_send, it reports back when done or idle (with its git status). Use only when all hold: parts with different file owners must agree on something mid-task (an API, a schema) or the goal is adversarial review; the work runs longer than about an hour; state lives in git plus a short status file, not in messages. Otherwise do the work directly or with one to three subagents. At most ${MAX_CHILDREN} children; stop each with team_stop when its work is merged.`,
     parameters: Type.Object({
       name: Type.String({ description: "Short member name, e.g. front, back, docs" }),
       task: Type.String({ description: "Self-contained brief: goal, files it owns, acceptance, how to test, what not to touch" }),
