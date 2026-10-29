@@ -1,0 +1,2 @@
+# Patches do PI Studio aplicados por scripts/studio/sync-studio.mjs: bytes exatos, sem conversão CRLF no Windows.
+/studio-patches/*.patch -text

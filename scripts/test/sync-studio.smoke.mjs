@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import {
-  isAllowedPath, looksSecret, main, parseArgs, parseTree, selectEntries, voiceTestSkip,
+  failedTests, isAllowedPath, looksSecret, main, parseArgs, parseTree, selectEntries, voiceTestSkip,
 } from '../studio/sync-studio.mjs';
 
 const temp = mkdtempSync(path.join(os.tmpdir(), 'evolvera-sync-studio-'));
@@ -34,6 +34,8 @@ try {
   assert.throws(() => selectEntries([{ ...payload, file: 'interface/server.mjs' }]), /install-payload-cli/);
   assert.deepEqual(selectEntries([payload, { ...payload, file: 'config/jev/api_key' }]).map((entry) => entry.file), [payload.file]);
 
+  assert.deepEqual(failedTests('✔ ok (1ms)\nℹ fail 1\n\n✖ failing tests:\n\ntest at test\\a.mjs:1:1\n✖ a test name (12.5ms)\n  AssertionError\n✖ other (3ms)\n'), ['a test name', 'other']);
+  assert.deepEqual(failedTests('ℹ fail 0\n'), []);
   assert.throws(() => parseArgs(['--latest', '--ref', 'x']), /não os dois/);
   assert.throws(() => parseArgs(['--ref']), /precisa de um valor/);
   assert.throws(() => parseArgs(['--bogus']), /desconhecida/);
@@ -81,6 +83,32 @@ try {
   assert.equal(existsSync(path.join(out, 'install.sh')), true);
   assert.equal(existsSync(path.join(out, 'config')), false, 'config/jev nunca é extraído');
   assert.equal(existsSync(path.join(out, 'research')), false);
+
+  // Patches do NatiamG: aplicados em ordem sobre o commit fixado; fora de interface/, link ou conflito param tudo.
+  write(upstream, 'interface/server.mjs', 'export const ok = 2;\n');
+  const goodPatch = git(upstream, 'diff');
+  git(upstream, 'checkout', '--', 'interface/server.mjs');
+  const patchesDir = path.join(local, 'studio-patches');
+  mkdirSync(patchesDir);
+  writeFileSync(path.join(patchesDir, '0001-ok.patch'), goodPatch);
+  const extractTo = async (name, extra = []) => {
+    const target = path.join(temp, name);
+    console.log = () => {};
+    try { await main(['--repo', local, '--source', source, '--extract-only', target, ...extra]); } finally { console.log = log; }
+    return target;
+  };
+  assert.equal(readFileSync(path.join(await extractTo('patched'), 'interface/server.mjs'), 'utf8'), 'export const ok = 2;\n');
+  assert.equal(readFileSync(path.join(await extractTo('pristine', ['--no-patches']), 'interface/server.mjs'), 'utf8'), 'export const ok = 1;\n');
+  const rejects = async (patchName, text, pattern) => {
+    writeFileSync(path.join(patchesDir, patchName), text);
+    await assert.rejects(extractTo(`bad-${patchName}`), pattern);
+    rmSync(path.join(patchesDir, patchName));
+  };
+  await rejects('0002-conflict.patch', goodPatch, /não aplica/);
+  await rejects('0002-outside.patch', goodPatch.replaceAll('interface/server.mjs', 'config/jev/api_key'), /fora de interface/);
+  await rejects('0002-link.patch', 'diff --git a/interface/l b/interface/l\nnew file mode 120000\nindex 0000000..1111111\n--- /dev/null\n+++ b/interface/l\n@@ -0,0 +1 @@\n+../../config\n', /link simbólico/);
+  await rejects('0002-plain.patch', '--- a/interface/server.mjs\n+++ b/interface/server.mjs\n', /diff --git/);
+  rmSync(patchesDir, { recursive: true });
 
   // Um segredo dentro de interface/ para antes de escrever qualquer arquivo.
   write(upstream, 'interface/.env', 'TOKEN=x\n');
