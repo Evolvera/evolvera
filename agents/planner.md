@@ -1,9 +1,9 @@
 ---
 name: planner
-description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: openai-codex/gpt-6.1-sol high."
-display_name: 🏛️ Planner · GPT-6.1 Sol · high
+description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: anthropic/claude-opus-5-5 high."
+display_name: 🏛️ Planner · Claude Opus 5.5 · high
 tools: read, grep, find, ls, write
-model: openai-codex/gpt-6.1-sol
+model: anthropic/claude-opus-5-5
 thinking: high
 max_turns: 60
 lifecycle: lazy
