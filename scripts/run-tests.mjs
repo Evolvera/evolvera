@@ -22,6 +22,7 @@ const tmpdirProprioPadrao = new Set([
   "studio-steer.smoke.mjs", // fake subagent manager on globalThis; extension copy in its own mkdtemp
   "provider-login-check.smoke.mjs", // agent files in its own mkdtemp; in-memory fake model registry
   "team-bus.smoke.mjs", // team mailbox in its own mkdtemp; two in-memory fake sessions
+  "autopilot.smoke.mjs", // in-memory fake host and session branch only
   "sync-studio.smoke.mjs", // synthetic upstream/local git repos and extraction only inside its owned mkdtemp
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
