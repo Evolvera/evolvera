@@ -24,7 +24,11 @@ Os bytes ficam exatos (`.gitattributes` marca `*.patch` como `-text`), então o 
 
 | `0004-ambientes.patch` | Ambientes como na barra lateral do app Claude: você cria um ambiente (nome e, se quiser, uma pasta existente; sem pasta, o Studio cria `PI Ambientes\<nome>` na sua pasta de usuário) e ele vira uma caixa no topo da barra, com as conversas dentro e forks e subagentes aninhados sob a conversa de origem. As pastas que o Studio achou sozinho ficam em "Outras pastas", recolhido. Atalho fixo no topo: "Vorcaro, a inteligência Master". Remover um ambiente nunca apaga a pasta nem as conversas. Testes em `test/ambientes.test.mjs`. |
 
-Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`. Vorcaro: `docs/studio-orca/vorcaro.md`. Ambientes: `docs/studio-orca/ambientes.md`.
+| `0005-palco-dos-agentes.patch` | Palco dos agentes acima do chat: um nó por agente (orquestrador, subagentes, membros e sessões filhas de uma equipe do team-bus) com estado, arquivo atual, tempo, custo, modelo e esforço; árvore lead em cima e filhos embaixo, linhas que acendem uma vez quando trabalho ou mensagem passa, faixa com as últimas mensagens da equipe; clicar abre a conversa do agente. Rotas só leitura `/api/teams/current` e `/api/teams/member` (`lib-server/teams.mjs`). Bancada à direita com Terminal, Worktrees, Checklist e Contexto. Tema claro e escuro (sol, lua, monitor), Plus Jakarta Sans e Geist Mono servidas localmente (OFL), nada abaixo de 12px, "—" de valor ausente trocado por "n/d". Testes em `test/agent-stage.test.mjs`. |
+
+| `0006-vorcaro-v1.patch` | Vorcaro v1: verificação própria (comandos de teste aprovados no pedido, lista fechada) antes de "concluído e verificado"; até duas continuações curtas com orçamento, nunca sobre objetivo ativo (pi-goal e autopilot); bloqueios tipados; respostas com fonte clicável; auditoria em `vorcaro-auditoria.jsonl`; o idle-reaper poupa sessões com pedido aberto ou esperando resposta do usuário. Testes em `test/vorcaro-conductor.test.mjs`. |
+
+Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`. Vorcaro: `docs/studio-orca/vorcaro.md`. Ambientes: `docs/studio-orca/ambientes.md`. Palco: `docs/studio-orca/palco.md`.
 
 ## Como mudar um patch
 
