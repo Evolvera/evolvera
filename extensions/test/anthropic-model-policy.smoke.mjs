@@ -303,6 +303,7 @@ const expectedRoutes = {
   "agents/builder-heavy-design.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
   "agents/website-designer.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "xhigh" },
   "agents/plan-briefer-fable.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
+  "agents/security-reviewer.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
 };
 for (const [relativePath, route] of Object.entries(expectedRoutes)) {
   const frontmatter = read(relativePath).split("---", 3)[1];
