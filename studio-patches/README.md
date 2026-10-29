@@ -20,7 +20,9 @@ Os bytes ficam exatos (`.gitattributes` marca `*.patch` como `-text`), então o 
 
 | `0002-conversa-simples.patch` | Conversa simples por padrão: só respostas e o trabalho em frases curtas ("Mexeu em pix.ts e checkout.ts. Rodou os testes: passaram"), raciocínio e diffs num clique; cada delegação vira uma troca entre agentes (quem pediu, o que voltou, estado, modelo, tempo e custo); painel da direita abre na equipe; paleta VeroNati (preto real, texto grafite, verde sálvia), tipo mínimo de 12px e frases sem travessão. A opção "Detalhes técnicos na conversa" nas configurações volta ao modo antigo. Testes em `test/simple-view.test.mjs`. |
 
-Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`.
+| `0003-vorcaro.patch` | Vorcaro, a inteligência Master (`Alt+V`): resumo persistido de cada sessão dos últimos 7 dias, um PI lateral somente leitura que responde sobre tudo, quadro (aguardando você, fazendo, a fazer, feito) com progresso e avisos, e envio de um pedido como `/goal` com checklist de aceite para a sessão escolhida, só depois do clique, com o estado de cada pedido acompanhado no quadro. Testes em `test/vorcaro.test.mjs`. |
+
+Medições e método: `docs/studio-orca/desempenho.md`. Conversa simples: `docs/studio-orca/conversa-simples.md`. Vorcaro: `docs/studio-orca/vorcaro.md`.
 
 ## Como mudar um patch
 
