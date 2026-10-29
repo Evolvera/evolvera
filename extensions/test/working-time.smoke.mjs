@@ -45,8 +45,16 @@ mod.registerWorkingTime(fakePi, runtime);
 assert.ok(handlers.has("turn_start"));
 assert.ok(handlers.has("turn_end"));
 assert.ok(handlers.has("session_shutdown"));
-assert.equal(handlers.has("agent_start"), false);
+// agent_start only marks the start of the request for the progress suffix; the timer itself still resets per turn.
+assert.ok(handlers.has("agent_start"));
 assert.equal(handlers.has("agent_settled"), false);
+
+// Progress suffix from the todo list: nothing without a list, items done/total, estimate after the first item.
+assert.equal(mod.progressSuffix([], 0, [], 60_000), "");
+assert.equal(mod.progressSuffix([{ id: 1, status: "pending" }, { id: 2, status: "pending" }], 0, [], 30_000), " · pedido 30s · 0/2 itens");
+assert.equal(mod.progressSuffix([{ id: 1, status: "completed" }, { id: 2, status: "in_progress" }, { id: 3, status: "pending" }], 0, [120_000], 150_000),
+  " · pedido 2m 30s · 1/3 itens · faltam ≈ 4 min");
+assert.equal(mod.progressSuffix([{ id: 1, status: "completed" }], 0, [60_000], 90_000), " · pedido 1m 30s · 1/1 itens · lista concluída");
 
 const messages = [];
 const ctx = {
