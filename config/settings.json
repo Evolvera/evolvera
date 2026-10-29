@@ -19,7 +19,7 @@
       ]
     }
   ],
-  "hideThinkingBlock": false,
+  "hideThinkingBlock": true,
   "theme": "cyberpsycho",
   "communicationMode": "default",
   "compaction": {
