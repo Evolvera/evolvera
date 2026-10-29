@@ -129,6 +129,12 @@ try {
   const declined = await solo.tools.get("team_start").execute("s", { name: "docs", task: "t" }, undefined, undefined, { hasUI: true, ui: { confirm: async () => false } });
   assert.match(declined.content[0].text, /não autorizou/, "the user can refuse child sessions");
   assert.equal(fs.existsSync(path.join(tmp3, "teams")), false, "nothing is created when refused");
+  // Two parallel team_start calls share one question; a refusal refuses both.
+  let asked = 0;
+  const slowNo = { hasUI: true, ui: { confirm: () => { asked++; return new Promise((resolve) => setTimeout(() => resolve(false), 20)); } } };
+  const pair = await Promise.all(["front", "back"].map((name) => solo.tools.get("team_start").execute("s", { name, task: "t" }, undefined, undefined, slowNo)));
+  assert.equal(asked, 1, "parallel calls ask once");
+  assert.ok(pair.every((r) => /não autorizou/.test(r.content[0].text)), "one refusal covers both");
   const empty = await solo.tools.get("team_start").execute("s", { name: "docs", task: "  " });
   assert.equal(empty.isError, true, "a child needs a task");
   const notInTeam = await solo.tools.get("team_send").execute("s", { to: "lead", message: "oi" });

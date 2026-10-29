@@ -139,6 +139,7 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
   const recent = new Map<string, number>();
   const children = new Map<string, Child>();
   let consented = false;
+  let consentAsk: Promise<boolean> | undefined;
   const reply = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], details: {}, ...(isError ? { isError: true } : {}) });
 
   const heartbeat = () => {
@@ -232,12 +233,18 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
       if (children.size >= MAX_CHILDREN) return reply(`Limite de ${MAX_CHILDREN} sessões filhas atingido; encerre uma com team_stop.`, true);
       // Child sessions act with this session's authority, so the user consents once per session when there is a UI.
       const ui = ctx as { hasUI?: boolean; ui?: { confirm?: (t: string, m: string) => Promise<boolean> } } | undefined;
+      // Parallel team_start calls share one question instead of asking once each.
       if (!consented && ui?.hasUI && ui.ui?.confirm) {
-        if (!(await ui.ui.confirm("Abrir sessões filhas?", `Esta sessão quer abrir a sessão filha "${name}" (e outras, até ${MAX_CHILDREN}) para trabalhar em paralelo, cada uma numa worktree própria.\n\nTarefa:\n${task.slice(0, 1_200)}`))) {
+        consentAsk ??= ui.ui.confirm("Abrir sessões filhas?", `Esta sessão quer abrir a sessão filha "${name}" (e outras, até ${MAX_CHILDREN}) para trabalhar em paralelo, cada uma numa worktree própria.\n\nTarefa:\n${task.slice(0, 1_200)}`);
+        if (!(await consentAsk)) {
+          consentAsk = undefined;
           return reply("O usuário não autorizou abrir sessões filhas.");
         }
       }
       consented = true;
+      // Re-checked after the wait: a parallel call may have taken the name or the last slot meanwhile.
+      if (children.has(name)) return reply(`Já existe uma sessão filha "${name}".`, true);
+      if (children.size >= MAX_CHILDREN) return reply(`Limite de ${MAX_CHILDREN} sessões filhas atingido; encerre uma com team_stop.`, true);
       if (!me && !activate({ team: `s-${Date.now().toString(36)}`, name: "lead", role: "lead" })) return reply("Não foi possível abrir o time.", true);
       ready = true; // joined mid-run: the child's replies must be delivered from now on
       running = true;
