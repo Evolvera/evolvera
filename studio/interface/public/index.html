@@ -228,6 +228,7 @@
           <button id="tab-subagents" class="insp-tab is-minor" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Agentes</span><span id="subBadge" class="count-badge" hidden></span></button>
           <button id="tab-files" class="insp-tab is-minor" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
           <button id="tab-browser" class="insp-tab is-minor" type="button" role="tab" data-tab="browser" aria-controls="view-browser" aria-selected="false" tabindex="-1"><svg><use href="#i-globe" /></svg><span class="insp-label">Navegador</span></button>
+          <button id="tab-github" class="insp-tab is-minor" type="button" role="tab" data-tab="github" aria-controls="view-github" aria-selected="false" tabindex="-1" title="PRs, issues e checks do repositório"><svg><use href="#i-code" /></svg><span class="insp-label">GitHub</span><span id="ghBadge" class="count-badge" hidden></span></button>
           <button id="tab-sidechat" class="insp-tab is-minor" type="button" role="tab" data-tab="sidechat" aria-controls="view-sidechat" aria-selected="false" tabindex="-1" title="Dúvidas (Alt+D)"><svg><use href="#i-help" /></svg><span class="insp-label">Dúvidas</span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
@@ -263,6 +264,9 @@
         </section>
         <section id="view-worktrees" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-worktrees" data-view="worktrees" tabindex="0" hidden>
           <div id="wtList" class="sa-list"></div>
+        </section>
+        <section id="view-github" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-github" data-view="github" tabindex="0" hidden>
+          <div id="ghView" class="gh-view"></div>
         </section>
         <section id="view-sidechat" class="insp-view view-sidechat" role="tabpanel" aria-labelledby="tab-sidechat" data-view="sidechat" hidden>
           <p class="sc-note">Só responde, não mexe em nada.</p>

@@ -106,6 +106,8 @@ import {
   normalizeModels,
   plural,
   relativeTime,
+  gitWorktreeView,
+  prView,
   modelMenuGroups,
   connectHint,
   reconcileEntries,
@@ -244,6 +246,8 @@ const els = {
   watchBack: $("#watchBack"),
   filesBadge: $("#filesBadge"),
   wtTabBadge: $("#wtTabBadge"),
+  ghView: $("#ghView"),
+  ghBadge: $("#ghBadge"),
   worktreesBadge: $("#worktreesBadge"),
   ctxView: $("#ctxView"),
   filesView: $("#view-files"),
@@ -2825,7 +2829,7 @@ function scheduleInspector(...tabs) {
   });
 }
 
-const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees, sidechat: () => sideChat.render() };
+const VIEW_RENDERERS = { terminal: renderTerminal, tasks: () => tasksPanel.render(), subagents: renderSubagents, context: renderContext, files: renderFiles, browser: renderBrowser, worktrees: renderWorktrees, github: renderGithub, sidechat: () => sideChat.render() };
 
 function renderInspector() {
   const runs = selectedSubagents();
@@ -4532,11 +4536,10 @@ function applyOrcaSettings() {
     closeWorktrees();
   }
   const on = orcaOn();
-  els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = !on;
+  els.tabs.find((button) => button.dataset.tab === "worktrees").hidden = false;
   els.worktreesBtn.hidden = !(on && orca.data?.available);
   updateWorktreeBadges();
   orca.uiKey = `${on}/${Boolean(orca.data?.available)}`;
-  if (!on && inspector.tab === "worktrees") selectTab("terminal");
   syncOrcaPolling();
   if (on && !orca.data) pollOrca();
 }
@@ -4646,8 +4649,97 @@ function worktreeCard(worktree) {
   return node;
 }
 
+// Worktrees and GitHub of the open project from the Studio itself (git and gh): Orca is no longer needed for them.
+const devtools = { project: null, worktrees: null, github: null, loading: new Set(), sig: "" };
+async function loadDevtools(kind) {
+  const project = state.currentProject;
+  if (!project || devtools.loading.has(kind)) return;
+  if (devtools.project !== project.id) Object.assign(devtools, { project: project.id, worktrees: null, github: null });
+  devtools.loading.add(kind);
+  try {
+    devtools[kind] = await api(`/api/devtools/${kind}?project=${encodeURIComponent(project.id)}`);
+  } catch (error) {
+    devtools[kind] = { error: error.message };
+  } finally {
+    devtools.loading.delete(kind);
+    scheduleInspector(kind);
+  }
+}
+
+function devEmpty(icon, title, hint = "") {
+  const empty = document.createElement("div");
+  empty.className = "insp-empty";
+  empty.innerHTML = `${svg(icon)}<strong>${esc(title)}</strong>${hint ? `<span>${esc(hint)}</span>` : ""}`;
+  return empty;
+}
+
+function renderGitWorktrees() {
+  if (devtools.project !== state.currentProject?.id || !devtools.worktrees) {
+    loadDevtools("worktrees");
+    return [devEmpty("i-branch", "Lendo as worktrees")];
+  }
+  const items = devtools.worktrees.worktrees ?? [];
+  if (!items.length) return [devEmpty("i-branch", "Nenhuma worktree", devtools.worktrees.reason || devtools.worktrees.error || "")];
+  return items.map((worktree) => {
+    const view = gitWorktreeView(worktree);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "gw-card";
+    card.dataset.gitWt = worktree.path;
+    card.title = worktree.path;
+    card.innerHTML = `<span class="gw-top"><span class="gw-name">${esc(view.name)}</span><span class="gw-branch">${svg("i-branch")}${esc(view.branch)}</span></span>
+      <span class="gw-meta"><span class="gw-chip${view.dirty ? " is-dirty" : ""}">${esc(view.changes)}</span><span>${esc(view.sync)}</span></span>
+      ${view.last ? `<span class="gw-last">${esc(view.last)}</span>` : ""}`;
+    return card;
+  });
+}
+
+function renderGithub() {
+  const view = els.ghView;
+  if (devtools.project !== state.currentProject?.id || !devtools.github) {
+    loadDevtools("github");
+    view.replaceChildren(devEmpty("i-code", state.currentProject ? "Lendo o GitHub" : "Abra uma conversa de um projeto"));
+    return;
+  }
+  const data = devtools.github;
+  if (!data.prs) {
+    view.replaceChildren(devEmpty("i-code", data.repo ? `GitHub de ${data.repo}` : "Sem repositório do GitHub", data.reason || data.error || ""));
+    return;
+  }
+  const failing = data.prs.filter((pr) => pr.checks?.failed).length;
+  setBadge(els.ghBadge, failing, plural(failing, "PR com check falhando", "PRs com check falhando"));
+  const link = (url, inner, cls = "") => `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+  const prs = data.prs.map((pr) => {
+    const v = prView(pr);
+    return link(pr.url, `<span class="gh-row-top"><b>#${pr.number}</b><span class="gh-title">${esc(pr.title)}</span></span>
+      <span class="gh-row-meta"><i data-tone="${v.tone}"></i><span>${esc(v.checks)}</span>${v.state ? `<span>${esc(v.state)}</span>` : ""}<span>${esc(pr.branch)} → ${esc(pr.base)}</span><span>${esc(relativeTime(Date.parse(pr.updatedAt)))}</span></span>`, "gh-row");
+  }).join("") || `<p class="vc-empty">Nenhum PR aberto.</p>`;
+  const issues = data.issues.map((issue) => link(issue.url, `<span class="gh-row-top"><b>#${issue.number}</b><span class="gh-title">${esc(issue.title)}</span></span>
+      <span class="gh-row-meta">${issue.labels.map((label) => `<span class="gh-label">${esc(label)}</span>`).join("")}<span>${esc(relativeTime(Date.parse(issue.updatedAt)))}</span></span>`, "gh-row")).join("") || `<p class="vc-empty">Nenhuma issue aberta.</p>`;
+  const runs = data.runs.map((run) => link(run.url, `<span class="gh-row-top"><i data-tone="${run.conclusion === "success" ? "ok" : run.conclusion ? "bad" : "work"}"></i><span class="gh-title">${esc(run.title || run.name)}</span></span>
+      <span class="gh-row-meta"><span>${esc(run.name)}</span><span>${esc(run.branch)}</span><span>${esc(run.conclusion || run.status)}</span><span>${esc(relativeTime(Date.parse(run.createdAt)))}</span></span>`, "gh-row")).join("") || `<p class="vc-empty">Nenhuma execução recente.</p>`;
+  view.innerHTML = `<header class="gh-head">${link(data.url, `${svg("i-code")}<span>${esc(data.repo)}</span>`, "gh-repo")}<button type="button" class="icon-btn small" data-gh-refresh title="Atualizar">${svg("i-retry")}</button></header>
+    <section class="insp-sec"><h3 class="sec-title">PRs abertos <b>${data.prs.length}</b></h3>${prs}</section>
+    <section class="insp-sec"><h3 class="sec-title">Checks recentes</h3>${runs}</section>
+    <section class="insp-sec"><h3 class="sec-title">Issues abertas <b>${data.issues.length}</b></h3>${issues}</section>`;
+}
+
+els.ghView.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-gh-refresh]")) return;
+  devtools.github = null;
+  scheduleInspector("github");
+});
+
 function renderWorktrees() {
   const data = orca.data;
+  // Without Orca (off, closed or not installed) the tab shows the project's git worktrees.
+  if (!data || !data.available || !data.worktrees.length) {
+    const sig = JSON.stringify(["git", devtools.worktrees, state.currentProject?.id]);
+    if (sig === orca.renderSig) return;
+    orca.renderSig = sig;
+    els.wtList.replaceChildren(...renderGitWorktrees());
+    return;
+  }
   const sig = JSON.stringify([data, state.currentProject?.cwd, allResources.sig]);
   if (sig === orca.renderSig) return;
   orca.renderSig = sig;
@@ -4673,6 +4765,11 @@ function renderWorktrees() {
 }
 
 els.wtList.addEventListener("click", (event) => {
+  const git = event.target.closest("[data-git-wt]");
+  if (git) {
+    openWorktree({ path: git.dataset.gitWt, name: basename(git.dataset.gitWt), projectId: projectIdForPath(git.dataset.gitWt) }).catch(report);
+    return;
+  }
   const head = event.target.closest("[data-wt]");
   if (!head) return;
   openWorktree({ path: head.dataset.wt, projectId: head.dataset.project }).catch(report);

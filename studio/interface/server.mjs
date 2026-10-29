@@ -17,6 +17,7 @@ import { SIDE_TOOLS, buildSidePrompt, createSideRegistry, sideArgs, sideCommand 
 import { createTeamReader } from "./lib-server/teams.mjs";
 import { CONDUCTOR_BUDGET, continuationMessage, createAudit, digestFor, isOpenDemand, nextStep, runVerification } from "./lib-server/vorcaro-conductor.mjs";
 import { createGithubMirror, createOrcaMirror, readMirrorConfig } from "./lib-server/vorcaro-mirror.mjs";
+import { createCache, githubRepoFromUrl, githubSummary, gitWorktrees } from "./lib-server/devtools.mjs";
 import { VORCARO_INDEX_DAYS, boardFilters, filterBoard, listConversations, readConversation } from "./lib-server/vorcaro.mjs";
 import { autoArchivable, boardChanges, buildBoard, changesMarkdown, claudeSidebar, hiddenFolders, insideIgnored, isArchived, seenSnapshot, buildVorcaroPrompt, createArchive, createDigestIndex, digestColumn, digestsMarkdown, goalMessage, organizationMarkdown, organizeProjects, readSessionDetail, scanClaudeDigest, scanDigest, validateAction } from "./lib-server/vorcaro.mjs";
 import { createAmbientes } from "./lib-server/ambientes.mjs";
@@ -2074,6 +2075,40 @@ const treeService = createTreeService({
   onPoll(at) { treeLastPollAt = at; },
 });
 
+// Development tools in the inspector (lib-server/devtools.mjs): git worktrees and the GitHub repository of a project
+// the Studio already knows (by id: no path from the client is ever run). gh uses the account pinned in
+// vorcaro-config.json ("github.conta"), like the Vorcaro mirror; results cached a little so tab switches are instant.
+const devtoolsCache = { worktrees: createCache(10_000), github: createCache(60_000) };
+function runDevCommand(bin, args, { cwd, env } = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(bin === "gh" ? GH_BIN : bin, args, { cwd, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...env } }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
+  });
+}
+async function devtoolsProject(id) {
+  await knownProjects(projects, discoverProjects);
+  const project = projects.get(String(id ?? ""));
+  if (!project) throw httpError(404, "Projeto não encontrado");
+  return project;
+}
+async function devtoolsWorktrees(project) {
+  try {
+    return { worktrees: await devtoolsCache.worktrees(project.cwd, () => gitWorktrees(project.cwd, { run: runDevCommand })) };
+  } catch { return { worktrees: [], reason: "Esta pasta não é um repositório git." }; }
+}
+async function devtoolsGithub(project) {
+  let remote = "";
+  try { remote = await runDevCommand("git", ["remote", "get-url", "origin"], { cwd: project.cwd }); } catch { /* no remote */ }
+  const repo = githubRepoFromUrl(remote);
+  if (!repo) return { repo: null, reason: "Esta pasta não tem um repositório do GitHub como origin." };
+  const { github } = await readMirrorConfig(VORCARO_CONFIG_FILE);
+  try {
+    const env = github?.conta ? { GH_TOKEN: (await ghToken(github.conta)).trim() } : {};
+    return await devtoolsCache.github(`${repo.owner}/${repo.repo}`, () => githubSummary(repo, { run: runDevCommand, env }));
+  } catch (error) {
+    return { repo: `${repo.owner}/${repo.repo}`, reason: /auth|login|401|403/i.test(String(error.message)) ? "O gh não tem acesso a este repositório com a conta configurada." : "Não deu para ler o GitHub agora; tente de novo." };
+  }
+}
+
 // Model accounts: which providers have a working login or key, from `pi auth check --json --no-refresh` (never with
 // --credentials, so no secret is printed). Checked: the providers the model list uses, the ones in models.json and the
 // usual subscription logins; cached for five minutes per provider.
@@ -3055,6 +3090,11 @@ async function route(req, res) {
     if (pathname === "/api/vorcaro/board") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       return json(res, 200, await vorcaroBoard(boardFilters(url.searchParams)));
+    }
+    if (pathname === "/api/devtools/worktrees" || pathname === "/api/devtools/github") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const project = await devtoolsProject(url.searchParams.get("project"));
+      return json(res, 200, pathname.endsWith("worktrees") ? await devtoolsWorktrees(project) : await devtoolsGithub(project));
     }
     if (pathname === "/api/model-accounts") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });

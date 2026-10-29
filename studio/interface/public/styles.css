@@ -2273,3 +2273,32 @@ html[data-vc-photo] .vc-btn::before { content: ""; flex: none; width: 20px; heig
 
 /* "Vorcaro, a inteligência Master": the comma belongs to the name, the tagline follows with a space */
 #vorcaroTitle .vc-sub { margin-left: 5px; }
+
+/* ---- dev tools in the inspector: git worktrees (without Orca) and GitHub */
+.gw-card { display: grid; gap: 4px; width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-card); color: var(--text); text-align: left; cursor: pointer; transition: border-color 180ms var(--ease-vero); }
+.gw-card + .gw-card { margin-top: 6px; }
+.gw-card:hover { border-color: var(--line-2); }
+.gw-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.gw-name { overflow: hidden; font: 600 13px/1.3 var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.gw-branch { display: inline-flex; align-items: center; gap: 4px; flex: none; max-width: 55%; overflow: hidden; color: var(--muted); font: 12px/1 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.gw-branch svg { width: 12px; height: 12px; flex: none; }
+.gw-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 12px; }
+.gw-chip { padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.gw-chip.is-dirty { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+.gw-last { overflow: hidden; color: var(--faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.gh-view { display: grid; gap: 4px; }
+.gh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 6px; }
+.gh-repo { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font: 600 13px/1 var(--font); text-decoration: none; }
+.gh-repo svg { width: 14px; height: 14px; color: var(--sage); }
+.gh-row { display: grid; gap: 3px; padding: 7px 9px; border-radius: 9px; color: var(--text); text-decoration: none; }
+.gh-row:hover { background: var(--bg-hover); }
+.gh-row-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
+.gh-row-top b { flex: none; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gh-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 9px; color: var(--muted); font-size: 12px; }
+.gh-row i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.gh-row i[data-tone="ok"] { background: var(--green); }
+.gh-row i[data-tone="bad"] { background: var(--red); }
+.gh-row i[data-tone="work"] { background: var(--amber); }
+.gh-label { padding: 0 6px; border: 1px solid var(--line-2); border-radius: 999px; }
+.sec-title b { margin-left: 4px; color: var(--faint); font-weight: 500; }

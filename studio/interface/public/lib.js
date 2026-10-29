@@ -1266,11 +1266,12 @@ export function samePath(a, b) {
 
 // --------------------------------------------------------------- inspector
 
-export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "sidechat"];
+export const INSPECTOR_TABS = ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "github", "sidechat"];
 
 // The Worktrees tab exists only while the Orca integration is on.
-export function visibleInspectorTabs(settings) {
-  return INSPECTOR_TABS.filter((tab) => tab !== "worktrees" || settings.orcaEnabled === true);
+// Every tab is always there: Worktrees reads git itself, Orca only adds its board state when it is on.
+export function visibleInspectorTabs() {
+  return INSPECTOR_TABS;
 }
 
 export function resolveInspectorTab(saved, settings) {
@@ -3528,4 +3529,28 @@ export function modelMenuGroups(models, accounts = []) {
   const connected = [...groups.values()].sort((a, b) => Number(a.locked) - Number(b.locked));
   const missing = accounts.filter((account) => account.status === "not_ready" && !groups.has(account.provider)).map((account) => ({ provider: account.provider, label: providerLabel(account.provider), hint: connectHint(account) }));
   return { connected, missing };
+}
+
+// ------------------------------------------------- dev tools (worktrees from git, GitHub)
+
+// One git worktree as the Worktrees tab shows it: name, branch, what is pending and the last commit.
+export function gitWorktreeView(worktree, now = Date.now()) {
+  const name = String(worktree.path ?? "").split(/[\\/]/).filter(Boolean).at(-1) ?? worktree.path;
+  const sync = [worktree.ahead ? `${worktree.ahead} à frente` : "", worktree.behind ? `${worktree.behind} atrás` : ""].filter(Boolean).join(" · ");
+  return {
+    name,
+    branch: worktree.detached ? "HEAD solto" : worktree.branch || "sem branch",
+    changes: worktree.missing ? "pasta não encontrada" : worktree.changed ? `${worktree.changed} ${worktree.changed === 1 ? "arquivo alterado" : "arquivos alterados"}` : "limpa",
+    dirty: Boolean(worktree.changed),
+    sync: sync || (worktree.upstream ? "em dia" : "sem upstream"),
+    last: worktree.last ? `${worktree.last.subject} · ${relativeTime(worktree.last.at, now)}` : "",
+  };
+}
+
+// A PR line: draft/review state and the checks as one label ("3 ok · 1 falhou").
+export function prView(pr) {
+  const checks = pr.checks ?? { passed: 0, failed: 0, pending: 0 };
+  const parts = [checks.passed ? `${checks.passed} ok` : "", checks.failed ? `${checks.failed} falhou` : "", checks.pending ? `${checks.pending} rodando` : ""].filter(Boolean);
+  const review = { APPROVED: "aprovado", CHANGES_REQUESTED: "pede mudanças", REVIEW_REQUIRED: "aguarda revisão" }[pr.review] ?? "";
+  return { tone: checks.failed ? "bad" : checks.pending ? "work" : parts.length ? "ok" : "idle", checks: parts.join(" · ") || "sem checks", state: pr.draft ? "rascunho" : review };
 }

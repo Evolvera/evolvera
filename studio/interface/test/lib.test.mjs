@@ -695,7 +695,7 @@ describe("inspector layout", () => {
     assert.equal(lib.tabKeyTarget("End", 0, 4), 3);
     assert.equal(lib.tabKeyTarget("Enter", 0, 4), null);
     assert.equal(lib.tabKeyTarget("ArrowRight", 0, 0), null);
-    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "sidechat"]);
+    assert.deepEqual(lib.INSPECTOR_TABS, ["terminal", "tasks", "subagents", "context", "files", "browser", "worktrees", "github", "sidechat"]);
   });
 
   test("clampPanelWidth keeps 320px..60% and falls back to 460px", () => {
