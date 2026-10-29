@@ -1,0 +1,11 @@
+const p = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));
+const from = Number(process.argv[3] || 25) * 1e6;
+const byId = new Map(p.nodes.map((n) => [n.id, n])); const parent = new Map(); for (const n of p.nodes) for (const c of n.children || []) parent.set(c, n.id);
+let t = 0; const buckets = {}; const inc = new Map(); let busy = 0, span = 0;
+p.samples.forEach((id, i) => { const d = p.timeDeltas[i] || 0; t += d; const f = byId.get(id).callFrame.functionName;
+  const b = Math.floor(t / 5e6) * 5; buckets[b] ??= 0; if (f !== "(idle)" && f !== "(program)") buckets[b] += d / 1000;
+  if (t < from) return; span += d; if (f === "(idle)" || f === "(program)") return; busy += d;
+  const seen = new Set(); let cur = id; while (cur !== undefined) { const cf = byId.get(cur).callFrame; const k = `${cf.functionName || "(anon)"} ${cf.url.split("/").slice(-1)[0]}:${cf.lineNumber + 1}`; if (!seen.has(k)) { seen.add(k); inc.set(k, (inc.get(k) || 0) + d); } cur = parent.get(cur); } });
+console.log("busy ms per 5s:", Object.entries(buckets).map(([k, v]) => `${k}s:${Math.round(v)}`).join(" "));
+console.log(`steady from ${from / 1e6}s: busy ${Math.round(busy / 1000)} ms of ${Math.round(span / 1000)} ms = ${(busy / span * 100).toFixed(1)}%`);
+[...inc].filter(([k]) => /\.mjs|\.js/.test(k) && !/prof-run|node:/.test(k)).sort((a, b) => b[1] - a[1]).slice(0, 30).forEach(([k, v]) => console.log(Math.round(v / 1000), k));
