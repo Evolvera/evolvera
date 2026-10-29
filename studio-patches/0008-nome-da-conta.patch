@@ -15,7 +15,7 @@ index d045e68..31c1445 100644
      "Cada linha do log é um objeto JSON e a mais nova é a última: leia primeiro o final do arquivo (read com offset perto do fim, ou grep) antes de responder.",
      `Os logs dos subagentes são os arquivos .jsonl da mesma pasta (${path.dirname(sessionPath)}) cuja primeira linha tem "parentSession" igual a ${sessionPath}.`,
 diff --git a/interface/public/app.js b/interface/public/app.js
-index 6115383..c6e4a67 100644
+index 6115383..9ed840f 100644
 --- a/interface/public/app.js
 +++ b/interface/public/app.js
 @@ -297,7 +297,7 @@ const els = {
@@ -27,7 +27,16 @@ index 6115383..c6e4a67 100644
  try {
    Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}"));
  } catch {
-@@ -1402,8 +1402,10 @@ function updateHeader() {
+@@ -457,6 +457,8 @@ async function fetchTreeChildren(parent, offset) {
+ async function fetchTreeAncestors(session) {
+   const query = new URLSearchParams({ session });
+   const response = await fetch(`/api/tree?${query}`, { cache: "no-store", headers: { "x-pi-studio-token": apiToken } });
++  // A conversation not yet written to disk (a new one, Vorcaro's) has no chain: not found, not an error toast.
++  if (response.status === 404) return null;
+   if (!response.ok) throw new Error(`HTTP ${response.status}`);
+   return response.json();
+ }
+@@ -1402,8 +1404,10 @@ function updateHeader() {
    els.projectTitle.textContent = els.app.dataset.view === "vorcaro" ? "Vorcaro" : stripPictographs(project?.name) || project?.name || "PI Studio";
    updateHeaderState();
    els.modeLabel.textContent = project ? `Agente · ${project.name}` : "Agente";
@@ -40,7 +49,7 @@ index 6115383..c6e4a67 100644
  }
  
  function updateModelButton() {
-@@ -4361,7 +4363,7 @@ function openCustomize() {
+@@ -4361,7 +4365,7 @@ function openCustomize() {
  
  els.customizeDialog.addEventListener("close", () => {
    if (els.customizeDialog.returnValue !== "save") return;
