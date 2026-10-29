@@ -465,10 +465,10 @@ index d0cdf05..bbb53bf 100644
    }
  
 diff --git a/interface/public/styles.css b/interface/public/styles.css
-index 4e86b79..00c5743 100644
+index 4e86b79..c0b0aa1 100644
 --- a/interface/public/styles.css
 +++ b/interface/public/styles.css
-@@ -1529,3 +1529,71 @@ html[data-motion="reduce"] .mic-live.is-recording .mic-dot { animation: none !im
+@@ -1529,3 +1529,75 @@ html[data-motion="reduce"] .mic-live.is-recording .mic-dot { animation: none !im
  @keyframes ax-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
  @media (prefers-reduced-motion: reduce) { .agent-exchange { animation: none; } }
  :root[data-motion="reduce"] .agent-exchange { animation: none; }
@@ -540,12 +540,16 @@ index 4e86b79..00c5743 100644
 +.vc-chip[data-state="aguardando"], .vc-chip[data-state="parado"] { background: var(--c-amber-soft); border-color: transparent; color: var(--amber); }
 +.vc-chip[data-state="bloqueado"] { background: var(--c-red-soft); border-color: transparent; color: var(--red); }
 +.vc-target { display: grid; gap: 2px; margin: 0; color: var(--faint); font-size: 12px; word-break: break-all; }
++.vc-review { margin: 0; color: var(--amber); font-size: 12px; }
++.vc-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
++.vc-field input, .vc-field textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; }
++.vc-field input:focus-visible, .vc-field textarea:focus-visible { outline: 2px solid var(--sage); outline-offset: 0; }
 diff --git a/interface/public/vorcaro.js b/interface/public/vorcaro.js
 new file mode 100644
-index 0000000..3b25c1f
+index 0000000..b17de8b
 --- /dev/null
 +++ b/interface/public/vorcaro.js
-@@ -0,0 +1,193 @@
+@@ -0,0 +1,214 @@
 +// Vorcaro, a inteligência Master: board of the recent sessions plus a chat with the read-only Vorcaro side PI.
 +// Vorcaro only proposes; a proposal ("vorcaro-acao" block) becomes a card, and only the user's click sends it
 +// (the chosen conversation is reopened first, then the server sends one /goal to it).
@@ -602,6 +606,17 @@ index 0000000..3b25c1f
 +  };
 +}
 +
++// The action as the user left it in the card: target unchanged (folder and conversation are not editable), text fields
++// from the form, checklist one item per line.
++export function reviewedAction(original, { objetivo, checklist, instrucoes } = {}) {
++  return {
++    ...original,
++    objetivo: String(objetivo ?? original.objetivo).trim().slice(0, 400),
++    checklist: String(checklist ?? original.checklist.join("\n")).split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 12),
++    instrucoes: String(instrucoes ?? original.instrucoes).trim().slice(0, 2000),
++  };
++}
++
 +const DEMAND_LABELS = { enviado: "enviado", trabalhando: "trabalhando", aguardando: "aguardando você", bloqueado: "bloqueado", parado: "parou sem concluir", concluido: "concluído e verificado" };
 +
 +// What a sent demand shows: its state in words, when it was sent and the checklist progress of the target session.
@@ -618,15 +633,18 @@ index 0000000..3b25c1f
 +  let timer = null;
 +  let board = null;
 +
++  // The proposal is model-written (and the model may have read third-party text in a log), so the objective, checklist
++  // and instructions are editable fields: what is sent is what the user sees and approves, not the original block.
 +  function actionHtml(action) {
 +    const id = `p${proposals.size + 1}`;
 +    proposals.set(id, action);
-+    const checklist = action.checklist.length ? `<ul class="vc-check">${action.checklist.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : "";
 +    return `<div class="vc-action" data-proposal="${id}">
 +      <p class="vc-action-head">${svg("i-send")}<span>Enviar para <strong>${esc(projectName(action.projeto))}</strong>${action.sessao ? " (conversa indicada)" : " (conversa atual do projeto)"}</span></p>
++      <p class="vc-review">Proposta escrita pelo Vorcaro. Revise e edite antes de enviar.</p>
 +      <p class="vc-target"><span>Pasta: ${esc(action.projeto)}</span>${action.sessao ? `<span>Conversa: ${esc(action.sessao)}</span>` : ""}</p>
-+      <p class="vc-goal">${esc(action.objetivo)}</p>${checklist}
-+      ${action.instrucoes ? `<p class="vc-instr">${esc(action.instrucoes)}</p>` : ""}
++      <label class="vc-field"><span>Objetivo</span><input type="text" data-field="objetivo" maxlength="400" value="${esc(action.objetivo)}" /></label>
++      <label class="vc-field"><span>Aceite (um item por linha)</span><textarea data-field="checklist" rows="${Math.min(6, Math.max(2, action.checklist.length))}">${esc(action.checklist.join("\n"))}</textarea></label>
++      <label class="vc-field"><span>Instruções</span><textarea data-field="instrucoes" rows="3" maxlength="2000">${esc(action.instrucoes)}</textarea></label>
 +      <div class="vc-action-foot"><span>Vai como /goal: a sessão trabalha até concluir e verificar o aceite.</span><button type="button" class="btn btn-primary vc-send" data-send="${id}">Enviar para a sessão</button></div>
 +    </div>`;
 +  }
@@ -690,8 +708,15 @@ index 0000000..3b25c1f
 +  }
 +
 +  async function sendProposal(id, button) {
-+    const action = proposals.get(id);
-+    if (!action) return;
++    const original = proposals.get(id);
++    if (!original) return;
++    const card = button.closest(".vc-action");
++    const field = (name) => card?.querySelector(`[data-field="${name}"]`)?.value;
++    const action = reviewedAction(original, { objetivo: field("objetivo"), checklist: field("checklist"), instrucoes: field("instrucoes") });
++    if (!action.objetivo) {
++      els.notice.textContent = "Escreva o objetivo antes de enviar.";
++      return;
++    }
 +    button.disabled = true;
 +    button.textContent = "Enviando";
 +    try {
@@ -882,10 +907,10 @@ index aac475c..030cbd1 100644
      }
 diff --git a/interface/test/vorcaro.test.mjs b/interface/test/vorcaro.test.mjs
 new file mode 100644
-index 0000000..e1a5408
+index 0000000..8d5f3a8
 --- /dev/null
 +++ b/interface/test/vorcaro.test.mjs
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,251 @@
 +// Vorcaro: session digests, board, proposals and the /goal handoff. Synthetic logs, fake PI and run-owned temp dirs only.
 +import assert from "node:assert/strict";
 +import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
@@ -894,7 +919,7 @@ index 0000000..e1a5408
 +import { after, before, describe, test } from "node:test";
 +import { fileURLToPath } from "node:url";
 +import { buildBoard, createDigestIndex, digestColumn, digestsMarkdown, goalMessage, parseActions, scanDigest, validateAction } from "../lib-server/vorcaro.mjs";
-+import { cardView, demandView, splitVorcaroAnswer } from "../public/vorcaro.js";
++import { cardView, demandView, reviewedAction, splitVorcaroAnswer } from "../public/vorcaro.js";
 +
 +const here = path.dirname(fileURLToPath(import.meta.url));
 +const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-vorcaro-"));
@@ -1051,6 +1076,13 @@ index 0000000..e1a5408
 +    assert.equal(parts[1].action.objetivo, "Fechar o Pix");
 +    assert.deepEqual(splitVorcaroAnswer("```vorcaro-acao\n{x\n```").map((part) => part.type), ["text"]);
 +    assert.deepEqual(splitVorcaroAnswer("só texto").map((part) => part.text), ["só texto"]);
++  });
++
++  test("reviewedAction sends what the user left in the card; the target never changes", () => {
++    const original = { acao: "enviar", projeto: projectDir, sessao: "", objetivo: "A", checklist: ["x"], instrucoes: "faça y" };
++    assert.deepEqual(reviewedAction(original, { objetivo: " B ", checklist: "um\n\n dois \n", instrucoes: "" }), { ...original, objetivo: "B", checklist: ["um", "dois"], instrucoes: "" });
++    assert.deepEqual(reviewedAction(original), original, "untouched fields keep the proposal");
++    assert.equal(reviewedAction(original, { objetivo: "x".repeat(500) }).objetivo.length, 400);
 +  });
 +
 +  test("cardView and demandView: progress, pending question, cost only from one cent", async () => {
