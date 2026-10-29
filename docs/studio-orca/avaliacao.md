@@ -83,6 +83,10 @@ Subir a versão do Studio: `node scripts\studio\sync-studio.mjs --latest`, confe
 
 Ligar a voz com o Python 3.12 deste PC: instalar `faster-whisper` nele e definir `PI_STUDIO_PYTHON` com o caminho do `python.exe` antes de abrir o Studio.
 
+## Segunda rodada (desempenho e Orca no Studio)
+
+Medições de CPU e RAM, as correções e os controles do Orca dentro do Studio estão em [desempenho.md](desempenho.md). As mudanças no Studio vão como patch em `studio-patches/`, aplicado pelo `sync-studio` sobre o commit fixado.
+
 ## Fica para depois
 
 - Pedir ao Miguel que o teste de voz respeite `PI_STUDIO_PYTHON` (hoje ele chama `py -3.14` fixo).
