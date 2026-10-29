@@ -75,6 +75,17 @@ assert.equal(appended.length, 1, "selecting a virtual model persists a reset");
 assert.equal(appended[0].customType, VIRTUAL_MODEL_STATE_ENTRY);
 assert.equal(appended[0].data.modelId, "conductor");
 assert.equal(appended[0].data.state.step, 0);
+// heavy is the one deliberate exception to "fallbacks mirror the primary effort": it keeps xhigh.
+assert.deepEqual(FALLBACK_CHAINS.heavy.map(({ model, level }) => ({ model, level })), [
+  { model: "gpt-6.1-terra", level: "inherit" },
+  { model: "deepseek-v4.1-flash-fast", level: "xhigh" },
+  { model: "claude-haiku-5-5", level: "xhigh" },
+]);
+assert.deepEqual(FALLBACK_CHAINS.builder.map(({ model, level }) => ({ model, level })), [
+  { model: "gpt-6-luna", level: "inherit" },
+  { model: "deepseek-v4.1-flash-fast", level: "high" },
+  { model: "claude-haiku-5-5", level: "inherit" },
+]);
 for (const [id, name] of [["builder", "GPT-6 Luna"], ["heavy", "GPT-6.1 Terra"], ["sol", "GPT-6.1 Sol"], ["terra", "GPT-6.1 Terra"], ["luna", "GPT-6 Luna"]]) {
   const metadata = virtualModels.get(`fallback/${id}`);
   assert.equal(metadata.name, name, `${id} exposes its step-0 physical model name`);

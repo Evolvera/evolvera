@@ -30,8 +30,8 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   ],
   heavy: [
     { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-    { provider: "anthropic", model: "claude-haiku-5-5", level: "inherit" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "xhigh" },
+    { provider: "anthropic", model: "claude-haiku-5-5", level: "xhigh" },
   ],
   sol: [
     { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
