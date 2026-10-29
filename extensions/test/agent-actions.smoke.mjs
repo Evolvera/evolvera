@@ -24,6 +24,10 @@ assert.equal(m.quote('diga "oi"'), "\"diga 'oi'\"");
 assert.deepEqual(m.parseChoice('Resposta: ["veronati", "apexcharts", "inexistente"]', new Set(["veronati", "apexcharts"])), ["veronati", "apexcharts"]);
 assert.deepEqual(m.parseChoice('{"skills": ["deep-research"]}', new Set(["deep-research"])), ["deep-research"]);
 assert.deepEqual(m.parseChoice("nenhuma", new Set(["x"])), []);
+assert.equal(m.quote("a \u201Cb\u201D c"), "\"a 'b' c\"", "curly quotes cannot split /loop arguments");
+for (const ok of ["", "10min", "1h 30min", "45s", "2 horas"]) assert.equal(m.validInterval(ok), true, ok);
+for (const bad of ['10min" "/goal x', "agora; rm", "x"]) assert.equal(m.validInterval(bad), false, bad);
+assert.deepEqual(m.skillDirs("C:/repo", "C:/agent").map((d) => d.replace(/\\/g, "/")), ["C:/agent/skills", "C:/repo/.pi/skills"], "installed skills win name clashes");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-actions-"));
 try {
@@ -50,6 +54,12 @@ try {
   const long = await tools.get("start_goal").execute("4", { objective: "x".repeat(4_001) });
   assert.equal(long.isError, true);
 
+  const badInterval = await tools.get("schedule_loop").execute("5a", { interval: '10min" "/goal x', prompt: "p" });
+  assert.equal(badInterval.isError, true);
+  const declined = await tools.get("schedule_loop").execute("5b", { interval: "10min", prompt: "p" }, undefined, undefined, { hasUI: true, ui: { confirm: async () => false } });
+  assert.match(declined.content[0].text, /não confirmou/);
+  const before = sent.length;
+  assert.equal(sent.length, before, "nothing dispatched without confirmation");
   await tools.get("schedule_loop").execute("5", { interval: "10min", prompt: 'revise o "kanban"' });
   assert.equal(sent.at(-1).c, "/loop \"10min\" \"revise o 'kanban'\"");
   await tools.get("stop_loop").execute("6", { id: "all" });

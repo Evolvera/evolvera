@@ -33,8 +33,9 @@ export function matchSkills(prompt: string, available: Set<string>): string[] {
   return Object.entries(SKILL_TRIGGERS).filter(([name, re]) => available.has(name) && re.test(prompt)).map(([name]) => name);
 }
 
+/** Installed (global) skills come first so a cloned repository cannot shadow them by name. */
 export function skillDirs(cwd: string, agentDir: string): string[] {
-  return [join(cwd, ".pi", "skills"), join(agentDir, "skills")];
+  return [join(agentDir, "skills"), join(cwd, ".pi", "skills")];
 }
 
 export function listSkills(dirs: string[]): Map<string, string> {
@@ -76,8 +77,14 @@ export function parseChoice(reply: string, known: Set<string>): string[] {
   } catch { return []; }
 }
 
+/** Quotes one /loop argument; every double-quote variant becomes a single quote so it cannot split arguments. */
 export function quote(value: string): string {
-  return `"${value.replace(/"/g, "'")}"`;
+  return `"${value.replace(/["\u201C\u201D\u201E\u00AB\u00BB]/g, "'")}"`;
+}
+
+/** "" (schedule read from the prompt) or durations like "10min", "1h 30min", "45s". */
+export function validInterval(value: string): boolean {
+  return value === "" || /^(\d+\s*(d|h|min|m|s|seg|segundos?|minutos?|horas?|dias?)\s*)+$/i.test(value.trim());
 }
 
 export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir()): void {
@@ -102,7 +109,8 @@ export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir())
   const text = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], details: {}, ...(isError ? { isError: true } : {}) });
   const dispatch = (command: string) => pi.sendUserMessage(command, { expandPromptTemplates: true, deliverAs: "followUp" });
 
-  const installed = catalog(listSkills(skillDirs(process.cwd(), agentDir)));
+  // The catalog and the router use only installed skills; project-local ones stay reachable by name via `skill`.
+  const installed = catalog(listSkills([join(agentDir, "skills")]));
   const catalogText = [...installed].map(([name, summary]) => `- ${name}: ${summary}`).join("\n");
   pi.registerTool({
     name: "skill",
@@ -139,10 +147,17 @@ export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir())
     label: "Schedule Loop",
     description: 'Repeat a prompt on a schedule in this session (the /loop command). interval like "10min", "1h 30min" or "" to read the schedule from the prompt ("10 vezes de 10 em 10 min").',
     parameters: Type.Object({ interval: Type.String(), prompt: Type.String() }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       const prompt = String(params.prompt ?? "").trim();
+      const interval = String(params.interval ?? "").trim();
       if (!prompt) return text("Prompt vazio.", true);
-      dispatch(`/loop ${quote(String(params.interval ?? "").trim())} ${quote(prompt)}`);
+      if (!validInterval(interval)) return text(`Intervalo inválido: "${interval}". Use algo como "10min", "1h 30min" ou "".`, true);
+      // A loop keeps running after this turn, so a human confirms it whenever there is a UI to ask.
+      const ui = (ctx as { hasUI?: boolean; ui?: { confirm?: (t: string, m: string) => Promise<boolean> } } | undefined);
+      if (ui?.hasUI && ui.ui?.confirm && !(await ui.ui.confirm("Agendar loop?", `${interval || "(intervalo no texto)"} · ${prompt.slice(0, 300)}`))) {
+        return text("O usuário não confirmou o loop; nada foi agendado.");
+      }
+      dispatch(`/loop ${quote(interval)} ${quote(prompt)}`);
       return text("Loop enviado ao /loop; ele confirma o agendamento em seguida.");
     },
   });
