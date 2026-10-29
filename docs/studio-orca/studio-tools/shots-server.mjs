@@ -33,7 +33,8 @@ names.forEach(([name, branch, column, task, agentState], i) => {
   const file = path.join(agent, "sessions", "--loja-online--", "rich-checkout.jsonl");
   const t = (s) => new Date(now - 600_000 + s * 1000).toISOString();
   let n = 0;
-  const msg = (s, message) => ({ type: "message", id: `r${++n}`, timestamp: t(s), message: { timestamp: Date.parse(t(s)), ...message } });
+  // Answers carry provider/model/thinkingLevel like real PI messages (the stage and the HUD read the model from them).
+  const msg = (s, message) => ({ type: "message", id: `r${++n}`, timestamp: t(s), message: { timestamp: Date.parse(t(s)), ...(message.role === "assistant" ? { provider: "openai-codex", model: "gpt-6.1-sol", thinkingLevel: "medium" } : {}), ...message } });
   const result = (s, toolCallId, toolName, text, details = {}, isError = false) => msg(s, { role: "toolResult", toolCallId, toolName, content: [{ type: "text", text }], details, isError });
   const lines = [
     { type: "session", version: 3, id: "rich-checkout", timestamp: t(0), cwd: dir },
@@ -112,6 +113,25 @@ const teamDir = path.join(agent, "teams", "painel-fechamento");
       block: { kind: "decision", question: "Os lembretes saem pelo WhatsApp. Qual horário padrão você prefere: 9h ou 18h?" } },
   ];
   writeFileSync(path.join(data, "vorcaro-demandas.json"), JSON.stringify(demands));
+  // Ambientes (the board filter and the context Vorcaro assumes) and two saved Vorcaro conversations for "Conversas".
+  writeFileSync(path.join(data, "ambientes.json"), JSON.stringify([
+    { id: "amb-loja", name: "Loja virtual", cwd: loja, createdAt: now - 9 * 86_400_000 },
+    { id: "amb-fin", name: "Financeiro", cwd: path.join(roots, "painel-financeiro"), createdAt: now - 9 * 86_400_000 },
+    { id: "amb-mkt", name: "Marketing", cwd: agenda, createdAt: now - 9 * 86_400_000 },
+  ]));
+  const conversas = path.join(data, "conversas");
+  mkdirSync(conversas, { recursive: true });
+  const saved = (name, minutesAgo, pairs) => {
+    const at = (i) => new Date(now - minutesAgo * 60_000 + i * 30_000).toISOString();
+    const lines = [{ type: "session", version: 3, id: name, timestamp: at(0), cwd: data },
+      ...pairs.flatMap(([ask, answer], i) => [
+        { type: "message", id: `${name}-u${i}`, timestamp: at(i * 2 + 1), message: { role: "user", content: [{ type: "text", text: `[Contexto do Studio: todos os ambientes.]\n\n${ask}` }] } },
+        { type: "message", id: `${name}-a${i}`, timestamp: at(i * 2 + 2), message: { role: "assistant", content: [{ type: "thinking", thinking: "raciocínio fora da tela" }, { type: "text", text: answer }] } },
+      ])];
+    writeFileSync(path.join(conversas, `${name}.jsonl`), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
+  };
+  saved("vc-fechamento", 180, [["Como está o fechamento de setembro?", "O saldo inicial foi corrigido e os 18 testes passaram. Falta o gráfico de entradas e saídas, que está com a sessão graficos."]]);
+  saved("vc-semana", 1500, [["O que ficou parado nesta semana?", "Duas frentes: os lembretes por WhatsApp esperam o horário padrão e o fluxo de caixa tem dois itens abertos."]]);
   const audit = [
     [sent, "dm-pix", "dispatched", "user", { project: "loja-online" }], [sent + 18 * 60_000, "dm-pix", "verify_result", "vorcaro", { ok: false }],
     [sent + 20 * 60_000, "dm-pix", "continuation_sent", "vorcaro", { attempt: 1 }], [sent + 40 * 60_000, "dm-pix", "verify_result", "vorcaro", { ok: true }], [sent + 40 * 60_000, "dm-pix", "done", "vorcaro", {}],
@@ -138,11 +158,13 @@ writeFileSync(replyFile, [
   JSON.stringify(action),
   "```",
 ].join("\n"));
+// PI settings the HUD reads (default model and effort, auto-compaction reserve), as in NatiamG.
+writeFileSync(path.join(agent, "settings.json"), JSON.stringify({ defaultProvider: "openai-codex", defaultModel: "gpt-6.1-sol", defaultThinkingLevel: "medium", compaction: { reserveTokens: 65536 } }));
 const orcaState = path.join(temp, "orca.json");
 writeFileSync(orcaState, JSON.stringify({ mode: "normal", active: worktrees[0].path, worktrees }));
 const env = { ...process.env, PI_WEB_PORT: "4198", PI_WEB_HOST: "127.0.0.1", PI_AGENT_DIR: agent, PI_PROJECT_ROOTS: JSON.stringify([roots]),
   PI_WEB_PI_BIN: process.execPath, PI_WEB_PI_BIN_ARGS: JSON.stringify([path.join(studio, "test", "fake-pi-rpc.mjs")]),
-  PI_STUDIO_ORCA_BIN: process.execPath, PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.join(studio, "test", "fake-orca.mjs")]), FAKE_ORCA_STATE: orcaState, FAKE_PI_REPLY_FILE: replyFile, PI_STUDIO_AMBIENTES_HOME: path.join(temp, "home") };
+  PI_STUDIO_ORCA_BIN: process.execPath, PI_STUDIO_ORCA_BIN_ARGS: JSON.stringify([path.join(studio, "test", "fake-orca.mjs")]), FAKE_ORCA_STATE: orcaState, FAKE_PI_REPLY_FILE: replyFile, FAKE_PI_MODEL: "openai-codex/gpt-6.1-luna", FAKE_PI_CONTEXT_PERCENT: "63", PI_STUDIO_AMBIENTES_HOME: path.join(temp, "home") };
 const server = spawn(process.execPath, [path.join(studio, "server.mjs")], { cwd: studio, env, stdio: "inherit" });
 console.log(`temp ${temp}`);
 server.on("exit", (code) => process.exit(code ?? 0));
