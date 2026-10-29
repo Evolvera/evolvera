@@ -1,0 +1,30 @@
+# Patches do PI Studio
+
+O código do PI Studio mora em `interface/` no branch `MiguelNevesZane`. O NatiamG instala esse código no commit fixado em `config/studio-source.json` e aplica por cima os patches desta pasta, em ordem de nome. Quem faz isso é `scripts/studio/sync-studio.mjs`, chamado pelo `install.ps1` e pelo `install.sh`.
+
+Regras que o sync confere antes de instalar:
+
+- cada patch é um `git diff` (precisa ter `diff --git`);
+- só toca arquivos dentro de `interface/`;
+- não cria link simbólico nem submódulo, nem toca arquivo com cara de segredo;
+- aplica limpo no commit fixado; se não aplicar, nada é instalado;
+- depois dos patches roda o `npm test` do Studio, já com os testes que os patches trazem. Se a primeira rodada falhar, ela é repetida uma vez (um teste do Studio depende de tempo); uma falha que se repete bloqueia a instalação.
+
+Os bytes ficam exatos (`.gitattributes` marca `*.patch` como `-text`), então o `core.autocrlf` do Windows não altera os patches.
+
+## Patches
+
+| Arquivo | O que muda |
+|---|---|
+| `0001-desempenho-e-orca.patch` | Leitura da lista de processos no Windows com um PowerShell persistente; árvore de conversas sem normalizar caminho por par projeto e sessão, e sem reler sessões paradas a cada 2 s; Orca fechado em cache de 15 s; árvore aceita Orca de até 10 s e lista de processos de até 15 s; Orca consultado a cada 15 s quando só o selo da barra precisa dele. No Orca: coluna do quadro e botão "Abrir PI no Orca" em cada worktree da visão geral. Testes novos em `test/orca-write.test.mjs` e nos arquivos de teste já existentes. |
+
+Medições e método: `docs/studio-orca/desempenho.md`.
+
+## Como mudar um patch
+
+1. Extraia o Studio sem os patches: `node scripts/studio/sync-studio.mjs --no-patches --extract-only <pasta>`.
+2. Dentro de `<pasta>`, crie um repositório com `core.autocrlf=false` e commite a base.
+3. Aplique os patches atuais (`git apply studio-patches/*.patch`), edite e rode `npm test` em `<pasta>/interface`.
+4. Gere de novo com `git diff --no-color -- interface > studio-patches/0001-....patch` e confira com `node scripts/studio/sync-studio.mjs --extract-only <outra-pasta>`.
+
+Ao subir o commit fixado em `config/studio-source.json`, os patches precisam aplicar no commit novo. Se o Miguel incorporar uma mudança, o patch correspondente sai daqui.
