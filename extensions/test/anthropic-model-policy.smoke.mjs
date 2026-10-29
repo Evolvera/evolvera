@@ -300,7 +300,7 @@ for (const model of gpt56CodexModels) {
 
 const expectedRoutes = {
   "agents/builder-design.md": { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", thinking: "high" },
-  "agents/builder-heavy-design.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
+  "agents/builder-heavy-design.md": { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", thinking: "xhigh" },
   "agents/website-designer.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "xhigh" },
   "agents/plan-briefer-fable.md": { id: "claude-opus-5-5", label: "Claude Opus 5.5", thinking: "high" },
 };
@@ -330,9 +330,9 @@ for (const [relativePath, model] of Object.entries(preservedHomeRoutes)) {
   assert.doesNotMatch(frontmatter, /claude-opus-5/);
 }
 assert.match(read("agents/builder-heavy.md"), /^model: openai-codex\/gpt-6\.1-terra$/m);
-assert.match(read("agents/builder-heavy.md"), /^thinking: xhigh$/m);
-assert.match(read("agents/builder-heavy.md"), /Model: openai-codex\/gpt-6\.1-terra xhigh\./);
-assert.match(read("agents/builder-heavy.md"), /GPT-6\.1 Terra · xhigh/);
+assert.match(read("agents/builder-heavy.md"), /^thinking: medium$/m);
+assert.match(read("agents/builder-heavy.md"), /Model: openai-codex\/gpt-6\.1-terra medium\./);
+assert.match(read("agents/builder-heavy.md"), /GPT-6\.1 Terra · medium/);
 for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"]) {
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
 }
@@ -349,7 +349,7 @@ assert.match(read("README.md"), /450K/);
 
 const agentGuide = read("skills/agent-guide/SKILL.md");
 assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Sonnet 5\.5 high\) \|/);
-assert.match(agentGuide, /\| Heavy Design \| `builder-heavy-design` \| Exceptional design tier \(Claude Opus 5\.5 high\) \|/);
-assert.match(agentGuide, /\| Heavy \| `builder-heavy` \| Exceptional local-integration\/correctness tier \(GPT-6\.1 Terra xhigh\) \|/);
+assert.match(agentGuide, /\| Heavy Design \| `builder-heavy-design` \| Exceptional design tier \(Claude Sonnet 5\.5 xhigh\) \|/);
+assert.match(agentGuide, /\| Heavy \| `builder-heavy` \| Exceptional local-integration\/correctness tier \(GPT-6\.1 Terra medium\) \|/);
 
 console.log("anthropic-model-policy smoke: PASS");

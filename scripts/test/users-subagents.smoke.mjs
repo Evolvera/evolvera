@@ -324,10 +324,10 @@ try {
   const commonMap = customAgents.loadCustomAgents(repo);
   assert.ok(commonMap.size > 0, "empty private agent root discovers admitted common agents");
   for (const [name, model, thinking] of [
-    ["builder-heavy", "openai-codex/gpt-6.1-terra", "xhigh"],
+    ["builder-heavy", "openai-codex/gpt-6.1-terra", "medium"],
     ["builder", "openai-codex/gpt-6-luna", "high"],
     ["builder-design", "anthropic/claude-sonnet-5-5", "high"],
-    ["builder-heavy-design", "anthropic/claude-opus-5-5", "high"],
+    ["builder-heavy-design", "anthropic/claude-sonnet-5-5", "xhigh"],
     ["scout", "openai-codex/gpt-6-luna", "medium"],
   ]) {
     const agent = commonMap.get(name);

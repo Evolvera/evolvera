@@ -1,10 +1,10 @@
 ---
 name: builder-heavy-design
-description: "Claude Opus 5.5 implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: anthropic/claude-opus-5-5 high."
-display_name: 🎞️ Builder Heavy Design · Claude Opus 5.5 · high
+description: "Claude Sonnet 5.5 implementation agent for exceptional visual work and complex non-visual semantic/declarative tasks: state/relation models, policy/selector systems, grammar/template semantics, and structural transformations. Model: anthropic/claude-sonnet-5-5 xhigh."
+display_name: 🎞️ Builder Heavy Design · Claude Sonnet 5.5 · xhigh
 tools: read, grep, find, ls, bash, write, edit
-model: anthropic/claude-opus-5-5
-thinking: high
+model: anthropic/claude-sonnet-5-5
+thinking: xhigh
 max_turns: 100
 lifecycle: lazy
 prompt_mode: replace
