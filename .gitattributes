@@ -1,2 +1,2 @@
-# Patches do PI Studio aplicados por scripts/studio/sync-studio.mjs: bytes exatos, sem conversão CRLF no Windows.
-/studio-patches/*.patch -text
+# Código do PI Studio (studio/): sempre LF, para os testes e o instalador lerem os mesmos bytes no Windows e no Linux.
+/studio/** text=auto eol=lf

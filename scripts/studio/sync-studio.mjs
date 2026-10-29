@@ -1,30 +1,24 @@
 #!/usr/bin/env node
 /**
- * Instala ou atualiza o PI Studio (~/.pi/agent/studio) a partir do commit fixado em config/studio-source.json.
+ * Instala ou atualiza o PI Studio (~/.pi/agent/studio) a partir de studio/ deste repositório.
  *
- * Por quê: o Studio é desenvolvido no branch MiguelNevesZane, fora desta distribuição (main ignora /interface/).
- * Sem este passo, a cópia instalada no PC fica congelada na versão do dia em que foi instalada, enquanto o atalho
- * da Área de Trabalho continua abrindo essa versão velha.
+ * Por quê: o Studio é código desta branch (studio/, ver studio/README.md). Sem este passo, a cópia instalada no PC
+ * fica congelada na versão do dia em que foi instalada, enquanto o atalho da Área de Trabalho continua abrindo ela.
  *
- * Determinístico: instala exatamente o commit fixado (busca no remoto só se o objeto não existir localmente);
- * `--latest` usa a ponta do branch e imprime o SHA para fixar. Lê do git apenas `interface/` (mais install.ps1 e
- * install.sh do mesmo commit, que os testes do Studio leem), nunca o resto do branch; para tudo se aparecer
- * arquivo com cara de segredo, link simbólico ou submódulo. Roda o `npm test` do Studio antes de trocar a cópia
- * instalada; a troca é atômica (instalador do próprio Studio). Não para um Studio em execução sem `--restart`.
- *
- * Mudanças do NatiamG no Studio ficam em studio-patches/*.patch (diffs sobre o commit fixado, em ordem de nome),
- * aplicados depois da extração e antes dos testes. Um patch só pode tocar interface/, nunca cria link simbólico, e
- * um patch que não aplica limpo para tudo. Ao subir o commit fixado, os patches precisam aplicar no commit novo.
+ * Copia só studio/interface e os dois instaladores do Studio (install.ps1, install.sh, que os testes leem); para
+ * tudo se aparecer arquivo com cara de segredo ou link simbólico. Roda o `npm test` do Studio numa cópia temporária
+ * antes de trocar a instalada; a troca é atômica (instalador do próprio Studio). Não para um Studio em execução sem
+ * `--restart`.
  */
-import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const STUDIO_PORT = 4123;
+export const STUDIO_DIR = 'studio';
 export const EXTRA_PATHS = Object.freeze(['install.ps1', 'install.sh']);
 // O teste exige `py -3.14` (ou python3) e não respeita PI_STUDIO_PYTHON; sem esse Python ele falha por ambiente.
 // Nome sem espaço: vai dentro de NODE_OPTIONS. Só esse teste do Studio tem "NVIDIA" no nome.
@@ -40,32 +34,39 @@ export function looksSecret(file) {
   return SECRET_NAME.test(file) || /(^|\/)config\/jev(\/|$)/i.test(file);
 }
 
-// `git ls-tree -r -z` → [{ mode, type, sha, file }]; só blobs comuns entram, o resto para a sincronização.
-export function parseTree(output) {
-  const entries = [];
-  for (const record of output.split('\0')) {
-    if (!record) continue;
-    const match = /^(\d{6}) (\w+) ([0-9a-f]{40,64})\t(.+)$/s.exec(record);
-    if (!match) throw new Error(`Linha inesperada de git ls-tree: ${JSON.stringify(record)}`);
-    entries.push({ mode: match[1], type: match[2], sha: match[3], file: match[4] });
+// Os arquivos do Studio a instalar, caminhos relativos com "/": só interface/ (sem node_modules) e os instaladores.
+// Segredo ou link simbólico param tudo antes de qualquer cópia.
+export function listStudioFiles(sourceDir) {
+  const files = [];
+  const walk = (relative) => {
+    for (const entry of readdirSync(path.join(sourceDir, relative), { withFileTypes: true })) {
+      const file = relative ? `${relative}/${entry.name}` : entry.name;
+      if (lstatSync(path.join(sourceDir, file)).isSymbolicLink()) throw new Error(`Link simbólico no Studio, nada foi instalado: ${file}`);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules') continue;
+        if (file === 'interface' || file.startsWith('interface/')) walk(file);
+        continue;
+      }
+      if (!entry.isFile() || !isAllowedPath(file)) continue;
+      if (looksSecret(file)) throw new Error(`Arquivo com cara de segredo no Studio, nada foi instalado: ${file}`);
+      files.push(file);
+    }
+  };
+  walk('');
+  if (!files.includes('interface/desktop/install-payload-cli.mjs')) {
+    throw new Error(`${sourceDir} não tem interface/desktop/install-payload-cli.mjs; não parece um PI Studio instalável.`);
   }
-  return entries;
+  return files.sort();
 }
 
-export function selectEntries(entries) {
-  const selected = [];
-  for (const entry of entries) {
-    if (!isAllowedPath(entry.file)) continue;
-    if (looksSecret(entry.file)) throw new Error(`Arquivo com cara de segredo no Studio, nada foi instalado: ${entry.file}`);
-    if (entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode)) {
-      throw new Error(`Entrada não suportada (${entry.mode} ${entry.type}) no Studio, nada foi instalado: ${entry.file}`);
-    }
-    selected.push(entry);
+export function copyStudio(sourceDir, destination) {
+  const files = listStudioFiles(sourceDir);
+  for (const file of files) {
+    const target = path.join(destination, ...file.split('/'));
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(path.join(sourceDir, ...file.split('/')), target);
   }
-  if (!selected.some((entry) => entry.file === 'interface/desktop/install-payload-cli.mjs')) {
-    throw new Error('O commit não tem interface/desktop/install-payload-cli.mjs; não parece um PI Studio instalável.');
-  }
-  return selected;
+  return files;
 }
 
 // Padrão para --test-skip-pattern quando falta o Python que o teste de voz exige; null = rodar tudo.
@@ -80,7 +81,7 @@ function probePython(command, args) {
 }
 
 export function parseArgs(argv) {
-  const options = { latest: false, skipTests: false, shortcuts: false, restart: false, noPatches: false, ref: null, piDir: null, repo: null, source: null, extractOnly: null };
+  const options = { skipTests: false, shortcuts: false, restart: false, piDir: null, sourceDir: null, extractOnly: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const value = () => {
@@ -89,100 +90,21 @@ export function parseArgs(argv) {
       index += 1;
       return next;
     };
-    if (arg === '--latest') options.latest = true;
-    else if (arg === '--skip-tests') options.skipTests = true;
+    if (arg === '--skip-tests') options.skipTests = true;
     else if (arg === '--shortcuts') options.shortcuts = true;
     else if (arg === '--restart') options.restart = true;
-    else if (arg === '--no-patches') options.noPatches = true;
-    else if (arg === '--ref') options.ref = value();
     else if (arg === '--pi-dir') options.piDir = path.resolve(value());
-    else if (arg === '--repo') options.repo = path.resolve(value());
-    else if (arg === '--source') options.source = path.resolve(value());
+    else if (arg === '--source-dir') options.sourceDir = path.resolve(value());
     else if (arg === '--extract-only') options.extractOnly = path.resolve(value());
     else throw new Error(`Opção desconhecida: ${arg}`);
   }
-  if (options.latest && options.ref) throw new Error('Use --latest ou --ref, não os dois.');
   return options;
 }
 
-function git(repo, args, options = {}) {
-  return execFileSync('git', ['-C', repo, ...args], { maxBuffer: 64 * 1024 * 1024, windowsHide: true, ...options });
-}
-
-function hasCommit(repo, ref) {
-  return spawnSync('git', ['-C', repo, 'cat-file', '-e', `${ref}^{commit}`], { windowsHide: true }).status === 0;
-}
-
-export function resolveCommit(repo, source, { latest = false, ref = null } = {}) {
-  if (latest) {
-    git(repo, ['fetch', '--quiet', source.remote, source.branch], { stdio: 'inherit' });
-    return git(repo, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'], { encoding: 'utf8' }).trim();
-  }
-  const wanted = ref ?? source.commit;
-  if (!wanted) throw new Error('config/studio-source.json não tem "commit".');
-  if (!hasCommit(repo, wanted)) {
-    git(repo, ['fetch', '--quiet', source.remote, source.branch], { stdio: 'inherit' });
-    if (!hasCommit(repo, wanted) && /^[0-9a-f]{40}$/.test(wanted)) git(repo, ['fetch', '--quiet', source.remote, wanted], { stdio: 'inherit' });
-    if (!hasCommit(repo, wanted)) throw new Error(`Commit do Studio não encontrado: ${wanted}`);
-  }
-  return git(repo, ['rev-parse', '--verify', `${wanted}^{commit}`], { encoding: 'utf8' }).trim();
-}
-
-export function extractStudio(repo, commit, destination) {
-  const tree = git(repo, ['ls-tree', '-r', '-z', '--full-tree', commit, '--', 'interface', ...EXTRA_PATHS], { encoding: 'utf8' });
-  const entries = selectEntries(parseTree(tree));
-  for (const entry of entries) {
-    const target = path.join(destination, ...entry.file.split('/'));
-    mkdirSync(path.dirname(target), { recursive: true });
-    writeFileSync(target, git(repo, ['cat-file', 'blob', entry.sha]));
-    if (entry.mode === '100755' && process.platform !== 'win32') chmodSync(target, 0o755);
-  }
-  return entries.map((entry) => entry.file);
-}
-
-export const PATCHES_DIR = 'studio-patches';
-
-export function listPatches(repo) {
-  const dir = path.join(repo, PATCHES_DIR);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((name) => name.endsWith('.patch')).sort().map((name) => path.join(dir, name));
-}
-
-// Caminhos que um diff no formato do git toca (`diff --git` e renomeações) e se ele cria link simbólico ou
-// submódulo. Linhas ---/+++ não são lidas: dentro de um trecho elas podem ser conteúdo.
-export function inspectPatch(text) {
-  const files = new Set();
-  let special = false;
-  for (const line of text.split(/\r?\n/)) {
-    const rename = /^(?:rename|copy) (?:from|to) (.+)$/.exec(line);
-    if (rename) files.add(rename[1]);
-    const diff = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-    if (diff) { files.add(diff[1]); files.add(diff[2]); }
-    if (/^(?:new file mode|new mode|old mode|deleted file mode) (?:120000|160000)$/.test(line) || /^index \S+ (?:120000|160000)$/.test(line)) special = true;
-  }
-  return { files: [...files], special };
-}
-
-export function applyPatches(destination, patches) {
-  const applied = [];
-  for (const file of patches) {
-    const text = readFileSync(file, 'utf8');
-    const name = path.basename(file);
-    const { files, special } = inspectPatch(text);
-    if (!files.length) throw new Error(`Patch sem cabeçalho "diff --git" (gere com git diff): ${name}`);
-    const outside = files.find((item) => !item.startsWith('interface/') || item.split('/').includes('..'));
-    if (outside) throw new Error(`Patch ${name} toca ${outside}, fora de interface/; nada foi instalado.`);
-    if (special) throw new Error(`Patch ${name} cria link simbólico ou submódulo; nada foi instalado.`);
-    const blocked = files.find(looksSecret);
-    if (blocked) throw new Error(`Patch ${name} toca arquivo com cara de segredo (${blocked}); nada foi instalado.`);
-    // Sem o teto, um destino dentro de outro repositório faria o git aplicar a partir da raiz dele; sem autocrlf=false,
-    // o core.autocrlf=true comum no Windows gravaria CRLF nos arquivos tocados.
-    const env = { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(path.resolve(destination)) };
-    const result = spawnSync('git', ['-c', 'core.autocrlf=false', 'apply', '--whitespace=nowarn', file], { cwd: destination, env, encoding: 'utf8', windowsHide: true });
-    if (result.status !== 0) throw new Error(`Patch ${name} não aplica no commit fixado: ${(result.stderr || '').trim()}`);
-    applied.push({ name, sha256: createHash('sha256').update(text).digest('hex') });
-  }
-  return applied;
+// O commit desta branch que está sendo instalado, para .source.json; null fora de um checkout git.
+function repoCommit(dir) {
+  const result = spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true });
+  return result.status === 0 ? result.stdout.trim() : null;
 }
 
 function runStudioTests(interfaceDir) {
@@ -248,30 +170,22 @@ function installShortcuts(studioDir, piDir) {
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
-  const repo = options.repo ?? repoRoot;
-  const source = JSON.parse(readFileSync(options.source ?? path.join(repo, 'config', 'studio-source.json'), 'utf8'));
-  const commit = resolveCommit(repo, source, options);
-  console.log(`PI Studio: ${source.remote}/${source.branch} @ ${commit}`);
-  if (options.latest && commit !== source.commit) console.log(`  Para fixar esta versão, grave "commit": "${commit}" em config/studio-source.json.`);
-
-  const patches = options.noPatches ? [] : listPatches(repo);
-  const extract = (destination) => {
-    const files = extractStudio(repo, commit, destination);
-    const applied = applyPatches(destination, patches);
-    console.log(`  ${files.length} arquivos extraídos${applied.length ? `, ${applied.length} patch(es) do NatiamG aplicado(s): ${applied.map((item) => item.name).join(', ')}` : ''}`);
-    return applied;
-  };
+  const sourceDir = options.sourceDir ?? path.join(repoRoot, STUDIO_DIR);
+  if (!existsSync(sourceDir)) throw new Error(`Pasta do Studio não encontrada: ${sourceDir}`);
+  const commit = repoCommit(sourceDir);
+  console.log(`PI Studio: ${sourceDir}${commit ? ` @ ${commit.slice(0, 12)}` : ''}`);
 
   if (options.extractOnly) {
-    extract(options.extractOnly);
-    console.log(`  Em ${options.extractOnly}`);
+    const files = copyStudio(sourceDir, options.extractOnly);
+    console.log(`  ${files.length} arquivos copiados para ${options.extractOnly}`);
     return 0;
   }
 
   const piDir = options.piDir ?? path.join(os.homedir(), '.pi', 'agent');
   const staging = mkdtempSync(path.join(os.tmpdir(), 'pi-studio-sync-'));
   try {
-    const applied = extract(staging);
+    const files = copyStudio(sourceDir, staging);
+    console.log(`  ${files.length} arquivos copiados`);
     const interfaceDir = path.join(staging, 'interface');
     if (options.skipTests) console.log('  --skip-tests: testes do Studio não rodados.');
     else runStudioTests(interfaceDir);
@@ -279,7 +193,7 @@ export async function main(argv = process.argv.slice(2)) {
     const installer = spawnSync(process.execPath, [path.join(interfaceDir, 'desktop', 'install-payload-cli.mjs'), interfaceDir, piDir], { stdio: 'inherit', windowsHide: true });
     if (installer.status !== 0) throw new Error('Falha ao instalar os arquivos do PI Studio.');
     const studioDir = path.join(piDir, 'studio');
-    writeFileSync(path.join(studioDir, '.source.json'), `${JSON.stringify({ ...source, commit, patches: applied, installedAt: new Date().toISOString() }, null, 2)}\n`);
+    writeFileSync(path.join(studioDir, '.source.json'), `${JSON.stringify({ source: 'NatiamG/studio', commit, base: 'MiguelNevesZane@a3a9e74', installedAt: new Date().toISOString() }, null, 2)}\n`);
     if (process.platform === 'win32') {
       mkdirSync(path.join(piDir, 'bin'), { recursive: true });
       // bin\pi-studio.cmd só repassa para o cliente instalado (cli.mjs precisa do public/ ao lado).

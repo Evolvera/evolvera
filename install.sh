@@ -240,7 +240,7 @@ else
 fi
 
 # ── PI Studio (opcional) ──────────────────────
-# O Studio vem do commit fixado em config/studio-source.json (branch MiguelNevesZane), não desta árvore.
+# O Studio vem de studio/ nesta árvore (código da NatiamG, ver studio/README.md).
 # EVOLVERA_STUDIO=1 instala; se já estiver instalado, atualiza sempre, para o atalho não ficar numa versão velha.
 if [ "${EVOLVERA_STUDIO:-}" = 1 ] || [ -f "$PI_DIR/studio/server.mjs" ]; then
     step "PI Studio"

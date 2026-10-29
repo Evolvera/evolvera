@@ -79,13 +79,13 @@ node scripts\studio\sync-studio.mjs --restart
 
 Ou só rodar o `install.ps1` de novo: como o Studio já está instalado, ele é atualizado no fim.
 
-Subir a versão do Studio: `node scripts\studio\sync-studio.mjs --latest`, conferir, gravar o SHA impresso em `config/studio-source.json` e commitar.
+Desde 29/10/2026 o Studio é código desta branch, em `studio/`: mudar lá, rodar `npm test` em `studio/interface` e instalar com `node scripts\studio\sync-studio.mjs` (ver `studio/README.md`).
 
 Ligar a voz com o Python 3.12 deste PC: instalar `faster-whisper` nele e definir `PI_STUDIO_PYTHON` com o caminho do `python.exe` antes de abrir o Studio.
 
 ## Segunda rodada (desempenho e Orca no Studio)
 
-Medições de CPU e RAM, as correções e os controles do Orca dentro do Studio estão em [desempenho.md](desempenho.md). As mudanças no Studio vão como patch em `studio-patches/`, aplicado pelo `sync-studio` sobre o commit fixado.
+Medições de CPU e RAM, as correções e os controles do Orca dentro do Studio estão em [desempenho.md](desempenho.md). Na época as mudanças iam como patch sobre o commit fixado; hoje estão direto em `studio/` (histórico em `studio/HISTORICO.md`).
 
 ## Fica para depois
 

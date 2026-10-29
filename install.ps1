@@ -335,7 +335,7 @@ if (-not $sameRoot) {
 }
 
 # -- PI Studio (opcional) ---------------------------------
-# O Studio vem do commit fixado em config/studio-source.json (branch MiguelNevesZane), nao desta arvore.
+# O Studio vem de studio/ nesta arvore (codigo da NatiamG, ver studio/README.md).
 # Instala com -Studio; se ja estiver instalado, atualiza sempre, para o atalho nao ficar preso numa versao velha.
 $studioDir = Join-Path $PI_DIR "studio"
 $studioInstalled = Test-Path -LiteralPath (Join-Path $studioDir "server.mjs")

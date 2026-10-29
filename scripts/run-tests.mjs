@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,7 @@ const tmpdirProprioPadrao = new Set([
   "team-bus.smoke.mjs", // team mailbox in its own mkdtemp; two in-memory fake sessions
   "autopilot.smoke.mjs", // in-memory fake host and session branch only
   "agent-actions.smoke.mjs", // skills in its own mkdtemp; in-memory fake host; router model off
-  "sync-studio.smoke.mjs", // synthetic upstream/local git repos and extraction only inside its owned mkdtemp
+  "sync-studio.smoke.mjs", // synthetic studio/ folder and --extract-only inside its owned mkdtemp
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
   "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
@@ -155,15 +155,10 @@ for (const dir of ["extensions/test", "scripts/test"]) {
 // --root fornece uma árvore falsa para testar glob/processos sem disparar suítes
 // fixas contra o repositório de trabalho.
 if (root === repoRoot) {
-  const interfaceTest = "npm test (interface)";
-  if (existsSync(path.join(root, "interface", "package.json"))) {
-    console.log("\n[tmpdir próprio] npm test (interface)");
-    executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
-  } else {
-    // /interface/ fica fora desta distribuição (.gitignore); scripts/studio/sync-studio.mjs roda essa suíte
-    // no commit fixado antes de instalar o Studio.
-    resultados.excluidos.push(`${interfaceTest} — interface/ ausente; testada por scripts/studio/sync-studio.mjs`);
-  }
+  // O Studio é código desta branch em studio/. A suíte dele leva perto de um minuto e passa do limite de tempo e de
+  // saída deste runner; quem a roda é scripts/studio/sync-studio.mjs, numa cópia temporária, antes de instalar.
+  // À mão: `npm test` dentro de studio/interface.
+  resultados.excluidos.push("npm test (studio/interface) — roda no scripts/studio/sync-studio.mjs antes de instalar");
 }
 
 console.log("\nResumo final");

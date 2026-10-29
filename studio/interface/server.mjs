@@ -1,0 +1,3238 @@
+#!/usr/bin/env node
+import { createServer } from "node:http";
+import { execFile, execFileSync, spawn } from "node:child_process";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createReadStream, existsSync } from "node:fs";
+import { access, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { availableParallelism, homedir, userInfo } from "node:os";
+import path from "node:path";
+import { createInterface } from "node:readline";
+import { pipeline } from "node:stream";
+import { fileURLToPath } from "node:url";
+import { hasRecentChildActivity, idleThresholdMs, reapIdle } from "./lib-server/idle-reaper.mjs";
+import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
+import { SIDE_TOOLS, buildSidePrompt, createSideRegistry, sideArgs, sideCommand } from "./lib-server/side-chat.mjs";
+import { createTeamReader } from "./lib-server/teams.mjs";
+import { CONDUCTOR_BUDGET, continuationMessage, createAudit, digestFor, isOpenDemand, nextStep, runVerification } from "./lib-server/vorcaro-conductor.mjs";
+import { createGithubMirror, createOrcaMirror, readMirrorConfig } from "./lib-server/vorcaro-mirror.mjs";
+import { VORCARO_INDEX_DAYS, boardFilters, filterBoard, listConversations, readConversation } from "./lib-server/vorcaro.mjs";
+import { autoArchivable, boardChanges, buildBoard, changesMarkdown, claudeSidebar, hiddenFolders, insideIgnored, isArchived, seenSnapshot, buildVorcaroPrompt, createArchive, createDigestIndex, digestColumn, digestsMarkdown, goalMessage, organizationMarkdown, organizeProjects, readSessionDetail, scanClaudeDigest, scanDigest, validateAction } from "./lib-server/vorcaro.mjs";
+import { createAmbientes } from "./lib-server/ambientes.mjs";
+import { createTitleIndex } from "./lib-server/session-titles.mjs";
+import { createTreeService, mapConcurrent } from "./lib-server/tree.mjs";
+import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, escapeHtml, foldText, localDay, newActivityTracker, normalizeOrca, orcaPiTerminalArgs, orcaWorktreeSetArgs, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+import { voice } from "./lib-server/voice.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, "public");
+const DEFAULT_HOST = process.env.PI_WEB_HOST || "127.0.0.1";
+const DEFAULT_PORT = Number.parseInt(process.env.PI_WEB_PORT || "4123", 10);
+let listeningPort = DEFAULT_PORT;
+const apiToken = randomBytes(32).toString("hex");
+const SERVER_ACCOUNT_USERNAME = userInfo().username;
+const AGENT_DIR = process.env.PI_AGENT_DIR || path.join(homedir(), ".pi", "agent");
+const MAX_BODY_BYTES = 30 * 1024 * 1024;
+const HISTORY_LIMIT = 800;
+const SSE_BUFFER_LIMIT = 8 * 1024 * 1024;
+const RETIRED_SESSION_LIMIT = 200;
+const UI_BOOKKEEPING_LIMIT = 1000;
+const SESSION_SCAN_MAX_BYTES = 5 * 1024 * 1024;
+const SEARCH_LIMIT = 30;
+const SEARCH_MIN_CHARS = 2;
+const SEARCH_TEXT_CAP = 64 * 1024;
+const SEARCH_REFRESH_INTERVAL_MS = 15_000;
+const SEARCH_INDEX_CONCURRENCY = 4;
+const LOG_LIMIT = 1000;
+const PROJECT_LIMIT = Number.parseInt(process.env.PI_WEB_PROJECT_LIMIT || "200", 10);
+const PROJECT_MARKERS = new Set([
+  ".git",
+  ".pi",
+  "AGENTS.md",
+  "package.json",
+  "pnpm-workspace.yaml",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "composer.json",
+  "Gemfile",
+  "deno.json",
+]);
+const SKIP_DIRS = new Set([
+  ".Trash",
+  ".cache",
+  ".npm",
+  ".bun",
+  ".config",
+  "Library",
+  "Applications",
+  "Movies",
+  "Music",
+  "Pictures",
+  "node_modules",
+]);
+
+const sessions = new Map();
+const retiredSessions = new Map();
+const projects = new Map();
+// Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
+const addedProjects = new Map();
+// PI_STUDIO_AMBIENTES_HOME: where unnamed ambiente folders go (<home>/PI Ambientes/<nome>); tests point it at a temp dir.
+const AMBIENTES_HOME = process.env.PI_STUDIO_AMBIENTES_HOME || homedir();
+// A folder the user names must already be inside the Studio's boundary (as open-path): a project it knows (history,
+// roots), a folder under a project root or under <home>/PI Ambientes, or an Orca-listed worktree. `real` has links resolved.
+async function ambienteFolderAllowed(real) {
+  const key = cwdKey(real);
+  await knownProjects(projects, discoverProjects);
+  if ([...projects.values()].some((project) => cwdKey(project.cwd) === key)) return true;
+  if ((await getProjectRoots()).some((root) => pathInside(root, real))) return true;
+  if (pathInside(path.join(AMBIENTES_HOME, "PI Ambientes"), real)) return true;
+  const orca = await getOrca();
+  return orca.available === true && orca.worktrees.some((worktree) => cwdKey(worktree.path) === key);
+}
+const ambientes = createAmbientes({ storeFile: path.join(AGENT_DIR, "pi-studio-data", "ambientes.json"), home: AMBIENTES_HOME, key: (cwd) => cwdKey(cwd), allowFolder: ambienteFolderAllowed });
+const serverLogs = [];
+const STALL = stallThresholds(process.env);
+
+// Bounded in-memory feed of notable events of every PI (turn finished, subagents, errors, dialogs, exits).
+// `seq` only grows, so a client polls with `since=<last seq>`; a cursor past the newest seq (server restarted) resets it.
+export class ActivityLog {
+  constructor(limit = ACTIVITY_LIMIT) {
+    this.limit = limit;
+    this.epoch = randomUUID();
+    this.items = [];
+    this.seq = 0;
+  }
+
+  push(entry) {
+    const item = { seq: ++this.seq, ...entry };
+    this.items.push(item);
+    if (this.items.length > this.limit) this.items.shift();
+    return item;
+  }
+
+  since(cursor, epoch) {
+    const reset = (epoch !== undefined && epoch !== this.epoch) || cursor > this.seq;
+    const from = reset ? 0 : cursor;
+    return { items: this.items.filter((item) => item.seq > from), seq: this.seq, reset, epoch: this.epoch };
+  }
+}
+
+export const activityLog = new ActivityLog();
+
+function recordLog(level, message, details = undefined) {
+  const entry = { at: new Date().toISOString(), level, message, details };
+  serverLogs.push(entry);
+  if (serverLogs.length > LOG_LIMIT) serverLogs.shift();
+  return entry;
+}
+
+function json(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+function text(res, status, payload, contentType = "text/plain; charset=utf-8") {
+  res.writeHead(status, {
+    "content-type": contentType,
+    "content-length": Buffer.byteLength(payload),
+    "cache-control": "no-store",
+  });
+  res.end(payload);
+}
+
+function sendSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeName(value) {
+  return String(value || "").replace(/[\u0000-\u001f]/g, "").trim();
+}
+
+// Windows paths are case-insensitive (session dirs exist as both `C--` and `c--`).
+export function cwdKey(cwd, platform = process.platform) {
+  const resolved = path.resolve(cwd);
+  return platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+// Sessions recorded by a host PI (e.g. Windows "C:\\Users\\me\\proj") are visible to a
+// containerized PI Studio only through a bind mount. PI_WEB_PATH_MAP maps host prefixes to
+// mount points: JSON [["C:/Users/me", "/home/me"], ...]. Matching ignores slash style and,
+// for drive-letter prefixes, case. Unmapped paths are returned unchanged.
+export function parsePathMap(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((pair) => Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string" && part))) return parsed;
+  } catch {
+    // fall through to the warning
+  }
+  recordLog("warn", "Ignoring PI_WEB_PATH_MAP; expected JSON [[from, to], ...].");
+  return [];
+}
+
+export function mapHostPath(value, pathMap) {
+  const slashed = String(value).replace(/\\/g, "/");
+  for (const [from, to] of pathMap) {
+    const prefix = from.replace(/\\/g, "/").replace(/\/+$/, "");
+    const head = slashed.slice(0, prefix.length);
+    const matches = /^[A-Za-z]:/.test(prefix) ? head.toLowerCase() === prefix.toLowerCase() : head === prefix;
+    const rest = slashed.slice(prefix.length);
+    if (matches && (rest === "" || rest.startsWith("/"))) return to.replace(/\/+$/, "") + rest;
+  }
+  return value;
+}
+
+const PATH_MAP = parsePathMap(process.env.PI_WEB_PATH_MAP);
+
+function projectIdFor(cwd) {
+  return createHash("sha1").update(cwdKey(cwd)).digest("hex").slice(0, 16);
+}
+
+function parseStringArrayEnv(name) {
+  const raw = process.env[name];
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Allow PATH-style env as a convenience.
+  }
+  return raw.split(path.delimiter).map((item) => item.trim()).filter(Boolean);
+}
+
+function parsePiPrefixArgs(env = process.env) {
+  const raw = env.PI_WEB_PI_BIN_ARGS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Fall through to safe default.
+  }
+  recordLog("warn", "Ignoring PI_WEB_PI_BIN_ARGS; expected JSON array of strings.");
+  return [];
+}
+
+const PI_CLI_PARTS = ["@earendil-works", "pi-coding-agent", "dist", "cli.js"];
+
+// `npm root -g` without a shell: npm.cmd cannot be spawned directly on Windows,
+// so run npm's own JS entry point with the current node binary.
+export function runNpmRootGlobal({ nodeBin = process.execPath, npmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js") } = {}) {
+  if (!existsSync(npmCli)) return null;
+  try {
+    const output = execFileSync(nodeBin, [npmCli, "root", "-g"], { encoding: "utf8", timeout: 15000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    return output.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function npmGlobalRootCandidates({ env = process.env, execPath = process.execPath, runNpmRoot = runNpmRootGlobal } = {}) {
+  const roots = [runNpmRoot()];
+  if (env.APPDATA) roots.push(path.win32.join(env.APPDATA, "npm", "node_modules"));
+  roots.push(path.win32.join(path.win32.dirname(execPath), "node_modules"));
+  return [...new Set(roots.filter(Boolean))];
+}
+
+// On win32 `pi` is `pi.cmd`, which spawn() cannot run without `shell: true`.
+// Spawn node with the globally installed CLI script instead.
+export function resolvePiCommand({
+  platform = process.platform,
+  env = process.env,
+  execPath = process.execPath,
+  runNpmRoot = runNpmRootGlobal,
+  npmRoots = () => npmGlobalRootCandidates({ env, execPath, runNpmRoot }),
+  exists = existsSync,
+  log = recordLog,
+} = {}) {
+  const prefixArgs = parsePiPrefixArgs(env);
+  if (env.PI_WEB_PI_BIN) return { bin: env.PI_WEB_PI_BIN, prefixArgs, source: "env" };
+  if (platform !== "win32") return { bin: "pi", prefixArgs, source: "path" };
+  const roots = npmRoots();
+  for (const root of roots) {
+    const cli = path.win32.join(root, ...PI_CLI_PARTS);
+    if (exists(cli)) return { bin: execPath, prefixArgs: [cli, ...prefixArgs], source: "npm-global" };
+  }
+  log("error", "PI CLI not found in the global npm root; falling back to `pi` (set PI_WEB_PI_BIN to fix).", { searched: roots });
+  return { bin: "pi", prefixArgs, source: "fallback" };
+}
+
+export function buildPiArgs({ prefixArgs = [], name, cwd, env = process.env }) {
+  const args = [...prefixArgs, "--mode", "rpc", "--name", name || path.basename(cwd) || "pi-web"];
+  if (env.PI_WEB_PROVIDER) args.push("--provider", env.PI_WEB_PROVIDER);
+  if (env.PI_WEB_MODEL) args.push("--model", env.PI_WEB_MODEL);
+  return args;
+}
+
+let cachedPiCommand = null;
+export function piCommand() {
+  cachedPiCommand ??= resolvePiCommand();
+  return cachedPiCommand;
+}
+
+async function readJsonBody(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      const err = new Error("Request body too large");
+      err.statusCode = 413;
+      throw err;
+    }
+    chunks.push(chunk);
+  }
+  if (chunks.length === 0) return {};
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    error.statusCode = 400;
+    error.message = `Invalid JSON body: ${error.message}`;
+    throw error;
+  }
+}
+
+async function pathExists(filePath) {
+  try {
+    await access(filePath, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isDirectory(filePath) {
+  try {
+    return (await stat(filePath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function looksLikeProject(dir) {
+  for (const marker of PROJECT_MARKERS) {
+    if (await pathExists(path.join(dir, marker))) return true;
+  }
+  return false;
+}
+
+function parseFrontmatter(markdown) {
+  if (!markdown.startsWith("---")) return {};
+  const end = markdown.indexOf("\n---", 3);
+  if (end === -1) return {};
+  const block = markdown.slice(3, end).trim();
+  const data = {};
+  for (const line of block.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    data[key] = rawValue.trim().replace(/^['"]|['"]$/g, "");
+  }
+  return data;
+}
+
+async function readAgentsFromDir(dir, scope) {
+  if (!(await isDirectory(dir))) return [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  const agents = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const filePath = path.join(dir, entry.name);
+    const content = await readFile(filePath, "utf8");
+    const fm = parseFrontmatter(content);
+    const fallbackName = entry.name.replace(/\.md$/i, "");
+    const bodyTitle = content.match(/^#\s+(.+)$/m)?.[1];
+    agents.push({
+      name: fm.name || fallbackName,
+      description: fm.description || bodyTitle || "Custom Pi agent",
+      model: fm.model || undefined,
+      thinking: fm.thinking || undefined,
+      tools: fm.tools || undefined,
+      scope,
+      path: filePath,
+    });
+  }
+  return agents;
+}
+
+async function listAgents(cwd = process.cwd()) {
+  const dirs = [
+    { dir: path.join(AGENT_DIR, "agents"), scope: "global" },
+    { dir: path.join(cwd, ".pi", "agents"), scope: "project" },
+  ];
+  const byName = new Map();
+  for (const { dir, scope } of dirs) {
+    for (const agent of await readAgentsFromDir(dir, scope)) byName.set(agent.name, agent);
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function readdirSafe(dir) {
+  try {
+    return await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+// Reads only the head of the file: session JSONL can be many MB, the header is one short line.
+export async function readFirstLine(filePath, maxBytes = 16 * 1024) {
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    const head = buffer.subarray(0, bytesRead).toString("utf8");
+    const newline = head.indexOf("\n");
+    return (newline === -1 ? head : head.slice(0, newline)).replace(/\r$/, "");
+  } finally {
+    await handle.close();
+  }
+}
+
+// Projects the user actually used with PI: cwd from each session header, newest first,
+// keeping only directories that still exist.
+export async function discoverHistoryProjects(sessionsDir, pathMap = PATH_MAP) {
+  const byKey = new Map();
+  for (const dir of await readdirSafe(sessionsDir)) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsDir, dir.name);
+    for (const file of await readdirSafe(fullDir)) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const header = JSON.parse(await readFirstLine(filePath));
+        if (header?.type !== "session" || typeof header.cwd !== "string" || !header.cwd) continue;
+        const { mtimeMs } = await stat(filePath);
+        const cwd = mapHostPath(header.cwd, pathMap);
+        const key = cwdKey(cwd);
+        const previous = byKey.get(key);
+        if (!previous || mtimeMs > previous.lastUsedMs) byKey.set(key, { cwd: path.resolve(cwd), lastUsedMs: mtimeMs });
+      } catch {
+        // Ignore malformed/partial session files.
+      }
+    }
+  }
+  const out = [];
+  for (const item of byKey.values()) {
+    if (await isDirectory(item.cwd)) out.push(item);
+  }
+  return out.sort((a, b) => b.lastUsedMs - a.lastUsedMs);
+}
+
+// Recently used projects first (newest first), then the rest alphabetically.
+export function sortProjects(list) {
+  return [...list].sort((a, b) => {
+    if (a.lastUsedAt && b.lastUsedAt) return b.lastUsedAt.localeCompare(a.lastUsedAt);
+    if (a.lastUsedAt || b.lastUsedAt) return a.lastUsedAt ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+async function getProjectRoots() {
+  const explicit = parseStringArrayEnv("PI_PROJECT_ROOTS");
+  if (explicit.length) return explicit.map((item) => path.resolve(item));
+  const workspace = process.env.PI_WORKSPACES_DIR || ((await isDirectory("/workspaces")) ? "/workspaces" : homedir());
+  return [path.resolve(workspace)];
+}
+
+async function discoverProjects() {
+  const found = new Map();
+  for (const root of await getProjectRoots()) {
+    if (!(await isDirectory(root))) continue;
+    if (await looksLikeProject(root)) {
+      const project = makeProject(root, root);
+      found.set(project.id, project);
+    }
+    let entries = [];
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      recordLog("warn", `Cannot read project root ${root}`, { error: error.message });
+      continue;
+    }
+    for (const entry of entries) {
+      if (found.size >= PROJECT_LIMIT) break;
+      if (!entry.isDirectory() || SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+      const cwd = path.join(root, entry.name);
+      if (!(await looksLikeProject(cwd))) continue;
+      const project = makeProject(cwd, root);
+      found.set(project.id, project);
+    }
+  }
+  const hidden = await studioHidden();
+  for (const item of await discoverHistoryProjects(path.join(AGENT_DIR, "sessions"))) {
+    if (insideIgnored(item.cwd, hidden)) continue;
+    const lastUsedAt = new Date(item.lastUsedMs).toISOString();
+    const id = projectIdFor(item.cwd);
+    if (found.has(id)) found.get(id).lastUsedAt = lastUsedAt;
+    else if (found.size < PROJECT_LIMIT) found.set(id, { ...makeProject(item.cwd, path.dirname(item.cwd)), lastUsedAt });
+  }
+  if (found.size === 0) {
+    const fallback = makeProject(process.cwd(), path.dirname(process.cwd()));
+    found.set(fallback.id, fallback);
+  }
+  for (const added of addedProjects.values()) {
+    if (!found.has(added.id)) found.set(added.id, { ...makeProject(added.cwd, added.root), lastUsedAt: added.lastUsedAt });
+  }
+  // Ambientes the user created: always listed (outside PROJECT_LIMIT), named as the user named them, first in the sidebar.
+  const created = await ambientes.list();
+  for (const item of created) {
+    const id = projectIdFor(item.cwd);
+    found.set(id, { ...(found.get(id) ?? makeProject(item.cwd, path.dirname(item.cwd))), name: item.name, ambiente: { id: item.id, name: item.name, createdAt: item.createdAt } });
+  }
+  const ordered = sortProjects([...found.values()]);
+  const rank = (project) => (project.ambiente ? created.findIndex((item) => item.id === project.ambiente.id) : created.length);
+  projects.clear();
+  for (const project of ordered.map((project, index) => ({ project, index })).sort((a, b) => rank(a.project) - rank(b.project) || a.index - b.index).map(({ project }) => project)) projects.set(project.id, project);
+  return [...projects.values()];
+}
+
+function makeProject(cwd, root) {
+  const resolved = path.resolve(cwd);
+  const active = [...sessions.values()].find((session) => session.cwd === resolved && !session.exited);
+  return {
+    id: projectIdFor(resolved),
+    name: path.basename(resolved) || resolved,
+    cwd: resolved,
+    root,
+    activeSessionId: active?.id || null,
+    hasGit: false,
+    lastUsedAt: null,
+  };
+}
+
+async function ensureProject(projectId) {
+  if (!projects.has(projectId)) await discoverProjects();
+  const project = projects.get(projectId);
+  if (!project) {
+    const error = new Error("Unknown project");
+    error.statusCode = 404;
+    throw error;
+  }
+  return project;
+}
+
+export class PiRpcSession {
+  constructor(options) {
+    this.id = randomUUID();
+    this.projectId = options.projectId;
+    this.projectName = options.projectName;
+    this.cwd = path.resolve(options.cwd || process.cwd());
+    this.createdAt = new Date().toISOString();
+    this.lastViewedAt = Date.now();
+    this.clients = new Set();
+    this.clientHeartbeats = new Map();
+    this.history = [];
+    this.stdoutBuffer = "";
+    this.stderrBuffer = "";
+    this.exited = false;
+    this.exitCode = null;
+    this.signal = null;
+    this.options = options;
+    this.proc = null;
+    this.lastState = null;
+    this.answeredUi = new Set();
+    // Live activity for /api/projects/status: a dialog stays pending until answered (or until its timeout passes).
+    this.streaming = false;
+    this.pendingUi = new Map();
+    this.lastEventAt = Date.now();
+    this.activity = newActivityTracker();
+  }
+
+  // Notable PI events (see activityFromEvent) go to the shared feed, tagged with this project.
+  note(payload, now = Date.now()) {
+    for (const item of activityFromEvent(payload, this.activity, now)) {
+      activityLog.push({ at: now, projectId: this.projectId, projectName: this.projectName, ...item });
+    }
+  }
+
+  piArgs(prefixArgs) {
+    return buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+  }
+
+  start() {
+    const { bin: piBin, prefixArgs } = piCommand();
+    const args = this.piArgs(prefixArgs);
+
+    this.proc = spawn(piBin, args, {
+      cwd: this.cwd,
+      env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    this.proc.stdout.setEncoding("utf8");
+    this.proc.stderr.setEncoding("utf8");
+    this.proc.stdout.on("data", (chunk) => this.consumeStdout(chunk));
+    this.proc.stderr.on("data", (chunk) => this.consumeStderr(chunk));
+    // A write racing PI's exit fails asynchronously (EPIPE/ECONNRESET on stdin). Without a
+    // listener that is an uncaught exception that would kill PI Studio; the exit handler
+    // already reports the process end, so only log it.
+    this.proc.stdin.on("error", (error) => {
+      recordLog("warn", `PI stdin closed for ${this.cwd}`, { error: error.message });
+    });
+    // A spawn failure (no pid: missing binary, vanished cwd) never emits "exit", so it ends the session
+    // here; an error on a running PI (e.g. a failed kill) is only noted and its later exit still counts.
+    this.proc.on("error", (error) => {
+      if (this.proc.pid === undefined) return this.finalizeTerminal("error", error);
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
+    });
+    this.proc.on("exit", (code, signal) => this.finalizeTerminal("exit", null, code, signal));
+    this.proc.on("close", (code, signal) => this.finalizeTerminal("close", null, code, signal));
+
+    recordLog("info", `Started PI for ${this.cwd}`, { sessionId: this.id, piBin, args: redactArgs(args) });
+    this.broadcast("session_ready", {
+      type: "session_ready",
+      id: this.id,
+      projectId: this.projectId,
+      projectName: this.projectName,
+      cwd: this.cwd,
+      createdAt: this.createdAt,
+      piBin,
+      args: redactArgs(args),
+    });
+
+    setTimeout(() => {
+      try {
+        this.send({ id: "bootstrap-state", type: "get_state" });
+        this.send({ id: "bootstrap-commands", type: "get_commands" });
+      } catch {
+        // The process may have failed immediately; process_error covers it.
+      }
+    }, 250);
+  }
+
+  finalizeTerminal(kind, error = null, code = null, signal = null) {
+    if (this.exited) return;
+    this.exited = true;
+    this.exitCode = code;
+    this.signal = signal;
+    if (kind === "error") {
+      recordLog("error", `PI process error for ${this.cwd}`, { error: error.message });
+      const payload = { type: "process_error", message: error.message };
+      this.note(payload);
+      this.broadcast("process_error", payload);
+    } else {
+      recordLog("info", `PI exited for ${this.cwd}`, { code, signal });
+      const payload = { type: "process_exit", code, signal };
+      this.note(payload);
+      this.broadcast("process_exit", payload);
+    }
+    const retired = { summary: this.summary(), status: this.statusSummary(), lastState: this.lastState?.sessionFile ? { sessionFile: this.lastState.sessionFile } : null };
+    this.retire(retired);
+    for (const client of this.clients) {
+      const heartbeat = this.clientHeartbeats.get(client);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(client);
+      client.end();
+    }
+    this.clients.clear();
+  }
+
+  retire(retired) {
+    sessions.delete(this.id);
+    resourceHistory.delete(this.id);
+    retiredSessions.set(this.id, retired);
+    while (retiredSessions.size > RETIRED_SESSION_LIMIT) retiredSessions.delete(retiredSessions.keys().next().value);
+  }
+
+  consumeStdout(chunk) {
+    this.stdoutBuffer += chunk;
+    let newlineIndex = this.stdoutBuffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      let line = this.stdoutBuffer.slice(0, newlineIndex);
+      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      this.handleStdoutLine(line);
+      newlineIndex = this.stdoutBuffer.indexOf("\n");
+    }
+  }
+
+  consumeStderr(chunk) {
+    this.stderrBuffer += chunk;
+    let newlineIndex = this.stderrBuffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      let line = this.stderrBuffer.slice(0, newlineIndex);
+      this.stderrBuffer = this.stderrBuffer.slice(newlineIndex + 1);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line.trim()) {
+        recordLog("stderr", line, { sessionId: this.id, cwd: this.cwd });
+        this.broadcast("stderr", { type: "stderr", text: line });
+      }
+      newlineIndex = this.stderrBuffer.indexOf("\n");
+    }
+  }
+
+  handleStdoutLine(line) {
+    if (!line.trim()) return;
+    try {
+      const payload = JSON.parse(line);
+      this.track(payload);
+      if (payload.type === "response" && payload.command === "get_state" && payload.success) {
+        this.lastState = payload.data;
+        if (payload.data?.sessionFile) studioFiles.add(cwdKey(payload.data.sessionFile)); // this PI has this file open (now or soon switched away from)
+      }
+      this.broadcast("rpc", payload);
+    } catch (error) {
+      this.broadcast("stdout", { type: "stdout", text: line, parseError: error.message });
+    }
+  }
+
+  pruneUi(now = Date.now()) {
+    for (const [id, expiry] of this.pendingUi) if (expiry <= now) this.pendingUi.delete(id);
+    while (this.pendingUi.size > UI_BOOKKEEPING_LIMIT) this.pendingUi.delete(this.pendingUi.keys().next().value);
+    while (this.answeredUi.size > UI_BOOKKEEPING_LIMIT) this.answeredUi.delete(this.answeredUi.values().next().value);
+  }
+
+  track(payload, now = Date.now()) {
+    this.pruneUi(now);
+    this.lastEventAt = now;
+    this.note(payload, now);
+    if (payload.type === "agent_start") this.streaming = true;
+    else if (payload.type === "agent_end") this.streaming = false;
+    else if (payload.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method) && payload.id) {
+      this.pendingUi.set(payload.id, payload.timeout > 0 ? now + payload.timeout : Infinity);
+      this.pruneUi(now);
+    }
+  }
+
+  statusSummary(now = Date.now()) {
+    this.pruneUi(now);
+    return {
+      projectId: this.projectId,
+      sessionId: this.id,
+      streaming: !this.exited && this.streaming,
+      waitingUi: !this.exited && [...this.pendingUi.values()].some((expiry) => expiry > now),
+      exited: this.exited,
+      lastEventAt: this.lastEventAt,
+    };
+  }
+
+  writeClient(res, chunk) {
+    if (res.writableLength + Buffer.byteLength(chunk) > SSE_BUFFER_LIMIT) {
+      const heartbeat = this.clientHeartbeats.get(res);
+      if (heartbeat) clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
+      res.end();
+      this.clients.delete(res);
+      return false;
+    }
+    res.write(chunk);
+    return true;
+  }
+
+  broadcast(event, payload) {
+    const envelope = { event, payload, at: new Date().toISOString() };
+    this.history.push(envelope);
+    if (this.history.length > HISTORY_LIMIT) this.history.shift();
+    const frame = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const client of this.clients) this.writeClient(client, frame);
+  }
+
+  addClient(res) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    const heartbeat = setInterval(() => this.writeClient(res, ": ping\n\n"), 15000);
+    this.clientHeartbeats.set(res, heartbeat);
+    this.clients.add(res);
+    this.lastViewedAt = Date.now();
+    res.on("close", () => {
+      this.lastViewedAt = Date.now();
+      clearInterval(heartbeat);
+      this.clientHeartbeats.delete(res);
+      this.clients.delete(res);
+    });
+    if (!this.writeClient(res, `: connected ${this.id}\n\n`)) return;
+    let replayed = 0;
+    for (const item of this.history) {
+      // A dialog is shown again only while it is still pending: answered, timed-out or pruned ones never pop up
+      // again on reconnect; a pending one comes with the time it has left.
+      let payload = item.payload;
+      if (payload?.type === "extension_ui_request" && UI_DIALOG_METHODS.has(payload.method)) {
+        const expiry = this.pendingUi.get(payload.id);
+        if (expiry === undefined || expiry <= Date.now() || this.answeredUi.has(payload.id)) continue;
+        if (Number.isFinite(expiry)) payload = { ...payload, timeout: Math.max(1, expiry - Date.now()) };
+      }
+      if (!this.writeClient(res, `event: ${item.event}\ndata: ${JSON.stringify(payload)}\n\n`)) return;
+      replayed++;
+    }
+    // Lets the client tell buffered history from live events.
+    this.writeClient(res, `event: replay_done\ndata: ${JSON.stringify({ type: "replay_done", count: replayed })}\n\n`);
+  }
+
+  send(command) {
+    if (!isPlainObject(command)) throw new Error("RPC command must be a JSON object");
+    if (!this.proc || this.exited || !this.proc.stdin.writable) throw new Error("Pi RPC process is not running");
+    this.proc.stdin.write(`${JSON.stringify(command)}\n`);
+    if (command.type === "extension_ui_response" && command.id) {
+      const wasPending = this.pendingUi.has(command.id);
+      this.answeredUi.add(command.id);
+      this.pruneUi();
+      this.pendingUi.delete(command.id);
+      this.note(command);
+      if (wasPending) this.broadcast("ui_resolved", { type: "ui_resolved", id: command.id });
+    }
+  }
+
+  stop() {
+    if (!this.proc || this.exited) return;
+    this.proc.kill("SIGTERM");
+    setTimeout(() => {
+      if (!this.exited) this.proc.kill("SIGKILL");
+    }, 2500).unref();
+  }
+
+  summary() {
+    return {
+      id: this.id,
+      projectId: this.projectId,
+      projectName: this.projectName,
+      cwd: this.cwd,
+      createdAt: this.createdAt,
+      exited: this.exited,
+      exitCode: this.exitCode,
+      signal: this.signal,
+      clientCount: this.clients.size,
+      sessionId: this.lastState?.sessionId,
+      sessionName: this.lastState?.sessionName,
+      model: this.lastState?.model,
+      isStreaming: this.lastState?.isStreaming ?? false,
+    };
+  }
+}
+
+// "Dúvidas": the same RPC session, but ephemeral and read-only (args), kept out of every Studio listing (never in `sessions`,
+// `retiredSessions` or the activity feed). Only the HTTP command route filters commands (sideCommand); internal sends stay as is.
+class SidePiSession extends PiRpcSession {
+  side = true;
+  piArgs(prefixArgs) {
+    return [...super.piArgs(prefixArgs), ...sideArgs(this.options.prompt)];
+  }
+  note() {}
+  retire() {
+    sideChats.remove(this);
+  }
+  summary() {
+    return { ...super.summary(), side: true };
+  }
+}
+
+const sideChats = createSideRegistry();
+export const reapSideChatsNow = (now = Date.now()) => sideChats.reap(now);
+
+// The conversation's project folder, from its JSONL header; 409 when the log cannot say where the project is.
+async function conversationCwd(file) {
+  let cwd;
+  try {
+    cwd = JSON.parse(await readFirstLine(file)).cwd;
+    if (typeof cwd !== "string" || !(await stat(cwd)).isDirectory()) throw new Error("no project folder");
+  } catch {
+    throw httpError(409, "A conversa não informa uma pasta de projeto válida");
+  }
+  return cwd;
+}
+
+async function openSideChat(rawPath) {
+  const file = await resolveWatchPath(rawPath);
+  const cwd = await conversationCwd(file);
+  return sideChats.acquire(cwdKey(file), () => {
+    const session = new SidePiSession({ projectName: "Dúvidas", cwd, prompt: buildSidePrompt({ sessionPath: file, cwd }) });
+    session.start();
+    return session;
+  });
+}
+
+// The few PI settings the HUD shows (default model and effort, auto-compaction), from <agentDir>/settings.json.
+// Only these keys leave the server; the file also lists packages and other preferences.
+export async function piSettingsSummary(file = path.join(AGENT_DIR, "settings.json")) {
+  let raw = {};
+  try { raw = JSON.parse(await readFile(file, "utf8")) ?? {}; } catch { raw = {}; }
+  const text = (value) => (typeof value === "string" && value.length <= 120 ? value : null);
+  const count = (value) => (Number.isFinite(value) && value >= 0 ? value : null);
+  const compaction = raw.compaction && typeof raw.compaction === "object" ? raw.compaction : {};
+  return {
+    defaultProvider: text(raw.defaultProvider),
+    defaultModel: text(raw.defaultModel),
+    defaultThinkingLevel: text(raw.defaultThinkingLevel),
+    compaction: { enabled: compaction.enabled !== false, reserveTokens: count(compaction.reserveTokens), keepRecentTokens: count(compaction.keepRecentTokens) },
+  };
+}
+
+// ---- Agent teams (team-bus): the stage reads members, messages and child logs under <agentDir>/teams, read only.
+const teamReader = createTeamReader({ teamsRoot: path.join(AGENT_DIR, "teams") });
+
+// ---- Vorcaro: digests of the recent sessions, the read-only Vorcaro side PI, and /goal handoff after the user confirms.
+const VORCARO_DIR = path.join(AGENT_DIR, "pi-studio-data");
+const VORCARO_DIGESTS_FILE = path.join(VORCARO_DIR, "vorcaro-sessoes.md");
+const VORCARO_DEMANDS_FILE = path.join(VORCARO_DIR, "vorcaro-demandas.json");
+const vorcaroAudit = createAudit(path.join(VORCARO_DIR, "vorcaro-auditoria.jsonl"));
+// Claude Code's logs (CLAUDE_CONFIG_DIR, as Claude Code itself reads it), indexed beside PI's so Vorcaro sees the whole week.
+// PI_STUDIO_CLAUDE_DIR points elsewhere (tests); set to an empty string it turns the source off.
+const CLAUDE_PROJECTS_DIR = process.env.PI_STUDIO_CLAUDE_DIR ?? path.join(process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), "projects");
+// Folders hidden from the sidebar, the tree and Vorcaro (test runs, scratch work): pi-studio-data/vorcaro-ignorar.json,
+// read on each use, so the person decides what is noise; nothing is hidden by default.
+const STUDIO_HIDDEN_FILE = path.join(AGENT_DIR, "pi-studio-data", "vorcaro-ignorar.json");
+const studioHidden = () => hiddenFolders(STUDIO_HIDDEN_FILE);
+const vorcaroIndex = createDigestIndex({
+  sources: [{ root: path.join(AGENT_DIR, "sessions"), scan: scanDigest }, ...(CLAUDE_PROJECTS_DIR ? [{ root: CLAUDE_PROJECTS_DIR, scan: scanClaudeDigest }] : [])],
+  storeFile: path.join(VORCARO_DIR, "vorcaro-digests.json"),
+  ignoreFile: path.join(VORCARO_DIR, "vorcaro-ignorar.json"),
+  days: VORCARO_INDEX_DAYS,
+});
+// Vorcaro's own conversations are saved PI sessions here (not under ~/.pi/agent/sessions, so they never become digests).
+const VORCARO_CONVERSATIONS = path.join(VORCARO_DIR, "conversas");
+// Sessions taken off the board (by the person, or by Vorcaro when finished and idle): hidden, never deleted.
+const vorcaroArchive = createArchive(path.join(VORCARO_DIR, "vorcaro-arquivo.json"));
+// Mirrors of Vorcaro's requests (lib-server/vorcaro-mirror.mjs): Orca's board and a GitHub Project, read from
+// pi-studio-data/vorcaro-config.json on each use so an edit applies without a restart.
+const VORCARO_CONFIG_FILE = path.join(VORCARO_DIR, "vorcaro-config.json");
+const GH_BIN = process.env.PI_STUDIO_GH_BIN || "gh";
+function runGh(args, env = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(GH_BIN, args, { timeout: 30_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...env } }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
+  });
+}
+const ghToken = (account) => runGh(["auth", "token", "--user", account]);
+function orcaMirror() {
+  const command = resolveOrcaCommand();
+  if (!command) return null;
+  // The desktop app next to the CLI (<orca>/resources/bin/orca.exe -> <orca>/Orca.exe), started detached with a window.
+  const app = process.platform === "win32" && !command.prefixArgs.length ? path.resolve(path.dirname(command.bin), "..", "..", "Orca.exe") : null;
+  const launch = app && existsSync(app) ? () => spawn(app, [], { detached: true, stdio: "ignore", windowsHide: false }).on("error", () => {}).unref() : null;
+  return createOrcaMirror({ run: (args) => runOrcaJson(command, [...command.prefixArgs, ...args]), launch });
+}
+async function githubMirror() {
+  const config = await readMirrorConfig(VORCARO_CONFIG_FILE);
+  return config.github ? createGithubMirror(config.github, { run: runGh, token: ghToken }) : null;
+}
+// Each pass brings every mirrored demand's Orca column and GitHub Status to its phase; a failure is retried next pass.
+// GitHub's own Status (a card moved by hand) is read back at most every 2 minutes and only shown.
+const mirrorState = { running: false, githubReadAt: 0 };
+async function syncMirrors() {
+  if (mirrorState.running) return;
+  mirrorState.running = true;
+  try {
+    const demands = await readDemands();
+    const github = demands.some((demand) => demand.github?.itemId) ? await githubMirror() : null;
+    const orca = demands.some((demand) => demand.orca?.path) ? orcaMirror() : null;
+    let changed = false;
+    for (const demand of demands) {
+      const phase = demand.phase ?? "enviado";
+      if (orca && demand.orca?.path && demand.orca.phase !== phase) {
+        try { await orca.setStatus(demand.orca.path, phase); demand.orca.phase = phase; changed = true; } catch { /* next pass */ }
+      }
+      if (github && demand.github?.itemId && demand.github.phase !== phase) {
+        try { demand.github.status = await github.setPhase(demand.github.itemId, phase); demand.github.phase = phase; changed = true; } catch { /* next pass */ }
+      }
+    }
+    if (github && Date.now() - mirrorState.githubReadAt > 120_000) {
+      mirrorState.githubReadAt = Date.now();
+      try {
+        const statuses = await github.statuses();
+        for (const demand of demands) {
+          const status = demand.github?.itemId ? statuses.get(demand.github.itemId) : undefined;
+          if (status !== undefined && status !== demand.github.status) { demand.github.status = status; changed = true; }
+        }
+      } catch { /* shown as before */ }
+    }
+    if (changed) await writeDemands(demands);
+  } finally {
+    mirrorState.running = false;
+  }
+}
+
+// The board as the person last saw it (taken when they leave the Vorcaro screen): the base of "what changed".
+const VORCARO_SEEN_FILE = path.join(VORCARO_DIR, "vorcaro-visto.json");
+async function readSeen() {
+  try { return JSON.parse(await readFile(VORCARO_SEEN_FILE, "utf8")); } catch { return null; }
+}
+async function markSeen() {
+  const live = vorcaroLive();
+  const archived = await vorcaroArchive.read();
+  const digests = vorcaroIndex.list().filter((digest) => !isArchived(archived, digest.path));
+  await mkdir(VORCARO_DIR, { recursive: true });
+  await writeFile(VORCARO_SEEN_FILE, JSON.stringify(seenSnapshot(digests, { columnOf: (digest) => digestColumn(digest, live.get(digest.path) ?? null) })), "utf8");
+}
+const vorcaroSessions = new Set();
+
+// The Vorcaro side PI: read-only like "Dúvidas", but its conversation is saved (--session-dir) and can be resumed.
+class VorcaroPiSession extends SidePiSession {
+  piArgs(prefixArgs) {
+    const args = buildPiArgs({ prefixArgs, name: this.projectName, cwd: this.cwd });
+    return [...args, "--session-dir", VORCARO_CONVERSATIONS, ...(this.options.resume ? ["--session", this.options.resume] : []), "--tools", SIDE_TOOLS, "--append-system-prompt", this.options.prompt];
+  }
+  retire() {
+    super.retire();
+    vorcaroSessions.delete(this);
+  }
+  summary() {
+    return { ...super.summary(), vorcaro: true, sessionFile: this.lastState?.sessionFile ?? this.options.resume ?? null };
+  }
+}
+
+// A saved conversation file the Vorcaro routes accept: a .jsonl inside the conversations folder, nothing else.
+async function vorcaroConversationFile(raw) {
+  const file = path.resolve(String(raw ?? ""));
+  const rel = path.relative(VORCARO_CONVERSATIONS, file);
+  if (!raw || !file.endsWith(".jsonl") || !rel || rel.startsWith("..") || path.isAbsolute(rel)) throw httpError(400, "Conversa do Vorcaro inválida");
+  try {
+    if (!(await stat(file)).isFile()) throw new Error("not a file");
+  } catch {
+    throw httpError(404, "Conversa do Vorcaro não encontrada");
+  }
+  return file;
+}
+
+async function readDemands() {
+  try {
+    const parsed = JSON.parse(await readFile(VORCARO_DEMANDS_FILE, "utf8"));
+    return Array.isArray(parsed) ? parsed.slice(-200) : [];
+  } catch { return []; }
+}
+
+async function writeDemands(list) {
+  await mkdir(VORCARO_DIR, { recursive: true });
+  const temp = `${VORCARO_DEMANDS_FILE}.${randomUUID()}.tmp`;
+  await writeFile(temp, JSON.stringify(list.slice(-200)), "utf8");
+  await rename(temp, VORCARO_DEMANDS_FILE);
+}
+
+// Live state of the conversations the Studio runs, by session file: a live run or a pending dialog wins over the log.
+function vorcaroLive() {
+  const live = new Map();
+  for (const session of sessions.values()) {
+    const file = session.lastState?.sessionFile;
+    if (file && !session.exited) live.set(file, { streaming: Boolean(session.streaming), waitingUi: Boolean(session.statusSummary(Date.now()).waitingUi) });
+  }
+  return live;
+}
+
+// The conductor's pass over the open demands (vorcaro-conductor.mjs decides, this applies): runs the approved
+// verification once a session says it finished, sends at most two continuations, records every step in the audit log.
+// One pass at a time; verification runs in the background and the next pass reads its result.
+const conductor = { running: false, verifying: new Set() };
+async function vorcaroConduct(allDigests = vorcaroIndex.list()) {
+  if (conductor.running) return;
+  // Demands run in PI sessions; a Claude Code log in the same folder must never be read as their progress.
+  const digests = allDigests.filter((digest) => digest.source !== "claude");
+  conductor.running = true;
+  try {
+    const demands = await readDemands();
+    const live = vorcaroLive();
+    let changed = false;
+    for (const demand of demands) {
+      if (!isOpenDemand(demand) || conductor.verifying.has(demand.id)) continue;
+      const digest = digestFor(demand, digests);
+      const session = sessions.get(demand.sessionId);
+      const liveState = digest ? live.get(digest.path) ?? null : null;
+      // A demand sent to an Orca worktree lives outside the Studio: Orca keeps that agent, so it is never "gone" here.
+      const step = nextStep(demand, digest, { ...(liveState ?? {}), gone: demand.orca ? false : !session || session.exited }, { budget: CONDUCTOR_BUDGET });
+      const before = JSON.stringify([demand.phase, demand.block]);
+      demand.phase = step.phase;
+      demand.block = step.block;
+      if (!demand.sessionFile && digest) demand.sessionFile = digest.path;
+      if (demand.costAtStart === undefined && digest) demand.costAtStart = Number(digest.cost) || 0;
+      if (JSON.stringify([demand.phase, demand.block]) !== before) {
+        changed = true;
+        await vorcaroAudit.record(demand.id, step.phase === "feito" ? "done" : step.block ? "blocked" : "phase", { phase: step.phase, block: step.block });
+      }
+      if (step.action === "verify") {
+        conductor.verifying.add(demand.id);
+        await vorcaroAudit.record(demand.id, "verify_started", { commands: demand.verify });
+        runVerification(demand.verify, demand.cwd).then(async (results) => {
+          const ok = results.length > 0 && results.every((result) => result.ok);
+          const list = await readDemands();
+          const saved = list.find((item) => item.id === demand.id);
+          if (saved) {
+            saved.verification = { at: Date.now(), ok, results };
+            saved.phase = ok ? "feito" : "trabalhando";
+            saved.block = null;
+            await writeDemands(list);
+          }
+          await vorcaroAudit.record(demand.id, "verify_result", { ok, checks: results.map((result) => ({ command: result.command, ok: result.ok, exit: result.exit })) });
+          if (ok) await vorcaroAudit.record(demand.id, "done", {});
+        }).catch((error) => recordLog("warn", "Vorcaro verification failed", { error: error.message })).finally(() => conductor.verifying.delete(demand.id));
+      } else if (step.action === "continue" && session && !session.exited && !session.streaming) {
+        demand.continuations = (Number(demand.continuations) || 0) + 1;
+        demand.lastContinuationAt = Date.now();
+        session.send({ type: "prompt", message: continuationMessage(demand, demand.continuations), streamingBehavior: "followUp" });
+        changed = true;
+        await vorcaroAudit.record(demand.id, "continuation_sent", { attempt: demand.continuations, reason: step.reason });
+      } else if (step.action === "continue" && demand.orca?.handle && (Number(demand.continuations) || 0) < CONDUCTOR_BUDGET.maxContinuations) {
+        const command = resolveOrcaCommand();
+        if (command) {
+          demand.continuations = (Number(demand.continuations) || 0) + 1;
+          demand.lastContinuationAt = Date.now();
+          changed = true;
+          await runOrcaJson(command, [...command.prefixArgs, "terminal", "send", `--terminal=${demand.orca.handle}`, `--text=${continuationMessage(demand, demand.continuations)}`, "--enter", "--json"])
+            .then(() => vorcaroAudit.record(demand.id, "continuation_sent", { attempt: demand.continuations, reason: step.reason, via: "orca" }))
+            .catch(() => vorcaroAudit.record(demand.id, "mirror_failed", { mirror: "orca", step: "continuation" }));
+        }
+      }
+    }
+    if (changed) await writeDemands(demands);
+    syncMirrors().catch((error) => recordLog("warn", "Vorcaro mirrors failed", { error: error.message }));
+  } finally {
+    conductor.running = false;
+  }
+}
+
+// Sessions the idle reaper must keep: the ones an open Vorcaro request was sent to.
+async function vorcaroPinnedSessions() {
+  return new Set((await readDemands()).filter(isOpenDemand).map((demand) => demand.sessionId).filter(Boolean));
+}
+
+export async function vorcaroBoard(filters = boardFilters({})) {
+  const all = await vorcaroIndex.refresh();
+  const live = vorcaroLive();
+  const columnOf = (digest) => digestColumn(digest, live.get(digest.path) ?? null);
+  let archived = await vorcaroArchive.read();
+  const stale = autoArchivable(all, { columnOf, archived });
+  if (stale.length) archived = await vorcaroArchive.add(stale, "vorcaro");
+  const scoped = filterBoard(all, await readDemands(), await ambientes.list(), filters);
+  const digests = scoped.digests;
+  await vorcaroConduct(all).catch((error) => recordLog("warn", "Vorcaro conductor failed", { error: error.message }));
+  // Re-read the demands: the conductor may have just moved one.
+  const demands = filterBoard(all, await readDemands(), await ambientes.list(), filters).demands;
+  const seen = await readSeen();
+  const changes = boardChanges(digests.filter((digest) => !isArchived(archived, digest.path)), seen, { columnOf });
+  return { ...buildBoard(digests, { live, demands, archived, audit: await vorcaroAudit.byDemand() }), changes, seenAt: seen?.at ?? null, refreshedAt: vorcaroIndex.refreshedAt(), budget: CONDUCTOR_BUDGET, ambientes: scoped.ambientes, filters: { periodo: filters.periodo, de: filters.de ?? null, ate: filters.ate ?? null, ambiente: filters.ambiente } };
+}
+
+// The pop-out of one board card. Only a session the index lists (PI or Claude Code, last 30 days): the path comes from
+// the client, so nothing outside the index is ever read.
+async function vorcaroSessionDetail(raw) {
+  const digest = vorcaroIndex.list().find((item) => cwdKey(item.path) === cwdKey(String(raw ?? "")));
+  if (!digest) throw httpError(404, "Sessão fora do quadro");
+  const detail = await readSessionDetail(digest.path, digest.source === "claude" ? "claude" : "pi");
+  const demands = (await readDemands()).filter((demand) => demand.sessionFile && cwdKey(demand.sessionFile) === cwdKey(digest.path)).slice(-4).reverse()
+    .map((demand) => ({ id: demand.id, objetivo: demand.objetivo, phase: demand.phase ?? "enviado", createdAt: demand.createdAt }));
+  return { digest: { ...digest, column: digestColumn(digest, vorcaroLive().get(digest.path) ?? null) }, ...detail, demands };
+}
+
+// `key`: "vorcaro" (the current conversation), "vorcaro:new:<id>" (a new one) or a saved conversation file to resume.
+// A file another live Vorcaro PI already has open is that PI: two processes never write the same conversation.
+async function openVorcaro(key = "vorcaro") {
+  const digests = await vorcaroIndex.refresh();
+  await mkdir(VORCARO_CONVERSATIONS, { recursive: true });
+  const archived = await vorcaroArchive.read();
+  const onBoard = digests.filter((digest) => !isArchived(archived, digest.path));
+  const changes = changesMarkdown(boardChanges(onBoard, await readSeen()));
+  await writeFile(VORCARO_DIGESTS_FILE, [changes, organizationMarkdown(organizeProjects(onBoard)), digestsMarkdown(digests, { days: VORCARO_INDEX_DAYS })].filter(Boolean).join("\n"), "utf8");
+  const raw = String(key ?? "vorcaro");
+  let resume = null;
+  let registryKey = /^vorcaro(?::new:[\w-]{1,64})?$/.test(raw) ? raw : null;
+  if (!registryKey) {
+    resume = await vorcaroConversationFile(raw);
+    const live = [...vorcaroSessions].find((session) => !session.exited && session.lastState?.sessionFile && cwdKey(session.lastState.sessionFile) === cwdKey(resume));
+    if (live) return live;
+    registryKey = `vorcaro:${cwdKey(resume)}`;
+  }
+  return sideChats.acquire(registryKey, () => {
+    const session = new VorcaroPiSession({ projectName: "Vorcaro", cwd: VORCARO_DIR, resume, prompt: buildVorcaroPrompt({ digestsFile: VORCARO_DIGESTS_FILE, sessionsRoot: path.join(AGENT_DIR, "sessions"), claudeRoot: CLAUDE_PROJECTS_DIR }) });
+    vorcaroSessions.add(session);
+    session.start();
+    return session;
+  });
+}
+
+// Confirmed by the user in the UI: the brief goes as one /goal to the project's conversation in the Studio (a new one when
+// the project has none running). Only a project the Studio knows, an Orca-listed worktree or a folder under a project root.
+async function vorcaroDispatch(body) {
+  const action = validateAction(body?.action);
+  if (!action) throw httpError(400, "Pedido do Vorcaro inválido");
+  // Only a PI conversation can receive a /goal; one named outside PI's sessions (a Claude Code log) goes to the project's.
+  if (action.sessao && !pathInside(path.join(AGENT_DIR, "sessions"), path.resolve(action.sessao))) action.sessao = "";
+  await knownProjects(projects, discoverProjects);
+  const project = [...projects.values()].find((item) => cwdKey(item.cwd) === cwdKey(action.projeto)) ?? (await projectForPath(action.projeto));
+  if (!projects.has(project.id)) projects.set(project.id, project);
+  // A named conversation must be the one open in this project's PI (the client reopens it first), never another one.
+  const running = [...sessions.values()].find((item) => item.projectId === project.id && !item.exited);
+  if (action.sessao && (!running?.lastState?.sessionFile || cwdKey(running.lastState.sessionFile) !== cwdKey(action.sessao))) {
+    throw httpError(409, "A conversa indicada não está aberta neste projeto. Abra a conversa e envie de novo.");
+  }
+  const id = randomUUID();
+  let demand;
+  if (action.onde === "orca") {
+    // A separate piece of work: a child worktree in Orca with its own PI agent (seen and moved on Orca's board, phone
+    // included). Orca is opened by itself when it is not running.
+    const orca = orcaMirror();
+    // "orca": { "auto": false } in vorcaro-config.json: Vorcaro uses Orca only when it is already open.
+    const { orcaAuto } = await readMirrorConfig(VORCARO_CONFIG_FILE);
+    const ready = orca && (orcaAuto ? await orca.ensure() : (await orca.status()).reachable);
+    if (!ready) throw httpError(503, orcaAuto ? "O Orca não abriu. Abra o Orca e envie de novo, ou envie para a sessão do projeto." : "O Orca está fechado e a abertura automática está desligada. Envie para a sessão do projeto.");
+    const parent = orcaWorktreeForProject(await runOrcaJson(resolveOrcaCommand(), [...resolveOrcaCommand().prefixArgs, "worktree", "ps", "--json"]), project.cwd);
+    if (!parent) throw httpError(409, "Este projeto não está no Orca. Adicione a pasta no Orca ou envie para a sessão do projeto.");
+    const name = `vorcaro-${action.objetivo.normalize("NFD").replace(/[^\w ]/g, "").trim().split(/\s+/).slice(0, 4).join("-").toLowerCase() || "pedido"}-${id.slice(0, 4)}`;
+    const task = await orca.createTask({ repoId: parent.repoId, parentWorktreeId: parent.worktreeId, name, prompt: goalMessage(action), comment: `vorcaro ${id}` });
+    demand = { id, createdAt: Date.now(), projectId: project.id, project: project.name, cwd: task.path, objetivo: action.objetivo, checklist: action.checklist, verify: action.verificar, phase: "enviado", continuations: 0, sessionId: null, sessionFile: null, orca: { path: task.path, worktreeId: task.worktreeId, handle: task.handle, name } };
+  } else {
+    const session = running ?? (await getOrStartProjectSession(project));
+    session.send({ type: "prompt", message: goalMessage(action), streamingBehavior: "followUp" });
+    demand = { id, createdAt: Date.now(), projectId: project.id, project: project.name, cwd: project.cwd, objetivo: action.objetivo, checklist: action.checklist, verify: action.verificar, phase: "enviado", continuations: 0, sessionId: session.id, sessionFile: session.lastState?.sessionFile ?? null };
+  }
+  const github = await githubMirror();
+  if (github) {
+    try { demand.github = await github.create(demand); } catch (error) { await vorcaroAudit.record(demand.id, "mirror_failed", { mirror: "github", error: String(error.message).slice(0, 200) }); }
+  }
+  await writeDemands([...(await readDemands()), demand]);
+  await vorcaroAudit.record(demand.id, "dispatched", { project: project.name, verify: action.verificar, checklist: action.checklist.length, via: demand.orca ? "orca" : "studio", github: Boolean(demand.github) }, "user");
+  syncMirrors().catch(() => {});
+  recordLog("info", `Vorcaro enviou um objetivo para ${project.cwd}`, { demand: demand.id });
+  const session = demand.sessionId ? sessions.get(demand.sessionId) : null;
+  return { demand, projectId: project.id, session: session?.summary() ?? null };
+}
+
+function redactArgs(args) {
+  return args.map((arg) => (/key|token|auth|secret/i.test(String(arg)) ? "[redacted]" : arg));
+}
+
+async function openProjectPayload(project) {
+  const session = await getOrStartProjectSession(project);
+  return { project, session: session.summary(), agents: await listAgents(project.cwd), history: await listProjectHistory(project) };
+}
+
+async function getOrStartProjectSession(project) {
+  const existing = [...sessions.values()].find((session) => session.projectId === project.id && !session.exited);
+  if (existing) return existing;
+  const session = new PiRpcSession({ projectId: project.id, projectName: project.name, cwd: project.cwd });
+  sessions.set(session.id, session);
+  session.start();
+  return session;
+}
+
+function messageText(message) {
+  if (!message) return "";
+  if (typeof message.content === "string") return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => (part?.type === "text" ? part.text || "" : ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
+function compactTitle(text, fallback) {
+  const cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return fallback;
+  return cleaned.length > 72 ? `${cleaned.slice(0, 69)}…` : cleaned;
+}
+
+async function latestSessionInfoNameInTail(filePath, size, maxBytes, currentName) {
+  if (size <= maxBytes) return currentName;
+  const handle = await open(filePath, "r");
+  try {
+    const length = Math.min(512 * 1024, size);
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8", 0, bytesRead).split(/\n/);
+    if (length < size) lines.shift();
+    for (let index = lines.length - 1; index >= 0; index--) {
+      try {
+        const entry = JSON.parse(lines[index]);
+        if (entry && entry.type === "session_info") return typeof entry.name === "string" ? entry.name.trim() : "";
+      } catch {
+        // A truncated tail line is not a session entry.
+      }
+    }
+    return currentName;
+  } finally {
+    await handle.close();
+  }
+}
+
+// One bounded pass over a session file: its title (the latest `session_info` name, else the first
+// user prompt, else `fallback`) and, for a folded query, a snippet of the first matching user/assistant
+// message. Streams at most `maxBytes`, so a huge session is never loaded whole; a line cut by the cap
+// fails to parse and is skipped.
+export async function scanSession(filePath, { foldedQuery = "", maxBytes = SESSION_SCAN_MAX_BYTES, fallback = "Nova conversa" } = {}) {
+  const input = createReadStream(filePath, { encoding: "utf8", end: maxBytes - 1 });
+  let name = "";
+  let firstPrompt = "";
+  let snippet = "";
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === "session_info") {
+      name = typeof entry.name === "string" ? entry.name.trim() : "";
+    } else if (entry?.type === "message" && (entry.message?.role === "user" || entry.message?.role === "assistant")) {
+      const body = messageText(entry.message);
+      if (entry.message.role === "user" && !firstPrompt) firstPrompt = body;
+      if (!snippet) snippet = searchSnippet(body, foldedQuery);
+    }
+  }
+  const fileStat = await stat(filePath);
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
+  return { title: compactTitle(name || firstPrompt, fallback), snippet };
+}
+
+// In-memory bound: at most 64 KiB of user/assistant text per indexed session (plus metadata).
+// When over cap, retain the newest text so recent conversation context remains searchable.
+export async function scanSessionIndexEntry(filePath, { maxBytes = SESSION_SCAN_MAX_BYTES, textCap = SEARCH_TEXT_CAP, statFile = stat } = {}) {
+  const fileStat = await statFile(filePath);
+  const input = createReadStream(filePath, { encoding: "utf8", end: maxBytes - 1 });
+  let header;
+  let name = "";
+  let firstPrompt = "";
+  const usage = {};
+  const textParts = [];
+  let textLength = 0;
+  for await (const line of createInterface({ input, crlfDelay: Infinity })) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!header && entry?.type === "session") header = entry;
+    if (entry?.type === "session_info") name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (entry?.type !== "message" || !["user", "assistant"].includes(entry.message?.role)) continue;
+    const body = messageText(entry.message);
+    if (entry.message.role === "user" && !firstPrompt) firstPrompt = body;
+    if (entry.message.role === "assistant") addUsage(usage, entry.timestamp ?? entry.message.timestamp, entry.message.usage);
+    if (body) {
+      textParts.push(body);
+      textLength += body.length + 1;
+      while (textLength > textCap && textParts.length) {
+        const oldest = textParts.shift();
+        textLength -= oldest.length + 1;
+        if (!textParts.length && oldest.length > textCap) {
+          textParts.push(oldest.slice(-textCap));
+          textLength = textCap;
+        }
+      }
+    }
+  }
+  if (!header || typeof header.cwd !== "string" || !header.cwd) return null;
+  name = await latestSessionInfoNameInTail(filePath, fileStat.size, maxBytes, name);
+  const entry = {
+    filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size,
+    cwd: header.cwd,
+    cwdKey: cwdKey(mapHostPath(header.cwd, PATH_MAP)),
+    timestamp: header.timestamp || new Date(fileStat.mtimeMs).toISOString(),
+    title: compactTitle(name || firstPrompt, "Nova conversa"),
+    text: textParts.join("\n").slice(-textCap),
+  };
+  entry.usage = usage;
+  // Folded once here so a query is a plain substring test, not a re-fold of every session.
+  entry.folded = foldText(entry.text);
+  return entry;
+}
+
+export class SessionIndex {
+  constructor(sessionsRoot, { scan = scanSessionIndexEntry, statFile = stat, concurrency = SEARCH_INDEX_CONCURRENCY, now = Date.now } = {}) {
+    this.sessionsRoot = sessionsRoot;
+    this.scan = scan;
+    this.statFile = statFile;
+    this.concurrency = concurrency;
+    this.now = now;
+    this.entries = new Map();
+    this.refreshPromise = null;
+    this.lastRefresh = 0;
+    this.indexing = false;
+  }
+
+  refresh() {
+    if (this.refreshPromise) return this.refreshPromise;
+    this.indexing = true;
+    this.refreshPromise = this.refreshEntries().finally(() => {
+      this.lastRefresh = this.now();
+      this.indexing = false;
+      this.refreshPromise = null;
+    });
+    return this.refreshPromise;
+  }
+
+  async refreshEntries() {
+    const listed = new Map();
+    for (const dir of await readdirSafe(this.sessionsRoot)) {
+      if (!dir.isDirectory()) continue;
+      for (const file of await readdirSafe(path.join(this.sessionsRoot, dir.name))) {
+        if (file.isFile() && file.name.endsWith(".jsonl")) listed.set(path.join(this.sessionsRoot, dir.name, file.name), true);
+      }
+    }
+    const pending = [];
+    for (const filePath of listed.keys()) {
+      try {
+        const info = await this.statFile(filePath);
+        const previous = this.entries.get(filePath);
+        if (!previous || previous.mtimeMs !== info.mtimeMs || previous.size !== info.size) pending.push(filePath);
+      } catch { /* vanished between listing and stat */ }
+    }
+    for (const filePath of this.entries.keys()) if (!listed.has(filePath)) this.entries.delete(filePath);
+    let next = 0;
+    const workers = Array.from({ length: Math.max(1, this.concurrency) }, async () => {
+      while (next < pending.length) {
+        const filePath = pending[next++];
+        try {
+          const entry = await this.scan(filePath, { statFile: this.statFile });
+          if (entry) this.entries.set(filePath, entry);
+          else this.entries.delete(filePath);
+        } catch { this.entries.delete(filePath); }
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  // Cost/tokens of the assistant messages dated `day` (local YYYY-MM-DD); entries are reused until mtime/size change.
+  usageOn(day) {
+    return sumUsage(this.entries.values(), day);
+  }
+
+  search(query, projectsByCwd, { limit = SEARCH_LIMIT, pathMap = PATH_MAP } = {}) {
+    const foldedQuery = foldText(String(query).trim().slice(0, 200));
+    if (foldedQuery.length < SEARCH_MIN_CHARS) return [];
+    const results = [];
+    const ordered = [...this.entries.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const entry of ordered) {
+      if (results.length >= limit) break;
+      const project = projectsByCwd.get(entry.cwd ? cwdKey(mapHostPath(entry.cwd, pathMap)) : entry.cwdKey);
+      if (!project) continue;
+      if (!(entry.folded ?? foldText(entry.text)).includes(foldedQuery)) continue;
+      let snippet = "";
+      for (const message of entry.text.split("\n")) if ((snippet = searchSnippet(message, foldedQuery))) break;
+      if (snippet) results.push({ projectId: project.id, sessionPath: entry.filePath, title: entry.title, snippet, timestamp: entry.timestamp });
+    }
+    return results;
+  }
+}
+
+export async function searchSessions(sessionsRoot, query, { projectsByCwd, pathMap = PATH_MAP, limit = SEARCH_LIMIT, maxFileBytes = SESSION_SCAN_MAX_BYTES, statFile = stat } = {}) {
+  const index = new SessionIndex(sessionsRoot, { statFile, scan: (filePath) => scanSessionIndexEntry(filePath, { maxBytes: maxFileBytes, statFile }) });
+  await index.refresh();
+  return index.search(query, projectsByCwd, { limit, pathMap });
+}
+
+// Title of an indexed session, only while the file is unchanged since it was indexed.
+export function indexedTitle(entry, fileStat) {
+  return entry && entry.mtimeMs === fileStat.mtimeMs && entry.size === fileStat.size ? entry.title : null;
+}
+
+// Search answers from memory; a stale index refreshes in the background, never in the request.
+export function refreshIfStale(index, { now = Date.now(), log = recordLog } = {}) {
+  if (index.refreshPromise || now - index.lastRefresh < SEARCH_REFRESH_INTERVAL_MS) return false;
+  index.refresh().catch((error) => log("warn", "Session search index refresh failed", { error: error.message }));
+  return true;
+}
+
+// Discovery reads every session header (seconds on a big history); reuse the known list.
+export async function knownProjects(known, discover) {
+  return known.size ? [...known.values()] : discover();
+}
+
+const sessionIndex = new SessionIndex(path.join(AGENT_DIR, "sessions"));
+export function refreshSessionIndex() { return sessionIndex.refresh(); }
+
+// ---- Conversation state (pronto | fazendo | parado | erro | aguardando | nova), from the tail of the session file.
+const STATE_TAIL_BYTES = 64 * 1024;
+const STATE_TAIL_MAX_BYTES = 512 * 1024;
+const STATE_FRESH_MS = 90_000;
+const STATE_CACHE_MAX = 20_000;
+const HISTORY_LIMIT_ITEMS = 50;
+
+// The last `message` entry decides; trailing `custom`/`session_info` entries and a line still being written are skipped.
+function lastMessageIn(lines) {
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry?.type === "message" && isPlainObject(entry.message)) return entry.message;
+    } catch {
+      // Partial or malformed line: keep looking further back.
+    }
+  }
+  return null;
+}
+
+// Reads only the tail of a session file: 64 KiB, widened to 512 KiB when no message line shows up.
+// null = no message at all; { role: "unknown" } = content exists but a single line overflows the window.
+export async function readLastMessage(filePath, size, { openFile = open } = {}) {
+  if (!size) return null;
+  const handle = await openFile(filePath, "r");
+  try {
+    for (const window of [STATE_TAIL_BYTES, STATE_TAIL_MAX_BYTES]) {
+      const length = Math.min(window, size);
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+      const lines = buffer.toString("utf8", 0, bytesRead).split(/\n/);
+      if (length < size) lines.shift();
+      const message = lastMessageIn(lines);
+      if (message) return message;
+      if (length >= size) return null;
+    }
+    return { role: "unknown" };
+  } finally {
+    await handle.close();
+  }
+}
+
+// A turn that ended decides by its stopReason; one still in flight (tool call, tool result, prompt) is "fazendo"
+// only while the file keeps changing, otherwise the run was interrupted ("parado").
+export function classifySessionState(message, mtimeMs, now = Date.now()) {
+  if (!message) return "nova";
+  if (message.role === "assistant") {
+    if (message.stopReason === "stop" || message.stopReason === "length") return "pronto";
+    if (message.stopReason === "aborted") return "parado";
+    if (message.stopReason === "error") return "erro";
+  }
+  return now - mtimeMs <= STATE_FRESH_MS ? "fazendo" : "parado";
+}
+
+// The live PI of the open project knows better than its file: a pending dialog is "aguardando", a streaming
+// turn "fazendo"; an exited PI cannot be running, so a run the file still shows in flight is "parado".
+export function applyLiveState(fileState, live) {
+  if (!live) return fileState;
+  if (live.exited) return fileState === "fazendo" ? "parado" : fileState;
+  if (live.waitingUi) return "aguardando";
+  return live.streaming ? "fazendo" : fileState;
+}
+
+// Last message per file, reused while (mtime, size) are unchanged.
+export class SessionStateReader {
+  constructor({ read = readLastMessage, maxEntries = STATE_CACHE_MAX } = {}) {
+    this.read = read;
+    this.maxEntries = maxEntries;
+    this.cache = new Map();
+    this.pending = new Map();
+  }
+
+  async lastMessage(filePath, fileStat) {
+    const cached = this.cache.get(filePath);
+    if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) return cached.message;
+    const pending = this.pending.get(filePath);
+    if (pending?.mtimeMs === fileStat.mtimeMs && pending.size === fileStat.size) return pending.promise;
+    const promise = (async () => {
+      const readMessage = await this.read(filePath, fileStat.size);
+      const message = readMessage && { role: readMessage.role, timestamp: readMessage.timestamp, stopReason: readMessage.stopReason };
+      if (this.cache.size >= this.maxEntries) this.cache.delete(this.cache.keys().next().value);
+      this.cache.set(filePath, { mtimeMs: fileStat.mtimeMs, size: fileStat.size, message });
+      return message;
+    })();
+    const entry = { mtimeMs: fileStat.mtimeMs, size: fileStat.size, promise };
+    this.pending.set(filePath, entry);
+    try { return await promise; } finally { if (this.pending.get(filePath) === entry) this.pending.delete(filePath); }
+  }
+}
+
+const sessionStates = new SessionStateReader();
+
+// Session files the Studio's own PIs had open during this server's lifetime. A recent write to one of them came from the
+// Studio, not from another PI, so the page must not treat it as "owned elsewhere" (history items carry studioOwned).
+const studioFiles = new Set();
+
+// The project PI that is still alive, else the last one that ran (exited), else null.
+function liveSessionFor(projectId) {
+  const live = [...sessions.values()].find((session) => session.projectId === projectId && !session.exited);
+  if (live) return live;
+  const retired = [...retiredSessions.values()].reverse().find((item) => item.status.projectId === projectId);
+  return retired ? { exited: true, lastState: retired.lastState, statusSummary: () => retired.status } : null;
+}
+
+// A session header (first line: id, cwd, timestamp, parentSession) never changes once written, so
+// history listings read it once per file instead of opening every session file on every call.
+const sessionHeaders = new Map();
+const SESSION_HEADER_CACHE_MAX = 20_000;
+
+export async function sessionHeader(filePath, { read = readFirstLine, cache = sessionHeaders, max = SESSION_HEADER_CACHE_MAX, statFile = stat, directoryMtimeMs } = {}) {
+  const cached = cache.get(filePath);
+  if (cached && directoryMtimeMs !== undefined && cached.directoryMtimeMs === directoryMtimeMs) return cached.header;
+  const fileStat = await statFile(filePath);
+  if (cached) {
+    const sameFile = cached.ino && fileStat.ino
+      ? cached.ino === fileStat.ino && cached.birthtimeMs === fileStat.birthtimeMs
+      : fileStat.size >= cached.size;
+    if (sameFile) {
+      cache.set(filePath, { ...cached, directoryMtimeMs });
+      return cached.header;
+    }
+  }
+  const header = JSON.parse(await read(filePath));
+  if (cache.size >= max) cache.clear();
+  cache.set(filePath, { header, ino: fileStat.ino, birthtimeMs: fileStat.birthtimeMs, size: fileStat.size, directoryMtimeMs });
+  return header;
+}
+
+const historyTitleCache = new Map();
+const historyScanPending = new Map();
+async function scanProjectHistoryRecords(project) {
+  const sessionsRoot = path.join(AGENT_DIR, "sessions");
+  if (!(await isDirectory(sessionsRoot))) return [];
+  const out = [];
+  const dirs = await readdir(sessionsRoot, { withFileTypes: true });
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsRoot, dir.name);
+    let files = [];
+    let directoryMtimeMs;
+    try {
+      [files, directoryMtimeMs] = await Promise.all([
+        readdir(fullDir, { withFileTypes: true }),
+        stat(fullDir).then((info) => info.mtimeMs),
+      ]);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const header = await sessionHeader(filePath, { directoryMtimeMs });
+        if (cwdKey(mapHostPath(header.cwd || "", PATH_MAP)) !== cwdKey(project.cwd)) continue;
+        const fileStat = await stat(filePath);
+        const title = await memoizedTreeTitle(historyTitleCache, filePath, fileStat, null, async () =>
+          indexedTitle(sessionIndex.entries.get(filePath), fileStat) ?? (await scanSession(filePath)).title);
+        const timestamp = header.timestamp || fileStat.mtime.toISOString();
+        out.push({
+          path: filePath,
+          title,
+          timestamp,
+          bytes: fileStat.size,
+          sessionId: header.id,
+          isSubagent: Boolean(header.parentSession),
+          parentSession: header.parentSession || null,
+          lastActivity: fileStat.mtime.toISOString(),
+          fileStat,
+        });
+      } catch {
+        // Ignore malformed/partial session files.
+      }
+    }
+  }
+  // Main conversations and sub-PIs are capped separately: a busy project spawns dozens of sub-PIs, and one shared cap
+  // let them push every main conversation out of the list (nothing left to open for a worktree).
+  const sorted = out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  return [
+    ...sorted.filter((item) => !item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+    ...sorted.filter((item) => item.isSubagent).slice(0, HISTORY_LIMIT_ITEMS),
+  ].sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+}
+
+// Concurrent history requests for one project share a single directory scan instead of each repeating it.
+async function projectHistoryRecords(project) {
+  const key = cwdKey(project.cwd);
+  if (historyScanPending.has(key)) return historyScanPending.get(key);
+  const pending = scanProjectHistoryRecords(project);
+  historyScanPending.set(key, pending);
+  try { return await pending; } finally { if (historyScanPending.get(key) === pending) historyScanPending.delete(key); }
+}
+
+export async function listProjectHistory(project, { states = sessionStates, now = Date.now() } = {}) {
+  const top = await projectHistoryRecords(project);
+  const live = liveSessionFor(project.id);
+  const liveFile = live?.lastState?.sessionFile ? cwdKey(live.lastState.sessionFile) : null;
+  return Promise.all(top.map(async ({ fileStat, ...item }) => {
+    let fileState = "nova";
+    try {
+      fileState = classifySessionState(await states.lastMessage(item.path, fileStat), fileStat.mtimeMs, now);
+    } catch {
+      // Vanished or unreadable between listing and reading: no state rather than a failed list.
+    }
+    return { ...item, studioOwned: studioFiles.has(cwdKey(item.path)), state: liveFile === cwdKey(item.path) ? applyLiveState(fileState, live.statusSummary(now)) : fileState };
+  }));
+}
+
+// ---- Watching a session another PI is writing (GET /api/sessions/watch). Strictly read-only: the Studio's own PI never
+// switches into such a file, the page just renders its entries and polls for the appended ones.
+export const WATCH_CAP_BYTES = 2 * 1024 * 1024;
+// A first read parses and re-serializes up to the cap: at most this many run at once, the rest queue (bounds memory under load).
+const WATCH_CONCURRENCY = 4;
+let watchActive = 0;
+const watchWaiters = [];
+
+export async function withWatchSlot(task) {
+  if (watchActive >= WATCH_CONCURRENCY) await new Promise((resolve) => watchWaiters.push(resolve));
+  watchActive++;
+  try {
+    return await task();
+  } finally {
+    watchActive--;
+    watchWaiters.shift()?.();
+  }
+}
+
+// The `path` query must be an absolute .jsonl file inside the sessions root (symlinks resolved); else 400/403/404.
+export async function resolveWatchPath(raw, sessionsRoot = path.join(AGENT_DIR, "sessions")) {
+  if (typeof raw !== "string" || !path.isAbsolute(raw) || raw.includes("\0") || !raw.toLowerCase().endsWith(".jsonl")) throw httpError(400, "Invalid session path");
+  const resolved = path.resolve(raw);
+  if (!pathInside(sessionsRoot, resolved)) throw httpError(403, "Path outside the sessions directory");
+  let real;
+  try {
+    real = await realpath(resolved);
+  } catch {
+    throw httpError(404, "Session file not found");
+  }
+  if (!pathInside(await realpath(sessionsRoot), real)) throw httpError(403, "Path outside the sessions directory");
+  if (!(await stat(real)).isFile()) throw httpError(404, "Session file not found");
+  return real;
+}
+
+// Entries appended after byte `since` (complete lines only), at most `cap` bytes per call. A first read (since 0) of a file
+// bigger than the cap starts at its tail; a cursor past the end (file replaced) restarts there too. A line that is still being
+// written is held back until it completes, except a final line without newline that already parses as a whole object.
+export async function readSessionWatch(filePath, since = 0, { cap = WATCH_CAP_BYTES, states = sessionStates, now = Date.now() } = {}) {
+  const handle = await open(filePath, "r");
+  try {
+    const info = await handle.stat();
+    const reset = since > info.size;
+    let start = reset ? 0 : since;
+    const tail = start === 0 && info.size > cap;
+    if (tail) start = info.size - cap;
+    const buffer = Buffer.alloc(Math.min(cap, info.size - start));
+    const bytesRead = buffer.length ? (await handle.read(buffer, 0, buffer.length, start)).bytesRead : 0; // nothing new: no read
+    let chunk = buffer.subarray(0, bytesRead);
+    let offset = start;
+    if (tail) {
+      const skip = chunk.indexOf(10) + 1 || chunk.length; // the cut falls mid-line: drop that fragment
+      chunk = chunk.subarray(skip);
+      offset += skip;
+    }
+    const end = chunk.lastIndexOf(10) + 1; // bytes through the last newline
+    const parse = (line) => {
+      try {
+        const entry = JSON.parse(line);
+        return isPlainObject(entry) ? entry : null;
+      } catch {
+        return null; // blank or malformed line
+      }
+    };
+    const entries = chunk.toString("utf8", 0, end).split("\n").map(parse).filter(Boolean);
+    let consumed = end;
+    if (end < chunk.length) {
+      const atEof = start + bytesRead >= info.size;
+      const unterminated = atEof ? parse(chunk.toString("utf8", end)) : null;
+      if (unterminated) {
+        entries.push(unterminated);
+        consumed = chunk.length;
+      } else if (!atEof && end === 0) {
+        consumed = chunk.length; // one line bigger than the cap: skipped (its remainder fails to parse)
+      }
+    }
+    const state = classifySessionState(await states.lastMessage(filePath, info), info.mtimeMs, now);
+    return { entries, offset: offset + consumed, size: info.size, mtimeMs: info.mtimeMs, state, reset, truncated: tail };
+  } finally {
+    await handle.close();
+  }
+}
+
+// ---- Running conversations per project (sidebar badge of projects that are not open).
+const RUNNING_WINDOW_MS = 30 * 60_000;
+const RUNNING_CACHE_MS = 2000;
+const runningCache = { at: 0, value: null, pending: null };
+
+// { projectId: n } for session files touched within `windowMs` whose last message says the run is still going ("fazendo").
+// Older files are never read; headers and tails come from the same caches the history list uses.
+export async function countRunningByProject(sessionsRoot, { states = sessionStates, now = Date.now(), windowMs = RUNNING_WINDOW_MS, pathMap = PATH_MAP, statFile = stat } = {}) {
+  const counts = {};
+  for (const dir of await readdirSafe(sessionsRoot)) {
+    if (!dir.isDirectory()) continue;
+    const fullDir = path.join(sessionsRoot, dir.name);
+    const ids = await Promise.all((await readdirSafe(fullDir)).filter((file) => file.isFile() && file.name.endsWith(".jsonl")).map(async (file) => {
+      const filePath = path.join(fullDir, file.name);
+      try {
+        const info = await statFile(filePath);
+        if (now - info.mtimeMs > windowMs) return null;
+        const header = await sessionHeader(filePath);
+        if (typeof header.cwd !== "string" || !header.cwd) return null;
+        const state = classifySessionState(await states.lastMessage(filePath, info), info.mtimeMs, now);
+        return state === "fazendo" ? projectIdFor(mapHostPath(header.cwd, pathMap)) : null;
+      } catch {
+        return null; // vanished or malformed between listing and reading
+      }
+    }));
+    for (const id of ids) if (id) counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export function clearRunningCache() {
+  runningCache.at = 0;
+  runningCache.value = null;
+}
+
+// Cached for 2 s; concurrent callers share one scan.
+export function getRunningCounts({ now = Date.now, compute = () => countRunningByProject(path.join(AGENT_DIR, "sessions")) } = {}) {
+  if (runningCache.value && now() - runningCache.at < RUNNING_CACHE_MS) return Promise.resolve(runningCache.value);
+  runningCache.pending ??= compute()
+    .then((value) => {
+      runningCache.value = value;
+      runningCache.at = now();
+      return value;
+    })
+    .finally(() => {
+      runningCache.pending = null;
+    });
+  return runningCache.pending;
+}
+
+// ---- Orca worktrees (read-only `orca worktree ps --json`; absent in Docker, so it degrades to available:false).
+const ORCA_TIMEOUT_MS = Number.parseInt(process.env.PI_STUDIO_ORCA_TIMEOUT_MS || "5000", 10);
+const ORCA_CACHE_MS = 2000;
+// Orca closed: each `orca` call still costs ~80 ms of CPU and ~0.7 s, so a failure is reused longer than an answer.
+const ORCA_UNAVAILABLE_CACHE_MS = 15_000;
+const ORCA_MAX_BUFFER = 8 * 1024 * 1024;
+const orcaCache = { at: 0, value: null, pending: null };
+
+function parseJsonStringArray(raw) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Fall through to no extra args.
+  }
+  return [];
+}
+
+// PI_STUDIO_ORCA_BIN (+ PI_STUDIO_ORCA_BIN_ARGS, a JSON array run before the orca arguments) wins; otherwise the Orca
+// desktop CLI on Windows, `orca` on PATH elsewhere. null = not installed.
+export function resolveOrcaCommand({ platform = process.platform, env = process.env, exists = existsSync } = {}) {
+  if (env.PI_STUDIO_ORCA_BIN) return { bin: env.PI_STUDIO_ORCA_BIN, prefixArgs: parseJsonStringArray(env.PI_STUDIO_ORCA_BIN_ARGS) };
+  if (platform !== "win32") return { bin: "orca", prefixArgs: [] };
+  const bin = env.LOCALAPPDATA ? path.win32.join(env.LOCALAPPDATA, "Programs", "orca", "resources", "bin", "orca.exe") : "";
+  return bin && exists(bin) ? { bin, prefixArgs: [] } : null;
+}
+
+// Never rejects: every failure becomes { available: false, reason } (not-found | timeout | failed | invalid).
+export function fetchOrca(command = resolveOrcaCommand(), timeoutMs = ORCA_TIMEOUT_MS) {
+  if (!command) return Promise.resolve({ available: false, reason: "not-found" });
+  return new Promise((resolve) => {
+    const args = [...command.prefixArgs, "worktree", "ps", "--json"];
+    execFile(command.bin, args, { timeout: timeoutMs, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      if (error) return resolve({ available: false, reason: error.code === "ENOENT" ? "not-found" : error.killed ? "timeout" : "failed" });
+      let summary = { ok: false };
+      try {
+        summary = normalizeOrca(JSON.parse(stdout));
+      } catch {
+        // Malformed output keeps ok:false.
+      }
+      resolve(summary.ok ? { available: true, active: summary.active, worktrees: summary.worktrees } : { available: false, reason: "invalid" });
+    });
+  });
+}
+
+const TASK_LINKS_FILE = path.join(AGENT_DIR, "pi-studio-data", "task-links.json");
+
+async function readTaskLinks() {
+  try {
+    const parsed = JSON.parse(await readFile(TASK_LINKS_FILE, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.conversationId === "string" && Number.isInteger(item.taskId)).slice(-1000) : [];
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    try {
+      await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+      await rename(TASK_LINKS_FILE, `${TASK_LINKS_FILE}.bak`);
+    } catch {
+      // Keep serving with an empty link set if recovery storage is unavailable.
+    }
+    return [];
+  }
+}
+
+// One writer at a time: concurrent creates must not drop each other's links (read-modify-write).
+let taskLinkWrites = Promise.resolve();
+function saveTaskLink(link) {
+  const write = taskLinkWrites.then(() => writeTaskLink(link));
+  taskLinkWrites = write.catch(() => {});
+  return write;
+}
+
+async function writeTaskLink(link) {
+  const links = (await readTaskLinks()).filter((item) => !(item.conversationId === link.conversationId && item.taskId === link.taskId));
+  links.push(link);
+  const temp = `${TASK_LINKS_FILE}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(TASK_LINKS_FILE), { recursive: true });
+  try {
+    await writeFile(temp, JSON.stringify(links.slice(-1000)), { encoding: "utf8", flag: "wx" });
+    await rename(temp, TASK_LINKS_FILE);
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+// At most ORCA_TASK_SLOTS task CLI processes at once; the rest wait their turn (a busy client cannot fork-bomb the host).
+const ORCA_TASK_SLOTS = 4;
+let orcaTaskRunning = 0;
+const orcaTaskQueue = [];
+async function runOrcaJson(command, args) {
+  // A finishing call hands its slot straight to the next waiter, so the count never exceeds the cap.
+  if (orcaTaskRunning >= ORCA_TASK_SLOTS) await new Promise((resolve) => orcaTaskQueue.push(resolve));
+  else orcaTaskRunning += 1;
+  try {
+    return await execOrcaJson(command, args);
+  } finally {
+    const next = orcaTaskQueue.shift();
+    if (next) next();
+    else orcaTaskRunning -= 1;
+  }
+}
+
+function execOrcaJson(command, args) {
+  return new Promise((resolve, reject) => {
+    execFile(command.bin, args, { timeout: ORCA_TIMEOUT_MS, maxBuffer: ORCA_MAX_BUFFER, windowsHide: true }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch { reject(Object.assign(new Error("Invalid Orca JSON"), { code: "INVALID_JSON" })); }
+    });
+  });
+}
+
+function taskLinkFromOrca(value, body) {
+  const outer = value?.result ?? value;
+  const worktree = outer?.worktree ?? outer;
+  const worktreePath = worktree?.path ?? worktree?.worktreePath;
+  const terminalHandle = outer?.agentTerminalHandle ?? outer?.startupTerminal?.handle ?? outer?.terminalHandle ?? worktree?.agentTerminalHandle ?? worktree?.startupTerminal?.handle;
+  if (typeof worktreePath !== "string" || !worktreePath || typeof terminalHandle !== "string" || !terminalHandle) return null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+function orcaWorktreeList(value) {
+  const outer = value?.result ?? value;
+  return [outer?.worktrees, outer?.result?.worktrees].flatMap((items) => Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
+}
+
+// After a create timeout: the worktree carries our comment (unique per conversation/task) in the same repo.
+// `worktree ps` reports no terminal handle, so a recovered link may have none (messaging then stays off).
+function findTaskWorktree(value, body, repoId) {
+  const match = orcaWorktreeList(value).find((item) => item.repoId === repoId && item.comment === taskComment(body));
+  if (!match || typeof match.path !== "string" || !match.path) return null;
+  const terminalHandle = match.agentTerminalHandle ?? match.terminalHandle ?? match.agents?.find((agent) => agent?.terminalHandle)?.terminalHandle ?? null;
+  return { conversationId: body.conversationId, taskId: body.taskId, worktreePath: match.path, worktreeName: body.name, terminalHandle, createdAt: new Date().toISOString() };
+}
+
+const taskComment = (body) => `pi-studio task ${body.conversationId}#${body.taskId}`;
+
+// The conversation's project must be a checkout Orca knows: it names the repo (--repo) and the parent worktree,
+// instead of letting Orca infer them from the server's own cwd or from whatever worktree is active in the app.
+function orcaWorktreeForProject(value, cwd) {
+  const key = cwdKey(cwd);
+  return orcaWorktreeList(value).find((item) => typeof item.path === "string" && item.path && cwdKey(item.path) === key &&
+    typeof item.repoId === "string" && item.repoId && typeof item.worktreeId === "string" && item.worktreeId) || null;
+}
+
+export function clearOrcaCache() {
+  orcaCache.at = 0;
+  orcaCache.value = null;
+}
+
+// Cached for 2 s (15 s while Orca is unavailable; `maxAgeMs` lets a background consumer accept older data);
+// concurrent callers share one child process.
+export function getOrca({ now = Date.now, fetch = fetchOrca, maxAgeMs = ORCA_CACHE_MS } = {}) {
+  const ttl = orcaCache.value?.available === false ? Math.max(maxAgeMs, ORCA_UNAVAILABLE_CACHE_MS) : maxAgeMs;
+  if (orcaCache.value && now() - orcaCache.at < ttl) return Promise.resolve(orcaCache.value);
+  orcaCache.pending ??= fetch()
+    .then((value) => {
+      orcaCache.value = value;
+      orcaCache.at = now();
+      return value;
+    })
+    .finally(() => {
+      orcaCache.pending = null;
+    });
+  return orcaCache.pending;
+}
+
+let treeLastPollAt = 0;
+const treeTitles = createTitleIndex({
+  async *readLines(file) { const input = createInterface({ input: createReadStream(file), crlfDelay: Infinity }); for await (const line of input) yield line; },
+  statFile: async (file) => { const info = await stat(file); return { mtimeMs: info.mtimeMs, size: info.size }; },
+});
+let treeRecordsPending = null;
+const TREE_TITLE_CACHE_MAX = SESSION_HEADER_CACHE_MAX;
+const treeTitleCache = new Map();
+const treeSessionNameCache = new Map();
+function touchBoundedCache(cache, key, value) {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > TREE_TITLE_CACHE_MAX) cache.delete(cache.keys().next().value);
+}
+function sameFileVersion(cached, info) {
+  return cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size && cached.ino === info.ino;
+}
+export async function statTreeFile(file, statFile = stat) {
+  try { return await statFile(file); } catch { return null; }
+}
+export async function memoizedTreeTitle(cache, file, info, parentInfo, compute) {
+  const key = `${info.ino ?? "?"}:${info.mtimeMs}:${info.size}|${parentInfo ? `${parentInfo.ino ?? "?"}:${parentInfo.mtimeMs}:${parentInfo.size}` : "missing"}`;
+  const cached = cache.get(file);
+  if (cached?.key === key) {
+    touchBoundedCache(cache, file, cached);
+    return cached.title;
+  }
+  const title = await compute();
+  touchBoundedCache(cache, file, { key, title });
+  return title;
+}
+async function cachedSessionName(file, info) {
+  const cached = treeSessionNameCache.get(file);
+  if (sameFileVersion(cached, info)) return cached.name;
+  const name = await sessionName(file);
+  touchBoundedCache(treeSessionNameCache, file, { mtimeMs: info.mtimeMs, size: info.size, ino: info.ino, name });
+  return name;
+}
+// Titles are recomputed only when the session file (or, for a sub-PI, its parent) changed: rescanning multi-MB
+// files on every 1 s tree refresh made even unchanged 304 polls wait seconds.
+// The tree polls every 2 s and used to stat (and read the tail of) every session file each time: ~730 files here,
+// several fs calls each, most of it on libuv's thread pool. A file untouched for 10 min keeps its record and is
+// rechecked every 30 s; a file that changed recently, or one never seen, is read on every poll as before.
+const TREE_COLD_FILE_MS = 10 * 60_000;
+const TREE_COLD_RECHECK_MS = 30_000;
+const treeRecordCache = new Map();
+export function reusableTreeRecord(cached, now = Date.now()) {
+  return Boolean(cached?.record?.stat) && now - cached.record.stat.mtimeMs > TREE_COLD_FILE_MS && now - cached.checkedAt < TREE_COLD_RECHECK_MS;
+}
+async function treeSessionRecords() {
+  if (treeRecordsPending) return treeRecordsPending;
+  treeRecordsPending = (async () => {
+  const root = path.join(AGENT_DIR, "sessions");
+  const files = [];
+  for (const directory of await readdirSafe(root)) {
+    if (!directory.isDirectory()) continue;
+    const dir = path.join(root, directory.name);
+    const directoryInfo = await statTreeFile(dir);
+    for (const entry of await readdirSafe(dir)) {
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push({ file: path.join(dir, entry.name), directoryMtimeMs: directoryInfo?.mtimeMs });
+    }
+  }
+  const listed = new Set(files.map(({ file }) => file));
+  for (const file of treeRecordCache.keys()) if (!listed.has(file)) treeRecordCache.delete(file);
+  const records = await mapConcurrent(files, 16, async ({ file, directoryMtimeMs }) => {
+    const cached = treeRecordCache.get(file);
+    if (reusableTreeRecord(cached)) return cached.record;
+    const record = await readTreeRecord(file, directoryMtimeMs);
+    if (record) treeRecordCache.set(file, { record, checkedAt: Date.now() });
+    else treeRecordCache.delete(file);
+    return record;
+  });
+  const hidden = await studioHidden();
+  return records.filter((record) => record !== null && !insideIgnored(record.header?.cwd, hidden));
+  })();
+  try { return await treeRecordsPending; } finally { treeRecordsPending = null; }
+}
+async function readTreeRecord(file, directoryMtimeMs) {
+    try {
+      const info = await stat(file);
+      const header = await sessionHeader(file, { directoryMtimeMs });
+      if (header?.type !== "session" || typeof header.cwd !== "string") return null;
+      const last = await sessionStates.lastMessage(file, info);
+      const classified = classifySessionState(last, info.mtimeMs);
+      let parentInfo = null;
+      if (header.parentSession) parentInfo = await statTreeFile(header.parentSession);
+      const title = await memoizedTreeTitle(treeTitleCache, file, info, parentInfo, async () => header.parentSession
+        ? treeTitles.subagentTitle(file, header, await cachedSessionName(file, info))
+        : (await scanSession(file)).title);
+      return { path: file, header, stat: info, state: classified, title, lastAssistantAt: last?.role === "assistant" && Number.isFinite(Date.parse(last.timestamp)) ? Date.parse(last.timestamp) : null };
+    } catch { /* malformed or disappearing session records are skipped */
+      return null;
+    }
+}
+async function sessionName(file) {
+  try { for await (const line of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) { const entry = JSON.parse(line); if (entry?.type === "session_info") return entry.name ?? ""; } } catch { /* malformed session name */ }
+  return "";
+}
+// The sidebar tree polls every 2 s; its Orca and live-PI markers may be up to 10 s / 15 s old, so the tree alone
+// no longer starts an `orca` process every 2 s and a process-list read every 5 s.
+const TREE_ORCA_MAX_AGE_MS = 10_000;
+const TREE_PROCESS_MAX_AGE_MS = 15_000;
+const treeService = createTreeService({
+  getProjects: async () => knownProjects(projects, discoverProjects), getOrca: () => getOrca({ maxAgeMs: TREE_ORCA_MAX_AGE_MS }),
+  getSessions: treeSessionRecords,
+  async getLive() {
+    const headers = await treeSessionRecords();
+    const sidePids = new Set(sideChats.pids());
+    const procs = parsePiProcesses(await processTable.list({ maxAgeMs: TREE_PROCESS_MAX_AGE_MS }), { studioPids: new Set([...sessions.values()].map((item) => item.proc?.pid).filter(Boolean)) }).filter((proc) => !sidePids.has(proc.pid));
+    const resolved = resolveSessions(procs, headers.map(({ path: file, header, stat: info }) => ({ path: file, cwd: header.cwd, timestampMs: Date.parse(header.timestamp), mtimeMs: info.mtimeMs })));
+    // Exited sessions leave this map in the same tick (see the exit handler); a just-started one may not know its file yet.
+    for (const session of sessions.values()) {
+      const file = session.lastState?.sessionFile;
+      resolved.push({ pid: session.proc.pid, owner: "studio", startedAt: Date.parse(session.createdAt), sessionPath: file, streaming: session.streaming, waitingUi: session.statusSummary().waitingUi });
+    }
+    return resolved.filter((item) => item.sessionPath);
+  },
+  onPoll(at) { treeLastPollAt = at; },
+});
+
+// Model accounts: which providers have a working login or key, from `pi auth check --json --no-refresh` (never with
+// --credentials, so no secret is printed). Checked: the providers the model list uses, the ones in models.json and the
+// usual subscription logins; cached for five minutes per provider.
+const PROVIDER_NAME = /^[\w.-]{1,40}$/;
+const PROVIDER_CANDIDATES = ["anthropic", "openai-codex", "github-copilot", "openai", "google"];
+const providerChecks = new Map();
+function checkProvider(provider) {
+  const cached = providerChecks.get(provider);
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.value;
+  const pi = piCommand();
+  const value = new Promise((resolve) => {
+    execFile(pi.bin, [...pi.prefixArgs, "auth", "check", "--provider", provider, "--json", "--no-refresh"], { timeout: 30_000, windowsHide: true, maxBuffer: 256 * 1024 }, (error, stdout) => {
+      try {
+        const parsed = JSON.parse(String(stdout).trim().split(/\r?\n/).at(-1));
+        resolve({ provider, status: parsed.status === "ready" ? "ready" : parsed.status === "not_ready" ? "not_ready" : "unknown", reason: typeof parsed.reason === "string" ? parsed.reason : null, authType: typeof parsed.authType === "string" ? parsed.authType : null });
+      } catch { resolve({ provider, status: "unknown", reason: error ? "check_failed" : null, authType: null }); }
+    });
+  });
+  providerChecks.set(provider, { at: Date.now(), value });
+  return value;
+}
+async function modelAccounts(asked = []) {
+  let configured = [];
+  try { configured = Object.keys(JSON.parse(await readFile(path.join(AGENT_DIR, "models.json"), "utf8"))?.providers ?? {}); } catch { configured = []; }
+  const names = [...new Set([...asked, ...PROVIDER_CANDIDATES, ...configured].filter((name) => PROVIDER_NAME.test(name)))].slice(0, 24);
+  return (await mapConcurrent(names, 4, checkProvider)).filter((account) => account.reason !== "provider_not_found");
+}
+
+function httpError(statusCode, message) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+export function pathInside(root, target) {
+  const base = cwdKey(root);
+  const key = cwdKey(target);
+  return key === base || key.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+}
+
+// Trust boundary of open-path: an absolute directory that Orca lists as a worktree or that sits under a project root.
+async function projectForPath(raw) {
+  const cwd = safeName(raw);
+  if (!path.isAbsolute(cwd) || /(^|[\\/])\.\.([\\/]|$)/.test(cwd)) throw httpError(400, "Invalid path");
+  const resolved = path.resolve(cwd);
+  const orca = await getOrca();
+  const listed = orca.available && orca.worktrees.some((worktree) => cwdKey(worktree.path) === cwdKey(resolved));
+  if (!listed && !(await getProjectRoots()).some((root) => pathInside(root, resolved))) throw httpError(403, "Path not allowed");
+  if (!(await isDirectory(resolved))) throw httpError(404, "Directory not found");
+  await knownProjects(projects, discoverProjects);
+  let project = projects.get(projectIdFor(resolved));
+  if (!project) {
+    project = { ...makeProject(resolved, path.dirname(resolved)), lastUsedAt: new Date().toISOString() };
+    addedProjects.set(project.id, project);
+    projects.set(project.id, project);
+  }
+  return project;
+}
+
+// Per-session process-tree totals remain local; acquisition, parsing, bounds, and cache are shared with live PIs.
+const RESOURCE_RECENT_MAX_MS = 30_000;
+const resourceHistory = new Map();
+
+export function clearResourceCache() { processTable.clear(); testProcessTable?.clear(); testProcessTable = null; }
+
+function resourceMap(rows) {
+  if (!rows?.length) return null;
+  const table = new Map();
+  for (const row of rows) table.set(row.pid, { ppid: row.ppid, rssKb: row.rssBytes / 1024, cpuSeconds: row.cpuSeconds });
+  return table;
+}
+
+// Compatibility helpers expose the shared command/parser for focused resource math tests.
+export function resolveSamplerCommand(options) {
+  const { timeoutMs, ...command } = resolveProcessTableCommand(options);
+  return command;
+}
+export function parseProcessTable(output) { return resourceMap(parseUnifiedProcessTable(output)); }
+export async function sampleProcesses(command = resolveProcessTableCommand(), timeoutMs = command.timeoutMs ?? 4000) {
+  return resourceMap(await sampleProcessTable({ ...command, timeoutMs }));
+}
+
+let testProcessTable = null;
+let mappedSnapshot = null;
+let mappedResourceSnapshot = null;
+function mapSnapshot(snapshot) {
+  if (snapshot === mappedSnapshot) return mappedResourceSnapshot;
+  mappedSnapshot = snapshot;
+  mappedResourceSnapshot = snapshot ? { at: snapshot.at, table: resourceMap(snapshot.rows) } : null;
+  return mappedResourceSnapshot;
+}
+export async function getProcessTable(options) {
+  if (options?.sample) {
+    testProcessTable ??= createProcessTable({ now: options.now, sample: async () => {
+      const value = await options.sample();
+      return value instanceof Map ? [...value].map(([pid, row]) => ({ pid, ppid: row.ppid, name: "", startedAt: null, commandLine: "", rssBytes: row.rssKb * 1024, cpuSeconds: row.cpuSeconds })) : value;
+    } });
+    const snapshot = await testProcessTable.snapshot();
+    return mapSnapshot(snapshot);
+  }
+  const snapshot = await processTable.snapshot();
+  return mapSnapshot(snapshot);
+}
+
+// The pid and all its descendants. null when the pid is not in the table. Cycles in a corrupt table end at the visited set.
+export function treeTotals(table, rootPid) {
+  if (!table.has(rootPid)) return null;
+  const childrenOf = new Map();
+  for (const [pid, row] of table) childrenOf.set(row.ppid, [...(childrenOf.get(row.ppid) ?? []), pid]);
+  const seen = new Set([rootPid]);
+  const queue = [rootPid];
+  const totals = { rssKb: 0, cpuSeconds: 0, children: -1 };
+  for (const pid of queue) {
+    const row = table.get(pid);
+    totals.rssKb += row.rssKb;
+    totals.cpuSeconds += row.cpuSeconds;
+    totals.children += 1;
+    for (const child of childrenOf.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return totals;
+}
+
+const oneDecimal = (value) => Math.round(value * 10) / 10;
+
+// cpuAvgPct: cpu seconds / wall seconds since the PI started / logical CPUs. cpuRecentPct: the same over the last two
+// samples (null on the first one, on a clock that did not advance, or when the previous sample is older than 30 s).
+export function sessionResources({ id, pid, startedAt, table, at, cpus = availableParallelism(), history = resourceHistory }) {
+  const totals = treeTotals(table, pid);
+  if (!totals) return null;
+  let entry = history.get(id);
+  if (entry?.last.at !== at) {
+    entry = { prev: entry?.last ?? null, last: { at, cpuSeconds: totals.cpuSeconds } };
+    history.set(id, entry);
+  }
+  const wall = (at - startedAt) / 1000;
+  const gap = entry.prev ? at - entry.prev.at : 0;
+  const recent = gap > 0 && gap <= RESOURCE_RECENT_MAX_MS ? (Math.max(0, totals.cpuSeconds - entry.prev.cpuSeconds) / (gap / 1000) / cpus) * 100 : null;
+  return {
+    pid,
+    rssMb: oneDecimal(totals.rssKb / 1024),
+    cpuAvgPct: wall > 0 ? oneDecimal((totals.cpuSeconds / wall / cpus) * 100) : null,
+    cpuRecentPct: recent === null ? null : oneDecimal(recent),
+    sampledAt: at,
+    children: totals.children,
+  };
+}
+
+// `sessions` only holds PIs that have not exited; start() ran in the same tick that added them, so `proc` is set.
+const measureSession = (session, snapshot) => sessionResources({ id: session.id, pid: session.proc.pid, startedAt: Date.parse(session.createdAt), table: snapshot.table, at: snapshot.at });
+
+async function sendSessionResources(res, id) {
+  const session = sessions.get(id);
+  if (!session) return retiredSessions.has(id) ? json(res, 409, { error: "no-live-process" }) : json(res, 404, { error: "Unknown session" });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = measureSession(session, snapshot);
+  return resources ? json(res, 200, resources) : json(res, 409, { error: "no-live-process" });
+}
+
+async function sendAllResources(res) {
+  const live = [...sessions.values()];
+  if (!live.length) return json(res, 200, { resources: [] });
+  const snapshot = await getProcessTable();
+  if (!snapshot) return json(res, 503, { error: "resources-unavailable" });
+  const resources = live.flatMap((session) => {
+    const measured = measureSession(session, snapshot);
+    return measured ? [{ sessionId: session.id, projectId: session.projectId, cwd: session.cwd, ...measured }] : [];
+  });
+  return json(res, 200, { resources });
+}
+
+// ---- Git state of the files of a conversation (GET /api/sessions/:id/git-files): colors of the Arquivos tab.
+// Read-only git (argv arrays, literal pathspecs, no optional locks so it never fights the user's own git), at most 4 git
+// processes at once, answers cached 2 s per directory and path set, output bounded.
+const GIT_CACHE_MS = 2000;
+const GIT_CACHE_MAX = 200;
+const GIT_MAX_ENTRIES = 2000;
+const GIT_MAX_BUFFER = 8 * 1024 * 1024;
+const GIT_SLOTS = 4;
+const GIT_REQUEST_PATHS = 100;
+const GIT_REQUEST_PATH_CHARS = 1024;
+const gitFilesCache = new Map();
+
+// Runs tasks with at most `slots` in flight; the rest wait their turn. A failing task still frees its slot.
+export function createLimiter(slots) {
+  let active = 0;
+  const waiting = [];
+  return async (task) => {
+    if (active >= slots) await new Promise((resolve) => waiting.push(resolve));
+    else active += 1;
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active -= 1;
+    }
+  };
+}
+
+const gitSlots = createLimiter(GIT_SLOTS);
+
+// { ok, stdout, truncated? } | { timedOut } | { ok: false, code }. Never rejects. Output past the buffer keeps what was read.
+export function runGit(cwd, args, { bin = "git", timeoutMs = Number.parseInt(process.env.PI_STUDIO_GIT_TIMEOUT_MS || "5000", 10), maxBuffer = GIT_MAX_BUFFER } = {}) {
+  return gitSlots(() => new Promise((resolve) => {
+    execFile(bin, ["--no-optional-locks", "--literal-pathspecs", "-C", cwd, ...args], { timeout: timeoutMs, maxBuffer, windowsHide: true, encoding: "utf8" }, (error, stdout) => {
+      if (!error) return resolve({ ok: true, stdout });
+      if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve({ ok: true, stdout, truncated: true });
+      resolve(error.killed ? { timedOut: true } : { ok: false, code: error.code });
+    });
+  }));
+}
+
+// NUL-separated output without its terminator; a cut output also loses its last (possibly half) field.
+function gitFields(stdout, truncated) {
+  const fields = stdout.split("\0");
+  if (fields.at(-1) === "") fields.pop();
+  if (truncated) fields.pop();
+  return fields;
+}
+
+// Porcelain v1 XY code -> state. A change in the work tree wins over a staged one; D on either side is a deletion.
+function gitFileState(code) {
+  const [index, tree] = code;
+  if (code === "??") return "untracked";
+  if (code === "!!") return null;
+  if (index === "U" || tree === "U" || code === "AA" || code === "DD") return "modified";
+  if (index === "D" || tree === "D") return "deleted";
+  return tree === " " ? "staged" : "modified";
+}
+
+// `git status --porcelain=v1 -z`: "XY path" fields; a rename/copy is followed by its origin path in a field of its own.
+export function parseGitStatus(stdout, { truncated = false } = {}) {
+  const fields = gitFields(stdout, truncated);
+  const entries = [];
+  for (let index = 0; index < fields.length; index++) {
+    const field = fields[index];
+    if (field.length < 4 || field[2] !== " ") continue;
+    if (/[RC]/.test(field.slice(0, 2))) index += 1;
+    const state = gitFileState(field.slice(0, 2));
+    if (state) entries.push({ path: field.slice(3), state });
+  }
+  return entries;
+}
+
+export function parseGitNames(stdout, { truncated = false } = {}) {
+  return [...new Set(gitFields(stdout, truncated).filter(Boolean))];
+}
+
+const gitPathKey = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
+const validRequestPath = (value) => typeof value === "string" && value.length > 0 && value.length <= GIT_REQUEST_PATH_CHARS && !value.includes("\0");
+
+// A requested path as the repository names it (relative to the root, "/"); null when it is the directory itself or outside the repo.
+function repoPathOf(cwd, prefix, input) {
+  const relative = path.relative(cwd, path.resolve(cwd, input));
+  if (relative === "" || path.isAbsolute(relative)) return null;
+  const combined = path.posix.normalize(`${prefix}${relative.split(path.sep).join("/")}`);
+  return combined === "." || combined === ".." || combined.startsWith("../") ? null : combined;
+}
+
+// null = git did not answer in time (or failed oddly); { git: false } = not a repository or no git.
+export async function readGitFiles(cwd, paths = [], { run = (args, dir) => runGit(dir, args) } = {}) {
+  const top = await run(["rev-parse", "--show-toplevel", "--show-prefix"], cwd);
+  if (top.timedOut) return null;
+  const [root, prefix = ""] = top.ok ? top.stdout.split(/\r?\n/) : [];
+  if (!root) return { git: false };
+  const mapped = new Map([...new Set(paths.filter(validRequestPath))].slice(0, GIT_REQUEST_PATHS).map((input) => [input, repoPathOf(cwd, prefix, input)]));
+  const inside = [...new Set([...mapped.values()].filter(Boolean))];
+  const [status, log, tracked] = await Promise.all([
+    run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], root),
+    run(["log", "-z", "--name-only", "--format=", "@{u}..HEAD"], root),
+    inside.length ? run(["ls-files", "-z", "--full-name", "--", ...inside], root) : { ok: true, stdout: "" },
+  ]);
+  if (!status.ok || log.timedOut || tracked.timedOut) return null;
+  const entries = parseGitStatus(status.stdout, status);
+  const stateByPath = new Map(entries.map((entry) => [gitPathKey(entry.path), entry.state]));
+  const upstream = log.ok === true;
+  const unpushed = upstream ? parseGitNames(log.stdout, log) : [];
+  const unpushedKeys = new Set(unpushed.map(gitPathKey));
+  const trackedKeys = new Set(tracked.ok ? parseGitNames(tracked.stdout).map(gitPathKey) : []);
+  const stateOf = (repoPath) => {
+    const key = gitPathKey(repoPath);
+    if (stateByPath.has(key)) return stateByPath.get(key);
+    if (unpushedKeys.has(key)) return "committed";
+    return trackedKeys.has(key) ? (upstream ? "pushed" : "committed") : "ignored";
+  };
+  const files = entries.concat(unpushed.filter((name) => !stateByPath.has(gitPathKey(name))).map((name) => ({ path: name, state: "committed" })));
+  const requested = Object.create(null);
+  for (const [input, repoPath] of mapped) requested[input] = repoPath === null ? { state: "outside", path: null } : { state: stateOf(repoPath), path: repoPath };
+  return { git: true, root, upstream, truncated: Boolean(status.truncated || log.truncated || files.length > GIT_MAX_ENTRIES), files: files.slice(0, GIT_MAX_ENTRIES), requested };
+}
+
+export function clearGitFilesCache() {
+  gitFilesCache.clear();
+}
+
+export function gitFilesCacheSize() {
+  return gitFilesCache.size;
+}
+
+// Same-key callers share one read (also while it runs) and its result for 2 s; the cache holds at most 200 keys.
+export function gitFilesCached(cwd, paths, { run, now = Date.now } = {}) {
+  const key = `${cwdKey(cwd)}\0${[...new Set(paths)].sort().join("\0")}`;
+  const hit = gitFilesCache.get(key);
+  if (hit?.pending) return hit.pending;
+  if (hit && now() - hit.at < GIT_CACHE_MS) return Promise.resolve(hit.value);
+  gitFilesCache.delete(key);
+  const entry = { at: 0, value: null, pending: null };
+  entry.pending = readGitFiles(cwd, paths, { run })
+    .catch(() => null)
+    .then((value) => {
+      Object.assign(entry, { at: now(), value, pending: null });
+      return value;
+    });
+  gitFilesCache.set(key, entry);
+  while (gitFilesCache.size > GIT_CACHE_MAX) gitFilesCache.delete(gitFilesCache.keys().next().value);
+  return entry.pending;
+}
+
+async function sendSessionGitFiles(res, id, paths) {
+  const cwd = sessions.get(id)?.cwd ?? retiredSessions.get(id)?.summary.cwd;
+  if (!cwd) return json(res, 404, { error: "Unknown session" });
+  const data = await gitFilesCached(cwd, paths);
+  return data ? json(res, 200, data) : json(res, 503, { error: "git-unavailable" });
+}
+
+// ---- Navegador: project files for the Inspector viewer.
+const FILE_MAX_BYTES = 20 * 1024 * 1024;
+
+// A file of the project, relative or absolute (`~` expands). Anything that resolves outside the project root
+// (`..`, another drive, a symlink or junction pointing out) is refused; the real path is what gets served.
+async function resolveProjectFile(project, requested) {
+  if (typeof requested !== "string" || !requested || requested.includes("\0")) throw httpError(400, "Invalid path");
+  const wanted = /^~(?:[\\/]|$)/.test(requested) ? path.join(homedir(), requested.slice(1)) : requested;
+  const rootReal = await realpath(project.cwd).catch(() => null);
+  if (!rootReal) throw httpError(404, "Project folder not found");
+  const candidate = path.resolve(rootReal, wanted);
+  if (!pathInside(rootReal, candidate) && !pathInside(project.cwd, candidate)) throw httpError(403, "Outside the project");
+  const real = await realpath(candidate).catch(() => null);
+  if (!real) throw httpError(404, "File not found");
+  if (!pathInside(rootReal, real)) throw httpError(403, "Outside the project");
+  const info = await stat(real);
+  if (!info.isFile()) throw httpError(404, "Not a file");
+  if (info.size > FILE_MAX_BYTES) throw httpError(413, `File too large (${formatBytes(info.size)}; limit ${formatBytes(FILE_MAX_BYTES)})`);
+  return { real, rel: path.relative(rootReal, real).split(path.sep).join("/"), size: info.size, mtimeMs: info.mtimeMs };
+}
+
+function fileDescriptor(project, { real, rel, size, mtimeMs }) {
+  const { kind, mime } = fileInfo(real);
+  const raw = `/api/projects/${encodeURIComponent(project.id)}/raw/${rawCapability(project.id)}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+  return { path: rel, name: path.basename(real), size, mtimeMs, kind, mime, raw };
+}
+
+// `Range: bytes=a-b | a- | -n` against a file of `size` bytes: null (absent, malformed or empty file), "unsatisfiable" or { start, end }.
+export function parseByteRange(header, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header ?? "");
+  if (!match || size === 0 || (match[1] === "" && match[2] === "")) return null;
+  let start;
+  let end;
+  if (match[1] === "") {
+    start = Math.max(0, size - Number(match[2]));
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+  }
+  return start >= size || start > end ? "unsatisfiable" : { start, end };
+}
+
+// Every file leaves with `Content-Security-Policy: sandbox` (opaque origin even when opened as a page) and nosniff.
+// Only HTML served for the Navegador's frame may run scripts, still without the Studio's origin.
+function sendFile(req, res, { real, size }, runScripts) {
+  const { kind, mime } = fileInfo(real);
+  const range = parseByteRange(req.headers.range, size);
+  const headers = {
+    "content-type": mime,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": runScripts && kind === "html" ? "sandbox allow-scripts allow-forms" : "sandbox",
+    "referrer-policy": "no-referrer",
+    "cache-control": "no-store",
+    "accept-ranges": "bytes",
+  };
+  if (range === "unsatisfiable") {
+    res.writeHead(416, { ...headers, "content-range": `bytes */${size}`, "content-length": 0 });
+    return res.end();
+  }
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  if (range) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(range ? 206 : 200, { ...headers, "content-length": size === 0 ? 0 : end - start + 1 });
+  if (size === 0) return res.end();
+  pipeline(createReadStream(real, { start, end }), res, () => {});
+}
+
+async function serveRaw(req, res, [, rawId, capability, tail = ""]) {
+  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+  let projectId;
+  let relative;
+  try {
+    projectId = decodeURIComponent(rawId);
+    relative = tail.split("/").slice(1).map(decodeURIComponent).join("/");
+  } catch {
+    return json(res, 400, { error: "Bad Request" });
+  }
+  const expected = Buffer.from(rawCapability(projectId));
+  const provided = Buffer.from(capability);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return json(res, 403, { error: "Forbidden" });
+  const project = await ensureProject(projectId);
+  // "./" keeps a leading "~" segment a plain name here.
+  return sendFile(req, res, await resolveProjectFile(project, `./${relative}`), true);
+}
+
+// ---- @-mention file picker: relative POSIX paths of a project, ranked per query.
+const FILE_RESULT_LIMIT = 50;
+const FILE_CACHE_TTL_MS = 10_000;
+const FILE_LIST_MAX = 100_000;
+const FILE_WALK_LIMIT = 5000;
+const FILE_WALK_SKIP = new Set([".git", "node_modules", "dist", "build", ".next", "coverage"]);
+const fileCache = new Map();
+
+// Tracked + untracked-but-not-ignored files, NUL-separated so odd names survive. Resolves null
+// (never rejects) when git is missing, times out or cwd is not a repository.
+export function gitListFiles(cwd, { bin = "git", timeoutMs = 3000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(bin, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (error, stdout) => {
+      resolve(error ? null : stdout.split(String.fromCharCode(0)).filter(Boolean));
+    });
+  });
+}
+
+// Breadth-first, so shallow files win when the entry budget runs out. Symlinks are not followed.
+export async function walkProjectFiles(cwd, limit = FILE_WALK_LIMIT) {
+  const files = [];
+  const queue = [""];
+  for (let next = 0; next < queue.length && files.length < limit; next++) {
+    for (const entry of await readdirSafe(path.join(cwd, queue[next]))) {
+      const relative = queue[next] ? `${queue[next]}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (!FILE_WALK_SKIP.has(entry.name) && !entry.name.startsWith(".")) queue.push(relative);
+      } else if (entry.isFile() && files.length < limit) {
+        files.push(relative);
+      }
+    }
+  }
+  return files;
+}
+
+// Only paths that stay inside cwd are ever returned, whatever the source produced.
+function insideProject(relative) {
+  return !path.win32.parse(relative).root && !path.win32.normalize(relative).split(path.win32.sep).includes("..");
+}
+
+export async function listProjectFiles(cwd, { git = gitListFiles, now = Date.now() } = {}) {
+  const key = cwdKey(cwd);
+  const cached = fileCache.get(key);
+  if (cached && now - cached.at < FILE_CACHE_TTL_MS) return cached.files;
+  const listed = (await git(cwd)) ?? (await walkProjectFiles(cwd));
+  const files = [...new Set(listed.filter(insideProject))].slice(0, FILE_LIST_MAX);
+  fileCache.set(key, { at: now, files });
+  return files;
+}
+
+function normalizedAuthority(value) {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const parsed = new URL(`http://${value}`);
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    return `${hostname}:${parsed.port || "80"}`;
+  } catch {
+    return null;
+  }
+}
+
+function hasSingleRawHeader(req, name) {
+  let count = 0;
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index].toLowerCase() === name) count++;
+  }
+  return count === 1;
+}
+
+function requestTokenMatches(req, allowCookie = false) {
+  let candidate;
+  if (allowCookie) {
+    const cookies = req.headers.cookie || "";
+    const matches = cookies.split(";").map((item) => item.trim()).filter((item) => item.startsWith("pi-studio-token="));
+    if (matches.length !== 1) return false;
+    candidate = matches[0].slice("pi-studio-token=".length);
+  } else {
+    if (!hasSingleRawHeader(req, "x-pi-studio-token")) return false;
+    candidate = req.headers["x-pi-studio-token"];
+  }
+  if (typeof candidate !== "string") return false;
+  const provided = Buffer.from(candidate);
+  const expected = Buffer.from(apiToken);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+// Host aceito = loopback ou PI_WEB_HOST, na porta em que o servidor ouve. Barra DNS
+// rebinding: um domínio externo apontado para 127.0.0.1 chega com o Host dele.
+function requestHostAllowed(req) {
+  if (!hasSingleRawHeader(req, "host")) return null;
+  const authority = normalizedAuthority(req.headers.host);
+  const configuredHost = DEFAULT_HOST.toLowerCase().replace(/\.$/, "");
+  const allowedHosts = new Set([
+    `127.0.0.1:${listeningPort}`,
+    `localhost:${listeningPort}`,
+    `[::1]:${listeningPort}`,
+    `${configuredHost.includes(":") && !configuredHost.startsWith("[") ? `[${configuredHost}]` : configuredHost}:${listeningPort}`,
+  ].map(normalizedAuthority));
+  return authority && allowedHosts.has(authority) ? authority : null;
+}
+
+// Capability URLs for the Navegador's sandboxed frames: they run without the Studio token (and without
+// cookies: an opaque-origin page sends none), so a read-only, per-project secret rides in the path instead.
+const RAW_ROUTE = /^\/api\/projects\/([^/]+)\/raw\/([0-9a-f]{32})(\/[^?#]*)?(?:[?#]|$)/;
+
+function rawCapability(projectId) {
+  return createHmac("sha256", apiToken).update(`raw:${projectId}`).digest("hex").slice(0, 32);
+}
+
+function authorizeApiRequest(req, pathname, rawRoute = false) {
+  if (!pathname.startsWith("/api/")) return null;
+  const authority = requestHostAllowed(req);
+  if (!authority) return 403;
+
+  const origins = [];
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index].toLowerCase() === "origin") origins.push(req.rawHeaders[index + 1]);
+  }
+  if (origins.length > 1) return 403;
+  // A sandboxed page (opaque origin) sends `Origin: null` on some subresource requests; only the capability route accepts it.
+  if (origins.length === 1 && !(rawRoute && origins[0] === "null")) {
+    if (origins[0] === "null") return 403;
+    try {
+      const origin = new URL(origins[0]);
+      if (origin.protocol !== "http:" || origin.username || origin.password || origin.origin === "null" ||
+          normalizedAuthority(origin.host) !== authority) return 403;
+    } catch {
+      return 403;
+    }
+  }
+  const isSse = req.method === "GET" && /^\/api\/(?:projects\/[^/]+|sessions\/[^/]+)\/events$/.test(pathname);
+  if (!rawRoute && !requestTokenMatches(req, isSse)) return 401;
+  return null;
+}
+
+async function serveFrontend(req, res) {
+  const html = (await readFile(path.join(PUBLIC_DIR, "index.html"), "utf8"))
+    .replace("</head>", `<meta name="pi-studio-token" content="${apiToken}"><meta name="pi-studio-account-name" content="${escapeHtml(SERVER_ACCOUNT_USERNAME)}"></head>`);
+  const body = Buffer.from(html);
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": body.length,
+    "cache-control": "no-store",
+    "set-cookie": `pi-studio-token=${apiToken}; Path=/; HttpOnly; SameSite=Strict`,
+  });
+  res.end(body);
+}
+
+async function serveStatic(req, res, pathname) {
+  // URL parsing normalizes literal dot segments; retain the origin-form path
+  // so this guard also rejects plain ../ before resolving it.
+  const requestPath = req.url?.startsWith("/") ? req.url.split(/[?#]/, 1)[0] : pathname;
+  const rel = requestPath === "/" ? "/index.html" : requestPath;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(rel);
+  } catch (error) {
+    if (error instanceof URIError) return text(res, 400, "Bad Request");
+    throw error;
+  }
+  const filePath = path.resolve(PUBLIC_DIR, `.${decoded}`);
+  const relativePath = path.relative(PUBLIC_DIR, filePath);
+  if (relativePath === ".." || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath)) {
+    return text(res, 403, "Forbidden");
+  }
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    return text(res, 404, "Not found");
+  }
+  if (!fileStat.isFile()) return text(res, 404, "Not found");
+  const ext = path.extname(filePath).toLowerCase();
+  const type = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+    ".txt": "text/plain; charset=utf-8",
+  }[ext] || "application/octet-stream";
+  res.writeHead(200, { "content-type": type, "content-length": fileStat.size, "cache-control": "no-store" });
+  createReadStream(filePath).pipe(res);
+}
+
+function parseProjectRoute(pathname) {
+  const match = pathname.match(/^\/api\/projects\/([^/]+)(?:\/(open|events|command|ui-response|stop|history|switch|files|file))?$/);
+  if (!match) return null;
+  return { projectId: decodeURIComponent(match[1]), action: match[2] };
+}
+
+async function route(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host || `${DEFAULT_HOST}:${listeningPort}`}`);
+  const { pathname } = url;
+
+  try {
+    const rawMatch = RAW_ROUTE.exec(req.url);
+    const authorizationStatus = authorizeApiRequest(req, pathname, Boolean(rawMatch));
+    if (authorizationStatus) return json(res, authorizationStatus, { error: pathname.startsWith("/api/voice/") ? authorizationStatus === 401 ? "Autenticação necessária." : "Origem não permitida." : authorizationStatus === 401 ? "Unauthorized" : "Forbidden" });
+    // Dispatch before anything else: the token check was skipped for this URL, so no other route may see it.
+    if (rawMatch) return await serveRaw(req, res, rawMatch);
+    if (req.method === "GET" && pathname === "/api/voice/status") return json(res, 200, voice.status());
+    if (req.method === "POST" && pathname === "/api/voice/transcribe") {
+      const drainRequest = (request) => new Promise((resolve) => { request.on("end", resolve); request.on("error", resolve); request.resume(); });
+      const type = String(req.headers["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+      // Answer only after the body is consumed: replying mid-upload makes the client see "other side closed" instead of the status.
+      if (!["audio/webm", "audio/ogg", "audio/wav"].includes(type)) { await drainRequest(req); return json(res, 400, { error: "Formato de áudio inválido." }); }
+      const chunks = [];
+      let size = 0;
+      const body = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(Object.assign(new Error("Envio de áudio expirou."), { statusCode: 413 })), 120000);
+        req.on("data", (chunk) => {
+          size += chunk.length;
+          if (size <= 10 * 1024 * 1024) chunks.push(chunk);
+          // Past the limit keep reading (not storing) so the 413 reaches the client; a runaway upload is cut at 4x the limit.
+          else if (size > 40 * 1024 * 1024) { clearTimeout(timer); req.destroy(); reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 })); }
+        });
+        req.on("end", () => {
+          clearTimeout(timer);
+          if (size > 10 * 1024 * 1024) reject(Object.assign(new Error("Áudio excede o limite de 10 MB."), { statusCode: 413 }));
+          else resolve(Buffer.concat(chunks));
+        });
+        req.on("error", (error) => { clearTimeout(timer); reject(error); });
+      });
+      if (!body.length) return json(res, 400, { error: "O áudio está vazio." });
+      try { return json(res, 200, { text: (await voice.transcribeBuffer(body)).text }); }
+      catch (error) { return json(res, error.status || 503, { error: error.status === 429 ? "O serviço de transcrição está ocupado. Tente novamente." : error.message?.includes("Tempo limite") ? "A transcrição excedeu o tempo limite." : "Transcrição local indisponível. Verifique o Python e o modelo local." }); }
+    }
+    if (req.method === "GET" && pathname === "/api/tree") {
+      if (url.searchParams.has("session")) {
+        if (url.searchParams.has("parent") || url.searchParams.has("offset")) return json(res, 400, { error: "Invalid tree query." });
+        const session = url.searchParams.get("session");
+        if (!session) return json(res, 400, { error: "A session path is required." });
+        const chain = await treeService.getSessionChain(session);
+        if (!chain) return json(res, 404, { error: "Conversation not found." });
+        return json(res, 200, chain);
+      }
+      if (url.searchParams.has("parent")) {
+        const parent = url.searchParams.get("parent");
+        const rawOffset = url.searchParams.get("offset") ?? "0";
+        if (!parent || !/^(0|[1-9]\d*)$/.test(rawOffset) || !Number.isSafeInteger(Number(rawOffset))) return json(res, 400, { error: "Invalid child page." });
+        const page = await treeService.getChildren(parent, Number(rawOffset));
+        if (!page) return json(res, 404, { error: "Conversation not found." });
+        return json(res, 200, page);
+      }
+      if (url.searchParams.has("offset")) return json(res, 400, { error: "A parent conversation is required." });
+      const tree = await treeService.get(req.headers["if-none-match"] ?? null);
+      if (tree.notModified) { res.writeHead(304, { etag: tree.version, "cache-control": "no-store" }); return res.end(); }
+      const { notModified, ...body } = tree;
+      const encoded = JSON.stringify(body);
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(encoded), "cache-control": "no-store", etag: tree.version });
+      return res.end(encoded);
+    }
+    if (req.method === "GET" && pathname === "/api/health") {
+      return json(res, 200, {
+        ok: true,
+        host: DEFAULT_HOST,
+        piBin: piCommand().bin,
+        agentDir: AGENT_DIR,
+        projectRoots: await getProjectRoots(),
+        node: process.version,
+        sessions: sessions.size + retiredSessions.size,
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/bootstrap") {
+      const discovered = await discoverProjects();
+      const firstProject = discovered[0];
+      return json(res, 200, {
+        projects: discovered,
+        agents: await listAgents(firstProject?.cwd || process.cwd()),
+        activeSessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())),
+        logs: serverLogs.slice(-200),
+        config: { agentDir: AGENT_DIR, projectRoots: await getProjectRoots() },
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/projects") {
+      return json(res, 200, { projects: await discoverProjects() });
+    }
+
+    if (req.method === "GET" && pathname === "/api/agents") {
+      const cwd = url.searchParams.get("cwd") || process.cwd();
+      return json(res, 200, { agents: await listAgents(cwd) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/logs") {
+      return json(res, 200, { logs: serverLogs.slice(-300) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/search") {
+      const projectsByCwd = new Map((await knownProjects(projects, discoverProjects)).map((project) => [cwdKey(project.cwd), project]));
+      refreshIfStale(sessionIndex);
+      // "Indexando" only until the first build completes; later background refreshes are silent.
+      return json(res, 200, { results: sessionIndex.search(url.searchParams.get("q") || "", projectsByCwd), indexing: sessionIndex.lastRefresh === 0 });
+    }
+
+    if (req.method === "GET" && pathname === "/api/sessions") {
+      return json(res, 200, { sessions: [...retiredSessions.values()].map((item) => item.summary).concat([...sessions.values()].map((session) => session.summary())) });
+    }
+
+    if (pathname === "/api/tasks/links") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const conversation = url.searchParams.get("conversation");
+      const links = await readTaskLinks();
+      return json(res, 200, { links: conversation === null ? links : links.filter((link) => link.conversationId === conversation) });
+    }
+
+    if (pathname === "/api/orca/worktrees") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.projectId !== "string" || !body.projectId || typeof body.conversationId !== "string" || !body.conversationId ||
+          !Number.isInteger(body.taskId) || typeof body.name !== "string" || !/^[\p{L}\p{N} ._-]{1,60}$/u.test(body.name) ||
+          typeof body.prompt !== "string" || body.prompt.length < 1 || body.prompt.length > 8000) return json(res, 400, { error: "invalid-request" });
+      let project = projects.get(body.projectId);
+      if (!project) {
+        await discoverProjects();
+        project = projects.get(body.projectId);
+      }
+      if (!project) return json(res, 400, { error: "invalid-project" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      let listing;
+      try {
+        listing = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]);
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+      const parent = orcaWorktreeForProject(listing, project.cwd);
+      if (!parent) return json(res, 409, { error: "project-not-in-orca" });
+      // Orca's parser reads a space-separated value that starts with "--" as a new flag; --flag=value is verbatim.
+      const args = [...orca.prefixArgs, "worktree", "create", `--name=${body.name}`, `--repo=id:${parent.repoId}`, "--agent", "pi",
+        `--prompt=${body.prompt}`, `--parent-worktree=worktree:${parent.worktreeId}`, `--comment=${taskComment(body)}`, "--json"];
+      try {
+        const result = await runOrcaJson(orca, args);
+        const link = taskLinkFromOrca(result, body);
+        if (!link) return json(res, 502, { error: "orca-invalid-response" });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (!error.killed && error.code !== "ETIMEDOUT") throw error;
+        const listed = await runOrcaJson(orca, [...orca.prefixArgs, "worktree", "ps", "--json"]).catch(() => null);
+        const link = findTaskWorktree(listed, body, parent.repoId);
+        if (!link) return json(res, 202, { ok: false, unknown: true });
+        await saveTaskLink(link);
+        return json(res, 201, { ok: true, link });
+      }
+    }
+
+    if (pathname === "/api/orca/terminal-send") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      if (typeof body?.handle !== "string" || !body.handle || typeof body.text !== "string" || body.text.length < 1 || body.text.length > 8000) return json(res, 400, { error: "invalid-request" });
+      const links = await readTaskLinks();
+      if (!links.some((link) => link.terminalHandle === body.handle)) return json(res, 403, { error: "terminal-not-linked" });
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      try {
+        await runOrcaJson(orca, [...orca.prefixArgs, "terminal", "send", `--terminal=${body.handle}`, `--text=${body.text}`, "--enter", "--json"]);
+        return json(res, 200, { ok: true });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+    }
+
+    // Writes to Orca from the Studio: move a worktree on Orca's board / set its comment, or open a PI terminal in it.
+    // Only a worktree Orca itself lists right now (exact worktreeId) is accepted.
+    if (pathname === "/api/orca/worktree-set" || pathname === "/api/orca/pi-terminal") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      let args;
+      try {
+        args = pathname === "/api/orca/pi-terminal"
+          ? orcaPiTerminalArgs({ worktreeId: body?.worktreeId })
+          : orcaWorktreeSetArgs({ worktreeId: body?.worktreeId, workspaceStatus: body?.workspaceStatus, comment: body?.comment });
+      } catch { return json(res, 400, { error: "invalid-request" }); }
+      const orca = resolveOrcaCommand();
+      if (!orca) return json(res, 503, { error: "orca-unavailable" });
+      clearOrcaCache();
+      const listing = await getOrca();
+      if (!listing.available) return json(res, 503, { error: "orca-unavailable" });
+      if (!listing.worktrees.some((worktree) => worktree.id === body.worktreeId)) return json(res, 409, { error: "worktree-not-in-orca" });
+      try {
+        const result = await runOrcaJson(orca, [...orca.prefixArgs, ...args]);
+        clearOrcaCache();
+        return result?.ok === false ? json(res, 502, { error: "orca-failed" }) : json(res, 200, { ok: true });
+      } catch (error) {
+        if (error.code === "ENOENT") return json(res, 503, { error: "orca-unavailable" });
+        if (error.killed || error.code === "ETIMEDOUT") return json(res, 504, { error: "orca-timeout" });
+        return json(res, 502, { error: "orca-failed" });
+      }
+    }
+
+    if (pathname === "/api/orca") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const orca = await getOrca();
+      if (!orca.available) return json(res, 200, { available: false, reason: orca.reason, active: null, worktrees: [] });
+      const byCwd = new Map((await knownProjects(projects, discoverProjects)).map((project) => [cwdKey(project.cwd), project.id]));
+      return json(res, 200, { ...orca, worktrees: orca.worktrees.map((worktree) => ({ ...worktree, projectId: byCwd.get(cwdKey(worktree.path)) ?? null })) });
+    }
+
+    if (pathname === "/api/projects/status") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const latest = new Map();
+      for (const item of retiredSessions.values()) latest.set(item.status.projectId, item.status);
+      for (const session of sessions.values()) latest.set(session.projectId, session.statusSummary());
+      return json(res, 200, { statuses: [...latest.values()], runningCounts: await getRunningCounts(), now: Date.now(), stall: STALL });
+    }
+
+    if (pathname === "/api/activity") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const since = url.searchParams.get("since") ?? "0";
+      if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
+      const epoch = url.searchParams.has("epoch") ? url.searchParams.get("epoch") : undefined;
+      return json(res, 200, { ...activityLog.since(Number(since), epoch), now: Date.now() });
+    }
+
+    if (pathname === "/api/usage/today") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      refreshIfStale(sessionIndex);
+      return json(res, 200, { ...sessionIndex.usageOn(localDay(Date.now())), indexing: sessionIndex.lastRefresh === 0 });
+    }
+
+    if (pathname === "/api/sessions/watch") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const since = url.searchParams.get("since") ?? "0";
+      if (!/^[0-9]{1,15}$/.test(since)) return json(res, 400, { error: "Invalid since" });
+      const file = await resolveWatchPath(url.searchParams.get("path"));
+      return json(res, 200, await withWatchSlot(() => readSessionWatch(file, Number(since))));
+    }
+
+    if (pathname === "/api/resources") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return await sendAllResources(res);
+    }
+
+    const sessionRoute = pathname.match(/^\/api\/sessions\/([^/]+)\/(resources|git-files)$/);
+    if (sessionRoute) {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      if (sessionRoute[2] === "resources") return await sendSessionResources(res, sessionRoute[1]);
+      return await sendSessionGitFiles(res, sessionRoute[1], url.searchParams.getAll("path"));
+    }
+
+    if (pathname === "/api/projects/open-path") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      return json(res, 201, await openProjectPayload(await projectForPath(body?.cwd)));
+    }
+
+    const projectRoute = parseProjectRoute(pathname);
+    if (projectRoute) {
+      const project = await ensureProject(projectRoute.projectId);
+      const { action } = projectRoute;
+
+      if (req.method === "POST" && action === "open") {
+        return json(res, 201, await openProjectPayload(project));
+      }
+
+      if (req.method === "GET" && action === "events") {
+        const session = [...sessions.values()].find((item) => item.projectId === project.id);
+        if (!session || session.exited) {
+          res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
+          sendSse(res, "session_stopped", { type: "session_stopped", message: "PI encerrado; abra o projeto para iniciar uma nova sessão." });
+          return res.end();
+        }
+        return session.addClient(res);
+      }
+
+      if (req.method === "POST" && action === "command") {
+        const body = await readJsonBody(req);
+        const session = await getOrStartProjectSession(project);
+        session.send(body);
+        return json(res, 202, { ok: true, session: session.summary() });
+      }
+
+      if (req.method === "POST" && action === "ui-response") {
+        const body = await readJsonBody(req);
+        if (!body.id) return json(res, 400, { error: "Missing extension UI request id" });
+        const session = await getOrStartProjectSession(project);
+        session.send({ type: "extension_ui_response", ...body });
+        return json(res, 202, { ok: true });
+      }
+
+      if (req.method === "POST" && action === "stop") {
+        const existing = [...sessions.values()].find((session) => session.projectId === project.id && !session.exited);
+        existing?.stop();
+        return json(res, 202, { ok: true });
+      }
+
+      if (req.method === "GET" && action === "history") {
+        return json(res, 200, { history: await listProjectHistory(project) });
+      }
+
+      if (req.method === "GET" && action === "files") {
+        const files = await listProjectFiles(project.cwd);
+        return json(res, 200, { files: rankFiles(files, url.searchParams.get("q") || "", FILE_RESULT_LIMIT) });
+      }
+
+      if (req.method === "GET" && action === "file") {
+        const found = await resolveProjectFile(project, url.searchParams.get("path"));
+        if (url.searchParams.get("info") === "1") return json(res, 200, fileDescriptor(project, found));
+        return sendFile(req, res, found, false);
+      }
+
+      if (req.method === "POST" && action === "switch") {
+        const body = await readJsonBody(req);
+        if (!body.sessionPath) return json(res, 400, { error: "Missing sessionPath" });
+        const session = await getOrStartProjectSession(project);
+        session.send({ id: body.id || randomUUID(), type: "switch_session", sessionPath: body.sessionPath });
+        setTimeout(() => {
+          try {
+            session.send({ id: randomUUID(), type: "get_entries" });
+          } catch {
+            // Ignore if session exited.
+          }
+        }, 250);
+        return json(res, 202, { ok: true });
+      }
+    }
+
+    if (pathname === "/api/ambientes") {
+      if (req.method === "GET") return json(res, 200, { ambientes: await ambientes.list() });
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      const ambiente = await ambientes.create({ name: body?.name, cwd: body?.cwd });
+      await discoverProjects();
+      return json(res, 201, { ambiente, project: projects.get(projectIdFor(ambiente.cwd)) ?? null });
+    }
+    const ambienteRoute = pathname.match(/^\/api\/ambientes\/([0-9a-f-]{36})$/);
+    if (ambienteRoute) {
+      if (req.method === "PATCH") {
+        const ambiente = await ambientes.rename(ambienteRoute[1], (await readJsonBody(req))?.name);
+        await discoverProjects();
+        return json(res, 200, { ambiente });
+      }
+      if (req.method === "DELETE") {
+        await ambientes.remove(ambienteRoute[1]);
+        await discoverProjects();
+        return json(res, 200, { ok: true });
+      }
+      return json(res, 405, { error: "Method not allowed" });
+    }
+
+    if (pathname === "/api/pi-settings") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return json(res, 200, await piSettingsSummary());
+    }
+    if (pathname === "/api/teams/current") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const project = projects.get(url.searchParams.get("project") || "");
+      if (!project) return json(res, 404, { error: "Projeto desconhecido" });
+      return json(res, 200, { team: await teamReader.current(project.cwd) });
+    }
+    if (pathname === "/api/teams/member") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const member = await teamReader.member(url.searchParams.get("team") || "", url.searchParams.get("name") || "");
+      return member ? json(res, 200, member) : json(res, 404, { error: "Membro da equipe não encontrado" });
+    }
+    if (pathname === "/api/vorcaro/board") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return json(res, 200, await vorcaroBoard(boardFilters(url.searchParams)));
+    }
+    if (pathname === "/api/model-accounts") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const asked = (url.searchParams.get("providers") ?? "").split(",").filter((item) => PROVIDER_NAME.test(item));
+      return json(res, 200, { accounts: await modelAccounts(asked) });
+    }
+    if (pathname === "/api/claude/sessions") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const live = vorcaroLive();
+      const digests = await vorcaroIndex.refresh();
+      return json(res, 200, { sessions: claudeSidebar(digests, { archived: await vorcaroArchive.read(), columnOf: (digest) => digestColumn(digest, live.get(digest.path) ?? null) }) });
+    }
+    if (pathname === "/api/vorcaro/foto") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      // Vorcaro's picture is the person's own file (pi-studio-data/vorcaro-foto.png|jpg|webp), never shipped in the code.
+      for (const [ext, type] of [["png", "image/png"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"], ["webp", "image/webp"]]) {
+        const file = path.join(VORCARO_DIR, `vorcaro-foto.${ext}`);
+        let body;
+        try { body = await readFile(file); } catch { continue; }
+        if (body.length > 8 * 1024 * 1024) return json(res, 413, { error: "Foto maior que 8 MB" });
+        res.writeHead(200, { "content-type": type, "content-length": body.length, "cache-control": "no-store" });
+        return res.end(body);
+      }
+      return json(res, 404, { error: "Sem foto do Vorcaro" });
+    }
+    if (pathname === "/api/vorcaro/seen") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      await markSeen();
+      return json(res, 200, { ok: true });
+    }
+    if (pathname === "/api/vorcaro/archive") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      // Only sessions the index lists; `desfazer` puts them back on the board.
+      const known = new Map(vorcaroIndex.list().map((digest) => [cwdKey(digest.path), digest.path]));
+      const paths = (Array.isArray(body?.paths) ? body.paths : []).slice(0, 500).map((item) => known.get(cwdKey(String(item)))).filter(Boolean);
+      if (!paths.length) return json(res, 400, { error: "Nenhuma sessão do quadro" });
+      const map = body.desfazer === true ? await vorcaroArchive.remove(paths) : await vorcaroArchive.add(paths, "voce");
+      return json(res, 200, { ok: true, archived: map.size });
+    }
+    if (pathname === "/api/vorcaro/session") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return json(res, 200, await vorcaroSessionDetail(url.searchParams.get("path")));
+    }
+    if (pathname === "/api/vorcaro/open") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req).catch(() => ({}));
+      return json(res, 200, { session: (await openVorcaro(body?.sessionPath)).summary() });
+    }
+    if (pathname === "/api/vorcaro/conversations") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const live = new Map([...vorcaroSessions].filter((session) => !session.exited && session.lastState?.sessionFile).map((session) => [cwdKey(session.lastState.sessionFile), session.id]));
+      return json(res, 200, { conversations: (await listConversations(VORCARO_CONVERSATIONS)).map((item) => ({ ...item, liveSessionId: live.get(cwdKey(item.file)) ?? null })) });
+    }
+    if (pathname === "/api/vorcaro/conversation") {
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      return json(res, 200, await readConversation(await vorcaroConversationFile(url.searchParams.get("file"))));
+    }
+    if (pathname === "/api/vorcaro/dispatch") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      return json(res, 201, await vorcaroDispatch(await readJsonBody(req)));
+    }
+
+    // Backward-compatible direct session endpoint used by smoke tests/tools.
+    if (pathname === "/api/side-chat") {
+      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      const body = await readJsonBody(req);
+      return json(res, 200, { session: (await openSideChat(body?.sessionPath)).summary() });
+    }
+
+    const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|command|ui-response|stop))?$/);
+    if (sessionMatch) {
+      const [, id, action] = sessionMatch;
+      const session = sessions.get(id) ?? sideChats.find(id);
+      if (!session) return json(res, 404, { error: "Unknown session" });
+      if (req.method === "GET" && action === "events") return session.addClient(res);
+      if (req.method === "POST" && action === "command") {
+        const body = await readJsonBody(req);
+        if (session.side) sideChats.touch(id);
+        session.send(session.side ? sideCommand(body) : body);
+        return json(res, 202, { ok: true });
+      }
+      if (req.method === "POST" && action === "stop") {
+        session.stop();
+        return json(res, 202, { ok: true });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/sessions") {
+      const body = await readJsonBody(req);
+      const cwd = path.resolve(safeName(body.cwd) || process.cwd());
+      const project = makeProject(cwd, path.dirname(cwd));
+      projects.set(project.id, project);
+      const session = await getOrStartProjectSession(project);
+      return json(res, 201, { project, session: session.summary() });
+    }
+
+    if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
+      // A página carrega o token: só é servida para um Host aceito.
+      if (!requestHostAllowed(req)) return json(res, 403, { error: "Forbidden" });
+      return await serveFrontend(req, res);
+    }
+    if (req.method === "GET") return serveStatic(req, res, pathname);
+    return json(res, 405, { error: "Method not allowed" });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    recordLog(status >= 500 ? "error" : "warn", error.message, { pathname });
+    return json(res, status, { error: error.message || "Internal server error" });
+  }
+}
+
+const server = createServer((req, res) => {
+  route(req, res).catch((error) => json(res, 500, { error: error.message || "Internal server error" }));
+});
+
+let idleReaper = null;
+// Rules live in lib-server/idle-reaper.mjs; here only the live session data is adapted to them.
+export async function reapIdleStudioPIsNow(now = Date.now()) {
+  const thresholdMs = idleThresholdMs();
+  const pinned = await vorcaroPinnedSessions().catch(() => new Set());
+  const asked = new Set(vorcaroIndex.list().filter((digest) => digest.endedWith === "stop" && /\?\s*$/.test(digest.lastOutput ?? "")).map((digest) => cwdKey(digest.path)));
+  const live = [...sessions.values()].map((session) => ({
+    id: session.id,
+    cwd: session.cwd,
+    sessionFile: session.lastState?.sessionFile || null,
+    snapshot: () => ({ exited: session.exited, streaming: session.streaming, clientCount: session.clients.size, waitingUi: session.statusSummary(now).waitingUi, pinned: pinned.has(session.id), awaitingUser: Boolean(session.lastState?.sessionFile && asked.has(cwdKey(session.lastState.sessionFile))), lastViewedAt: session.lastViewedAt, lastEventAt: session.lastEventAt }),
+    stop: () => session.stop(),
+  }));
+  return reapIdle(live, { now, thresholdMs, childActive: (file) => hasRecentChildActivity(file, { now, thresholdMs }), log: (line) => recordLog("info", line) });
+}
+const reapIdleStudioPIs = () => {
+  reapSideChatsNow();
+  reapIdleStudioPIsNow().catch((error) => recordLog("warn", "Idle PI check failed", { error: error.message }));
+  vorcaroIndex.refresh().then((digests) => vorcaroConduct(digests)).catch((error) => recordLog("warn", "Vorcaro conductor failed", { error: error.message }));
+};
+
+export function startServer(port = DEFAULT_PORT, host = DEFAULT_HOST) {
+  return new Promise((resolve) => {
+    server.listen(port, host, () => {
+      if (!idleReaper) { idleReaper = setInterval(reapIdleStudioPIs, 60_000); idleReaper.unref(); }
+      const address = server.address();
+      listeningPort = address.port;
+      const line = `PI Studio listening on http://${host}:${listeningPort}`;
+      recordLog("info", line);
+      console.log(line);
+      setTimeout(() => sessionIndex.refresh().catch((error) => recordLog("warn", "Session search index warm-up failed", { error: error.message })), 25).unref();
+      if (!new Set(["127.0.0.1", "localhost", "::1", "[::1]"]).has(host.toLowerCase())) {
+        console.warn("PI Studio is exposed beyond loopback; protect this server and its network access.");
+      }
+      resolve(server);
+    });
+  });
+}
+
+// Graceful stop for embedders/tests: stops PI children and closes the listener without exiting.
+export function stopServer() {
+  if (idleReaper) clearInterval(idleReaper);
+  idleReaper = null;
+  for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
+  void voice.stop();
+  server.closeAllConnections();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+export function shutdown() {
+  for (const session of sessions.values()) session.stop();
+  sideChats.stopAll();
+  void voice.stop().catch(() => {});
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+
+export const isMainModule = Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  await startServer();
+  // Resolve the PI binary up front (it may run `npm root -g` once) so the first project opens fast.
+  piCommand();
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}

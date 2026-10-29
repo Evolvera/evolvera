@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <!-- The title bar of the installed (--app) window takes this colour; it must equal the top bar background (--bg in styles.css). -->
+    <meta name="theme-color" content="#09090b" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2032%2032%27%3E%3Crect%20width=%2732%27%20height=%2732%27%20rx=%278%27%20fill=%27%23121214%27/%3E%3Crect%20x=%27.5%27%20y=%27.5%27%20width=%2731%27%20height=%2731%27%20rx=%277.5%27%20fill=%27none%27%20stroke=%27%232e2e33%27/%3E%3Cpath%20d=%27M8%2011.5h16M12.5%2011.5v11M19.5%2011.5V20a2.5%202.5%200%200%200%202.5%202.5%27%20fill=%27none%27%20stroke=%27%237cc4a0%27%20stroke-width=%273%27%20stroke-linecap=%27round%27/%3E%3Ccircle%20cx=%2725%27%20cy=%276.6%27%20r=%271.9%27%20fill=%27%237cc4a0%27/%3E%3C/svg%3E" />
+    <title>PI Studio</title>
+    <link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/boot.js"></script>
+  </head>
+  <body>
+    <svg width="0" height="0" class="sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.6l2 2.2H18a2.5 2.5 0 0 1 2.5 2.5v7.3A2.5 2.5 0 0 1 18 19.5H6A2.5 2.5 0 0 1 3.5 17z" /></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" /><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M6 18l1.4-1.4M16.6 7.4 18 6" /></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.2A7.5 7.5 0 0 1 9.8 4.5a7.5 7.5 0 1 0 9.7 9.7z" /></symbol>
+        <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="2.5" /><path d="M9 20h6M12 16v4" /></symbol>
+        <symbol id="i-tree" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="5" rx="1.5" /><rect x="3.5" y="15.5" width="6" height="5" rx="1.5" /><rect x="14.5" y="15.5" width="6" height="5" rx="1.5" /><path d="M12 8.5v3.5M6.5 15.5V12h11v3.5" /></symbol>
+        <symbol id="i-checklist" viewBox="0 0 24 24"><path d="m4.5 7 1.6 1.6L9 5.7M4.5 13l1.6 1.6L9 11.7M4.5 19l1.6 1.6L9 17.7M12 7h7.5M12 13h7.5M12 19h7.5" /></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+        <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M9.5 4.5v15" /></symbol>
+        <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="M14.5 4.5v15" /></symbol>
+        <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></symbol>
+        <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5" /></symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4" /></symbol>
+        <symbol id="i-files" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2.2h5.5A2.5 2.5 0 0 1 20 9.7v6.8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13" /></symbol>
+        <symbol id="i-artifacts" viewBox="0 0 24 24"><path d="M12 3.8 19.5 8v8L12 20.2 4.5 16V8z" /><path d="M4.8 8.2 12 12.3l7.2-4.1M12 12.3v7.6" /></symbol>
+        <symbol id="i-brush" viewBox="0 0 24 24"><path d="M12 3.8a8.2 8.2 0 1 0 0 16.4c1.3 0 1.9-.8 1.9-1.7 0-1.4-1.3-1.7-1.3-2.9 0-1 .8-1.6 1.8-1.6h1.8a3.9 3.9 0 0 0 3.9-3.9c0-3.5-3.6-6.3-8.1-6.3Z" /><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none" /><circle cx="11" cy="7.8" r="1" fill="currentColor" stroke="none" /><circle cx="15" cy="8.6" r="1" fill="currentColor" stroke="none" /></symbol>
+        <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" /><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none" /></symbol>
+        <symbol id="i-code" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13" /></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.8" /><circle cx="12" cy="12" r="7" stroke-dasharray="2.75 2.75" stroke-width="3.2" /><circle cx="12" cy="12" r="5.6" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m19.5 19.5-4-4" /></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.8" width="6" height="10.4" rx="3" /><path d="M5.8 11.4a6.2 6.2 0 0 0 12.4 0M12 17.6v2.6" /></symbol>
+        <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M5 9.6h3l4.4-3.6v12L8 14.4H5z" /><path d="M15.6 9.3a3.8 3.8 0 0 1 0 5.4M18.2 6.8a7.3 7.3 0 0 1 0 10.4" /></symbol>
+        <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 18.5v-13M6.5 11 12 5.5l5.5 5.5" /></symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor" stroke="none" /></symbol>
+        <symbol id="i-file" viewBox="0 0 24 24"><path d="M7.5 3.5h6l4.5 4.5v10.5a2 2 0 0 1-2 2h-8.5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" /><path d="M13.5 3.5V8H18" /></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9" /></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5.5 12.5 4 4 9-9.5" /></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5v-3.2L15.8 5a1.8 1.8 0 0 1 2.5 0l.7.7a1.8 1.8 0 0 1 0 2.5L7.7 19.5z" /><path d="m14 6.8 3.2 3.2" /></symbol>
+        <symbol id="i-retry" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5" /><path d="M19 4.5V8h-3.5" /></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5.5v13M6.5 13 12 18.5l5.5-5.5" /></symbol>
+        <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="M4 17V7.5A2.5 2.5 0 0 1 6.5 5H10l2 2.2h5a2.5 2.5 0 0 1 2.5 2.5v.8" /><path d="M4 17.2 6.4 11a2 2 0 0 1 1.9-1.3h12a1.2 1.2 0 0 1 1.1 1.6L19.2 17.4a2.3 2.3 0 0 1-2.2 1.6H5.8A1.8 1.8 0 0 1 4 17.2Z" /></symbol>
+        <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.2" /><circle cx="7" cy="18" r="2.2" /><circle cx="17" cy="9" r="2.2" /><path d="M7 8.2v7.6M17 11.2c0 3.3-3.4 3.6-8.1 5.2" /></symbol>
+        <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a8 8 0 1 1 15 0" /><path d="m12 13.5 3.5-4" /></symbol>
+        <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4.5a7.5 7.5 0 1 1-7.5 7.5" /></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><path d="M12 8v4.5M12 15.6v.1" /></symbol>
+        <symbol id="i-agents" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="5" rx="1.6" /><rect x="3.5" y="15.5" width="6" height="5" rx="1.6" /><rect x="14.5" y="15.5" width="6" height="5" rx="1.6" /><path d="M12 8.5v3.5M6.5 15.5V13.5a1.5 1.5 0 0 1 1.5-1.5h8a1.5 1.5 0 0 1 1.5 1.5v2" /></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" /><path d="M3.8 12h16.4M12 3.8c2.2 2.3 3.3 5 3.3 8.2s-1.1 5.9-3.3 8.2c-2.2-2.3-3.3-5-3.3-8.2s1.1-5.9 3.3-8.2Z" /></symbol>
+        <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5.5M11 6.5 5.5 12l5.5 5.5" /></symbol>
+        <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h13.5M13 6.5l5.5 5.5-5.5 5.5" /></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M13.5 5H19v5.5M19 5l-8 8M17.5 14v3a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3" /></symbol>
+        <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .8-1 1.5M12 16.6v.1" /></symbol>
+        <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m4 6 1.5 1.5L8 4.8M4 12.5 5.5 14 8 11.3M4 19 5.5 20.5 8 17.8" /><path d="M11.5 6.5h8.5M11.5 13h8.5M11.5 19.5h8.5" /></symbol>
+        <symbol id="i-task-pending" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /></symbol>
+        <symbol id="i-task-running" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="M12 7.8V12l2.9 1.7" /></symbol>
+        <symbol id="i-task-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="m8.5 12.3 2.4 2.4 4.6-4.9" /></symbol>
+        <symbol id="i-task-blocked" viewBox="0 0 24 24"><rect x="6.5" y="11" width="11" height="8" rx="2" /><path d="M9 11V8.5a3 3 0 0 1 6 0V11" /></symbol>
+        <symbol id="i-parallel" viewBox="0 0 24 24"><path d="M12 4.5V10M12 10c0 3.2-6 2.6-6 6.5v3M12 10c0 3.2 6 2.6 6 6.5v3" /><path d="m3.8 17.8 2.2 2.2 2.2-2.2M15.8 17.8l2.2 2.2 2.2-2.2" /></symbol>
+        <symbol id="i-msg" viewBox="0 0 24 24"><path d="M5 7a2.5 2.5 0 0 1 2.5-2.5h9A2.5 2.5 0 0 1 19 7v6a2.5 2.5 0 0 1-2.5 2.5H11L7 19v-3.5A2.5 2.5 0 0 1 5 13z" /></symbol>
+        <symbol id="i-ag-scout" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5" /><path d="m14.9 9.1-1.7 4.1-4.1 1.7 1.7-4.1z" /></symbol>
+        <symbol id="i-ag-builder" viewBox="0 0 24 24"><path d="M15 5.5a4 4 0 0 0-4.8 5.2l-5.7 5.7a1.8 1.8 0 0 0 2.6 2.6l5.7-5.7A4 4 0 0 0 18 8.5l-2.3 2.3-2.6-.6-.6-2.6z" /></symbol>
+        <symbol id="i-ag-qa" viewBox="0 0 24 24"><path d="M9.5 4.5h5M10.5 4.5v5L5.8 18a1.4 1.4 0 0 0 1.2 2h10a1.4 1.4 0 0 0 1.2-2L13.5 9.5v-5M8.3 14h7.4" /></symbol>
+        <symbol id="i-ag-validator" viewBox="0 0 24 24"><path d="M12 4 5.5 6.5v5c0 4 2.7 7 6.5 8.5 3.8-1.5 6.5-4.5 6.5-8.5v-5z" /><path d="m9 12 2.2 2.2L15 10.3" /></symbol>
+        <symbol id="i-ag-planner" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="15" rx="2" /><path d="M9.5 3.5h5v3h-5zM9 11.5h6M9 15.5h4" /></symbol>
+        <symbol id="i-ag-bug-hunt" viewBox="0 0 24 24"><path d="M9.5 8.5a2.5 2.5 0 0 1 5 0v1h-5zM8 10.5h8v4a4 4 0 0 1-8 0zM12 10.5v8M4.5 12.5H8M16 12.5h3.5M5.5 7.5l3 2M18.5 7.5l-3 2M5.5 19l3-2.5M18.5 19l-3-2.5" /></symbol>
+        <symbol id="i-ag-research" viewBox="0 0 24 24"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H18v13H6.5A1.5 1.5 0 0 0 5 18.5z" /><path d="M5 18.5A1.5 1.5 0 0 0 6.5 20H18v-3M9 8h5M9 11.5h3" /></symbol>
+      </defs>
+    </svg>
+
+    <div id="app" class="app" data-left="open" data-right="open">
+      <header class="topbar">
+        <div class="tb-group">
+          <button id="menuBtn" class="icon-btn" type="button" aria-label="Menu" aria-haspopup="menu"><svg><use href="#i-menu" /></svg></button>
+          <button id="toggleLeftBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar barra lateral" aria-controls="sidebar" aria-expanded="true"><svg><use href="#i-sidebar" /></svg></button>
+          <button id="projectMenuBtn" class="title-btn" type="button" aria-haspopup="menu">
+            <span id="headerState" class="state" data-state="idle" aria-hidden="true"></span><span id="projectTitle">PI Studio</span><svg><use href="#i-chevron-down" /></svg>
+          </button>
+        </div>
+        <div class="tb-group">
+          <div id="themeSwitch" class="theme-switch" role="radiogroup" aria-label="Tema">
+            <button type="button" role="radio" data-theme-choice="light" aria-checked="false" title="Tema claro"><svg><use href="#i-sun" /></svg><span class="sr-only">Claro</span></button>
+            <button type="button" role="radio" data-theme-choice="dark" aria-checked="false" title="Tema escuro"><svg><use href="#i-moon" /></svg><span class="sr-only">Escuro</span></button>
+            <button type="button" role="radio" data-theme-choice="auto" aria-checked="true" title="Seguir o sistema"><svg><use href="#i-monitor" /></svg><span class="sr-only">Automático</span></button>
+          </div>
+          <button id="toggleRightBtn" class="icon-btn" type="button" aria-label="Mostrar/ocultar inspetor" aria-controls="panel" aria-expanded="true"><svg><use href="#i-panel" /></svg></button>
+          <button id="consoleBtn" class="icon-btn" type="button" aria-label="Console RPC" aria-controls="drawer" aria-expanded="false"><svg><use href="#i-terminal" /></svg></button>
+          <button id="filesBtn" class="icon-btn" type="button" aria-label="Arquivos alterados"><svg><use href="#i-files" /></svg></button>
+          <button id="vorcaroBtn" class="icon-btn vc-btn" type="button" aria-label="Vorcaro, a inteligência Master (Alt+V)" title="Vorcaro, a inteligência Master (Alt+V)" aria-haspopup="dialog"><svg><use href="#i-agents" /></svg><span>Vorcaro</span></button>
+          <button id="worktreesBtn" class="icon-btn" type="button" aria-label="Worktrees (Alt+W)" title="Worktrees (Alt+W)" aria-haspopup="dialog" hidden><svg><use href="#i-branch" /></svg><span id="worktreesBadge" class="count-badge" hidden></span></button>
+        </div>
+      </header>
+
+      <aside id="sidebar" class="sidebar" aria-label="Projetos e conversas">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">π</span><span class="brand-name">PI Studio</span></div>
+        <nav class="side-nav">
+          <button id="vorcaroSideBtn" class="nav-item nav-vorcaro" type="button" title="Vorcaro, a inteligência Master (Alt+V)"><span class="nav-ico"><svg><use href="#i-agents" /></svg></span><span class="nav-vc-text"><strong>Vorcaro,</strong><small>a inteligência Master</small></span></button>
+          <button id="newSessionBtn" class="nav-item nav-new" type="button" title="Abre uma sessão do PI direto na pasta atual, sem passar pelo Vorcaro. Para pedir algo, fale com o Vorcaro."><span class="nav-ico"><svg><use href="#i-plus" /></svg></span><span id="newSessionLabel">Nova sessão</span></button>
+        </nav>
+        <div id="searchWrap" class="side-search" hidden>
+          <svg><use href="#i-search" /></svg>
+          <input id="searchInput" type="search" placeholder="Buscar projetos e conversas" aria-label="Buscar projetos e conversas" />
+        </div>
+        <div id="searchResults" class="search-results" hidden></div>
+        <section id="claudeSide" class="claude-side" aria-label="Suas sessões do Claude Code" hidden></section>
+        <div class="side-heading"><span>Ambientes</span><span class="side-heading-actions"><button id="newAmbienteBtn" class="mini-btn" type="button" title="Criar um ambiente: uma pasta com as suas conversas">Novo ambiente</button><button id="refreshProjectsBtn" class="mini-btn" type="button">Atualizar</button></span></div>
+        <div id="projectsList" class="projects" role="list"></div>
+        <footer class="side-footer">
+          <button id="userBtn" class="user" type="button" title="Trocar o nome que aparece aqui e na saudação"><span id="userAvatar" class="avatar" aria-hidden="true"></span><span id="userName" class="user-name"></span></button>
+          <div class="side-footer-actions">
+            <button id="settingsBtn" class="icon-btn" type="button" aria-label="Configurações"><svg><use href="#i-gear" /></svg></button>
+            <button id="searchBtn" class="icon-btn" type="button" aria-label="Buscar" aria-controls="searchWrap"><svg><use href="#i-search" /></svg></button>
+          </div>
+        </footer>
+      </aside>
+
+      <main class="main" id="main">
+        <section id="stage" class="stage" data-mode="solo" aria-label="Palco dos agentes" hidden>
+          <header class="stage-head">
+            <h2 class="stage-title"><svg><use href="#i-tree" /></svg><span>Palco</span><button type="button" class="info-dot" aria-label="Sobre o palco" title="Cada agente desta conversa aparece aqui com o que está fazendo agora, o modelo, o tempo e o custo. Numa equipe, o lead fica em cima e as sessões filhas embaixo; a linha entre dois agentes acende quando um trabalho ou uma mensagem passa por ela. Clique num agente para abrir a conversa dele.">i</button></h2>
+            <div id="stageSummary" class="stage-summary" aria-live="polite"></div>
+            <button id="stageToggle" class="icon-btn small stage-toggle" type="button" aria-expanded="true" aria-controls="stageBody" title="Recolher o palco"><svg><use href="#i-chevron-down" /></svg></button>
+          </header>
+          <div id="stageBody" class="stage-body">
+            <div id="stageCanvas" class="stage-canvas"></div>
+            <ol id="stageMail" class="stage-mail" aria-label="Mensagens entre os agentes" hidden></ol>
+          </div>
+        </section>
+        <div id="scroller" class="scroller">
+          <div id="thread" class="thread" aria-label="Conversa"></div>
+        </div>
+        <button id="jumpBtn" class="jump-btn" type="button" aria-label="Ir para o fim" hidden><svg><use href="#i-down" /></svg></button>
+
+        <footer class="dock">
+          <div id="widgetArea" class="widget-area hidden" role="status" aria-live="polite"></div>
+          <div class="exit-row">
+            <div id="exitBanner" class="exit-banner hidden" role="status"></div>
+            <button id="restartBtn" class="restart-inline" type="button">Reiniciar PI</button>
+          </div>
+          <div id="queueArea" class="queue-area" hidden></div>
+          <section id="todoPanel" class="todo-panel" aria-label="Lista de tarefas" hidden>
+            <button id="todoToggle" class="todo-head" type="button" aria-expanded="true" aria-controls="todoList" title="Mostrar ou ocultar as tarefas (Alt+T)">
+              <svg class="chev" aria-hidden="true"><use href="#i-chevron-right" /></svg>
+              <span class="todo-title">Tarefas</span>
+              <span id="todoCount" class="todo-count"></span>
+              <span id="todoCurrent" class="todo-current"></span>
+            </button>
+            <ul id="todoList" class="todo-list"></ul>
+          </section>
+          <div id="watchBar" class="watch-bar" role="status" hidden>
+            <span id="watchText" class="watch-text"></span>
+            <button id="watchBack" class="watch-btn watch-btn-quiet" type="button" hidden>Voltar ao PI principal</button>
+            <button id="watchContinue" class="watch-btn" type="button" disabled>Continuar aqui</button>
+          </div>
+          <div id="hudActivity" class="hud-activity" role="status" aria-live="polite" hidden></div>
+          <form id="composer" class="composer">
+            <div id="attachments" class="attachments"></div>
+            <textarea id="promptInput" rows="1" placeholder="Mensagem · / comandos · @ arquivos · ! shell" aria-label="Mensagem para o PI" aria-autocomplete="list" aria-controls="menu"></textarea>
+            <div class="composer-row">
+              <label class="icon-btn attach-btn" title="Anexar imagem">
+                <input id="imageInput" type="file" accept="image/*" multiple />
+                <svg><use href="#i-plus" /></svg><span class="sr-only">Anexar imagem</span>
+              </label>
+              <button id="micBtn" class="icon-btn mic-btn" type="button" title="Gravar voz (Ctrl+Shift+M)" aria-label="Gravar voz (Ctrl+Shift+M)" aria-pressed="false"><svg><use href="#i-mic" /></svg></button>
+              <span id="micLive" class="mic-live" role="status" aria-live="polite" hidden>
+                <span class="mic-dot" aria-hidden="true"></span>
+                <span id="micTimer" class="mic-timer">0:00</span>
+                <span class="mic-meter" aria-hidden="true"><i id="micLevel"></i></span>
+                <span id="micLabel" class="mic-label"></span>
+              </span>
+              <span id="shellChip" class="shell-chip" hidden>$ shell</span>
+              <span id="composerHint" class="composer-hint"></span>
+              <button id="speakStop" class="icon-btn speak-stop" type="button" title="Parar a leitura em voz alta" aria-label="Parar a leitura em voz alta" hidden><svg><use href="#i-speaker" /></svg></button>
+              <button id="stopBtn" class="stop-btn" type="button" aria-label="Interromper" hidden><svg><use href="#i-stop" /></svg></button>
+              <button id="sendBtn" class="send-btn" type="submit" aria-label="Enviar" disabled><svg><use href="#i-send" /></svg></button>
+            </div>
+          </form>
+          <div class="composer-meta">
+            <span id="modeLabel" class="mode-label">Agente</span>
+            <span id="statusLine" class="status-line"></span>
+            <span class="meta-spacer"></span>
+            <button id="fastChip" class="fast-chip" type="button" aria-label="Velocidade (Fast): abrir configuração" hidden></button>
+            <span id="hudDefault" class="hud-default" hidden></span>
+            <button id="modelBtn" class="model-btn" type="button" aria-haspopup="menu" title="Modelo em uso nesta conversa (clique para trocar)"><span id="modelName">Modelo</span><span id="thinkingName" class="model-level" hidden></span><svg><use href="#i-chevron-down" /></svg></button>
+            <button id="hudCtx" class="hud-ctx" type="button" hidden></button>
+            <span id="ctxRing" class="ctx-ring" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" class="ring-track" /><circle id="ctxRingFill" cx="10" cy="10" r="7.5" class="ring-fill" /></svg></span>
+          </div>
+        </footer>
+
+        <section id="drawer" class="drawer" aria-label="Console RPC" hidden>
+          <header class="drawer-head">
+            <strong>Console RPC</strong>
+            <input id="logFilter" type="search" placeholder="Filtrar eventos" aria-label="Filtrar eventos" />
+            <span class="meta-spacer"></span>
+            <button id="serverLogsBtn" class="mini-btn" type="button">Logs do servidor</button>
+            <button id="clearLogBtn" class="mini-btn" type="button">Limpar</button>
+            <button id="closeDrawerBtn" class="icon-btn" type="button" aria-label="Fechar console"><svg><use href="#i-x" /></svg></button>
+          </header>
+          <div id="logList" class="log-list" role="log"></div>
+          <form id="rawForm" class="raw-form">
+            <textarea id="rawInput" rows="2" spellcheck="false" aria-label="Comando RPC em JSON">{"type":"get_state"}</textarea>
+            <div class="raw-actions">
+              <button type="button" class="mini-btn" data-raw='{"type":"get_state"}'>get_state</button>
+              <button type="button" class="mini-btn" data-raw='{"type":"get_session_stats"}'>get_session_stats</button>
+              <button type="button" class="mini-btn" data-raw='{"type":"get_commands"}'>get_commands</button>
+              <span class="meta-spacer"></span>
+              <button type="submit" class="btn btn-primary">Enviar RPC</button>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <aside id="panel" class="panel inspector" aria-label="Inspetor da sessão" data-tab="terminal">
+        <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="Redimensionar inspetor" aria-controls="panel" aria-valuemin="320" aria-valuemax="900" aria-valuenow="460" tabindex="0" title="Arraste para redimensionar · duplo clique restaura"></div>
+        <div id="inspectorTabs" class="insp-tabs" role="tablist" aria-label="Visões do inspetor">
+          <button id="tab-terminal" class="insp-tab" type="button" role="tab" data-tab="terminal" aria-controls="view-terminal" aria-selected="true"><svg><use href="#i-terminal" /></svg><span class="insp-label">Terminal</span></button>
+          <button id="tab-worktrees" class="insp-tab" type="button" role="tab" data-tab="worktrees" aria-controls="view-worktrees" aria-selected="false" tabindex="-1" hidden><svg><use href="#i-branch" /></svg><span class="insp-label">Worktrees</span><span id="wtTabBadge" class="count-badge" hidden></span></button>
+          <button id="tab-tasks" class="insp-tab" type="button" role="tab" data-tab="tasks" aria-controls="view-tasks" aria-selected="false" tabindex="-1"><svg><use href="#i-checklist" /></svg><span class="insp-label">Checklist</span><span id="tasksBadge" class="count-badge" hidden></span></button>
+          <button id="tab-context" class="insp-tab" type="button" role="tab" data-tab="context" aria-controls="view-context" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge" /></svg><span class="insp-label">Contexto</span></button>
+          <button id="tab-subagents" class="insp-tab is-minor" type="button" role="tab" data-tab="subagents" aria-controls="view-subagents" aria-selected="false" tabindex="-1"><svg><use href="#i-agents" /></svg><span class="insp-label">Agentes</span><span id="subBadge" class="count-badge" hidden></span></button>
+          <button id="tab-files" class="insp-tab is-minor" type="button" role="tab" data-tab="files" aria-controls="view-files" aria-selected="false" tabindex="-1"><svg><use href="#i-files" /></svg><span class="insp-label">Arquivos</span><span id="filesBadge" class="count-badge muted" hidden></span></button>
+          <button id="tab-browser" class="insp-tab is-minor" type="button" role="tab" data-tab="browser" aria-controls="view-browser" aria-selected="false" tabindex="-1"><svg><use href="#i-globe" /></svg><span class="insp-label">Navegador</span></button>
+          <button id="tab-sidechat" class="insp-tab is-minor" type="button" role="tab" data-tab="sidechat" aria-controls="view-sidechat" aria-selected="false" tabindex="-1" title="Dúvidas (Alt+D)"><svg><use href="#i-help" /></svg><span class="insp-label">Dúvidas</span></button>
+        </div>
+        <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
+          <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
+          <button id="termJump" class="term-jump" type="button" hidden>Ir para o fim<svg><use href="#i-down" /></svg></button>
+          <div id="termWidgets" class="term-widgets" aria-label="Widgets de extensão" hidden></div>
+          <div id="termFoot" class="term-foot" role="status"></div>
+        </section>
+        <section id="view-tasks" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-tasks" data-view="tasks" tabindex="0" hidden>
+          <div id="tasksList" class="sa-list tk-list"></div>
+        </section>
+        <section id="view-subagents" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-subagents" data-view="subagents" tabindex="0" hidden>
+          <div id="subList" class="sa-list"></div>
+        </section>
+        <section id="view-context" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-context" data-view="context" tabindex="0" hidden>
+          <div id="ctxView" class="ctx-view"></div>
+        </section>
+        <section id="view-files" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-files" data-view="files" tabindex="0" hidden>
+          <div class="files-view">
+            <section class="insp-sec"><h3 class="sec-title">Projeto</h3><div id="envPath" class="env-path"></div></section>
+            <section class="insp-sec"><h3 class="sec-title">Arquivos</h3><div id="gitLegend" class="git-legend" aria-label="Legenda dos estados no git" hidden></div><div id="outputsList" class="outputs"></div></section>
+          </div>
+        </section>
+        <section id="view-browser" class="insp-view view-browser" role="tabpanel" aria-labelledby="tab-browser" data-view="browser" hidden>
+          <form id="browserBar" class="browser-bar" autocomplete="off">
+            <button id="browserBack" class="icon-btn small" type="button" aria-label="Voltar" title="Voltar" disabled><svg><use href="#i-arrow-left" /></svg></button>
+            <button id="browserForward" class="icon-btn small" type="button" aria-label="Avançar" title="Avançar" disabled><svg><use href="#i-arrow-right" /></svg></button>
+            <button id="browserReload" class="icon-btn small" type="button" aria-label="Recarregar" title="Recarregar" disabled><svg><use href="#i-retry" /></svg></button>
+            <input id="browserInput" class="browser-input" type="text" spellcheck="false" placeholder="Arquivo, caminho ou http://localhost:3000" aria-label="Endereço do navegador" />
+            <button id="browserOutside" class="icon-btn small" type="button" aria-label="Abrir fora" title="Abrir fora (navegador do sistema)" disabled><svg><use href="#i-external" /></svg></button>
+          </form>
+          <div id="browserStage" class="browser-stage" role="region" aria-label="Conteúdo do navegador" aria-live="polite"></div>
+        </section>
+        <section id="view-worktrees" class="insp-view view-scroll" role="tabpanel" aria-labelledby="tab-worktrees" data-view="worktrees" tabindex="0" hidden>
+          <div id="wtList" class="sa-list"></div>
+        </section>
+        <section id="view-sidechat" class="insp-view view-sidechat" role="tabpanel" aria-labelledby="tab-sidechat" data-view="sidechat" hidden>
+          <p class="sc-note">Só responde, não mexe em nada.</p>
+          <div id="scList" class="sc-list" role="log" aria-live="polite" aria-label="Dúvidas sobre esta conversa" tabindex="0"></div>
+          <div id="scStatus" class="sc-status" role="status"></div>
+          <form id="scForm" class="sc-form" autocomplete="off">
+            <textarea id="scInput" class="sc-input" rows="2" maxlength="8000" placeholder="Pergunte sobre o que está acontecendo…" aria-label="Pergunta sobre o que está acontecendo"></textarea>
+            <button id="scStop" class="icon-btn" type="button" aria-label="Parar a resposta" title="Parar a resposta" hidden><svg><use href="#i-stop" /></svg></button>
+            <button id="scSend" class="icon-btn sc-send" type="submit" aria-label="Enviar pergunta" title="Enviar (Enter)"><svg><use href="#i-send" /></svg></button>
+          </form>
+        </section>
+      </aside>
+      <section id="vorcaroView" class="vc-view" aria-label="Vorcaro, a inteligência Master" hidden>
+        <header class="vc-view-head">
+          <button id="vcExit" class="vc-exit" type="button" title="Sair do Vorcaro e voltar às suas sessões (Esc)"><svg><use href="#i-arrow-left" /></svg><span>Sessões</span></button>
+          <span class="vc-avatar" aria-hidden="true"></span>
+          <div class="vc-id">
+            <h2 id="vorcaroTitle">Vorcaro,<span class="vc-sub">a inteligência Master</span><button type="button" class="info-dot" aria-label="Sobre o Vorcaro" title="Conhece as sessões de PI dos últimos 30 dias pelo resumo de cada uma, lê o log quando precisa de detalhe e só responde. Quando você pede algo para uma sessão, ele prepara o pedido como objetivo (/goal) com checklist de aceite e verificação, e só envia quando você clica. Depois verifica sozinho antes de marcar feito. As conversas com ele ficam salvas.">i</button></h2>
+            <span id="vcConvTitle" class="vc-conv-title">Nova conversa</span>
+          </div>
+          <div id="vcFilters" class="filter-bar" aria-label="Filtros do quadro"></div>
+          <div class="vc-conv-actions">
+            <button id="vcHistoryBtn" class="btn vc-history-btn" type="button" aria-haspopup="menu" aria-expanded="false"><svg><use href="#i-clock" /></svg><span>Conversas</span></button>
+            <button id="vcNewBtn" class="btn" type="button"><svg><use href="#i-plus" /></svg><span>Nova</span></button>
+            <div id="vcHistoryMenu" class="vc-history-menu" role="menu" hidden></div>
+          </div>
+        </header>
+        <div class="vc-view-body">
+          <aside id="vorcaroBoardPane" class="vc-board-pane" aria-label="Quadro das sessões">
+            <button id="vcBoardToggle" class="vc-board-toggle" type="button" aria-expanded="false" aria-controls="vorcaroBoard" title="Abrir o quadro"><svg><use href="#i-chevron-right" /></svg><span>Quadro</span></button>
+            <div id="vcBoardRail" class="vc-board-rail" role="button" tabindex="0" aria-label="Abrir o quadro"></div>
+            <div id="vorcaroBoard" class="vc-board"></div>
+          </aside>
+          <div class="vc-chat">
+            <p id="vorcaroSuggestions" class="vc-suggestions" hidden></p>
+            <div id="vcList" class="sc-list" role="log" aria-live="polite" aria-label="Conversa com o Vorcaro" tabindex="0"></div>
+            <div id="vcStatus" class="sc-status" role="status"></div>
+            <p id="vcContext" class="vc-context" role="status"></p>
+            <form id="vcForm" class="sc-form" autocomplete="off">
+              <textarea id="vcInput" class="sc-input" rows="2" maxlength="8000" placeholder="Pergunte ao Vorcaro ou peça algo para uma sessão" aria-label="Mensagem para o Vorcaro"></textarea>
+              <button id="vcStop" class="icon-btn" type="button" aria-label="Parar a resposta" title="Parar a resposta" hidden><svg><use href="#i-stop" /></svg></button>
+              <button id="vcSend" class="icon-btn sc-send" type="submit" aria-label="Enviar" title="Enviar (Enter)"><svg><use href="#i-send" /></svg></button>
+            </form>
+            <p id="vorcaroNotice" class="vc-notice" role="status" aria-live="polite"></p>
+          </div>
+          <aside id="vcLive" class="vc-live" aria-label="O que o Vorcaro acompanha"></aside>
+          <aside id="vcPop" class="vc-pop" aria-label="Detalhe da sessão" hidden></aside>
+        </div>
+      </section>
+      <div id="scrim" class="scrim" hidden></div>
+    </div>
+
+    <dialog id="uiDialog" class="dialog">
+      <form method="dialog" class="dialog-form">
+        <h3 id="uiDialogTitle">PI precisa de resposta</h3>
+        <p id="uiDialogMessage" class="dialog-message" hidden></p>
+        <div id="uiDialogBody" class="dialog-body"></div>
+        <div id="uiDialogTimer" class="dialog-timer" hidden><span></span></div>
+        <menu>
+          <button id="uiCancelBtn" class="btn" value="cancel">Cancelar</button>
+          <button id="uiOkBtn" class="btn btn-primary" value="ok">OK</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="confirmDialog" class="dialog">
+      <form method="dialog" class="dialog-form">
+        <h3 id="confirmTitle">Confirmar</h3>
+        <p id="confirmMessage"></p>
+        <menu>
+          <button class="btn" value="cancel">Cancelar</button>
+          <button id="confirmOkBtn" class="btn btn-primary" value="ok">Confirmar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="diffDialog" class="dialog dialog-wide">
+      <form method="dialog" class="dialog-form">
+        <header class="diff-head">
+          <svg><use href="#i-file" /></svg>
+          <div><h3 id="diffTitle">Arquivo</h3><p id="diffPath" class="diff-path"></p></div>
+          <span id="diffStats" class="diff-stats"></span>
+        </header>
+        <div id="diffBody" class="diff-body"></div>
+        <menu><button class="btn btn-primary" value="ok">Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="customizeDialog" class="dialog">
+      <form method="dialog" class="dialog-form" id="customizeForm">
+        <h3>Personalização</h3>
+        <label class="field"><span>Seu nome</span><input id="prefName" maxlength="40" autocomplete="off" /></label>
+        <label class="switch-row"><span><strong>Mostrar raciocínio</strong><small>Expande o raciocínio do modelo por padrão.</small></span><input id="prefThinking" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Expandir ferramentas</strong><small>Mostra cada comando em vez do resumo.</small></span><input id="prefTools" type="checkbox" class="switch" /></label>
+        <menu>
+          <button class="btn" value="cancel">Cancelar</button>
+          <button class="btn btn-primary" value="save" id="prefSaveBtn">Salvar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="shortcutsDialog" class="dialog dialog-shortcuts" aria-labelledby="shortcutsTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="shortcutsTitle">Atalhos de teclado</h3>
+        <div id="shortcutsBody" class="shortcuts"></div>
+        <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="settingsDialog" class="dialog" aria-labelledby="settingsTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="settingsTitle">Configurações</h3>
+        <div class="setting-row">
+          <span><strong>Densidade da tela</strong><small>Tamanho de tudo: letras, painéis e espaços.</small></span>
+          <div class="seg-group" role="radiogroup" aria-label="Densidade da tela">
+            <label><input type="radio" name="settingDensity" value="confortavel" /><span>Confortável</span></label>
+            <label><input type="radio" name="settingDensity" value="compacta" /><span>Compacta</span></label>
+            <label><input type="radio" name="settingDensity" value="maxima" /><span>Máxima</span></label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span><strong>Tamanho da fonte</strong><small>Texto das conversas.</small></span>
+          <div class="seg-group" role="radiogroup" aria-label="Tamanho da fonte">
+            <label><input type="radio" name="settingFont" value="small" /><span>Pequena</span></label>
+            <label><input type="radio" name="settingFont" value="medium" /><span>Média</span></label>
+            <label><input type="radio" name="settingFont" value="large" /><span>Grande</span></label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <span><strong>Largura da conversa</strong><small>Coluna central de mensagens.</small></span>
+          <div class="seg-group" role="radiogroup" aria-label="Largura da conversa">
+            <label><input type="radio" name="settingWidth" value="normal" /><span>Normal</span></label>
+            <label><input type="radio" name="settingWidth" value="wide" /><span>Larga</span></label>
+          </div>
+        </div>
+        <label class="switch-row"><span><strong>Notificações</strong><small id="settingNotifyHint">Avisa quando o PI termina ou precisa de você, com a aba em segundo plano.</small></span><input id="settingNotify" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Ler respostas em voz alta</strong><small id="settingVoiceReadHint">Fala cada resposta ao terminar. As vozes “Online (Natural)” do Edge são sintetizadas pela nuvem da Microsoft.</small></span><input id="settingVoiceRead" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Reduzir movimento</strong><small>Desliga animações e rolagem suave.</small></span><input id="settingMotion" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Detalhes técnicos na conversa</strong><small>Mostra raciocínio, cada ferramenta e os diffs. Desligado, a conversa mostra as respostas e o trabalho em frases curtas, com os detalhes num clique.</small></span><input id="settingTechnical" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Mostrar raciocínio por padrão</strong><small>Expande o raciocínio do modelo nas respostas.</small></span><input id="settingThinking" type="checkbox" class="switch" /></label>
+        <p class="sec-title settings-sec">Orca</p>
+        <label class="switch-row"><span><strong>Integração com o Orca</strong><small id="settingOrcaHint">Mostra a aba Worktrees com as worktrees e agentes do Orca.</small></span><input id="settingOrca" type="checkbox" class="switch" /></label>
+        <label class="switch-row"><span><strong>Seguir a worktree ativa do Orca</strong><small>Abre aqui a conversa da worktree em foco no Orca.</small></span><input id="settingOrcaFollow" type="checkbox" class="switch" /></label>
+        <menu><button class="btn btn-primary" value="ok" autofocus>Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <dialog id="renameDialog" class="dialog" aria-labelledby="renameTitle">
+      <form method="dialog" class="dialog-form">
+        <h3 id="renameTitle">Renomear conversa</h3>
+        <label class="field"><span>Título</span><input id="renameInput" maxlength="120" autocomplete="off" required /></label>
+        <menu>
+          <button class="btn" value="cancel" formnovalidate>Cancelar</button>
+          <button class="btn btn-primary" value="save">Salvar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="taskWorktreeDialog" class="dialog" aria-labelledby="taskWorktreeTitle">
+      <form method="dialog" class="dialog-form" id="taskWorktreeForm">
+        <h3 id="taskWorktreeTitle">Rodar numa worktree</h3>
+        <p class="muted">Cria uma worktree no Orca a partir da atual e inicia um PI nela com o texto abaixo.</p>
+        <label class="field"><span>Nome da worktree</span><input id="taskWorktreeName" maxlength="60" autocomplete="off" required /></label>
+        <label class="field"><span>Prompt</span><textarea id="taskWorktreePrompt" rows="7" maxlength="8000" required></textarea></label>
+        <menu>
+          <button class="btn" value="cancel" formnovalidate>Cancelar</button>
+          <button class="btn btn-primary" id="taskWorktreeOk" value="create">Criar worktree</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="paletteDialog" class="dialog dialog-palette" aria-label="Paleta de comandos">
+      <div class="palette">
+        <div class="palette-input">
+          <svg><use href="#i-search" /></svg>
+          <input id="paletteInput" type="text" role="combobox" aria-expanded="true" aria-controls="paletteList" aria-autocomplete="list" placeholder="Digite um comando ou busque nas conversas…" aria-label="Paleta de comandos" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="paletteList" class="palette-list" role="listbox" aria-label="Resultados"></div>
+        <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></div>
+      </div>
+    </dialog>
+
+    <dialog id="ambienteDialog" class="dialog" aria-labelledby="ambienteTitle">
+      <form method="dialog" class="dialog-form" id="ambienteForm">
+        <h3 id="ambienteTitle">Novo ambiente</h3>
+        <p class="amb-hint">Um ambiente é uma pasta com as suas conversas, como uma caixa na barra lateral.</p>
+        <label class="field"><span>Nome</span><input id="ambienteName" maxlength="60" autocomplete="off" required /></label>
+        <label class="field"><span>Pasta (opcional)</span><input id="ambienteFolder" autocomplete="off" spellcheck="false" placeholder="Vazio: cria em PI Ambientes, na sua pasta de usuário" /></label>
+        <p id="ambienteError" class="amb-error" role="alert" hidden></p>
+        <menu>
+          <button type="button" class="btn" value="cancel" data-close>Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="ambienteCreate">Criar ambiente</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="agentDialog" class="dialog dialog-agent" aria-labelledby="agentDialogTitle">
+      <div class="ad-shell">
+        <header class="ad-head">
+          <span id="agentDialogGlyph" class="ag-glyph" aria-hidden="true"></span>
+          <div class="ad-id"><h3 id="agentDialogTitle">Agente</h3><p id="agentDialogMeta" class="ad-meta"></p></div>
+          <button type="button" class="icon-btn" aria-label="Fechar" title="Fechar (Esc)" data-close><svg><use href="#i-x" /></svg></button>
+        </header>
+        <div id="agentDialogBody" class="ad-body" role="log" aria-label="Conversa do agente" tabindex="0"></div>
+      </div>
+    </dialog>
+    <dialog id="worktreesDialog" class="dialog dialog-palette dialog-worktrees" aria-label="Worktrees e atividade">
+      <div class="palette">
+        <div class="seg-group wtv-modes" role="radiogroup" aria-label="Visão">
+          <label><input type="radio" name="wtvMode" value="worktrees" checked /><span>Worktrees</span></label>
+          <label><input type="radio" name="wtvMode" value="activity" /><span>Atividade<b id="activityBadge" class="count-badge" hidden></b></span></label>
+        </div>
+        <div class="palette-input">
+          <svg><use href="#i-branch" /></svg>
+          <input id="worktreesInput" type="text" role="combobox" aria-expanded="true" aria-controls="worktreesList" aria-autocomplete="list" placeholder="Filtrar worktrees por nome, branch ou repositório…" aria-label="Filtrar worktrees" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="worktreesList" class="palette-list wtv-list" role="listbox" aria-label="Worktrees"></div>
+        <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span><span id="worktreesNotice" class="wtv-notice" role="status" aria-live="polite"></span></div>
+      </div>
+    </dialog>
+
+    <dialog id="dockerDialog" class="dialog dialog-wide">
+      <form method="dialog" class="dialog-form">
+        <h3>Rodar como ambiente Docker</h3>
+        <p>Use Docker quando quiser que o PI Studio seja o ambiente de trabalho e cada pasta montada vire um projeto.</p>
+        <pre class="plain-pre"><code>cd interface
+PI_WORKSPACES_DIR="$HOME" docker compose up --build</code></pre>
+        <p class="muted">O compose monta seus projetos em <code>/workspaces</code> e seu <code>~/.pi/agent</code> dentro do container para manter agentes, skills, auth e histórico.</p>
+        <menu><button class="btn btn-primary" value="ok">Fechar</button></menu>
+      </form>
+    </dialog>
+
+    <div id="menu" class="menu" role="menu" hidden></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
