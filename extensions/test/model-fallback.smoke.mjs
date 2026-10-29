@@ -83,10 +83,10 @@ for (const [id, name] of [["builder", "GPT-6 Luna"], ["heavy", "GPT-6.1 Terra"],
   assert.deepEqual(metadata.input, ["text", "image"]);
 }
 assert.deepEqual(FALLBACK_CHAINS.conductor.map(({ provider, model, level }) => ({ provider, model, level })), [
-  { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "inherit" },
+  { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
 ]);
-assert.equal(FALLBACK_CHAINS.conductor.every(({ level }) => level === "inherit"), true);
+assert.equal(FALLBACK_CHAINS.conductor[1].level, "inherit", "the Codex fallback mirrors the requested effort");
 const conductor = virtualModels.get("fallback/conductor");
 const builder = virtualModels.get("fallback/builder");
 const registry = { find(provider, id) { return models.get(`${provider}/${id}`); } };
@@ -120,7 +120,7 @@ for (const chainId of ["luna"]) {
   const chain = FALLBACK_CHAINS[chainId];
   assert.deepEqual(chain.map(({ provider, model, level }) => ({ provider, model, level })), [
     { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "inherit" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   ]);
   assert.equal(nextFallbackStep(chain, 0), 1);
   assert.equal(nextFallbackStep(chain, 1), 1, `${chainId} clamps at its final step`);

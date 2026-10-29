@@ -26,12 +26,12 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   builder: [
     { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-    { provider: "anthropic", model: "claude-haiku-5-5", level: "medium" },
+    { provider: "anthropic", model: "claude-haiku-5-5", level: "inherit" },
   ],
   heavy: [
     { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "xhigh" },
-    { provider: "anthropic", model: "claude-haiku-5-5", level: "xhigh" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
+    { provider: "anthropic", model: "claude-haiku-5-5", level: "inherit" },
   ],
   sol: [
     { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
@@ -39,15 +39,15 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   ],
   terra: [
     { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "inherit" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "anthropic", model: "claude-sonnet-5-5", level: "inherit" },
   ],
   luna: [
     { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "inherit" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   ],
   conductor: [
-    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "inherit" },
+    { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
   ],
 };
