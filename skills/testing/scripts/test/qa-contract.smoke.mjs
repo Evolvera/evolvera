@@ -58,7 +58,7 @@ try {
   const qa = read("agents/qa.md");
   const qaFm = frontmatter(qa, "agents/qa.md");
   assert(qaFm.name === "qa", "qa agent name mismatch");
-  assert(qaFm.model === "openai-codex/gpt-6.1-terra", "qa model mismatch");
+  assert(qaFm.model === "fallback/terra", "qa model mismatch");
   assert(qaFm.thinking === "medium", "qa thinking mismatch");
   assert(qaFm.display_name === "🧪 QA · GPT-6.1 Terra · medium", "qa display_name mismatch");
   assert(qaFm.prompt_mode === "replace" && qaFm.inherit_context === "false" && qaFm.extensions === "false" && qaFm.skills === "false", "qa isolation frontmatter mismatch");

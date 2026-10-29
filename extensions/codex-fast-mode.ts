@@ -108,6 +108,40 @@ interface ModelIdentity {
   id?: unknown;
 }
 
+// model-fallback publishes the physical model its virtual chain routed to. The channel name is
+// duplicated from model-fallback.ts rather than imported, so fast mode keeps loading on agents and
+// sessions that enable it without the router extension.
+const ROUTED_MODEL_EVENT = "model-fallback:routed";
+const VIRTUAL_ROUTER_PROVIDER = "fallback";
+
+export interface RoutedPhysicalModel {
+  provider: string;
+  modelId: string;
+}
+
+/** Read a routed-model payload; anything malformed counts as "no model was routed". */
+export function readRoutedModel(payload: unknown): RoutedPhysicalModel | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const { provider, modelId } = payload as { provider?: unknown; modelId?: unknown };
+  if (typeof provider !== "string" || provider.length === 0) return undefined;
+  if (typeof modelId !== "string" || modelId.length === 0) return undefined;
+  return { provider, modelId };
+}
+
+/**
+ * The model a request is dispatched to. A virtual `fallback/*` selection keeps the router provider
+ * in `ctx.model`, so the service-tier gate has to read the physical model the router published;
+ * with no routed model it stays on today's selection-based decision. A physical selection is
+ * returned unchanged.
+ */
+export function effectiveDispatchModel(
+  selected: ModelIdentity | undefined,
+  routed: RoutedPhysicalModel | undefined,
+): ModelIdentity | undefined {
+  if (selected?.provider !== VIRTUAL_ROUTER_PROVIDER || !routed) return selected;
+  return { provider: routed.provider, id: routed.modelId };
+}
+
 interface ProviderPayload {
   [key: string]: unknown;
 }
@@ -156,6 +190,12 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   let currentModel: ModelIdentity | undefined;
   let fastRequestInFlight = false;
   let fastRequestAccepted = false;
+  // Last physical model the fallback router published. Subscription is optional: without the shared
+  // event bus (older SDK, isolated harness) the gate keeps today's ctx.model decision.
+  let routedModel: RoutedPhysicalModel | undefined;
+  pi.events?.on?.(ROUTED_MODEL_EVENT, (data: unknown) => {
+    routedModel = readRoutedModel(data);
+  });
 
   const updateStatus = (ctx: {
     sessionManager: { getSessionId(): string };
@@ -346,9 +386,10 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
     const isOwner = state.ownerSessionId === ctx.sessionManager.getSessionId();
     const appliesToRequest = mode === "all" || mode === "ultra"
       || ((mode === "subagents" || mode === "ultra-subagents") && !isOwner);
-    if (!appliesToRequest || !isFastEligibleModel(ctx.model)) return undefined;
+    const dispatchModel = effectiveDispatchModel(ctx.model, routedModel);
+    if (!appliesToRequest || !isFastEligibleModel(dispatchModel)) return undefined;
     fastRequestInFlight = true;
-    return applyFastServiceTier(event.payload, serviceTierFor(mode, ctx.model));
+    return applyFastServiceTier(event.payload, serviceTierFor(mode, dispatchModel));
   });
 
   pi.on("after_provider_response", (event, ctx) => {

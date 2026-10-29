@@ -4,7 +4,7 @@ description: "Guided read-only codebase exploration with evidence-based reports 
 display_name: 🔍 Scout · GPT-6 Luna · medium
 thinking: medium
 tools: read, grep, find, ls
-model: openai-codex/gpt-6-luna
+model: fallback/luna
 max_turns: 70
 exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 ---

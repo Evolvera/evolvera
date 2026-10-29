@@ -43,11 +43,11 @@ assert.equal(
 );
 requireMatch("SYSTEM.md", /internal order[\s\S]{0,180}TILL-DO[\s\S]{0,180}(before|prior to)[\s\S]{0,80}TODO[\s\S]{0,80}(editing|source)/i, "missing concise global readiness rule");
 requireMatch("SYSTEM.md", /simple tasks[^.\n]*artifact-free/i, "simple tasks must remain artifact-free by default");
-requireMatch("agents/builder-light.md", /^model: openai-codex\/gpt-6-luna$/m, "builder-light must use GPT-6 Luna medium");
+requireMatch("agents/builder-light.md", /^model: fallback\/luna$/m, "builder-light must use the Luna fallback chain");
 requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light must remain medium effort");
-requireMatch("agents/builder.md", /^model: openai-codex\/gpt-6-luna$/m, "builder must use Luna");
+requireMatch("agents/builder.md", /^model: fallback\/builder$/m, "builder must use the fallback chain");
 requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
-requireMatch("agents/builder-heavy.md", /^model: openai-codex\/gpt-6\.1-terra$/m, "builder-heavy must use Terra");
+requireMatch("agents/builder-heavy.md", /^model: fallback\/heavy$/m, "builder-heavy must use the fallback chain");
 requireMatch("agents/builder-heavy.md", /^thinking: medium$/m, "builder-heavy must use medium effort");
 
 for (const path of plannerFiles) {

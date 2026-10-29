@@ -3,7 +3,7 @@ name: builder-light
 description: "Light general implementation agent for routine bounded work whose correctness is locally decidable: mechanical edits, utilities, focused tests, tooling, exact pattern-following config/docs, and well-reproduced local bug fixes. Escalate to builder when correctness depends on non-local contracts, subtle state/lifecycle, or ambiguity. Model: openai-codex/gpt-6-luna medium."
 display_name: 🪶 Builder Light · GPT-6 Luna · medium
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-6-luna
+model: fallback/luna
 thinking: medium
 max_turns: 80
 exclude_extensions: [orca-agent-status, orca-titlebar-spinner]

@@ -3,7 +3,7 @@ description: "Independent read-only reviewer for focused diffs, PRs, branches, n
 display_name: 🛡️ Validator · GPT-6.1 Terra · low
 name: validator
 tools: read, grep, bash, vscode_get_diagnostics
-model: openai-codex/gpt-6.1-terra
+model: fallback/terra
 thinking: low
 max_turns: 24
 lifecycle: lazy

@@ -45,9 +45,49 @@ try {
     service_tier: "priority",
   });
 
+  // A "fallback/*" selection carries the router provider, so the gate reads the routed physical model.
+  const routedSol = { provider: "openai-codex", modelId: "gpt-6.1-sol" };
+  const selectedFallback = { provider: "fallback", id: "builder" };
+  assert.deepEqual(mod.readRoutedModel(routedSol), routedSol);
+  assert.equal(mod.readRoutedModel({ provider: "openai-codex" }), undefined);
+  assert.equal(mod.readRoutedModel({ provider: "openai-codex", modelId: "" }), undefined);
+  assert.equal(mod.readRoutedModel("openai-codex/gpt-6.1-sol"), undefined);
+  assert.equal(mod.readRoutedModel(null), undefined);
+  assert.deepEqual(
+    mod.effectiveDispatchModel(selectedFallback, routedSol),
+    { provider: "openai-codex", id: "gpt-6.1-sol" },
+    "the routed physical model is the effective dispatch model",
+  );
+  assert.equal(
+    mod.effectiveDispatchModel(selectedFallback, undefined),
+    selectedFallback,
+    "without a routed model the selection decides, exactly as before",
+  );
+  assert.equal(mod.effectiveDispatchModel(claude, routedSol), claude, "physical selections ignore routed state");
+  assert.equal(mod.effectiveDispatchModel(undefined, routedSol), undefined);
+  assert.equal(mod.isFastEligibleModel(mod.effectiveDispatchModel(selectedFallback, routedSol)), true);
+  assert.equal(mod.isFastEligibleModel(mod.effectiveDispatchModel(selectedFallback, { provider: "refuseless", modelId: "deepseek-v4.1-flash-fast" })), false);
+  assert.equal(mod.isFastEligibleModel(mod.effectiveDispatchModel(selectedFallback, { provider: "anthropic", modelId: "claude-haiku-5-5" })), false);
+
+  function createEventBus() {
+    const listeners = new Map();
+    return {
+      on(channel, handler) {
+        const set = listeners.get(channel) ?? new Set();
+        set.add(handler);
+        listeners.set(channel, set);
+        return () => set.delete(handler);
+      },
+      emit(channel, data) {
+        for (const handler of [...(listeners.get(channel) ?? [])]) handler(data);
+      },
+    };
+  }
+
   function createExtensionHarness() {
     const handlers = new Map();
     const commandOptions = new Map();
+    const events = createEventBus();
     mod.default({
       registerCommand(name, options) {
         commandOptions.set(name, options);
@@ -55,8 +95,9 @@ try {
       on(name, handler) {
         handlers.set(name, handler);
       },
+      events,
     });
-    return { handlers, commandOptions };
+    return { handlers, commandOptions, events };
   }
 
   const { handlers, commandOptions } = createExtensionHarness();
@@ -533,6 +574,55 @@ try {
   }
   assert.match(readFileSync(path.join(root, "agents", "deep-research-auditor.md"), "utf8"), /^isolated: true$/m);
   assert.match(readFileSync(path.join(root, "agents", "plan-briefer-fable.md"), "utf8"), /^extensions: false$/m);
+
+  // A "fallback/*" selection must keep Fast/Ultrafast: the gate follows the routed physical model.
+  const routed = createExtensionHarness();
+  const routedCtx = {
+    mode: "headless",
+    model: selectedFallback,
+    sessionManager: { getSessionId: () => "routed-owner" },
+    ui: { notify() {}, setStatus() {} },
+  };
+  const routedRequest = (payload, probeCtx = routedCtx) => routed.handlers.get("before_provider_request")({ payload }, probeCtx);
+  await routed.handlers.get("session_start")({ reason: "startup" }, routedCtx);
+  await routed.commandOptions.get("fast").handler("on", routedCtx);
+  assert.equal(
+    await routedRequest({ model: "gpt-6.1-sol" }),
+    undefined,
+    "a virtual selection with no routed model published stays on the standard tier",
+  );
+  routed.events.emit("model-fallback:routed", { provider: "openai-codex", modelId: "gpt-6.1-sol" });
+  assert.deepEqual(
+    await routedRequest({ model: "gpt-6.1-sol", service_tier: "default" }),
+    { model: "gpt-6.1-sol", service_tier: "priority" },
+    "the routed Codex model is fast-eligible",
+  );
+  await routed.commandOptions.get("fast").handler("ultra", routedCtx);
+  assert.deepEqual(
+    await routedRequest({ model: "gpt-6.1-sol" }),
+    { model: "gpt-6.1-sol", service_tier: "ultrafast" },
+    "the routed GPT-6.1 Sol also gets Ultrafast",
+  );
+  await routed.commandOptions.get("fast").handler("on", routedCtx);
+  for (const notEligible of [
+    { provider: "refuseless", modelId: "deepseek-v4.1-flash-fast" },
+    { provider: "anthropic", modelId: "claude-haiku-5-5" },
+  ]) {
+    routed.events.emit("model-fallback:routed", notEligible);
+    assert.equal(await routedRequest({ model: notEligible.modelId }), undefined, `${notEligible.provider} is not eligible`);
+  }
+  // A malformed payload must fall back to the selection decision, never to "eligible by default".
+  routed.events.emit("model-fallback:routed", { modelId: "gpt-6.1-sol" });
+  assert.equal(await routedRequest({ model: "gpt-6.1-sol" }), undefined);
+  // A lingering routed model never changes a physical selection's gate.
+  routed.events.emit("model-fallback:routed", routedSol);
+  assert.equal(await routedRequest({ model: claude.id }, { ...routedCtx, model: claude }), undefined);
+  assert.deepEqual(
+    await routedRequest({ model: gpt6Luna.id }, { ...routedCtx, model: gpt6Luna }),
+    { model: gpt6Luna.id, service_tier: "priority" },
+    "a physical selection keeps today's behaviour byte-for-byte",
+  );
+  await routed.commandOptions.get("fast").handler("off", routedCtx);
 
   console.log("codex-fast-mode smoke: PASS");
 } finally {
