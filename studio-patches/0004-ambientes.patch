@@ -1,0 +1,572 @@
+diff --git a/interface/lib-server/ambientes.mjs b/interface/lib-server/ambientes.mjs
+new file mode 100644
+index 0000000..ba71cc9
+--- /dev/null
++++ b/interface/lib-server/ambientes.mjs
+@@ -0,0 +1,104 @@
++// Ambientes: folders the user creates in the Studio, each one a box in the sidebar holding its conversations (like the
++// project folders of the Claude app). Only the list lives here (pi-studio-data/ambientes.json); the conversations stay
++// PI sessions of that folder, and removing an ambiente never touches the folder or its sessions.
++import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
++import path from "node:path";
++import { randomUUID } from "node:crypto";
++
++export const AMBIENTES_MAX = 100;
++const NAME_MAX = 60;
++
++const httpError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
++
++// A folder name Windows, macOS and Linux all accept: no reserved characters, no trailing dot/space, no device names.
++export function folderName(name) {
++  const clean = String(name ?? "").replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, "").slice(0, NAME_MAX);
++  if (!clean || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(clean)) return "";
++  return clean;
++}
++
++export function ambienteName(name) {
++  const clean = String(name ?? "").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, NAME_MAX);
++  if (!clean) throw httpError(400, "Dê um nome ao ambiente");
++  return clean;
++}
++
++// Where a new ambiente lives: the folder the user chose (absolute, no ".."), or <home>/PI Ambientes/<name>.
++export function ambienteFolder({ name, cwd, home }) {
++  if (cwd !== undefined && cwd !== null && String(cwd).trim()) {
++    const raw = String(cwd).trim();
++    if (!path.isAbsolute(raw) || /(^|[\\/])\.\.([\\/]|$)/.test(raw) || /[\r\n\0]/.test(raw)) throw httpError(400, "A pasta precisa ser um caminho completo, sem ..");
++    if (/^[\\/]{2}/.test(raw)) throw httpError(400, "Pastas de rede não podem ser ambientes");
++    const resolved = path.resolve(raw);
++    if (path.parse(resolved).root === resolved) throw httpError(400, "Escolha uma pasta, não a raiz do disco");
++    return resolved;
++  }
++  const folder = folderName(name);
++  if (!folder) throw httpError(400, "Esse nome não serve como nome de pasta");
++  return path.join(home, "PI Ambientes", folder);
++}
++
++// `allowFolder(realPath)`: the server's trust boundary for a folder the user named (known project, under a project root
++// or the ambientes home, or an Orca worktree). A named folder must already exist; only <home>/PI Ambientes/<nome> is created.
++export function createAmbientes({ storeFile, home, now = Date.now, key = (cwd) => path.resolve(cwd).toLowerCase(), allowFolder = async () => true }) {
++  let cache = null;
++
++  async function list() {
++    if (cache) return cache;
++    try {
++      const parsed = JSON.parse(await readFile(storeFile, "utf8"));
++      cache = Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.cwd === "string" && typeof item.name === "string").slice(0, AMBIENTES_MAX) : [];
++    } catch {
++      cache = [];
++    }
++    return cache;
++  }
++
++  async function save(items) {
++    await mkdir(path.dirname(storeFile), { recursive: true });
++    const temp = `${storeFile}.${randomUUID()}.tmp`;
++    await writeFile(temp, JSON.stringify(items, null, 2), "utf8");
++    await rename(temp, storeFile);
++    cache = items;
++  }
++
++  return {
++    list,
++    async create({ name, cwd } = {}) {
++      const clean = ambienteName(name);
++      const folder = ambienteFolder({ name: clean, cwd, home });
++      const items = await list();
++      if (items.length >= AMBIENTES_MAX) throw httpError(409, "Limite de ambientes atingido");
++      if (items.some((item) => key(item.cwd) === key(folder))) throw httpError(409, "Essa pasta já é um ambiente");
++      const named = cwd !== undefined && cwd !== null && String(cwd).trim() !== "";
++      let real = folder;
++      try {
++        const info = await stat(folder);
++        if (!info.isDirectory()) throw httpError(409, "Já existe um arquivo com esse nome");
++        real = await realpath(folder);
++      } catch (error) {
++        if (error.statusCode) throw error;
++        if (named) throw httpError(400, "Essa pasta não existe. Deixe o campo vazio para o Studio criar uma.");
++        await mkdir(folder, { recursive: true });
++      }
++      // The resolved folder (links followed) must sit inside the server's boundary; links out of it are refused too.
++      if (named && !(await allowFolder(real))) throw httpError(403, "Essa pasta fica fora das raízes de projeto do Studio. Deixe o campo vazio para criar em PI Ambientes, ou abra a pasta como projeto antes.");
++      const ambiente = { id: randomUUID(), name: clean, cwd: folder, createdAt: now() };
++      await save([...items, ambiente]);
++      return ambiente;
++    },
++    async rename(id, name) {
++      const clean = ambienteName(name);
++      const items = await list();
++      if (!items.some((item) => item.id === id)) throw httpError(404, "Ambiente não encontrado");
++      await save(items.map((item) => (item.id === id ? { ...item, name: clean } : item)));
++      return (await list()).find((item) => item.id === id);
++    },
++    // Only leaves the list: the folder and its conversations stay where they are.
++    async remove(id) {
++      const items = await list();
++      if (!items.some((item) => item.id === id)) throw httpError(404, "Ambiente não encontrado");
++      await save(items.filter((item) => item.id !== id));
++    },
++  };
++}
+diff --git a/interface/lib-server/tree.mjs b/interface/lib-server/tree.mjs
+index 4b9389b..3795faa 100644
+--- a/interface/lib-server/tree.mjs
++++ b/interface/lib-server/tree.mjs
+@@ -127,7 +127,7 @@ export function createTreeService({ getProjects, getOrca, getSessions, getLive,
+         delete env._agents;
+       }
+       envs.sort((a, b) => Number(b.primary) - Number(a.primary) || Number(b.pis.some((pi) => pi.live || pi.raw.busy)) - Number(a.pis.some((pi) => pi.live || pi.raw.busy)) || Math.max(0, ...b.pis.map((pi) => pi.updatedAt)) - Math.max(0, ...a.pis.map((pi) => pi.updatedAt)));
+-      treeProjects.push({ id: project.id, name: project.name ?? "", cwd: project.cwd, envs });
++      treeProjects.push({ id: project.id, name: project.name ?? "", cwd: project.cwd, envs, ...(project.ambiente ? { ambiente: project.ambiente } : {}) });
+     }
+     itemsByPath = allItemsByPath;
+     childrenByParent = allChildrenByParent;
+diff --git a/interface/package.json b/interface/package.json
+index d5a665f..38e799c 100644
+--- a/interface/package.json
++++ b/interface/package.json
+@@ -6,7 +6,7 @@
+   "type": "module",
+   "scripts": {
+     "start": "node server.mjs",
+-    "test": "node --check server.mjs && node --check public/app.js && node --check public/lib.js && node --check cli.mjs && node --check cli-lib.mjs && node --check public/sidebar-tree.js && node --check public/state-indicator.js && node --check public/tree-controller.js && node --check public/voice.js && node --check public/side-chat.js && node --check public/simple-view.js && node --check public/vorcaro.js && node --check lib-server/vorcaro.mjs && node --test test/lib.test.mjs test/server.test.mjs test/smoke.mjs test/git-wrapper.test.mjs test/cli.test.mjs test/desktop.test.mjs test/orca.test.mjs test/orca-tasks.test.mjs test/orca-write.test.mjs test/simple-view.test.mjs test/vorcaro.test.mjs test/tasks-ui.test.mjs test/tasks-fake-pi.test.mjs test/visibility.test.mjs test/menu-fast.test.mjs test/watch.test.mjs test/sidebar-tree.test.mjs test/sidebar-tree-dom.test.mjs test/live-pis.test.mjs test/session-titles.test.mjs test/ctx-lib.test.mjs test/resources.test.mjs test/git-files.test.mjs test/voice.test.mjs test/voice-ui.test.mjs test/tree.test.mjs test/idle-reaper.test.mjs test/process-table.test.mjs test/side-chat-ui.test.mjs test/side-chat.test.mjs test/studio-regressions.test.mjs",
++    "test": "node --check server.mjs && node --check public/app.js && node --check public/lib.js && node --check cli.mjs && node --check cli-lib.mjs && node --check public/sidebar-tree.js && node --check public/state-indicator.js && node --check public/tree-controller.js && node --check public/voice.js && node --check public/side-chat.js && node --check public/simple-view.js && node --check public/vorcaro.js && node --check lib-server/vorcaro.mjs && node --check lib-server/ambientes.mjs && node --test test/lib.test.mjs test/server.test.mjs test/smoke.mjs test/git-wrapper.test.mjs test/cli.test.mjs test/desktop.test.mjs test/orca.test.mjs test/orca-tasks.test.mjs test/orca-write.test.mjs test/simple-view.test.mjs test/vorcaro.test.mjs test/ambientes.test.mjs test/tasks-ui.test.mjs test/tasks-fake-pi.test.mjs test/visibility.test.mjs test/menu-fast.test.mjs test/watch.test.mjs test/sidebar-tree.test.mjs test/sidebar-tree-dom.test.mjs test/live-pis.test.mjs test/session-titles.test.mjs test/ctx-lib.test.mjs test/resources.test.mjs test/git-files.test.mjs test/voice.test.mjs test/voice-ui.test.mjs test/tree.test.mjs test/idle-reaper.test.mjs test/process-table.test.mjs test/side-chat-ui.test.mjs test/side-chat.test.mjs test/studio-regressions.test.mjs",
+     "test:load": "node test/load-new-endpoints.mjs && node test/sse-soak.mjs",
+     "coverage": "node test/coverage.mjs"
+   },
+diff --git a/interface/public/app.js b/interface/public/app.js
+index 37358b5..ad12c4b 100644
+--- a/interface/public/app.js
++++ b/interface/public/app.js
+@@ -798,6 +798,34 @@ const vorcaro = createVorcaro({
+   isFollowingElsewhere: () => Boolean(state.watch),
+ });
+ $("#vorcaroBtn").addEventListener("click", () => vorcaro.open());
++$("#vorcaroSideBtn").addEventListener("click", () => vorcaro.open());
++
++// Ambientes: the user creates a folder (or names an existing one); it becomes a box in the sidebar with its conversations.
++const ambiente = { dialog: $("#ambienteDialog"), form: $("#ambienteForm"), name: $("#ambienteName"), folder: $("#ambienteFolder"), error: $("#ambienteError"), create: $("#ambienteCreate") };
++$("#newAmbienteBtn").addEventListener("click", () => {
++  ambiente.form.reset();
++  ambiente.error.hidden = true;
++  ambiente.dialog.showModal();
++  ambiente.name.focus();
++});
++ambiente.dialog.addEventListener("click", (event) => { if (event.target.closest("[data-close]")) ambiente.dialog.close(); });
++ambiente.form.addEventListener("submit", async (event) => {
++  event.preventDefault();
++  ambiente.create.disabled = true;
++  try {
++    const { ambiente: created, project } = await api("/api/ambientes", { method: "POST", body: JSON.stringify({ name: ambiente.name.value, cwd: ambiente.folder.value }) });
++    ambiente.dialog.close();
++    toast(`Ambiente criado: ${created.name}`);
++    await refreshProjects();
++    tree.poke?.();
++    if (project?.id) await openProject(project.id);
++  } catch (error) {
++    ambiente.error.textContent = error.message;
++    ambiente.error.hidden = false;
++  } finally {
++    ambiente.create.disabled = false;
++  }
++});
+ $("#vorcaroDialog").addEventListener("click", (event) => {
+   if (event.target.closest("[data-close]") || event.target === event.currentTarget) event.currentTarget.close();
+ });
+diff --git a/interface/public/index.html b/interface/public/index.html
+index 353e759..9037c2b 100644
+--- a/interface/public/index.html
++++ b/interface/public/index.html
+@@ -88,6 +88,7 @@
+       <aside id="sidebar" class="sidebar" aria-label="Projetos e conversas">
+         <div class="brand"><span class="brand-mark" aria-hidden="true">π</span><span class="brand-name">PI Studio</span></div>
+         <nav class="side-nav">
++          <button id="vorcaroSideBtn" class="nav-item nav-vorcaro" type="button" title="Vorcaro, a inteligência Master (Alt+V)"><span class="nav-ico"><svg><use href="#i-agents" /></svg></span><span class="nav-vc-text"><strong>Vorcaro</strong><small>A inteligência Master</small></span></button>
+           <button id="newSessionBtn" class="nav-item nav-new" type="button"><span class="nav-ico"><svg><use href="#i-plus" /></svg></span><span id="newSessionLabel">Nova conversa</span></button>
+         </nav>
+         <div id="searchWrap" class="side-search" hidden>
+@@ -95,7 +96,7 @@
+           <input id="searchInput" type="search" placeholder="Buscar projetos e conversas" aria-label="Buscar projetos e conversas" />
+         </div>
+         <div id="searchResults" class="search-results" hidden></div>
+-        <div class="side-heading"><span>Projetos</span><button id="refreshProjectsBtn" class="mini-btn" type="button">Atualizar</button></div>
++        <div class="side-heading"><span>Ambientes</span><span class="side-heading-actions"><button id="newAmbienteBtn" class="mini-btn" type="button" title="Criar um ambiente: uma pasta com as suas conversas">Novo ambiente</button><button id="refreshProjectsBtn" class="mini-btn" type="button">Atualizar</button></span></div>
+         <div id="projectsList" class="projects" role="list"></div>
+         <footer class="side-footer">
+           <div class="user"><span id="userAvatar" class="avatar" aria-hidden="true">M</span><span id="userName" class="user-name">Miguel</span></div>
+@@ -370,6 +371,19 @@
+       </div>
+     </dialog>
+ 
++    <dialog id="ambienteDialog" class="dialog" aria-labelledby="ambienteTitle">
++      <form method="dialog" class="dialog-form" id="ambienteForm">
++        <h3 id="ambienteTitle">Novo ambiente</h3>
++        <p class="amb-hint">Um ambiente é uma pasta com as suas conversas, como uma caixa na barra lateral.</p>
++        <label class="field"><span>Nome</span><input id="ambienteName" maxlength="60" autocomplete="off" required /></label>
++        <label class="field"><span>Pasta (opcional)</span><input id="ambienteFolder" autocomplete="off" spellcheck="false" placeholder="Vazio: cria em PI Ambientes, na sua pasta de usuário" /></label>
++        <p id="ambienteError" class="amb-error" role="alert" hidden></p>
++        <menu>
++          <button type="button" class="btn" value="cancel" data-close>Cancelar</button>
++          <button type="submit" class="btn btn-primary" id="ambienteCreate">Criar ambiente</button>
++        </menu>
++      </form>
++    </dialog>
+     <dialog id="vorcaroDialog" class="dialog dialog-vorcaro" aria-labelledby="vorcaroTitle">
+       <div class="vc-shell">
+         <header class="vc-head">
+diff --git a/interface/public/lib.js b/interface/public/lib.js
+index d2092ca..aeaf3a9 100644
+--- a/interface/public/lib.js
++++ b/interface/public/lib.js
+@@ -3094,7 +3094,9 @@ export function normalizeTree(data, { maxDepth = TREE_MAX_DEPTH, maxNodes = TREE
+         pis, morePis: countOf(env.morePis),
+       });
+     }
+-    projects.push({ id: project.id, name: String(project.name ?? ""), cwd: String(project.cwd ?? ""), envs });
++    // A user-created ambiente keeps its id and name (the sidebar shows it as a box, first).
++    const ambiente = plainObject(project.ambiente) && typeof project.ambiente.id === "string" ? { id: project.ambiente.id, name: String(project.ambiente.name ?? "") } : null;
++    projects.push({ id: project.id, name: String(project.name ?? ""), cwd: String(project.cwd ?? ""), envs, ...(ambiente ? { ambiente } : {}) });
+   }
+   return { version: String(data.version ?? ""), projects };
+ }
+diff --git a/interface/public/sidebar-tree.js b/interface/public/sidebar-tree.js
+index 4f0be26..56d95de 100644
+--- a/interface/public/sidebar-tree.js
++++ b/interface/public/sidebar-tree.js
+@@ -274,6 +274,7 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
+     const key = `p:${project.id}`;
+     const expanded = open(key);
+     data(node, "key", model.key);
++    data(node, "ambiente", project.ambiente ? "1" : "0");
+     const [row, body] = node.children;
+     const head = row.children[0];
+     const [name, stateEl] = head.children;
+@@ -295,18 +296,48 @@ export function createSidebarTree({ root, doc = document, icon = () => "" }) {
+     return make("div", "sessions-empty pad");
+   }
+ 
++  // ---- "Outras pastas": the folders the Studio found on its own, collapsed under the user's ambientes.
++  function createGroup() {
++    const node = make("div", "tgroup");
++    const head = make("button", "tg-head", { "data-action": "tree-toggle" });
++    head.append(make("span", "tg-name"), make("span", "tg-count"));
++    node.append(head, make("div", "tg-body"));
++    return node;
++  }
++
++  function updateGroup(node, model) {
++    const key = "g:outras";
++    const expanded = ctx.forceOpen || isExpanded(ctx.expanded, key, false);
++    data(node, "key", model.key);
++    const [head, body] = node.children;
++    data(head, "toggle", key);
++    data(head, "default", "0");
++    attr(head, "aria-expanded", String(expanded));
++    text(head.children[0], "Outras pastas");
++    text(head.children[1], String(model.projects.length));
++    hide(body, !expanded);
++    if (!expanded) return;
++    reconcileChildren(body, model.projects.map((project) => ({ key: `p:${project.id}`, kind: "project", project })), { create: createProject, update: updateProject });
++  }
++
+   // `data`: normalized tree. `expanded`: Map of overrides. `extras`: Map("projectId/envKey" -> older PIs). `filtered`: a search is active.
+   function render(input) {
+     // The old project list shares this container: its rows are dropped once, before the first keyed render.
+     if (!keyed.has(root)) while (root.children.length) root.children[0].remove();
+     ctx = { forceOpen: input.filtered === true && input.data.projects.length > 0, extras: new Map(), ...input };
+     stats.renders++;
+-    const models = input.data.projects.map((project) => ({ key: `p:${project.id}`, kind: "project", project }));
++    // With ambientes, they come first (each its own box) and every other folder goes into "Outras pastas".
++    const asModel = (project) => ({ key: `p:${project.id}`, kind: "project", project });
++    const created = input.data.projects.filter((project) => project.ambiente);
++    const others = input.data.projects.filter((project) => !project.ambiente);
++    const models = created.length ? created.map(asModel) : input.data.projects.map(asModel);
++    if (created.length && others.length) models.push({ key: "g:outras", kind: "group", projects: others });
+     if (!models.length) models.push({ key: "note", kind: "note" });
+     reconcileChildren(root, models, {
+-      create: (model) => (model.kind === "note" ? createNote() : createProject()),
++      create: (model) => (model.kind === "note" ? createNote() : model.kind === "group" ? createGroup() : createProject()),
+       update: (node, model) => {
+         if (model.kind === "note") text(node, input.filtered ? "Nada encontrado." : "Nenhum projeto encontrado.");
++        else if (model.kind === "group") updateGroup(node, model);
+         else updateProject(node, model);
+       },
+     });
+diff --git a/interface/public/styles.css b/interface/public/styles.css
+index c0b0aa1..2eb1c5e 100644
+--- a/interface/public/styles.css
++++ b/interface/public/styles.css
+@@ -1601,3 +1601,23 @@ html[data-motion="reduce"] .mic-live.is-recording .mic-dot { animation: none !im
+ .vc-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+ .vc-field input, .vc-field textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; line-height: 1.45; resize: vertical; }
+ .vc-field input:focus-visible, .vc-field textarea:focus-visible { outline: 2px solid var(--sage); outline-offset: 0; }
++
++/* Vorcaro shortcut at the top of the sidebar, and the ambientes as boxes. */
++.nav-vorcaro { height: auto; padding-top: 8px; padding-bottom: 8px; border: 1px solid var(--line); background: var(--bg-card); }
++.nav-vorcaro .nav-ico { color: var(--sage); }
++.nav-vc-text { display: grid; gap: 1px; text-align: left; line-height: 1.25; }
++.nav-vc-text strong { font-size: 14px; }
++.nav-vc-text small { color: var(--muted); font-size: 12px; }
++.side-heading-actions { display: inline-flex; gap: 4px; }
++.tproj[data-ambiente="1"] { margin: 4px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-card); }
++.tproj[data-ambiente="1"] > .tp-row .tp-name { font-weight: 600; }
++.tgroup { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
++.tg-head { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 10px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
++.tg-head[aria-expanded="false"] + .tg-body { display: none; }
++.tg-count { color: var(--faint); font-variant-numeric: tabular-nums; }
++.amb-hint { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
++.amb-error { margin: 0; color: var(--red); font-size: 13px; }
++/* Creating an ambiente is the main action of the sidebar heading: always visible, not only on hover. */
++.side-heading #newAmbienteBtn { opacity: 1; color: var(--sage); }
++.side-heading .mini-btn { white-space: nowrap; }
++.side-heading-actions { margin-left: auto; }
+diff --git a/interface/server.mjs b/interface/server.mjs
+index 2d411ce..d42cb25 100644
+--- a/interface/server.mjs
++++ b/interface/server.mjs
+@@ -15,6 +15,7 @@ import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
+ import { createProcessTable, parseProcessTable as parseUnifiedProcessTable, processTable, resolveProcessTableCommand, sampleProcessTable } from "./lib-server/process-table.mjs";
+ import { buildSidePrompt, createSideRegistry, sideArgs, sideCommand } from "./lib-server/side-chat.mjs";
+ import { buildBoard, buildVorcaroPrompt, createDigestIndex, digestsMarkdown, goalMessage, validateAction } from "./lib-server/vorcaro.mjs";
++import { createAmbientes } from "./lib-server/ambientes.mjs";
+ import { createTitleIndex } from "./lib-server/session-titles.mjs";
+ import { createTreeService, mapConcurrent } from "./lib-server/tree.mjs";
+ import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, escapeHtml, foldText, localDay, newActivityTracker, normalizeOrca, orcaPiTerminalArgs, orcaWorktreeSetArgs, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
+@@ -73,6 +74,20 @@ const retiredSessions = new Map();
+ const projects = new Map();
+ // Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
+ const addedProjects = new Map();
++// PI_STUDIO_AMBIENTES_HOME: where unnamed ambiente folders go (<home>/PI Ambientes/<nome>); tests point it at a temp dir.
++const AMBIENTES_HOME = process.env.PI_STUDIO_AMBIENTES_HOME || homedir();
++// A folder the user names must already be inside the Studio's boundary (as open-path): a project it knows (history,
++// roots), a folder under a project root or under <home>/PI Ambientes, or an Orca-listed worktree. `real` has links resolved.
++async function ambienteFolderAllowed(real) {
++  const key = cwdKey(real);
++  await knownProjects(projects, discoverProjects);
++  if ([...projects.values()].some((project) => cwdKey(project.cwd) === key)) return true;
++  if ((await getProjectRoots()).some((root) => pathInside(root, real))) return true;
++  if (pathInside(path.join(AMBIENTES_HOME, "PI Ambientes"), real)) return true;
++  const orca = await getOrca();
++  return orca.available === true && orca.worktrees.some((worktree) => cwdKey(worktree.path) === key);
++}
++const ambientes = createAmbientes({ storeFile: path.join(AGENT_DIR, "pi-studio-data", "ambientes.json"), home: AMBIENTES_HOME, key: (cwd) => cwdKey(cwd), allowFolder: ambienteFolderAllowed });
+ const serverLogs = [];
+ const STALL = stallThresholds(process.env);
+ 
+@@ -467,8 +482,16 @@ async function discoverProjects() {
+   for (const added of addedProjects.values()) {
+     if (!found.has(added.id)) found.set(added.id, { ...makeProject(added.cwd, added.root), lastUsedAt: added.lastUsedAt });
+   }
++  // Ambientes the user created: always listed (outside PROJECT_LIMIT), named as the user named them, first in the sidebar.
++  const created = await ambientes.list();
++  for (const item of created) {
++    const id = projectIdFor(item.cwd);
++    found.set(id, { ...(found.get(id) ?? makeProject(item.cwd, path.dirname(item.cwd))), name: item.name, ambiente: { id: item.id, name: item.name, createdAt: item.createdAt } });
++  }
++  const ordered = sortProjects([...found.values()]);
++  const rank = (project) => (project.ambiente ? created.findIndex((item) => item.id === project.ambiente.id) : created.length);
+   projects.clear();
+-  for (const project of sortProjects([...found.values()])) projects.set(project.id, project);
++  for (const project of ordered.map((project, index) => ({ project, index })).sort((a, b) => rank(a.project) - rank(b.project) || a.index - b.index).map(({ project }) => project)) projects.set(project.id, project);
+   return [...projects.values()];
+ }
+ 
+@@ -2680,6 +2703,29 @@ async function route(req, res) {
+       }
+     }
+ 
++    if (pathname === "/api/ambientes") {
++      if (req.method === "GET") return json(res, 200, { ambientes: await ambientes.list() });
++      if (req.method !== "POST") return json(res, 405, { error: "Method not allowed" });
++      const body = await readJsonBody(req);
++      const ambiente = await ambientes.create({ name: body?.name, cwd: body?.cwd });
++      await discoverProjects();
++      return json(res, 201, { ambiente, project: projects.get(projectIdFor(ambiente.cwd)) ?? null });
++    }
++    const ambienteRoute = pathname.match(/^\/api\/ambientes\/([0-9a-f-]{36})$/);
++    if (ambienteRoute) {
++      if (req.method === "PATCH") {
++        const ambiente = await ambientes.rename(ambienteRoute[1], (await readJsonBody(req))?.name);
++        await discoverProjects();
++        return json(res, 200, { ambiente });
++      }
++      if (req.method === "DELETE") {
++        await ambientes.remove(ambienteRoute[1]);
++        await discoverProjects();
++        return json(res, 200, { ok: true });
++      }
++      return json(res, 405, { error: "Method not allowed" });
++    }
++
+     if (pathname === "/api/vorcaro/board") {
+       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+       return json(res, 200, await vorcaroBoard());
+diff --git a/interface/test/ambientes.test.mjs b/interface/test/ambientes.test.mjs
+new file mode 100644
+index 0000000..a6ed513
+--- /dev/null
++++ b/interface/test/ambientes.test.mjs
+@@ -0,0 +1,150 @@
++// Ambientes: user-created folders shown as boxes in the sidebar. Run-owned temp dirs, fake PI and fake DOM only.
++import assert from "node:assert/strict";
++import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
++import os from "node:os";
++import path from "node:path";
++import { after, before, describe, test } from "node:test";
++import { fileURLToPath } from "node:url";
++import { ambienteFolder, ambienteName, createAmbientes, folderName } from "../lib-server/ambientes.mjs";
++import { createSidebarTree } from "../public/sidebar-tree.js";
++import { FakeDocument, FakeElement } from "./fake-dom.mjs";
++
++const here = path.dirname(fileURLToPath(import.meta.url));
++const tmp = await mkdtemp(path.join(os.tmpdir(), "pi-studio-ambientes-"));
++const home = path.join(tmp, "home");
++await mkdir(home, { recursive: true });
++
++describe("ambiente rules", () => {
++  test("names and folder names", () => {
++    assert.equal(folderName('  Loja: "Pix" / v2.  '), "Loja Pix v2");
++    assert.equal(folderName("CON"), "");
++    assert.equal(folderName("???"), "");
++    assert.equal(ambienteName("  Financeiro   BLVR "), "Financeiro BLVR");
++    assert.throws(() => ambienteName("   "), /nome/);
++  });
++
++  test("folder: the chosen absolute path, or <home>/PI Ambientes/<nome>; never relative, .. or a drive root", () => {
++    assert.equal(ambienteFolder({ name: "Loja", home }), path.join(home, "PI Ambientes", "Loja"));
++    assert.equal(ambienteFolder({ name: "x", cwd: path.join(tmp, "algo"), home }), path.join(tmp, "algo"));
++    assert.throws(() => ambienteFolder({ name: "x", cwd: "relativa", home }), /caminho completo/);
++    assert.throws(() => ambienteFolder({ name: "x", cwd: `${tmp}${path.sep}..${path.sep}fora`, home }), /caminho completo/);
++    assert.throws(() => ambienteFolder({ name: "x", cwd: path.parse(tmp).root, home }), /raiz/);
++    assert.throws(() => ambienteFolder({ name: "???", home }), /nome de pasta/);
++  });
++
++  test("store: create (making the folder), duplicates refused, rename, remove keeps the folder", async () => {
++    const storeFile = path.join(tmp, "store", "ambientes.json");
++    let clock = 1000;
++    const store = createAmbientes({ storeFile, home, now: () => clock++ });
++    const loja = await store.create({ name: "Loja" });
++    assert.equal(loja.cwd, path.join(home, "PI Ambientes", "Loja"));
++    assert.ok((await stat(loja.cwd)).isDirectory());
++    await assert.rejects(store.create({ name: "Outra", cwd: loja.cwd }), /já é um ambiente/);
++    const filePath = path.join(tmp, "um-arquivo");
++    await writeFile(filePath, "x");
++    await assert.rejects(store.create({ name: "Arq", cwd: filePath }), /arquivo/);
++    const existing = path.join(tmp, "ja-existe");
++    await mkdir(existing);
++    const second = await store.create({ name: "Já existe", cwd: existing });
++    assert.equal((await store.rename(second.id, "Renomeado")).name, "Renomeado");
++    await store.remove(loja.id);
++    assert.deepEqual((await store.list()).map((item) => item.name), ["Renomeado"]);
++    assert.ok((await stat(loja.cwd)).isDirectory(), "removing an ambiente never deletes its folder");
++    await assert.rejects(store.remove(loja.id), /não encontrado/);
++    // A fresh instance (Studio restart) reads the same list from disk.
++    assert.deepEqual((await createAmbientes({ storeFile, home }).list()).map((item) => item.name), ["Renomeado"]);
++  });
++});
++
++describe("sidebar boxes", () => {
++  const NOW = 1_800_000_000_000;
++  const tree = (projects) => {
++    const root = new FakeElement("div");
++    const sidebar = createSidebarTree({ root, doc: new FakeDocument(), icon: () => "<svg/>" });
++    sidebar.render({ data: { version: "v", projects }, store: { baseline: NOW, seen: {} }, expanded: new Map(), now: NOW, currentPath: null, extras: new Map(), projectIdFor: (_p, id) => id });
++    return root;
++  };
++  const project = (id, extra = {}) => ({ id, name: `Proj ${id}`, cwd: `/${id}`, envs: [], ...extra });
++
++  test("with ambientes they come first, and every other folder goes into a collapsed Outras pastas", () => {
++    const root = tree([project("a", { ambiente: { id: "1", name: "A" } }), project("b"), project("c", { ambiente: { id: "2", name: "C" } }), project("d")]);
++    const kids = root.children;
++    assert.deepEqual(kids.map((node) => node.dataset.key), ["p:a", "p:c", "g:outras"]);
++    assert.deepEqual(kids.slice(0, 2).map((node) => node.dataset.ambiente), ["1", "1"]);
++    const group = kids[2];
++    const [head, body] = group.children;
++    assert.equal(head.getAttribute("aria-expanded"), "false");
++    assert.equal(body.hidden, true);
++    assert.equal(head.children[1].textContent, "2");
++  });
++
++  test("normalizeTree keeps a well-formed ambiente and drops a malformed one", async () => {
++    const { normalizeTree } = await import("../public/lib.js");
++    const data = normalizeTree({ version: "v", projects: [project("a", { ambiente: { id: "1", name: "A", extra: "x" } }), project("b", { ambiente: "nope" }), project("c")] });
++    assert.deepEqual(data.projects.map((item) => item.ambiente ?? null), [{ id: "1", name: "A" }, null, null]);
++  });
++
++  test("without ambientes the sidebar stays as it was", () => {
++    assert.deepEqual(tree([project("b"), project("d")]).children.map((node) => node.dataset.key), ["p:b", "p:d"]);
++  });
++});
++
++describe("routes", () => {
++  let server;
++  let base;
++  let token;
++  const agentDir = path.join(tmp, "agent");
++  const roots = path.join(tmp, "roots");
++  before(async () => {
++    await mkdir(path.join(roots, "descoberto"), { recursive: true });
++    await writeFile(path.join(roots, "descoberto", "package.json"), "{}");
++    Object.assign(process.env, { PI_WEB_HOST: "127.0.0.1", PI_WEB_PORT: "0", PI_AGENT_DIR: agentDir, PI_PROJECT_ROOTS: roots, PI_STUDIO_AMBIENTES_HOME: home,
++      PI_WEB_PI_BIN: process.execPath, PI_WEB_PI_BIN_ARGS: JSON.stringify([path.join(here, "fake-pi-rpc.mjs")]), PI_STUDIO_ORCA_BIN: path.join(tmp, "no-orca.exe") });
++    server = await import("../server.mjs?ambientes");
++    const running = await server.startServer(0, "127.0.0.1");
++    base = `http://127.0.0.1:${running.address().port}`;
++    token = (await (await fetch(base)).text()).match(/name="pi-studio-token" content="([a-f0-9]+)"/)[1];
++  });
++  after(async () => {
++    await server.stopServer();
++    delete process.env.PI_STUDIO_AMBIENTES_HOME;
++    await rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
++  });
++  const call = async (method, route, body) => {
++    const response = await fetch(`${base}${route}`, { method, headers: { "x-pi-studio-token": token, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
++    return { status: response.status, body: await response.json() };
++  };
++
++  test("create, list first with its name, rename, remove; invalid input and no token refused", async () => {
++    assert.equal((await fetch(`${base}/api/ambientes`)).status, 401);
++    assert.equal((await call("POST", "/api/ambientes", { name: "" })).status, 400);
++    assert.equal((await call("POST", "/api/ambientes", { name: "x", cwd: "relativa" })).status, 400);
++    // A named folder must exist and sit inside the Studio's boundary; only the default folder is ever created.
++    const outside = path.join(tmp, "fora-das-raizes");
++    await mkdir(outside, { recursive: true });
++    assert.equal((await call("POST", "/api/ambientes", { name: "Fora", cwd: outside })).status, 403);
++    assert.equal((await call("POST", "/api/ambientes", { name: "Nova", cwd: path.join(roots, "nao-existe") })).status, 400);
++    await assert.rejects(stat(path.join(roots, "nao-existe")), "a named folder that does not exist is not created");
++    assert.equal((await call("POST", "/api/ambientes", { name: "Rede", cwd: "\\\\servidor\\pasta" })).status, 400);
++    const inRoot = await call("POST", "/api/ambientes", { name: "Descoberto", cwd: path.join(roots, "descoberto") });
++    assert.equal(inRoot.status, 201);
++    assert.equal((await call("DELETE", `/api/ambientes/${inRoot.body.ambiente.id}`)).status, 200);
++    const created = await call("POST", "/api/ambientes", { name: "Financeiro BLVR" });
++    assert.equal(created.status, 201);
++    assert.equal(created.body.project.name, "Financeiro BLVR");
++    const projects = (await call("GET", "/api/projects")).body.projects;
++    assert.equal(projects[0].ambiente.name, "Financeiro BLVR");
++    assert.ok(projects.some((item) => item.name === "descoberto" && !item.ambiente));
++    const tree = (await call("GET", "/api/tree")).body;
++    assert.equal(tree.projects[0].ambiente.name, "Financeiro BLVR");
++    const id = created.body.ambiente.id;
++    assert.equal((await call("PATCH", `/api/ambientes/${id}`, { name: "Financeiro" })).body.ambiente.name, "Financeiro");
++    assert.equal((await call("GET", "/api/projects")).body.projects[0].name, "Financeiro");
++    assert.equal((await call("DELETE", `/api/ambientes/${id}`)).status, 200);
++    assert.equal((await call("GET", "/api/ambientes")).body.ambientes.length, 0);
++    assert.equal((await call("DELETE", `/api/ambientes/${id}`)).status, 404);
++    assert.ok((await stat(created.body.ambiente.cwd)).isDirectory(), "the folder stays");
++    const saved = JSON.parse(await readFile(path.join(agentDir, "pi-studio-data", "ambientes.json"), "utf8"));
++    assert.deepEqual(saved, []);
++  });
++});
+diff --git a/interface/test/coverage.mjs b/interface/test/coverage.mjs
+index cee7b01..8b262a8 100644
+--- a/interface/test/coverage.mjs
++++ b/interface/test/coverage.mjs
+@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
+ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ const base = process.argv[2] || "414d9dd";
+ const lcovPath = path.join(os.tmpdir(), `pi-studio-lcov-${process.pid}.info`);
+-const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/orca-write.test.mjs", "test/simple-view.test.mjs", "test/vorcaro.test.mjs", "test/tasks-ui.test.mjs", "test/tasks-fake-pi.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs", "test/sidebar-tree.test.mjs", "test/sidebar-tree-dom.test.mjs", "test/live-pis.test.mjs", "test/session-titles.test.mjs", "test/ctx-lib.test.mjs", "test/resources.test.mjs", "test/git-files.test.mjs", "test/voice.test.mjs", "test/tree.test.mjs", "test/idle-reaper.test.mjs", "test/process-table.test.mjs", "test/side-chat.test.mjs", "test/side-chat-ui.test.mjs"];
++const suites = ["test/lib.test.mjs", "test/server.test.mjs", "test/smoke.mjs", "test/cli.test.mjs", "test/orca.test.mjs", "test/orca-tasks.test.mjs", "test/orca-write.test.mjs", "test/simple-view.test.mjs", "test/vorcaro.test.mjs", "test/ambientes.test.mjs", "test/tasks-ui.test.mjs", "test/tasks-fake-pi.test.mjs", "test/visibility.test.mjs", "test/watch.test.mjs", "test/sidebar-tree.test.mjs", "test/sidebar-tree-dom.test.mjs", "test/live-pis.test.mjs", "test/session-titles.test.mjs", "test/ctx-lib.test.mjs", "test/resources.test.mjs", "test/git-files.test.mjs", "test/voice.test.mjs", "test/tree.test.mjs", "test/idle-reaper.test.mjs", "test/process-table.test.mjs", "test/side-chat.test.mjs", "test/side-chat-ui.test.mjs"];
+ 
+ const run = spawnSync(process.execPath, [
+   "--test", "--experimental-test-coverage",
