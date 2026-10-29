@@ -85,7 +85,8 @@ export function quote(value: string): string {
 
 /** Strips ANSI escapes and control characters, collapses blank runs and caps lines, so what is confirmed is what runs. */
 export function normalizePrompt(value: string, maxLines = 12): string {
-  const clean = value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, " ");
+  const clean = value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, " ")
+    .replace(/[\p{Cf}\p{Co}\p{Cn}\u{E0000}-\u{E007F}]/gu, ""); // invisible format, private-use, unassigned and tag code points
   const lines = clean.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
   return lines.filter((line, i) => line || (i > 0 && lines[i - 1])).slice(0, maxLines).join("\n").trim();
 }

@@ -64,6 +64,7 @@ try {
   await tools.get("schedule_loop").execute("5d", { interval: "", prompt: "revise o kanban a cada 10 min" }, undefined, undefined, { hasUI: true, ui: { confirm: async (_t, msg) => { shown = msg; return false; } } });
   assert.ok(shown.includes('"revise o kanban a cada 10 min"'), shown);
   assert.equal(m.normalizePrompt("a\u001b[2Kb\u0007c   d\n\n\n\ne"), "ab c d\n\ne", "escapes and control chars are removed");
+  assert.equal(m.normalizePrompt("ok​‮\u{E0041} fim"), "ok fim", "invisible and tag characters are removed");
   assert.equal(m.normalizePrompt(Array.from({ length: 30 }, (_, i) => `l${i}`).join("\n")).split("\n").length, 12);
   assert.match(shown, /lido do texto abaixo/);
   const before = sent.length;
