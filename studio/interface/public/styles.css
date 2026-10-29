@@ -2302,3 +2302,19 @@ html[data-vc-photo] .vc-btn::before { content: ""; flex: none; width: 20px; heig
 .gh-row i[data-tone="work"] { background: var(--amber); }
 .gh-label { padding: 0 6px; border: 1px solid var(--line-2); border-radius: 999px; }
 .sec-title b { margin-left: 4px; color: var(--faint); font-weight: 500; }
+
+/* ---- Terminal tab: PI (read-only) or Shell (commands in the project's folder) */
+.term-modes { flex: none; display: flex; gap: 2px; padding: 6px 10px 0; background: var(--term-bg); }
+.term-modes button { height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: none; color: #8a8a8a; font: 600 12px/1 var(--font); cursor: pointer; }
+.term-modes button[aria-checked="true"] { background: #1c1c1c; color: #e8e8e8; }
+.shell-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.shell-view[hidden], .term[hidden] { display: none; }
+.shell-out { flex: 1; min-height: 0; margin: 0; padding: 10px 14px; overflow: auto; color: #d6d6d6; font: 12.5px/1.5 var(--mono-term); white-space: pre-wrap; overflow-wrap: anywhere; }
+.shell-out .shell-cmd { color: #7cc4a0; }
+.shell-out .shell-ok { color: #6a9a7e; }
+.shell-out .shell-bad { color: #ec8d7d; }
+.shell-form { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid #1c1c1c; background: #0b0b0b; }
+.shell-cwd { flex: none; max-width: 30%; overflow: hidden; color: #7cc4a0; font: 12px/1 var(--mono-term); text-overflow: ellipsis; white-space: nowrap; }
+.shell-cwd::after { content: " $"; color: #6e6e6e; }
+.shell-input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; border: 1px solid #262626; border-radius: 7px; background: #111; color: #e8e8e8; font: 12.5px/1 var(--mono-term); }
+.shell-input:focus { outline: none; border-color: #3d6b56; }

@@ -90,3 +90,50 @@ describe("github", () => {
     assert.equal(await cache("bad", async () => "ok"), "ok");
   });
 });
+
+describe("shell runner", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { createShellRunner } = await import("../lib-server/devtools.mjs");
+  const fakeSpawn = (spawned) => (command, cwd) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.kill = () => { child.killed = true; child.emit("close", null); };
+    spawned.push({ command, cwd, child });
+    return child;
+  };
+
+  test("one command per project, output read by offset, exit code at the end", () => {
+    const spawned = [];
+    const shell = createShellRunner({ spawn: fakeSpawn(spawned), timeoutMs: 60_000 });
+    const first = shell.start({ projectId: "p", cwd: "D:/repo", command: "git status" });
+    assert.deepEqual([spawned[0].command, spawned[0].cwd, first.running], ["git status", "D:/repo", true]);
+    assert.throws(() => shell.start({ projectId: "p", cwd: "D:/repo", command: "npm test" }), /rodando/);
+    assert.equal(shell.start({ projectId: "q", cwd: "D:/outro", command: "ls" }).running, true, "another project runs in parallel");
+    spawned[0].child.stdout.emit("data", "On branch NatiamG\n");
+    spawned[0].child.stderr.emit("data", "warning\n");
+    const mid = shell.read(first.id, 0);
+    assert.equal(mid.chunk, "On branch NatiamG\nwarning\n");
+    spawned[0].child.emit("close", 0);
+    const end = shell.read(first.id, mid.offset);
+    assert.deepEqual([end.chunk, end.running, end.exitCode], ["", false, 0]);
+    assert.equal(shell.start({ projectId: "p", cwd: "D:/repo", command: "npm test" }).running, true, "free again after the exit");
+  });
+
+  test("stop, invalid commands and the output cap", () => {
+    const spawned = [];
+    const shell = createShellRunner({ spawn: fakeSpawn(spawned), maxOutput: 10, timeoutMs: 60_000 });
+    for (const bad of ["", "   ", "a\nb", "x".repeat(2001)]) assert.throws(() => shell.start({ projectId: "p", cwd: "D:/r", command: bad }), /inválido/);
+    const run = shell.start({ projectId: "p", cwd: "D:/r", command: "npm run dev" });
+    spawned[0].child.stdout.emit("data", "0123456789ABCDEF");
+    const read = shell.read(run.id, 0);
+    assert.equal(read.chunk, "6789ABCDEF", "only the last bytes stay");
+    assert.equal(read.offset, 16, "the offset keeps counting what was dropped");
+    assert.equal(shell.stop(run.id), true);
+    assert.equal(spawned[0].child.killed, true);
+    assert.equal(shell.stop(run.id), false, "an ended command cannot be stopped again");
+    assert.equal(shell.read("nope"), null);
+    assert.deepEqual(shell.list("p").map((item) => item.command), ["npm run dev"]);
+  });
+});

@@ -17,7 +17,7 @@ import { SIDE_TOOLS, buildSidePrompt, createSideRegistry, sideArgs, sideCommand 
 import { createTeamReader } from "./lib-server/teams.mjs";
 import { CONDUCTOR_BUDGET, continuationMessage, createAudit, digestFor, isOpenDemand, nextStep, runVerification } from "./lib-server/vorcaro-conductor.mjs";
 import { createGithubMirror, createOrcaMirror, readMirrorConfig } from "./lib-server/vorcaro-mirror.mjs";
-import { createCache, githubRepoFromUrl, githubSummary, gitWorktrees } from "./lib-server/devtools.mjs";
+import { createCache, createShellRunner, githubRepoFromUrl, githubSummary, gitWorktrees } from "./lib-server/devtools.mjs";
 import { VORCARO_INDEX_DAYS, boardFilters, filterBoard, listConversations, readConversation } from "./lib-server/vorcaro.mjs";
 import { autoArchivable, boardChanges, buildBoard, changesMarkdown, claudeSidebar, hiddenFolders, insideIgnored, isArchived, seenSnapshot, buildVorcaroPrompt, createArchive, createDigestIndex, digestColumn, digestsMarkdown, goalMessage, organizationMarkdown, organizeProjects, readSessionDetail, scanClaudeDigest, scanDigest, validateAction } from "./lib-server/vorcaro.mjs";
 import { createAmbientes } from "./lib-server/ambientes.mjs";
@@ -2084,6 +2084,13 @@ function runDevCommand(bin, args, { cwd, env } = {}) {
     execFile(bin === "gh" ? GH_BIN : bin, args, { cwd, timeout: 20_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...env } }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
   });
 }
+// The shell beside the conversation (lib-server/devtools.mjs): the same commands PI's "!" already runs, typed by the
+// person in the project's folder; Windows PowerShell or bash, no window, output read by offset.
+const shellRunner = createShellRunner({
+  spawn: (command, cwd) => process.platform === "win32"
+    ? spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${command}`], { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] })
+    : spawn("bash", ["-lc", command], { cwd, stdio: ["ignore", "pipe", "pipe"] }),
+});
 async function devtoolsProject(id) {
   await knownProjects(projects, discoverProjects);
   const project = projects.get(String(id ?? ""));
@@ -3090,6 +3097,19 @@ async function route(req, res) {
     if (pathname === "/api/vorcaro/board") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
       return json(res, 200, await vorcaroBoard(boardFilters(url.searchParams)));
+    }
+    if (pathname === "/api/devtools/shell") {
+      if (req.method === "POST") {
+        const body = await readJsonBody(req);
+        const project = await devtoolsProject(body?.project);
+        if (body?.stop) return json(res, 200, { stopped: shellRunner.stop(String(body.stop)) });
+        return json(res, 201, shellRunner.start({ projectId: project.id, cwd: project.cwd, command: body?.command }));
+      }
+      if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+      const id = url.searchParams.get("id");
+      if (!id) return json(res, 200, { runs: shellRunner.list(String(url.searchParams.get("project") ?? "")) });
+      const result = shellRunner.read(id, Number(url.searchParams.get("offset") ?? 0));
+      return result ? json(res, 200, result) : json(res, 404, { error: "Comando não encontrado" });
     }
     if (pathname === "/api/devtools/worktrees" || pathname === "/api/devtools/github") {
       if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });

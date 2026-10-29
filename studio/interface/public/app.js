@@ -3009,6 +3009,7 @@ function termBlockNode(block, open) {
 }
 
 function renderTerminal() {
+  if (shellEls.cwd.textContent !== (state.currentProject?.name ?? "")) applyTermMode();
   const blocks = buildTerminal(state.messages, state.runtime, state.notices, TERM_MAX_LINES);
   const nodes = [];
   const seen = new Set();
@@ -4723,6 +4724,82 @@ function renderGithub() {
     <section class="insp-sec"><h3 class="sec-title">Checks recentes</h3>${runs}</section>
     <section class="insp-sec"><h3 class="sec-title">Issues abertas <b>${data.issues.length}</b></h3>${issues}</section>`;
 }
+
+// Shell mode of the Terminal tab: commands typed here run in the open project's folder (server: /api/devtools/shell),
+// one at a time, output polled by offset; ↑/↓ walk the history. PI mode is the read-only terminal of the conversation.
+const shell = { mode: localStorage.getItem("pi-studio:term-mode") === "shell" ? "shell" : "pi", run: null, offset: 0, timer: null, history: [], cursor: -1 };
+try { shell.history = JSON.parse(localStorage.getItem("pi-studio:shell-history") || "[]").slice(-50); } catch { shell.history = []; }
+const shellEls = { view: $("#shellView"), out: $("#shellOut"), form: $("#shellForm"), input: $("#shellInput"), stop: $("#shellStop"), cwd: $("#shellCwd"), term: $("#term"), modes: [...document.querySelectorAll("[data-term-mode]")] };
+function applyTermMode() {
+  const isShell = shell.mode === "shell";
+  shellEls.view.hidden = !isShell;
+  shellEls.term.hidden = isShell;
+  for (const button of shellEls.modes) button.setAttribute("aria-checked", String(button.dataset.termMode === shell.mode));
+  shellEls.cwd.textContent = state.currentProject?.name ?? "";
+  shellEls.cwd.title = state.currentProject?.cwd ?? "";
+  if (isShell) requestAnimationFrame(() => shellEls.input.focus());
+}
+for (const button of shellEls.modes) button.addEventListener("click", () => {
+  shell.mode = button.dataset.termMode;
+  try { localStorage.setItem("pi-studio:term-mode", shell.mode); } catch { /* storage off */ }
+  applyTermMode();
+});
+function shellWrite(text, cls = "") {
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = text;
+  shellEls.out.append(span);
+  while (shellEls.out.childNodes.length > 4000) shellEls.out.firstChild.remove();
+  shellEls.out.scrollTop = shellEls.out.scrollHeight;
+}
+async function shellPoll() {
+  if (!shell.run) return;
+  try {
+    const result = await api(`/api/devtools/shell?id=${encodeURIComponent(shell.run)}&offset=${shell.offset}`);
+    if (result.chunk) shellWrite(result.chunk);
+    shell.offset = result.offset;
+    if (!result.running) {
+      shellWrite(result.error ? `\n[erro: ${result.error}]\n` : `\n[terminou com código ${result.exitCode}]\n`, result.exitCode === 0 ? "shell-ok" : "shell-bad");
+      shell.run = null;
+      shellEls.stop.hidden = true;
+      shellEls.input.disabled = false;
+      shellEls.input.focus();
+      return;
+    }
+  } catch (error) { report(error); }
+  shell.timer = setTimeout(shellPoll, 400);
+}
+shellEls.form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const command = shellEls.input.value.trim();
+  if (!command || shell.run || !state.currentProject) return;
+  shell.history = [...shell.history.filter((item) => item !== command), command].slice(-50);
+  shell.cursor = -1;
+  try { localStorage.setItem("pi-studio:shell-history", JSON.stringify(shell.history)); } catch { /* storage off */ }
+  shellWrite(`\n$ ${command}\n`, "shell-cmd");
+  shellEls.input.value = "";
+  try {
+    const started = await api("/api/devtools/shell", { method: "POST", body: JSON.stringify({ project: state.currentProject.id, command }) });
+    shell.run = started.id;
+    shell.offset = 0;
+    shellEls.stop.hidden = false;
+    shellEls.input.disabled = true;
+    shellPoll();
+  } catch (error) { shellWrite(`[${error.message}]\n`, "shell-bad"); }
+});
+shellEls.input.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  if (!shell.history.length) return;
+  event.preventDefault();
+  shell.cursor = event.key === "ArrowUp" ? (shell.cursor < 0 ? shell.history.length - 1 : Math.max(0, shell.cursor - 1)) : (shell.cursor < 0 ? -1 : shell.cursor + 1);
+  if (shell.cursor >= shell.history.length) shell.cursor = -1;
+  shellEls.input.value = shell.cursor < 0 ? "" : shell.history[shell.cursor];
+});
+shellEls.stop.addEventListener("click", () => {
+  if (!shell.run || !state.currentProject) return;
+  api("/api/devtools/shell", { method: "POST", body: JSON.stringify({ project: state.currentProject.id, stop: shell.run }) }).catch(report);
+});
+applyTermMode();
 
 els.ghView.addEventListener("click", (event) => {
   if (!event.target.closest("[data-gh-refresh]")) return;

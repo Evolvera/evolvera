@@ -93,3 +93,60 @@ export function createCache(ttlMs, now = Date.now) {
     return value;
   };
 }
+
+// ---- Shell beside the conversation: one command at a time per project, run in the project's folder, output kept in
+// memory (capped) and read by offset. Not an interactive terminal (no PTY): commands that wait for typed input are
+// stopped by the person with "Parar" or by the time limit. `spawn(command, cwd)` starts the shell process.
+export const SHELL_OUTPUT_MAX = 512 * 1024;
+export const SHELL_TIMEOUT_MS = 30 * 60_000;
+
+export function createShellRunner({ spawn, now = Date.now, maxOutput = SHELL_OUTPUT_MAX, timeoutMs = SHELL_TIMEOUT_MS, keep = 20 } = {}) {
+  const runs = new Map();
+  let seq = 0;
+  const running = (projectId) => [...runs.values()].find((run) => run.projectId === projectId && run.exitCode === null && !run.error);
+  function append(run, chunk) {
+    run.output += String(chunk);
+    if (run.output.length > maxOutput) {
+      const cut = run.output.length - maxOutput;
+      run.output = run.output.slice(cut);
+      run.dropped += cut;
+    }
+  }
+  return {
+    start({ projectId, cwd, command }) {
+      const text = String(command ?? "").trim();
+      if (!text || text.length > 2000 || /[\0\r\n]/.test(text)) throw Object.assign(new Error("Comando inválido"), { statusCode: 400 });
+      if (running(projectId)) throw Object.assign(new Error("Já tem um comando rodando nesta pasta; pare ele antes."), { statusCode: 409 });
+      const id = `c${++seq}`;
+      const run = { id, projectId, cwd, command: text, startedAt: now(), endedAt: null, exitCode: null, error: null, output: "", dropped: 0 };
+      runs.set(id, run);
+      for (const old of [...runs.values()].filter((item) => item.endedAt).slice(0, Math.max(0, runs.size - keep))) runs.delete(old.id);
+      const child = spawn(text, cwd);
+      run.child = child;
+      child.stdout?.on("data", (chunk) => append(run, chunk));
+      child.stderr?.on("data", (chunk) => append(run, chunk));
+      child.on("error", (error) => { run.error = error.message; run.endedAt = now(); });
+      child.on("close", (code) => { if (run.exitCode === null) run.exitCode = code ?? -1; run.endedAt ??= now(); clearTimeout(run.timer); });
+      run.timer = setTimeout(() => { append(run, "\n[parado: passou de 30 minutos]\n"); child.kill(); }, timeoutMs);
+      run.timer.unref?.();
+      return this.read(id, 0);
+    },
+    // New output since `offset` (a position in the whole output, also counting what the cap already dropped).
+    read(id, offset = 0) {
+      const run = runs.get(id);
+      if (!run) return null;
+      const from = Math.max(0, Number(offset) - run.dropped);
+      return { id, command: run.command, startedAt: run.startedAt, endedAt: run.endedAt, exitCode: run.exitCode, error: run.error, running: run.exitCode === null && !run.error, chunk: run.output.slice(from), offset: run.dropped + run.output.length };
+    },
+    stop(id) {
+      const run = runs.get(id);
+      if (!run || run.exitCode !== null) return false;
+      append(run, "\n[parado por você]\n");
+      run.child?.kill();
+      return true;
+    },
+    list(projectId) {
+      return [...runs.values()].filter((run) => run.projectId === projectId).map((run) => ({ id: run.id, command: run.command, startedAt: run.startedAt, exitCode: run.exitCode, running: run.exitCode === null && !run.error }));
+    },
+  };
+}

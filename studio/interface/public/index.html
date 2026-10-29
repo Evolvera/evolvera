@@ -232,6 +232,18 @@
           <button id="tab-sidechat" class="insp-tab is-minor" type="button" role="tab" data-tab="sidechat" aria-controls="view-sidechat" aria-selected="false" tabindex="-1" title="Dúvidas (Alt+D)"><svg><use href="#i-help" /></svg><span class="insp-label">Dúvidas</span></button>
         </div>
         <section id="view-terminal" class="insp-view view-terminal" role="tabpanel" aria-labelledby="tab-terminal" data-view="terminal">
+          <div class="term-modes" role="radiogroup" aria-label="O que o terminal mostra">
+            <button type="button" role="radio" data-term-mode="pi" aria-checked="true">PI</button>
+            <button type="button" role="radio" data-term-mode="shell" aria-checked="false" title="Rodar comandos nesta pasta">Shell</button>
+          </div>
+          <div id="shellView" class="shell-view" hidden>
+            <pre id="shellOut" class="shell-out" role="log" aria-live="polite" tabindex="0"></pre>
+            <form id="shellForm" class="shell-form" autocomplete="off">
+              <span class="shell-cwd" id="shellCwd"></span>
+              <input id="shellInput" class="shell-input" type="text" spellcheck="false" placeholder="Comando, ex.: git status, npm test" aria-label="Comando para rodar nesta pasta" />
+              <button id="shellStop" class="btn" type="button" hidden>Parar</button>
+            </form>
+          </div>
           <div id="term" class="term" role="log" aria-label="Terminal do PI (somente leitura)" tabindex="0"></div>
           <button id="termJump" class="term-jump" type="button" hidden>Ir para o fim<svg><use href="#i-down" /></svg></button>
           <div id="termWidgets" class="term-widgets" aria-label="Widgets de extensão" hidden></div>
