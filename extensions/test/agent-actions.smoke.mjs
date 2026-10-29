@@ -62,7 +62,9 @@ try {
   assert.equal(tooLong.isError, true, "loop prompts longer than the confirmation can show are refused");
   let shown = "";
   await tools.get("schedule_loop").execute("5d", { interval: "", prompt: "revise o kanban a cada 10 min" }, undefined, undefined, { hasUI: true, ui: { confirm: async (_t, msg) => { shown = msg; return false; } } });
-  assert.ok(shown.includes("Prompt completo:\nrevise o kanban a cada 10 min"), shown);
+  assert.ok(shown.includes('"revise o kanban a cada 10 min"'), shown);
+  assert.equal(m.normalizePrompt("a\u001b[2Kb\u0007c   d\n\n\n\ne"), "ab c d\n\ne", "escapes and control chars are removed");
+  assert.equal(m.normalizePrompt(Array.from({ length: 30 }, (_, i) => `l${i}`).join("\n")).split("\n").length, 12);
   assert.match(shown, /lido do texto abaixo/);
   const before = sent.length;
   assert.equal(sent.length, before, "nothing dispatched without confirmation");

@@ -83,6 +83,13 @@ export function quote(value: string): string {
   return `"${value.replace(/["\u201C\u201D\u201E\u00AB\u00BB]/g, "'")}"`;
 }
 
+/** Strips ANSI escapes and control characters, collapses blank runs and caps lines, so what is confirmed is what runs. */
+export function normalizePrompt(value: string, maxLines = 12): string {
+  const clean = value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, " ");
+  const lines = clean.split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+  return lines.filter((line, i) => line || (i > 0 && lines[i - 1])).slice(0, maxLines).join("\n").trim();
+}
+
 /** "" (schedule read from the prompt) or durations like "10min", "1h 30min", "45s". */
 export function validInterval(value: string): boolean {
   return value === "" || /^(\d+\s*(d|h|min|m|s|seg|segundos?|minutos?|horas?|dias?)\s*)+$/i.test(value.trim());
@@ -149,7 +156,7 @@ export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir())
     description: 'Repeat a prompt on a schedule in this session (the /loop command). interval like "10min", "1h 30min" or "" to read the schedule from the prompt ("10 vezes de 10 em 10 min").',
     parameters: Type.Object({ interval: Type.String(), prompt: Type.String() }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const prompt = String(params.prompt ?? "").trim();
+      const prompt = normalizePrompt(String(params.prompt ?? ""));
       const interval = String(params.interval ?? "").trim();
       if (!prompt) return text("Prompt vazio.", true);
       if (!validInterval(interval)) return text(`Intervalo inválido: "${interval}". Use algo como "10min", "1h 30min" ou "".`, true);
@@ -158,8 +165,8 @@ export default function agentActions(pi: ExtensionAPI, agentDir = getAgentDir())
       const ui = (ctx as { hasUI?: boolean; ui?: { confirm?: (t: string, m: string) => Promise<boolean> } } | undefined);
       if (ui?.hasUI && ui.ui?.confirm && !(await ui.ui.confirm("Agendar loop?", `Intervalo: ${interval || "lido do texto abaixo pelo /loop"}
 
-Prompt completo:
-${prompt}`))) {
+Prompt completo, exatamente como será enviado:
+${quote(prompt)}`))) {
         return text("O usuário não confirmou o loop; nada foi agendado.");
       }
       dispatch(`/loop ${quote(interval)} ${quote(prompt)}`);
