@@ -1,13 +1,13 @@
 diff --git a/interface/lib-server/ambientes.mjs b/interface/lib-server/ambientes.mjs
 new file mode 100644
-index 0000000..0bfd144
+index 0000000..ba71cc9
 --- /dev/null
 +++ b/interface/lib-server/ambientes.mjs
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,104 @@
 +// Ambientes: folders the user creates in the Studio, each one a box in the sidebar holding its conversations (like the
 +// project folders of the Claude app). Only the list lives here (pi-studio-data/ambientes.json); the conversations stay
 +// PI sessions of that folder, and removing an ambiente never touches the folder or its sessions.
-+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
++import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 +import path from "node:path";
 +import { randomUUID } from "node:crypto";
 +
@@ -34,6 +34,7 @@ index 0000000..0bfd144
 +  if (cwd !== undefined && cwd !== null && String(cwd).trim()) {
 +    const raw = String(cwd).trim();
 +    if (!path.isAbsolute(raw) || /(^|[\\/])\.\.([\\/]|$)/.test(raw) || /[\r\n\0]/.test(raw)) throw httpError(400, "A pasta precisa ser um caminho completo, sem ..");
++    if (/^[\\/]{2}/.test(raw)) throw httpError(400, "Pastas de rede não podem ser ambientes");
 +    const resolved = path.resolve(raw);
 +    if (path.parse(resolved).root === resolved) throw httpError(400, "Escolha uma pasta, não a raiz do disco");
 +    return resolved;
@@ -43,7 +44,9 @@ index 0000000..0bfd144
 +  return path.join(home, "PI Ambientes", folder);
 +}
 +
-+export function createAmbientes({ storeFile, home, now = Date.now, key = (cwd) => path.resolve(cwd).toLowerCase() }) {
++// `allowFolder(realPath)`: the server's trust boundary for a folder the user named (known project, under a project root
++// or the ambientes home, or an Orca worktree). A named folder must already exist; only <home>/PI Ambientes/<nome> is created.
++export function createAmbientes({ storeFile, home, now = Date.now, key = (cwd) => path.resolve(cwd).toLowerCase(), allowFolder = async () => true }) {
 +  let cache = null;
 +
 +  async function list() {
@@ -73,13 +76,19 @@ index 0000000..0bfd144
 +      const items = await list();
 +      if (items.length >= AMBIENTES_MAX) throw httpError(409, "Limite de ambientes atingido");
 +      if (items.some((item) => key(item.cwd) === key(folder))) throw httpError(409, "Essa pasta já é um ambiente");
++      const named = cwd !== undefined && cwd !== null && String(cwd).trim() !== "";
++      let real = folder;
 +      try {
 +        const info = await stat(folder);
 +        if (!info.isDirectory()) throw httpError(409, "Já existe um arquivo com esse nome");
++        real = await realpath(folder);
 +      } catch (error) {
 +        if (error.statusCode) throw error;
++        if (named) throw httpError(400, "Essa pasta não existe. Deixe o campo vazio para o Studio criar uma.");
 +        await mkdir(folder, { recursive: true });
 +      }
++      // The resolved folder (links followed) must sit inside the server's boundary; links out of it are refused too.
++      if (named && !(await allowFolder(real))) throw httpError(403, "Essa pasta fica fora das raízes de projeto do Studio. Deixe o campo vazio para criar em PI Ambientes, ou abra a pasta como projeto antes.");
 +      const ambiente = { id: randomUUID(), name: clean, cwd: folder, createdAt: now() };
 +      await save([...items, ambiente]);
 +      return ambiente;
@@ -312,7 +321,7 @@ index c0b0aa1..2eb1c5e 100644
 +.side-heading .mini-btn { white-space: nowrap; }
 +.side-heading-actions { margin-left: auto; }
 diff --git a/interface/server.mjs b/interface/server.mjs
-index 2d411ce..011ce01 100644
+index 2d411ce..d42cb25 100644
 --- a/interface/server.mjs
 +++ b/interface/server.mjs
 @@ -15,6 +15,7 @@ import { parsePiProcesses, resolveSessions } from "./lib-server/live-pis.mjs";
@@ -323,16 +332,28 @@ index 2d411ce..011ce01 100644
  import { createTitleIndex } from "./lib-server/session-titles.mjs";
  import { createTreeService, mapConcurrent } from "./lib-server/tree.mjs";
  import { ACTIVITY_LIMIT, UI_DIALOG_METHODS, activityFromEvent, addUsage, escapeHtml, foldText, localDay, newActivityTracker, normalizeOrca, orcaPiTerminalArgs, orcaWorktreeSetArgs, fileInfo, formatBytes, rankFiles, searchSnippet, stallThresholds, sumUsage } from "./public/lib.js";
-@@ -73,6 +74,8 @@ const retiredSessions = new Map();
+@@ -73,6 +74,20 @@ const retiredSessions = new Map();
  const projects = new Map();
  // Projects opened by path (e.g. Orca worktrees): discovery rebuilds `projects`, so they are re-added each time.
  const addedProjects = new Map();
 +// PI_STUDIO_AMBIENTES_HOME: where unnamed ambiente folders go (<home>/PI Ambientes/<nome>); tests point it at a temp dir.
-+const ambientes = createAmbientes({ storeFile: path.join(AGENT_DIR, "pi-studio-data", "ambientes.json"), home: process.env.PI_STUDIO_AMBIENTES_HOME || homedir(), key: (cwd) => cwdKey(cwd) });
++const AMBIENTES_HOME = process.env.PI_STUDIO_AMBIENTES_HOME || homedir();
++// A folder the user names must already be inside the Studio's boundary (as open-path): a project it knows (history,
++// roots), a folder under a project root or under <home>/PI Ambientes, or an Orca-listed worktree. `real` has links resolved.
++async function ambienteFolderAllowed(real) {
++  const key = cwdKey(real);
++  await knownProjects(projects, discoverProjects);
++  if ([...projects.values()].some((project) => cwdKey(project.cwd) === key)) return true;
++  if ((await getProjectRoots()).some((root) => pathInside(root, real))) return true;
++  if (pathInside(path.join(AMBIENTES_HOME, "PI Ambientes"), real)) return true;
++  const orca = await getOrca();
++  return orca.available === true && orca.worktrees.some((worktree) => cwdKey(worktree.path) === key);
++}
++const ambientes = createAmbientes({ storeFile: path.join(AGENT_DIR, "pi-studio-data", "ambientes.json"), home: AMBIENTES_HOME, key: (cwd) => cwdKey(cwd), allowFolder: ambienteFolderAllowed });
  const serverLogs = [];
  const STALL = stallThresholds(process.env);
  
-@@ -467,8 +470,16 @@ async function discoverProjects() {
+@@ -467,8 +482,16 @@ async function discoverProjects() {
    for (const added of addedProjects.values()) {
      if (!found.has(added.id)) found.set(added.id, { ...makeProject(added.cwd, added.root), lastUsedAt: added.lastUsedAt });
    }
@@ -350,7 +371,7 @@ index 2d411ce..011ce01 100644
    return [...projects.values()];
  }
  
-@@ -2680,6 +2691,29 @@ async function route(req, res) {
+@@ -2680,6 +2703,29 @@ async function route(req, res) {
        }
      }
  
@@ -382,10 +403,10 @@ index 2d411ce..011ce01 100644
        return json(res, 200, await vorcaroBoard());
 diff --git a/interface/test/ambientes.test.mjs b/interface/test/ambientes.test.mjs
 new file mode 100644
-index 0000000..2462b6f
+index 0000000..a6ed513
 --- /dev/null
 +++ b/interface/test/ambientes.test.mjs
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,150 @@
 +// Ambientes: user-created folders shown as boxes in the sidebar. Run-owned temp dirs, fake PI and fake DOM only.
 +import assert from "node:assert/strict";
 +import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -507,6 +528,16 @@ index 0000000..2462b6f
 +    assert.equal((await fetch(`${base}/api/ambientes`)).status, 401);
 +    assert.equal((await call("POST", "/api/ambientes", { name: "" })).status, 400);
 +    assert.equal((await call("POST", "/api/ambientes", { name: "x", cwd: "relativa" })).status, 400);
++    // A named folder must exist and sit inside the Studio's boundary; only the default folder is ever created.
++    const outside = path.join(tmp, "fora-das-raizes");
++    await mkdir(outside, { recursive: true });
++    assert.equal((await call("POST", "/api/ambientes", { name: "Fora", cwd: outside })).status, 403);
++    assert.equal((await call("POST", "/api/ambientes", { name: "Nova", cwd: path.join(roots, "nao-existe") })).status, 400);
++    await assert.rejects(stat(path.join(roots, "nao-existe")), "a named folder that does not exist is not created");
++    assert.equal((await call("POST", "/api/ambientes", { name: "Rede", cwd: "\\\\servidor\\pasta" })).status, 400);
++    const inRoot = await call("POST", "/api/ambientes", { name: "Descoberto", cwd: path.join(roots, "descoberto") });
++    assert.equal(inRoot.status, 201);
++    assert.equal((await call("DELETE", `/api/ambientes/${inRoot.body.ambiente.id}`)).status, 200);
 +    const created = await call("POST", "/api/ambientes", { name: "Financeiro BLVR" });
 +    assert.equal(created.status, 201);
 +    assert.equal(created.body.project.name, "Financeiro BLVR");
