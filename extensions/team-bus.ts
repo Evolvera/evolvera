@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, watch, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -14,6 +14,10 @@ import { Type } from "typebox";
  * message that starts or steers a turn. A member that goes idle without having written to the lead in that
  * run sends the lead one notice with its `git status --short`, so uncommitted work is visible without chasing.
  * Teammates' words are data, never the user's consent: the injected text says so.
+ *
+ * A session can also open its own children (team_start): live `pi --mode rpc` sessions in sibling git
+ * worktrees, which it leads and messages, like nested sessions. Each child's events go to logs/<name>.jsonl
+ * and every message to messages.jsonl, so the Studio can draw the tree and the conversation.
  */
 
 export const MAX_MESSAGE_CHARS = 8_000;
@@ -78,6 +82,9 @@ export function deliver(dir: string, msg: TeamMessage): void {
   }
   mkdirSync(inbox, { recursive: true });
   writeAtomic(join(inbox, `${msg.at}-${msg.id}.json`), JSON.stringify(msg));
+  // Append-only trail of who told whom what, for the Studio's team view.
+  try { appendFileSync(join(dir, "messages.jsonl"), `${JSON.stringify({ at: msg.at, from: msg.from, to: msg.to, preview: msg.text.slice(0, 280) })}
+`); } catch { /* the trail is best effort */ }
 }
 
 /** Reads and removes every complete message in the inbox, oldest first. */
@@ -106,35 +113,42 @@ function gitStatus(cwd: string): Promise<string> {
   });
 }
 
-export default function teamBus(pi: ExtensionAPI, env: Record<string, string | undefined> = process.env, root = getAgentDir()): void {
-  const me = teamFromEnv(env);
-  if (!me) return;
-  // In-process subagents load extensions with the same env; only the first (primary) session joins the team.
-  const claimed = globalThis as { [JOINED]?: Set<string> };
-  const key = `${root}|${me.team}|${me.name}`;
-  claimed[JOINED] ??= new Set();
-  if (claimed[JOINED].has(key)) return;
-  claimed[JOINED].add(key);
-  const dir = teamDir(root, me.team);
-  const memberFile = join(dir, "members", `${me.name}.json`);
-  mkdirSync(join(dir, "members"), { recursive: true });
-  mkdirSync(join(dir, "inbox", me.name), { recursive: true });
-  let state = "idle";
-  // Presence is best effort: a failed heartbeat must never take the session down.
-  const heartbeat = () => {
-    try { writeAtomic(memberFile, JSON.stringify({ name: me.name, role: me.role, cwd: process.cwd(), pid: process.pid, updatedAt: Date.now(), state })); } catch { /* next tick retries */ }
-  };
-  heartbeat();
+export const MAX_CHILDREN = 4;
 
+/** Where a child session works: a sibling folder of the repository, on its own branch. */
+export function childWorktree(repoRoot: string, name: string): { dir: string; branch: string } {
+  return { dir: `${repoRoot}-team${sep}${name}`, branch: `team/${name}` };
+}
+
+function repoRootOf(cwd: string): string | undefined {
+  try { return execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", windowsHide: true }).trim().replace(/\//g, sep); } catch { return undefined; }
+}
+
+type Child = { name: string; proc: ChildProcess; cwd: string; branch?: string };
+
+export default function teamBus(pi: ExtensionAPI, env: Record<string, string | undefined> = process.env, root = getAgentDir()): void {
+  // In-process subagents load extensions with the same env; only the first (primary) session may act.
+  const claimed = globalThis as { [JOINED]?: Set<string> };
+  claimed[JOINED] ??= new Set();
+  let me: { team: string; name: string; role: string } | undefined;
+  let dir = "";
+  let state = "idle";
+  let ready = false;
+  let running = false;
   let wroteToLead = false;
   const recent = new Map<string, number>();
+  const children = new Map<string, Child>();
+  const reply = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], details: {}, ...(isError ? { isError: true } : {}) });
+
+  const heartbeat = () => {
+    if (!me) return;
+    try { writeAtomic(join(dir, "members", `${me.name}.json`), JSON.stringify({ name: me.name, role: me.role, cwd: process.cwd(), pid: process.pid, updatedAt: Date.now(), state })); } catch { /* best effort */ }
+  };
   // PI rejects sendMessage while extensions load, and an injected turn before the first prompt races it.
   // So mail waiting when a run starts rides along with that run (before_agent_start), mail arriving while
   // it runs steers it between tool calls, and mail arriving while idle starts a new turn.
-  let ready = false;
-  let running = false;
   const check = () => {
-    if (!ready) return;
+    if (!me || !ready) return;
     const messages = drain(dir, me.name);
     if (!messages.length) return;
     try {
@@ -145,44 +159,134 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
     }
   };
   const safeCheck = () => { try { check(); } catch { /* a bad message file or a busy disk must not crash PI */ } };
-  try { watch(join(dir, "inbox", me.name), () => safeCheck()).unref?.(); } catch { /* the poll below still delivers */ }
-  setInterval(() => { safeCheck(); heartbeat(); }, POLL_MS).unref();
+
+  /** Joins a team (from env at load, or as lead when this session starts its first child). False if taken. */
+  function activate(next: { team: string; name: string; role: string }): boolean {
+    const key = `${root}|${next.team}|${next.name}`;
+    if (claimed[JOINED]!.has(key)) return false;
+    claimed[JOINED]!.add(key);
+    me = next;
+    dir = teamDir(root, me.team);
+    mkdirSync(join(dir, "members"), { recursive: true });
+    mkdirSync(join(dir, "inbox", me.name), { recursive: true });
+    heartbeat();
+    try { watch(join(dir, "inbox", me.name), () => safeCheck()).unref?.(); } catch { /* the poll below still delivers */ }
+    setInterval(() => { safeCheck(); heartbeat(); }, POLL_MS).unref();
+    return true;
+  }
+
+  const fromEnv = teamFromEnv(env);
+  if (fromEnv && !activate(fromEnv)) return;
 
   pi.registerTool({
     name: "team_send",
     label: "Team Send",
-    description: `Send a message to a teammate in team "${me.team}" (you are ${me.name}, ${me.role}). Use "lead", "all" or a member name. Only for decisions, contract changes, blockers, questions, review findings or "done (committed)"; never for progress chatter.`,
+    description: 'Send a message to a teammate or child session. Use "lead", "all" or a member name. Only for decisions, contract changes, blockers, questions, review findings or "done (committed)"; never for progress chatter.',
     parameters: Type.Object({ to: Type.String({ description: 'Member name, "lead" or "all"' }), message: Type.String({ description: "Self-contained message" }) }),
     async execute(_id, params) {
+      if (!me) return reply("Esta sessão ainda não está num time; use team_start para abrir uma sessão filha.", true);
       const text = String(params.message ?? "").slice(0, MAX_MESSAGE_CHARS);
       const targets = recipients(String(params.to ?? ""), me.name, listMembers(dir));
-      if (!text.trim() || !targets.length) return { content: [{ type: "text" as const, text: "Nada enviado: destinatário ou mensagem vazios." }], isError: true, details: {} };
+      if (!text.trim() || !targets.length) return reply("Nada enviado: destinatário ou mensagem vazios.", true);
       const key = `${targets.join(",")}::${text}`;
-      if (Date.now() - (recent.get(key) ?? 0) < DUPLICATE_WINDOW_MS) return { content: [{ type: "text" as const, text: "Mensagem idêntica enviada há menos de 1 minuto; não reenviada." }], details: {} };
+      if (Date.now() - (recent.get(key) ?? 0) < DUPLICATE_WINDOW_MS) return reply("Mensagem idêntica enviada há menos de 1 minuto; não reenviada.");
       recent.set(key, Date.now());
       const lead = listMembers(dir).find((m) => m.role === "lead")?.name;
       for (const to of targets) {
         deliver(dir, { id: Math.random().toString(36).slice(2, 10), from: me.name, to, text, at: Date.now() });
         if (to === lead) wroteToLead = true;
       }
-      return { content: [{ type: "text" as const, text: `Enviado para ${targets.join(", ")}.` }], details: { to: targets } };
+      return reply(`Enviado para ${targets.join(", ")}.`);
     },
   });
 
   pi.registerTool({
     name: "team_list",
     label: "Team List",
-    description: `List the members of team "${me.team}" with role, state, folder and last heartbeat.`,
+    description: "List the members of this session's team (child sessions included) with role, state, folder and last heartbeat.",
     parameters: Type.Object({}),
     async execute() {
+      if (!me) return reply("Esta sessão não está num time.");
       const now = Date.now();
       const rows = listMembers(dir).map((m: Member & { state?: string }) => `${m.name} · ${m.role} · ${m.state ?? "?"} · ${m.cwd} · visto há ${Math.round((now - m.updatedAt) / 1000)} s`);
-      return { content: [{ type: "text" as const, text: rows.join("\n") || "Nenhum membro registrado." }], details: {} };
+      return reply(rows.join("\n") || "Nenhum membro registrado.");
     },
   });
 
+  pi.registerTool({
+    name: "team_start",
+    label: "Team Start",
+    description: `Open a live child PI session for an independent part of the work, in its own git worktree (sibling folder, branch team/<name>), and send it its task. This session becomes the team lead; talk to the child with team_send, it reports back when done or idle (with its git status). Use only for parts that can run in parallel with their own files; at most ${MAX_CHILDREN} children. Stop it with team_stop when its work is merged.`,
+    parameters: Type.Object({
+      name: Type.String({ description: "Short member name, e.g. front, back, docs" }),
+      task: Type.String({ description: "Self-contained brief: goal, files it owns, acceptance, how to test, what not to touch" }),
+      worktree: Type.Optional(Type.Boolean({ description: "Own git worktree (default true when in a repository)" })),
+    }),
+    async execute(_id, params) {
+      const name = String(params.name ?? "").trim();
+      const task = String(params.task ?? "").trim();
+      if (!isSafeName(name) || name === "lead") return reply('Nome inválido: use letras, números, "-" ou "_" (e não "lead").', true);
+      if (!task) return reply("Tarefa vazia.", true);
+      if (children.has(name)) return reply(`Já existe uma sessão filha "${name}".`, true);
+      if (children.size >= MAX_CHILDREN) return reply(`Limite de ${MAX_CHILDREN} sessões filhas atingido; encerre uma com team_stop.`, true);
+      if (!me && !activate({ team: `s-${Date.now().toString(36)}`, name: "lead", role: "lead" })) return reply("Não foi possível abrir o time.", true);
+      ready = true; // joined mid-run: the child's replies must be delivered from now on
+      running = true;
+      if (me!.role !== "lead") return reply("Só o lead do time abre sessões filhas.", true);
+      let cwd = process.cwd();
+      let branch: string | undefined;
+      const repo = params.worktree === false ? undefined : repoRootOf(cwd);
+      if (repo) {
+        const wt = childWorktree(repo, name);
+        try {
+          mkdirSync(dirname(wt.dir), { recursive: true });
+          execFileSync("git", ["worktree", "add", "-q", "-b", wt.branch, wt.dir], { cwd: repo, windowsHide: true, stdio: "ignore" });
+          cwd = wt.dir; branch = wt.branch;
+        } catch (error) {
+          return reply(`Não consegui criar a worktree ${wt.dir} (${(error as Error).message.split("\n")[0]}). Escolha outro nome ou use worktree: false.`, true);
+        }
+      }
+      const cli = process.argv[1];
+      const proc = spawn(process.execPath, [cli, "--mode", "rpc", "--approve"], {
+        cwd, windowsHide: true, stdio: ["pipe", "pipe", "ignore"],
+        env: { ...process.env, PI_TEAM: me!.team, PI_TEAM_NAME: name, PI_TEAM_ROLE: "member", PI_TEAM_PARENT: me!.name },
+      });
+      mkdirSync(join(dir, "logs"), { recursive: true });
+      const log = createWriteStream(join(dir, "logs", `${name}.jsonl`), { flags: "a" });
+      proc.stdout?.pipe(log);
+      proc.on("exit", () => { children.delete(name); });
+      children.set(name, { name, proc, cwd, branch });
+      const brief = `Você é \`${name}\`, uma sessão filha do lead \`${me!.name}\` no time \`${me!.team}\`${branch ? `, trabalhando na worktree ${cwd} (branch ${branch})` : ""}. Faça só a sua parte, commite, e avise o lead com team_send quando terminar (ou se precisar de uma decisão).\n\nTarefa:\n${task}`;
+      proc.stdin?.write(`${JSON.stringify({ type: "prompt", message: brief })}\n`);
+      return reply(`Sessão filha "${name}" aberta${branch ? ` em ${cwd} (branch ${branch})` : ` em ${cwd}`}. Ela avisa por mensagem do time quando terminar.`);
+    },
+  });
+
+  pi.registerTool({
+    name: "team_stop",
+    label: "Team Stop",
+    description: "Stop a child session this session started (its worktree and branch are kept for merging).",
+    parameters: Type.Object({ name: Type.String() }),
+    async execute(_id, params) {
+      const child = children.get(String(params.name ?? ""));
+      if (!child) return reply(`Não há sessão filha "${String(params.name ?? "")}" aberta por esta sessão.`, true);
+      stopChild(child);
+      return reply(`Sessão "${child.name}" encerrada.${child.branch ? ` O trabalho fica na branch ${child.branch} (${child.cwd}).` : ""}`);
+    },
+  });
+
+  function stopChild(child: Child) {
+    children.delete(child.name);
+    try {
+      if (process.platform === "win32" && child.proc.pid) execFileSync("taskkill", ["/F", "/T", "/PID", String(child.proc.pid)], { stdio: "ignore", windowsHide: true });
+      else child.proc.kill();
+    } catch { /* already gone */ }
+  }
+  pi.on("session_shutdown", async () => { for (const child of [...children.values()]) stopChild(child); });
+
   pi.on("before_agent_start", async (event) => {
-    ready = true;
+    ready = true; // the runtime is initialized from here on, whether or not this session is in a team yet
+    if (!me) return;
     const waiting = drain(dir, me.name);
     return {
       ...(waiting.length ? { message: { customType: "team-message", content: formatInbox(waiting), display: true, details: { from: waiting.map((m) => m.from) } } } : {}),
@@ -194,11 +298,10 @@ export default function teamBus(pi: ExtensionAPI, env: Record<string, string | u
     running = false;
     state = "idle";
     heartbeat();
-    if (me.role === "lead" || wroteToLead) return;
+    if (!me || me.role === "lead" || wroteToLead) return;
     const lead = listMembers(dir).find((m) => m.role === "lead")?.name;
     if (!lead) return;
     deliver(dir, { id: Math.random().toString(36).slice(2, 10), from: me.name, to: lead, at: Date.now(),
       text: `${me.name} ficou ocioso sem mensagem para o lead nesta rodada.\ngit status --short:\n${await gitStatus(process.cwd())}` });
   });
 }
-

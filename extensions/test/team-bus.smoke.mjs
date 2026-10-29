@@ -117,5 +117,23 @@ try {
   await new Promise((r) => setTimeout(r, 2_600)); // one poll tick with the members folder gone
   fs.rmSync(tmp2, { recursive: true, force: true });
 }
+// team_start validates before touching git or spawning anything.
+{
+  const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), "team-bus-start-"));
+  const solo = host();
+  m.default(solo.api, {}, tmp3);
+  for (const bad of ["lead", "../x", "a/b", ""]) {
+    const r = await solo.tools.get("team_start").execute("s", { name: bad, task: "t" });
+    assert.equal(r.isError, true, `child name ${JSON.stringify(bad)} is refused`);
+  }
+  const empty = await solo.tools.get("team_start").execute("s", { name: "docs", task: "  " });
+  assert.equal(empty.isError, true, "a child needs a task");
+  const notInTeam = await solo.tools.get("team_send").execute("s", { to: "lead", message: "oi" });
+  assert.match(notInTeam.content[0].text, /team_start/, "team_send outside a team points to team_start");
+  const wt = m.childWorktree(path.join(tmp3, "repo"), "docs");
+  assert.equal(wt.branch, "team/docs");
+  assert.equal(wt.dir, path.join(`${path.join(tmp3, "repo")}-team`, "docs"), "child worktree is a sibling of the repository");
+  fs.rmSync(tmp3, { recursive: true, force: true });
+}
 console.log("team-bus smoke: PASS");
 process.exit(0);
