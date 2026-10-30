@@ -147,7 +147,7 @@ interface ProviderPayload {
 }
 
 export function isFastEligibleModel(model: ModelIdentity | undefined): boolean {
-  if (model?.provider !== "openai-codex" || typeof model.id !== "string") return false;
+  if (model?.provider !== "openai" || typeof model.id !== "string") return false;
 
   // The configured GPT-5.6 Sol/Terra/Luna IDs, GPT-6 Astra/Sol/Luna, and GPT-6.1 Sol support Fast mode.
   return model.id.startsWith("gpt-5.6-")
@@ -165,7 +165,7 @@ export function isFastEligibleModel(model: ModelIdentity | undefined): boolean {
 // so only the documented models are ever sent it.
 const ULTRAFAST_MODEL_IDS = new Set(["gpt-6-astra", "gpt-6.1-sol"]);
 export function isUltrafastEligibleModel(model: ModelIdentity | undefined): boolean {
-  return model?.provider === "openai-codex" && ULTRAFAST_MODEL_IDS.has(model.id);
+  return model?.provider === "openai" && ULTRAFAST_MODEL_IDS.has(model.id);
 }
 
 export function isUltraMode(mode: FastMode): boolean {

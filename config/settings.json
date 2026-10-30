@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.80.3",
   "followUpMode": "one-at-a-time",
-  "defaultProvider": "openai-codex",
+  "defaultProvider": "openai",
   "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "medium",
   "packages": [

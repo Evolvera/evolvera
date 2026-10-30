@@ -39,7 +39,7 @@ const sdkFiles = [...new Set([
   'node_modules/@earendil-works/pi-ai/dist/models.js',
   'node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js',
   'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js',
-  'node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.d.ts',
+  'node_modules/@earendil-works/pi-ai/dist/api/openai-responses.d.ts',
   'node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
   'node_modules/@earendil-works/pi-tui/package.json',
   'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js',

@@ -1,6 +1,6 @@
 ---
 name: builder
-description: "General normal-risk procedural implementation agent for bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, and structured integration. Prefer design builders for relation/rule/declarative semantic modeling. Model: openai-codex/gpt-6-luna high."
+description: "General normal-risk procedural implementation agent for bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, and structured integration. Prefer design builders for relation/rule/declarative semantic modeling. Model: openai/gpt-6-luna high."
 display_name: 🔨 Builder · GPT-6 Luna · high
 tools: read, grep, find, ls, bash, write, edit
 model: fallback/builder

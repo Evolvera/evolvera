@@ -23,7 +23,7 @@ function append(entry) {
 
 // A genuinely fresh session: the coordinator bootstraps at session_start, when the branch
 // carries only non-source entries and SessionManager.buildContextEntries() is empty.
-const modelChange = append({ type: "model_change", data: { model: "openai-codex/gpt-6-luna" } });
+const modelChange = append({ type: "model_change", data: { model: "openai/gpt-6-luna" } });
 const thinkingChange = append({ type: "thinking_level_change", data: { level: "medium" } });
 
 const bootstrap = bootstrapModule.bootstrapSession({ entries: branch, binding, activeEntries: [] });
@@ -88,7 +88,7 @@ assert.equal(resumedSnapshot.span.sourceEntryIds.includes(resumedAssistant.id), 
 const appended = [];
 const offlineRuntime = {
   modelRegistry: {
-    find: () => ({ provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 }),
+    find: () => ({ provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 }),
     async getProviderAuth() { return { apiKey: "fake-only" }; },
   },
   async agentLoop() { throw new Error("offline smoke runtime never calls a model"); },

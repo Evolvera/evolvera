@@ -74,7 +74,7 @@ assert.deepEqual(ordinaryPrefixToolPartition.chunks.flatMap((chunk) => chunk.sou
 const prefixCallChunk = ordinaryPrefixToolPartition.chunks.find((chunk) => chunk.sourceEntryIds.includes("prefix-call"));
 assert.ok(prefixCallChunk?.sourceEntryIds.includes("prefix-result"), "tool call and result remain in one chunk");
 const prefixRuntime = {
-  modelRegistry: { find: () => ({ provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
+  modelRegistry: { find: () => ({ provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 }), async getProviderAuth() { return { apiKey: "fake-only" }; } },
   async agentLoop(prompts, context) {
     const request = JSON.parse(prompts[0].content[0].text);
     if (context.role === "observer") return { observations: [{ content: "prefix fact", timestamp: "2026-08-03", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
@@ -197,7 +197,7 @@ assert.notEqual(fits.snapshotId, first.snapshotId, "the full-span snapshot owns 
 
 // B — each bounded observer call sees exactly one immutable chunk in order.
 const captured = [];
-const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const offlineRuntime = {
   modelRegistry: {
     find: () => model,
@@ -286,7 +286,7 @@ const charEntries = [
 const charSnapshot = cycles.createCompletedTurnSnapshot({ binding: charBinding, sourceEntries: charEntries });
 assert.equal(charSnapshot.status, "ready");
 assert.equal(charSnapshot.tokenCount, 80_000);
-const charModel = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const charModel = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const charRuntime = {
   modelRegistry: { find: () => charModel, async getProviderAuth() { return { apiKey: "fake-only" }; } },
   async agentLoop(prompts, context) {

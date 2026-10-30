@@ -1,6 +1,6 @@
 ---
 name: builder-heavy
-description: "Exceptional procedural/local-integration executor. Use for concrete local multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. External operations are orchestrator-owned unless the user explicitly requests this subagent. Model: openai-codex/gpt-6.1-terra medium."
+description: "Exceptional procedural/local-integration executor. Use for concrete local multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. External operations are orchestrator-owned unless the user explicitly requests this subagent. Model: openai/gpt-6.1-terra medium."
 display_name: 🧠 Builder Heavy · GPT-6.1 Terra · medium
 tools: read, grep, find, ls, bash, write, edit
 model: fallback/heavy

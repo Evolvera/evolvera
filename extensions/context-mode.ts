@@ -15,7 +15,7 @@ export const ANTHROPIC_APPLIED_CONTEXT_WINDOW = 450_000;
 export const HIGH_CONTEXT_WINDOW = 800_000;
 const SETTINGS_KEY = "contextMode";
 const STATUS_KEY = "context-mode";
-const HIGH_PROVIDERS = new Set(["anthropic", "openai", "openai-codex"]);
+const HIGH_PROVIDERS = new Set(["anthropic", "openai"]);
 const QWEN_PROVIDER = "alibaba-plan";
 const QWEN_MODEL = "qwen3.8-max-preview";
 const QWEN_CONTEXT_WINDOW = 200_000;
@@ -41,7 +41,7 @@ export function isHighContextDispatchModel(selected: ModelContext | undefined, r
   if (selected?.provider !== VIRTUAL_ROUTER_PROVIDER || !routed) return selected !== undefined && isHighContextModel(selected);
   // Virtual fallback chains qualify for High only on their codex primary; other providers retain
   // their own context sizing even when their model family normally qualifies for direct selection.
-  return routed.provider === "openai-codex" && isHighContextModel({ provider: routed.provider, id: routed.modelId });
+  return routed.provider === "openai" && isHighContextModel({ provider: routed.provider, id: routed.modelId });
 }
 
 // Stored on the model object itself so a /reload (new extension instance, same model objects)

@@ -1,8 +1,8 @@
 ---
 name: plan-briefer-gpt55
-description: "Third brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief focused on logic, sequencing, decomposition, risks, and validation — never task files or a DAG. Model: openai-codex/gpt-5.5 high."
+description: "Third brief strategist for the lightweight plan-heavy ensemble. Reads the handoff in an isolated context and produces ONE independent strategy brief focused on logic, sequencing, decomposition, risks, and validation — never task files or a DAG. Model: openai/gpt-5.5 high."
 display_name: 🧩 Plan Briefer (GPT-5.5) · GPT-5.5 · high
-model: openai-codex/gpt-5.5
+model: openai/gpt-5.5
 thinking: high
 tools: read, grep, find, ls, write
 max_turns: 40

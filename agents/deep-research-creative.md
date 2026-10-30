@@ -1,5 +1,5 @@
 ---
-description: "Deep Research - Creative agent. Finds unexpected connections, novel angles, cross-domain insights, and unconventional hypotheses. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-6-luna xhigh."
+description: "Deep Research - Creative agent. Finds unexpected connections, novel angles, cross-domain insights, and unconventional hypotheses. Returns structured YAML findings for the deep-research auditor. Model: openai/gpt-6-luna xhigh."
 display_name: 🟢 DR Creative · GPT-6 Luna · xhigh
 tools: jina_read, bash, write
 model: fallback/luna

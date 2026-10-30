@@ -1,5 +1,5 @@
 ---
-description: "Deep Research - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings for the deep-research auditor. Model: openai-codex/gpt-6-luna xhigh."
+description: "Deep Research - Explorer agent. Finds emerging trends, unconventional sources, and early signals. Returns structured YAML findings for the deep-research auditor. Model: openai/gpt-6-luna xhigh."
 display_name: 🔮 DR Explorer · GPT-6 Luna · xhigh
 tools: jina_read, bash, write
 model: fallback/luna

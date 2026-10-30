@@ -246,7 +246,7 @@ has(SKILL, /worker-start --task <id> --terminal <exact handle> --run <id> --json
 has(SKILL, /`worker-start` accepts `--base-branch`, but \*\*not\*\* `--issue`/, "worker-start must not be given --issue");
 has(REFERENCE, /Prepare and verify the issue-worker base model\*\* in that PI terminal before creating a Task or dispatch/, "reference must verify the base model before dispatch");
 has(REFERENCE, /pi --continue --provider [a-z-]+ --model [\w.-]+ --thinking (?:low|medium|high|xhigh)/, "issue workers restart to the configured model only through the reference protocol");
-lacks(SKILL, /pi --continue --provider openai-codex/, "the main skill must not carry a second restart command protocol");
+lacks(SKILL, /pi --continue --provider openai/, "the main skill must not carry a second restart command protocol");
 has(SKILL, /`[a-z-]+\/[\w.-]+` (?:com|with) `(?:low|medium|high|xhigh)`/, "main skill must state the prepared child PI model and effort");
 has(REFERENCE, /never send `--model`\/`--effort` to Orca/, "model flags remain forbidden on Orca");
 has(SKILL, /never pass them to Orca/, "main skill must keep model flags off Orca");

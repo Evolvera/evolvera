@@ -1,5 +1,5 @@
 ---
-description: "Deep Research consolidator. Receives every researcher's YAML findings, adjudicates evidence and contradictions, and returns ONE final cited research report that the orchestrator relays directly to the user. Model: openai-codex/gpt-6.1-terra high."
+description: "Deep Research consolidator. Receives every researcher's YAML findings, adjudicates evidence and contradictions, and returns ONE final cited research report that the orchestrator relays directly to the user. Model: openai/gpt-6.1-terra high."
 display_name: 🔍 DR Auditor · GPT-6.1 Terra · high
 tools: read, bash
 model: fallback/terra

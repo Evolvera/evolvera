@@ -6,7 +6,7 @@ import type {
   SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
 
-export const NATIVE_COMPACTION_PROVIDER = "openai-codex";
+export const NATIVE_COMPACTION_PROVIDER = "openai";
 export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
 export const NATIVE_COMPACTION_THINKING_LEVEL = "medium" as const;
 
@@ -62,7 +62,7 @@ export function isStaleCrossProviderThreshold(event: SessionBeforeCompactEvent, 
   const major = claudeVersion ? Number(claudeVersion[1]) : 0;
   const minor = claudeVersion ? Number(claudeVersion[2]) : 0;
   return event.reason === "threshold"
-    && (dispatchModel?.provider === "openai" || dispatchModel?.provider === "openai-codex")
+    && (dispatchModel?.provider === "openai" || dispatchModel?.provider === "openai")
     && /^gpt-\d+(?:[.-]|$)/.test(dispatchModel.id)
     && claudeVersion !== null
     && (major > 4 || (major === 4 && minor >= 8))

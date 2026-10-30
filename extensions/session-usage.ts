@@ -253,7 +253,7 @@ function quotaLines(report: ProviderQuotaReport | undefined, accountId: string |
       const remaining = 100 - window.usedPercent;
       lines.push(`  ${formatDuration(window.durationSeconds)} window: ${window.usedPercent}% used · ${remaining}% remaining · resets ${window.resetAt}`);
     }
-    if (provider.provider === "openai-codex") lines.push(`  Banked resets: ${bankedResetCount(provider.bankedResets) ?? "not reported"}`);
+    if (provider.provider === "openai") lines.push(`  Banked resets: ${bankedResetCount(provider.bankedResets) ?? "not reported"}`);
   }
   lines.push(`Fetched ${report.fetchedAt} UTC`);
   return lines;
@@ -286,7 +286,7 @@ function quotaCard(provider: ProviderQuotaReport["providers"][number], width: nu
   const inner = framed ? width - 4 : width;
   const wrap = (text: string) => wrapPlain(text, Math.max(1, inner));
   const muted = (text: string) => theme.fg("muted", text);
-  const name = provider.provider === "anthropic" ? "Claude" : provider.provider === "openai-codex" ? "Codex" : cleanLabel(provider.provider) ?? "Provider";
+  const name = provider.provider === "anthropic" ? "Claude" : provider.provider === "openai" ? "Codex" : cleanLabel(provider.provider) ?? "Provider";
   const symbol = provider.provider === "anthropic" ? "✦" : "◇";
   const content = wrap(`${symbol} ${name} · OAuth`).map((line) => theme.style(line, { fg: "accent", bold: true }));
   content.push("");
@@ -308,7 +308,7 @@ function quotaCard(provider: ProviderQuotaReport["providers"][number], width: nu
       content.push(...wrap(`↺ ${quotaTime(window.resetAt)}`).map(muted), "");
     }
   }
-  if (provider.provider === "openai-codex") {
+  if (provider.provider === "openai") {
     const count = provider.unavailable ? undefined : bankedResetCount(provider.bankedResets);
     content.push(...wrap(`↻ Banked resets: ${count ?? "não informado"}`).map((line) => count === undefined ? muted(line) : theme.fg("success", line)));
   }
@@ -320,7 +320,7 @@ function quotaCard(provider: ProviderQuotaReport["providers"][number], width: nu
 function quotaPanelLines(report: ProviderQuotaReport | undefined, width: number, theme: Theme): string[] {
   const muted = (text: string) => theme.fg("muted", text);
   if (!report) return wrapPlain(QUOTA_LABEL, width).map(muted);
-  const order = (provider: string) => provider === "anthropic" ? 0 : provider === "openai-codex" ? 1 : 2;
+  const order = (provider: string) => provider === "anthropic" ? 0 : provider === "openai" ? 1 : 2;
   const providers = [...report.providers].sort((a, b) => order(a.provider) - order(b.provider));
   const columns = width >= 100 ? 2 : 1;
   const gap = 3;
@@ -450,7 +450,7 @@ export function registerSessionUsage(pi: ExtensionAPI, options: { quotaReader?: 
       let report: ProviderQuotaReport | undefined;
       if (options.quotaReader) {
         try { report = await options.quotaReader(ctx); }
-        catch { report = { fetchedAt: new Date().toISOString(), providers: ["anthropic", "openai-codex"].map((provider) => ({ provider, windows: [], unavailable: "request failed" })) }; }
+        catch { report = { fetchedAt: new Date().toISOString(), providers: ["anthropic", "openai"].map((provider) => ({ provider, windows: [], unavailable: "request failed" })) }; }
       }
       const localText = formatSessionUsage(rows);
       const text = report ? `${quotaLines(report, options.accountId).join("\n")}\n\n${localText.replace(`${QUOTA_LABEL}\n`, "")}` : localText;

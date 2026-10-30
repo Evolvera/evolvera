@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 const PROVIDERS = Object.freeze({
   anthropic: Object.freeze({ url: "https://api.anthropic.com/api/oauth/usage", beta: "oauth-2025-04-20" }),
-  "openai-codex": Object.freeze({ url: "https://chatgpt.com/backend-api/wham/usage" }),
+  "openai": Object.freeze({ url: "https://chatgpt.com/backend-api/wham/usage" }),
 });
 const CACHE_MS = 5 * 60 * 1000;
 const REQUEST_MS = 5_000;
@@ -104,8 +104,8 @@ export function createProviderQuotaCollector({ readCredential, fetchImpl = globa
       try {
         const credential = await readCredential(provider, { signal: AbortSignal.timeout(REQUEST_MS) });
         if (!record(credential) || credential.type !== "oauth" || typeof credential.access !== "string" || credential.access.length === 0 || !Number.isFinite(credential.expires) || credential.expires <= timestamp) throw fail("OAuth credential unavailable or expired");
-        const workspaceId = provider === "openai-codex" ? accountHeader(credential) : "";
-        if (provider === "openai-codex" && !workspaceId) throw fail("account metadata unavailable");
+        const workspaceId = provider === "openai" ? accountHeader(credential) : "";
+        if (provider === "openai" && !workspaceId) throw fail("account metadata unavailable");
         const fingerprint = createHash("sha256").update(JSON.stringify([provider, credential.access, workspaceId])).digest("hex");
         const previous = cache.get(provider);
         if (previous?.fingerprint === fingerprint && timestamp < previous.until) return { provider, windows: previous.windows, ...(previous.bankedResets === undefined ? {} : { bankedResets: previous.bankedResets }), fetchedAt: previous.fetchedAt };

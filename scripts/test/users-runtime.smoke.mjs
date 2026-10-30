@@ -1432,7 +1432,7 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
       assert.equal(completeCalls, 2, "the original explicit OpenAI observer and detached compactor remain two native calls");
       assert.deepEqual(queuedResponses, [], "the original OpenAI observer and detached compactor responses are consumed");
       const targets = [
-        { provider: "openai-codex", id: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
+        { provider: "openai", id: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
         { provider: "anthropic", id: "claude-sonnet-5", apiKey: id === "account-a" ? "synthetic-corporate-poison-account-a" : `synthetic-anthropic-${id}` },
       ];
       for (const target of targets) {
@@ -1476,7 +1476,7 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
       }
       assert.deepEqual(runtime.modelRuntime.getModels().map(({ provider: providerId, id: modelId }) => `${providerId}/${modelId}`).sort(), nativeBaseline, "native fixture hooks preserve all catalog model IDs");
       assert.deepEqual(structuredClone(runtime.modelRuntime.getModels()), memoryCatalogModels, "native fixture hooks preserve every builtin model definition");
-      assert.equal(runtime.modelRuntime.getProvider("openai-codex").auth.oauth, originalProviders.get("openai-codex").auth.oauth, "Codex keeps the original lazy native OAuth resolver");
+      assert.equal(runtime.modelRuntime.getProvider("openai").auth.oauth, originalProviders.get("openai").auth.oauth, "Codex keeps the original lazy native OAuth resolver");
       assert.equal(runtime.modelRuntime.getProvider("anthropic").auth.apiKey, originalProviders.get("anthropic").auth.apiKey, "Anthropic keeps the original native API-key resolver");
       globalThis.__usersMemoryNativeResponses = [
         { ...targets[0], text: JSON.stringify({ observations: [{ content: "Default Codex observation retained.", timestamp: "2026-10-06T00:00:00.000Z", relevance: "medium", sourceEntryIds: snapshot.span.sourceEntryIds }] }) },
@@ -1488,13 +1488,13 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
         eligibleCycles: closedCycles, projectSnapshot, runtime: memoryRuntime,
       });
       assert.equal(defaultObserverResult.ok, true);
-      assert.equal(defaultObserverResult.runner.resolved.model.provider, "openai-codex");
+      assert.equal(defaultObserverResult.runner.resolved.model.provider, "openai");
       assert.equal(defaultObserverResult.runner.resolved.model.id, "gpt-6-luna");
       assert.equal(defaultObserverResult.runner.resolved.config.thinking, "medium");
       assert.equal(defaultObserverResult.runner.resolved.auth.apiKey, `synthetic-codex-${id}`);
       assert.equal(defaultCompactorResult.ok, true);
       assert.equal(defaultCompactorResult.detached, true);
-      assert.equal(defaultCompactorResult.runner.resolved.model.provider, "openai-codex");
+      assert.equal(defaultCompactorResult.runner.resolved.model.provider, "openai");
       assert.equal(defaultCompactorResult.runner.resolved.model.id, "gpt-6-luna");
       assert.equal(defaultCompactorResult.runner.resolved.config.thinking, "medium");
       assert.equal(defaultCompactorResult.runner.resolved.auth.apiKey, `synthetic-codex-${id}`);
@@ -1513,7 +1513,7 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
           assert.equal(unavailable.ok, false);
           // The public facade preserves keyless compatibility; authenticated Codex fails at native request setup, not at a fabricated facade gate.
           assert.equal(completeCalls - beforeMissingCompleteCalls, 1);
-          assert.deepEqual(nativeCompletionResults.slice(beforeMissingResults), [{ provider: "openai-codex", model: "gpt-6-luna", stopReason: "error", errorMessage: "Provider is not configured: openai-codex" }]);
+          assert.deepEqual(nativeCompletionResults.slice(beforeMissingResults), [{ provider: "openai", model: "gpt-6-luna", stopReason: "error", errorMessage: "Provider is not configured: openai" }]);
           assert.equal(nativeStreamCalls, beforeMissingStreamCalls, "missing selected B credential never enters either provider stream hook");
           assert.equal(nativeDispatches.length, beforeMissingDispatch, "missing selected B credential fails before any native transport dispatch");
           assert.equal(JSON.stringify(unavailable).includes("synthetic-corporate-poison-account-a"), false, "other-owner corporate fixture is excluded from B's selected store");
@@ -1565,7 +1565,7 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
       assert.deepEqual(scheduledLifecycle.filter((event) => event.phase === "observer" && event.status === "failed").map(({ status }) => status), ["failed", "failed"]);
       assert.equal(scheduledLifecycle.filter((event) => event.phase === "observer" && event.status === "started").length, 3);
       const scheduledDispatches = nativeDispatches.slice(dispatchStart);
-      assert.deepEqual(scheduledDispatches.map(({ provider, model }) => `${provider}/${model}`), ["openai-codex/gpt-6-luna", "openai-codex/gpt-6-luna", "anthropic/claude-sonnet-5", "openai-codex/gpt-6-luna"]);
+      assert.deepEqual(scheduledDispatches.map(({ provider, model }) => `${provider}/${model}`), ["openai/gpt-6-luna", "openai/gpt-6-luna", "anthropic/claude-sonnet-5", "openai/gpt-6-luna"]);
       assert.deepEqual(scheduledDispatches.map(({ apiKey }) => apiKey), [`synthetic-codex-${id}`, `synthetic-codex-${id}`, targets[1].apiKey, `synthetic-codex-${id}`]);
       const [firstRetryMessages, secondRetryMessages] = scheduledDispatches.slice(0, 2).map(({ prompt }) => JSON.parse(prompt));
       for (const messages of [firstRetryMessages, secondRetryMessages]) {
@@ -1600,8 +1600,8 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
       assert.deepEqual(structuredClone(runtime.modelRuntime.getModels()), memoryCatalogModels);
       assert.equal(nativeStreamCalls, 6, "all six native transport entries are accounted for, including failures");
       assert.deepEqual(nativeDispatches.slice(0, 2).map(({ provider, model, apiKey }) => ({ provider, model, apiKey })), [
-        { provider: "openai-codex", model: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
-        { provider: "openai-codex", model: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
+        { provider: "openai", model: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
+        { provider: "openai", model: "gpt-6-luna", apiKey: `synthetic-codex-${id}` },
       ]);
     } finally {
       runtime.receipt.modelRuntime.complete = originalComplete;
@@ -1635,7 +1635,7 @@ async function worker(root, id, registryPath, runKey, mode, foreignSessionPath, 
     assert.equal(runtime.receipt.modelRuntime, runtime.modelRuntime);
     assert.equal(nativeProviders.size, 0, "all synthetic native provider hooks are removed before finalization");
     process.stdout.write(`MEMORY_DIRECT_CONSUMERS profile=${id} observer=complete compactor=detached-prepared nativeCompleteCalls=2 selectedTokens=2 catalogPreserved=true authBytesPreserved=true scheduler=closed publication=not-run\n`);
-    process.stdout.write(`MEMORY_DEFAULT_FALLBACK profile=${id} defaultObserver=openai-codex/gpt-6-luna/default-medium defaultCompactor=openai-codex/gpt-6-luna/default-medium scheduler=closed order=openai-codex/gpt-6-luna,openai-codex/gpt-6-luna,anthropic/claude-sonnet-5,openai-codex/gpt-6-luna nativeCompleteCalls=${completeCalls} nativeTokens=${nativeDispatches.length} negativeB=${id === "account-b" ? "native-auth-error-before-provider-stream" : "not-applicable"} hostDisposed=true settingsFlushed=true drained={"pending":0,"descriptors":0} counters={"protected":0,"network":0,"child":0,"outside":0,"keyring":0} catalogPreserved=true authBytesPreserved=true publication=not-run\n`);
+    process.stdout.write(`MEMORY_DEFAULT_FALLBACK profile=${id} defaultObserver=openai/gpt-6-luna/default-medium defaultCompactor=openai/gpt-6-luna/default-medium scheduler=closed order=openai/gpt-6-luna,openai/gpt-6-luna,anthropic/claude-sonnet-5,openai/gpt-6-luna nativeCompleteCalls=${completeCalls} nativeTokens=${nativeDispatches.length} negativeB=${id === "account-b" ? "native-auth-error-before-provider-stream" : "not-applicable"} hostDisposed=true settingsFlushed=true drained={"pending":0,"descriptors":0} counters={"protected":0,"network":0,"child":0,"outside":0,"keyring":0} catalogPreserved=true authBytesPreserved=true publication=not-run\n`);
     for (const dispatch of nativeDispatches) process.stdout.write(`MEMORY_NATIVE_TRANSPORT ${JSON.stringify({ provider: dispatch.provider, model: dispatch.model, apiKey: dispatch.apiKey })}\n`);
     return;
   }
@@ -2407,7 +2407,7 @@ async function parent({ childPhase = false, interactivePhase = false, cachePhase
     mkdir(id, "home", "AppData", "Local", "Cache");
     write(path.join(agentDir, "auth.json"), JSON.stringify(memoryPhase ? {
       openai: { type: "api_key", key: `synthetic-${id}` },
-      "openai-codex": { type: "oauth", access: `synthetic-codex-${id}`, refresh: `synthetic-refresh-${id}`, expires: 4_000_000_000_000 },
+      "openai": { type: "oauth", access: `synthetic-codex-${id}`, refresh: `synthetic-refresh-${id}`, expires: 4_000_000_000_000 },
       anthropic: { type: "api_key", key: id === "account-a" ? "synthetic-corporate-poison-account-a" : `synthetic-anthropic-${id}` },
     } : { openai: { type: "api_key", key: `synthetic-${id}` } }));
     const ownedChildExtension = path.join(agentDir, "extensions", "child-owned.mjs");
@@ -2664,10 +2664,10 @@ async function parent({ childPhase = false, interactivePhase = false, cachePhase
           assert.ok(r.stdout.includes(`MEMORY_DIRECT_CONSUMERS profile=${p.id} observer=complete compactor=detached-prepared nativeCompleteCalls=2 selectedTokens=2 catalogPreserved=true authBytesPreserved=true scheduler=closed publication=not-run`));
           const negativeB = p.id === "account-b" ? "native-auth-error-before-provider-stream" : "not-applicable";
           const expectedCompleteCalls = p.id === "account-b" ? 9 : 8;
-          assert.ok(r.stdout.includes(`MEMORY_DEFAULT_FALLBACK profile=${p.id} defaultObserver=openai-codex/gpt-6-luna/default-medium defaultCompactor=openai-codex/gpt-6-luna/default-medium scheduler=closed order=openai-codex/gpt-6-luna,openai-codex/gpt-6-luna,anthropic/claude-sonnet-5,openai-codex/gpt-6-luna nativeCompleteCalls=${expectedCompleteCalls} nativeTokens=6 negativeB=${negativeB} hostDisposed=true settingsFlushed=true drained={"pending":0,"descriptors":0} counters={"protected":0,"network":0,"child":0,"outside":0,"keyring":0} catalogPreserved=true authBytesPreserved=true publication=not-run`), "owner-specific default OAuth/fallback proof follows actual disposal and strict drain");
+          assert.ok(r.stdout.includes(`MEMORY_DEFAULT_FALLBACK profile=${p.id} defaultObserver=openai/gpt-6-luna/default-medium defaultCompactor=openai/gpt-6-luna/default-medium scheduler=closed order=openai/gpt-6-luna,openai/gpt-6-luna,anthropic/claude-sonnet-5,openai/gpt-6-luna nativeCompleteCalls=${expectedCompleteCalls} nativeTokens=6 negativeB=${negativeB} hostDisposed=true settingsFlushed=true drained={"pending":0,"descriptors":0} counters={"protected":0,"network":0,"child":0,"outside":0,"keyring":0} catalogPreserved=true authBytesPreserved=true publication=not-run`), "owner-specific default OAuth/fallback proof follows actual disposal and strict drain");
           assert.ok(r.stdout.split("\n").some((line) => line === `MODE_TRANSPORT {"provider":"openai","apiKey":"synthetic-${p.id}"}`));
           const nativeLines = r.stdout.split("\n").filter((line) => line.startsWith("MEMORY_NATIVE_TRANSPORT "));
-          assert.equal(nativeLines.filter((line) => line === `MEMORY_NATIVE_TRANSPORT {"provider":"openai-codex","model":"gpt-6-luna","apiKey":"synthetic-codex-${p.id}"}`).length, 5);
+          assert.equal(nativeLines.filter((line) => line === `MEMORY_NATIVE_TRANSPORT {"provider":"openai","model":"gpt-6-luna","apiKey":"synthetic-codex-${p.id}"}`).length, 5);
           const anthropicToken = p.id === "account-a" ? "synthetic-corporate-poison-account-a" : `synthetic-anthropic-${p.id}`;
           assert.equal(nativeLines.filter((line) => line === `MEMORY_NATIVE_TRANSPORT {"provider":"anthropic","model":"claude-sonnet-5","apiKey":"${anthropicToken}"}`).length, 1);
           assert.equal((r.stdout + r.stderr).includes(`synthetic-codex-${other.id}`), false, "default/fallback workers never borrow sibling Codex OAuth");

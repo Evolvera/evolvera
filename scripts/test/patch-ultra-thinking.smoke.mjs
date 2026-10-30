@@ -96,7 +96,7 @@ try {
   const schemas = await import(pathToFileURL(modelSchemaPath));
   assert.ok(schemas.ModelThinkingLevelSchema.enum.includes('ultra'), 'persisted model thinking setting schema omits ultra');
   assert.ok(schemas.ThinkingLevelMapSchema.properties.ultra, 'model configuration map schema omits ultra');
-  assert.match(read('node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.d.ts'), /"max" \| "ultra"/);
+  assert.match(read('node_modules/@earendil-works/pi-ai/dist/api/openai-responses.d.ts'), /"max" \| "ultra"/);
   assert.match(read('dist/modes/interactive/components/thinking-selector.js'), /ultra: "Ultra reasoning"/);
   assert.match(read('dist/modes/interactive/components/settings-selector.js'), /ultra: "Ultra reasoning"/);
   assert.match(read('dist/modes/interactive/theme/theme-tokens.js'), /thinkingUltraAlt.*fallback: "thinkingUltra"/);
