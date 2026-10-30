@@ -217,6 +217,13 @@
       ]
     },
 
+    "opengateway": {
+      "modelOverrides": {
+        "deepseek/deepseek-v4.1-flash-ultrafast": {
+          "reasoning": true
+        }
+      }
+    },
     "shrimp": {
       "baseUrl": "http://127.0.0.1:8002/v1",
       "api": "openai-completions",
