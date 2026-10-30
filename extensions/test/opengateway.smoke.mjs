@@ -99,6 +99,12 @@ try {
   assert.equal(refresh.errors.has("opengateway"), false);
   const ids = runtime.getModels("opengateway").map((model) => model.id).sort();
   assert.deepEqual(ids, ["maker/model-with-slash", "openai/o4-mini"]);
+  const catalogRequests = calls.filter((call) => call.url === "https://apis.opengateway.ai/v1/models");
+  assert.ok(catalogRequests.length > 0, "the catalog was requested");
+  for (const request of catalogRequests) {
+    assert.equal(new Headers(request.init.headers).get("authorization"), `Bearer ${credential}`,
+      "the catalog must be key-scoped so only callable models are advertised");
+  }
   const model = runtime.getModel("opengateway", "maker/model-with-slash");
   assert.ok(model, "catalog model is selectable through the native model runtime");
   assert.equal(model.reasoning, false, "unknown reasoning capability remains conservative");

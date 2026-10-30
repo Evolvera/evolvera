@@ -73,12 +73,17 @@ function cachedModels(stored: { models: readonly unknown[] } | undefined): Provi
     !!model && typeof model === "object" && (model as { provider?: unknown }).provider === PROVIDER && (model as { type?: unknown }).type === "chat");
 }
 
-async function fetchModels(signal: AbortSignal, hasCachedModels: boolean): Promise<ProviderModelConfig[]> {
+// An authenticated catalog is scoped to what the key may actually call. The public
+// catalog lists every model the gateway serves, so advertising it would offer models
+// that answer HTTP 401 model_access_denied at inference time.
+async function fetchModels(signal: AbortSignal, hasCachedModels: boolean, apiKey?: string): Promise<ProviderModelConfig[]> {
   const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const requestSignal = AbortSignal.any([signal, timeout]);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   let response: Response;
   try {
-    response = await fetch(CATALOG_URL, { signal: requestSignal, headers: { Accept: "application/json" } });
+    response = await fetch(CATALOG_URL, { signal: requestSignal, headers });
   } catch (error) {
     if (signal.aborted || hasCachedModels) throw error;
     return fallbackModels;
@@ -113,12 +118,14 @@ export default function (pi: ExtensionAPI): void {
     authHeader: true,
     models: seedModels,
     refreshModels: async (context) => {
+      const credential = context.credential;
+      const apiKey = credential?.type === "api_key" ? credential.key : undefined;
       const stored = cachedModels(context.stored);
       if (!context.allowNetwork || context.signal.aborted) {
         if (stored.length) updateSeedModels(stored);
         return stored.length ? stored : fallbackModels;
       }
-      const models = await fetchModels(context.signal, stored.length > 0);
+      const models = await fetchModels(context.signal, stored.length > 0, apiKey);
       await context.publish({
         persist: {
           models: models.map((model) => ({ ...model, provider: PROVIDER })),
