@@ -3515,7 +3515,9 @@ export function sideChatApply(chat, payload) {
 
 // ------------------------------------------------- model accounts
 
-const PROVIDER_LABELS = { anthropic: "Claude (Anthropic)", "openai-codex": "ChatGPT (OpenAI)", "github-copilot": "GitHub Copilot", openai: "OpenAI API", google: "Google Gemini", groq: "Groq", cerebras: "Cerebras", minimax: "MiniMax", xiaomi: "Xiaomi", antigravity: "Antigravity", openrouter: "OpenRouter" };
+const PROVIDER_LABELS = { anthropic: "Claude (Anthropic)", "openai-codex": "ChatGPT (OpenAI)", "github-copilot": "GitHub Copilot", openai: "OpenAI API", google: "Google Gemini", groq: "Groq", cerebras: "Cerebras", minimax: "MiniMax", xiaomi: "Xiaomi", antigravity: "Antigravity", openrouter: "OpenRouter", fallback: "Reserva automática" };
+// Virtual providers have no login of their own: each request is routed to the first model of its chain that has one.
+const VIRTUAL_PROVIDERS = new Set(["fallback"]);
 export const providerLabel = (provider) => PROVIDER_LABELS[provider] ?? provider;
 
 // What to do to connect a provider, by how it signs in.
@@ -3531,12 +3533,12 @@ export function modelMenuGroups(models, accounts = []) {
   const byProvider = new Map(accounts.map((account) => [account.provider, account]));
   const groups = new Map();
   for (const model of models) {
-    const account = byProvider.get(model.provider) ?? { provider: model.provider, status: "unknown" };
+    const account = VIRTUAL_PROVIDERS.has(model.provider) ? { provider: model.provider, status: "virtual" } : byProvider.get(model.provider) ?? { provider: model.provider, status: "unknown" };
     if (!groups.has(model.provider)) groups.set(model.provider, { provider: model.provider, label: providerLabel(model.provider), account, locked: account.status === "not_ready", models: [] });
     groups.get(model.provider).models.push(model);
   }
   const connected = [...groups.values()].sort((a, b) => Number(a.locked) - Number(b.locked));
-  const missing = accounts.filter((account) => account.status === "not_ready" && !groups.has(account.provider)).map((account) => ({ provider: account.provider, label: providerLabel(account.provider), hint: connectHint(account) }));
+  const missing = accounts.filter((account) => account.status === "not_ready" && !groups.has(account.provider) && !VIRTUAL_PROVIDERS.has(account.provider)).map((account) => ({ provider: account.provider, label: providerLabel(account.provider), hint: connectHint(account) }));
   return { connected, missing };
 }
 

@@ -210,6 +210,13 @@ describe("model accounts and sidebar", async () => {
     assert.equal(providerLabel("openai-codex"), "ChatGPT (OpenAI)");
   });
 
+  test("the fallback chains stay selectable: pi reports their provider not_ready, but each request uses a signed-in step", () => {
+    const { connected, missing } = modelMenuGroups([{ provider: "fallback", id: "opus" }], [{ provider: "fallback", status: "not_ready" }]);
+    assert.deepEqual(connected.map((group) => [group.label, group.locked]), [["Reserva automática", false]]);
+    assert.deepEqual(missing, []);
+    assert.deepEqual(modelMenuGroups([], [{ provider: "fallback", status: "not_ready" }]).missing, []);
+  });
+
   test("the sidebar's Claude Code list: Claude sessions only, newest first, archived out; hidden folders by the ignore file", async () => {
     const cwd = path.join(tmp, "loja");
     const sessions = [digest("a", cwd, { source: "claude", lastActivity: 1 }), digest("b", cwd, { source: "claude", lastActivity: 5 }), digest("pi", cwd, { lastActivity: 9 })];
