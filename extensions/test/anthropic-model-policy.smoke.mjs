@@ -384,12 +384,12 @@ for (const preservedPath of ["agents/builder-light.md", "agents/plan-briefer.md"
   assert.match(read(preservedPath), /^model: (?!.*claude-opus-5).*$/m);
 }
 
-assert.match(read("install.sh"), /PI_CODING_AGENT_VERSION=\"\$\{PI_CODING_AGENT_VERSION:-0\.83\.0\}\"/);
-assert.match(read("install.ps1"), /\$PI_CODING_AGENT_VERSION = \"0\.83\.0\"/);
+assert.match(read("install.sh"), /PI_CODING_AGENT_VERSION=\"\$\{PI_CODING_AGENT_VERSION:-1\.4\.0\}\"/);
+assert.match(read("install.ps1"), /\$PI_CODING_AGENT_VERSION = \"1\.4\.0\"/);
 assert.doesNotMatch(read("install.sh"), /0\.80\.10/);
 assert.doesNotMatch(read("install.ps1"), /0\.80\.10/);
 assert.doesNotMatch(read("install.ps1"), /pi-xai-oauth|PI_XAI_OAUTH_VERSION/i);
-assert.match(read("README.md"), /0\.83\.0/);
+assert.match(read("README.md"), /@earendil-works\/pi-coding-agent@1\.4\.0/);
 assert.doesNotMatch(read("README.md"), /0\.80\.10/);
 assert.match(read("README.md"), /fnm 22\.22\.3/);
 assert.match(read("README.md"), /450K/);
