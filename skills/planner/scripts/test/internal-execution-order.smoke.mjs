@@ -48,7 +48,7 @@ requireMatch("agents/builder-light.md", /^thinking: medium$/m, "builder-light mu
 requireMatch("agents/builder.md", /^model: fallback\/builder$/m, "builder must use the fallback chain");
 requireMatch("agents/builder.md", /^thinking: high$/m, "builder must remain high effort");
 requireMatch("agents/builder-heavy.md", /^model: fallback\/heavy$/m, "builder-heavy must use the fallback chain");
-requireMatch("agents/builder-heavy.md", /^thinking: medium$/m, "builder-heavy must use medium effort");
+requireMatch("agents/builder-heavy.md", /^thinking: xhigh$/m, "builder-heavy must use xhigh effort");
 
 for (const path of plannerFiles) {
   requireMatch(path, /Internal Execution Order/i, "missing ordered-task contract");
