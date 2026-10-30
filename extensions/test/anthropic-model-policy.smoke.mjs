@@ -391,8 +391,8 @@ assert.doesNotMatch(read("install.ps1"), /0\.80\.10/);
 assert.doesNotMatch(read("install.ps1"), /pi-xai-oauth|PI_XAI_OAUTH_VERSION/i);
 assert.match(read("README.md"), /@earendil-works\/pi-coding-agent@1\.4\.0/);
 assert.doesNotMatch(read("README.md"), /0\.80\.10/);
-assert.match(read("README.md"), /fnm 22\.22\.3/);
-assert.match(read("README.md"), /450K/);
+assert.match(read("docs/setup.md"), /fnm 22\.22\.3/);
+assert.match(read("docs/setup.md"), /450K/);
 
 const agentGuide = read("skills/agent-guide/SKILL.md");
 assert.match(agentGuide, /\| Design \| `builder-design` \| Normal design tier \(Claude Sonnet 5\.5 high\) \|/);
