@@ -70,18 +70,18 @@ try {
 
   // Previously saved role overrides must not silently disable Plastic Memory.
   // The configured input stays untouched; only the resolved runtime uses Luna 6.
-  const oldRoles = Object.fromEntries(nodeConfig.ROLE_NAMES.map((name) => [name, { model: "openai-codex/gpt-5.6-luna" }]));
+  const oldRoles = Object.fromEntries(nodeConfig.ROLE_NAMES.map((name) => [name, { model: "openai/gpt-5.6-luna" }]));
   const oldSettings = { "plastic-memory": { enabled: true, roles: oldRoles } };
   const upgraded = nodeConfig.resolvePlasticMemorySettings(oldSettings);
   assert.equal(upgraded.config.enabled, true);
   for (const role of nodeConfig.ROLE_NAMES) {
-    assert.equal(upgraded.config.roles[role].model, "openai-codex/gpt-6-luna");
-    assert.equal(oldRoles[role].model, "openai-codex/gpt-5.6-luna", "saved settings must not change");
+    assert.equal(upgraded.config.roles[role].model, "openai/gpt-6-luna");
+    assert.equal(oldRoles[role].model, "openai/gpt-5.6-luna", "saved settings must not change");
   }
   assert.equal(nodeConfig.loadConfig({ ...nodeConfig.defaultConfig(), enabled: true, roles: Object.fromEntries(
-    nodeConfig.ROLE_NAMES.map((name) => [name, { ...nodeConfig.DEFAULT_CONFIG.roles[name], model: "openai-codex/gpt-5.6-luna" }]),
-  ) }).roles.compactor.model, "openai-codex/gpt-6-luna");
-  assert.equal(nodeConfig.resolvePlasticMemorySettings({ "plastic-memory": { enabled: true, roles: { observer: { model: "openai-codex/unknown" } } } }).config.enabled, false);
+    nodeConfig.ROLE_NAMES.map((name) => [name, { ...nodeConfig.DEFAULT_CONFIG.roles[name], model: "openai/gpt-5.6-luna" }]),
+  ) }).roles.compactor.model, "openai/gpt-6-luna");
+  assert.equal(nodeConfig.resolvePlasticMemorySettings({ "plastic-memory": { enabled: true, roles: { observer: { model: "openai/unknown" } } } }).config.enabled, false);
 
   assert.equal(nodeConfig.resolvePlasticMemorySettings({ "plastic-memory": null }, projectSettings).config.enabled, false);
   assert.equal(nodeConfig.resolvePlasticMemorySettings({ "plastic-memory": { enabled: "yes" } }, projectSettings).config.enabled, false);
@@ -95,7 +95,7 @@ try {
   assert.deepEqual(Object.keys(nodeConfig.DEFAULT_CONFIG.roles), nodeConfig.ROLE_NAMES);
   for (const role of nodeConfig.ROLE_NAMES) {
     assert.deepEqual(nodeConfig.DEFAULT_CONFIG.roles[role], {
-      model: "openai-codex/gpt-6-luna",
+      model: "openai/gpt-6-luna",
       thinking: "medium",
       maxTurns: 8,
       maxToolCalls: 4,
@@ -154,7 +154,7 @@ try {
   const jitiRoot = await jiti.import(path.join(sandboxRoot, "index.ts"));
   const jitiCalls = [];
   jitiRoot.default(new Proxy({}, { get: () => (..._args) => jitiCalls.push(true) }));
-  assert.equal(jitiConfig.DEFAULT_CONFIG.roles.compactor.model, "openai-codex/gpt-6-luna");
+  assert.equal(jitiConfig.DEFAULT_CONFIG.roles.compactor.model, "openai/gpt-6-luna");
   assert.equal(jitiIds.parseLegacyMemoryId("abcdef012345"), "abcdef012345");
   assert.equal(jitiSafety.scrubSensitiveText("api_key=hidden").includes("hidden"), false);
   assert.deepEqual(jitiCalls, [], "Pi jiti inert root must register nothing");

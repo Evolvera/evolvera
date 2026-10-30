@@ -9,9 +9,9 @@ type FallbackChain = readonly Step[];
 
 // Current chain primaries share limits and input modalities in the configured physical registry.
 const PRIMARY_MODEL_METADATA: Record<string, { name: string; contextWindow: number; maxTokens: number; input: string[] }> = {
-  "gpt-6-luna": { name: "GPT-6 Luna", contextWindow: 300_000, maxTokens: 128_000, input: ["text", "image"] },
-  "gpt-6.1-terra": { name: "GPT-6.1 Terra", contextWindow: 300_000, maxTokens: 128_000, input: ["text", "image"] },
-  "gpt-6.1-sol": { name: "GPT-6.1 Sol", contextWindow: 300_000, maxTokens: 128_000, input: ["text", "image"] },
+  "gpt-6-luna": { name: "GPT-6 Luna", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
+  "gpt-6.1-terra": { name: "GPT-6.1 Terra", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
+  "gpt-6.1-sol": { name: "GPT-6.1 Sol", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
   "deepseek-v4.1-flash-fast": { name: "DeepSeek V4.1 Flash 1017", contextWindow: 1_048_576, maxTokens: 262_144, input: ["text", "image"] },
 };
 
@@ -24,31 +24,31 @@ export type RoutedModel = { provider: string; modelId: string };
 
 export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   builder: [
-    { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
+    { provider: "openai", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "anthropic", model: "claude-haiku-5-5", level: "inherit" },
   ],
   heavy: [
-    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
+    { provider: "openai", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "xhigh" },
     { provider: "anthropic", model: "claude-haiku-5-5", level: "xhigh" },
   ],
   sol: [
-    { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
     { provider: "anthropic", model: "claude-opus-5-5", level: "inherit" },
   ],
   terra: [
-    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
+    { provider: "openai", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "anthropic", model: "claude-sonnet-5-5", level: "inherit" },
   ],
   luna: [
-    { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
+    { provider: "openai", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   ],
   conductor: [
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-    { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
   ],
 };
 

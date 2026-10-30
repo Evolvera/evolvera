@@ -288,7 +288,7 @@ test("falls back to plain TUI notification when custom UI is unavailable", async
 test("quota cards render truthful used bars, UTC dates and separated branch sections", async () => {
   const report = { fetchedAt: "2026-10-13T18:57:29.231Z", providers: [
     { provider: "anthropic", windows: [0, 10, 75, 94, 100, 20.125].map((usedPercent) => ({ durationSeconds: 18000, usedPercent, resetAt: "2026-10-14T04:00:00.000Z" })) },
-    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58.000Z" }] },
+    { provider: "openai", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58.000Z" }] },
   ] };
   const before = structuredClone(report);
   const harness = makeHarness();
@@ -336,7 +336,7 @@ test("unavailable, absent and invalid quota windows never acquire invented zero 
 test("headless quota formatting retains measured values without terminal decoration", async () => {
   const harness = makeHarness({ mode: "rpc", hasUI: false });
   registerSessionUsage(harness.pi, { accountId: "evolvera", quotaReader: async () => ({ fetchedAt: "2026-10-13T18:57:00Z", providers: [
-    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58Z" }] },
+    { provider: "openai", windows: [{ durationSeconds: 604800, usedPercent: 18, resetAt: "2026-10-20T05:04:58Z" }] },
   ] }) });
   await harness.pi.registered.handler("", harness.ctx);
   const text = harness.sent[0].message.content;
@@ -356,7 +356,7 @@ test("does not replace a command named usage", () => {
 
 test("provider cards share columns on wide terminals, stack narrowly and banked counts are explicit", async () => {
   const report = { fetchedAt: "2026-10-13T18:57:00Z", providers: [
-    { provider: "openai-codex", windows: [{ durationSeconds: 604800, usedPercent: 22, resetAt: "2026-10-20T05:04:58Z" }], bankedResets: 3 },
+    { provider: "openai", windows: [{ durationSeconds: 604800, usedPercent: 22, resetAt: "2026-10-20T05:04:58Z" }], bankedResets: 3 },
     { provider: "anthropic", windows: [{ durationSeconds: 18000, usedPercent: 15, resetAt: "2026-10-13T20:10:00Z" }] },
   ] };
   const h = makeHarness();

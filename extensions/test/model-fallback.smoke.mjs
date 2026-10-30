@@ -31,15 +31,15 @@ assert.deepEqual(decideFallbackRoute(FALLBACK_CHAINS.builder, { reason: "user", 
 assert.deepEqual(decideFallbackRoute(FALLBACK_CHAINS.builder, { reason: "user", thinkingLevel: "high", state: { step: 1, runId: "u1" } }, "fresh"), { step: 1, runId: "u1" }, "user requests stay on the advanced step");
 assert.deepEqual(decideFallbackRoute(FALLBACK_CHAINS.builder, {
   reason: "retry", thinkingLevel: "high", state,
-  failed: { model: { provider: "openai-codex", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "provider overloaded" } },
+  failed: { model: { provider: "openai", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "provider overloaded" } },
 }, "u1"), { step: 1, runId: "u1" });
 assert.deepEqual(decideFallbackRoute(FALLBACK_CHAINS.builder, {
   reason: "retry", thinkingLevel: "high", state,
-  failed: { model: { provider: "openai-codex", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "Monthly usage limit reached" } },
+  failed: { model: { provider: "openai", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "Monthly usage limit reached" } },
 }, "u1"), { step: 1, runId: "u1" });
 assert.deepEqual(decideFallbackRoute(FALLBACK_CHAINS.builder, {
   reason: "retry", thinkingLevel: "high", state,
-  failed: { model: { provider: "openai-codex", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "context window overflow" } },
+  failed: { model: { provider: "openai", id: "gpt-6-luna" }, message: { stopReason: "error", errorMessage: "context window overflow" } },
 }, "u1"), state, "context overflow does not advance during retry");
 
 const models = new Map();
@@ -68,7 +68,7 @@ const pi = {
 register(pi);
 assert.equal(virtualModels.size, 6, "all six virtual chains register");
 const selectModel = handlers.get("model_select");
-selectModel({ model: { provider: "openai-codex", id: "gpt-6.1-sol" } });
+selectModel({ model: { provider: "openai", id: "gpt-6.1-sol" } });
 assert.equal(appended.length, 0, "selecting another model does not reset fallback state");
 selectModel({ model: { provider: "fallback", id: "conductor" } });
 assert.equal(appended.length, 1, "selecting a virtual model persists a reset");
@@ -89,13 +89,13 @@ assert.deepEqual(FALLBACK_CHAINS.builder.map(({ model, level }) => ({ model, lev
 for (const [id, name] of [["builder", "GPT-6 Luna"], ["heavy", "GPT-6.1 Terra"], ["sol", "GPT-6.1 Sol"], ["terra", "GPT-6.1 Terra"], ["luna", "GPT-6 Luna"]]) {
   const metadata = virtualModels.get(`fallback/${id}`);
   assert.equal(metadata.name, name, `${id} exposes its step-0 physical model name`);
-  assert.equal(metadata.contextWindow, 300_000);
+  assert.equal(metadata.contextWindow, 272_000);
   assert.equal(metadata.maxTokens, 128_000);
   assert.deepEqual(metadata.input, ["text", "image"]);
 }
 assert.deepEqual(FALLBACK_CHAINS.conductor.map(({ provider, model, level }) => ({ provider, model, level })), [
   { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-  { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
+  { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
 ]);
 assert.equal(FALLBACK_CHAINS.conductor[1].level, "inherit", "the Codex fallback mirrors the requested effort");
 const conductor = virtualModels.get("fallback/conductor");
@@ -113,12 +113,12 @@ assert.equal(firstRoute.model.id, "gpt-6-luna");
 assert.equal(firstRoute.thinkingLevel, "high");
 assert.deepEqual(published.at(-1), {
   channel: "model-fallback:routed",
-  data: { provider: "openai-codex", modelId: "gpt-6-luna" },
+  data: { provider: "openai", modelId: "gpt-6-luna" },
 }, "the routed physical model is published for tier gating");
 assert.deepEqual(Object.keys(published.at(-1).data).sort(), ["modelId", "provider"], "only provider and model id travel");
 const fallbackRoute = builder.route({ ...baseRequest, reason: "continuation", state: firstRoute.state }, { modelRegistry: registry });
 assert.equal(fallbackRoute.model.id, "gpt-6-luna", "continuation stays on the cache-owning primary");
-const solFallback = virtualModels.get("fallback/sol").route({ ...baseRequest, model: { provider: "fallback", id: "sol" }, reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "openai-codex", id: "gpt-6.1-sol" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
+const solFallback = virtualModels.get("fallback/sol").route({ ...baseRequest, model: { provider: "fallback", id: "sol" }, reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "openai", id: "gpt-6.1-sol" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
 assert.equal(solFallback.model.id, "claude-opus-5-5");
 assert.equal(solFallback.thinkingLevel, "high", "SDK clamp preserves supported adaptive high effort");
 assert.deepEqual(published.at(-1).data, { provider: "anthropic", modelId: "claude-opus-5-5" }, "the advanced step publishes its own physical model");
@@ -130,7 +130,7 @@ assert.equal(published.every(({ channel }) => channel === "model-fallback:routed
 for (const chainId of ["luna"]) {
   const chain = FALLBACK_CHAINS[chainId];
   assert.deepEqual(chain.map(({ provider, model, level }) => ({ provider, model, level })), [
-    { provider: "openai-codex", model: "gpt-6-luna", level: "inherit" },
+    { provider: "openai", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   ]);
   assert.equal(nextFallbackStep(chain, 0), 1);
@@ -154,7 +154,7 @@ const activeStateEntry = { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY
 const quotaBranch = [
   { type: "message", id: "u1", message: { role: "user", content: "work" } },
   activeStateEntry,
-  { type: "message", id: "a1", message: { role: "assistant", provider: "openai-codex", model: "gpt-6-luna", stopReason: "error", errorMessage: "insufficient_quota" } },
+  { type: "message", id: "a1", message: { role: "assistant", provider: "openai", model: "gpt-6-luna", stopReason: "error", errorMessage: "insufficient_quota" } },
 ];
 const settleResult = settle({ outcome: "error", context: {} }, {
   model: activeModel,
@@ -197,7 +197,7 @@ const repeated = settle({ outcome: "error", context: {} }, {
 assert.equal(repeated, undefined, "same chain step cannot advance twice in one run");
 assert.equal(settle({ outcome: "aborted", context: {} }, { model: activeModel, sessionManager: { getBranch: () => quotaBranch } }), undefined);
 for (const errorMessage of ["prompt context overflow", "tool execution failed"]) {
-  const branch = [...quotaBranch.slice(0, -1), { type: "message", message: { role: "assistant", provider: "openai-codex", model: "gpt-6-luna", stopReason: "error", errorMessage } }];
+  const branch = [...quotaBranch.slice(0, -1), { type: "message", message: { role: "assistant", provider: "openai", model: "gpt-6-luna", stopReason: "error", errorMessage } }];
   assert.equal(settle({ outcome: "error", context: {} }, { model: activeModel, sessionManager: { getBranch: () => branch } }), undefined);
 }
 const exhaustedBranch = [
@@ -206,6 +206,6 @@ const exhaustedBranch = [
   { type: "message", message: { role: "assistant", provider: "anthropic", model: "claude-haiku-5-5", stopReason: "error", errorMessage: "insufficient_quota" } },
 ];
 assert.equal(settle({ outcome: "error", context: {} }, { model: activeModel, sessionManager: { getBranch: () => exhaustedBranch } }), undefined, "exhausted chain ends without looping");
-assert.equal(settle({ outcome: "error", context: {} }, { model: { provider: "openai-codex", id: "gpt-6-luna" }, sessionManager: { getBranch: () => quotaBranch } }), undefined);
+assert.equal(settle({ outcome: "error", context: {} }, { model: { provider: "openai", id: "gpt-6-luna" }, sessionManager: { getBranch: () => quotaBranch } }), undefined);
 
 console.log("model-fallback smoke: PASS");

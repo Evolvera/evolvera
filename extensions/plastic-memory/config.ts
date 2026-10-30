@@ -1,13 +1,13 @@
 export const ROLE_NAMES = ["observer", "reflector", "compactor", "project-promoter"] as const;
-const CURRENT_ROLE_MODEL = "openai-codex/gpt-6-luna" as const;
-const PREVIOUS_ROLE_MODEL = "openai-codex/gpt-5.6-luna" as const;
+const CURRENT_ROLE_MODEL = "openai/gpt-6-luna" as const;
+const PREVIOUS_ROLE_MODEL = "openai/gpt-5.6-luna" as const;
 function supportedRoleModel(value: unknown): boolean {
   return value === CURRENT_ROLE_MODEL || value === PREVIOUS_ROLE_MODEL;
 }
 export type PlasticMemoryRole = (typeof ROLE_NAMES)[number];
 
 export type RoleConfig = {
-  model: "openai-codex/gpt-6-luna";
+  model: "openai/gpt-6-luna";
   thinking: "medium";
   maxTurns: 8;
   maxToolCalls: 4;
@@ -27,7 +27,7 @@ export type PlasticMemoryConfig = {
 
 function role(): RoleConfig {
   return {
-    model: "openai-codex/gpt-6-luna",
+    model: "openai/gpt-6-luna",
     thinking: "medium",
     maxTurns: 8,
     maxToolCalls: 4,

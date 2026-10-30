@@ -52,7 +52,7 @@ try {
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: owned("synthetic-auth.json"), modelsPath: null });
   const providerConfig = { api: core.api, streamSimple, apiKey: "synthetic-only", baseUrl: "http://127.0.0.1:9", models: core.models.map((model) => ({ ...model })) };
   modelRuntime.registerProvider(core.provider, providerConfig);
-  modelRuntime.registerProvider("openai-codex", providerConfig);
+  modelRuntime.registerProvider("openai", providerConfig);
   modelRuntime.registerProvider("anthropic", providerConfig);
   fs.writeFileSync(owned("synthetic-auth.json"), JSON.stringify({ synthetic: true }));
   fs.writeFileSync(owned("synthetic-models.json"), JSON.stringify({ synthetic: true }));
@@ -85,7 +85,7 @@ try {
     result.session.extensionRunner.setUIContext(ui, "tui");
     return result.session;
   };
-  const gpt = { ...core.models[0], provider: "openai-codex", id: "gpt-6.1-test" };
+  const gpt = { ...core.models[0], provider: "openai", id: "gpt-6.1-test" };
   const session = await makeSession(gpt);
   const runner = session.extensionRunner;
   const command = (name, args) => session.extensionRunner.getCommand(name).handler(args, session.extensionRunner.createCommandContext());
@@ -115,7 +115,7 @@ try {
   await command("context-mode", "default");
 
   // Session branch starts standard; worker-like independent session does not inherit conductor.
-  const independent = await makeSession({ ...core.models[0], provider: "openai-codex", id: "gpt-6.1-test" });
+  const independent = await makeSession({ ...core.models[0], provider: "openai", id: "gpt-6.1-test" });
   await independent.extensionRunner.emit({ type: "session_start" });
   assert.equal(independent.agent.state.model.contextWindow, 300_000);
   assert.equal(independent.extensionRunner.createContext().sessionManager.getBranch().some((entry) => entry.customType === "orchestration-mode" && entry.data?.mode === "conductor"), false);

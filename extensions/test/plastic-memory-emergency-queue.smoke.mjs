@@ -32,7 +32,7 @@ const appended = [];
 const calls = [];
 let firstSignal;
 let observerCalls = 0;
-const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const runtime = {
   modelRegistry: {
     find(provider, id) { assert.equal(provider, model.provider); assert.equal(id, model.id); return model; },

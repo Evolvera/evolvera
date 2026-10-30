@@ -13,9 +13,9 @@ const oauth = (fields = {}) => ({ type: "oauth", access: "synthetic-access", ref
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body) });
 const claude = { five_hour: { utilization: 61, resets_at: "2026-10-09T15:00:00.000Z" }, seven_day: { utilization: 25, resets_at: "2026-10-12T00:00:00.000Z" } };
 const codex = { rate_limit: { primary_window: { used_percent: 37.5, limit_window_seconds: 14_400, reset_at: now / 1000 + 3600 }, secondary_window: { used_percent: 12, limit_window_seconds: 864_000, reset_after_seconds: 7200 } } };
-const expectedUrl = { anthropic: "https://api.anthropic.com/api/oauth/usage", "openai-codex": "https://chatgpt.com/backend-api/wham/usage" };
+const expectedUrl = { anthropic: "https://api.anthropic.com/api/oauth/usage", "openai": "https://chatgpt.com/backend-api/wham/usage" };
 
-function mockFetch(calls, replies = { anthropic: claude, "openai-codex": codex }) {
+function mockFetch(calls, replies = { anthropic: claude, "openai": codex }) {
   return async (url, options) => {
     const provider = Object.keys(expectedUrl).find((key) => expectedUrl[key] === url);
     assert.ok(provider, `fixed provider endpoint only: ${url}`);
@@ -31,23 +31,23 @@ test("collector validates OAuth quota DTOs, UTC reset units, and bounded fixed r
   const calls = [];
   const reads = [];
   const readProviderQuotas = createProviderQuotaCollector({
-    readCredential: async (id) => { reads.push(id); return oauth({ accountId: id === "openai-codex" ? "synthetic-account" : undefined }); },
+    readCredential: async (id) => { reads.push(id); return oauth({ accountId: id === "openai" ? "synthetic-account" : undefined }); },
     fetchImpl: mockFetch(calls), now: () => now,
   });
   const report = await readProviderQuotas();
-  assert.deepEqual(reads.sort(), ["anthropic", "openai-codex"]);
+  assert.deepEqual(reads.sort(), ["anthropic", "openai"]);
   assert.equal(calls.length, 2);
   const claudeReport = report.providers.find((item) => item.provider === "anthropic");
   assert.deepEqual(claudeReport.windows.map((item) => [item.durationSeconds, item.usedPercent, item.resetAt]), [
     [18_000, 61, "2026-10-09T15:00:00.000Z"], [604_800, 25, "2026-10-12T00:00:00.000Z"],
   ]);
-  const codexReport = report.providers.find((item) => item.provider === "openai-codex");
+  const codexReport = report.providers.find((item) => item.provider === "openai");
   assert.deepEqual(codexReport.windows.map((item) => [item.durationSeconds, item.usedPercent, item.resetAt]), [
     [14_400, 37.5, "2026-10-09T13:00:00.000Z"], [864_000, 12, "2026-10-09T14:00:00.000Z"],
   ]);
   assert.equal(report.fetchedAt, "2026-10-09T12:00:00.000Z");
   assert.equal(claudeReport.fetchedAt, "2026-10-09T12:00:00.000Z");
-  assert.equal(calls.find((call) => call.provider === "openai-codex").options.headers["ChatGPT-Account-Id"], "synthetic-account");
+  assert.equal(calls.find((call) => call.provider === "openai").options.headers["ChatGPT-Account-Id"], "synthetic-account");
   assert.equal(calls.find((call) => call.provider === "anthropic").options.headers["anthropic-beta"], "oauth-2025-04-20");
   assert.doesNotMatch(JSON.stringify(report), /synthetic-access|synthetic-refresh|synthetic-account/);
 });
@@ -65,11 +65,11 @@ test("Codex available reset count is optional, validated independently, and cach
     const calls = [];
     const payload = { ...codex, ...extra };
     const reader = createProviderQuotaCollector({
-      readCredential: async (provider) => oauth({ accountId: provider === "openai-codex" ? "synthetic-account" : undefined }),
-      fetchImpl: async (url, options) => { calls.push(url); return response(url === expectedUrl["openai-codex"] ? payload : { ...claude, ...extra }); }, now: () => now,
+      readCredential: async (provider) => oauth({ accountId: provider === "openai" ? "synthetic-account" : undefined }),
+      fetchImpl: async (url, options) => { calls.push(url); return response(url === expectedUrl["openai"] ? payload : { ...claude, ...extra }); }, now: () => now,
     });
     const report = await reader();
-    const codexResult = report.providers.find((item) => item.provider === "openai-codex");
+    const codexResult = report.providers.find((item) => item.provider === "openai");
     const claudeResult = report.providers.find((item) => item.provider === "anthropic");
     assert.equal(codexResult.bankedResets, expected, `${label} Codex count`);
     assert.equal(Object.hasOwn(codexResult, "bankedResets"), expected !== undefined, `${label} optional field presence`);
@@ -84,15 +84,15 @@ test("Codex available reset count is optional, validated independently, and cach
   let codexPayload = { ...codex, rate_limit_reset_credits: { available_count: 3, credits: [{ id: "detail-a" }] } };
   const calls = [];
   const reader = createProviderQuotaCollector({
-    readCredential: async (provider) => oauth({ access, accountId: provider === "openai-codex" ? "synthetic-account" : undefined, expires: time + 60_000 }),
-    fetchImpl: async (url) => { calls.push(url); return response(url === expectedUrl["openai-codex"] ? codexPayload : claude); }, now: () => time,
+    readCredential: async (provider) => oauth({ access, accountId: provider === "openai" ? "synthetic-account" : undefined, expires: time + 60_000 }),
+    fetchImpl: async (url) => { calls.push(url); return response(url === expectedUrl["openai"] ? codexPayload : claude); }, now: () => time,
   });
   const first = await reader();
-  const firstCodex = first.providers.find((item) => item.provider === "openai-codex");
+  const firstCodex = first.providers.find((item) => item.provider === "openai");
   firstCodex.bankedResets = 99;
   firstCodex.windows[0].usedPercent = 99;
   const cached = await reader();
-  const cachedCodex = cached.providers.find((item) => item.provider === "openai-codex");
+  const cachedCodex = cached.providers.find((item) => item.provider === "openai");
   assert.equal(cachedCodex.bankedResets, 3);
   assert.equal(cachedCodex.windows[0].usedPercent, 37.5, "cache hits are clone-isolated");
   assert.equal(calls.length, 2);
@@ -101,13 +101,13 @@ test("Codex available reset count is optional, validated independently, and cach
   codexPayload = { ...codex, rate_limit_reset_credits: { available_count: 0 } };
   time += 1_000;
   const rotated = await reader();
-  assert.equal(rotated.providers.find((item) => item.provider === "openai-codex").bankedResets, 0, "credential fingerprint change fetches new counter");
+  assert.equal(rotated.providers.find((item) => item.provider === "openai").bankedResets, 0, "credential fingerprint change fetches new counter");
   assert.equal(calls.length, 4);
 
   codexPayload = { ...codex };
   time += 5 * 60 * 1000 + 1;
   const refreshed = await reader();
-  const refreshedCodex = refreshed.providers.find((item) => item.provider === "openai-codex");
+  const refreshedCodex = refreshed.providers.find((item) => item.provider === "openai");
   assert.equal(Object.hasOwn(refreshedCodex, "bankedResets"), false, "refresh without a counter removes the previous optional value");
   assert.equal(calls.length, 6);
 });
@@ -122,7 +122,7 @@ test("invalid, expired, unsupported, malformed and failed credentials never beco
   }
   for (const utilization of [NaN, Infinity, -1, 101, undefined]) {
     const calls = [];
-    const reader = createProviderQuotaCollector({ readCredential: async () => oauth(), fetchImpl: mockFetch(calls, { anthropic: { ...claude, five_hour: { utilization, resets_at: claude.five_hour.resets_at } }, "openai-codex": codex }), now: () => now });
+    const reader = createProviderQuotaCollector({ readCredential: async () => oauth(), fetchImpl: mockFetch(calls, { anthropic: { ...claude, five_hour: { utilization, resets_at: claude.five_hour.resets_at } }, "openai": codex }), now: () => now });
     const result = await reader();
     assert.equal(result.providers.find((item) => item.provider === "anthropic").unavailable, "invalid quota window");
     assert.equal(result.providers.find((item) => item.provider === "anthropic").windows.length, 0);
@@ -139,7 +139,7 @@ test("optional Claude and Codex windows are omitted, while malformed present win
   const partialCodex = { rate_limit: { primary_window: codex.rate_limit.primary_window, secondary_window: null } };
   const calls = [];
   const reader = createProviderQuotaCollector({
-    readCredential: async (provider) => oauth({ accountId: provider === "openai-codex" ? "synthetic-account" : undefined }),
+    readCredential: async (provider) => oauth({ accountId: provider === "openai" ? "synthetic-account" : undefined }),
     fetchImpl: async (url, options) => {
       calls.push(url);
       return response(url === expectedUrl.anthropic ? partialClaude : partialCodex);
@@ -147,8 +147,8 @@ test("optional Claude and Codex windows are omitted, while malformed present win
   });
   const report = await reader();
   assert.equal(report.providers.find((item) => item.provider === "anthropic").windows.length, 1);
-  assert.equal(report.providers.find((item) => item.provider === "openai-codex").windows.length, 1);
-  assert.equal(report.providers.find((item) => item.provider === "openai-codex").windows[0].durationSeconds, 14_400);
+  assert.equal(report.providers.find((item) => item.provider === "openai").windows.length, 1);
+  assert.equal(report.providers.find((item) => item.provider === "openai").windows[0].durationSeconds, 14_400);
   assert.equal(calls.length, 2);
 
   for (const payload of [
@@ -167,7 +167,7 @@ test("successful results cache only inside one collector and failures are not ca
   let reads = 0;
   let calls = 0;
   const readCredential = async () => { reads++; return oauth({ accountId: "synthetic-account", expires: time + 60_000 }); };
-  const fetchImpl = async (url, options) => { calls++; return mockFetch([], { anthropic: claude, "openai-codex": codex })(url, options); };
+  const fetchImpl = async (url, options) => { calls++; return mockFetch([], { anthropic: claude, "openai": codex })(url, options); };
   const reader = createProviderQuotaCollector({ readCredential, fetchImpl, now: () => time });
   await reader();
   await reader();
@@ -236,7 +236,7 @@ test("Claude-only managed /usage reuses its credential-bound quota across invoca
   const calls = [];
   const fixture = runtimeFixture({
     credentials: (_account, provider) => provider === "anthropic" ? oauth() : undefined,
-    fetchImpl: async (url, options) => { calls.push(url); return mockFetch([], { anthropic: claude, "openai-codex": codex })(url, options); },
+    fetchImpl: async (url, options) => { calls.push(url); return mockFetch([], { anthropic: claude, "openai": codex })(url, options); },
   });
   const manager = new FakeSessionManager([binding("alpha")]);
   const { pi, usageHandler } = await loadedUsage(fixture, manager, path.join(fixture.root, "profiles", "alpha", "agent"));
@@ -246,7 +246,7 @@ test("Claude-only managed /usage reuses its credential-bound quota across invoca
   await usageHandler("", ctx);
   assert.equal(calls.length, 1, "missing Codex OAuth does not disable Claude's successful cache");
   assert.match(pi.message.content, /anthropic OAuth quota/);
-  assert.match(pi.message.content, /openai-codex: unavailable/);
+  assert.match(pi.message.content, /openai: unavailable/);
   assert.doesNotMatch(pi.message.content, /Cotas dos provedores: não consultadas/);
   assert.match(first, /Fetched 2026-10-09T12:00:00.000Z/);
 });
@@ -282,7 +282,7 @@ test("managed /usage binds selected account, blocks manager mismatch, and render
 
 test("managed metadata is inert; account-bound collectors do not share cache", async () => {
   let networkCalls = 0;
-  const fixture = runtimeFixture({ accounts: ["alpha", "beta"], credentials: () => oauth({ accountId: "synthetic-account" }), fetchImpl: async (...args) => { networkCalls++; return mockFetch([], { anthropic: claude, "openai-codex": codex })(...args); } });
+  const fixture = runtimeFixture({ accounts: ["alpha", "beta"], credentials: () => oauth({ accountId: "synthetic-account" }), fetchImpl: async (...args) => { networkCalls++; return mockFetch([], { anthropic: claude, "openai": codex })(...args); } });
   await fixture.factory({ purpose: "metadata", sdkRoot: path.join(fixture.root, "synthetic-sdk"), agentDir: fixture.root });
   assert.equal(networkCalls, 0);
   const managerA = new FakeSessionManager([binding("alpha")]);
@@ -291,7 +291,7 @@ test("managed metadata is inert; account-bound collectors do not share cache", a
   const betaFactory = createUserRuntime(path.join(fixture.root, "registry", "users.json"), {
     sdkRoot: path.join(fixture.root, "synthetic-sdk"), inheritedAccountId: "beta",
     createStore: (account) => ({ read: async (providerId) => oauth({ accountId: `${account.id}-${providerId}` }) }),
-    createModelRuntime: async () => ({}), providerQuotaFetch: async (...args) => { networkCalls++; return mockFetch([], { anthropic: claude, "openai-codex": codex })(...args); }, providerQuotaNow: () => now,
+    createModelRuntime: async () => ({}), providerQuotaFetch: async (...args) => { networkCalls++; return mockFetch([], { anthropic: claude, "openai": codex })(...args); }, providerQuotaNow: () => now,
   });
   const betaFixture = { ...fixture, factory: betaFactory };
   const beta = await loadedUsage(betaFixture, managerB, path.join(fixture.root, "profiles", "beta", "agent"));
@@ -307,18 +307,18 @@ test("one provider 429 does not evict the other provider cache or refresh its ti
   let time = now;
   const calls = [];
   const reader = createProviderQuotaCollector({
-    readCredential: async (provider) => oauth({ accountId: provider === "openai-codex" ? "synthetic-account" : undefined, expires: time + 60_000 }),
+    readCredential: async (provider) => oauth({ accountId: provider === "openai" ? "synthetic-account" : undefined, expires: time + 60_000 }),
     fetchImpl: async (url) => {
       calls.push(url);
       return url === expectedUrl.anthropic ? response(claude) : response({ secret: "not-for-output" }, 429);
     }, now: () => time,
   });
   const first = await reader();
-  assert.equal(first.providers.find((item) => item.provider === "openai-codex").unavailable, "provider request unavailable");
+  assert.equal(first.providers.find((item) => item.provider === "openai").unavailable, "provider request unavailable");
   time += 30_000;
   const second = await reader();
   assert.equal(calls.filter((url) => url === expectedUrl.anthropic).length, 1);
-  assert.equal(calls.filter((url) => url === expectedUrl["openai-codex"]).length, 2);
+  assert.equal(calls.filter((url) => url === expectedUrl["openai"]).length, 2);
   assert.equal(second.providers.find((item) => item.provider === "anthropic").fetchedAt, first.providers.find((item) => item.provider === "anthropic").fetchedAt);
   assert.equal(second.fetchedAt, "2026-10-09T12:00:00.000Z", "mixed report time is the oldest successful snapshot");
   assert.doesNotMatch(JSON.stringify(second), /not-for-output/);
@@ -340,7 +340,7 @@ test("changed token still invalidates its own cache while another provider is mi
   time += 1_000;
   const rotated = await reader();
   assert.equal(calls.length, 2);
-  assert.equal(rotated.providers.find((item) => item.provider === "openai-codex").unavailable, "OAuth credential unavailable or expired");
+  assert.equal(rotated.providers.find((item) => item.provider === "openai").unavailable, "OAuth credential unavailable or expired");
   assert.equal(rotated.fetchedAt, "2026-10-09T12:00:01.000Z");
 });
 
@@ -349,7 +349,7 @@ test("expired provider invalidates only its own cache", async () => {
   let expireCodex = false;
   const calls = [];
   const reader = createProviderQuotaCollector({
-    readCredential: async (provider) => oauth({ accountId: provider === "openai-codex" ? "synthetic-account" : undefined, expires: provider === "openai-codex" && expireCodex ? time : time + 60_000 }),
+    readCredential: async (provider) => oauth({ accountId: provider === "openai" ? "synthetic-account" : undefined, expires: provider === "openai" && expireCodex ? time : time + 60_000 }),
     fetchImpl: async (url) => { calls.push(url); return response(url === expectedUrl.anthropic ? claude : codex); }, now: () => time,
   });
   await reader();
@@ -358,11 +358,11 @@ test("expired provider invalidates only its own cache", async () => {
   time += 1_000;
   const expired = await reader();
   assert.equal(calls.length, 2, "Claude cache survives Codex expiry");
-  assert.match(expired.providers.find((item) => item.provider === "openai-codex").unavailable, /expired/);
+  assert.match(expired.providers.find((item) => item.provider === "openai").unavailable, /expired/);
   expireCodex = false;
   const recovered = await reader();
   assert.equal(calls.filter((url) => url === expectedUrl.anthropic).length, 1);
-  assert.equal(calls.filter((url) => url === expectedUrl["openai-codex"]).length, 2, "expired Codex cache was cleared and retried");
+  assert.equal(calls.filter((url) => url === expectedUrl["openai"]).length, 2, "expired Codex cache was cleared and retried");
   assert.equal(calls.length, 3);
   assert.ok(recovered.providers.every((item) => !item.unavailable));
 });
@@ -373,7 +373,7 @@ test("same-runtime credential changes and missing/expired auth never reuse old q
   const sent = [];
   const fixture = runtimeFixture({
     credentials: () => credentialState === "missing" ? undefined : oauth({ access, accountId: "synthetic-account", expires: credentialState === "expired" ? now : now + 60_000 }),
-    fetchImpl: async (url, options) => { sent.push(options.headers.authorization); return mockFetch([], { anthropic: claude, "openai-codex": codex })(url, options); },
+    fetchImpl: async (url, options) => { sent.push(options.headers.authorization); return mockFetch([], { anthropic: claude, "openai": codex })(url, options); },
   });
   const manager = new FakeSessionManager([binding("alpha")]);
   const { pi, usageHandler } = await loadedUsage(fixture, manager, path.join(fixture.root, "profiles", "alpha", "agent"));

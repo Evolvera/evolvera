@@ -48,11 +48,11 @@ const selection = emergency.selectEmergencyWindow({
 assert.ok(selection);
 assert.equal(selection.firstKeptEntryId, open.id);
 
-const luna = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const luna = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const sonnet = { provider: "anthropic", id: "claude-sonnet-5", contextWindow: 200_000, maxTokens: 16_000 };
 const visible = { provider: "google", id: "visible-emergency-model", contextWindow: 200_000, maxTokens: 16_000 };
 const models = new Map([
-  ["openai-codex/gpt-6-luna", luna],
+  ["openai/gpt-6-luna", luna],
   ["anthropic/claude-sonnet-5", sonnet],
   ["google/visible-emergency-model", visible],
 ]);
@@ -113,8 +113,8 @@ assert.equal(traces.filter((trace) => trace.role === "reflector").length, 2);
 assert.equal(traces.filter((trace) => trace.role === "compactor").length, 2);
 for (const role of ["observer", "reflector", "compactor"]) {
   const roleTraces = traces.filter((trace) => trace.role === role);
-  assert.equal(roleTraces[0].model, "openai-codex/gpt-6-luna");
-  assert.equal(roleTraces[1].model, "openai-codex/gpt-6-luna");
+  assert.equal(roleTraces[0].model, "openai/gpt-6-luna");
+  assert.equal(roleTraces[1].model, "openai/gpt-6-luna");
   assert.equal(roleTraces[0].prompt, roleTraces[1].prompt, `${role} retries use immutable prompt bytes`);
 }
 assert.deepEqual(entries.map((entry) => entry.id), ["e1", "e2", "e3"], "pipeline does not mutate the host branch");

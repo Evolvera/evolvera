@@ -13,7 +13,7 @@ const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 
 const projectId = "pm:p:" + "a".repeat(32);
 const projectSnapshot = { summary: "bounded project summary", activeIndex: "bounded active index" };
-const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const candidate = {
   category: "decisions", title: "Keep promotion provenance fresh", target: "docs/promotion-provenance.md", body: "The candidate is a delayed, evidence-backed proposal only.", confidence: "known",
   evidence: [{ id: "promotion-lifecycle", path: "extensions/test/plastic-memory-promotion-lifecycle.smoke.mjs", claim: "The fake runtime proves the detached acknowledgement lifecycle." }],
@@ -73,8 +73,8 @@ function world() {
   const state = { branch: [...entries] };
   const runtime = {
     modelRegistry: {
-      find(provider, id) { assert.equal(provider, "openai-codex"); assert.equal(id, "gpt-6-luna"); return model; },
-      async getProviderAuth(provider) { assert.equal(provider, "openai-codex"); return { apiKey: "fake-only" }; },
+      find(provider, id) { assert.equal(provider, "openai"); assert.equal(id, "gpt-6-luna"); return model; },
+      async getProviderAuth(provider) { assert.equal(provider, "openai"); return { apiKey: "fake-only" }; },
     },
     async agentLoop(prompts, context, config, signal) {
       assert.equal(context.role, "project-promoter", "only the promoter runs in this lifecycle smoke");

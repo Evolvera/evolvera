@@ -14,7 +14,7 @@ const schedulerModule = await jiti.import(path.join(root, "plastic-memory/worker
 const coordinatorModule = await jiti.import(path.join(root, "plastic-memory/runtime/coordinator.ts"));
 
 const projectSnapshot = { summary: "bounded project summary", activeIndex: JSON.stringify({ kind: "active-chunk-index", chunks: [] }) };
-const model = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const model = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 
 /** Offline stub runtime: no network, counts every model invocation per role and keeps the emitted prompts. */
 function stubRuntime(options = {}) {

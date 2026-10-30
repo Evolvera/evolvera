@@ -6,7 +6,7 @@ tools:
   - bash
   - write
   - read
-model: openai-codex/gpt-5.5
+model: openai/gpt-5.5
 thinking: low
 max_turns: 20
 lifecycle: lazy

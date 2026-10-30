@@ -22,15 +22,15 @@ try {
   cpSync(path.join(root, "extensions", "codex-fast-mode.ts"), path.join(sandbox, "codex-fast-mode.ts"));
   const mod = await import(pathToFileURL(path.join(sandbox, "codex-fast-mode.ts")));
 
-  const gpt56 = { provider: "openai-codex", id: "gpt-5.6-sol" };
-  const gpt54 = { provider: "openai-codex", id: "gpt-5.4" };
-  const astra = { provider: "openai-codex", id: "gpt-6-astra" };
-  const gpt6Sol = { provider: "openai-codex", id: "gpt-6-sol" };
-  const gpt6Luna = { provider: "openai-codex", id: "gpt-6-luna" };
+  const gpt56 = { provider: "openai", id: "gpt-5.6-sol" };
+  const gpt54 = { provider: "openai", id: "gpt-5.4" };
+  const astra = { provider: "openai", id: "gpt-6-astra" };
+  const gpt6Sol = { provider: "openai", id: "gpt-6-sol" };
+  const gpt6Luna = { provider: "openai", id: "gpt-6-luna" };
   assert.equal(mod.isFastEligibleModel(gpt6Sol), true);
   assert.equal(mod.isFastEligibleModel(gpt6Luna), true);
-  assert.equal(mod.isFastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), true);
-  const spark = { provider: "openai-codex", id: "gpt-5.3-codex-spark" };
+  assert.equal(mod.isFastEligibleModel({ provider: "openai", id: "gpt-6.1-sol" }), true);
+  const spark = { provider: "openai", id: "gpt-5.3-codex-spark" };
   const claude = { provider: "anthropic", id: "claude-fable-5" };
 
   assert.equal(mod.isFastEligibleModel(gpt56), true);
@@ -46,16 +46,16 @@ try {
   });
 
   // A "fallback/*" selection carries the router provider, so the gate reads the routed physical model.
-  const routedSol = { provider: "openai-codex", modelId: "gpt-6.1-sol" };
+  const routedSol = { provider: "openai", modelId: "gpt-6.1-sol" };
   const selectedFallback = { provider: "fallback", id: "builder" };
   assert.deepEqual(mod.readRoutedModel(routedSol), routedSol);
-  assert.equal(mod.readRoutedModel({ provider: "openai-codex" }), undefined);
-  assert.equal(mod.readRoutedModel({ provider: "openai-codex", modelId: "" }), undefined);
-  assert.equal(mod.readRoutedModel("openai-codex/gpt-6.1-sol"), undefined);
+  assert.equal(mod.readRoutedModel({ provider: "openai" }), undefined);
+  assert.equal(mod.readRoutedModel({ provider: "openai", modelId: "" }), undefined);
+  assert.equal(mod.readRoutedModel("openai/gpt-6.1-sol"), undefined);
   assert.equal(mod.readRoutedModel(null), undefined);
   assert.deepEqual(
     mod.effectiveDispatchModel(selectedFallback, routedSol),
-    { provider: "openai-codex", id: "gpt-6.1-sol" },
+    { provider: "openai", id: "gpt-6.1-sol" },
     "the routed physical model is the effective dispatch model",
   );
   assert.equal(
@@ -160,7 +160,7 @@ try {
     const handlers = new Map(); let status;
     mod.default({ registerCommand() {}, on(name, handler) { handlers.set(name, handler); } });
     await handlers.get("session_start")({ reason: "startup" }, {
-      mode: "tui", model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+      mode: "tui", model: { provider: "openai", id: "gpt-5.6-sol" },
       sessionManager: { getSessionId: () => "fresh-process" },
       ui: { notify() {}, setStatus(_key, value) { status = value; } },
     });
@@ -459,10 +459,10 @@ try {
 
   // Ultrafast: only Astra is ever sent the ultrafast tier; other eligible models fall back to priority.
   assert.equal(mod.isUltrafastEligibleModel(astra), true);
-  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6.1-sol" }), true);
-  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6-sol" }), false);
-  assert.equal(mod.serviceTierFor("ultra", { provider: "openai-codex", id: "gpt-6.1-sol" }), "ultrafast");
-  assert.equal(mod.serviceTierFor("all", { provider: "openai-codex", id: "gpt-6.1-sol" }), "priority");
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6.1-sol" }), true);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-sol" }), false);
+  assert.equal(mod.serviceTierFor("ultra", { provider: "openai", id: "gpt-6.1-sol" }), "ultrafast");
+  assert.equal(mod.serviceTierFor("all", { provider: "openai", id: "gpt-6.1-sol" }), "priority");
   assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-astra" }), false);
   assert.equal(mod.serviceTierFor("ultra", astra), "ultrafast");
   assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
@@ -491,7 +491,7 @@ try {
     "priority",
   );
   assert.equal(
-    (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.1-sol" } }, { ...childCtx, model: { provider: "openai-codex", id: "gpt-6.1-sol" } })).service_tier,
+    (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.1-sol" } }, { ...childCtx, model: { provider: "openai", id: "gpt-6.1-sol" } })).service_tier,
     "ultrafast",
   );
   assert.equal(
@@ -591,7 +591,7 @@ try {
     undefined,
     "a virtual selection with no routed model published stays on the standard tier",
   );
-  routed.events.emit("model-fallback:routed", { provider: "openai-codex", modelId: "gpt-6.1-sol" });
+  routed.events.emit("model-fallback:routed", { provider: "openai", modelId: "gpt-6.1-sol" });
   assert.deepEqual(
     await routedRequest({ model: "gpt-6.1-sol", service_tier: "default" }),
     { model: "gpt-6.1-sol", service_tier: "priority" },

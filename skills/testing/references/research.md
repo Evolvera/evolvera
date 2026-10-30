@@ -5,8 +5,8 @@ Accessed 2026-07-24. This is provenance and design evidence, not mandatory runti
 ## Prompt runtime
 
 - Maker: OpenAI.
-- Host/runtime: ChatGPT Codex, `openai-codex-responses`.
-- Model: `openai-codex/gpt-6-sol`; context: 300k; tool use enabled; selected effort: `high`.
+- Host/runtime: ChatGPT Codex, `openai-responses`.
+- Model: `openai/gpt-6-sol`; context: 300k; tool use enabled; selected effort: `high`.
 - Current official GPT-5.6 model guidance: <https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices> (accessed 2026-07-24). It identifies Sol as the flagship-capability variant, recommends preserving domain context, hard constraints, approval boundaries, and success criteria, says intent understanding often removes the need to prescribe ordinary steps, and recommends lean prompts with instructions stated once. Effort choices are workload/evaluation dependent; `high` is this agent's baseline, not a claim that xhigh/max is superior.
 - Official OpenAI prompt guidance: <https://platform.openai.com/docs/guides/prompt-engineering> (accessed 2026-07-24). It supports explicit authority/task/context/tool/output contracts and representative evaluation. The retrieval displayed future-dated publication metadata; that metadata is unreliable here, so only current access/applicability is recorded.
 

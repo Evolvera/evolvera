@@ -12,11 +12,11 @@ const ids = await jiti.import(path.join(root, "plastic-memory/common/ids.ts"));
 const cycles = await jiti.import(path.join(root, "plastic-memory/session/cycles.ts"));
 const schedulerModule = await jiti.import(path.join(root, "plastic-memory/workers/scheduler.ts"));
 
-const luna = { provider: "openai-codex", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
+const luna = { provider: "openai", id: "gpt-6-luna", contextWindow: 200_000, maxTokens: 16_000 };
 const sonnet = { provider: "anthropic", id: "claude-sonnet-5", contextWindow: 200_000, maxTokens: 16_000 };
 const visible = { provider: "google", id: "gemini-visible", contextWindow: 200_000, maxTokens: 16_000 };
 const models = new Map([
-  ["openai-codex/gpt-6-luna", luna],
+  ["openai/gpt-6-luna", luna],
   ["anthropic/claude-sonnet-5", sonnet],
   ["google/gemini-visible", visible],
 ]);
@@ -34,8 +34,8 @@ const registry = {
 };
 const targets = runner.buildEmergencyModelTargets(visible);
 assert.deepEqual(targets, [
-  { provider: "openai-codex", id: "gpt-6-luna" },
-  { provider: "openai-codex", id: "gpt-6-luna" },
+  { provider: "openai", id: "gpt-6-luna" },
+  { provider: "openai", id: "gpt-6-luna" },
   { provider: "anthropic", id: "claude-sonnet-5" },
   { provider: "google", id: "gemini-visible" },
 ]);
@@ -58,8 +58,8 @@ for (const target of targets.slice(0, 3)) {
   assert.equal(result.resolved.model, models.get(`${target.provider}/${target.id}`));
 }
 assert.deepEqual(traces.map((trace) => `${trace.config.model.provider}/${trace.config.model.id}`), [
-  "openai-codex/gpt-6-luna",
-  "openai-codex/gpt-6-luna",
+  "openai/gpt-6-luna",
+  "openai/gpt-6-luna",
   "anthropic/claude-sonnet-5",
 ]);
 assert.equal(traces[0].prompt, prompt);
@@ -121,7 +121,7 @@ const normalRuntime = {
   async agentLoop(prompts, context, config) {
     const request = JSON.parse(prompts[0].content[0].text);
     normalTraces.push({ role: context.role, target: `${config.model.provider}/${config.model.id}`, prompt: prompts[0].content[0].text });
-    if (config.model.provider === "openai-codex") return { invalid: true };
+    if (config.model.provider === "openai") return { invalid: true };
     if (context.role === "observer") return { observations: [{ content: "fallback fact", timestamp: "2026-08-06T00:00:00Z", relevance: "medium", sourceEntryIds: request.sourceEntryIds }] };
     return { reflections: [{ content: "fallback reflection", supportingObservationIds: request.observations.map((item) => item.id) }] };
   },
@@ -137,8 +137,8 @@ const normalResult = await schedulerModule.createCycleScheduler().trigger({
 });
 assert.equal(normalResult.status, "closed");
 assert.deepEqual(normalTraces.map((trace) => trace.target), [
-  "openai-codex/gpt-6-luna", "openai-codex/gpt-6-luna", "anthropic/claude-sonnet-5",
-  "openai-codex/gpt-6-luna", "openai-codex/gpt-6-luna", "anthropic/claude-sonnet-5",
+  "openai/gpt-6-luna", "openai/gpt-6-luna", "anthropic/claude-sonnet-5",
+  "openai/gpt-6-luna", "openai/gpt-6-luna", "anthropic/claude-sonnet-5",
 ]);
 assert.equal(normalTraces[0].prompt, normalTraces[1].prompt);
 assert.equal(normalTraces[1].prompt, normalTraces[2].prompt);
