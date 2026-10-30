@@ -463,7 +463,7 @@ try {
   assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-sol" }), false);
   assert.equal(mod.serviceTierFor("ultra", { provider: "openai", id: "gpt-6.1-sol" }), "ultrafast");
   assert.equal(mod.serviceTierFor("all", { provider: "openai", id: "gpt-6.1-sol" }), "priority");
-  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-astra" }), false);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6-astra" }), false, "the retired openai-codex provider id is no longer eligible");
   assert.equal(mod.serviceTierFor("ultra", astra), "ultrafast");
   assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
   assert.equal(mod.serviceTierFor("all", astra), "priority");
