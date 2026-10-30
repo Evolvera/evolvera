@@ -118,15 +118,23 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
       thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
       route(request, ctx) {
         const runId = request.reason === "user" ? randomUUID() : request.state?.runId ?? lastUserId(request.messages);
-        const state = decideFallbackRoute(chain, request, runId);
-        const step = chain[state.step];
-        const model = ctx.modelRegistry.find(step.provider, step.model);
-        if (!model) throw new Error(`Fallback model is unavailable: ${step.provider}/${step.model}`);
+        const requested = decideFallbackRoute(chain, request, runId);
+        // A step whose model is absent from the current catalog is a fallback condition, not a hard
+        // error: the catalog is remote and may not be cached yet, and a chain primary such as
+        // gpt-6.1-terra ships in the remote catalog only. Advance to the first resolvable step.
+        let step = requested.step;
+        let model = ctx.modelRegistry.find(chain[step].provider, chain[step].model);
+        while (!model && step < chain.length - 1) {
+          step = nextFallbackStep(chain, step);
+          model = ctx.modelRegistry.find(chain[step].provider, chain[step].model);
+        }
+        if (!model) throw new Error(`Fallback model is unavailable: ${chain[step].provider}/${chain[step].model}`);
+        const state = { step, runId: requested.runId };
         // Routing runs before every request, so listeners hold the model serving the current one.
         // Only provider and model id travel: no message, session or account data.
         const routed: RoutedModel = { provider: model.provider, modelId: model.id };
         pi.events?.emit?.(ROUTED_MODEL_EVENT, routed);
-        const desiredLevel = step.level === "inherit" ? request.thinkingLevel : step.level;
+        const desiredLevel = chain[step].level === "inherit" ? request.thinkingLevel : chain[step].level;
         return { model, thinkingLevel: clampThinkingLevel(model, desiredLevel as any), state };
       },
     });

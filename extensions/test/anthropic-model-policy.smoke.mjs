@@ -290,12 +290,13 @@ assert.deepEqual(
   JSON.parse(read("models.json")).providers.anthropic,
   modelsConfig.providers.anthropic,
 );
-// The GPT models are served by the remote catalog. This config must not declare a provider for
-// them: a local block would shadow the catalog's richer metadata (tiered costs, the api.openai.com
-// base URL) with a stale copy, and the retired openai-codex provider must stay gone.
+// The GPT models are served by the remote catalog. This config must not declare models for them:
+// a local copy would shadow the catalog's richer metadata (tiered costs, the api.openai.com base
+// URL). `modelOverrides` is the supported exception - it merges onto the catalog entry instead of
+// replacing it - and docs/setup.md relies on it to enable `ultra` for openai/gpt-6-astra.
 for (const configFile of ["models.json", "config/models.json"]) {
   const declared = JSON.parse(read(configFile)).providers;
-  assert.equal(declared.openai, undefined, `${configFile} must not override the catalog's openai provider`);
+  assert.equal(declared.openai?.models, undefined, `${configFile} must not shadow the catalog's openai models`);
   assert.equal(declared["openai-codex"], undefined, `${configFile} must not declare the retired openai-codex provider`);
 }
 
