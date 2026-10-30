@@ -3,7 +3,7 @@ name: app-validator
 description: "Independent read-only device QA executor for mobile/desktop app checkpoints. Uses an already-created versioned harness to drive emulator/simulator journeys, observes UI and non-UI outcomes, and returns a SHA-bound APP VALIDATION PASS/BLOCKED/UNVERIFIED. Never creates, edits, or repairs product or harness code. Model: openai-codex/gpt-6.1-terra high."
 display_name: 📱🛡️ App Validator · GPT-6.1 Terra · high
 tools: read, grep, find, ls, bash
-model: openai-codex/gpt-6.1-terra
+model: fallback/terra
 thinking: high
 max_turns: 120
 prompt_mode: replace

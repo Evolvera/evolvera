@@ -20,6 +20,29 @@ const QWEN_PROVIDER = "alibaba-plan";
 const QWEN_MODEL = "qwen3.8-max-preview";
 const QWEN_CONTEXT_WINDOW = 200_000;
 const CONDUCTOR_RATIO = 0.7;
+const ROUTED_MODEL_EVENT = "model-fallback:routed";
+const VIRTUAL_ROUTER_PROVIDER = "fallback";
+
+type RoutedPhysicalModel = { provider: string; modelId: string };
+
+function readRoutedModel(payload: unknown): RoutedPhysicalModel | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const { provider, modelId } = payload as { provider?: unknown; modelId?: unknown };
+  if (typeof provider !== "string" || !provider || typeof modelId !== "string" || !modelId) return undefined;
+  return { provider, modelId };
+}
+
+export function effectiveDispatchModel<T extends { provider: string; id?: string }>(selected: T | undefined, routed: RoutedPhysicalModel | undefined): T | { provider: string; id: string } | undefined {
+  if (selected?.provider !== VIRTUAL_ROUTER_PROVIDER || !routed) return selected;
+  return { provider: routed.provider, id: routed.modelId };
+}
+
+export function isHighContextDispatchModel(selected: ModelContext | undefined, routed?: RoutedPhysicalModel): boolean {
+  if (selected?.provider !== VIRTUAL_ROUTER_PROVIDER || !routed) return selected !== undefined && isHighContextModel(selected);
+  // Virtual fallback chains qualify for High only on their codex primary; other providers retain
+  // their own context sizing even when their model family normally qualifies for direct selection.
+  return routed.provider === "openai-codex" && isHighContextModel({ provider: routed.provider, id: routed.modelId });
+}
 
 // Stored on the model object itself so a /reload (new extension instance, same model objects)
 // still restores the real default instead of capturing an already-raised window.
@@ -99,11 +122,16 @@ export function writeContextMode(settingsPath: string, mode: ContextMode): void 
 
 // Only the session's live model object matters: ctx.model and model_select's event.model are
 // agent.state.model, while modelRegistry.getAll() returns fresh copies whose mutation has no effect.
-function applyToSession(ctx: ExtensionContext, mode: ContextMode): void {
+function applyToSession(ctx: ExtensionContext, mode: ContextMode, routedModel?: RoutedPhysicalModel): void {
   const conductor = currentMode(ctx);
-  applyContextMode(ctx.model, mode, conductor === "conductor");
-  const activeHigh = mode === "high" && ctx.model !== undefined && isHighContextModel(ctx.model);
-  const effective = ctx.model?.contextWindow;
+  const dispatchModel = mode === "high" ? effectiveDispatchModel(ctx.model, routedModel) : ctx.model;
+  const targetModel = dispatchModel !== ctx.model && dispatchModel
+    ? ctx.modelRegistry.find(dispatchModel.provider, dispatchModel.id)
+    : ctx.model;
+  const effectiveMode = mode === "high" && isHighContextDispatchModel(ctx.model, routedModel) ? mode : "default";
+  applyContextMode(targetModel, effectiveMode, conductor === "conductor");
+  const activeHigh = mode === "high" && isHighContextDispatchModel(ctx.model, routedModel);
+  const effective = targetModel?.contextWindow;
   const showCapacity = conductor === "conductor" || activeHigh;
   ctx.ui?.setStatus?.(STATUS_KEY, showCapacity && effective ? `${Math.round(effective / 1000)}K` : undefined);
 }
@@ -117,27 +145,29 @@ export function isConductorChild(env: NodeJS.ProcessEnv = process.env): boolean 
 
 export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(getAgentDir(), "settings.json")) {
   let mode: ContextMode = "default";
+  let routedModel: RoutedPhysicalModel | undefined;
+  pi.events?.on?.(ROUTED_MODEL_EVENT, (data: unknown) => { routedModel = readRoutedModel(data); });
 
   // Children created by a conductor always start on the default window; the saved High
   // preference belongs to the user's own sessions. They never write that preference either.
   pi.on("session_start", async (_event, ctx) => {
     mode = isConductorChild() ? "default" : readContextMode(settingsPath());
-    applyToSession(ctx, mode);
+    applyToSession(ctx, mode, routedModel);
   });
 
   pi.events.on(MODE_CHANGED_EVENT, (data: unknown) => {
     if (!data || typeof data !== "object") return;
     const ctx = (data as { ctx?: unknown }).ctx;
-    if (ctx && typeof ctx === "object") applyToSession(ctx as ExtensionContext, mode);
+    if (ctx && typeof ctx === "object") applyToSession(ctx as ExtensionContext, mode, routedModel);
   });
 
   pi.on("model_select", async (_event, ctx) => {
-    applyToSession(ctx, mode);
+    applyToSession(ctx, mode, routedModel);
   });
 
   // Selecting the same model can replace its object without emitting model_select.
   pi.on("before_agent_start", async (_event, ctx) => {
-    applyToSession(ctx, mode);
+    applyToSession(ctx, mode, routedModel);
   });
 
   pi.registerCommand("context-mode", {
@@ -168,7 +198,7 @@ export default function contextMode(pi: ExtensionAPI, settingsPath = () => join(
         return;
       }
       mode = requested;
-      applyToSession(ctx, mode);
+      applyToSession(ctx, mode, routedModel);
       show();
     },
   });

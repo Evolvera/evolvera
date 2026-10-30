@@ -3,7 +3,7 @@ name: builder-heavy
 description: "Exceptional procedural/local-integration executor. Use for concrete local multi-runtime integration that a normal builder cannot safely own, or bounded exceptional non-frontend formal/numerical/scientific correctness work with a stated invariant/acceptance oracle. External operations are orchestrator-owned unless the user explicitly requests this subagent. Model: openai-codex/gpt-6.1-sol high."
 display_name: 🧠 Builder Heavy · GPT-6.1 Sol · high
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-6.1-sol
+model: fallback/heavy
 thinking: high
 max_turns: 100
 lifecycle: lazy

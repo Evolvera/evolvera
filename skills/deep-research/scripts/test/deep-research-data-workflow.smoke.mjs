@@ -38,7 +38,7 @@ assert.match(skill, /final report cites official sources.*not local artifact pat
 assert.match(skill, /no credentials\/project data\/package installs/i);
 
 assert.match(dataAgent, /^name: deep-research-data$/m);
-assert.match(dataAgent, /^model: openai-codex\/gpt-6.1-terra$/m);
+assert.match(dataAgent, /^model: fallback\/terra$/m);
 assert.match(dataAgent, /^thinking: high$/m);
 assert.match(dataAgent, /^max_turns: 70$/m);
 assert.match(dataAgent, /^display_name: 📊 DR Data · GPT-6.1 Terra · high$/m);

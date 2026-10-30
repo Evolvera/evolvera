@@ -367,7 +367,7 @@ has(REFERENCE, /reuse it only after exact ownership proof[^\n]*never duplicate i
 has(SKILL, /\*\*Coordinator action priority:\*\* \(1\) handle pending questions\/results[^\n]*\(2\) first finish an open PI that is still unassigned[^\n]*\(3\) dispatch safe independent candidates[^\n]*\(4\) only then do limited, punctual observation/, "action priorities must be explicit and ordered");
 has(SKILL, /No fixed polling timer or new mechanism/, "priorities must not add a polling timer");
 // Model: skip restart when the fresh UI already proves it; restart only for an uninjected owned PI.
-has(REFERENCE, /If that fresh UI already shows `[a-z-]+\/[\w.-]+` with `(?:low|medium|high|xhigh)`, skip `\/quit` and the restart/, "an already-correct fresh model must skip the restart");
+has(REFERENCE, /If that fresh UI proves the selection is `fallback\/conductor` with `high`[\s\S]{0,180}skip `\/quit` and the restart/, "an already-correct virtual selection and effort must skip the restart");
 has(REFERENCE, /one bounded fresh verification read is allowed; never infer the model from command echo, stale output, global settings, or exit 0/, "missing indication allows only a fresh verification read");
 has(REFERENCE, /only when this is a newly created or settled owned PI with \*\*no task injected\*\*/, "restart must be limited to an uninjected owned PI");
 // Mode pin is mandatory even when the model restart was skipped.

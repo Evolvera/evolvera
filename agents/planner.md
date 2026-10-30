@@ -3,7 +3,7 @@ name: planner
 description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: anthropic/claude-opus-5-5 high."
 display_name: 🏛️ Planner · Claude Opus 5.5 · high
 tools: read, grep, find, ls, write
-model: anthropic/claude-opus-5-5
+model: fallback/opus
 thinking: high
 max_turns: 60
 lifecycle: lazy

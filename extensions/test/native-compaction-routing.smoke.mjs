@@ -151,6 +151,15 @@ try {
     assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, target)), { compaction: result }, `${target.provider}/${target.id} is outside scope`);
   }
   assert.deepEqual(mod.lastUsageSource(opusBranch), { provider: "anthropic", model: "claude-opus-5-5" }, "error/zero-usage messages are skipped like PI does");
+  const virtual = { provider: "fallback", id: "heavy" };
+  const codexRoute = { provider: "openai-codex", modelId: "gpt-6.1-terra" };
+  const deepseekRoute = { provider: "refuseless", modelId: "deepseek-v4.1-flash-fast" };
+  const haikuRoute = { provider: "anthropic", modelId: "claude-haiku-5-5" };
+  assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: virtual }, codexRoute), true, "virtual codex route gets the stale-tokenizer guard");
+  assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: virtual }, deepseekRoute), false, "virtual DeepSeek route is not treated as codex");
+  assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: virtual }, haikuRoute), false, "virtual Claude route is not treated as codex");
+  assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: conversationModel }, deepseekRoute), true, "physical selection ignores routed metadata");
+  assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: virtual }), false, "missing route preserves virtual selection decision");
 
   // Fallback: Luna unavailable or failing -> the conversation model summarizes.
   const opusMain = { provider: "anthropic", id: "claude-opus-5-5" };

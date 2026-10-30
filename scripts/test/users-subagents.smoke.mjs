@@ -346,11 +346,11 @@ try {
   const commonMap = customAgents.loadCustomAgents(repo);
   assert.ok(commonMap.size > 0, "empty private agent root discovers admitted common agents");
   for (const [name, model, thinking] of [
-    ["builder-heavy", "openai-codex/gpt-6.1-sol", "high"],
-    ["builder", "openai-codex/gpt-6.1-terra", "medium"],
+    ["builder-heavy", "fallback/heavy", "high"],
+    ["builder", "fallback/builder", "medium"],
     ["builder-design", "anthropic/claude-sonnet-5-5", "high"],
     ["builder-heavy-design", "anthropic/claude-opus-5-5", "high"],
-    ["scout", "openai-codex/gpt-6-luna", "medium"],
+    ["scout", "fallback/luna", "medium"],
   ]) {
     const agent = commonMap.get(name);
     assert.ok(agent, `common routing includes ${name}`);

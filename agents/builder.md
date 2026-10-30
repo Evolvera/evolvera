@@ -3,7 +3,7 @@ name: builder
 description: "General normal-risk procedural implementation agent for bounded API/tooling/tests, module/cache/lifecycle behavior, serialization surfaces, and structured integration. Prefer design builders for relation/rule/declarative semantic modeling. Model: openai-codex/gpt-6.1-terra medium."
 display_name: 🔨 Builder · GPT-6.1 Terra · medium
 tools: read, grep, find, ls, bash, write, edit
-model: openai-codex/gpt-6.1-terra
+model: fallback/builder
 thinking: medium
 max_turns: 120
 exclude_extensions: [orca-agent-status, orca-titlebar-spinner]

@@ -363,10 +363,12 @@ In the default context mode, native Anthropic models with a 1M window are capped
 
 High does not increase the provider's actual capacity or guarantee that every route accepts 800K. More context can increase cost and latency; output limits remain unchanged.
 
+The heavy design route uses `anthropic/claude-sonnet-5-5` at `xhigh`.
+
 Approved routes for Opus 5.5 are:
 
 - `agents/builder-design.md` — `anthropic/claude-opus-5-5`, `medium`;
-- `agents/builder-heavy-design.md` — `anthropic/claude-opus-5-5`, `high`;
+
 - `agents/website-designer.md` — `anthropic/claude-opus-5-5`, `xhigh`;
 - `agents/plan-briefer-fable.md` — `anthropic/claude-opus-5-5`, `high`.
 

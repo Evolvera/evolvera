@@ -3,7 +3,7 @@ description: "Independent read-only security reviewer for security, auth, paymen
 display_name: 🔒 Security Reviewer · Claude Opus 5.5 · high
 name: security-reviewer
 tools: read, grep, find, ls, bash
-model: anthropic/claude-opus-5-5
+model: fallback/opus
 thinking: high
 max_turns: 80
 lifecycle: lazy
