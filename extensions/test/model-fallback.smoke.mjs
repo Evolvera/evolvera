@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -18,7 +16,7 @@ const jiti = createJiti(import.meta.url, {
     "@earendil-works/pi-ai/models": path.join(sdkRoot, "node_modules/@earendil-works/pi-ai/dist/models.js"),
   },
 });
-const { default: register, FALLBACK_CHAINS, decideFallbackRoute, classifyFallbackError, nextFallbackStep, deepFastChain, readDeepFast, writeDeepFast, DEEP_FAST_PRIMARY, DEEP_FAST_SETTINGS_KEY } =
+const { default: register, FALLBACK_CHAINS, decideFallbackRoute, classifyFallbackError, nextFallbackStep } =
   await jiti.import(path.join(root, "extensions/model-fallback.ts"));
 const { VIRTUAL_MODEL_STATE_ENTRY } = await import(pathToFileURL(path.join(sdkRoot, "dist/index.js")));
 
@@ -61,18 +59,13 @@ const virtualModels = new Map();
 const handlers = new Map();
 const appended = [];
 const published = [];
-const commands = new Map();
-const notified = [];
 const pi = {
   registerVirtualModel(model) { virtualModels.set(`${model.provider}/${model.id}`, model); },
-  registerCommand(name, command) { commands.set(name, command); },
   on(name, handler) { handlers.set(name, handler); },
   appendEntry(type, data) { appended.push({ type: "custom", customType: type, data }); },
   events: { emit(channel, data) { published.push({ channel, data }); } },
 };
-const settingsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "model-fallback-smoke-")), "settings.json");
-fs.writeFileSync(settingsFile, JSON.stringify({ contextMode: "high" }));
-register(pi, () => settingsFile);
+register(pi);
 assert.equal(virtualModels.size, 6, "all six virtual chains register");
 const selectModel = handlers.get("model_select");
 selectModel({ model: { provider: "openai", id: "gpt-6.1-sol" } });
@@ -215,89 +208,17 @@ const exhaustedBranch = [
 assert.equal(settle({ outcome: "error", context: {} }, { model: activeModel, sessionManager: { getBranch: () => exhaustedBranch } }), undefined, "exhausted chain ends without looping");
 assert.equal(settle({ outcome: "error", context: {} }, { model: { provider: "openai", id: "gpt-6-luna" }, sessionManager: { getBranch: () => quotaBranch } }), undefined);
 
-// Deep fast: every chain starts on the fastest model, the scout chain drops to low effort, and
-// the original steps stay as fallbacks in the same order.
-assert.equal(DEEP_FAST_SETTINGS_KEY, "deepFastMode");
-assert.deepEqual({ ...DEEP_FAST_PRIMARY }, { provider: "opengateway", model: "deepseek/deepseek-v4.1-flash-ultrafast" });
-for (const chainId of Object.keys(FALLBACK_CHAINS)) {
-  const base = FALLBACK_CHAINS[chainId];
-  const fast = deepFastChain(chainId, base);
-  assert.equal(fast.length, base.length, `${chainId} keeps its fallback count`);
-  assert.equal(fast[0].provider, "opengateway", `${chainId} starts on the fast provider`);
-  assert.equal(fast[0].model, "deepseek/deepseek-v4.1-flash-ultrafast", `${chainId} starts on the fast model`);
-  assert.deepEqual(fast.slice(1), base.slice(1), `${chainId} preserves its existing fallbacks`);
-  const expectedLevel = chainId === "luna" ? "low" : "inherit";
-  assert.equal(fast[0].level, expectedLevel, `${chainId} uses ${expectedLevel} effort in deep fast`);
-}
-
-// Every other key and the file mode survive the preference write.
-assert.equal(readDeepFast(settingsFile), false, "deep fast defaults to off");
-writeDeepFast(settingsFile, true);
-assert.equal(readDeepFast(settingsFile), true);
-assert.equal(JSON.parse(fs.readFileSync(settingsFile, "utf8")).contextMode, "high", "unrelated settings are preserved");
-writeDeepFast(settingsFile, false);
-assert.equal(readDeepFast(settingsFile), false);
-assert.equal(readDeepFast(path.join(os.tmpdir(), "no-such-settings.json")), false, "a missing file never enables speed mode");
-fs.writeFileSync(settingsFile, "not json");
-assert.equal(readDeepFast(settingsFile), false, "a malformed file never enables speed mode");
-fs.writeFileSync(settingsFile, JSON.stringify({}));
-
-// The command drives the same preference the router reads, and routing follows it immediately.
-const deepFastCommand = commands.get("deep-fast");
-assert.ok(deepFastCommand, "the deep-fast command is registered");
-models.set(`opengateway/${DEEP_FAST_PRIMARY.model}`, {
-  provider: "opengateway", id: DEEP_FAST_PRIMARY.model, reasoning: true,
-  thinkingLevelMap: { off: null, minimal: "low", low: "low", medium: "medium", high: "high" },
-});
-const commandCtx = { hasUI: true, model: undefined, ui: { notify: (...args) => notified.push(args), select: async () => "Desligado" } };
-const scoutRequest = { model: { provider: "fallback", id: "luna" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" };
-handlers.get("session_start")({}, commandCtx);
-assert.equal(virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: registry }).model.provider, "openai", "off routes to the configured primary");
-
-await deepFastCommand.handler("on", commandCtx);
-assert.equal(readDeepFast(settingsFile), true, "on persists the preference");
-const fastScout = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: registry });
-assert.equal(fastScout.model.id, "deepseek/deepseek-v4.1-flash-ultrafast");
-assert.equal(fastScout.thinkingLevel, "low", "scouts run at low effort in deep fast");
-const fastBuilder = virtualModels.get("fallback/builder").route({ ...scoutRequest, model: { provider: "fallback", id: "builder" } }, { modelRegistry: registry });
-assert.equal(fastBuilder.model.id, "deepseek/deepseek-v4.1-flash-ultrafast");
-assert.equal(fastBuilder.thinkingLevel, "high", "builders keep the requested effort in deep fast");
-assert.deepEqual(published.at(-1).data, { provider: "opengateway", modelId: DEEP_FAST_PRIMARY.model }, "the fast physical model is published for tier gating");
-
-await deepFastCommand.handler("off", commandCtx);
-assert.equal(readDeepFast(settingsFile), false, "off persists the preference");
-assert.equal(virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: registry }).model.provider, "openai", "off restores the configured primary");
-
-// A machine without the opengateway provider falls through to the next resolvable step instead
-// of failing the request when deep fast is on.
-const offlineRegistry = { find: (provider, id) => provider === "opengateway" ? undefined : models.get(`${provider}/${id}`) };
-models.delete(`opengateway/${DEEP_FAST_PRIMARY.model}`);
-handlers.get("session_start")({}, commandCtx);
-await deepFastCommand.handler("on", commandCtx);
-const degraded = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: offlineRegistry });
-assert.equal(degraded.model.provider, "refuseless", "an unavailable fast primary advances instead of throwing");
-assert.equal(degraded.state.step, 1, "the advanced step is recorded");
-await deepFastCommand.handler("off", commandCtx);
-
-// Deep fast is only usable when the router actually has a credential. A provider without one would
-// fail every request with an auth error that no retry classification recovers from, so the router
-// skips it and the chain keeps working on its configured steps.
-models.set(`opengateway/${DEEP_FAST_PRIMARY.model}`, {
-  provider: "opengateway", id: DEEP_FAST_PRIMARY.model, reasoning: true,
-  thinkingLevelMap: { off: null, low: "low", high: "high" },
-});
-const keyedRegistry = (hasKey) => ({
+// A chain step whose provider has no configured credential is skipped: selecting it would fail
+// every request with an auth error that no retry classification recovers from.
+const credRegistry = (missing) => ({
   find: (provider, id) => models.get(`${provider}/${id}`),
-  hasConfiguredAuth: (model) => (model.provider === "opengateway" ? hasKey : true),
+  hasConfiguredAuth: (model) => model.provider !== missing,
 });
-handlers.get("session_start")({}, commandCtx);
-await deepFastCommand.handler("on", commandCtx);
-const withKey = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: keyedRegistry(true) });
-assert.equal(withKey.model.provider, "opengateway", "a configured key routes to the fast primary");
-assert.equal(withKey.thinkingLevel, "low");
-const withoutKey = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: keyedRegistry(false) });
-assert.equal(withoutKey.model.provider, "refuseless", "a missing router key falls through instead of selecting it");
-assert.equal(withoutKey.state.step, 1, "the skip is recorded in the chain state");
-await deepFastCommand.handler("off", commandCtx);
+const noRefuseless = virtualModels.get("fallback/luna").route(
+  { ...baseRequest, model: { provider: "fallback", id: "luna" }, reason: "continuation", state: { step: 1, runId: "u1" } },
+  { modelRegistry: credRegistry("refuseless") },
+);
+assert.equal(noRefuseless.model.provider, "openai", "an uncredentialed step falls back to the previous usable one");
+assert.equal(noRefuseless.state.step, 0, "the state records the step actually serving the request");
 
 console.log("model-fallback smoke: PASS");
