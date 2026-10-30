@@ -279,4 +279,25 @@ assert.equal(degraded.model.provider, "refuseless", "an unavailable fast primary
 assert.equal(degraded.state.step, 1, "the advanced step is recorded");
 await deepFastCommand.handler("off", commandCtx);
 
+// Deep fast is only usable when the router actually has a credential. A provider without one would
+// fail every request with an auth error that no retry classification recovers from, so the router
+// skips it and the chain keeps working on its configured steps.
+models.set(`opengateway/${DEEP_FAST_PRIMARY.model}`, {
+  provider: "opengateway", id: DEEP_FAST_PRIMARY.model, reasoning: true,
+  thinkingLevelMap: { off: null, low: "low", high: "high" },
+});
+const keyedRegistry = (hasKey) => ({
+  find: (provider, id) => models.get(`${provider}/${id}`),
+  hasConfiguredAuth: (model) => (model.provider === "opengateway" ? hasKey : true),
+});
+handlers.get("session_start")({}, commandCtx);
+await deepFastCommand.handler("on", commandCtx);
+const withKey = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: keyedRegistry(true) });
+assert.equal(withKey.model.provider, "opengateway", "a configured key routes to the fast primary");
+assert.equal(withKey.thinkingLevel, "low");
+const withoutKey = virtualModels.get("fallback/luna").route(scoutRequest, { modelRegistry: keyedRegistry(false) });
+assert.equal(withoutKey.model.provider, "refuseless", "a missing router key falls through instead of selecting it");
+assert.equal(withoutKey.state.step, 1, "the skip is recorded in the chain state");
+await deepFastCommand.handler("off", commandCtx);
+
 console.log("model-fallback smoke: PASS");

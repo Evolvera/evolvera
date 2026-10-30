@@ -212,14 +212,19 @@ export default function modelFallbackExtension(pi: ExtensionAPI, settingsPath = 
         if (!chain.length) throw new Error(`Unknown fallback chain: ${id}`);
         const runId = request.reason === "user" ? randomUUID() : request.state?.runId ?? lastUserId(request.messages);
         const requested = decideFallbackRoute(chain, request, runId);
-        // A step whose model is absent from the current catalog is a fallback condition, not a hard
+        // A step is usable only when its model is in the current catalog AND its provider has a
+        // configured credential. A model absent from the catalog is a fallback condition, not a hard
         // error: the catalog is remote and may not be cached yet, and a chain primary such as
-        // gpt-6.1-terra ships in the remote catalog only. Advance to the first resolvable step.
+        // gpt-6.1-terra ships in the remote catalog only. A provider without credentials would fail
+        // every request with an auth error, which no retry classification recovers from, so it is
+        // skipped here instead of being selected. Advance to the first usable step.
+        const usable = (candidate: ReturnType<typeof ctx.modelRegistry.find>) =>
+          candidate && (ctx.modelRegistry.hasConfiguredAuth?.(candidate) ?? true) ? candidate : undefined;
         let step = requested.step;
-        let model = ctx.modelRegistry.find(chain[step].provider, chain[step].model);
+        let model = usable(ctx.modelRegistry.find(chain[step].provider, chain[step].model));
         while (!model && step < chain.length - 1) {
           step = nextFallbackStep(chain, step);
-          model = ctx.modelRegistry.find(chain[step].provider, chain[step].model);
+          model = usable(ctx.modelRegistry.find(chain[step].provider, chain[step].model));
         }
         if (!model) throw new Error(`Fallback model is unavailable: ${chain[step].provider}/${chain[step].model}`);
         const state = { step, runId: requested.runId };
