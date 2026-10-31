@@ -7,6 +7,8 @@ import { normalizeAlibabaAuthRecords } from "../compat/alibaba-users.mjs";
 const CORE = "C:/nvm4w/nodejs/node_modules/@earendil-works/pi-coding-agent";
 const LOCK_VERSION = "4.1.2";
 const MAX_BYTES = 16 * 1024 * 1024;
+// ELOCKED is normal contention; EPERM/EBUSY can be transient filesystem interference, and ENOENT can occur when an owner removes the lock between attempts.
+const RETRYABLE_LOCK_ERRORS = new Set(["ELOCKED", "EPERM", "EBUSY", "ENOENT"]);
 const fail = (code) => Object.assign(new Error(code), { code });
 
 function lockLibrary(sdkRoot) {
@@ -158,20 +160,24 @@ export function createUserCredentialStore(context, { lockTimeoutMs = 10_000, sdk
         identity = fs.lstatSync(lockPath);
         return { release, isCompromised: () => compromised !== undefined || !sameLock() };
       } catch (error) {
-        if (error?.code !== "ELOCKED") {
-          const failure = fail("CREDENTIAL_LOCK_FAILED");
-          const cause = {};
-          for (const key of ["code", "errno", "syscall"]) {
-            const value = error?.[key];
-            if ((typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value)) || (key === "errno" && Number.isSafeInteger(value))) {
-              cause[key] = value;
-            }
+        if (RETRYABLE_LOCK_ERRORS.has(error?.code)) {
+          if (Date.now() >= deadline) {
+            if (error.code === "ELOCKED") throw fail("CREDENTIAL_LOCK_TIMEOUT");
+          } else {
+            await delay(Math.min(25, Math.max(1, deadline - Date.now())), signal);
+            continue;
           }
-          if (Object.keys(cause).length) failure.cause = cause;
-          throw failure;
         }
-        if (Date.now() >= deadline) throw fail("CREDENTIAL_LOCK_TIMEOUT");
-        await delay(Math.min(25, Math.max(1, deadline - Date.now())), signal);
+        const failure = fail("CREDENTIAL_LOCK_FAILED");
+        const cause = {};
+        for (const key of ["code", "errno", "syscall"]) {
+          const value = error?.[key];
+          if ((typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value)) || (key === "errno" && Number.isSafeInteger(value))) {
+            cause[key] = value;
+          }
+        }
+        if (Object.keys(cause).length) failure.cause = cause;
+        throw failure;
       }
     }
   }
