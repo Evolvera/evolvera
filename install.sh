@@ -190,6 +190,7 @@ if command -v pi &>/dev/null; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-hud.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-stale-mention-context.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2

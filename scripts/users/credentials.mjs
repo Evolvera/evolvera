@@ -158,7 +158,18 @@ export function createUserCredentialStore(context, { lockTimeoutMs = 10_000, sdk
         identity = fs.lstatSync(lockPath);
         return { release, isCompromised: () => compromised !== undefined || !sameLock() };
       } catch (error) {
-        if (error?.code !== "ELOCKED") throw fail("CREDENTIAL_LOCK_FAILED");
+        if (error?.code !== "ELOCKED") {
+          const failure = fail("CREDENTIAL_LOCK_FAILED");
+          const cause = {};
+          for (const key of ["code", "errno", "syscall"]) {
+            const value = error?.[key];
+            if ((typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value)) || (key === "errno" && Number.isSafeInteger(value))) {
+              cause[key] = value;
+            }
+          }
+          if (Object.keys(cause).length) failure.cause = cause;
+          throw failure;
+        }
         if (Date.now() >= deadline) throw fail("CREDENTIAL_LOCK_TIMEOUT");
         await delay(Math.min(25, Math.max(1, deadline - Date.now())), signal);
       }

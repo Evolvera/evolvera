@@ -265,6 +265,8 @@ if ($piCmd) {
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de timeouts limitados." }
     & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-hud.mjs")
     if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch visual HUD." }
+    & node (Join-Path $SCRIPT_DIR "scripts\patch-pi-subagents-stale-mention-context.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "pi-subagents recusou o patch de contexto obsoleto." }
     Info "Suporte a thinking ultra dos subagentes verificado"
 
     Info "pi-alibaba-models..."
