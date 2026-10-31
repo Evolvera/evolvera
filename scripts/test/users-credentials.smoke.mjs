@@ -422,7 +422,23 @@ async function worker(mode, root, registryPath, agentDir, fixture) {
     const context = resolveUser({ registryPath, id: "kevin" });
     const store = createUserCredentialStore(context, { lockTimeoutMs: 3000, sdkRoot: CORE });
     const authPath = path.join(agentDir, "auth.json");
-    if (mode === "integration") {
+    if (mode === "lock-error") {
+      const originalMkdir = fs.mkdir;
+      fs.mkdir = function (target, ...args) {
+        if (String(target) === `${authPath}.lock`) {
+          const callback = args.at(-1);
+          queueMicrotask(() => callback(Object.assign(new Error("synthetic filesystem failure with secret token"), { code: "EPERM", errno: -4048, syscall: "mkdir" })));
+          return;
+        }
+        return originalMkdir.call(this, target, ...args);
+      };
+      await assert.rejects(store.modify("other", async (current) => current), (error) => {
+        assert.equal(error.code, "CREDENTIAL_LOCK_FAILED");
+        assert.deepEqual(error.cause, { code: "EPERM", errno: -4048, syscall: "mkdir" });
+        assert.doesNotMatch(error.message, /secret token|EPERM/);
+        return true;
+      });
+    } else if (mode === "integration") {
       await integration(store, authPath, root);
     } else if (mode === "boundaries") {
       await boundaries(store, authPath, agentDir);
@@ -591,7 +607,7 @@ async function main() {
     await supervisor.waitClosed(inspect, phase);
     assert.equal(fs.readFileSync(authPath, "utf8"), before, "read/list/public getAuth must preserve original auth bytes");
     if (!debugInspect) {
-      for (const mode of ["undefined", "throw", "legacy"]) { phase = `${mode} worker`; await supervisor.run([SCRIPT, "--worker", mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)], phase); }
+      for (const mode of ["undefined", "throw", "legacy", "lock-error"]) { phase = `${mode} worker`; await supervisor.run([SCRIPT, "--worker", mode, sandbox.root, registryPath, agentDir, JSON.stringify(fixture)], phase); }
       // Legacy cases intentionally replace the synthetic file with independent records.
       // Start the lock scenario from its own fixture, as boundary/integration cases do.
       fs.writeFileSync(authPath, JSON.stringify(fixture));
