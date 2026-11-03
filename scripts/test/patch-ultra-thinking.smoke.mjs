@@ -22,23 +22,24 @@ assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes(sourceMeta.version));
 
 function normalizeOwnedCopy(packageRoot) {
   const grouped = new Map();
-  for (const [rel, before, after] of main.PATCHES) {
+  const operationsToNormalize = [...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])];
+  for (const [rel, before, after, expectedCount = 1] of operationsToNormalize) {
     const operations = grouped.get(rel) ?? [];
-    operations.push({ before, after });
+    operations.push({ before, after, expectedCount });
     grouped.set(rel, operations);
   }
   const files = [];
   for (const [rel, operations] of grouped) {
     const target = path.join(packageRoot, rel);
     let source = fs.readFileSync(target, 'utf8');
-    for (const { before, after } of operations.toReversed()) {
+    for (const { before, after, expectedCount } of operations.toReversed()) {
       const beforeCount = source.split(before).length - 1;
       const afterCount = source.split(after).length - 1;
-      if (afterCount === 1) {
-        source = source.replace(after, before);
+      if (afterCount === expectedCount) {
+        source = source.split(after).join(before);
         continue;
       }
-      if (beforeCount === 1) continue;
+      if (beforeCount === expectedCount && afterCount === 0) continue;
       throw new Error(`anchor cardinality mismatch while normalizing owned fixture: ${rel}`);
     }
     files.push({ target, source });
@@ -77,6 +78,15 @@ try {
   console.log = (...values) => { help += values.join(' '); };
   try { cli.printHelp(); } finally { console.log = originalLog; }
   assert.match(help, /max, ultra/);
+  const bundlePath = path.join(piRoot, 'dist/bundle/chunks/chunk-44DLKSKE.js');
+  const bundle = fs.readFileSync(bundlePath, 'utf8');
+  assert.match(bundle, /VALID_THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /ThinkingLevelMapSchema=openObject2\(\{[^}]*ultra:opt\(ThinkingLevelMapValueSchema\)\}/);
+  assert.equal(bundle.split('ultra:"Ultra reasoning"').length - 1, 2, 'bundle selector labels do not both include ultra');
+  assert.match(bundle, /Set thinking level: off, minimal, low, medium, high, xhigh, max, ultra/);
+  assert.match(bundle, /THINKING_LEVEL_OPTIONS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /,THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /for\(let level of\["off","minimal","low","medium","high","xhigh","max","ultra"\]\)/);
   const parse = cli.parseArgs(['--thinking', 'ultra']);
   assert.equal(parse.thinking, 'ultra');
 
@@ -135,7 +145,7 @@ try {
   assert.equal(await sub.patch(subRoot), false, 'subagent patch is not idempotent');
   for (const rel of sub.FILES) assert.match(fs.readFileSync(path.join(subRoot, rel), 'utf8'), /"max", "ultra"/);
 
-  const changedFiles = [...new Set(main.PATCHES.map(([rel]) => rel))];
+  const changedFiles = [...new Set([...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])].map(([rel]) => rel))];
   const failureRoot = path.join(temp, 'failure-fixture');
   fs.cpSync(sourceRoot, failureRoot, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
   normalizeOwnedCopy(failureRoot);
