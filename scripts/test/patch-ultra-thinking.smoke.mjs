@@ -16,27 +16,30 @@ for (const key of Object.keys(process.env)) {
 const piRoot = path.join(temp, 'pi-coding-agent');
 const sourceMeta = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8'));
 assert.equal(sourceMeta.name, main.PACKAGE_NAME);
+assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes('1.4.0'), 'legacy 1.4.0 pin was dropped');
+assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes('1.5.0'), '1.5.0 pin is missing');
 assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes(sourceMeta.version));
 
 function normalizeOwnedCopy(packageRoot) {
   const grouped = new Map();
-  for (const [rel, before, after] of main.PATCHES) {
+  const operationsToNormalize = [...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])];
+  for (const [rel, before, after, expectedCount = 1] of operationsToNormalize) {
     const operations = grouped.get(rel) ?? [];
-    operations.push({ before, after });
+    operations.push({ before, after, expectedCount });
     grouped.set(rel, operations);
   }
   const files = [];
   for (const [rel, operations] of grouped) {
     const target = path.join(packageRoot, rel);
     let source = fs.readFileSync(target, 'utf8');
-    for (const { before, after } of operations.toReversed()) {
+    for (const { before, after, expectedCount } of operations.toReversed()) {
       const beforeCount = source.split(before).length - 1;
       const afterCount = source.split(after).length - 1;
-      if (afterCount === 1) {
-        source = source.replace(after, before);
+      if (afterCount === expectedCount) {
+        source = source.split(after).join(before);
         continue;
       }
-      if (beforeCount === 1) continue;
+      if (beforeCount === expectedCount && afterCount === 0) continue;
       throw new Error(`anchor cardinality mismatch while normalizing owned fixture: ${rel}`);
     }
     files.push({ target, source });
@@ -75,6 +78,15 @@ try {
   console.log = (...values) => { help += values.join(' '); };
   try { cli.printHelp(); } finally { console.log = originalLog; }
   assert.match(help, /max, ultra/);
+  const bundlePath = path.join(piRoot, 'dist/bundle/chunks/chunk-44DLKSKE.js');
+  const bundle = fs.readFileSync(bundlePath, 'utf8');
+  assert.match(bundle, /VALID_THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /ThinkingLevelMapSchema=openObject2\(\{[^}]*ultra:opt\(ThinkingLevelMapValueSchema\)\}/);
+  assert.equal(bundle.split('ultra:"Ultra reasoning"').length - 1, 2, 'bundle selector labels do not both include ultra');
+  assert.match(bundle, /Set thinking level: off, minimal, low, medium, high, xhigh, max, ultra/);
+  assert.match(bundle, /THINKING_LEVEL_OPTIONS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /,THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+  assert.match(bundle, /for\(let level of\["off","minimal","low","medium","high","xhigh","max","ultra"\]\)/);
   const parse = cli.parseArgs(['--thinking', 'ultra']);
   assert.equal(parse.thinking, 'ultra');
 
@@ -84,8 +96,8 @@ try {
   const aiTypes = fs.readFileSync(path.join(piRoot, 'node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts'), 'utf8');
   assert.match(coreTypes, /"max" \| "ultra"/);
   assert.match(aiTypes, /"max", "ultra"/);
-  assert.match(aiTypes, /ModelThinkingLevelSchema: Type\.TEnum<.*"ultra"/);
-  assert.match(aiTypes, /ultra: Type\.TOptional<Type\.TUnion/);
+  assert.match(aiTypes, /ModelThinkingLevelSchema: import\("@earendil-works\/pi-schema"\)\.Schema<[^;]*"ultra"/);
+  assert.match(aiTypes, /ultra(?:\?: string \| null \| undefined|: Type\.TOptional<Type\.TUnion)/);
   const { getSupportedThinkingLevels } = await import(pathToFileURL(modelsPath));
   const supported = getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { ultra: 'ultra' } });
   assert.equal(supported.at(-1), 'ultra', 'runtime supported-level discovery omits ultra');
@@ -93,6 +105,7 @@ try {
 
   const read = (rel) => fs.readFileSync(path.join(piRoot, rel), 'utf8');
   assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /"max", "ultra"/);
+  assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /ultra: opt\(ThinkingLevelMapValueSchema\)/, 'runtime thinking-level map schema omits ultra');
   const schemas = await import(pathToFileURL(modelSchemaPath));
   assert.ok(schemas.ModelThinkingLevelSchema.enum.includes('ultra'), 'persisted model thinking setting schema omits ultra');
   assert.ok(schemas.ThinkingLevelMapSchema.properties.ultra, 'model configuration map schema omits ultra');
@@ -132,7 +145,7 @@ try {
   assert.equal(await sub.patch(subRoot), false, 'subagent patch is not idempotent');
   for (const rel of sub.FILES) assert.match(fs.readFileSync(path.join(subRoot, rel), 'utf8'), /"max", "ultra"/);
 
-  const changedFiles = [...new Set(main.PATCHES.map(([rel]) => rel))];
+  const changedFiles = [...new Set([...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])].map(([rel]) => rel))];
   const failureRoot = path.join(temp, 'failure-fixture');
   fs.cpSync(sourceRoot, failureRoot, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
   normalizeOwnedCopy(failureRoot);

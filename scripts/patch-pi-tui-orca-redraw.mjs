@@ -26,7 +26,7 @@ export const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 export const PI_PACKAGE_VERSION = '1.2.0';
 export const TUI_PACKAGE_NAME = '@earendil-works/pi-tui';
 export const TUI_PACKAGE_VERSION = '1.2.0';
-export const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.2.0', '1.3.0', '1.4.0']);
+export const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.2.0', '1.3.0', '1.4.0', '1.5.0']);
 export const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-tui/dist/tui-alt-screen.js';
 export const UNPATCHED_SHA256 = 'aa0b953c0158357d20a1d6f868cd4d7b667fd6646848a788ffded9808c9ef720';
 export const PATCHED_SHA256 = '4266c1e4239c8b39d17b9b62e3421b349b81c928244ad32f70786db30ec60ce0';
@@ -36,6 +36,10 @@ export const VERSIONED_PINS = Object.freeze({
   '1.4.0': {
     unpatched: 'ea5f52dc983f60c4354c674bd19f0d296fda8b5fa86185d4a4bdf0343b1ff92b',
     patched: 'ae1456234e4b6008af27ccaaf14888f83bf0f99d88cdccd8469d5e9c2157ce01',
+  },
+  '1.5.0': {
+    unpatched: '5b6609ac44a39cc49bbb1ce0b5c3c9550854849daba492fe530dfbaa50aac608',
+    patched: '0cf36cad899ff736ad199ddc1b5cfcaa728c6b79078cdc9d694c2bfc1c855051',
   },
 });
 

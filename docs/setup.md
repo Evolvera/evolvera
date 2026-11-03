@@ -23,7 +23,7 @@ User
 - npm available on `PATH`;
 - credentials for at least one AI provider.
 
-The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.4.0`. The patches described below are verified for this version; override-selected versions without proven compatibility fail closed.
+The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.5.0`. Version-specific patches remain guarded by their own verified content pins; override-selected versions without proven compatibility fail closed.
 
 ### Node with fnm (Linux and macOS)
 
@@ -229,14 +229,14 @@ This means changing `config/mcp.json` does not automatically replace the MCP con
 
 ### Platform Differences
 
-Windows also installs `pi-provider-kimi-code`. The scripts use `@earendil-works/pi-coding-agent@1.4.0` by default; the baseline can be explicitly overridden for controlled tests:
+Windows also installs `pi-provider-kimi-code`. The scripts use `@earendil-works/pi-coding-agent@1.5.0` by default; the baseline can be explicitly overridden for controlled tests:
 
 ```bash
-PI_CODING_AGENT_VERSION=1.4.0 ./install.sh
+PI_CODING_AGENT_VERSION=1.5.0 ./install.sh
 ```
 
 ```powershell
-$env:PI_CODING_AGENT_VERSION = "1.4.0"
+$env:PI_CODING_AGENT_VERSION = "1.5.0"
 .\install.ps1
 ```
 

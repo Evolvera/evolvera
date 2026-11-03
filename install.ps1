@@ -26,7 +26,7 @@ $GREEN = "Green"
 $CYAN = "Cyan"
 
 $PI_CODING_AGENT_VERSION = $env:PI_CODING_AGENT_VERSION
-if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "1.4.0" }
+if (-not $PI_CODING_AGENT_VERSION) { $PI_CODING_AGENT_VERSION = "1.5.0" }
 $MIN_NODE_VERSION = [version]"22.19.0"
 
 function Info($message) { Write-Host "[OK] $message" -ForegroundColor $GREEN }
