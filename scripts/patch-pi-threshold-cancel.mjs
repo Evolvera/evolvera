@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PACKAGE_VERSION = '1.3.0';
-const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0']);
+const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0', '1.5.0']);
 const TARGET_RELATIVE_PATH = 'dist/core/agent-session.js';
 const UNPATCHED_ANCHOR = `                await this._emitSessionCompactFailed({
                     reason,

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PACKAGE_VERSION = '1.3.0';
-const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0']);
+const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0', '1.5.0']);
 const PULSE_MS = 350;
 
 const PATCHES = [
@@ -20,14 +20,17 @@ const PATCHES = [
     'MODEL_THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max"]',
     'MODEL_THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]'],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
-    'ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max"]>',
-    'ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>'],
+    'export declare const ThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "xhigh">;',
+    'export declare const ThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "ultra" | "xhigh">;'],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
-    'ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max"]>',
-    'ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>'],
+    'export declare const ModelThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">;',
+    'export declare const ModelThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "ultra" | "xhigh">;'],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
-    '    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;',
-    '    ultra: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;'],
+    '    xhigh?: string | null | undefined;\n    max?: string | null | undefined;\n}>;',
+    '    xhigh?: string | null | undefined;\n    max?: string | null | undefined;\n    ultra?: string | null | undefined;\n}>;'],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js',
+    '    max: opt(ThinkingLevelMapValueSchema),\n}, {',
+    '    max: opt(ThinkingLevelMapValueSchema),\n    ultra: opt(ThinkingLevelMapValueSchema),\n}, {'],
   ['node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";'],
