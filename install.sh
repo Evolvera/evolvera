@@ -27,7 +27,7 @@ if [ -d "$SCRIPT_DIR/skills/flow-orca" ] && [ -d "$PI_DIR/skills/flow" ]; then
     exit 1
 fi
 
-PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.4.0}"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.5.0}"
 MIN_NODE_VERSION="22.19.0"
 same_root=false
 
