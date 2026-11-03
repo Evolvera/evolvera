@@ -16,6 +16,8 @@ for (const key of Object.keys(process.env)) {
 const piRoot = path.join(temp, 'pi-coding-agent');
 const sourceMeta = JSON.parse(fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8'));
 assert.equal(sourceMeta.name, main.PACKAGE_NAME);
+assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes('1.4.0'), 'legacy 1.4.0 pin was dropped');
+assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes('1.5.0'), '1.5.0 pin is missing');
 assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes(sourceMeta.version));
 
 function normalizeOwnedCopy(packageRoot) {
@@ -84,8 +86,8 @@ try {
   const aiTypes = fs.readFileSync(path.join(piRoot, 'node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts'), 'utf8');
   assert.match(coreTypes, /"max" \| "ultra"/);
   assert.match(aiTypes, /"max", "ultra"/);
-  assert.match(aiTypes, /ModelThinkingLevelSchema: Type\.TEnum<.*"ultra"/);
-  assert.match(aiTypes, /ultra: Type\.TOptional<Type\.TUnion/);
+  assert.match(aiTypes, /ModelThinkingLevelSchema: import\("@earendil-works\/pi-schema"\)\.Schema<[^;]*"ultra"/);
+  assert.match(aiTypes, /ultra(?:\?: string \| null \| undefined|: Type\.TOptional<Type\.TUnion)/);
   const { getSupportedThinkingLevels } = await import(pathToFileURL(modelsPath));
   const supported = getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { ultra: 'ultra' } });
   assert.equal(supported.at(-1), 'ultra', 'runtime supported-level discovery omits ultra');
@@ -93,6 +95,7 @@ try {
 
   const read = (rel) => fs.readFileSync(path.join(piRoot, rel), 'utf8');
   assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /"max", "ultra"/);
+  assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /ultra: opt\(ThinkingLevelMapValueSchema\)/, 'runtime thinking-level map schema omits ultra');
   const schemas = await import(pathToFileURL(modelSchemaPath));
   assert.ok(schemas.ModelThinkingLevelSchema.enum.includes('ultra'), 'persisted model thinking setting schema omits ultra');
   assert.ok(schemas.ThinkingLevelMapSchema.properties.ultra, 'model configuration map schema omits ultra');

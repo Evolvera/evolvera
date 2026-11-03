@@ -81,7 +81,7 @@ function response(body, status = 402, headers = {}) {
 }
 
 try {
-  assert.ok(['1.3.0', '1.4.0'].includes(piMetadata.version));
+  assert.ok(['1.3.0', '1.4.0', '1.5.0'].includes(piMetadata.version));
   assert.equal(piMetadata.version, aiMetadata.version);
   assert.equal(patcher.TARGET_RELATIVE_PATH, 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js');
   assert.deepEqual(

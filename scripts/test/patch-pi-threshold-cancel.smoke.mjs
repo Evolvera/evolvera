@@ -49,7 +49,7 @@ function evaluateCatch({ cancelledByExtension, reason, aborted, queued }) {
 
 try {
   assert.equal(PACKAGE_VERSION, '1.3.0');
-  assert.deepEqual(SUPPORTED_PACKAGE_VERSIONS, ['1.3.0', '1.4.0']);
+  assert.deepEqual(SUPPORTED_PACKAGE_VERSIONS, ['1.3.0', '1.4.0', '1.5.0']);
   assert.equal(createHash('sha256').update(UNPATCHED_ANCHOR).digest('hex'), UNPATCHED_SHA256);
   assert.equal(createHash('sha256').update(PATCHED_ANCHOR).digest('hex'), PATCHED_SHA256);
   assert.equal(packageRootFromArgs(['--package-root', fixtureRoot]), fixtureRoot);
