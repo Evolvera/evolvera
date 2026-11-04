@@ -40,6 +40,13 @@ const SDK_PINS = {
     "dist/core/model-runtime.js": "44d8017928eff6721d5a56b4e71f98bcafb124f5aa6e7d3f016491e11fcf6461",
     "dist/core/model-config.js": "b4ecb1165c328fdb5f8b767519f2b632c31737f86d0ce1d7a05959e7c8354d93",
   },
+  "1.5.0": {
+    "package.json": "990aac3caff17b717294fa792b4e3f60b991d274d9f4ab6977d6aa42aa43c95e",
+    "dist/main.js": "dec83f4f151de1351c9a39ed8ad6752cb5e5d91798daede5780fa401d0e6ec06",
+    "dist/migrations.js": "8514d2573b028baeba60635498a1c5f129a602abd203ea5c37a63df2eea3fb6b",
+    "dist/core/model-runtime.js": "44d8017928eff6721d5a56b4e71f98bcafb124f5aa6e7d3f016491e11fcf6461",
+    "dist/core/model-config.js": "f03200776dbefa9171da850724e2e2eb20d865768feb0cb3f5b9e5f3260d13fe",
+  },
 };
 const BUILTINS = new Set(["node:readline", "node:path", "node:fs/promises", "fs", "path"]);
 const PACKAGE_PINS = {
@@ -60,8 +67,12 @@ const PACKAGE_PINS = {
     "@earendil-works/pi-tui": { version: "1.3.0", hash: "a6a82af81ed5b6069267eabfdcf047d0af8013695b0e64d72f3c9f44f8e8124e" },
   },
   "1.4.0": {
-    "@earendil-works/pi-ai": { version: "1.4.0", hash: "36df91142c18a5912eafab0f2783bb4d88cdd101c5c5e7fd9173d4387cc5cced" },
+    "@earendil-works/pi-ai": { version: "1.4.0", hash: "36df91142c18a5912eafab0f2783bb4d88cdd101c5e7fd9173d4387cc5cced" },
     "@earendil-works/pi-tui": { version: "1.4.0", hash: "49362a3815b3f69728c68243609d63355aa54b4c374414c5b037560b41ca6038" },
+  },
+  "1.5.0": {
+    "@earendil-works/pi-ai": { version: "1.5.0", hash: "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca" },
+    "@earendil-works/pi-tui": { version: "1.5.0", hash: "396da9b4632e2f43a5cf17299298cbb7618c891c5c693a049df952ee9ccf03d7" },
   },
 };
 const COMMON_PACKAGES = {

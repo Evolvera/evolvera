@@ -27,7 +27,7 @@ if [ -d "$SCRIPT_DIR/skills/flow-orca" ] && [ -d "$PI_DIR/skills/flow" ]; then
     exit 1
 fi
 
-PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.4.0}"
+PI_CODING_AGENT_VERSION="${PI_CODING_AGENT_VERSION:-1.5.0}"
 MIN_NODE_VERSION="22.19.0"
 same_root=false
 
@@ -190,6 +190,7 @@ if command -v pi &>/dev/null; then
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-deferred-nudges.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-bounded-waits.mjs"
         node "$SCRIPT_DIR/scripts/patch-pi-subagents-hud.mjs"
+        node "$SCRIPT_DIR/scripts/patch-pi-subagents-stale-mention-context.mjs"
         info "Suporte a thinking ultra dos subagentes verificado"
     else
         echo "[!] Pulando patch de pi-subagents: pacote não instalado." >&2

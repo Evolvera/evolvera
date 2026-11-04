@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_PACKAGE_VERSION = '1.3.0';
-const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
+const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0', '1.5.0'];
 const AUTH_PACKAGE_NAME = '@gotgenes/pi-anthropic-auth';
 const AUTH_PACKAGE_VERSION = '2.0.6';
 // Preserve the installed adapted 2.0.1 instead of reinstalling its OAuth path.

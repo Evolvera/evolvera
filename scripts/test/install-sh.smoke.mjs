@@ -250,7 +250,7 @@ for (const [file, install] of [['install.sh', 'npm:@tintinweb/pi-subagents@0.18.
 const shellText = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
 const powershellText = fs.readFileSync(path.join(root, 'install.ps1'), 'utf8');
 for (const [label, text] of [['shell', shellText], ['PowerShell', powershellText]]) {
-  assert.match(text, /PI_CODING_AGENT_VERSION.*1\.4\.0/, `${label}: PI default must be 1.4.0`);
+  assert.match(text, /PI_CODING_AGENT_VERSION.*1\.5\.0/, `${label}: PI default must be 1.5.0`);
   const install = text.indexOf('npm install -g ');
   for (const patch of ['patch-pi-threshold-cancel.mjs', 'patch-pi-tui-orca-redraw.mjs', 'patch-pi-ultra-thinking.mjs']) {
     assert.ok(text.indexOf(patch) > install, `${label}: ${patch} must follow PI install`);

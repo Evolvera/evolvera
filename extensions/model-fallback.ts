@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
-import { VIRTUAL_MODEL_STATE_ENTRY, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VIRTUAL_MODEL_STATE_ENTRY, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { resolveDeepFastChain } from "./deep-fast";
 
 type Level = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -22,6 +22,8 @@ const PRIMARY_MODEL_METADATA: Record<string, { name: string; contextWindow: numb
 // codex-fast-mode.ts instead of imported, so each extension still loads on its own.
 export const ROUTED_MODEL_EVENT = "model-fallback:routed";
 export type RoutedModel = { provider: string; modelId: string };
+
+let lastKnownGoodRegistry: ModelRegistry | undefined;
 
 export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   builder: [
@@ -111,55 +113,68 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
     });
   });
 
-  for (const [id, configuredChain] of Object.entries(FALLBACK_CHAINS)) {
-    pi.registerVirtualModel<ChainState>({
-      provider: "fallback",
-      id,
-      ...PRIMARY_MODEL_METADATA[configuredChain[0].model],
-      thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-      route(request, ctx) {
-        // A speed mode may serve a different chain for this id; the configured one is the default.
-        const chain = resolveDeepFastChain(id, configuredChain, ctx.modelRegistry);
-        const runId = request.reason === "user" ? randomUUID() : request.state?.runId ?? lastUserId(request.messages);
-        const requested = decideFallbackRoute(chain, request, runId);
-        // A step whose model is absent from the current catalog is a fallback condition, not a hard
-        // error: the catalog is remote and may not be cached yet, and a chain primary such as
-        // gpt-6.1-terra ships in the remote catalog only. Advance to the first resolvable step.
-        // A step is usable only when its model is in the current catalog AND its provider has a
-        // configured credential. A provider without credentials would fail every request with an
-        // auth error that no retry classification recovers from, so it is skipped here instead of
-        // being selected.
-        const usable = (candidate: ReturnType<typeof ctx.modelRegistry.find>) =>
-          candidate && (ctx.modelRegistry.hasConfiguredAuth?.(candidate) ?? true) ? candidate : undefined;
-        // Search forward from the requested step, then wrap to the earlier ones: a working earlier
-        // step beats a hard failure when the advanced step itself became unusable.
-        const order = [...Array(chain.length).keys()].slice(requested.step)
-          .concat([...Array(requested.step).keys()]);
-        let step = requested.step;
-        let model: ReturnType<typeof ctx.modelRegistry.find>;
-        for (const candidateStep of order) {
-          model = usable(ctx.modelRegistry.find(chain[candidateStep].provider, chain[candidateStep].model));
-          if (model) { step = candidateStep; break; }
-        }
-        if (!model) throw new Error(`Fallback model is unavailable: ${chain[requested.step].provider}/${chain[requested.step].model}`);
-        const state = { step, runId: requested.runId };
-        // Routing runs before every request, so listeners hold the model serving the current one.
-        // Only provider and model id travel: no message, session or account data.
-        const routed: RoutedModel = { provider: model.provider, modelId: model.id };
-        pi.events?.emit?.(ROUTED_MODEL_EVENT, routed);
-        const desiredLevel = chain[step].level === "inherit" ? request.thinkingLevel : chain[step].level;
-        return { model, thinkingLevel: clampThinkingLevel(model, desiredLevel as any), state };
-      },
-    });
-  }
+  const registerRouters = () => {
+    for (const [id, configuredChain] of Object.entries(FALLBACK_CHAINS)) {
+      pi.registerVirtualModel<ChainState>({
+        provider: "fallback",
+        id,
+        ...PRIMARY_MODEL_METADATA[configuredChain[0].model],
+        thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        route(request, ctx) {
+          let registry: ModelRegistry | undefined;
+          try {
+            registry = ctx.modelRegistry;
+            lastKnownGoodRegistry = registry;
+          } catch {
+            registry = lastKnownGoodRegistry;
+          }
+          if (!registry) throw new Error(`Fallback chain '${id}' cannot route: model registry is unavailable`);
+          // Speed mode may serve a different chain for this id; the configured one is the default.
+          const chain = resolveDeepFastChain(id, configuredChain, registry);
+          const runId = request.reason === "user" ? randomUUID() : request.state?.runId ?? lastUserId(request.messages);
+          const state = decideFallbackRoute(chain, request, runId);
+          let chosen: { step: Step; model: NonNullable<ReturnType<typeof registry.find>>; index: number } | undefined;
+          const unavailable: string[] = [];
+          for (let index = state.step; index < chain.length; index++) {
+            const step = chain[index];
+            const model = registry.find(step.provider, step.model);
+            if (!model) {
+              unavailable.push(`${step.provider}/${step.model}: model is not in the registry`);
+              continue;
+            }
+            if (!registry.hasConfiguredAuth(model)) {
+              unavailable.push(`${step.provider}/${step.model}: provider has no configured credentials`);
+              continue;
+            }
+            chosen = { step, model, index };
+            break;
+          }
+          if (!chosen) throw new Error(`Fallback chain '${id}' has no eligible step: ${unavailable.join("; ")}`);
+          const { step, model, index } = chosen;
+          const routedState = { ...state, step: index };
+          // Routing runs before every request, so listeners hold the model serving the current one.
+          // Only provider and model id travel: no message, session or account data.
+          const routed: RoutedModel = { provider: model.provider, modelId: model.id };
+          try { pi.events?.emit?.(ROUTED_MODEL_EVENT, routed); } catch { /* routing remains valid without the optional bridge event */ }
+          const desiredLevel = step.level === "inherit" ? request.thinkingLevel : step.level;
+          return { model, thinkingLevel: clampThinkingLevel(model, desiredLevel as any), state: routedState };
+        },
+      });
+    }
+  };
+  registerRouters();
+  pi.on("session_start", () => registerRouters());
 
   pi.on("agent_before_settle", (event, ctx) => {
     if (event.outcome === "aborted" || !ctx.model || ctx.model.provider !== "fallback") return;
     const chainId = ctx.model.id;
     const configuredChain = FALLBACK_CHAINS[chainId];
     if (!configuredChain) return;
-    const chain = resolveDeepFastChain(chainId, configuredChain);
-    if (!chain.length) return;
+    // Advancement must index the chain that actually served the request, so resolve it exactly as
+    // route() does, with the same registry.
+    let settleRegistry: ModelRegistry | undefined;
+    try { settleRegistry = ctx.modelRegistry; } catch { settleRegistry = lastKnownGoodRegistry; }
+    const chain = resolveDeepFastChain(chainId, configuredChain, settleRegistry);
 
     let branch: any[];
     try {

@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_PACKAGE_VERSION = '1.3.0';
-const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
+const PI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0', '1.5.0'];
 const AI_PACKAGE_NAME = '@earendil-works/pi-ai';
 const AI_PACKAGE_VERSION = '1.3.0';
-const AI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0'];
+const AI_SUPPORTED_VERSIONS = ['1.3.0', '1.4.0', '1.5.0'];
 const TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js';
 const CREATE_CLIENT_ANCHOR = 'function createClient(';
 const UNPATCHED_ANCHOR = `    return new OpenAI({
@@ -64,6 +64,10 @@ const VERSIONED_HASHES = {
   '1.4.0': {
     unpatched: '106eb312121137abbe9ad8050e2c9baa1ea27315233c7b8bee8c7820c8b3a6cf',
     patched: '96fa22a1e0334ed2cf5f520af664417b1a99307e1731ad8eaf7d53d96e06cac8',
+  },
+  '1.5.0': {
+    unpatched: 'df81627c173163d0b918692f4a3b87e22cbdb5883b809e4d70d6152d1e68d948',
+    patched: '15c33eac1a07378f009d30f3f6b09b4d87c8e0663d3c3a902b03eeba95941059',
   },
 };
 

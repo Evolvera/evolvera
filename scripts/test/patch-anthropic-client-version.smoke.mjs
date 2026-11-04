@@ -138,18 +138,21 @@ try {
     path.join('/synthetic/home', '.pi', 'agent', 'npm', 'node_modules', '@gotgenes', 'pi-anthropic-auth'),
   );
 
-  assert.equal(sdkMetadata.version, '1.4.0');
-  assert.equal(patcher.PI_140_NATIVE_SHA256, createHash('sha256').update(sdkPiTarget).digest('hex'));
+  assert.ok(patcher.PI_SUPPORTED_VERSIONS.includes('1.4.0'), 'legacy 1.4.0 pin was dropped');
+  assert.ok(patcher.PI_SUPPORTED_VERSIONS.includes('1.5.0'), '1.5.0 pin is missing');
+  assert.equal(sdkMetadata.version, '1.5.0');
+  assert.equal(patcher.PI_140_NATIVE_SHA256, '360298eff89e8c517c213880088db33c93b56ba737c91e885b22e7e125ca5d55', 'legacy 1.4.0 native hash pin changed');
+  assert.ok(sdkPiTarget.toString('utf8').includes(patcher.PI_PATCHED_ANCHOR), '1.5.0 client-version target pin missing');
   createFixture({ piVersion: sdkMetadata.version, piSource: sdkPiTarget.toString('utf8') });
   const nativePiBefore = fs.readFileSync(piTarget);
   const nativeAuthBefore = fs.readFileSync(authTarget);
   const nativeFirst = runPatcher();
   assert.equal(nativeFirst.status, 0, nativeFirst.stderr);
-  assert.deepEqual(fs.readFileSync(piTarget), nativePiBefore, 'native PI 1.4 client version was rewritten');
+  assert.deepEqual(fs.readFileSync(piTarget), nativePiBefore, 'native PI 1.5 client version was rewritten');
   assert.deepEqual(fs.readFileSync(authTarget), expectedReplacement(
     nativeAuthBefore.toString('utf8'), patcher.AUTH_UNPATCHED_ANCHOR, patcher.AUTH_PATCHED_ANCHOR,
   ));
-  assert.equal(runPatcher().status, 0, 'native PI 1.4 rerun was not idempotent');
+  assert.equal(runPatcher().status, 0, 'native PI 1.5 rerun was not idempotent');
 
   createFixture();
   const piBefore = fs.readFileSync(piTarget);

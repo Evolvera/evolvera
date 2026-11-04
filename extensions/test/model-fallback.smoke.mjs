@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -59,14 +61,19 @@ const virtualModels = new Map();
 const handlers = new Map();
 const appended = [];
 const published = [];
+let failEmit = false;
+let registrations = 0;
 const pi = {
-  registerVirtualModel(model) { virtualModels.set(`${model.provider}/${model.id}`, model); },
+  registerVirtualModel(model) { registrations++; virtualModels.set(`${model.provider}/${model.id}`, model); },
   on(name, handler) { handlers.set(name, handler); },
   appendEntry(type, data) { appended.push({ type: "custom", customType: type, data }); },
-  events: { emit(channel, data) { published.push({ channel, data }); } },
+  events: { emit(channel, data) { if (failEmit) throw new Error("This extension ctx is stale"); published.push({ channel, data }); } },
 };
 register(pi);
 assert.equal(virtualModels.size, 6, "all six virtual chains register");
+const initialRegistrations = registrations;
+handlers.get("session_start")({}, {});
+assert.equal(registrations, initialRegistrations + 6, "a live session reasserts ownership of every virtual router");
 const selectModel = handlers.get("model_select");
 selectModel({ model: { provider: "openai", id: "gpt-6.1-sol" } });
 assert.equal(appended.length, 0, "selecting another model does not reset fallback state");
@@ -100,13 +107,40 @@ assert.deepEqual(FALLBACK_CHAINS.conductor.map(({ provider, model, level }) => (
 assert.equal(FALLBACK_CHAINS.conductor[1].level, "inherit", "the Codex fallback mirrors the requested effort");
 const conductor = virtualModels.get("fallback/conductor");
 const builder = virtualModels.get("fallback/builder");
-const registry = { find(provider, id) { return models.get(`${provider}/${id}`); } };
+const configuredProviders = new Set([...FALLBACK_CHAINS.conductor.map(({ provider }) => provider), "anthropic"]);
+const registry = {
+  find(provider, id) { return models.get(`${provider}/${id}`); },
+  hasConfiguredAuth(model) { return configuredProviders.has(model.provider); },
+};
 const conductorPrimary = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry });
 assert.equal(conductorPrimary.model.id, "deepseek-v4.1-flash-fast");
 assert.equal(conductorPrimary.thinkingLevel, "high");
 const conductorFallback = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "continuation", state: { step: 1, runId: "u1" } }, { modelRegistry: registry });
 assert.equal(conductorFallback.model.id, "gpt-6.1-sol");
 assert.equal(conductorFallback.thinkingLevel, "high");
+configuredProviders.delete("refuseless");
+const conductorSkipped = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry });
+assert.equal(conductorSkipped.model.id, "gpt-6.1-sol", "initial selection skips a credential-less provider");
+assert.equal(conductorSkipped.state.step, 1, "the skipped step is not persisted");
+assert.deepEqual(published.at(-1), {
+  channel: "model-fallback:routed",
+  data: { provider: "openai", modelId: "gpt-6.1-sol" },
+}, "the routed event reports the eligible step, not the skipped step");
+const advancedSkipped = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "refuseless", id: "deepseek-v4.1-flash-fast" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
+assert.equal(advancedSkipped.model.id, "gpt-6.1-sol", "advance selection also skips credential-less providers");
+assert.equal(advancedSkipped.state.step, 1);
+const staleContext = { get modelRegistry() { throw new Error("This extension ctx is stale"); } };
+assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, staleContext).model.id, "gpt-6.1-sol", "cached registry avoids rejecting a stale ctx getter");
+failEmit = true;
+assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }).model.id, "gpt-6.1-sol", "stale routed-event emit is non-fatal");
+failEmit = false;
+configuredProviders.clear();
+assert.throws(() => conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }), /Fallback chain 'conductor' has no eligible step: refuseless\/deepseek-v4\.1-flash-fast: provider has no configured credentials; openai\/gpt-6\.1-sol: provider has no configured credentials/);
+configuredProviders.add("openai");
+configuredProviders.add("refuseless");
+const configuredPrimary = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry });
+assert.equal(configuredPrimary.model.id, "deepseek-v4.1-flash-fast", "a configured first step remains unchanged");
+configuredProviders.add("anthropic");
 const baseRequest = { model: { provider: "fallback", id: "builder" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" };
 const firstRoute = builder.route(baseRequest, { modelRegistry: registry });
 assert.equal(firstRoute.model.id, "gpt-6-luna");
@@ -208,17 +242,63 @@ const exhaustedBranch = [
 assert.equal(settle({ outcome: "error", context: {} }, { model: activeModel, sessionManager: { getBranch: () => exhaustedBranch } }), undefined, "exhausted chain ends without looping");
 assert.equal(settle({ outcome: "error", context: {} }, { model: { provider: "openai", id: "gpt-6-luna" }, sessionManager: { getBranch: () => quotaBranch } }), undefined);
 
-// A chain step whose provider has no configured credential is skipped: selecting it would fail
-// every request with an auth error that no retry classification recovers from.
-const credRegistry = (missing) => ({
-  find: (provider, id) => models.get(`${provider}/${id}`),
-  hasConfiguredAuth: (model) => model.provider !== missing,
-});
-const noRefuseless = virtualModels.get("fallback/luna").route(
-  { ...baseRequest, model: { provider: "fallback", id: "luna" }, reason: "continuation", state: { step: 1, runId: "u1" } },
-  { modelRegistry: credRegistry("refuseless") },
-);
-assert.equal(noRefuseless.model.provider, "openai", "an uncredentialed step falls back to the previous usable one");
-assert.equal(noRefuseless.state.step, 0, "the state records the step actually serving the request");
+// Deep fast is wired into the router, not just defined next to it: while the preference is on and
+// the router provider is usable, the workhorse chains start on the fast model, and fallback
+// advancement indexes the chain that actually served the request. Judgment chains stay untouched.
+const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "model-fallback-deepfast-"));
+const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = agentDir;
+try {
+  const fastId = "deepseek/deepseek-v4.1-flash-ultrafast";
+  models.set(`opengateway/${fastId}`, {
+    provider: "opengateway", id: fastId, reasoning: true,
+    thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high" },
+  });
+  const fastRegistry = (providers) => ({
+    find(provider, id) { return models.get(`${provider}/${id}`); },
+    hasConfiguredAuth(model) { return providers.has(model.provider); },
+  });
+  const everyone = new Set(["openai", "refuseless", "anthropic", "opengateway"]);
+  const lunaRequest = { ...baseRequest, model: { provider: "fallback", id: "luna" }, thinkingLevel: "high", reason: "user" };
+  const route = (chainId, request, providers = everyone) =>
+    virtualModels.get(`fallback/${chainId}`).route({ ...request, model: { provider: "fallback", id: chainId } }, { modelRegistry: fastRegistry(providers) });
+  const setDeepFast = (on) => fs.writeFileSync(path.join(agentDir, "settings.json"), JSON.stringify(on ? { deepFastMode: true } : {}));
+
+  setDeepFast(false);
+  assert.equal(route("luna", lunaRequest).model.provider, "openai", "off keeps the configured primary");
+
+  setDeepFast(true);
+  const fastScout = route("luna", lunaRequest);
+  assert.equal(fastScout.model.provider, "opengateway", "on routes the scout chain to the fast model");
+  assert.equal(fastScout.thinkingLevel, "low", "scouts run at low effort");
+  assert.equal(route("builder", lunaRequest).model.provider, "opengateway", "the builder chain is accelerated");
+  assert.equal(route("heavy", lunaRequest).model.provider, "opengateway", "the heavy chain is accelerated");
+  assert.equal(route("builder", lunaRequest).thinkingLevel, "high", "builders keep the effort requested");
+  assert.equal(route("sol", lunaRequest).model.provider, "openai", "the sol chain is never swapped");
+  assert.equal(route("conductor", lunaRequest).model.provider, "refuseless", "the conductor chain is never swapped");
+
+  // No router credential: the configured chain serves the request instead of failing it.
+  assert.equal(route("luna", lunaRequest, new Set(["openai", "refuseless", "anthropic"])).model.provider, "openai", "an unusable router is skipped");
+
+  // A fast-model failure advances to the configured primary: settle must index the deep-fast chain.
+  const fastBranch = [
+    { type: "message", message: { role: "user", id: "u1" } },
+    { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: "luna", state: { step: 0, runId: "u1" } } },
+    { type: "message", message: { role: "assistant", provider: "opengateway", model: fastId, stopReason: "error", errorMessage: "insufficient_quota" } },
+  ];
+  const before = appended.length;
+  const settleResult = settle(
+    { outcome: "error", context: {} },
+    { model: { provider: "fallback", id: "luna" }, modelRegistry: fastRegistry(everyone), sessionManager: { getBranch: () => fastBranch } },
+  );
+  assert.deepEqual(settleResult, { continue: true }, "a fast-model quota error continues on the next step");
+  const advance = appended.slice(before).find((e) => e.customType === VIRTUAL_MODEL_STATE_ENTRY);
+  assert.equal(advance.data.state.step, 1, "the advance indexes the deep-fast chain");
+  const afterAdvance = route("luna", { ...lunaRequest, reason: "continuation", state: advance.data.state });
+  assert.equal(afterAdvance.model.provider, "openai", "the next step is the configured primary");
+} finally {
+  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  fs.rmSync(agentDir, { recursive: true, force: true });
+}
 
 console.log("model-fallback smoke: PASS");
