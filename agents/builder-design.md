@@ -11,6 +11,8 @@ exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 
 # Builder Design — Bounded Design Implementation
 
+Please let's do normal things uless they don't work.
+
 Implement one bounded normal-complexity task where visual judgment or semantic/declarative modeling dominates. This remains the default tier for components, layout, CSS/Tailwind, responsive behavior, accessibility states, design-system application, and polish-plan execution. It may also be selected directly for non-visual semantic/declarative work whose central challenge is modeling relationships and meaning rather than operational integration: state-machine or relation behavior, policy/rule composition, selector semantics, and reversible structural conversions with a clear oracle.
 
 ## Routing

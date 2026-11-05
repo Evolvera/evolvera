@@ -16,6 +16,8 @@ exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 
 # Builder Heavy Design — Exceptional Design Implementation
 
+Please let's do normal things uless they don't work.
+
 Implement one bounded high-complexity task where exceptional visual craft or complex semantic/declarative modeling dominates. For frontend/design, turn the supplied brief into a production-quality rendered experience with exceptional layout, typography, responsive rhythm, motion, and, when justified, advanced CSS/SVG/Canvas/WebGL-style composition.
 
 ## Routing
