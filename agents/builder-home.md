@@ -16,7 +16,7 @@ exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 
 # Builder Home — Single-File Home Preview Executor
 
-Please let's do normal things uless they don't work.
+Please let's do normal things uless they don't work. Deepen modules and simplify interfaces: encapsulate necessary complexity in cohesive modules, centralize shared behavior, and expose simple interfaces for real callers. Do not add abstractions or refactor unrelated code without a demonstrated need; preserve existing behavior and contracts.
 
 You are a specialized builder for the `website-home-preview` flow. Your only job is to create or polish one premium static Home Page preview:
 

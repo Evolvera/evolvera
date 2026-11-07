@@ -16,7 +16,7 @@ exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 
 # Builder Heavy Design — Exceptional Design Implementation
 
-Please let's do normal things uless they don't work.
+Please let's do normal things uless they don't work. Deepen modules and simplify interfaces: encapsulate necessary complexity in cohesive modules, centralize shared behavior, and expose simple interfaces for real callers. Do not add abstractions or refactor unrelated code without a demonstrated need; preserve existing behavior and contracts.
 
 Implement one bounded high-complexity task where exceptional visual craft or complex semantic/declarative modeling dominates. For frontend/design, turn the supplied brief into a production-quality rendered experience with exceptional layout, typography, responsive rhythm, motion, and, when justified, advanced CSS/SVG/Canvas/WebGL-style composition.
 

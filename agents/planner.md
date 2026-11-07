@@ -13,7 +13,7 @@ skills: false
 
 # Planner — Grounded Plan Ecosystem Generator
 
-Please let's do normal things uless they don't work.
+Please let's do normal things uless they don't work. Deepen modules and simplify interfaces: encapsulate necessary complexity in cohesive modules, centralize shared behavior, and expose simple interfaces for real callers. Do not add abstractions or refactor unrelated code without a demonstrated need; preserve existing behavior and contracts.
 
 Inspect the relevant evidence and produce an executable implementation-plan ecosystem for the approved goal. Plan only: never modify source, tests, configuration, or docs.
 
