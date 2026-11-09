@@ -18,6 +18,15 @@ for (const [key, value] of Object.entries({ HOME: owned("home"), USERPROFILE: ow
   fs.mkdirSync(value, { recursive: true }); process.env[key] = value;
 }
 process.env.PI_OFFLINE = "1"; process.env.JITI_FS_CACHE = "0"; process.env.PI_REPORT_RUN = "run_integration123";
+// The native Goal extension is installed into the agent runtime, never into the checkout, and the
+// sandbox below replaces PI_CODING_AGENT_DIR. Resolve it from the caller's real agent directory so the
+// test exercises the installed package instead of silently loading nothing.
+function nativeGoalExtension() {
+  const agentDir = previousEnv.PI_CODING_AGENT_DIR || path.join(previousEnv.HOME ?? os.homedir(), ".pi", "agent");
+  const extension = path.join(agentDir, "npm", "node_modules", "@narumitw", "pi-goal", "src", "goal.ts");
+  assert.ok(fs.existsSync(extension), `native Goal extension is not installed at ${extension}; run install.sh`);
+  return extension;
+}
 if (callerSdkRoot) process.env.PI_SDK_ROOT = callerSdkRoot; else delete process.env.PI_SDK_ROOT;
 let networkAttempts = 0; let providerRequests = 0; let session;
 const originalFetch = globalThis.fetch;
@@ -37,7 +46,7 @@ try {
   const modelCore = faux.createFauxCore({ models: [{ id: "worker-report-test", contextWindow: 32_000, maxTokens: 2_000 }] });
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: owned("synthetic-auth.json"), modelsPath: null });
   modelRuntime.registerProvider(modelCore.provider, { api: modelCore.api, streamSimple: (...args) => { providerRequests++; return modelCore.streamSimple(...args); }, apiKey: "synthetic-only", baseUrl: "http://127.0.0.1:9", models: modelCore.models.map((model) => ({ ...model })) });
-  const extensions = await loadExtensions([path.join(repoRoot, "npm/node_modules/@narumitw/pi-goal/src/goal.ts"), wrapper], process.env.PI_CODING_AGENT_DIR);
+  const extensions = await loadExtensions([nativeGoalExtension(), wrapper], process.env.PI_CODING_AGENT_DIR);
   assert.equal(extensions.diagnostics?.length ?? 0, 0, "only the explicitly loaded native Goal and injected report extensions initialize cleanly");
   const resourceLoader = { getExtensions: () => extensions, getSkills: () => ({ skills: [], diagnostics: [] }), getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }), getSystemPrompt: () => "Synthetic integration only.", getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources() {}, reload: async () => {} };
   const ui = { notify() {}, setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, onTerminalInput: () => () => {}, setWorkingMessage() {}, setWorkingVisible() {}, setWorkingIndicator() {}, setHiddenThinkingLabel() {}, setWidget() {}, setFooter() {}, setHeader() {}, setTitle() {}, pasteToEditor() {}, setEditorText() {}, getEditorText: () => "", addAutocompleteProvider() {}, setEditorComponent() {}, getEditorComponent: () => undefined, getAllThemes: () => [], getTheme: () => undefined, setTheme: () => ({ success: false }), getToolsExpanded: () => false, setToolsExpanded() {}, custom: async () => undefined, editor: async () => undefined };
