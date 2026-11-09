@@ -257,7 +257,9 @@ try {
   await command("yolo global", makeContext());
   const primary = await beforeAgentStart({ systemPrompt: primaryPrompt }, makeContext());
   assert.match(primary.systemPrompt, /a delegated result completes only that assignment, not the user's outcome/);
-  assert.match(primary.systemPrompt, /The orchestrator owns the remaining work/);
+  // Ownership of the work that remains after a delegated result: the prompt was reworded, the rule
+  // (the coordinator, not the worker's terminal result, decides what still has to happen) did not change.
+  assert.match(primary.systemPrompt, /The orchestrator owns the outcome, safety, integration, and external operations/);
   assert.match(primaryPrompt, /interpret the latest message within the active user-authorized outcome/);
   assert.match(primaryPrompt, /a question about purpose, progress, remaining work, or available parallel work does not itself pause or narrow that delivery/);
   assert.match(primaryPrompt, /Work you owe \([^)]*\) is listed with its next action and started in the same turn, never labeled blocked/);
