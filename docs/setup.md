@@ -340,7 +340,9 @@ What the machine needs:
 2. Blender 3.0 or newer with the addon **Interface: MCP for Blender** enabled under `Edit → Preferences → Add-ons`;
 3. the addon's socket server running inside Blender: 3D viewport → `N` → **MCP for Blender** → **Start MCP Server**.
 
-Install the addon with `uvx mcp-for-blender install-addon`, or by hand from `Edit → Preferences → Add-ons → Install…`. Automatic detection does not cover every layout — a Flatpak Blender keeps addons under `~/.var/app/org.blender.Blender/config/blender/<version>/scripts/addons`, where `uvx mcp-for-blender addon-paths` reports nothing; install it from the preferences panel, or point `BLENDERMCP_ADDONS_DIR` at that directory.
+Install the addon with `uvx mcp-for-blender setup`, which installs and enables it and configures other MCP hosts (not PI), or by hand from `Edit → Preferences → Add-ons → Install…`. On Linux the automatic path targets `~/.config/blender/<version>/scripts/addons`; a Flatpak Blender reads `~/.var/app/org.blender.Blender/config/blender/<version>/scripts/addons` instead, where `uvx mcp-for-blender addon-paths` reports nothing. Point `--addons-dir` or `BLENDERMCP_ADDONS_DIR` at the Flatpak directory, or install from the preferences panel.
+
+The `blender-mcp` skill automates this diagnosis: it walks the four links from PI's config to Blender's socket, gives the exact commands per platform, and lists the failure signatures.
 
 The server exposes nine tools: `get_scene_info`, `look` (viewport, camera, multi-angle and animation-frame captures, renders), `execute_blender_code`, `search_assets` and `import_asset` (Poly Haven, Sketchfab, Poly Pizza), `generate_3d`, `get_addon_status`, `disable_telemetry`, and `record_trajectory_feedback`.
 
