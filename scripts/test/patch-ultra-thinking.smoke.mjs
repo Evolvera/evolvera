@@ -22,8 +22,7 @@ assert.ok(main.SUPPORTED_PACKAGE_VERSIONS.includes(sourceMeta.version));
 
 function normalizeOwnedCopy(packageRoot) {
   const grouped = new Map();
-  const operationsToNormalize = [...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])];
-  for (const [rel, before, after, expectedCount = 1] of operationsToNormalize) {
+  for (const { rel, before, after, expectedCount } of main.operationsForVersion(sourceMeta.version)) {
     const operations = grouped.get(rel) ?? [];
     operations.push({ before, after, expectedCount });
     grouped.set(rel, operations);
@@ -78,15 +77,18 @@ try {
   console.log = (...values) => { help += values.join(' '); };
   try { cli.printHelp(); } finally { console.log = originalLog; }
   assert.match(help, /max, ultra/);
-  const bundlePath = path.join(piRoot, 'dist/bundle/chunks/chunk-44DLKSKE.js');
-  const bundle = fs.readFileSync(bundlePath, 'utf8');
-  assert.match(bundle, /VALID_THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
-  assert.match(bundle, /ThinkingLevelMapSchema=openObject2\(\{[^}]*ultra:opt\(ThinkingLevelMapValueSchema\)\}/);
-  assert.equal(bundle.split('ultra:"Ultra reasoning"').length - 1, 2, 'bundle selector labels do not both include ultra');
-  assert.match(bundle, /Set thinking level: off, minimal, low, medium, high, xhigh, max, ultra/);
-  assert.match(bundle, /THINKING_LEVEL_OPTIONS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
-  assert.match(bundle, /,THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
-  assert.match(bundle, /for\(let level of\["off","minimal","low","medium","high","xhigh","max","ultra"\]\)/);
+  if (sourceMeta.version === '1.5.0') {
+    // 1.5.0 ships a pre-bundled CLI next to the unbundled dist/ artifacts.
+    const bundlePath = path.join(piRoot, 'dist/bundle/chunks/chunk-44DLKSKE.js');
+    const bundle = fs.readFileSync(bundlePath, 'utf8');
+    assert.match(bundle, /VALID_THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+    assert.match(bundle, /ThinkingLevelMapSchema=openObject2\(\{[^}]*ultra:opt\(ThinkingLevelMapValueSchema\)\}/);
+    assert.equal(bundle.split('ultra:"Ultra reasoning"').length - 1, 2, 'bundle selector labels do not both include ultra');
+    assert.match(bundle, /Set thinking level: off, minimal, low, medium, high, xhigh, max, ultra/);
+    assert.match(bundle, /THINKING_LEVEL_OPTIONS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+    assert.match(bundle, /,THINKING_LEVELS=\["off","minimal","low","medium","high","xhigh","max","ultra"\]/);
+    assert.match(bundle, /for\(let level of\["off","minimal","low","medium","high","xhigh","max","ultra"\]\)/);
+  }
   const parse = cli.parseArgs(['--thinking', 'ultra']);
   assert.equal(parse.thinking, 'ultra');
 
@@ -96,7 +98,12 @@ try {
   const aiTypes = fs.readFileSync(path.join(piRoot, 'node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts'), 'utf8');
   assert.match(coreTypes, /"max" \| "ultra"/);
   assert.match(aiTypes, /"max", "ultra"/);
-  assert.match(aiTypes, /ModelThinkingLevelSchema: import\("@earendil-works\/pi-schema"\)\.Schema<[^;]*"ultra"/);
+  if (sourceMeta.version === '1.5.0') {
+    assert.match(aiTypes, /ModelThinkingLevelSchema: import\("@earendil-works\/pi-schema"\)\.Schema<[^;]*"ultra"/);
+  } else {
+    // 1.3.0/1.4.0 build the same declarations with typebox.
+    assert.match(aiTypes, /ModelThinkingLevelSchema: Type\.TEnum<\[[^\]]*"ultra"\]>/);
+  }
   assert.match(aiTypes, /ultra(?:\?: string \| null \| undefined|: Type\.TOptional<Type\.TUnion)/);
   const { getSupportedThinkingLevels } = await import(pathToFileURL(modelsPath));
   const supported = getSupportedThinkingLevels({ reasoning: true, thinkingLevelMap: { ultra: 'ultra' } });
@@ -105,7 +112,12 @@ try {
 
   const read = (rel) => fs.readFileSync(path.join(piRoot, rel), 'utf8');
   assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /"max", "ultra"/);
-  assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /ultra: opt\(ThinkingLevelMapValueSchema\)/, 'runtime thinking-level map schema omits ultra');
+  if (sourceMeta.version === '1.5.0') {
+    assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /ultra: opt\(ThinkingLevelMapValueSchema\)/, 'runtime thinking-level map schema omits ultra');
+  } else {
+    // The legacy schema derives its map from the level list, so the level entry is the whole patch.
+    assert.match(read('node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js'), /ThinkingLevelMapSchema = Type\.Partial\(Type\.Record\(ModelThinkingLevelSchema/);
+  }
   const schemas = await import(pathToFileURL(modelSchemaPath));
   assert.ok(schemas.ModelThinkingLevelSchema.enum.includes('ultra'), 'persisted model thinking setting schema omits ultra');
   assert.ok(schemas.ThinkingLevelMapSchema.properties.ultra, 'model configuration map schema omits ultra');
@@ -145,7 +157,7 @@ try {
   assert.equal(await sub.patch(subRoot), false, 'subagent patch is not idempotent');
   for (const rel of sub.FILES) assert.match(fs.readFileSync(path.join(subRoot, rel), 'utf8'), /"max", "ultra"/);
 
-  const changedFiles = [...new Set([...main.PATCHES, ...(sourceMeta.version === '1.5.0' ? main.BUNDLE_150_PATCHES : [])].map(([rel]) => rel))];
+  const changedFiles = [...new Set(main.operationsForVersion(sourceMeta.version).map(({ rel }) => rel))];
   const failureRoot = path.join(temp, 'failure-fixture');
   fs.cpSync(sourceRoot, failureRoot, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
   normalizeOwnedCopy(failureRoot);

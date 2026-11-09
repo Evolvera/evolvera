@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 const PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PACKAGE_VERSION = '1.3.0';
 const SUPPORTED_PACKAGE_VERSIONS = Object.freeze(['1.3.0', '1.4.0', '1.5.0']);
+const PI_AI_150_SCHEMA_VERSIONS = Object.freeze(['1.5.0']);
+// pi-ai switched its schema builder between 1.4.0 and 1.5.0 (typebox Type.* to pi-schema
+// oneOf/opt), so the same logical level addition has a different text per version.
+const LEGACY_SCHEMA_VERSIONS = Object.freeze(['1.3.0', '1.4.0']);
 const PULSE_MS = 350;
 
 const BUNDLE_150_PATCHES = [
@@ -45,16 +49,26 @@ const PATCHES = [
     'MODEL_THINKING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]'],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
     'export declare const ThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "xhigh">;',
-    'export declare const ThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "ultra" | "xhigh">;'],
+    'export declare const ThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "ultra" | "xhigh">;', 1, PI_AI_150_SCHEMA_VERSIONS],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'export declare const ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max"]>;',
+    'export declare const ThinkingLevelSchema: Type.TEnum<["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>;', 1, LEGACY_SCHEMA_VERSIONS],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
     'export declare const ModelThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "xhigh">;',
-    'export declare const ModelThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "ultra" | "xhigh">;'],
+    'export declare const ModelThinkingLevelSchema: import("@earendil-works/pi-schema").Schema<"high" | "low" | "max" | "medium" | "minimal" | "off" | "ultra" | "xhigh">;', 1, PI_AI_150_SCHEMA_VERSIONS],
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    'export declare const ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max"]>;',
+    'export declare const ModelThinkingLevelSchema: Type.TEnum<["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]>;', 1, LEGACY_SCHEMA_VERSIONS],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
     '    xhigh?: string | null | undefined;\n    max?: string | null | undefined;\n}>;',
-    '    xhigh?: string | null | undefined;\n    max?: string | null | undefined;\n    ultra?: string | null | undefined;\n}>;'],
+    '    xhigh?: string | null | undefined;\n    max?: string | null | undefined;\n    ultra?: string | null | undefined;\n}>;', 1, PI_AI_150_SCHEMA_VERSIONS],
+  // 1.3.0/1.4.0 order the map members alphabetically and close the block with xhigh.
+  ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.d.ts',
+    '    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;',
+    '    xhigh: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n    ultra: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;\n}>;', 1, LEGACY_SCHEMA_VERSIONS],
   ['node_modules/@earendil-works/pi-ai/dist/providers/model-schema.js',
     '    max: opt(ThinkingLevelMapValueSchema),\n}, {',
-    '    max: opt(ThinkingLevelMapValueSchema),\n    ultra: opt(ThinkingLevelMapValueSchema),\n}, {'],
+    '    max: opt(ThinkingLevelMapValueSchema),\n    ultra: opt(ThinkingLevelMapValueSchema),\n}, {', 1, PI_AI_150_SCHEMA_VERSIONS],
   ['node_modules/@earendil-works/pi-agent-core/dist/types.d.ts',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";',
     'export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";'],
@@ -100,6 +114,16 @@ const PATCHES = [
 ];
 
 function count(source, value) { return source.split(value).length - 1; }
+/** Every anchor that applies to one package version, in declaration order. */
+function operationsForVersion(version) {
+  const all = [...PATCHES, ...(version === '1.5.0' ? BUNDLE_150_PATCHES : [])];
+  const operations = [];
+  for (const [rel, before, after, expected = 1, versions = SUPPORTED_PACKAGE_VERSIONS] of all) {
+    if (!versions.includes(version) || (rel.startsWith('dist/bundle/') && version !== '1.5.0')) continue;
+    operations.push({ rel, before, after, expectedCount: expected });
+  }
+  return operations;
+}
 function npmRoot() { return execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['root', '-g'], { encoding: 'utf8', shell: process.platform === 'win32' }).trim(); }
 function resolveRoot(argv) {
   if (!argv.length) return path.join(npmRoot(), '@earendil-works', 'pi-coding-agent');
@@ -117,10 +141,8 @@ async function patch(packageRoot, { renameFile = rename } = {}) {
   const meta = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
   if (meta.name !== PACKAGE_NAME || !SUPPORTED_PACKAGE_VERSIONS.includes(meta.version)) throw new Error('package identity mismatch');
   const grouped = new Map();
-  const operationsToApply = [...PATCHES, ...(meta.version === '1.5.0' ? BUNDLE_150_PATCHES : [])];
-  for (const [rel, before, after, expected = 1] of operationsToApply) {
-    if (rel.startsWith('dist/bundle/') && meta.version !== '1.5.0') continue;
-    const list = grouped.get(rel) ?? []; list.push({ before, after, expectedCount: expected }); grouped.set(rel, list);
+  for (const { rel, before, after, expectedCount } of operationsForVersion(meta.version)) {
+    const list = grouped.get(rel) ?? []; list.push({ before, after, expectedCount }); grouped.set(rel, list);
   }
   const targets = [];
   for (const [rel, operations] of grouped) {
@@ -163,4 +185,4 @@ async function main() {
   catch (error) { console.error(`Pi ultra-thinking patch refused: ${error instanceof Error ? error.message : 'unknown error'}`); process.exitCode = 1; }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
-export { PACKAGE_NAME, PACKAGE_VERSION, SUPPORTED_PACKAGE_VERSIONS, PATCHES, BUNDLE_150_PATCHES, PULSE_MS, patch, resolveRoot };
+export { PACKAGE_NAME, PACKAGE_VERSION, SUPPORTED_PACKAGE_VERSIONS, PATCHES, BUNDLE_150_PATCHES, PULSE_MS, operationsForVersion, patch, resolveRoot };
