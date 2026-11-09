@@ -44,6 +44,8 @@ Read:
 
 If screenshots are missing, run or request the Home Preview screenshot capture command before final PASS when browser tooling is available.
 
+A final PASS requires `VISUAL_SNAPSHOT.md` to record `Engine: chromium`. Screenshots captured with the `obscura` engine are iteration evidence only: that engine is not Chromium and diverges on long-tail CSS, Web APIs, media playback, and font rasterization. If the snapshot records `obscura`, request a re-capture with `PI_BROWSER=chromium` instead of issuing PASS.
+
 ## Validation Checklist
 
 ### Scope and artifact integrity

@@ -275,7 +275,29 @@ Expected outputs:
 .pi/previews/<slug>/screenshots/VISUAL_SNAPSHOT.md
 ```
 
-If Playwright/Chromium is unavailable, the script tries to install Chromium once through `npx playwright install chromium`. If screenshot capture still fails, keep going only if the user asked for best-effort preview; otherwise stop with a clear browser/sandbox blocker.
+If Playwright/Chromium is unavailable, the script installs the pinned Chromium once and retries. If screenshot capture still fails, keep going only if the user asked for best-effort preview; otherwise stop with a clear browser/sandbox blocker.
+
+### Engine selection
+
+The script picks a browser engine and records it in `VISUAL_SNAPSHOT.md`:
+
+| `PI_BROWSER` | Behavior |
+|---|---|
+| `auto` (default) | Uses `obscura` when the binary is available, else pinned Chromium. |
+| `obscura` | Obscura only; fails if the binary is missing or capture fails. |
+| `chromium` | Pinned Playwright + Chromium only. |
+
+Obscura is a Rust engine speaking CDP. Install it once with:
+
+```bash
+curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-aarch64-macos.tar.gz
+tar xzf obscura-aarch64-macos.tar.gz
+install -m 0755 obscura obscura-worker ~/.pi/agent/bin/
+```
+
+Use the `x86_64-macos`, `aarch64-linux`, or `x86_64-linux` asset to match the host.
+
+Engine authority: Obscura is a non-Chromium rendering engine with known divergence in long-tail CSS, Web APIs, media playback, and font rasterization. Treat its screenshots as iteration evidence. **Final visual approval requires `PI_BROWSER=chromium`**, and `VISUAL_SNAPSHOT.md` must record `Engine: chromium` for that run.
 
 ## Step 6 — Website Polisher
 

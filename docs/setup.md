@@ -313,6 +313,36 @@ PI should be able to use the `vscode_*` tools provided by the extension.
 
 There is no `config/AGENTS.md` in this harness. Active routing is distributed across `SYSTEM.md`, skills, and agent definitions.
 
+### Home Preview Screenshots and Browser Engines
+
+The harness has no native browser tool. The only automated browser surface is `skills/website-home-preview/scripts/capture-home-screenshots.mjs`, which captures the portrait (390x844) and landscape (1440x900) full-page screenshots that `website-polisher-home` and `validator-home` read. Every other browser claim (FULL QA, page reading) has no shared harness behind it: `jina_read` returns text without executing JavaScript, and the configured MCP servers do not expose page automation.
+
+The script selects an engine and records it in `VISUAL_SNAPSHOT.md`:
+
+| `PI_BROWSER` | Behavior |
+|---|---|
+| `auto` (default) | Obscura when the binary resolves, otherwise pinned Playwright + Chromium. |
+| `obscura` | Obscura only; fails instead of falling back. |
+| `chromium` | Pinned Playwright + Chromium only. |
+
+Obscura is a Rust engine that speaks CDP. Install it once so the script can find it on `PATH` or in `~/.pi/agent/bin`:
+
+```bash
+curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-aarch64-macos.tar.gz
+tar xzf obscura-aarch64-macos.tar.gz
+install -m 0755 obscura obscura-worker ~/.pi/agent/bin/
+```
+
+Use the `x86_64-macos`, `aarch64-linux`, or `x86_64-linux` asset for other hosts. Obscura's CLI and MCP `browser_screenshot` capture the viewport only, so full-page parity comes from `Page.captureScreenshot` over CDP; the harness drives that itself without adding an npm dependency.
+
+Engine authority: Obscura is not Chromium. It documents divergence in long-tail CSS, Web APIs, media playback, compositor effects, and font rasterization. Its screenshots are iteration evidence; a final visual PASS requires a run recorded as `Engine: chromium` in `VISUAL_SNAPSHOT.md`.
+
+Playwright is pinned in the script. A floating tag resolves a new browser build on each upstream release, which silently re-downloads ~100 MB per drift and can change captured pixels between two runs of the same page. Pinning to the build already cached keeps the Chromium path download-free. Validate without touching a real preview:
+
+```bash
+node skills/website-home-preview/scripts/test/capture-engine.smoke.mjs
+```
+
 ### Agent, Skill, Extension, and MCP
 
 - **Agent:** an executor with its own model, tools, and responsibility. The main PI delegates a bounded mission.
