@@ -128,7 +128,7 @@ Os instaladores:
 4. copy the versioned configuration to `~/.pi/agent`;
 5. copy agents, skills, regular extensions, and themes; `extensions/plastic-memory/` is not installed while its compaction path is disabled;
 6. install only the configured PI packages (Goal Mode and helper integrations); the configuration template does not enable `plastic-memory` or `pi-observational-memory`;
-7. create `mcp.json` only if it does not already exist;
+7. create `mcp.json` from `config/mcp.json` only if it does not already exist (the template declares the Blender MCP server);
 8. write `settings.json` last, after all resources have been prepared. The template sets `compaction.reserveTokens: 65536` to begin compaction with more headroom before the output limit.
 
 ### PI 1.3.0/1.4.0 Continuation Patch
@@ -307,7 +307,7 @@ PI should be able to use the `vscode_*` tools provided by the extension.
 | `config/settings.json` | Default provider/model, thinking, theme, and packages; does not enable `plastic-memory` or the OM package. |
 | `config/models.json` | Available model catalog and overrides. |
 | `subagents.json` | Subagent concurrency limit. |
-| `config/mcp.json` | Initial MCP configuration; currently declares no servers (`mcpServers` is empty). |
+| `config/mcp.json` | Initial MCP configuration; declares the Blender server (`uvx mcp-for-blender`). |
 | `.pi/` inside a project | Plans, memory, previews, recovery, and other local artifacts for that project. |
 
 There is no `config/AGENTS.md` in this harness. Active routing is distributed across `SYSTEM.md`, skills, and agent definitions.
@@ -319,6 +319,35 @@ There is no `config/AGENTS.md` in this harness. Active routing is distributed ac
 - **Extension:** TypeScript code loaded by PI to add tools, commands, or runtime hooks.
 - **MCP:** an external integration that exposes tools through a separate server.
 - **System prompt:** the global contract the main PI uses to decide scope, security, delegation, and validation.
+
+### MCP Servers
+
+PI reads user-level servers from `~/.pi/agent/mcp.json` and, after project trust, project servers from `.pi/mcp.json`. The installer writes the user-level file from `config/mcp.json` only when it does not exist yet, so an existing `mcp.json` is never replaced.
+
+The harness ships one server, **Blender**, which stays idle until something calls one of its tools:
+
+| Field | Value |
+|---|---|
+| `command` | `uvx` |
+| `args` | `mcp-for-blender` |
+| Upstream | [ahujasid/mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) — third-party, MIT, not from the Blender Foundation |
+| Transport | stdio; the server reaches Blender's addon over TCP on `localhost:9876` |
+
+What the machine needs:
+
+1. `uv` on `PATH` so that `uvx` resolves (`curl -LsSf https://astral.sh/uv/install.sh | sh` on Linux/macOS, `winget install --id=astral-sh.uv -e` on Windows);
+2. Blender 3.0 or newer with the addon **Interface: MCP for Blender** enabled under `Edit → Preferences → Add-ons`;
+3. the addon's socket server running inside Blender: 3D viewport → `N` → **MCP for Blender** → **Start MCP Server**.
+
+Install the addon with `uvx mcp-for-blender install-addon`, or by hand from `Edit → Preferences → Add-ons → Install…`. Automatic detection does not cover every layout — a Flatpak Blender keeps addons under `~/.var/app/org.blender.Blender/config/blender/<version>/scripts/addons`, where `uvx mcp-for-blender addon-paths` reports nothing; install it from the preferences panel, or point `BLENDERMCP_ADDONS_DIR` at that directory.
+
+The server exposes nine tools: `get_scene_info`, `look` (viewport, camera, multi-angle and animation-frame captures, renders), `execute_blender_code`, `search_assets` and `import_asset` (Poly Haven, Sketchfab, Poly Pizza), `generate_3d`, `get_addon_status`, `disable_telemetry`, and `record_trajectory_feedback`.
+
+**Security:** `execute_blender_code` runs arbitrary Python inside Blender, and the addon's socket carries no authentication or encryption — keep it on `localhost` and save work before using it. Adding `"env": { "BLENDER_MCP_SAFE_MODE": "1" }` to the entry validates scripts before they run, and `"DISABLE_TELEMETRY": "true"` turns off the anonymous usage record.
+
+Verify with `pi mcp list`, or `/mcp` inside a session; run `/reload` after changing `mcp.json` outside one. A runtime that already has its own `mcp.json` keeps it, so add the same entry there deliberately.
+
+The addon never starts its socket under `blender --background`: `_blendermcp_ensure_server_running()` returns early when `bpy.app.background` is set, because commands queued to a headless instance would never run. Automation needs a GUI session or a virtual display, for example `xvfb-run -a blender`.
 
 ### Routing
 

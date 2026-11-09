@@ -1,3 +1,9 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "blender": {
+      "command": "uvx",
+      "args": ["mcp-for-blender"],
+      "description": "Control a running Blender session: inspect the scene, capture viewport or render images, run Blender Python, and import assets or generated 3D models."
+    }
+  }
 }
