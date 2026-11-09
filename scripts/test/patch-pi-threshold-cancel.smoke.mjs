@@ -5,28 +5,42 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const patcher = path.join(root, 'scripts/patch-pi-threshold-cancel.mjs');
-const sdkRoot = process.env.PI_SDK_ROOT;
-assert.ok(sdkRoot && path.isAbsolute(sdkRoot), 'PI_SDK_ROOT must name the approved SDK fixture');
-const disposableRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-pi-threshold-'));
-const fixtureRoot = path.join(disposableRoot, 'package');
-const target = path.join(fixtureRoot, 'dist/core/agent-session.js');
-const source = fs.readFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'));
+// PI_SDK_ROOT wins when set; otherwise the installed SDK is resolved. Only read from it.
+const sdkRoot = resolvePiSdkRoot(import.meta.url);
 const packageJson = path.join(sdkRoot, 'package.json');
 const metadata = JSON.parse(fs.readFileSync(packageJson, 'utf8'));
 assert.equal(metadata.name, '@earendil-works/pi-coding-agent');
-assert.ok(['1.3.0', '1.4.0'].includes(metadata.version));
-fs.mkdirSync(path.dirname(target), { recursive: true });
-fs.copyFileSync(path.join(sdkRoot, 'package.json'), path.join(fixtureRoot, 'package.json'));
-fs.copyFileSync(path.join(sdkRoot, 'dist/core/agent-session.js'), target);
-
+// Version gate: the pinned anchors and SHA-256 values exist only for these SDK versions.
+assert.ok(['1.3.0', '1.4.0'].includes(metadata.version),
+  `SDK at ${sdkRoot} is ${metadata.version}; threshold-cancel anchors are pinned to 1.3.0 and 1.4.0 only`);
 const patcherApi = await import(pathToFileURL(patcher));
 const {
   UNPATCHED_ANCHOR, PATCHED_ANCHOR, UNPATCHED_SHA256, PATCHED_SHA256,
   PACKAGE_VERSION, SUPPORTED_PACKAGE_VERSIONS, npmInvocation, npmGlobalNodeModulesRoot, packageRootFromArgs,
 } = patcherApi;
+// An installed SDK may already carry this patch from an earlier install, and the patcher
+// treats that as a no-op. The oracle below needs the unpatched bytes, so the disposable copy
+// reverses the single pinned patched anchor. Any other anchor cardinality fails loudly.
+function pristineSdkBytes(raw) {
+  const text = raw.toString('utf8');
+  const unpatchedCount = text.split(UNPATCHED_ANCHOR).length - 1;
+  const patchedCount = text.split(PATCHED_ANCHOR).length - 1;
+  if (unpatchedCount === 1 && patchedCount === 0) return raw;
+  assert.ok(unpatchedCount === 0 && patchedCount === 1,
+    `SDK at ${sdkRoot} has threshold anchor cardinality unpatched=${unpatchedCount} patched=${patchedCount}; expected exactly one of them`);
+  return Buffer.from(text.replace(PATCHED_ANCHOR, UNPATCHED_ANCHOR), 'utf8');
+}
+const source = pristineSdkBytes(fs.readFileSync(path.join(sdkRoot, 'dist/core/agent-session.js')));
+const disposableRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-pi-threshold-'));
+const fixtureRoot = path.join(disposableRoot, 'package');
+const target = path.join(fixtureRoot, 'dist/core/agent-session.js');
+fs.mkdirSync(path.dirname(target), { recursive: true });
+fs.copyFileSync(path.join(sdkRoot, 'package.json'), path.join(fixtureRoot, 'package.json'));
+fs.writeFileSync(target, source);
 function runPatcher() {
   return spawnSync(process.execPath, [patcher, '--package-root', fixtureRoot], {
     cwd: root, encoding: 'utf8', env: { PATH: process.env.PATH ?? '' },

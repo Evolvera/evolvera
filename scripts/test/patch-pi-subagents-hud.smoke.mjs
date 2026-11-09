@@ -81,9 +81,10 @@ try {
   assert.deepEqual(targets.map((rel) => fs.readFileSync(path.join(rollback, rel))), rollbackBefore, 'failed commit was not rolled back');
 
   // 3. Render the patched widget (src and dist) against the upstream widget, with fake and real themes.
-  const agentRoot = path.dirname(path.dirname(installed)); // .../npm/node_modules
-  const piTui = path.join(agentRoot, '@earendil-works', 'pi-tui');
-  const sdk = path.join(resolvePiSdkRoot(import.meta.url), 'dist', 'index.js');
+  // pi-tui ships nested in the PI SDK package, so it is located through the same resolver as the SDK itself.
+  const sdkRoot = resolvePiSdkRoot(import.meta.url);
+  const piTui = path.join(sdkRoot, 'node_modules', '@earendil-works', 'pi-tui');
+  const sdk = path.join(sdkRoot, 'dist', 'index.js');
   const { visibleWidth } = await createJitiFor(import.meta.url, {}).import(path.join(piTui, 'dist', 'index.js'));
   const realTheme = await loadRealTheme(root);
 

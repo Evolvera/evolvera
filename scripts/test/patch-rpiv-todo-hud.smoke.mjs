@@ -4,16 +4,20 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import {
   assertPaletteAndShape, assertTokens, copyPackage, createJitiFor, loadRealTheme, plainTheme, stripTokens, tokenTheme, toUpstream,
 } from './lib/hud-render.mjs';
+import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 
 // STATEFUL RESOURCE PROOF: DISPOSABLE_VERIFIED. The installed package is only read; every patch and render
 // runs on a copy under one mkdtemp, with HOME pointed there so rpiv-todo's config lookup cannot see the user's.
 const root = path.resolve(import.meta.dirname, '../..');
 const p = await import(pathToFileURL(path.join(root, 'scripts/patch-rpiv-todo-hud.mjs')));
 const installed = p.resolveRoot([]);
+// pi-tui ships nested in the PI SDK package, so it is located through the same resolver as the SDK itself.
+const piTui = path.join(resolvePiSdkRoot(import.meta.url), 'node_modules', '@earendil-works', 'pi-tui');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'evolvera-rpiv-todo-hud-'));
 const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const targets = [...new Set(p.PATCHES.map(([rel]) => rel))];
@@ -75,13 +79,14 @@ try {
   process.env.HOME = process.env.USERPROFILE = path.join(temp, 'home');
   fs.mkdirSync(process.env.HOME, { recursive: true });
   const jiti = createJitiFor(import.meta.url, {
-    '@earendil-works/pi-tui': path.join(path.dirname(installed), '..', '@earendil-works', 'pi-tui'),
-    '@juicesharp/rpiv-config': path.join(installed, 'node_modules', '@juicesharp', 'rpiv-config'), // the version this package pins, not the hoisted one
+    '@earendil-works/pi-tui': piTui,
+    // The version rpiv-todo's own pin resolves to, as Node resolves it at runtime (nested copy if present, else hoisted).
+    '@juicesharp/rpiv-config': path.dirname(createRequire(path.join(installed, 'package.json')).resolve('@juicesharp/rpiv-config')),
   });
   // One entry module, so the overlay and the test share a single store instance.
   fs.writeFileSync(path.join(pkg, 'hud-entry.ts'), 'export { TodoOverlay } from "./todo-overlay.ts";\nexport * as store from "./state/store.ts";\n');
   const { TodoOverlay, store } = await jiti.import(path.join(pkg, 'hud-entry.ts'));
-  const { visibleWidth } = await jiti.import(path.join(path.dirname(installed), '..', '@earendil-works', 'pi-tui', 'dist', 'index.js'));
+  const { visibleWidth } = await jiti.import(path.join(piTui, 'dist', 'index.js'));
   const realTheme = await loadRealTheme(root);
 
   function overlayFor(tasks, theme) {
