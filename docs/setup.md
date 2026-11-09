@@ -21,7 +21,8 @@ User
 - GitHub CLI (`gh`) or another way to clone the repository;
 - Node.js `>=22.19.0`;
 - npm available on `PATH`;
-- credentials for at least one AI provider.
+- credentials for at least one AI provider;
+- for the Blender MCP server only: `uv` on `PATH`, Blender 3.0 or newer, and the addon installed and enabled (see [MCP Servers](#mcp-servers)).
 
 The default baseline installed by the scripts is `@earendil-works/pi-coding-agent@1.5.0`. Version-specific patches remain guarded by their own verified content pins; override-selected versions without proven compatibility fail closed.
 

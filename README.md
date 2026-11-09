@@ -33,7 +33,7 @@ You describe the outcome. The main agent chooses whether to act directly or dele
 
 ## Get started
 
-You need **Git**, **Node.js ≥22.19.0**, **npm**, and access to at least one AI provider. The default installed runtime is **`@earendil-works/pi-coding-agent@1.5.0`**.
+You need **Git**, **Node.js ≥22.19.0**, **npm**, and access to at least one AI provider. The default installed runtime is **`@earendil-works/pi-coding-agent@1.5.0`**. The Blender MCP server shipped in the default configuration additionally needs `uv`, Blender 3.0 or newer, and its addon installed and enabled ([MCP Servers](docs/setup.md#mcp-servers)).
 
 > The public repository is [Evolvera/evolvera](https://github.com/Evolvera/evolvera), licensed under GPLv3.
 
