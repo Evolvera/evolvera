@@ -554,7 +554,9 @@ Do not use bare `recall(<id>)` syntax: for a project/chunk, use the exact ID wit
 
 ## Tests
 
-`node scripts/run-tests.mjs` runs classified suites and reports passed, failed, excluded, and unclassified tests; it also runs `npm test` in `interface/`. Inspect the runner before execution: suites without proven state isolation must not run against existing resources.
+`node scripts/run-tests.mjs` runs classified suites and reports passed, failed, excluded, and unclassified tests; it also runs `npm test` in `interface/`, or records that suite as excluded when that separate project is not present in the checkout. Inspect the runner before execution: suites without proven state isolation must not run against existing resources.
+
+A suite that pins one PI version reports `SKIP` and exits 0 when the resolved host is a different version, naming the fixture that would run it — for example `plastic-memory-host.smoke.mjs`, which needs a Pi 0.83.0 SDK in `PI_SDK_ROOT`. A skip is a missing capability, not a passing test: provide the fixture when that surface matters.
 
 ## Uninstall
 
