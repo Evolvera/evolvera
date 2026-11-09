@@ -10,7 +10,10 @@ import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 // own mkdtemp, in-memory session/settings, empty resource loader and faux provider.
 // The SDK is read-only. No user settings, credentials, sessions or network access.
 const sdkRoot = resolvePiSdkRoot(import.meta.url);
-assert.ok(['1.3.0', '1.4.0'].includes(JSON.parse(fs.readFileSync(path.join(sdkRoot, 'package.json'), 'utf8')).version));
+// Recovery anchors below are pinned to these SDK releases; name the precondition instead of asserting bare.
+const sdkVersion = JSON.parse(fs.readFileSync(path.join(sdkRoot, 'package.json'), 'utf8')).version;
+assert.ok(['1.3.0', '1.4.0'].includes(sdkVersion),
+  `SDK at ${sdkRoot} is ${sdkVersion}; native-recovery anchors are pinned to 1.3.0 and 1.4.0 only`);
 const { AuthStorage } = await import(pathToFileURL(path.join(sdkRoot, 'dist/core/auth-storage.js')));
 let content = JSON.stringify({ synthetic: { type: 'api_key', key: 'fixture-only' } });
 let rejectRead = false;
