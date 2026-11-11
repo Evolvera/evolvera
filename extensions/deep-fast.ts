@@ -20,8 +20,8 @@ import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent"
 // configured model is the point.
 
 export const DEEP_FAST_SETTINGS_KEY = "deepFastMode";
-export const DEEP_FAST_PROVIDER = "opengateway";
-export const DEEP_FAST_MODEL = "deepseek/deepseek-v4.1-flash-ultrafast";
+export const DEEP_FAST_PROVIDER = "refuseless";
+export const DEEP_FAST_MODEL = "deepseek-v4.1-flash-fast";
 export const DEEP_FAST_TARGET = `${DEEP_FAST_PROVIDER}/${DEEP_FAST_MODEL}`;
 
 type Step = { provider: string; model: string; level: string };

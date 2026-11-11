@@ -60,10 +60,12 @@ for (const chainId of ["luna", "builder", "heavy"]) {
   assert.equal(fast[0].provider, DEEP_FAST_PROVIDER, `${chainId} starts on the fast provider`);
   assert.equal(fast[0].model, DEEP_FAST_MODEL, `${chainId} starts on the fast model`);
   assert.equal(fast[0].level, DEEP_FAST_CHAINS[chainId].thinking, `${chainId} uses its deep-fast effort`);
-  assert.equal(fast.length, FALLBACK_CHAINS[chainId].length + 1, `${chainId} keeps every configured attempt`);
+  assert.equal(fast.length, FALLBACK_CHAINS[chainId].length + (FALLBACK_CHAINS[chainId].some((s) => `${s.provider}/${s.model}` === DEEP_FAST_TARGET) ? 0 : 1), `${chainId} keeps every configured attempt exactly once`);
   assert.deepEqual(
     fast.slice(1).map((s) => `${s.provider}/${s.model}`),
-    FALLBACK_CHAINS[chainId].map((s) => `${s.provider}/${s.model}`),
+    FALLBACK_CHAINS[chainId]
+      .map((s) => `${s.provider}/${s.model}`)
+      .filter((key) => key !== DEEP_FAST_TARGET),
     `${chainId} preserves the configured attempts as fallbacks`,
   );
 }
