@@ -27,42 +27,48 @@ let lastKnownGoodRegistry: ModelRegistry | undefined;
 
 export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   builder: [
-    { provider: "openai", model: "gpt-6-luna", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "anthropic", model: "claude-haiku-5-5", level: "inherit" },
   ],
   heavy: [
-    { provider: "openai", model: "gpt-6.1-terra", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "xhigh" },
     { provider: "anthropic", model: "claude-haiku-5-5", level: "xhigh" },
   ],
   sol: [
-    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
     { provider: "anthropic", model: "claude-opus-5-5", level: "inherit" },
   ],
   terra: [
-    { provider: "openai", model: "gpt-6.1-terra", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
     { provider: "anthropic", model: "claude-sonnet-5-5", level: "inherit" },
   ],
   luna: [
-    { provider: "openai", model: "gpt-6-luna", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-terra", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
   ],
   conductor: [
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai-codex", model: "gpt-6.1-sol", level: "inherit" },
   ],
 };
 
 const QUOTA_ERROR = /insufficient[_ ]quota|quota exceeded|out of budget|billing|monthly usage limit|subscription[_ ]sharing[_ ]usage[_ ]limit|(?:go|free)usagelimiterror|usage limit/i;
 const CONTEXT_OVERFLOW = /context (?:window )?(?:overflow|too large|exceeded)|maximum context length|prompt is too long/i;
 const RETRYABLE_ERROR = /(?:\b429\b|\b5\d\d\b|overload|rate.?limit|timeout|timed out|temporar|connection reset|network|stream.{0,20}(?:closed|drop|fail)|service unavailable|internal server error)/i;
+// A credential the provider rejects is terminal for that step, not for the chain: the whole point of
+// a fallback chain is to keep the work moving on a provider that still has quota. Without this, an
+// exhausted ChatGPT plan surfaces as "Invalid or missing API key" and kills the run on step one.
+const AUTH_ERROR = /invalid[_ ]?(?:or[_ ]missing[_ ])?api[_ ]?key|invalid_api_key|authentication[_ ]error|unauthorized|\b401\b|invalid_grant|token (?:expired|invalid|revoked)|not authenticated|missing credentials|no api key|insufficient permissions/i;
 
 export function classifyFallbackError(message: { stopReason?: string; errorMessage?: string } | undefined): "fallback" | "none" {
   if (!message || message.stopReason !== "error" || !message.errorMessage) return "none";
   if (/abort|cancel/i.test(message.errorMessage) || CONTEXT_OVERFLOW.test(message.errorMessage)) return "none";
-  return QUOTA_ERROR.test(message.errorMessage) || RETRYABLE_ERROR.test(message.errorMessage) ? "fallback" : "none";
+  return QUOTA_ERROR.test(message.errorMessage) || RETRYABLE_ERROR.test(message.errorMessage) || AUTH_ERROR.test(message.errorMessage)
+    ? "fallback"
+    : "none";
 }
 
 export function nextFallbackStep(chain: FallbackChain, step: number): number {

@@ -24,6 +24,9 @@ const { VIRTUAL_MODEL_STATE_ENTRY } = await import(pathToFileURL(path.join(sdkRo
 
 assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "Monthly usage limit reached" }), "fallback");
 assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "provider overloaded (503)" }), "fallback");
+assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "Invalid or missing API key." }), "fallback", "a rejected credential must advance the chain");
+assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "401 Unauthorized" }), "fallback");
+assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "invalid_grant" }), "fallback");
 assert.equal(classifyFallbackError({ stopReason: "error", errorMessage: "Prompt is too long: context overflow" }), "none");
 assert.equal(classifyFallbackError({ stopReason: "aborted", errorMessage: "request aborted" }), "none");
 assert.equal(nextFallbackStep(FALLBACK_CHAINS.builder, 2), 2, "last step is clamped");
