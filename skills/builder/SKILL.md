@@ -167,7 +167,7 @@ CONSTRAINTS
 - Use targeted edits for existing files; do not overwrite whole files
 - Verify any API/package/symbol/endpoint/parameter before using it; do not invent missing dependencies or functions
 - Do not change public API except [allowed change]
-- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI/DYC defaults, so do not restate them]
+- [Only task-specific engineering constraints; builder agents already carry the general SoC/DRY/KISS/YAGNI, no-comments, root-cause, and feature-structure defaults, so do not restate them]
 - Do not touch files outside TARGET FILES unless blocked and reported
 - Treat every `NOT TO DO` item as a hard boundary; if success requires violating one, stop `BLOCKED` and report the exact conflict rather than expanding scope
 
@@ -265,7 +265,7 @@ After a producer builder finishes:
 - inspect actual diff and exact-head proof, not just its summary; verify decisive anchors and integration delta rather than blanket re-investigation, with focused rereads for contradictions or quality gaps;
 - return concrete local defects to the same builder; do not write the same files in parallel. Take over/reroute only if the owner is unavailable, genuinely blocked, capability-mismatched, or a known trivial repair is clearly cheaper/faster, and explicitly reassign ownership first;
 - separate contract/safety decisions from engineering repairs; preserve two-failure re-grounding and proper tier escalation;
-- check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, noisy comments, or unrelated formatting churn;
+- check for accidental deletions, broad rewrites, weakened tests, removed handlers, premature abstractions, speculative YAGNI additions, added code comments outside the allowed set (license headers, tool directives, public-API doc comments, links to external constraints), workarounds that hide a bug instead of fixing its root cause, imports across banned boundaries, or unrelated formatting churn;
 - verify `.pi/recovery/{task_id}/before/...` snapshots exist where the task required them;
 - run or review producer validation results;
 - commit verified task output immediately with selective staging only; never include unrelated dirty files;

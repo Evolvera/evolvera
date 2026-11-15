@@ -174,7 +174,7 @@ Apply engineering principles as decisions, not boilerplate:
 - SoC/SRP: one coherent responsibility per task/module.
 - DRY/Rule of Three: reuse existing helpers; no new abstraction before three proven repetitions or an architectural requirement.
 - KISS/YAGNI: smallest readable in-scope solution; no speculative dependency, API, flag, migration, extension point, cleanup, or future-proofing.
-- DYC: document only non-obvious decisions, invariants, failure/rollback behavior, or operations.
+- No code comments (only license headers, tool directives, public-API doc comments, links to external constraints); non-obvious decisions, invariants, and failure/rollback behavior go in tests, types, commit messages, or docs. Root-cause fixes, never workarounds.
 - Tests serve the outcome: the cheapest check that proves each behavior change, with a new test where it guards a fixed bug or uncovered risky logic (money, permissions, security, data loss, parsing, or user-visible state); producer tests travel with their production concern by default. Parallel test authoring is allowed after the observable contract is settled when full implementation/test write sets are disjoint, resources are isolated, and no unresolved implementation choice affects the tests. Test authoring may contribute to one coherent combined producer checkpoint when separately authored outputs cannot pass alone; never manufacture an independently invalid test-only planner task or weaken checkpoint validity. Implementation-dependent acceptance tests run only against the ready combined producer checkpoint; syntax-only or blocked tests do not establish COMPLETE. No planned coverage, baselines, or suite-wide runs unless the user asked.
 
 ## 6. Routing and Validation
