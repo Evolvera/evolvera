@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anti-slop gallery — slop vs. fix</title>
+<style>
+  :root{
+    --bg:#12130e; --panel:#1e2017; --well:#232519;
+    --ink:#eef2e6; --ink2:#bfc7b1; --ink3:#a2ab93;
+    --accent:#87b85c; --warn:#e0b052; --danger:#e08a63;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:400 15px/1.5 "Segoe UI",system-ui,sans-serif; padding:32px;
+  }
+  h1{font-size:24px; margin:0 0 4px}
+  .sub{color:var(--ink2); max-width:720px; margin:0 0 8px}
+  .legend{color:var(--ink3); font-size:13px; margin-bottom:28px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:24px}
+  .pair{background:var(--panel); border-radius:14px; overflow:hidden; border:1px solid #2a2d22}
+  .pair h2{font-size:15px; margin:0; padding:14px 16px; border-bottom:1px solid #2a2d22}
+  .cols{display:grid; grid-template-columns:1fr 1fr}
+  .col{padding:16px; min-height:180px}
+  .col + .col{border-left:1px solid #2a2d22}
+  .tag{font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; font-weight:600}
+  .bad{color:var(--danger)} .good{color:var(--accent)}
+  .note{font-size:12px; color:var(--ink3); margin-top:10px; border-top:1px dashed #33362a; padding-top:8px}
+  .cell{display:flex; flex-direction:column; gap:8px; align-items:flex-start}
+  .cell.center{align-items:center; text-align:center}
+
+  /* demo pieces */
+  .bar{width:100%; height:10px; border-radius:6px; background:var(--well)}
+  .card{width:100%; border-radius:10px; padding:10px; background:var(--well); font-size:12px; color:var(--ink2)}
+  .row{display:flex; gap:8px; width:100%; align-items:center}
+  .btn{border-radius:8px; padding:7px 12px; font-size:12px; border:none; color:#111}
+  .chip{font-size:10px; padding:3px 9px; border-radius:999px}
+
+  /* ===== SIGNALS (SLOP) ===== */
+  .grad-bg{background:linear-gradient(135deg,#7a5cff,#3ec6ff); color:#fff; border:none}
+  .grad-btn{background:linear-gradient(135deg,#ff9a5c,#ff5ca8); color:#fff; border:none}
+  .glow{background:#2b2f26; color:var(--ink); box-shadow:0 0 24px rgba(135,184,92,.6)}
+  .glass{background:rgba(255,255,255,.08); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,.15)}
+  .sq{width:36px; height:36px; border-radius:9px; display:grid; place-items:center; font-size:14px; background:var(--accent); color:#111}
+  .pill{background:var(--accent); color:#111}
+  .donut{width:64px; height:64px; border-radius:50%; background:conic-gradient(#87b85c 0 62%, #3a4030 62%); box-shadow:0 0 18px rgba(135,184,92,.4)}
+
+  /* ===== FIXES ===== */
+  .solid{background:#2b2f26; color:var(--ink)}
+  .outline{background:transparent; border:1px solid var(--accent); color:var(--accent)}
+  .plain-icon{font-size:15px; color:var(--ink2); background:none; width:auto; height:auto}
+  .skeleton{position:relative; overflow:hidden; background:#3a4030}
+  .skeleton::after{content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent); animation:shimmer 1.4s infinite}
+  @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+  /* extra pieces */
+  .fingernail{position:relative; width:100%; border-radius:10px; padding:14px 10px 10px; background:var(--well); font-size:12px; color:var(--ink2)}
+  .fingernail::before{content:""; position:absolute; top:0; left:14px; right:14px; height:12px; border-radius:0 0 7px 7px; background:var(--accent)}
+  .grad-text{background:linear-gradient(90deg,#ff9a5c,#ff5ca8); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:700; font-size:20px}
+  .neon{border:1px solid #3ec6ff; box-shadow:0 0 14px rgba(62,198,255,.55); background:rgba(62,198,255,.08); border-radius:8px; padding:8px 12px; font-size:12px; color:#bfe9ff}
+  .purple-bg{background:linear-gradient(135deg,#7a5cff,#3ec6ff)}
+  .pulse{display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 10px; border-radius:999px; background:var(--accent); color:#111}
+  .pulse::before{content:""; width:8px; height:8px; border-radius:50%; background:#111; animation:pulse 1.1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.15}}
+  .tile{flex:1; height:26px; border-radius:7px}
+  .feature{display:flex; flex-direction:column; align-items:center; gap:6px; width:100%}
+
+  /* extra pieces 2 */
+  .saas{background:#f7f7f8; border-radius:8px; padding:10px; width:100%; font-size:12px; color:#3f3f46}
+  .saas-card{background:#fff; border:1px solid #e4e4e7; border-radius:6px; padding:8px; margin-top:6px; box-shadow:0 1px 2px rgba(0,0,0,.05); color:#52525b}
+  .saas-btn{background:#18181b; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:11px}
+  .landing{width:100%; display:flex; flex-direction:column; gap:6px}
+  .l-hero{height:52px; border-radius:8px; background:linear-gradient(135deg,#7a5cff,#3ec6ff)}
+  .l-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+  .l-box{height:28px; border-radius:6px; background:#2b2f26; border:1px solid #3a4030}
+  .emerald{background:linear-gradient(135deg,#10b981,#34d399); color:#052e21}
+  .iconrow{display:flex; gap:12px; align-items:center}
+  .ownicon{width:22px; height:22px; color:var(--accent); fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+
+  /* glass */
+  .scene{position:relative; width:100%; height:132px; border-radius:10px; overflow:hidden; background:#141a24}
+  .scene::before{content:""; position:absolute; inset:-8%;
+    background:
+      radial-gradient(circle at 22% 28%, #d97a4e 0 26%, transparent 27%),
+      radial-gradient(circle at 78% 38%, #5f8fd6 0 30%, transparent 31%),
+      radial-gradient(circle at 50% 94%, #7fbf6a 0 34%, transparent 35%),
+      linear-gradient(120deg,#232c3a,#10141b)}
+  .scene::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 35%,rgba(0,0,0,.5))}
+  .scene.slop::before{background:linear-gradient(135deg,#7a5cff,#3ec6ff)}
+  .scene.slop::after{background:linear-gradient(180deg,transparent 40%,rgba(0,0,0,.35))}
+  .glass-slop{position:absolute; left:14px; right:14px; bottom:14px; padding:10px 12px; border-radius:10px;
+    background:rgba(255,255,255,.07); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.14); box-shadow:0 0 22px rgba(122,92,255,.5); color:#fff; font-size:12px}
+  .glass-real{position:absolute; left:14px; right:14px; bottom:14px; padding:10px 12px; border-radius:10px;
+    background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05));
+    -webkit-backdrop-filter:blur(12px) saturate(170%); backdrop-filter:blur(12px) saturate(170%);
+    border:1px solid rgba(255,255,255,.22);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 0 rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.35);
+    color:#fff; font-size:12px; text-shadow:0 1px 2px rgba(0,0,0,.55)}
+  .glass-real::after{content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:linear-gradient(135deg,rgba(255,255,255,.2),transparent 42%)}
+  .glowdot{width:12px; height:12px; border-radius:50%; background:#ffe9b0; flex:none;
+    box-shadow:0 0 10px 3px rgba(255,220,140,.75), 0 0 28px 8px rgba(255,200,100,.35)}
+</style>
+</head>
+<body>
+  <h1>Anti-slop gallery</h1>
+  <p class="sub">What gives the "AI look" (left, red) and what to do instead (right, green). Each pair is a real piece, not an illustration.</p>
+  <p class="legend">Open it in a browser and screenshot the signal you want to attach. The full catalogue is in <code>catalog.md</code>; the quick checklist in <code>ai-aesthetics.md</code>.</p>
+
+  <div class="grid">
+
+    <div class="pair">
+      <h2>1. Gradient on everything</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="bar grad-bg"></div>
+            <button class="btn grad-btn">Button</button>
+            <div class="card" style="background:linear-gradient(135deg,#3a2f6b,#1f5f7a)">gradient card</div>
+          </div>
+          <div class="note">Gradient on the background, the button, the card… each one different.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="bar" style="background:var(--accent)"></div>
+            <button class="btn solid">Button</button>
+            <div class="card">solid card</div>
+          </div>
+          <div class="note">Solid colour as the base; a single accent, with meaning.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>2. Glow on everything × focal glow</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <button class="btn glow">Action</button>
+            <div class="card glow">card with an aura</div>
+            <div class="card glow">another card with an aura</div>
+          </div>
+          <div class="note">Diffuse glow on everything, with no light source: the generic AI aura.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="row" style="gap:10px">
+              <span class="glowdot"></span>
+              <span style="font-size:12px; color:var(--ink2)">the focal light (star, comet)</span>
+            </div>
+            <button class="btn outline">Action</button>
+            <div class="card">card with no aura</div>
+          </div>
+          <div class="note">One glow, with a clear light source; the rest stays solid.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>3. Icon in a tinted square</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="row"><span class="sq">✦</span><span class="sq">★</span><span class="sq">⚙</span></div>
+          </div>
+          <div class="note">Every icon stuck in a small coloured square that groups nothing.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="row"><span class="plain-icon">✦</span><span class="plain-icon">★</span><span class="plain-icon">⚙</span></div>
+          </div>
+          <div class="note">A bare icon in the text colour. A container only for identity (avatar/logo).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>4. Everything centred</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell center">
+            <div class="card" style="text-align:center">centred title<br>a long paragraph also centred, which is hard to read</div>
+            <button class="btn solid">Centre</button>
+          </div>
+          <div class="note">Centred "by default", even in reading text.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card" style="text-align:left">left-aligned title<br>an aligned paragraph, easy to read</div>
+            <button class="btn solid">Action</button>
+          </div>
+          <div class="note">Left for reading; centre only in the hero/empty state.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>5. Pill with no function</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="row"><span class="chip pill">group</span><span class="chip pill">new</span><span class="chip pill">online</span></div>
+          </div>
+          <div class="note">Coloured pills that are neither a state nor an action.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="row"><span style="color:var(--ink2); font-size:12px">plain text, no decoration</span></div>
+          </div>
+          <div class="note">A pill only when it is a real state (status, active filter).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>6. Decorated chart</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell center">
+            <div class="donut"></div>
+            <div style="font-size:11px; color:var(--ink2)">62% with shadow and gradient</div>
+          </div>
+          <div class="note">A donut for a single number, with glow on top.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div style="font-size:28px; font-weight:600">62%</div>
+            <div style="font-size:12px; color:var(--ink2)">the data is the number</div>
+          </div>
+          <div class="note">A number or a sentence. A chart only when there is a series to compare.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>7. Action repeated on every item</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="row"><span class="card" style="flex:1">item A</span><button class="btn solid">Check</button></div>
+            <div class="row"><span class="card" style="flex:1">item B</span><button class="btn solid">Check</button></div>
+            <div class="row"><span class="card" style="flex:1">item C</span><button class="btn solid">Check</button></div>
+          </div>
+          <div class="note">The same button on every row, with the same weight.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card">item A, needs you</div>
+            <div class="card">item B</div>
+            <div class="card">item C</div>
+            <button class="btn" style="background:var(--accent); color:#111">Check (only where needed)</button>
+          </div>
+          <div class="note">The action appears only in the state that asks for it; once.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>8. Looping shimmer (fake loading)</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="bar skeleton"></div>
+            <div class="bar skeleton"></div>
+            <div class="bar skeleton" style="width:60%"></div>
+          </div>
+          <div class="note">A sheen sweeping forever, even with nothing loading.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card">content loaded</div>
+            <div style="font-size:12px; color:var(--ink3)">shimmer only during real loading.</div>
+          </div>
+          <div class="note">No opening animation; shimmer = real loading.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>9. AI glass × real glass</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="scene slop">
+              <div class="glass-slop">glass card</div>
+            </div>
+          </div>
+          <div class="note">Milky glass over a flat gradient: there is nothing behind to see; border + glow do the rest.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="scene">
+              <div class="glass-real">glass card</div>
+            </div>
+          </div>
+          <div class="note">The background shows (shapes, colour); light on the top edge, shadow below, text with contrast. Recipe in <code>glass.md</code>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>10. Fingernail card (coloured tab)</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="fingernail">card with a coloured tab</div>
+          </div>
+          <div class="note">A coloured "fingernail" on top that marks nothing.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card">clean card</div>
+          </div>
+          <div class="note">No tab; content and spacing define the card.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>11. Rainbow of colours</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="row"><div class="tile" style="background:#7a5cff"></div><div class="tile" style="background:#3ec6ff"></div><div class="tile" style="background:#ff9a5c"></div><div class="tile" style="background:#ff5ca8"></div></div>
+          </div>
+          <div class="note">Colours that mean nothing, only to tell things apart.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="row"><div class="tile" style="background:#2b2f26"></div><div class="tile" style="background:#2b2f26"></div><div class="tile" style="background:var(--accent)"></div><div class="tile" style="background:#2b2f26"></div></div>
+          </div>
+          <div class="note">Neutral + one accent; colour only when the data asks for it (70-30-10).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>12. Pulsing status badge</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <span class="pulse">active</span>
+            <span class="pulse" style="background:var(--warn)">verified</span>
+          </div>
+          <div class="note">A badge that never changes: if it were not active, it would not be showing.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <span style="font-size:12px; color:var(--ink2)">no badge; status only when it varies</span>
+          </div>
+          <div class="note">A still state stays still; movement signals what matters.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>13. Emoji on everything</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div style="font-size:14px">Welcome ✨</div>
+            <button class="btn solid">🚀 Get started</button>
+            <div style="font-size:12px; color:var(--ink2)">😊 done!</div>
+          </div>
+          <div class="note">Emoji decorating without saying anything.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div style="font-size:14px">Welcome</div>
+            <button class="btn solid">Get started</button>
+            <div style="font-size:12px; color:var(--ink2)">done</div>
+          </div>
+          <div class="note">The visual and the text already communicate.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>14. Gradient text</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <span class="grad-text">Supercharge</span>
+          </div>
+          <div class="note">Colour changing along the text, for decoration only.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <span style="font-size:20px; font-weight:700; color:var(--ink)">Supercharge</span>
+          </div>
+          <div class="note">Solid colour; emphasis by size and weight.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>15. AI palette (purple/cyan + neon)</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="card purple-bg" style="color:#fff">title</div>
+            <button class="btn neon">action</button>
+          </div>
+          <div class="note">Purple in gradient + a glowing cyan border: the "AI look".</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card">title</div>
+            <button class="btn" style="background:var(--accent); color:#111">action</button>
+          </div>
+          <div class="note">A neutral palette with one accent, from the product's identity.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>16. Icon in a square over the title</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell feature">
+            <span class="sq">✦</span>
+            <div style="font-size:12px; font-weight:600">Feature</div>
+            <div style="font-size:11px; color:var(--ink3); text-align:center">feature description here</div>
+          </div>
+          <div class="note">The classic feature card: an icon in a square, centred above.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="row" style="align-items:center">
+              <span class="plain-icon">✦</span>
+              <span style="font-size:12px; font-weight:600">Feature</span>
+            </div>
+            <div style="font-size:11px; color:var(--ink3)">feature description here</div>
+          </div>
+          <div class="note">Icon beside the title, no container.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>17. The "shadcn / default SaaS" look</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="saas">
+              <div class="saas-card" style="margin-top:0">neutral grey background + white card</div>
+              <div class="saas-card">rounded corner + subtle shadow</div>
+              <button class="saas-btn" style="margin-top:6px">Button</button>
+            </div>
+          </div>
+          <div class="note">The default of shadcn/ui/Bootstrap/Tailwind: grey, equal corners, light shadow, Inter. Left uncustomised, everything looks the same.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card" style="background:var(--panel); border:1px solid #3a4030; color:var(--ink)">
+              <div style="color:var(--accent); font-weight:600; margin-bottom:4px">Identity title</div>
+              the product's own surface and tone
+            </div>
+            <button class="btn" style="background:var(--accent); color:#111">Button</button>
+          </div>
+          <div class="note">Shape, colour and typography come from the identity, not from the library's statistical average.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>18. Default landing skeleton</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="landing">
+              <div class="l-hero"></div>
+              <div class="l-grid"><div class="l-box"></div><div class="l-box"></div><div class="l-box"></div></div>
+              <div class="l-grid"><div class="l-box"></div><div class="l-box"></div><div class="l-box"></div></div>
+              <div class="bar" style="background:#2b2f26"></div>
+            </div>
+          </div>
+          <div class="note">Hero → features → features → CTA → footer, always in the same order. The template dictates the content.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="landing">
+              <div class="row" style="align-items:flex-start; gap:8px">
+                <div style="flex:1.6; display:flex; flex-direction:column; gap:6px">
+                  <div class="bar" style="background:var(--accent); height:14px"></div>
+                  <div class="bar" style="width:80%"></div>
+                  <div class="bar" style="width:60%"></div>
+                </div>
+                <div style="flex:1; height:60px; border-radius:8px; background:var(--well); border:1px solid #3a4030"></div>
+              </div>
+              <div class="bar" style="width:45%"></div>
+            </div>
+          </div>
+          <div class="note">The content decides the order and the weight: one concrete proof is worth more than three feature grids.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>19. Emerald green is the new purple</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="card emerald">emerald gradient card</div>
+            <button class="btn emerald" style="font-weight:600">Action</button>
+          </div>
+          <div class="note">The fashionable accent colour moved from purple to emerald: the default is still a default.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="card">neutral card</div>
+            <button class="btn" style="background:var(--accent); color:#111">Action</button>
+          </div>
+          <div class="note">The colour comes from the product's identity, not from the model's fashion.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h2>20. Generic AI icons</h2>
+      <div class="cols">
+        <div class="col">
+          <div class="tag bad">Slop</div>
+          <div class="cell">
+            <div class="iconrow">
+              <span class="sq">✦</span>
+              <span class="sq" style="background:#7a5cff; color:#fff">✧</span>
+              <span class="sq" style="background:#3ec6ff; color:#111">⚡</span>
+              <span class="sq" style="background:#ff9a5c; color:#111">★</span>
+            </div>
+          </div>
+          <div class="note">Sparkles, wands and loose symbols in coloured squares, each in a different style.</div>
+        </div>
+        <div class="col">
+          <div class="tag good">Fix</div>
+          <div class="cell">
+            <div class="iconrow">
+              <svg class="ownicon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg>
+              <svg class="ownicon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/></svg>
+              <svg class="ownicon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V6M4 20h16"/><path d="M8 16v-4M12 16V9M16 16v-7"/></svg>
+              <svg class="ownicon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.5-7-9a4 4 0 0 1 7-2.5A4 4 0 0 1 19 11c0 4.5-7 9-7 9z"/></svg>
+            </div>
+          </div>
+          <div class="note">Own SVGs: same stroke, same grid, same identity colour, one symbol per function.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
