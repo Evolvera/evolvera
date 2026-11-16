@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -148,8 +148,13 @@ for (const dir of ["extensions/test", "scripts/test"]) {
 // fixas contra o repositório de trabalho.
 if (root === repoRoot) {
   const interfaceTest = "npm test (interface)";
-  console.log("\n[tmpdir próprio] npm test (interface)");
-  executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
+  // PI Studio is a separate project that is not part of every checkout; absent, it is not a failure.
+  if (existsSync(path.join(root, "interface", "package.json"))) {
+    console.log("\n[tmpdir próprio] npm test (interface)");
+    executar(interfaceTest, "npm", ["test"], path.join(root, "interface"), process.platform === "win32");
+  } else {
+    resultados.excluidos.push(`${interfaceTest} — interface/package.json is absent in this checkout`);
+  }
 }
 
 console.log("\nResumo final");

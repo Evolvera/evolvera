@@ -8,7 +8,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const packageRoot = resolvePiSdkRoot(import.meta.url);
 const packageJson = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
-assert.equal(packageJson.version, "0.83.0", "host version must be Pi 0.83.0");
+// This suite pins Pi 0.83.0 internals: its guard exists because that version appended an invalid custom
+// cut and collapsed the rebuilt context. An explicit fixture must therefore be exactly 0.83.0; without
+// one the suite reports the missing capability instead of failing the default run, which resolves
+// whatever Pi is installed. Same rule as the SDK_<version>_ROOT fixtures in sdk-*-compat.test.mjs.
+if (process.env.PI_SDK_ROOT) {
+  assert.equal(packageJson.version, "0.83.0", "PI_SDK_ROOT must name a Pi 0.83.0 fixture for this host suite");
+} else {
+  console.log(`SKIP (host capability fixture): this suite pins Pi 0.83.0 compaction internals and the resolved host is Pi ${packageJson.version}; set PI_SDK_ROOT to a Pi 0.83.0 SDK to run it`);
+  process.exit(0);
+}
 
 const sandbox = mkdtempSync(path.join(tmpdir(), "plastic-memory-host-"));
 const packageLinkDir = path.join(sandbox, "node_modules", "@earendil-works");
