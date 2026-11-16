@@ -8,6 +8,10 @@ description: Mandatory pre-flight skill. Load BEFORE using scout, bug-hunt, plan
 > **LOAD THIS SKILL FIRST** before using `scout`, `planner`, `builder`, or `qa`.
 > Using subagents without these instructions causes context overload, poor results, and wasted tokens.
 
+## Background monitoring of long jobs
+
+Keep passive waits out of the coordinator. For continued observation of an authorized job, use one read-only `general-purpose` Agent with `run_in_background: true`, `model: "openai/gpt-6.1-terra"`, and `thinking: "medium"`; completion automatically notifies the coordinator. The handoff names the exact job/host, allowed read-only commands, immediate first check, interval, finite deadline, terminal success/failure evidence, and scope fence: no edits, restarts, retries of the job, cleanup, deploys, or other mutation. This user-authorized monitoring pattern permits only those named read-only SSH/status calls; SSH remains foreground inside the background agent. Waiting between checks belongs to that agent, never the coordinator. Report the actual launch receipt before claiming monitoring is active; do not poll the agent or duplicate its checks. On completion, consume its result and continue the authorized outcome. A monitor timeout or access error is not job completion. If launch/notification is unavailable, explicitly say there is no active monitor; never promise an unarmed follow-up. Preserve Orca's separate ownership-handoff and campaign event rules.
+
 ## Runtime Identity
 
 Every custom agent must declare explicit `model:` and `thinking:` frontmatter. Its `display_name` must end with `· <Model Label> · <thinking>` so the initial Agent launch line visibly identifies the effective model and reasoning effort. Keep all three synchronized when changing routing. Agents using `model: inherit` display `inherit` plus their explicit effort.
