@@ -75,7 +75,7 @@ for (const unchanged of [
 
 // Eligibility for high: GPT >= 6 and Claude >= 5 on first-party providers only.
 const eligible = [
-  ["openai", "gpt-6.2-sol"], ["openai", "gpt-6-astra"], ["openai", "gpt-6-sol"], ["openai", "gpt-6-luna"],
+  ["openai", "gpt-6.2-sol"], ["openai", "gpt-6.2-astra"], ["openai", "gpt-6-sol"], ["openai", "gpt-6-luna"],
   ["openai", "gpt-6.2-sol"], ["anthropic", "claude-opus-5-5"], ["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-fable-5-1"],
   ["anthropic", "claude-opus-5"], ["anthropic", "claude-haiku-5-5"],
 ];
@@ -290,13 +290,10 @@ assert.deepEqual(
   JSON.parse(read("models.json")).providers.anthropic,
   modelsConfig.providers.anthropic,
 );
-// The GPT models are served by the remote catalog. This config must not declare models for them:
-// a local copy would shadow the catalog's richer metadata (tiered costs, the api.openai.com base
-// URL). `modelOverrides` is the supported exception - it merges onto the catalog entry instead of
-// replacing it - and docs/setup.md relies on it to enable `ultra` for openai/gpt-6-astra.
 for (const configFile of ["models.json", "config/models.json"]) {
   const declared = JSON.parse(read(configFile)).providers;
-  assert.equal(declared.openai?.models, undefined, `${configFile} must not shadow the catalog's openai models`);
+  assert.deepEqual(declared.openai?.models, modelsConfig.providers.openai.models, `${configFile} must match the packaged OpenAI entries`);
+  assert.deepEqual(declared.openai.models.map(({ id }) => id).sort(), ["gpt-6.2-astra", "gpt-6.2-sol"], `${configFile} must leave other OpenAI models to the native catalog`);
   assert.equal(declared["openai-codex"], undefined, `${configFile} must not declare the retired openai-codex provider`);
 }
 

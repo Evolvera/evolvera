@@ -149,21 +149,18 @@ interface ProviderPayload {
 export function isFastEligibleModel(model: ModelIdentity | undefined): boolean {
   if (model?.provider !== "openai" || typeof model.id !== "string") return false;
 
-  // The configured GPT-5.6 Sol/Terra/Luna IDs, GPT-6 Astra/Sol/Luna, and GPT-6.2 Sol support Fast mode.
+  // The configured GPT-5.6 Sol/Terra/Luna IDs, GPT-6.2 Astra/Sol/Luna, and GPT-6.2 Sol support Fast mode.
   return model.id.startsWith("gpt-5.6-")
     || model.id === "gpt-5.6"
     || model.id === "gpt-5.5"
     || model.id === "gpt-5.4"
-    || model.id === "gpt-6-astra"
+    || model.id === "gpt-6.2-astra"
     || model.id === "gpt-6-sol"
     || model.id === "gpt-6.2-sol"
     || model.id === "gpt-6-luna";
 }
 
-// Ultrafast supports GPT-6 Astra and GPT-6.2 Sol (Pro $500 / eligible Enterprise/Edu; OpenAI Codex
-// speed docs, 2026-10-08). The backend accepts the tier for other models but silently serves Standard,
-// so only the documented models are ever sent it.
-const ULTRAFAST_MODEL_IDS = new Set(["gpt-6-astra", "gpt-6.2-sol"]);
+const ULTRAFAST_MODEL_IDS = new Set(["gpt-6.2-astra", "gpt-6.2-sol"]);
 export function isUltrafastEligibleModel(model: ModelIdentity | undefined): boolean {
   return model?.provider === "openai" && ULTRAFAST_MODEL_IDS.has(model.id);
 }
@@ -239,8 +236,8 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
   ) => {
     ctx.ui.notify(
       isUltrafastEligibleModel(model)
-        ? `Ultrafast ativado no ${model?.id === "gpt-6-astra" ? "GPT-6 Astra (até ~8× mais rápido)" : "GPT-6.2 Sol"}: 8× consumo do limite incluído (6× em créditos). Outros modelos compatíveis usam Fast.`
-        : "Ultrafast só existe no GPT-6 Astra e no GPT-6.2 Sol. Este modelo usa Fast (priority); troque para gpt-6-astra ou gpt-6.2-sol para Ultrafast.",
+        ? `Ultrafast ativado no ${model?.id === "gpt-6.2-astra" ? "GPT-6.2 Astra" : "GPT-6.2 Sol"}. Ultrafast tem custo maior que o tier padrão. Outros modelos compatíveis usam Fast.`
+        : "Ultrafast só existe no GPT-6.2 Astra e no GPT-6.2 Sol. Este modelo usa Fast (priority); troque para gpt-6.2-astra ou gpt-6.2-sol para Ultrafast.",
       "warning",
     );
   };
@@ -262,13 +259,13 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
           value: "ultra",
           label: "ultra",
           description: isUltrafastEligibleModel(currentModel)
-            ? "Ultrafast here + subagents (Astra/6.2 Sol); 8× credits"
-            : "Ultrafast on Astra/6.2 Sol, Fast on other eligible models, here + subagents",
+            ? "Ultrafast here + subagents (6.2 Astra/Sol); higher cost"
+            : "Ultrafast on 6.2 Astra/Sol, Fast on other eligible models, here + subagents",
         },
         { value: "eco", label: "eco", description: "Fast for eligible subagents only" },
         { value: "eco default on", label: "eco default on", description: "Enable Eco for future TUI initializations" },
         { value: "eco default off", label: "eco default off", description: "Disable Eco for future TUI initializations" },
-        { value: "ultra-eco", label: "ultra-eco", description: "Ultrafast for Astra/6.2 Sol subagents, Fast for others" },
+        { value: "ultra-eco", label: "ultra-eco", description: "Ultrafast for 6.2 Astra/Sol subagents, Fast for others" },
         { value: "off", label: "off", description: "Use standard service tier" },
       ];
       const normalizedPrefix = prefix.toLowerCase();
@@ -318,7 +315,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
         fastRequestAccepted = false;
         updateStatus(ctx);
         ctx.ui.notify(
-          "Fast Mode ULTRA ECO ativado: a sessão principal fica no tier padrão; subagentes GPT-6 Astra e GPT-6.2 Sol usam Ultrafast (8× créditos) e outros compatíveis usam Fast.",
+          "Fast Mode ULTRA ECO ativado: a sessão principal fica no tier padrão; subagentes GPT-6.2 Astra e GPT-6.2 Sol usam Ultrafast (custo maior que o tier padrão) e outros compatíveis usam Fast.",
           "warning",
         );
         return;
@@ -338,7 +335,7 @@ export default function codexFastModeExtension(pi: ExtensionAPI) {
       updateStatus(ctx);
       if (!eligibleModelSelected) {
         ctx.ui.notify(
-          `Fast Mode ${action === "ultra" ? "ULTRA " : ""}ativado: este modelo não tem Fast e segue no tier padrão; subagentes OpenAI Codex compatíveis usam ${action === "ultra" ? "Ultrafast (Astra/6.2 Sol) ou Fast" : "Fast"}.`,
+          `Fast Mode ${action === "ultra" ? "ULTRA " : ""}ativado: este modelo não tem Fast e segue no tier padrão; subagentes OpenAI Codex compatíveis usam ${action === "ultra" ? "Ultrafast (6.2 Astra/Sol) ou Fast" : "Fast"}.`,
           "warning",
         );
       } else if (action === "ultra") notifyUltraEnabled(ctx, model);

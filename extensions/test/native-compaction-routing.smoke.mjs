@@ -138,7 +138,7 @@ try {
   assert.deepEqual(await handler(guardEvent("threshold", 290_000, [...opusBranch, msg("openai", 290_000)]), makeContext(state, conversationModel)), { compaction: result }, "once GPT counted, normal rule");
   assert.deepEqual(await handler(guardEvent("threshold", 350_000), makeContext(state, { provider: "anthropic", id: "claude-opus-5-5" })), { compaction: result }, "current model must be GPT");
   for (const claude of ["claude-sonnet-4-8", "claude-haiku-4-9", "claude-fable-5-1", "claude-opus-5-5"]) {
-    for (const gpt of [{ provider: "openai", id: "gpt-5.6-terra" }, { provider: "openai", id: "gpt-6-astra" }]) {
+    for (const gpt of [{ provider: "openai", id: "gpt-5.6-terra" }, { provider: "openai", id: "gpt-6.2-astra" }]) {
       const branch = [msg("anthropic", 350_000, { model: claude })];
       assert.deepEqual(await handler(guardEvent("threshold", 350_000, branch), makeContext(state, gpt)), { cancel: true }, `${claude} -> ${gpt.provider}/${gpt.id}`);
     }

@@ -10,7 +10,7 @@ Plan-heavy is the normal planner workflow with one deliberate upgrade: three iso
 ```text
 orchestrator handoff
   → plan-briefer + plan-briefer-fable + plan-briefer-gpt55 (parallel)
-  → fresh planner synthesis on GPT-6 Astra/high (reads all briefs directly)
+  → fresh planner synthesis on GPT-6.2 Astra/high (reads all briefs directly)
   → normal PLAN_FULL / SCHEDULE / TASKS
   → normal builder/testing/validator execution
 ```
@@ -91,7 +91,7 @@ The briefs should disagree honestly when their independently derived judgment di
 
 ## 4. Launch the Final Planner
 
-After all three brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis`, using the unchanged prompt from `agents/planner.md`. Pass the explicit plan-heavy override `model: openai/gpt-6-astra` and `thinking: high`: normal planning remains on its planner frontmatter defaults, while plan-heavy synthesis is deliberately Astra/high. If the user explicitly requests a different supported model or effort for this run, pass exactly that request after verifying the resolved runtime supports it; never substitute, upgrade, or downgrade the selected effort silently.
+After all three brief files exist, launch a fresh `planner` session—never resume a prior planner—with the exact 3-word description `Plan-heavy final synthesis`, using the unchanged prompt from `agents/planner.md`. Pass the explicit plan-heavy override `model: openai/gpt-6.2-astra` and `thinking: high`: normal planning remains on its planner frontmatter defaults, while plan-heavy synthesis is deliberately Astra/high. If the user explicitly requests a different supported model or effort for this run, pass exactly that request after verifying the resolved runtime supports it; never substitute, upgrade, or downgrade the selected effort silently.
 
 Prompt rules for this launch (per the model maker's first-party guidance for the planner's configured model): keep the delegated prompt lean, clear, and outcome-first; avoid conflicting or duplicated instructions; state explicitly when and how the planner may delegate or stop; bound any requested verification to the named artifacts; provide the domain context, hard constraints, approval boundaries, success criteria, and required evidence without prescribing ordinary intermediate reasoning; require progress and completion claims to be grounded in actual tool results; and never ask it to echo, transcribe, or explain hidden reasoning — decisions recorded in `PLAN_FULL.md` are work product, not reasoning extraction.
 

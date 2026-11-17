@@ -1158,7 +1158,7 @@ If only blocked or in-review work remains and no workers are active, end the cam
 | S, local | direct / `builder` |
 | M | light pre-plan → builder(s) |
 | L / multi-file | `planner` skill → builders |
-| High risk | `planner` → smallest suitable builder + selective gates; external operations remain with the coordinator unless the user explicitly requests a subagent; heavy only for exceptional local integration; when the user requests the plan-heavy ensemble, use the `plan-heavy` skill (three briefs + a new planner session using the original prompt in GPT-6 Astra high) |
+| High risk | `planner` → smallest suitable builder + selective gates; external operations remain with the coordinator unless the user explicitly requests a subagent; heavy only for exceptional local integration; when the user requests the plan-heavy ensemble, use the `plan-heavy` skill (three briefs + a new planner session using the original prompt in GPT-6.2 Astra high) |
 
 Always:
 

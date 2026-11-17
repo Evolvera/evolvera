@@ -26,7 +26,7 @@ assert.match(planner, /^model: fallback\/sol$/m);
 assert.match(planner, /^thinking: high$/m);
 assert.match(planner, /^display_name: .*GPT-6\.2 Sol · high$/m);
 assert.match(planner, /Model: openai\/gpt-6\.2-sol high\./);
-assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|gpt-6-sol|thinking:\s*(?:low|medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/6 Sol/low/medium/xhigh/max routing");
+assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6\.2-astra|gpt-6-sol|thinking:\s*(?:low|medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/6 Sol/low/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
@@ -41,7 +41,7 @@ assert.match(briefer55, /brief_gpt55\.md/);
 
 assert.match(planHeavy, /launch a fresh `planner` session/i);
 assert.match(planHeavy, new RegExp(finalDescription));
-assert.match(planHeavy, /explicit plan-heavy override `model: openai\/gpt-6-astra` and `thinking: high`/);
+assert.match(planHeavy, /explicit plan-heavy override `model: openai\/gpt-6\.2-astra` and `thinking: high`/);
 assert.match(planHeavy, /plan-heavy synthesis is deliberately Astra\/high/);
 assert.match(planHeavy, /unchanged prompt from `agents\/planner\.md`/);
 assert.match(planHeavy, /Prompt rules for this launch/);
@@ -59,7 +59,7 @@ assert.match(plannerSkill, /reads the handoff plus all briefs, reconciles them/i
 assert.equal(system, systemMirror, "SYSTEM mirrors must remain byte-identical");
 assert.match(
   system,
-  /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt with explicit `openai\/gpt-6-astra` \/ `high` routing/i,
+  /three parallel briefs → a fresh planner synthesis using the unchanged planner prompt with explicit `openai\/gpt-6\.2-astra` \/ `high` routing/i,
 );
 assert.match(plannerSkill, /no hardcoded model or effort override/i);
 
