@@ -151,13 +151,52 @@ try {
     const nativeAuthBefore = fs.readFileSync(authTarget);
     const nativeFirst = runPatcher();
     assert.equal(nativeFirst.status, 0, nativeFirst.stderr);
-    assert.deepEqual(fs.readFileSync(piTarget), nativePiBefore, 'native PI 1.5 client version was rewritten');
+    const nativePiSource = nativePiBefore.toString('utf8');
+    const supersededPiAnchor = patcher.PI_SUPERSEDED_ANCHORS.find(({ anchor }) => nativePiSource.includes(anchor))?.anchor;
+    if (supersededPiAnchor) {
+      assert.deepEqual(fs.readFileSync(piTarget), expectedReplacement(nativePiSource, supersededPiAnchor, patcher.PI_PATCHED_ANCHOR));
+    } else {
+      assert.ok(nativePiSource.includes(patcher.PI_PATCHED_ANCHOR), 'native PI 1.5 client-version anchor is unknown');
+      assert.deepEqual(fs.readFileSync(piTarget), nativePiBefore, 'native PI 1.5 client version was rewritten');
+    }
     assert.deepEqual(fs.readFileSync(authTarget), expectedReplacement(
       nativeAuthBefore.toString('utf8'), patcher.AUTH_UNPATCHED_ANCHOR, patcher.AUTH_PATCHED_ANCHOR,
     ));
+    const nativePiAfter = fs.readFileSync(piTarget);
     assert.equal(runPatcher().status, 0, 'native PI 1.5 rerun was not idempotent');
+    assert.deepEqual(fs.readFileSync(piTarget), nativePiAfter, 'native PI 1.5 rerun changed the target');
+  } else if (sdkMetadata.version === '1.4.0') {
+    assert.equal(patcher.PI_140_NATIVE_SHA256, '360298eff89e8c517c213880088db33c93b56ba737c91e885b22e7e125ca5d55', 'legacy 1.4.0 native hash pin changed');
+    assert.equal(patcher.PI_140_PATCHED_SHA256, '7c621aec1de0548d6d6ac150863aa678102a829f218e5a6ba980403bdf077742', 'legacy 1.4.0 patched hash pin changed');
+    const sdkPiSource = sdkPiTarget.toString('utf8');
+    const sdkPiDigest = createHash('sha256').update(sdkPiTarget).digest('hex');
+    let nativePiSource;
+    if (sdkPiDigest === patcher.PI_140_NATIVE_SHA256) {
+      nativePiSource = sdkPiSource;
+    } else if (sdkPiDigest === patcher.PI_140_PATCHED_SHA256) {
+      assert.equal(sdkPiSource.split(patcher.PI_PATCHED_ANCHOR).length - 1, 1, 'patched native PI 1.4 anchor cardinality mismatch');
+      nativePiSource = sdkPiSource.replace(patcher.PI_PATCHED_ANCHOR, patcher.PI_SUPERSEDED_ANCHORS[0].anchor);
+      assert.equal(createHash('sha256').update(nativePiSource).digest('hex'), patcher.PI_140_NATIVE_SHA256, 'derived native PI 1.4 fixture does not match its full-file pin');
+    } else {
+      assert.fail(`resolved PI 1.4 SDK has unknown full-file digest: ${sdkPiDigest}`);
+    }
+    createFixture({ piVersion: sdkMetadata.version, piSource: nativePiSource });
+    const nativePiBefore = fs.readFileSync(piTarget);
+    const nativeAuthBefore = fs.readFileSync(authTarget);
+    const nativeFirst = runPatcher();
+    assert.equal(nativeFirst.status, 0, nativeFirst.stderr);
+    assert.deepEqual(fs.readFileSync(piTarget), expectedReplacement(
+      nativePiBefore.toString('utf8'), patcher.PI_SUPERSEDED_ANCHORS[0].anchor, patcher.PI_PATCHED_ANCHOR,
+    ), 'native PI 1.4 patch changed bytes outside the version anchor');
+    assert.equal(createHash('sha256').update(fs.readFileSync(piTarget)).digest('hex'), patcher.PI_140_PATCHED_SHA256);
+    assert.deepEqual(fs.readFileSync(authTarget), expectedReplacement(
+      nativeAuthBefore.toString('utf8'), patcher.AUTH_UNPATCHED_ANCHOR, patcher.AUTH_PATCHED_ANCHOR,
+    ));
+    const nativePatchedSnapshot = fixtureSnapshot();
+    assert.equal(runPatcher().status, 0, 'native PI 1.4 rerun was not idempotent');
+    assert.deepEqual(fixtureSnapshot(), nativePatchedSnapshot, 'native PI 1.4 rerun changed fixture bytes');
   } else {
-    console.log(`native PI 1.5 section skipped: resolved SDK ${sdkRoot} is ${sdkMetadata.version}, not 1.5.0`);
+    console.log(`native PI 1.4/1.5 sections skipped: resolved SDK ${sdkRoot} is ${sdkMetadata.version}`);
   }
 
   createFixture();

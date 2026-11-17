@@ -175,11 +175,11 @@ When the account lists `gemini-4-argon`, select `/model antigravity/gemini-4-arg
 
 This flow uses third-party OAuth, not an official Google flow. Antigravity's terms, section 6, prohibit third-party OAuth, and use may result in account suspension: https://antigravity.google/terms. Credentials must not be committed to Git.
 
-### Claude Fable 5.1 OAuth Compatibility
+### Claude Fable 5.2 OAuth Compatibility
 
-The template installs `npm:@gotgenes/pi-anthropic-auth@2.0.6`. After that installation and before the final activation of `settings.json`, the installers run `scripts/patch-anthropic-client-version.mjs`. The patcher is limited to the `@earendil-works/pi-coding-agent@1.3.0` and `1.4.0` baselines and `@gotgenes/pi-anthropic-auth@2.0.6` or adapted `2.0.1` installation (preserved without reinstalling), changing only known anchors to report Claude Code `2.1.280`. This is required because Opus 5.5 OAuth requires Claude Code `2.1.280+` (Fable 5.1 required `2.1.251+`); the patch fixes PI and OAuth adapter compatibility headers and does not depend on updating the standalone CLI.
+The template installs `npm:@gotgenes/pi-anthropic-auth@2.0.6`. After that installation and before the final activation of `settings.json`, the installers run `scripts/patch-anthropic-client-version.mjs`. The patcher supports the `@earendil-works/pi-coding-agent` 1.3.0, 1.4.0, and 1.5.0 baselines and `@gotgenes/pi-anthropic-auth@2.0.6` or adapted 2.0.1 installation (preserved without reinstalling), changing only known anchors to report Claude Code `2.1.290`. This is required because Fable 5.2 OAuth requires Claude Code `2.1.290+`; the patch fixes PI and OAuth adapter compatibility headers and does not depend on updating the standalone CLI. For PI 1.4.0, the patcher verifies the full native-file digest and the resulting patched-file digest, and changes only the client-version anchor.
 
-Installations already carrying a value written by an earlier version of this patcher (`2.1.257`) are migrated to the current target with the same identity, cardinality, and rollback checks; any other value remains rejected. After applying the patch, restart the PI session so the already-loaded module is replaced.
+Installations already carrying a value written by an earlier version of this patcher (`2.1.280` or `2.1.257`) are migrated to the current target with the same identity, cardinality, and rollback checks; any other value remains rejected. After applying the patch, restart the PI session so the already-loaded module is replaced.
 
 The operation fails closed, is idempotent and atomic per file, is rollback-safe across both targets, and preserves file mode and bytes outside the anchors. Validate only with the disposable fixture:
 

@@ -16,14 +16,15 @@ const AUTH_SUPPORTED_VERSIONS = [AUTH_PACKAGE_VERSION, '2.0.1'];
 const PI_TARGET_RELATIVE_PATH = 'node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js';
 const AUTH_TARGET_RELATIVE_PATH = 'src/constants.ts';
 const PI_UNPATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.75";';
-const PI_PATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.280";';
+const PI_PATCHED_ANCHOR = 'const claudeCodeVersion = "2.1.290";';
 const AUTH_UNPATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.206";';
-const AUTH_PATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.280";';
+const AUTH_PATCHED_ANCHOR = 'export const CLAUDE_CODE_VERSION = "2.1.290";';
 const PI_UNPATCHED_SHA256 = 'af2514d6f1a4a4f4e92499c9ff996b5f12792e882cdf55a7687aa09aed7b9a9e';
-const PI_PATCHED_SHA256 = 'eaa26ecdb63f379a96b5bc556bda397fa8d747ea6a3aa94922656f1496fcce41';
+const PI_PATCHED_SHA256 = '1fcff17624d43e41997fe3b2539eb1211eee644147040ad4bd84954308990418';
 const PI_140_NATIVE_SHA256 = '360298eff89e8c517c213880088db33c93b56ba737c91e885b22e7e125ca5d55';
+const PI_140_PATCHED_SHA256 = '7c621aec1de0548d6d6ac150863aa678102a829f218e5a6ba980403bdf077742';
 const AUTH_UNPATCHED_SHA256 = 'e327b67cd75d719f06910db06468f9b39fd03e657b5fb593555ca6e4cbe349f8';
-const AUTH_PATCHED_SHA256 = 'bfbe5a011ae42f04765567d4b177f164a048eaca33f3d89043fa0672360691c3';
+const AUTH_PATCHED_SHA256 = '91d7d1b07f7a22af8ccc4d0e9c3c268c9b291658ea9eb89bca9101e80d4fce53';
 /**
  * Client versions this patcher previously wrote. An install already carrying
  * one of them is migrated to the current target with the same fail-closed
@@ -32,11 +33,19 @@ const AUTH_PATCHED_SHA256 = 'bfbe5a011ae42f04765567d4b177f164a048eaca33f3d89043f
  */
 const PI_SUPERSEDED_ANCHORS = [
   {
+    anchor: 'const claudeCodeVersion = "2.1.280";',
+    sha256: 'eaa26ecdb63f379a96b5bc556bda397fa8d747ea6a3aa94922656f1496fcce41',
+  },
+  {
     anchor: 'const claudeCodeVersion = "2.1.257";',
     sha256: 'ca9165b796800e97b0946541d95c586cac8fb963d148673935d46091eacd9cd6',
   },
 ];
 const AUTH_SUPERSEDED_ANCHORS = [
+  {
+    anchor: 'export const CLAUDE_CODE_VERSION = "2.1.280";',
+    sha256: 'bfbe5a011ae42f04765567d4b177f164a048eaca33f3d89043fa0672360691c3',
+  },
   {
     anchor: 'export const CLAUDE_CODE_VERSION = "2.1.257";',
     sha256: 'b01a4eb50efa8fecd6bf8e3ebdd525337f30d57ad43d2562c7b2cbd62f50efff',
@@ -157,11 +166,26 @@ async function prepareTarget({
 
   const source = decodeUtf8(original);
   if (relativePath === PI_TARGET_RELATIVE_PATH && piVersion === '1.4.0') {
-    if (sha256(original) !== PI_140_NATIVE_SHA256 || countOccurrences(source, PI_PATCHED_ANCHOR) !== 1) {
-      throw new Error(`native PI 1.4 target digest/anchor mismatch: ${relativePath}`);
+    const sourceDigest = sha256(original);
+    if (sourceDigest === PI_140_NATIVE_SHA256 && countOccurrences(source, PI_SUPERSEDED_ANCHORS[0].anchor) === 1) {
+      const nativeAnchor = PI_SUPERSEDED_ANCHORS[0].anchor;
+      const index = source.indexOf(nativeAnchor);
+      const output = Buffer.concat([
+        Buffer.from(source.slice(0, index), 'utf8'),
+        Buffer.from(patchedAnchor, 'utf8'),
+        Buffer.from(source.slice(index + nativeAnchor.length), 'utf8'),
+      ]);
+      if (sha256(output) !== PI_140_PATCHED_SHA256 || countOccurrences(output.toString('utf8'), patchedAnchor) !== 1) {
+        throw new Error(`native PI 1.4 patched output mismatch: ${relativePath}`);
+      }
+      return { targetPath, original, mode: targetStat.mode & 0o7777, output, changed: true,
+        unpatchedAnchor: nativeAnchor, patchedAnchor };
     }
-    return { targetPath, original, mode: targetStat.mode & 0o7777, output: original, changed: false,
-      unpatchedAnchor, patchedAnchor };
+    if (sourceDigest === PI_140_PATCHED_SHA256 && countOccurrences(source, patchedAnchor) === 1) {
+      return { targetPath, original, mode: targetStat.mode & 0o7777, output: original, changed: false,
+        unpatchedAnchor, patchedAnchor };
+    }
+    throw new Error(`native PI 1.4 target digest/anchor mismatch: ${relativePath}`);
   }
   // Exactly one known client-version anchor may appear, exactly once: a
   // pristine install, one this patcher wrote earlier, or the current target.
@@ -351,6 +375,7 @@ export {
   PI_PACKAGE_VERSION,
   PI_SUPPORTED_VERSIONS,
   PI_140_NATIVE_SHA256,
+  PI_140_PATCHED_SHA256,
   AUTH_PACKAGE_NAME,
   AUTH_PACKAGE_VERSION,
   PI_TARGET_RELATIVE_PATH,
