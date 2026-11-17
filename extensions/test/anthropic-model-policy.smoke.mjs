@@ -26,10 +26,10 @@ assert.equal(mod.HIGH_CONTEXT_WINDOW, 800_000);
 
 // Conductor applies 70% after normal/default or High policy and never changes output limits.
 for (const [modelInput, mode, expected, normal] of [
-  [{ provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 }, "default", 210_000, 300_000],
+  [{ provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 }, "default", 210_000, 300_000],
   [{ provider: "anthropic", id: "claude-opus-5", contextWindow: 1_000_000 }, "default", 315_000, 450_000],
   [{ provider: "anthropic", id: "claude-opus-5", contextWindow: 450_000 }, "default", 315_000, 450_000],
-  [{ provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 }, "high", 560_000, 800_000],
+  [{ provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 }, "high", 560_000, 800_000],
   [{ provider: "openai", id: "gpt-5.6-sol", contextWindow: 300_000 }, "high", 210_000, 300_000],
   [{ provider: "alibaba-plan", id: "qwen3.8-max-preview", contextWindow: 1_000_000 }, "default", 140_000, 200_000],
 ]) {
@@ -64,8 +64,8 @@ assert.equal(mod.applyContextMode(native, "default"), false);
 for (const unchanged of [
   { provider: "anthropic", id: "claude-opus-5-5", contextWindow: 450_000 },
   { provider: "anthropic", id: "claude-x", contextWindow: 200_000 },
-  { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 },
-  { provider: "openai", id: "gpt-6.1-sol", contextWindow: 1_000_000 },
+  { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 },
+  { provider: "openai", id: "gpt-6.2-sol", contextWindow: 1_000_000 },
   { provider: "anthropic", id: "claude-x", contextWindow: 999_999 },
 ]) {
   const before = structuredClone(unchanged);
@@ -75,19 +75,19 @@ for (const unchanged of [
 
 // Eligibility for high: GPT >= 6 and Claude >= 5 on first-party providers only.
 const eligible = [
-  ["openai", "gpt-6.1-sol"], ["openai", "gpt-6-astra"], ["openai", "gpt-6-sol"], ["openai", "gpt-6-luna"],
-  ["openai", "gpt-6.1-sol"], ["anthropic", "claude-opus-5-5"], ["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-fable-5-1"],
+  ["openai", "gpt-6.2-sol"], ["openai", "gpt-6-astra"], ["openai", "gpt-6-sol"], ["openai", "gpt-6-luna"],
+  ["openai", "gpt-6.2-sol"], ["anthropic", "claude-opus-5-5"], ["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-fable-5-1"],
   ["anthropic", "claude-opus-5"], ["anthropic", "claude-haiku-5-5"],
 ];
 const ineligible = [
   ["openai", "gpt-5.6-sol"], ["openai", "gpt-5.5"], ["anthropic", "claude-opus-4-8"], ["anthropic", "claude-sonnet-4-6"],
-  ["openrouter", "gpt-6.1-sol"], ["cursor", "claude-opus-5-5"], ["alibaba-plan", "qwen3.8-max"], ["openai", "gpt-oss-120b"],
+  ["openrouter", "gpt-6.2-sol"], ["cursor", "claude-opus-5-5"], ["alibaba-plan", "qwen3.8-max"], ["openai", "gpt-oss-120b"],
 ];
 for (const [provider, id] of eligible) assert.equal(mod.isHighContextModel({ provider, id }), true, `${provider}/${id} eligible`);
 for (const [provider, id] of ineligible) assert.equal(mod.isHighContextModel({ provider, id }), false, `${provider}/${id} not eligible`);
 
 // high raises eligible models to 800K and default restores their own value, even across a reload.
-const sol = { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000, maxTokens: 128_000 };
+const sol = { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000, maxTokens: 128_000 };
 const opusNative = { provider: "anthropic", id: "claude-opus-5-5", contextWindow: 1_000_000 };
 const old = { provider: "openai", id: "gpt-5.6-sol", contextWindow: 300_000 };
 for (const model of [sol, opusNative, old]) mod.applyContextMode(model, "high");
@@ -96,7 +96,7 @@ assert.equal(sol.maxTokens, 128_000, "maxTokens untouched");
 const reloaded = await createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: sdkAlias }).import(path.join(root, "extensions/context-mode.ts"));
 for (const model of [sol, opusNative, old]) reloaded.applyContextMode(model, "default");
 assert.deepEqual([sol.contextWindow, opusNative.contextWindow, old.contextWindow], [300_000, 450_000, 300_000]);
-const acrossReload = { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 };
+const acrossReload = { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 };
 mod.applyContextMode(acrossReload, "default", true);
 assert.equal(reloaded.applyContextMode(acrossReload, "default", true), false);
 assert.equal(acrossReload.contextWindow, 210_000, "reload preserves original window without compounding");
@@ -142,7 +142,7 @@ try {
   const handlers = new Map(); const commands = new Map(); const statuses = new Map(); const notices = [];
   const eventHandlers = new Map();
   mod.default({ on: (name, fn) => handlers.set(name, fn), registerCommand: (name, def) => commands.set(name, def), events: { on: (name, fn) => { eventHandlers.set(name, fn); return () => eventHandlers.delete(name); } } }, () => settingsPath);
-  const current = { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 };
+  const current = { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 };
   let choice;
   const ctx = {
     model: current, hasUI: true,
@@ -181,7 +181,7 @@ try {
   await handlers.get("model_select")({ model: ctx.model }, ctx);
   assert.equal(ctx.model.contextWindow, 450_000);
   assert.equal(statuses.has("context-mode"), false);
-  ctx.model = { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 };
+  ctx.model = { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 };
   await handlers.get("before_agent_start")({}, ctx);
   assert.equal(ctx.model.contextWindow, 800_000, "same-model replacement is corrected before requests");
   assert.equal(statuses.get("context-mode"), "800K");
@@ -194,7 +194,7 @@ try {
   const previousRun = process.env.PI_REPORT_RUN;
   process.env.PI_REPORT_RUN = "run_abc123";
   try {
-    const childCtx = { model: { provider: "openai", id: "gpt-6.1-sol", contextWindow: 300_000 }, hasUI: true, ui: ctx.ui };
+    const childCtx = { model: { provider: "openai", id: "gpt-6.2-sol", contextWindow: 300_000 }, hasUI: true, ui: ctx.ui };
     await handlers.get("session_start")({}, childCtx);
     assert.equal(childCtx.model.contextWindow, 300_000, "conductor child ignores the saved High preference");
     await commands.get("context-mode").handler("default", childCtx);

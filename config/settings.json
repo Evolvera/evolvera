@@ -2,7 +2,7 @@
   "lastChangelogVersion": "0.80.3",
   "followUpMode": "one-at-a-time",
   "defaultProvider": "openai",
-  "defaultModel": "gpt-6.1-sol",
+  "defaultModel": "gpt-6.2-sol",
   "defaultThinkingLevel": "medium",
   "packages": [
     "npm:pi-mcp-adapter",

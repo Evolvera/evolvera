@@ -20,12 +20,12 @@ const [planner, planHeavy, plannerSkill, system, systemMirror, deadlinePatcher] 
   read("scripts/patch-pi-subagents-bounded-waits.mjs"),
 ]);
 
-// Routing authority: normal planner follows frontmatter (GPT-6.1 Sol/high); plan-heavy final
+// Routing authority: normal planner follows frontmatter (GPT-6.2 Sol/high); plan-heavy final
 // synthesis explicitly overrides to Astra/high. Static contract regression.
 assert.match(planner, /^model: fallback\/sol$/m);
 assert.match(planner, /^thinking: high$/m);
-assert.match(planner, /^display_name: .*GPT-6\.1 Sol · high$/m);
-assert.match(planner, /Model: openai\/gpt-6\.1-sol high\./);
+assert.match(planner, /^display_name: .*GPT-6\.2 Sol · high$/m);
+assert.match(planner, /Model: openai\/gpt-6\.2-sol high\./);
 assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6-astra|gpt-6-sol|thinking:\s*(?:low|medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/6 Sol/low/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);

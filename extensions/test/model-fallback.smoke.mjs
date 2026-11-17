@@ -78,7 +78,7 @@ const initialRegistrations = registrations;
 handlers.get("session_start")({}, {});
 assert.equal(registrations, initialRegistrations + 6, "a live session reasserts ownership of every virtual router");
 const selectModel = handlers.get("model_select");
-selectModel({ model: { provider: "openai", id: "gpt-6.1-sol" } });
+selectModel({ model: { provider: "openai", id: "gpt-6.2-sol" } });
 assert.equal(appended.length, 0, "selecting another model does not reset fallback state");
 selectModel({ model: { provider: "fallback", id: "conductor" } });
 assert.equal(appended.length, 1, "selecting a virtual model persists a reset");
@@ -96,16 +96,16 @@ assert.deepEqual(FALLBACK_CHAINS.builder.map(({ model, level }) => ({ model, lev
   { model: "deepseek-v4.1-flash-fast", level: "high" },
   { model: "claude-haiku-5-5", level: "inherit" },
 ]);
-for (const [id, name] of [["builder", "GPT-6 Luna"], ["heavy", "GPT-6.1 Terra"], ["sol", "GPT-6.1 Sol"], ["terra", "GPT-6.1 Terra"], ["luna", "GPT-6 Luna"]]) {
+for (const [id, name] of [["builder", "GPT-6 Luna"], ["heavy", "GPT-6.1 Terra"], ["sol", "GPT-6.2 Sol"], ["terra", "GPT-6.1 Terra"], ["luna", "GPT-6 Luna"]]) {
   const metadata = virtualModels.get(`fallback/${id}`);
   assert.equal(metadata.name, name, `${id} exposes its step-0 physical model name`);
-  assert.equal(metadata.contextWindow, 272_000);
+  assert.equal(metadata.contextWindow, id === "sol" ? 1_050_000 : 272_000);
   assert.equal(metadata.maxTokens, 128_000);
   assert.deepEqual(metadata.input, ["text", "image"]);
 }
 assert.deepEqual(FALLBACK_CHAINS.conductor.map(({ provider, model, level }) => ({ provider, model, level })), [
   { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-  { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
+  { provider: "openai", model: "gpt-6.2-sol", level: "inherit" },
 ]);
 assert.equal(FALLBACK_CHAINS.conductor[1].level, "inherit", "the Codex fallback mirrors the requested effort");
 const conductor = virtualModels.get("fallback/conductor");
@@ -119,26 +119,26 @@ const conductorPrimary = conductor.route({ model: { provider: "fallback", id: "c
 assert.equal(conductorPrimary.model.id, "deepseek-v4.1-flash-fast");
 assert.equal(conductorPrimary.thinkingLevel, "high");
 const conductorFallback = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "continuation", state: { step: 1, runId: "u1" } }, { modelRegistry: registry });
-assert.equal(conductorFallback.model.id, "gpt-6.1-sol");
+assert.equal(conductorFallback.model.id, "gpt-6.2-sol");
 assert.equal(conductorFallback.thinkingLevel, "high");
 configuredProviders.delete("refuseless");
 const conductorSkipped = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry });
-assert.equal(conductorSkipped.model.id, "gpt-6.1-sol", "initial selection skips a credential-less provider");
+assert.equal(conductorSkipped.model.id, "gpt-6.2-sol", "initial selection skips a credential-less provider");
 assert.equal(conductorSkipped.state.step, 1, "the skipped step is not persisted");
 assert.deepEqual(published.at(-1), {
   channel: "model-fallback:routed",
-  data: { provider: "openai", modelId: "gpt-6.1-sol" },
+  data: { provider: "openai", modelId: "gpt-6.2-sol" },
 }, "the routed event reports the eligible step, not the skipped step");
 const advancedSkipped = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "refuseless", id: "deepseek-v4.1-flash-fast" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
-assert.equal(advancedSkipped.model.id, "gpt-6.1-sol", "advance selection also skips credential-less providers");
+assert.equal(advancedSkipped.model.id, "gpt-6.2-sol", "advance selection also skips credential-less providers");
 assert.equal(advancedSkipped.state.step, 1);
 const staleContext = { get modelRegistry() { throw new Error("This extension ctx is stale"); } };
-assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, staleContext).model.id, "gpt-6.1-sol", "cached registry avoids rejecting a stale ctx getter");
+assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, staleContext).model.id, "gpt-6.2-sol", "cached registry avoids rejecting a stale ctx getter");
 failEmit = true;
-assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }).model.id, "gpt-6.1-sol", "stale routed-event emit is non-fatal");
+assert.equal(conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }).model.id, "gpt-6.2-sol", "stale routed-event emit is non-fatal");
 failEmit = false;
 configuredProviders.clear();
-assert.throws(() => conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }), /Fallback chain 'conductor' has no eligible step: refuseless\/deepseek-v4\.1-flash-fast: provider has no configured credentials; openai\/gpt-6\.1-sol: provider has no configured credentials/);
+assert.throws(() => conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry }), /Fallback chain 'conductor' has no eligible step: refuseless\/deepseek-v4\.1-flash-fast: provider has no configured credentials; openai\/gpt-6\.2-sol: provider has no configured credentials/);
 configuredProviders.add("openai");
 configuredProviders.add("refuseless");
 const configuredPrimary = conductor.route({ model: { provider: "fallback", id: "conductor" }, thinkingLevel: "high", messages: [{ role: "user", id: "u1" }], reason: "user" }, { modelRegistry: registry });
@@ -155,7 +155,7 @@ assert.deepEqual(published.at(-1), {
 assert.deepEqual(Object.keys(published.at(-1).data).sort(), ["modelId", "provider"], "only provider and model id travel");
 const fallbackRoute = builder.route({ ...baseRequest, reason: "continuation", state: firstRoute.state }, { modelRegistry: registry });
 assert.equal(fallbackRoute.model.id, "gpt-6-luna", "continuation stays on the cache-owning primary");
-const solFallback = virtualModels.get("fallback/sol").route({ ...baseRequest, model: { provider: "fallback", id: "sol" }, reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "openai", id: "gpt-6.1-sol" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
+const solFallback = virtualModels.get("fallback/sol").route({ ...baseRequest, model: { provider: "fallback", id: "sol" }, reason: "retry", state: { step: 0, runId: "u1" }, failed: { model: { provider: "openai", id: "gpt-6.2-sol" }, message: { stopReason: "error", errorMessage: "quota exceeded" } } }, { modelRegistry: registry });
 assert.equal(solFallback.model.id, "claude-opus-5-5");
 assert.equal(solFallback.thinkingLevel, "high", "SDK clamp preserves supported adaptive high effort");
 assert.deepEqual(published.at(-1).data, { provider: "anthropic", modelId: "claude-opus-5-5" }, "the advanced step publishes its own physical model");

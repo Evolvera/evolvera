@@ -12,7 +12,7 @@ type FallbackChain = readonly Step[];
 const PRIMARY_MODEL_METADATA: Record<string, { name: string; contextWindow: number; maxTokens: number; input: string[] }> = {
   "gpt-6-luna": { name: "GPT-6 Luna", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
   "gpt-6.1-terra": { name: "GPT-6.1 Terra", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
-  "gpt-6.1-sol": { name: "GPT-6.1 Sol", contextWindow: 272_000, maxTokens: 128_000, input: ["text", "image"] },
+  "gpt-6.2-sol": { name: "GPT-6.2 Sol", contextWindow: 1_050_000, maxTokens: 128_000, input: ["text", "image"] },
   "deepseek-v4.1-flash-fast": { name: "DeepSeek V4.1 Flash 1017", contextWindow: 1_048_576, maxTokens: 262_144, input: ["text", "image"] },
 };
 
@@ -37,7 +37,7 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
     { provider: "anthropic", model: "claude-haiku-5-5", level: "xhigh" },
   ],
   sol: [
-    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai", model: "gpt-6.2-sol", level: "inherit" },
     { provider: "anthropic", model: "claude-opus-5-5", level: "inherit" },
   ],
   terra: [
@@ -51,7 +51,7 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   ],
   conductor: [
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
-    { provider: "openai", model: "gpt-6.1-sol", level: "inherit" },
+    { provider: "openai", model: "gpt-6.2-sol", level: "inherit" },
   ],
 };
 

@@ -29,7 +29,7 @@ try {
   const gpt6Luna = { provider: "openai", id: "gpt-6-luna" };
   assert.equal(mod.isFastEligibleModel(gpt6Sol), true);
   assert.equal(mod.isFastEligibleModel(gpt6Luna), true);
-  assert.equal(mod.isFastEligibleModel({ provider: "openai", id: "gpt-6.1-sol" }), true);
+  assert.equal(mod.isFastEligibleModel({ provider: "openai", id: "gpt-6.2-sol" }), true);
   const spark = { provider: "openai", id: "gpt-5.3-codex-spark" };
   const claude = { provider: "anthropic", id: "claude-fable-5" };
 
@@ -46,16 +46,16 @@ try {
   });
 
   // A "fallback/*" selection carries the router provider, so the gate reads the routed physical model.
-  const routedSol = { provider: "openai", modelId: "gpt-6.1-sol" };
+  const routedSol = { provider: "openai", modelId: "gpt-6.2-sol" };
   const selectedFallback = { provider: "fallback", id: "builder" };
   assert.deepEqual(mod.readRoutedModel(routedSol), routedSol);
   assert.equal(mod.readRoutedModel({ provider: "openai" }), undefined);
   assert.equal(mod.readRoutedModel({ provider: "openai", modelId: "" }), undefined);
-  assert.equal(mod.readRoutedModel("openai/gpt-6.1-sol"), undefined);
+  assert.equal(mod.readRoutedModel("openai/gpt-6.2-sol"), undefined);
   assert.equal(mod.readRoutedModel(null), undefined);
   assert.deepEqual(
     mod.effectiveDispatchModel(selectedFallback, routedSol),
-    { provider: "openai", id: "gpt-6.1-sol" },
+    { provider: "openai", id: "gpt-6.2-sol" },
     "the routed physical model is the effective dispatch model",
   );
   assert.equal(
@@ -226,7 +226,7 @@ try {
   assert.equal(statuses.at(-1).text, "⚡ECO");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
-  assert.match(completions[1].description, /Ultrafast on Astra\/6\.1 Sol, Fast on other eligible models/);
+  assert.match(completions[1].description, /Ultrafast on Astra\/6\.2 Sol, Fast on other eligible models/);
   const defaultPayload = await handlers.get("before_provider_request")(
     { payload: { model: gpt56.id, service_tier: "default" } },
     ctx,
@@ -459,17 +459,17 @@ try {
 
   // Ultrafast: only Astra is ever sent the ultrafast tier; other eligible models fall back to priority.
   assert.equal(mod.isUltrafastEligibleModel(astra), true);
-  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6.1-sol" }), true);
+  assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6.2-sol" }), true);
   assert.equal(mod.isUltrafastEligibleModel({ provider: "openai", id: "gpt-6-sol" }), false);
-  assert.equal(mod.serviceTierFor("ultra", { provider: "openai", id: "gpt-6.1-sol" }), "ultrafast");
-  assert.equal(mod.serviceTierFor("all", { provider: "openai", id: "gpt-6.1-sol" }), "priority");
+  assert.equal(mod.serviceTierFor("ultra", { provider: "openai", id: "gpt-6.2-sol" }), "ultrafast");
+  assert.equal(mod.serviceTierFor("all", { provider: "openai", id: "gpt-6.2-sol" }), "priority");
   assert.equal(mod.isUltrafastEligibleModel({ provider: "openai-codex", id: "gpt-6-astra" }), false, "the retired openai-codex provider id is no longer eligible");
   assert.equal(mod.serviceTierFor("ultra", astra), "ultrafast");
   assert.equal(mod.serviceTierFor("ultra", gpt56), "priority");
   assert.equal(mod.serviceTierFor("all", astra), "priority");
   completions = await fastCommand.getArgumentCompletions("");
   assert.deepEqual(completions.map((item) => item.value), ["on", "ultra", "eco", "eco default on", "eco default off", "ultra-eco", "off"]);
-  assert.match(completions[1].description, /Ultrafast here \+ subagents \(Astra\/6\.1 Sol\)/);
+  assert.match(completions[1].description, /Ultrafast here \+ subagents \(Astra\/6\.2 Sol\)/);
   await fastCommand.handler("ultra", ctx);
   assert.match(notifications.at(-1).message, /Ultrafast ativado no GPT-6 Astra/);
   assert.deepEqual(
@@ -491,7 +491,7 @@ try {
     "priority",
   );
   assert.equal(
-    (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.1-sol" } }, { ...childCtx, model: { provider: "openai", id: "gpt-6.1-sol" } })).service_tier,
+    (await child.handlers.get("before_provider_request")({ payload: { model: "gpt-6.2-sol" } }, { ...childCtx, model: { provider: "openai", id: "gpt-6.2-sol" } })).service_tier,
     "ultrafast",
   );
   assert.equal(
@@ -515,7 +515,7 @@ try {
   await handlers.get("model_select")({ model: gpt56, previousModel: claude, source: "set" }, ctx);
   // /fast ultra on a non-Astra model warns and uses priority.
   await fastCommand.handler("ultra", ctx);
-  assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra e no GPT-6\.1 Sol/);
+  assert.match(notifications.at(-1).message, /Ultrafast só existe no GPT-6 Astra e no GPT-6\.2 Sol/);
   assert.equal((await handlers.get("before_provider_request")({ payload: { model: gpt56.id } }, ctx)).service_tier, "priority");
   assert.equal(statuses.at(-1).text, "⚡🟡");
   // ultra-eco: owner stays standard, Astra children get ultrafast, other children priority.
@@ -587,21 +587,21 @@ try {
   await routed.handlers.get("session_start")({ reason: "startup" }, routedCtx);
   await routed.commandOptions.get("fast").handler("on", routedCtx);
   assert.equal(
-    await routedRequest({ model: "gpt-6.1-sol" }),
+    await routedRequest({ model: "gpt-6.2-sol" }),
     undefined,
     "a virtual selection with no routed model published stays on the standard tier",
   );
-  routed.events.emit("model-fallback:routed", { provider: "openai", modelId: "gpt-6.1-sol" });
+  routed.events.emit("model-fallback:routed", { provider: "openai", modelId: "gpt-6.2-sol" });
   assert.deepEqual(
-    await routedRequest({ model: "gpt-6.1-sol", service_tier: "default" }),
-    { model: "gpt-6.1-sol", service_tier: "priority" },
+    await routedRequest({ model: "gpt-6.2-sol", service_tier: "default" }),
+    { model: "gpt-6.2-sol", service_tier: "priority" },
     "the routed Codex model is fast-eligible",
   );
   await routed.commandOptions.get("fast").handler("ultra", routedCtx);
   assert.deepEqual(
-    await routedRequest({ model: "gpt-6.1-sol" }),
-    { model: "gpt-6.1-sol", service_tier: "ultrafast" },
-    "the routed GPT-6.1 Sol also gets Ultrafast",
+    await routedRequest({ model: "gpt-6.2-sol" }),
+    { model: "gpt-6.2-sol", service_tier: "ultrafast" },
+    "the routed GPT-6.2 Sol also gets Ultrafast",
   );
   await routed.commandOptions.get("fast").handler("on", routedCtx);
   for (const notEligible of [
@@ -612,8 +612,8 @@ try {
     assert.equal(await routedRequest({ model: notEligible.modelId }), undefined, `${notEligible.provider} is not eligible`);
   }
   // A malformed payload must fall back to the selection decision, never to "eligible by default".
-  routed.events.emit("model-fallback:routed", { modelId: "gpt-6.1-sol" });
-  assert.equal(await routedRequest({ model: "gpt-6.1-sol" }), undefined);
+  routed.events.emit("model-fallback:routed", { modelId: "gpt-6.2-sol" });
+  assert.equal(await routedRequest({ model: "gpt-6.2-sol" }), undefined);
   // A lingering routed model never changes a physical selection's gate.
   routed.events.emit("model-fallback:routed", routedSol);
   assert.equal(await routedRequest({ model: claude.id }, { ...routedCtx, model: claude }), undefined);

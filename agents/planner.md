@@ -1,7 +1,7 @@
 ---
 name: planner
-description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: openai/gpt-6.1-sol high."
-display_name: 🏛️ Planner · GPT-6.1 Sol · high
+description: "Creates concise implementation plan ecosystems — PLAN_FULL, compact TASKS, and SCHEDULE — for orchestrator-driven execution. Model: openai/gpt-6.2-sol high."
+display_name: 🏛️ Planner · GPT-6.2 Sol · high
 tools: read, grep, find, ls, write
 model: fallback/sol
 thinking: high
