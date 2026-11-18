@@ -257,12 +257,12 @@ for (const [label, text] of [['shell', shellText], ['PowerShell', powershellText
   }
   assert.doesNotMatch(text, /patch-pi-083-/, `${label}: obsolete 0.83 patchers must not run`);
 }
-const antigravityPackage = 'npm:pi-antigravity@0.10.0';
+const antigravityPackage = 'npm:pi-antigravity@0.14.0';
 const settingsPackages = JSON.parse(fs.readFileSync(path.join(root, 'config/settings.json'), 'utf8')).packages;
 const antigravityEntries = settingsPackages.filter((entry) => (typeof entry === 'string' ? entry : entry?.source) === antigravityPackage);
 assert.equal(antigravityEntries.length, 1, 'config/settings.json must include pi-antigravity exactly once');
-assert.deepEqual(antigravityEntries[0].extensions, ['-src/features/google-search.ts'],
-  'google_search stays unregistered: research uses jina_read/MCP, not Antigravity credentials');
+assert.deepEqual(antigravityEntries[0].extensions, ['-src/features/google-search.ts', '-src/features/read-url-content.ts'],
+  'Antigravity web tools stay unregistered: research uses jina_read/MCP');
 assert.ok(shellText.includes(`install_pi_package "${antigravityPackage}" "pi-antigravity"`),
   'install.sh must install pinned pi-antigravity');
 assert.ok(powershellText.includes(`Invoke-PiInstall ${antigravityPackage}`),

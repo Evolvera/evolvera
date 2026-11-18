@@ -13,9 +13,10 @@
     "npm:@gotgenes/pi-anthropic-auth@2.0.6",
     "npm:@rahularya01/pi-cursor@1.4.39",
     {
-      "source": "npm:pi-antigravity@0.10.0",
+      "source": "npm:pi-antigravity@0.14.0",
       "extensions": [
-        "-src/features/google-search.ts"
+        "-src/features/google-search.ts",
+        "-src/features/read-url-content.ts"
       ]
     }
   ],

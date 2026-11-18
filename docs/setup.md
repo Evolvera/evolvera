@@ -169,7 +169,7 @@ node scripts/test/patch-pi-subagents-hud.smoke.mjs
 
 ### Gemini Browser OAuth Login
 
-The template installs `pi-antigravity@0.10.0`, an unofficial OAuth provider for Google browser login (no API key required). After installing or updating, use `/reload` and `/login antigravity`, complete browser consent, run `/antigravity.refresh`, and check `/antigravity.models` to choose a model announced by the server. This does not change the provider or default model. Gemini 3.8 is included in Pro; Argon requires an Ultra or Enterprise plan.
+The template installs `pi-antigravity@0.14.0`, an unofficial OAuth provider for Google browser login (no API key required). After installing or updating, use `/reload` and `/login antigravity`, complete browser consent, run `/antigravity.refresh`, and check `/antigravity.models` to choose a model announced by the server. Carbon, Hydrogen, and Oxygen appear when the account catalog advertises them. The update does not change the default model or grant access to models not enabled for the account. If already signed in, refresh before attempting to log in again.
 
 When the account lists `gemini-4-argon`, select `/model antigravity/gemini-4-argon`. The override in `config/models.json` adjusts this discovered model to a unified 1,048,576-token context and 65,536 synchronous output, as described in the [Argon documentation](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon). It does not create a model missing from the catalog, invent reasoning variants, or grant access on the Pro plan. Availability and the actual response must be verified after login.
 

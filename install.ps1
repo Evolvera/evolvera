@@ -319,7 +319,7 @@ if ($piCmd) {
     Info "Compatibilidade de reasoning effort do Cursor verificada"
 
     Info "pi-antigravity..."
-    Invoke-PiInstall npm:pi-antigravity@0.10.0
+    Invoke-PiInstall npm:pi-antigravity@0.14.0
     if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar pi-antigravity." }
 
     & node (Join-Path $SCRIPT_DIR "scripts\patch-openai-error-body.mjs")
