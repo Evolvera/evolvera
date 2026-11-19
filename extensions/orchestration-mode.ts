@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -226,6 +228,183 @@ function pinThinking(pi: ExtensionAPI, ctx: Ctx): void {
   if (currentMode(ctx) !== "conductor") return;
   if (pi.getThinkingLevel() === PINNED_THINKING) return;
   pi.setThinkingLevel(PINNED_THINKING);
+}
+
+export type V2DiarySnapshot = { text: string; lines: number; estimatedTokens: number };
+
+export type V2DiaryContext = {
+  sessionManager?: {
+    getSessionId(): string;
+    getSessionFile(): string | undefined;
+    getBranch(): Iterable<unknown>;
+  };
+};
+
+type DiaryEvent = (event: any, ctx: V2DiaryContext) => void;
+
+const V2_DIARY_LIMIT = 100_000;
+const V2_DIARY_SUFFIX = ".v2-diary";
+
+function diaryText(message: any): string | undefined {
+  if (message?.role !== "user" && message?.role !== "assistant") return undefined;
+  const content = Array.isArray(message.content) ? message.content : [];
+  return content.filter((part: any) => part?.type === "text" && typeof part.text === "string").map((part: any) => part.text).join("");
+}
+
+function diaryBytes(lines: string[]): number {
+  return Buffer.byteLength(lines.join("\n"), "utf8");
+}
+
+function boundDiary(lines: string[]): string[] {
+  while (Math.ceil(diaryBytes(lines) / 4) > V2_DIARY_LIMIT) {
+    lines = lines.slice(Math.ceil(lines.length * 0.6));
+  }
+  return lines;
+}
+
+function diaryLine(kind: string, fields: Record<string, unknown>): string {
+  return JSON.stringify({ kind, ...fields });
+}
+
+export function observeV2Diary(pi: ExtensionAPI, isActive: (ctx: V2DiaryContext) => boolean) {
+  let context: V2DiaryContext | undefined;
+  let scope = "";
+  let diskPath: string | undefined;
+  let lines: string[] = [];
+  let available = true;
+  const memory = new Map<string, string[]>();
+  let bashSeen = new Set<string>();
+  const bashToolCommands = new Set<string>();
+  const subagents = new Map<string, { type: string; description: string }>();
+
+  const activeState = (ctx?: V2DiaryContext) => {
+    if (ctx) context = ctx;
+    if (!context || !context.sessionManager) return undefined;
+    const manager = context.sessionManager;
+    let enabled = false;
+    try { enabled = isActive(context); } catch { return undefined; }
+    if (!enabled) {
+      try { bashSeen = new Set([...manager.getBranch()].filter((entry: any) => entry?.type === "message" && entry.message?.role === "bashExecution").map((entry: any) => entry.id)); } catch {}
+      return undefined;
+    }
+    const sessionId = manager.getSessionId();
+    const sessionFile = manager.getSessionFile();
+    const nextScope = `${sessionId}:${sessionFile ?? "memory"}`;
+    if (scope !== nextScope) {
+      scope = nextScope;
+      available = true;
+      diskPath = sessionFile ? `${sessionFile}${V2_DIARY_SUFFIX}` : undefined;
+      try {
+        lines = diskPath ? fs.readFileSync(diskPath, "utf8").split("\n").filter(Boolean) : [...(memory.get(nextScope) ?? [])];
+      } catch (error) {
+        if (diskPath && (error as NodeJS.ErrnoException).code === "ENOENT") lines = [];
+        else {
+          lines = [];
+          available = false;
+        }
+      }
+      bashSeen = new Set([...manager.getBranch()].filter((entry: any) => entry?.type === "message" && entry.message?.role === "bashExecution").map((entry: any) => entry.id));
+    }
+    return { manager, sessionId, sessionFile, nextScope };
+  };
+
+  const snapshot = (ctx?: V2DiaryContext): V2DiarySnapshot | undefined => {
+    const state = activeState(ctx);
+    if (!state || !available) return undefined;
+    harvestBash(state.manager, state.nextScope);
+    return { text: lines.join("\n"), lines: lines.length, estimatedTokens: Math.ceil(diaryBytes(lines) / 4) };
+  };
+
+  const append = (ctx: V2DiaryContext, line: string) => {
+    const state = activeState(ctx);
+    if (!state || !available) return;
+    const previous = lines;
+    const next = boundDiary([...lines, line]);
+    let temporary: string | undefined;
+    const trimmed = next.length !== previous.length || next.some((entry, index) => entry !== previous[index]);
+    try {
+      if (trimmed && diskPath) {
+        temporary = `${diskPath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(temporary, next.length ? `${next.join("\n")}\n` : "", { mode: 0o600 });
+        fs.renameSync(temporary, diskPath);
+      } else if (diskPath) {
+        if (fs.existsSync(diskPath)) fs.chmodSync(diskPath, 0o600);
+        fs.appendFileSync(diskPath, `${line}\n`, { mode: 0o600 });
+      }
+      lines = next;
+      if (!diskPath) memory.set(state.nextScope, [...lines]);
+    } catch {
+      lines = previous;
+      available = false;
+      if (temporary) try { fs.rmSync(temporary, { force: true }); } catch {}
+    }
+  };
+
+  function harvestBash(manager: NonNullable<V2DiaryContext["sessionManager"]>, nextScope: string) {
+    try {
+      const branch = [...manager.getBranch()];
+      const present = new Set(branch.filter((entry: any) => entry?.type === "message" && entry.message?.role === "bashExecution").map((entry: any) => entry.id));
+      if ([...bashSeen].some((id) => !present.has(id))) {
+        bashSeen = present;
+        return;
+      }
+      for (const entry of branch as any[]) {
+        if (entry?.type !== "message" || entry.message?.role !== "bashExecution") continue;
+        present.add(entry.id);
+        if (bashSeen.has(entry.id)) continue;
+        if (bashToolCommands.has(entry.message.command)) bashToolCommands.delete(entry.message.command);
+        else append(context!, diaryLine("bash", { command: entry.message.command, status: entry.message.cancelled ? "error" : entry.message.exitCode === 0 ? "ok" : "error" }));
+        bashSeen.add(entry.id);
+      }
+      memory.set(nextScope, [...lines]);
+    } catch {}
+  }
+
+  const on = (name: string, fn: DiaryEvent) => pi.on(name as any, (event: any, ctx: any) => { try { fn(event, ctx); } catch {} });
+  on("input", (_event, ctx) => { activeState(ctx); });
+  on("message_end", (event, ctx) => {
+    const message = event.message;
+    const text = diaryText(message);
+    if (text !== undefined) append(ctx, diaryLine(message.role, { text }));
+    if (message?.role === "assistant" && message.stopReason === "error" && typeof message.errorMessage === "string") append(ctx, diaryLine("error", { message: message.errorMessage }));
+  });
+  on("tool_result", (event, ctx) => {
+    const input = event.input ?? {};
+    const name = event.toolName;
+    if (["read", "grep", "find", "ls"].includes(name)) append(ctx, diaryLine("tool", { name, path: input.path ?? input.pattern ?? "" }));
+    if (name === "bash") {
+      const command = typeof input.command === "string" ? input.command : "";
+      const exitCode = event.structuredContent?.exit_code;
+      bashToolCommands.add(command);
+      append(ctx, diaryLine("bash", { command, status: event.isError || (typeof exitCode === "number" && exitCode !== 0) ? "error" : "ok" }));
+    }
+    if (name === "edit") append(ctx, diaryLine("edit", { path: input.path ?? "", bytes: (input.edits ?? []).reduce((total: number, edit: any) => total + Buffer.byteLength(String(edit.oldText ?? ""), "utf8") + Buffer.byteLength(String(edit.newText ?? ""), "utf8"), 0) }));
+    if (name === "write") append(ctx, diaryLine("write", { path: input.path ?? "", bytes: Buffer.byteLength(String(input.content ?? ""), "utf8") }));
+  });
+  for (const name of ["subagents:completed", "subagents:failed"]) pi.events.on(name, (event: any) => {
+    if (!context || !activeState()) return;
+    const metadata = subagents.get(event?.id);
+    if (!metadata) return;
+    subagents.delete(event.id);
+    append(context, diaryLine("subagent", { ...metadata, status: name.endsWith("failed") ? "failed" : "completed" }));
+  });
+  pi.events.on("subagents:started", (event: any) => {
+    if (!context || !activeState() || typeof event?.id !== "string" || typeof event.type !== "string") return;
+    subagents.set(event.id, { type: event.type, description: typeof event.description === "string" ? event.description : "" });
+  });
+  on("session_compact", (event, ctx) => append(ctx, diaryLine("compaction", { status: "successful" })));
+  for (const name of ["agent_end", "session_shutdown"]) on(name, (_event, ctx) => {
+    const state = activeState(ctx);
+    if (state) harvestBash(state.manager, state.nextScope);
+  });
+
+  return {
+    snapshot,
+    recordGuidance(ctx: V2DiaryContext, ids: string[]) {
+      if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) return;
+      append(ctx, diaryLine("guidance", { ids: [...ids] }));
+    },
+  };
 }
 
 export default function orchestrationMode(pi: ExtensionAPI): void {
