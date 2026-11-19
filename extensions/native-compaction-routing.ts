@@ -9,6 +9,11 @@ import type {
 export const NATIVE_COMPACTION_PROVIDER = "openai";
 export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
 export const NATIVE_COMPACTION_THINKING_LEVEL = "medium" as const;
+export const COMPACTION_CHAIN: ReadonlyArray<readonly [string, string, "low" | "medium"]> = [
+  [NATIVE_COMPACTION_PROVIDER, NATIVE_COMPACTION_MODEL, NATIVE_COMPACTION_THINKING_LEVEL],
+  ["anthropic", "claude-haiku-5-5", "low"],
+  ["refuseless", "deepseek-v4.1-flash-fast", "low"],
+];
 
 /**
  * Cross-tokenizer guard. PI's threshold check compares the last assistant
@@ -108,9 +113,9 @@ async function tryCompact(event: SessionBeforeCompactEvent, ctx: ExtensionContex
 }
 
 /**
- * Luna summarizes first. If Luna is unavailable or fails (for example an
- * OpenAI outage), the conversation's own model summarizes instead with the
- * session's thinking level; only when both fail is compaction cancelled.
+ * Luna summarizes first. If it is unavailable or fails, Haiku and then DeepSeek
+ * flash summarize silently; the conversation's own model is the last resort,
+ * and only when every candidate fails is compaction cancelled.
  */
 async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: ExtensionContext, sessionThinking: () => ThinkingLevel | undefined = () => undefined, routedModel?: RoutedPhysicalModel) {
   try {
@@ -120,19 +125,18 @@ async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: Exte
       return { cancel: true };
     }
 
-    const luna = ctx.modelRegistry.find(NATIVE_COMPACTION_PROVIDER, NATIVE_COMPACTION_MODEL);
-    const primary = luna ? await tryCompact(event, ctx, luna, NATIVE_COMPACTION_THINKING_LEVEL) : undefined;
-    if (primary) return { compaction: primary };
-
-    const main = ctx.model;
-    const mainIsLuna = main?.provider === NATIVE_COMPACTION_PROVIDER && main?.id === NATIVE_COMPACTION_MODEL;
-    if (main && !mainIsLuna && !event.signal.aborted) {
-      const fallback = await tryCompact(event, ctx, main, sessionThinking() ?? NATIVE_COMPACTION_THINKING_LEVEL);
-      if (fallback) {
-        try { ctx.ui.notify(`Luna indisponível; compactação feita com ${main.id}.`, "info"); } catch { /* notice is best effort */ }
-        return { compaction: fallback };
-      }
+    const tried = new Set<string>();
+    const attempt = async (model: CompactionModel | undefined, thinking: ThinkingLevel) => {
+      if (!model || event.signal.aborted || tried.has(`${model.provider}/${model.id}`)) return undefined;
+      tried.add(`${model.provider}/${model.id}`);
+      return tryCompact(event, ctx, model, thinking);
+    };
+    for (const [provider, id, thinking] of COMPACTION_CHAIN) {
+      const compaction = await attempt(ctx.modelRegistry.find(provider, id), thinking);
+      if (compaction) return { compaction };
     }
+    const compaction = await attempt(ctx.model, sessionThinking() ?? NATIVE_COMPACTION_THINKING_LEVEL);
+    if (compaction) return { compaction };
 
     notifyFailure(ctx);
     return { cancel: true };
