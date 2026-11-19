@@ -77,9 +77,9 @@ try {
   const timed = await module.selectV2Guidance(registry(() => new Promise(() => {})), "", "");
   assert.deepEqual(timed, { available: false, ids: [] });
   assert.equal(calls.find((call) => call.target).options.signal.aborted, true, "timeout aborts underlying request");
-  const late = registry(() => new Promise((resolve) => setTimeout(() => resolve({ content: [{ type: "text", text: '["workflow"]' }], usage: validUsage }), 3_050)));
+  const late = registry(() => new Promise((resolve) => setTimeout(() => resolve({ content: [{ type: "text", text: '["workflow"]' }], usage: validUsage }), 6_050)));
   assert.deepEqual(await module.selectV2Guidance(late, "", ""), { available: false, ids: [] });
-  const lateFailure = registry(() => new Promise((_resolve, reject) => setTimeout(() => reject(new Error("late synthetic failure")), 3_050)));
+  const lateFailure = registry(() => new Promise((_resolve, reject) => setTimeout(() => reject(new Error("late synthetic failure")), 6_050)));
   assert.deepEqual(await module.selectV2Guidance(lateFailure, "", ""), { available: false, ids: [] });
   assert.deepEqual(await module.selectV2Guidance(registry(answer("[]"), { provider: "openai", id: "gpt-6-luna", api: "openai-responses" }), "", ""), { available: true, ids: [], usage: validUsage });
   const streamThrow = { find: () => ({ provider: "openai", id: "gpt-6-luna", api: "openai-responses" }), streamSimple() { throw new Error("sync stream failure"); } };
@@ -240,8 +240,12 @@ try {
   globalThis.__v2Selector = async () => { helperCalls++; return { available: false, ids: [] }; };
   const deliveriesBeforeUnavailable = [...manager.getBranch()].filter((entry) => entry.customType === "orchestration-v2-delivery").length;
   await session.prompt("helper unavailable input"); await session.waitForIdle();
-  assert.equal([...manager.getBranch()].filter((entry) => entry.customType === "orchestration-v2-delivery").length, deliveriesBeforeUnavailable, "unavailable selection records no delivery");
-  assert.ok(uiMessages.some((message) => String(message).includes("V2 guidance: unavailable")), "unavailable selection is visible only through UI notification");
+  const fallbackDelivery = [...manager.getBranch()].filter((entry) => entry.customType === "orchestration-v2-delivery");
+  assert.equal(fallbackDelivery.length, deliveriesBeforeUnavailable + 1, "unavailable selection falls back to the baseline sections");
+  const baselineIds = module.V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
+  const deliveredNow = new Set(fallbackDelivery.flatMap((entry) => entry.data.ids));
+  assert.ok(baselineIds.every((id) => deliveredNow.has(id)), "every baseline section is active after a helper failure");
+  assert.ok(uiMessages.some((message) => String(message).includes("helper unavailable, baseline sections")), "unavailable selection is visible only through UI notification");
   const previousReportRun = process.env.PI_REPORT_RUN;
   process.env.PI_REPORT_RUN = "run_A1";
   try {

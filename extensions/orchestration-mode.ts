@@ -162,7 +162,7 @@ export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: 
       settled = true;
       controller.abort();
       resolve(undefined);
-    }, 3_000);
+    }, 6_000);
   });
   const request = (async (): Promise<V2GuidanceSelection | undefined> => {
     try {
@@ -563,12 +563,14 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       }
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
-      const ids = decision.available ? decision.ids.filter((id) => !existing.includes(id)) : [];
+      const chosen = decision.available ? decision.ids : V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
+      const withCompanions = chosen.includes("delegation") && !chosen.includes("workflow") ? [...chosen, "workflow"] : chosen;
+      const ids = withCompanions.filter((id) => !existing.includes(id));
       if (ids.length || decision.usage) {
         pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });
         if (ids.length) diary.recordGuidance(ctx as V2DiaryContext, ids);
       }
-      ctx.ui?.notify?.(`V2 guidance: ${ids.length ? ids.join(", ") : decision.available ? "none" : "unavailable"}`, "info");
+      ctx.ui?.notify?.(`V2 guidance${decision.available ? "" : " (helper unavailable, baseline sections)"}: ${ids.length ? ids.join(", ") : "none"}`, decision.available ? "info" : "warning");
     }
     return { systemPrompt };
   });
