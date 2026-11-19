@@ -14,8 +14,8 @@ Use this skill first whenever the user asks for a plan, architecture, decomposit
 | User wants a quick plan or the change is already obvious and bounded | **Pre-plan only**: give a concise approach; do not launch an agent |
 | One bounded implementation concern with known targets | **Direct/focused delegation** using the builder skill |
 | Several bounded asks in one message, with grounded disjoint write sets and a short dependency order | **Focused multi-builder orchestration** — make a private mental schedule; no planner artifacts |
-| Multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
-| User explicitly requests the plan-heavy ensemble, or three independent strategy briefs materially improve a complex plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
+| Extensive settled work where planning overhead pays for itself: multiple concerns with architecture decisions, unclear sequencing, shared ownership, or long-horizon coordination | **Normal planner** — default full-plan route |
+| User explicitly requests plan-heavy for settled scope, or three independent strategy briefs materially improve an extensive settled plan | **Plan-heavy ensemble** — load the `plan-heavy` skill |
 
 ### Commit Forecast (speed heuristic)
 
@@ -23,9 +23,9 @@ Before selecting a route, mentally forecast the smallest coherent selective comm
 
 - Commit count is a coordination hint, never an executor or cost proxy. Trivial known changes/lookups and already-ordered external operations stay direct. For substantial bounded implementation, prefer a suitable existing builder when expected parent work replaced exceeds handoff, integration, and likely rework overhead, even for one commit.
 - **2–5 clear commits:** load the builder skill; use focused delegation and parallelize disjoint SoC slices when the expected benefit exceeds coordination overhead.
-- **More than ~5 commits:** normal planner is preferred, because it can create the dependency graph once and reduce wall-clock time through safe parallel groups.
+- **More than ~5 commits:** normal planner is often worthwhile when the work is extensive and its sequencing, ownership, evidence, or acceptance dependencies need a durable plan. Clear independent parallel lanes alone do not imply planner; use focused delegation when lane boundaries and execution order are already settled.
 
-Override commit-count heuristics when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; otherwise route based on triviality and expected work replaced versus handoff/integration/rework, not commit count. Importance alone does not require planning. The forecast counts code still to be written, not operations on finished artifacts: merging or integrating existing PRs/branches, pushing, rerunning an installer, deploying an approved build, reload, or rollback is direct orchestrator work however many artifacts it touches—never planner, plan-heavy, a scout wave, or a builder. When the user directly orders such an operation, perform it now; resolve mechanical conflicts yourself and stop only for a semantic conflict or a named safety gate.
+Override commit-count heuristics when warranted: use planner earlier for difficult coordination, shared contracts, architecture, uncertain sequencing, or high rework risk; otherwise route based on triviality and expected work replaced versus handoff/integration/rework, not commit count. Importance or parallelizability alone does not require planning. The forecast counts code still to be written, not operations on finished artifacts: merging or integrating existing PRs/branches, pushing, rerunning an installer, deploying an approved build, reload, or rollback is direct orchestrator work however many artifacts it touches—never planner, plan-heavy, a scout wave, or a builder. When the user directly orders such an operation, perform it now; resolve mechanical conflicts yourself and stop only for a semantic conflict or a named safety gate.
 
 ### Bundled-request decision
 
@@ -132,13 +132,13 @@ Expected output:
   TASKS/task_NN_<agent>.md
 ```
 
-Each writing task contains a proportional `Proof` section with its semantic delta, closure evidence, checkpoint validity, and acceptance path. Review-only validator tasks omit it.
+Each writing task contains a proportional `Proof` section with its semantic delta, closure evidence, checkpoint validity, acceptance path, and required evidence dependencies. Planner-generated task files and schedules do not assign reviewers or include reviewer roles.
 
 ## 4. Plan-Heavy Ensemble
 
 When the user explicitly requests the plan-heavy ensemble—or independently prompted strategy briefs are expected to materially improve a complex plan—load the `plan-heavy` skill and follow it directly.
 
-Plan-heavy is not a separate harness or planner agent. It uses the normal planner's repository-root, plan-directory, artifact, task, execution, testing, and validator conventions. Its only differences are:
+Plan-heavy is not a separate harness or planner agent. It uses the normal planner's repository-root, plan-directory, artifact, implementation-task, execution, validation, and safety conventions. It plans only settled scope; briefers advise on strategy, while unresolved human preferences remain with the orchestrator and block planning until reconciled. Its only differences are:
 
 1. the orchestrator writes one concise `HANDOFF.md`;
 2. `plan-briefer`, `plan-briefer-fable`, and `plan-briefer-gpt55` produce independent briefs in parallel;
@@ -189,7 +189,7 @@ Load the builder skill; it is authoritative for tier selection. Defaults:
 
 A server/config file containing rules is not enough to select a design tier. The orchestrator directly performs host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations; do not create a builder task for them. Only an explicit user request for a subagent permits that delegation, and it does not bypass any authorization or safety gate.
 
-Add a linked `validator` task only when a specific producer has a named credible high-consequence escape risk. Do not add validators for inventory, docs, static prompt/config/policy edits with deterministic acceptance, mechanical work, file importance, or every builder. Validator gates are review-only by default and return `PASS | BLOCKED`.
+Planner tasks and schedules cover implementation, acceptance, evidence, and genuine downstream proof dependencies; they never select reviewers, create validator task files/successors, or schedule reviewer roles. After the actual diff exists, the orchestrator may choose optional independent review from the concrete changed surface and credible escape risk. Preserve pre-existing schedule gates and formally required PR, QA, safety, and acceptance gates; optional review is not a substitute for them.
 
 ## 7. Execute the Plan
 
@@ -200,7 +200,7 @@ Before builders, read `SCHEDULE.md` and task contracts once; ask for user review
 - Before each writing task, inspect its `Proof` against the actual task file and schedule. Reject execution if an acceptance path or deterministic gate depends on an undeclared artifact, unresolved relationship, or later restoration, or if the workload receipt shows more than two complex fronts; an over-limit task is rejected before delegation, and a builder may not grow scope into a new complex front.
 - After each verified writing task, create exactly one selective commit and record its hash.
 - After the relevant task or coherent builder wave is checkpointed, ensure proportionate outcome evidence against that exact head: producer proof may close static/mechanical work; run an obvious deterministic integration check directly only after proving its complete stateful resource set is `NO_STATEFUL_RESOURCES` or all `DISPOSABLE_VERIFIED`; when independent scenario selection, edge/error coverage, integration, browser, or runtime observation materially improves confidence, load `testing`, select exactly `CORE` or `FULL`, and launch one fresh dedicated `qa` session. Do not add QA-only task files or SCHEDULE rows. Unsafe runtime evidence remains `UNVERIFIED`; never point tests at existing local/dev data to satisfy a gate.
-- A dependent task starts only after its writing dependency is checkpointed, any materially required post-build proof is satisfied, and any linked validator records `PASS`. Validator review complements rather than replaces behavioral testing.
+- A dependent implementation task starts only after its writing dependencies are checkpointed and any materially required evidence is satisfied. Preserve any pre-existing schedule gates and formally required PR, QA, safety, and acceptance gates; optional reviewer selection happens after the actual diff and remains orchestrator-owned.
 - On `BLOCKED`, distinguish implementation defect from contract conflict. Only an already-authorized implementation defect returns to a repair builder. If the finding implies removing/degrading an existing capability, changing its preservation oracle, or choosing between plausible product meanings, pause execution and re-ground the reconciled contract; ask the user only when evidence cannot resolve intent.
 - Inspect actual diffs and validation evidence; never trust summaries alone.
 

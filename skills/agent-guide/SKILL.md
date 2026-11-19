@@ -23,7 +23,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 | Tier | Agents | Model | Best For | Avoid |
 |---|---|---|---|---|
 | Default | `scout`, `builder` | Standard general tier (GPT-6 Luna high for builder) | **default for normal bounded development**: code, APIs, tests, config, auth/payment behavior, migrations, shared files, and multi-file changes with clear acceptance | relation/rule/declarative semantic modeling, visual judgment, or exceptional runtime coordination |
-| Design | `builder-design` | Normal design tier (Claude Sonnet 5.5 high) | frontend/UI implementation plus bounded normal-complexity state/relation, policy/rule, selector, and reversible structural semantics | procedural API/streaming/lifecycle integration, correctness-heavy operational work, formal/numerical work, advanced visual spectacle |
+| Design | `builder-design` | Normal design tier (Claude Sonnet 5.5 high) | frontend/UI implementation, system/skill/agent/tool prompt authoring with `prompt-engineering`, plus bounded normal-complexity state/relation, policy/rule, selector, and reversible structural semantics | procedural API/streaming/lifecycle integration, correctness-heavy operational work, formal/numerical work, advanced visual spectacle |
 | Light | `builder-light` | Routine deterministic tier (GPT-6 Luna medium) | cheap execution after the task is already narrowed: mechanical/multi-spot edits, small utilities, focused tests, tooling, exact pattern-following config/docs, local reproduced bug fixes | implicit cross-module contracts, broad code search, subtle state/lifecycle/concurrency, serialization compatibility, auth/data-flow judgment, or ambiguity — there a plausible-but-wrong result passes shallow validation; UI beyond exact token/class/text swaps |
 | Heavy | `builder-heavy` | Exceptional local-integration/correctness tier (GPT-6.1 Terra medium) | concrete exceptional local runtime/service/lifecycle coordination, or bounded non-frontend work with a stated invariant/oracle and demonstrated exceptional formal/numerical/scientific difficulty. Host/SSH/deploy/network/provider/reload/rollback stay with the orchestrator unless the user explicitly requests a subagent. | ordinary local code, auth/payment, migration, config, shared files, multi-file changes, broad planning, or vague scope |
 | Heavy Design | `builder-heavy-design` | Exceptional design tier (Claude Sonnet 5.5 xhigh) | exceptional visual work or direct complex semantic/declarative work: state/relation models, policy/selector composition, grammar/template reconstruction, and structure-preserving transformations | procedural API/streaming/lifecycle/serialization integration, auth/payment, migrations, formal/numerical/scientific work, tiny edits, or vague scope |
@@ -41,7 +41,7 @@ Every custom agent must declare explicit `model:` and `thinking:` frontmatter. I
 
 ## Orchestrator Change-Contract Gate
 
-Before any mutation—direct orchestrator edit/command, delegated builder, planner-driven execution, repair, migration, config, or external operation—the orchestrator owns reconciliation. Scouts collect evidence; planners decompose; builders execute; validators review. None may decide readiness or unresolved product meaning for the orchestrator.
+Before any mutation—direct orchestrator edit/command, delegated builder, planner-driven execution, repair, migration, config, or external operation—the orchestrator owns reconciliation. Scouts collect evidence; planners decompose; builders execute; independent team-review specialists review when selected by the orchestrator. None may decide readiness or unresolved product meaning for the orchestrator.
 
 Use the smallest sufficient contract:
 
@@ -114,7 +114,7 @@ Read-only defect finder on GPT-6.2 Sol medium. Where `scout` explains how a syst
 - **Hinted:** a symptom, error, log, failing or flaky test, user report, or suspect commit range whose root cause is unknown. Pass the raw evidence verbatim; the hunter confirms or refutes the hint.
 - **Unhinted:** pre-merge or pre-release sweeps, auditing an unfamiliar or risky module, after an incident, or after a fix to look for sibling bugs with the same pattern.
 
-**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (`validator`); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
+**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (orchestrator-selected team-review specialist); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
 
 **Default to a parallel wave.** After bounded orientation, split the hunt into independent shards and launch them together in one message with `run_in_background: true`, up to free background capacity:
 - **By region:** one shard per independent subsystem or layer, such as client, API, domain/data, jobs/async, auth, or config/infra.
@@ -148,7 +148,7 @@ Creates detailed implementation plans. It analyzes requirements, designs archite
 - You need architecture decisions or new patterns
 - Scope is unclear — you don't know all files involved
 - User asks for a new feature without implementation details
-- Long-horizon work is ahead: many related tasks, phased delivery, or parallelizable implementation work
+- Extensive settled work is ahead and planning overhead pays for itself: architecture decisions, uncertain sequencing, shared ownership, or long-horizon coordination. Clear parallel lanes alone do not imply planner when boundaries and execution order are settled.
 
 **How to use:**
 ```
@@ -189,8 +189,8 @@ read({ path: ".pi/plans/PLAN_FULL.md" })
 - Reconcile reports into a concise contract and evidence package. Classify claims `KNOWN | INFERRED | UNKNOWN`; classify affected capabilities `PRESERVE | CHANGE | REMOVE` only when user intent/evidence supports it. Never paste raw transcripts or ask planner to “understand the repository.”
 - If two plausible interpretations would preserve versus disable different behavior, stop and ask the user before planner. If broad discovery or product-semantic choice remains, pre-plan is not complete.
 - Planner is **expensive** — don't run it for trivial tasks
-- Read `SCHEDULE.md` and `TASKS/` before spawning agents. Reject the ecosystem if a task's acceptance or deterministic gate needs an undeclared artifact, unresolved relationship, or later task to restore validity; require an evidenced compatible transition or one coherent checkpoint.
-- Builders own focused validation. Add a separate `validator` task only when one named high-consequence defect could credibly escape builder checks and must gate dependents; do not add it after every builder or duplicate the final PR review
+- Read `SCHEDULE.md` and implementation task files before spawning agents. Reject the ecosystem if a task's acceptance or deterministic gate needs an undeclared artifact, unresolved relationship, or later task to restore validity; require an evidenced compatible transition or one coherent checkpoint. Planner owns acceptance/evidence requirements and genuine downstream proof dependencies, not reviewer selection or reviewer-role tasks.
+- Builders own focused validation. The orchestrator may select optional independent review after inspecting the actual diff; preserve pre-existing schedule gates and formally required PR, QA, safety, and acceptance gates.
 
 ---
 
@@ -232,7 +232,7 @@ Agent({
 - Use `builder-heavy-design` directly for exceptional visual work or complex tasks dominated by state/relation semantics, policy/selector composition, grammar/template reconstruction, or declarative structure preservation. It does not require a prior GPT failure.
 - Use `builder-heavy` for evidenced exceptional local runtime/service/lifecycle coordination or bounded non-frontend work with concrete targets, a stated invariant/validation oracle, and demonstrated exceptional formal/numerical/scientific difficulty. The orchestrator performs host/external execution unless the user explicitly requests a subagent. Do not select it merely because code is backend, risky, multi-file, auth/payment, migration, config, API, or shared; vague scope or a generic retry goes to scout/planner.
 - For frontend work, route visual hierarchy/layout/motion/accessibility to design tiers; use `builder` for bounded local data/API/auth behavior; reserve `builder-heavy` for exceptional local integration boundaries. The orchestrator performs external operations unless the user explicitly requests a subagent. For non-visual work, choose by problem shape rather than filename: declarative relation/rule/structure → design tier; normal local procedural work → `builder`.
-- A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact needs separate `validator` review only when one named consequential ambiguity or escape risk could survive producer proof. For a static locally-decidable artifact, focused orchestrator diff review closes it. Authority or importance alone selects neither `validator` nor `builder-heavy`; `builder` may collect evidence.
+- A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact may need independent team-review specialist review only when one named consequential ambiguity or escape risk could survive producer proof. The orchestrator selects a specialist lead after inspecting the actual diff. For a legacy schedule with a generic `validator` route, map execution to an orchestrator-selected independent specialist lead and preserve the original acceptance and gate. For a static locally-decidable artifact, focused orchestrator diff review closes it. Authority or importance alone selects neither review nor `builder-heavy`; `builder` may collect evidence.
 - Avoid `builder-light` for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
@@ -264,9 +264,9 @@ An explicitly authorized FULL harness-construction phase may write only an exact
 2. **planner** only when the planner skill selects it; normal planner is the default full-plan route.
 3. **builder tier** executes and validates its bounded task.
 4. **qa** runs at CORE or FULL only when materially required after the producer checkpoint; direct static closure skips it.
-5. **validator** is exceptional during implementation, plus one independent bounded review for a final PR head SHA.
+5. Optional independent review is selected by the orchestrator after inspecting the actual diff; a formally required final PR review remains governed by its existing gate.
 
-For a selected planner gate, the schedule edge is authoritative: `builder checkpoint → validator PASS → dependent task`. Do not add a validator merely because a task changed config, touched staging, or is important. A `PASS` covering the complete final PR diff at its exact head SHA satisfies the PR review gate; never launch a duplicate review for that SHA.
+Planner-generated dependencies describe implementation and required evidence, not reviewer assignments. Preserve pre-existing schedules and gates. Do not add optional review merely because a task changed config, touched staging, or is important. A `PASS` from a review covering the complete final PR diff at its exact head SHA satisfies the PR review gate; never launch a duplicate review for that SHA.
 
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`

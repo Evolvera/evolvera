@@ -11,10 +11,11 @@ const finalDescription = "Plan-heavy final synthesis";
 await assert.rejects(access(removedAgent, constants.F_OK), "duplicate final planner agent must remain removed");
 
 const read = (relativePath) => readFile(path.join(root, relativePath), "utf8");
-const [planner, planHeavy, plannerSkill, system, systemMirror, deadlinePatcher] = await Promise.all([
+const [planner, planHeavy, plannerSkill, builderSkill, system, systemMirror, deadlinePatcher] = await Promise.all([
   read("agents/planner.md"),
   read("skills/plan-heavy/SKILL.md"),
   read("skills/planner/SKILL.md"),
+  read("skills/builder/SKILL.md"),
   read("SYSTEM.md"),
   read("config/SYSTEM.md"),
   read("scripts/patch-pi-subagents-bounded-waits.mjs"),
@@ -28,6 +29,12 @@ assert.match(planner, /^display_name: .*GPT-6\.2 Sol · high$/m);
 assert.match(planner, /Model: openai\/gpt-6\.2-sol high\./);
 assert.doesNotMatch(planner.split("---", 2)[1], /gpt-6\.2-astra|gpt-6-sol|thinking:\s*(?:low|medium|xhigh|max)\b/i, "planner frontmatter must carry no stale Astra/6 Sol/low/medium/xhigh/max routing");
 assert.match(planner, /## Optional Ensemble Brief Input/);
+assert.match(planner, /does not select reviewers, create validator task files or successors, or schedule reviewer roles/i);
+assert.doesNotMatch(planner, /TASKS\/task_NN_validator\.md|\*\*Agent\*\*: validator/);
+assert.match(plannerSkill, /Clear independent parallel lanes alone do not imply planner/i);
+assert.match(planHeavy, /Plan-heavy applies only to settled scope/i);
+assert.match(builderSkill, /legacy generic `validator` schedule gate[\s\S]*team-review specialist lead/i);
+assert.match(builderSkill, /prompt authoring \(use `builder-design` with `prompt-engineering`\)/i);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);
 assert.match(planner, /any brief is missing or empty[\s\S]*`BLOCKED`/i);
