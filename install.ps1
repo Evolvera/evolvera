@@ -178,11 +178,6 @@ if (-not $sameRoot) {
 
 if (-not $sameRoot) {
     # -- Agents -----------------------------------------------
-    $legacyValidator = Join-Path $PI_DIR "agents\validator.md"
-    if ((Test-Path -LiteralPath $legacyValidator -PathType Leaf) -and -not ((Get-Item -LiteralPath $legacyValidator).Attributes -band [IO.FileAttributes]::ReparsePoint) -and
-        (Get-FileHash -LiteralPath $legacyValidator -Algorithm SHA256).Hash -eq '4113888e7241c3327c7e043726a81dba54e69c3a9c4bbb89ea32ca8894418089') {
-        Remove-Item -LiteralPath $legacyValidator
-    }
     $retiredAgents = @("planner-heavy.md", "builder-ultra.md", "builder-light-design.md", "scout-highspeed.md", "deep-research-finalizer.md", "deep-search-master.md")
     foreach ($retired in $retiredAgents) {
         Remove-Item (Join-Path $PI_DIR "agents\$retired") -Force -ErrorAction SilentlyContinue

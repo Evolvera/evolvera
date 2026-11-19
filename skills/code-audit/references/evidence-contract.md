@@ -10,7 +10,7 @@
 - **DISPROVEN:** inspected counterevidence or a falsifying check shows the hypothesized violation does not hold under its stated preconditions.
 - **UNVERIFIED:** proof is incomplete, unavailable, unsafe, conflicting, or outside approval. It is not a defect.
 
-Scout agreement, reviewer agreement, severity, a keyword hit, or plausibility never advances a candidate to PROVEN.
+Scout agreement, validator agreement, severity, a keyword hit, or plausibility never advances a candidate to PROVEN.
 
 ## Candidate ledger
 
@@ -30,7 +30,7 @@ Use static source-to-sink proof, inert fixtures, local mock boundaries, hashes/m
 
 ## Adjudication and false-positive rejection
 
-A pre-approved read-only specialist may adjudicate only when its exact mission and count were approved. It reviews the candidate contract, reachability, proof, and counterevidence; it does not create new missions or run unapproved commands. Reject or leave UNVERIFIED any candidate with ambiguous contract, missing reachability, non-reproducible result, unsafe proof, evidence only from consensus, environmental failure, or a plausible counterexample not resolved by evidence. Failed/unavailable proof is never evidence of a defect.
+A validator may adjudicate only when its exact mission and count were approved. It reviews the candidate contract, reachability, proof, and counterevidence; it does not create new missions or run unapproved commands. Reject or leave UNVERIFIED any candidate with ambiguous contract, missing reachability, non-reproducible result, unsafe proof, evidence only from consensus, environmental failure, or a plausible counterexample not resolved by evidence. Failed/unavailable proof is never evidence of a defect.
 
 ## Report language
 

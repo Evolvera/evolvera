@@ -149,9 +149,6 @@ rm -f "$PI_DIR/extensions/delivery-closure.ts" "$PI_DIR/extensions/continuation-
 rm -f "$PI_DIR/extensions/anthropic-context-limit.ts" "$PI_DIR/extensions/qwen-context-limit.ts"
 
 # Remove retired agents so updates do not leave stale routes.
-if [ -f "$PI_DIR/agents/validator.md" ] && [ ! -L "$PI_DIR/agents/validator.md" ] && [ "$(git hash-object --no-filters -- "$PI_DIR/agents/validator.md")" = "2e2a0ea07e8a51ffdb8dbae2e3e705a7a11d8764" ]; then
-    rm -- "$PI_DIR/agents/validator.md"
-fi
 rm -f "$PI_DIR"/agents/{planner-heavy,builder-ultra,builder-light-design,scout-highspeed,deep-research-finalizer,deep-search-master}.md
 
 if ls "$SCRIPT_DIR"/extensions/*.ts &>/dev/null; then

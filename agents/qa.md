@@ -53,7 +53,7 @@ Protected-resource postcheck: <unchanged/unreachable evidence>
 Browser evidence: <real browser | simulated/mocked partial evidence | not required>
 Failures: <none or concrete reproducible mismatch; retain first failure and retries>
 Evidence gaps: <none or exact unavailable/unsafe requirement>
-Next: <independent review if required | bounded repair | fresh QA after harness checkpoint | user/environment decision>
+Next: <validator | bounded repair | fresh QA after harness checkpoint | user/environment decision>
 ```
 
 `PASS` means all acceptance required by the selected level and declared scope was safely exercised. `CORE PASS` is only a bounded CORE-scope claim, never product-wide or full-stack PASS. `BLOCKED` requires a concrete reproducible contract mismatch. `UNVERIFIED` means no defect is proven but required evidence was unavailable or unsafe. Never upgrade `UNVERIFIED`, simulation, mocks, or retry success to clean `PASS`.

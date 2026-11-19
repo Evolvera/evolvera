@@ -857,7 +857,7 @@ Promote `backlog → ready` only when **all** of the following pass:
 
 - Open PR (not draft, unless agreed) **against the repository's chosen base**
 - Local/CI validation run or explicit reason
-- **Every PR** receives one independent, read-only, bounded whole-PR review on the final head SHA, run as a `team-review` Lead-mode review by one explicitly assigned `reviewer-*` lead; an existing lead `PASS` for that SHA counts and must not be duplicated. A lens-only reviewer result is not a PR `PASS`
+- **Every PR** receives one independent, read-only, bounded review by `validator` on the final head SHA; an existing `PASS` for that SHA counts and must not be duplicated
 - Issue links to the PR; PR has `Closes #N` / `Fixes #N` when it should close on merge
 - `status:in-review` label applied **in the same step** as `gh pr create`
 
@@ -1080,7 +1080,7 @@ The prepared PI **does not edit anything** before this set of postconditions. If
 
 ### 7.5 PR + in review as a verified transition
 
-Run relevant validation in the issue workspace and publish without force. Before creating one, confirm there is no PR for the same head/issue. **For every PR**, obtain one independent review, distinct from planner/builder, by the one `reviewer-*` agent whose lens fits the dominant risk, explicitly assigned lead per `team-review` Lead mode and strictly read-only (read/grep/find). The orchestrator supplies at once: base/head SHA, the complete sanitized diff, approved scope and matrix, CI/tests already run, supplied evidence, and known limitations, and persists any required report itself. The review is limited to this material; it does not authorize SSH/external probes, invented paths, repo scanning, or ceremonial suite reruns. A lead `PASS` already issued for the same head SHA satisfies the gate. Obtain a new review only after the head changes or a concrete blocker is materially fixed. Do not move to `in-review` with a proven in-scope blocker.
+Run relevant validation in the issue workspace and publish without force. Before creating one, confirm there is no PR for the same head/issue. **For every PR**, obtain one independent review by `validator`, distinct from planner/builder and strictly read-only. Provide at once: base/head SHA, diff/files, approved scope and matrix, CI/tests already run, and known limitations. The review is limited to this material; it does not authorize SSH/external probes, invented paths, repo scanning, or ceremonial suite reruns. A `PASS` already issued for the same head SHA satisfies the gate. Obtain a new review only after the head changes or a concrete blocker is materially fixed. Do not move to `in-review` with a proven in-scope blocker.
 
 ```bash
 BRANCH="<real branch returned by Orca>"
@@ -1096,7 +1096,7 @@ Closes #<N>
 
 ## Validation
 - [ ] affected-area tests (commands and results)
-- [ ] independent lead review (`team-review` Lead mode, read-only), with no pending blockers
+- [ ] independent review by `validator` (read-only), with no pending blockers
 - [ ] environment/validation limitations, if any, documented (do not mark done without an explicit decision)
 
 ## Notes
@@ -1169,7 +1169,7 @@ Always:
 5. Add a new test only for a fixed bug or uncovered contract, when inexpensive
 6. Use a planner for L/complex work
 7. Before the PR, run tests for the affected area and static checks touched by the change; no full suite, coverage hunt, or test refactoring by default
-8. Before opening **any PR**, ensure one independent lead `PASS` (`team-review` Lead mode) for the final head SHA; reuse an existing PASS for that SHA and never relaunch because of optional metadata or a false positive outside the matrix
+8. Before opening **any PR**, ensure one independent `PASS` from `validator` for the final head SHA; reuse an existing PASS for that SHA and never relaunch because of optional metadata or a false positive outside the matrix
 9. Record commands, results, and bounded assessment in the PR; if a required layer cannot run, state the reason, risk, and next action
 10. Do not advance to `done` if there is an issue-caused failure or a proven in-scope blocker; report an unrelated pre-existing failure, do not pursue it
 11. Plans in `.pi/plans/` referencing `#N`

@@ -313,6 +313,7 @@ const fallbackAgentRoutes = {
   "agents/bug-hunt.md": "fallback/sol",
   "agents/app-validator.md": "fallback/terra",
   "agents/qa.md": "fallback/terra",
+  "agents/validator.md": "fallback/terra",
   "agents/reviewer-simplicity.md": "openai/gpt-6.1-terra",
   "agents/reviewer-edge-cases.md": "openai/gpt-6.2-sol",
   "agents/reviewer-security.md": "openai/gpt-6.2-sol",
