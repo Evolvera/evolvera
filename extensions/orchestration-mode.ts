@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 /**
  * Orchestration mode: `/orchestration conductor` turns the primary PI session into a pure
@@ -139,6 +139,58 @@ export function applyConductor(systemPrompt: string, customPrompt: string): stri
   const at = systemPrompt.indexOf(customPrompt);
   if (!conductor || at < 0) return undefined;
   return systemPrompt.slice(0, at) + conductor + systemPrompt.slice(at + customPrompt.length);
+}
+
+export type V2GuidanceUsage = { input: number; output: number; cacheRead?: number; cacheWrite?: number; totalTokens?: number };
+export type V2GuidanceSelection =
+  | { available: true; ids: string[]; usage: V2GuidanceUsage }
+  | { available: false; ids: []; usage?: V2GuidanceUsage };
+
+type V2GuidanceRegistry = Pick<ModelRegistry, "find" | "streamSimple">;
+
+export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: string, newInput: string): Promise<V2GuidanceSelection> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      settled = true;
+      controller.abort();
+      resolve(undefined);
+    }, 3_000);
+  });
+  const request = (async (): Promise<V2GuidanceSelection | undefined> => {
+    try {
+      const model = registry.find("openai", "gpt-6-luna");
+      if (!model || model.provider !== "openai" || model.id !== "gpt-6-luna" || model.api === "pi-virtual") return undefined;
+      const catalog = V2_GUIDANCE.catalog.map(({ id, when }) => ({ id, when }));
+      const message = `${V2_GUIDANCE.instructions}\n\n${JSON.stringify(catalog)}\n\n<diary>\n${diaryText}\n</diary>\n\n<new_input>\n${newInput}\n</new_input>`;
+      const response = await registry.streamSimple(model, { messages: [{ role: "user", content: [{ type: "text", text: message }] }] }, { reasoning: "low", signal: controller.signal, maxRetries: 0 }).result();
+      if (settled) return undefined;
+      const usage = response.usage;
+      const text = response.content.every((part) => part.type === "text" && typeof part.text === "string")
+        ? response.content.map((part) => (part as { text: string }).text).join("") : undefined;
+      if (text === undefined) return { available: false, ids: [], usage };
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { return { available: false, ids: [], usage }; }
+      if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === "string" && V2_GUIDANCE.catalog.some((entry) => entry.id === id))) {
+        return { available: false, ids: [], usage };
+      }
+      return { available: true, ids: [...new Set(parsed as string[])], usage };
+    } catch {
+      return undefined;
+    }
+  })();
+  try {
+    const result = await Promise.race([request, timeout]);
+    return result ?? { available: false, ids: [] };
+  } catch {
+    return { available: false, ids: [] };
+  } finally {
+    settled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    controller.abort();
+  }
 }
 
 export function readSessionMode(branch: Iterable<unknown>): OrchestrationMode {
