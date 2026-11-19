@@ -257,7 +257,7 @@ An explicitly authorized FULL harness-construction phase may write only an exact
 ```
 [direct/scout pre-plan evidence] → [planner if needed] → builder → focused validation
                                                           ├→ qa CORE/FULL only when materially required
-                                                          └→ validator only for a named gate or one final PR review
+                                                          └→ orchestrator-selected team-review specialist only when warranted or formally required
 ```
 
 1. **scout** only when bounded evidence is missing.
@@ -271,8 +271,8 @@ Planner-generated dependencies describe implementation and required evidence, no
 **Skip rules:**
 - Trivial (<20 lines, 1 file) → do it yourself with `edit`
 - Small focused change → `builder-light` only when deterministic and locally decidable; `builder` for normal procedural code and ordinary contracts; `builder-design` for visual judgment, routine design-system UI, or semantic/declarative work; `builder-heavy` for complex operational integration or exceptional non-frontend formal/numerical/scientific risk with an explicit oracle; `builder-heavy-design` for exceptional visuals or complex relation/rule/grammar/structure semantics
-- Critical (auth, payment) → appropriate builder tier with focused tests; add a validator gate only for a named escape risk that must block dependents — the single final PR review covers the rest
-- Low-risk/mechanical/docs-only task → no separate validator task unless evidence shows a specific escape risk
+- Critical (auth, payment) → appropriate builder tier with focused tests; the orchestrator may select an independent specialist review after the actual diff for a named escape risk, while formal PR gates remain in force
+- Low-risk/mechanical/docs-only task → no optional review unless evidence shows a specific escape risk
 
 ---
 

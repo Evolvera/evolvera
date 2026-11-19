@@ -185,11 +185,11 @@ Load the builder skill; it is authoritative for tier selection. Defaults:
 - deterministic locally-decidable work (clear anchor, established pattern, exact validation, no broad discovery or hidden contract) → `builder-light`;
 - normal procedural work with module/API contracts, serialization, lifecycle, auth/data flow, tests, or structured integration → `builder`;
 - complex local procedural/integration beyond normal builder capacity or exceptional formal/numerical/scientific work with an explicit oracle → `builder-heavy`; host/external operations remain orchestrator-owned unless the user explicitly requests a subagent;
-- local semantic/declarative model with a clear oracle, routine design-system UI, or visual/UI work → design tier.
+- local semantic/declarative model with a clear oracle, routine design-system UI, visual/UI work, or system/skill/agent/tool prompt authoring → `builder-design`; prompt authoring uses `prompt-engineering`.
 
 A server/config file containing rules is not enough to select a design tier. The orchestrator directly performs host, SSH, deploy, network, Plesk, nginx, ACME, CI, reload, rollback, provider, and other external operations; do not create a builder task for them. Only an explicit user request for a subagent permits that delegation, and it does not bypass any authorization or safety gate.
 
-Planner tasks and schedules cover implementation, acceptance, evidence, and genuine downstream proof dependencies; they never select reviewers, create validator task files/successors, or schedule reviewer roles. After the actual diff exists, the orchestrator may choose optional independent review from the concrete changed surface and credible escape risk. Preserve pre-existing schedule gates and formally required PR, QA, safety, and acceptance gates; optional review is not a substitute for them.
+Planner tasks and schedules cover implementation, acceptance, evidence, and genuine downstream proof dependencies; they never select reviewers, create validator task files/successors, or schedule reviewer roles. After the actual diff exists, the orchestrator may choose optional independent team-review specialist review from the concrete changed surface and credible escape risk. For a legacy schedule with a generic `validator` route, the orchestrator selects an independent specialist lead at execution and preserves the original acceptance and gate. Preserve pre-existing schedule gates and formally required PR, QA, safety, and acceptance gates; optional review is not a substitute for them.
 
 ## 7. Execute the Plan
 
