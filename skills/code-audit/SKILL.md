@@ -27,7 +27,7 @@ Use exactly these states and advance only in order:
 - **SCOUT_WAVES:** run only approved missions, in approved waves, against mirror paths. Reconcile and persist each wave before launching the next.
 - **TRIAGE:** maintain the candidate ledger and apply `OBSERVATION`, `CANDIDATE`, `PROVEN`, `DISPROVEN`, `UNVERIFIED` conservatively.
 - **APPROVED_PROOF:** execute only literal pre-approved proof commands in verified confinement. An unavailable/failed proof yields UNVERIFIED, not a defect.
-- **ADJUDICATION:** use only pre-approved validator calls. Consensus is not proof.
+- **ADJUDICATION:** use only pre-approved read-only `reviewer-*` lens calls, supplied sanitized evidence by the orchestrator. Consensus is not proof.
 - **SOURCE_INTEGRITY:** run `node <skill>/scripts/verify-source-unchanged.mjs <run-root>/baseline-manifest.json`. Any mismatch is `INTEGRITY_FAILURE`; do not attribute it to the audit or to concurrent work.
 - **HTML_REPORT:** after integrity, render the template to exactly `<run-root>/code-audit-report.html`. No other deliverable. Remove every placeholder and embed the complete machine-readable ledger.
 - **REPORT_VALIDATION:** run `node <skill>/scripts/validate-audit-report.mjs <run-root>/code-audit-report.html`. Repair only the report in the run root, never source. If validation cannot pass, stop.
@@ -49,7 +49,7 @@ Modes are ceilings, never quotas:
 | deep | <= 32 | <= 4 |
 | maximum | <= 100 | <= `ceil(100 / runtime maxConcurrent)` |
 
-Read the current runtime concurrency setting; never edit it. This repository currently caps concurrency at 12, so maximum means at most 12 simultaneous Agent calls and at most 9 waves—not 100 simultaneous calls. Use fewer missions when evidence warrants fewer. One mission equals one perspective/shard. Every mission must state: ID, one question, why material, exact mirror scope, evidence required, route (`scout`, or pre-approved `validator` only where applicable), and stop conditions. Use narrowly scoped scout missions for retrieval shards and one coherent scout for semantic perspectives or broad state. Do not split merely to fill capacity.
+Read the current runtime concurrency setting; never edit it. This repository currently caps concurrency at 12, so maximum means at most 12 simultaneous Agent calls and at most 9 waves—not 100 simultaneous calls. Use fewer missions when evidence warrants fewer. One mission equals one perspective/shard. Every mission must state: ID, one question, why material, exact mirror scope, evidence required, route (`scout`, or pre-approved read-only `reviewer-*` only where applicable), and stop conditions. Use narrowly scoped scout missions for retrieval shards and one coherent scout for semantic perspectives or broad state. Do not split merely to fill capacity.
 
 ## Literal approval proposal
 
@@ -121,7 +121,7 @@ No external operation, production/staging/database mutation, credential, live-se
 
 Launch each independent wave in one parent message with multiple `Agent` calls, `run_in_background: true`, never exceeding runtime concurrency. Each prompt is self-contained: objective, mission ID/question/materiality, exact mirror-only scope, evidence required, evidence-state vocabulary, no origin path, no command execution, no writes, and stop conditions. Scouts are read-only by capability and return text; the orchestrator saves returned text under `<run-root>/findings/<mission-id>.md`. Reconcile all completed results and candidate ledger changes before the next wave. A PARTIAL result does not authorize a retry or continuation; stop if another call is needed.
 
-A defect is publishable only as PROVEN and includes exact mirror-relative evidence, authoritative contract/invariant, reachability/preconditions, smallest non-destructive falsifying check, actual versus expected, reproducibility or deterministic proof, impact, counterevidence, confidence, and evidence hashes. Severity and confidence are separate. Do not expose secrets or sensitive payloads. Validator adjudication is allowed only when listed in the approved mission/count schedule, and a validator cannot substitute consensus for proof. Never use a mutation-capable builder tester for proof.
+A defect is publishable only as PROVEN and includes exact mirror-relative evidence, authoritative contract/invariant, reachability/preconditions, smallest non-destructive falsifying check, actual versus expected, reproducibility or deterministic proof, impact, counterevidence, confidence, and evidence hashes. Severity and confidence are separate. Do not expose secrets or sensitive payloads. Validator adjudication is allowed only when listed in the approved mission/count schedule, and a reviewer cannot substitute consensus for proof. Never use a mutation-capable builder tester for proof.
 
 ## Report contract
 

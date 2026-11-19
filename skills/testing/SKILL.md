@@ -90,7 +90,7 @@ Protected-resource postcheck: <unchanged/unreachable evidence>
 Browser evidence: <real browser | simulated/mocked partial evidence | not required>
 Failures: <none or exact reproducible mismatch; first failure and retry history retained>
 Evidence gaps: <none or exact unavailable/unsafe requirement>
-Next: <validator | bounded repair | fresh QA after harness checkpoint | user/environment decision>
+Next: <team-review lens/lead | bounded repair | fresh QA after harness checkpoint | user/environment decision>
 ```
 
 - `PASS`: all acceptance required by the selected level and declared scope was safely exercised. A `CORE PASS` remains bounded to CORE scope.
@@ -113,15 +113,15 @@ On `BLOCKED`:
 
 A contract/acceptance defect goes back to planning rather than implementation. The `qa` session never repairs while testing.
 
-## Validator and Ship Ordering
+## Review and Ship Ordering
 
 When a separate test gate is materially warranted, the order is:
 
 ```text
-producer checkpoint → selected CORE/FULL QA gate → validator/review → ready to ship
+producer checkpoint → selected CORE/FULL QA gate → team-review (lens or lead) → ready to ship
 ```
 
-Otherwise focused producer/direct evidence may flow straight to the applicable review or closure. The validator reviews the exact evidenced head and receives the acceptance matrix plus relevant QA evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace materially required QA or rerun broad passing suites.
+Otherwise focused producer/direct evidence may flow straight to the applicable review or closure. The reviewer, read-only, reviews the exact evidenced head; the orchestrator supplies the diff, acceptance matrix, and relevant QA evidence. It checks the focused diff, contracts, and adequacy of evidence; it does not replace materially required QA or rerun broad passing suites.
 
 Merge/deploy still requires explicit authorization. When shipping includes deployment, perform the approved deploy, post-deploy smoke, and rollback procedure separately; a pre-merge local PASS is not production proof.
 
@@ -130,5 +130,5 @@ Merge/deploy still requires explicit authorization. When shipping includes deplo
 - Static/mechanical/docs-only changes usually use direct closure and no delegated QA.
 - One QA gate may cover a coherent builder wave; do not create one session per file/task when the same acceptance journey covers them together.
 - Use a fresh `qa` session at CORE or FULL only when independent behavior, boundaries, cross-task integration, browser, or runtime observation materially improves confidence.
-- A linked validator remains selective for named escape risk; every PR still receives one final independent validator review under the global contract.
+- A linked lens reviewer remains selective for named escape risk; every PR still receives one final independent whole-PR review by an explicitly assigned `team-review` lead under the global contract. A lens result is not a PR `PASS`.
 - Do not create new task files, SCHEDULE rows, commits, or lifecycle artifacts solely to represent QA. Record the verdict in the existing execution log/report or PR evidence.

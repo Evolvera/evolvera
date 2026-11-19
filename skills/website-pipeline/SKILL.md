@@ -17,7 +17,7 @@ Strategy Intake (orchestrator)
   → planner
   → builder-design (default UI tier)
   → website-polisher
-  → validator
+  → final quality gate (orchestrator + team-review)
 ```
 
 | Step | Owner | Produces | Notes |
@@ -29,7 +29,7 @@ Strategy Intake (orchestrator)
 | 3 | **planner** | `PLAN_FULL.md` + `SCHEDULE.md` + `TASKS/` | Reads WEBSITE_BRIEF + DESIGN_PLAN + CONTENT_PLAN. Then get user approval. |
 | 4 | **builder-design / builder / builder-heavy-design / builder-heavy** | Code implementation | `builder-design` is the default UI tier; reads design/content plus any mapped additive addendum, follows SCHEDULE.md and builder routing rules, and preserves design authority. |
 | 5 | **website-polisher** | `.pi/plans/POLISH_PLAN.md` | Premium trust audit + visual refinements + states + a11y; directly audits any optional additive addendum without overriding design/content. |
-| 6 | **validator** | Quality gate | Compilation, types, accessibility, no unsupported claims, responsive behavior. |
+| 6 | **Orchestrator** (+ `team-review` as warranted) | Quality gate | Orchestrator runs or consumes compilation, type, and build evidence. Read-only `reviewer-ux` / `reviewer-edge-cases` lenses, selected only for a named accessibility, responsive, or unsupported-claim risk, receive the sanitized diff and evidence; a whole-site `PASS`/`BLOCKED` comes only from a reviewer explicitly assigned lead. |
 
 ## Step 0 — Strategy Intake for the Orchestrator
 
@@ -231,7 +231,7 @@ Use this checklist throughout design, polish, and validation. Premium means **cl
 7. **builder must not turn placeholders into fake facts**.
 8. **polisher must audit premium trust**, not only colors/spacing.
 9. **website-creative runs only on an explicit creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led request** — never inferred from generic premium/modern/beautiful wording, never gated behind an extra approval, never asked twice.
-10. **When `CREATIVE_DIRECTION.md` exists**: planner, builder, polisher, and validator check its mapped additive mechanics, one-purpose-class interventions, provenance, and fallbacks against `DESIGN_PLAN.md`; none may override design/content authority. The SEO writer continues through `DESIGN_PLAN.md` and does not independently reinterpret mechanics.
+10. **When `CREATIVE_DIRECTION.md` exists**: planner, builder, polisher, and any final reviewer check its mapped additive mechanics, one-purpose-class interventions, provenance, and fallbacks against `DESIGN_PLAN.md`; none may override design/content authority. The SEO writer continues through `DESIGN_PLAN.md` and does not independently reinterpret mechanics.
 
 ## Builder Routing for Website Implementation
 
@@ -304,7 +304,7 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | User wants quick autonomous preview | Use `/skill:website-home-preview` instead of full pipeline. |
 | User already has DESIGN_PLAN.md | Skip designer; if creative activation is explicit, run the optional post-design website-creative stage, then start with seo-content-writer. |
 | User did not explicitly ask for a creative/experimental/immersive/editorial/art-directed/unconventional/interaction-led/personality-led/motion-led site | Skip website-creative; run the standard pipeline. |
-| User already has CREATIVE_DIRECTION.md | Skip website-creative and pass the addendum to planner/builder/polisher/validator; do not send it back as designer intake. |
+| User already has CREATIVE_DIRECTION.md | Skip website-creative and pass the addendum to planner/builder/polisher/final reviewer; do not send it back as designer intake. |
 | User already has both plans | Skip designer + writer. If creative activation is explicit and no CREATIVE_DIRECTION.md exists, run website-creative against DESIGN_PLAN.md before planner; otherwise go straight to planner. |
 | Small visual tweak (1 page, <5 components) | Skip planner, use direct builder-design. |
 | No design changes, only copy update | Skip designer, update CONTENT_PLAN.md directly. |
@@ -320,4 +320,4 @@ Produce exact old_string/new_string fixes when code-level fixes are possible; ot
 | planner | `/skill:website-stack` for tech conventions. Carry the DESIGN_PLAN.md Design Vocabulary Selection terms (exact names, see `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`) into builder tasks. |
 | builder-design / builder / builder-heavy-design / builder-heavy | `/skill:website-stack` for file structure/components; `/skill:builder` for routing. Design builders implement the named terms per `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md`. |
 | website-polisher | `/skill:design-catalog` for design system consistency; audits against the selected terms in `~/.pi/agent/skills/design-catalog/DESIGN_VOCABULARY.md` ("term X specified, Y implemented"). |
-| validator | No skill needed. |
+| final reviewers | Orchestrator-owned `/skill:team-review`; reviewers load no skills. |

@@ -58,7 +58,7 @@ integration, diff review, or final verification.
 | `planner` | Need a plan for cross-cutting or multi-stage work | Reconciled contract + evidence | Plan, tasks, and schedule |
 | `builder` | Need bounded implementation | Task description or task file | Changes and handover |
 | `qa` | Independent behavioral or integration proof is warranted | Acceptance and checkpoint | Validation report |
-| `validator` | Named escape risk or final PR gate | Focused diff and acceptance | Review report |
+| `reviewer-ux` / `reviewer-simplicity` / `reviewer-edge-cases` / `reviewer-security` (via `team-review`) | One named escape risk, or the formally required whole-PR gate when one is explicitly assigned lead | Orchestrator-supplied diff, acceptance, and evidence (read-only: read/grep/find) | Lens findings; `PASS`/`BLOCKED` only from the assigned lead, bound to the head SHA |
 
 ---
 

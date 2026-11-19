@@ -18,7 +18,7 @@ coordinates existing specialist roles:
 - **builder** creates or maintains test-only harness code and documentation;
 - **app-validator** independently executes only the expressly delegated,
   documented run-owned commands and observes the device;
-- generic **qa** or **validator** may consume the resulting evidence when their
+- generic **qa** or a `team-review` reviewer (lens or assigned lead) may consume the resulting evidence when their
   separate scope is needed, but must not duplicate the same device journey.
 
 The harness is a maintained, versioned companion to the app. The validator is

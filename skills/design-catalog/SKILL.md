@@ -172,7 +172,7 @@ The website construction chain has a **clear separation of concerns** between ba
 | All website copy (headlines, body, CTAs, microcopy, meta tags, alt text, schema) | `seo-content-writer` | `CONTENT_PLAN.md` |
 | Visual website implementation | `builder-design` | Reads both `DESIGN_PLAN.md` + `CONTENT_PLAN.md`; escalate per `/skill:builder` |
 | UI/UX polish | `website-polisher` | Reads both plans + code |
-| Quality verification | `validator` | Reads all artifacts |
+| Quality verification | Orchestrator + `team-review` lens/lead reviewers (read-only) | Orchestrator supplies the sanitized diff and artifacts |
 
 ### How It Works
 
@@ -180,16 +180,16 @@ The website construction chain has a **clear separation of concerns** between ba
 2. On explicit creative activation only, **website-creative** reads the completed design artifact and emits a mapped additive `CREATIVE_DIRECTION.md` or reports `DESIGN_CONFLICT`; it does not redesign the baseline.
 3. **SEO Content Writer** reads `DESIGN_PLAN.md` and the strategy brief, generates all copy in `CONTENT_PLAN.md`, does not independently reinterpret mechanics, and preserves the existing human approval pause before planning/building.
 4. **Planner/Builder** reads the baseline design, content, and optional addendum; implementation preserves design authority and re-verifies addendum provenance and fallbacks.
-5. **Polisher/Validator** audit the implementation against design/content authority plus any mapped additive mechanics and their fallbacks.
+5. **Polisher/final reviewer** audit the implementation against design/content authority plus any mapped additive mechanics and their fallbacks.
 
 ### When to Use Each Agent
 
 | Use Case | Agent(s) |
 |----------|----------|
-| New website from scratch | Full chain: `website-designer` → optional `website-creative` addendum → `seo-content-writer` → `planner` → `builder-design` → `website-polisher` → `builder-design` → `validator` |
+| New website from scratch | Full chain: `website-designer` → optional `website-creative` addendum → `seo-content-writer` → `planner` → `builder-design` → `website-polisher` → `builder-design` → orchestrator final gate (`team-review` as warranted) |
 | Design only (no implementation) | `website-designer` only |
 | Content only (DESIGN_PLAN.md already exists) | `seo-content-writer` only |
 | Implement visual website work from existing plans | `builder-design` by default; escalate per `/skill:builder` |
 | Polish existing website | `website-polisher` only |
-| Validate implementation | `validator` only |
+| Validate implementation | Orchestrator gate; `team-review` lens or assigned lead as warranted |
 | Regenerate/revise copy | `seo-content-writer` only (after design is approved) |

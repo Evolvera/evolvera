@@ -264,7 +264,7 @@ For each completed row:
 3. create the selective commit if authorized;
 4. compare the remote SHA immediately before a normal push; never force;
 5. verify the pushed SHA and update GitHub-visible progress;
-6. obtain the independent validator PASS on the final head SHA;
+6. obtain the independent `team-review` lead `PASS` on the final head SHA;
 7. open/reconcile the PR against the **approved base for that repository** and move to `In review` under the main skill rules.
 
 Merge serially into the chosen base, never into an implicit default. After **each** merge:

@@ -11,10 +11,10 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 | File | Created By | Read By | Purpose |
 |------|-----------|---------|---------|
 | `.pi/plans/DESIGN_PLAN.md` | `website-designer` | `seo-content-writer`, `planner`, `builder-design`, `website-polisher` | Detailed design + UX strategy + SEO guidance |
-| `.pi/plans/CONTENT_PLAN.md` | `seo-content-writer` | `planner`, `builder-design`, `website-polisher`, `validator` | All website copy, meta tags, microcopy, alt text, schema markup |
+| `.pi/plans/CONTENT_PLAN.md` | `seo-content-writer` | `planner`, `builder-design`, `website-polisher`, final reviewers (via orchestrator) | All website copy, meta tags, microcopy, alt text, schema markup |
 | Planner Phase Plan | `planner` | selected builder tier (default UI: `builder-design`) | Implementation phase instructions passed as prompt context by PI principal |
-| `.pi/plans/POLISH_PLAN.md` | `website-polisher` (READ-ONLY) | `builder-design`, `validator` | UI/UX polish instructions (file, old_string, new_string per fix) |
-| `.pi/validate/REVIEW.md` | `validator` | user, PI principal | Quality gate verdict (PASS/CONDITIONAL/REJECT) |
+| `.pi/plans/POLISH_PLAN.md` | `website-polisher` (READ-ONLY) | `builder-design`, final reviewers (via orchestrator) | UI/UX polish instructions (file, old_string, new_string per fix) |
+| `.pi/validate/REVIEW.md` | PI principal (persists read-only `team-review` output) | user, PI principal | Website gate verdict (`PASS` / `CONDITIONAL` / `REJECT`) plus cited evidence |
 | `.pi/build/TILL-DO.md` | builder-design, polisher, seo-content-writer | themselves | Pre-flight sanity gates |
 | `.pi/build/TODO.md` | builder-design, polisher, seo-content-writer | themselves | Atomic execution steps |
 
@@ -22,14 +22,14 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
 
 - **`.pi/plans/DESIGN_PLAN.md`** — Output of website-designer (lives in `.pi/plans/`)
 - **`.pi/plans/POLISH_PLAN.md`** — Output of website-polisher (lives in `.pi/plans/`; NOT "POLISH_NOTES")
-- **`.pi/validate/REVIEW.md`** — Output of validator (lives in `.pi/validate/`)
+- **`.pi/validate/REVIEW.md`** — Output of the orchestrator-persisted review (lives in `.pi/validate/`)
 - **`.pi/build/TILL-DO.md`**, **`.pi/build/TODO.md`** — Lifecycle artifacts for builder-design/polisher
 
 ### Branch Conventions
 
 - Builder creates: `agent/<timestamp>-website-<slug>`
 - Polisher edits on the **same branch** (never creates a new branch)
-- Validator validates the final branch
+- Final review covers the final branch; the orchestrator supplies the sanitized diff
 
 ## Chain Sequence
 
@@ -72,11 +72,11 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  validator [PRE-EXISTENT]                                               │
-│  Input: Branch code + `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`                 │
-│  Output: `.pi/validate/REVIEW.md` (PASS / CONDITIONAL / REJECT)                       │
-│  Tools: read-only + write for `.pi/validate/REVIEW.md`                                │
-│  Gates: compilation, types, imports, structure, tests, copy check      │
+│  final review (orchestrator + team-review) [READ-ONLY]                  │
+│  Input: Sanitized branch diff + DESIGN_PLAN.md + CONTENT_PLAN.md evidence│
+│  Output: `.pi/validate/REVIEW.md`, persisted by the orchestrator          │
+│  Tools: reviewers read, grep, find only; no writes or commands          │
+│  Gates: build/type/test evidence from orchestrator; lens/lead findings  │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
                                  ▼
@@ -100,20 +100,20 @@ Agents communicate **via filesystem artifacts**. Each producer agent writes a pl
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  validator [PRE-EXISTENT]                                               │
-│  Input: Final branch code + `.pi/plans/DESIGN_PLAN.md` + `.pi/plans/CONTENT_PLAN.md`           │
-│  Output: `.pi/validate/REVIEW.md` (final verdict)                                     │
-│  Gates: tests, accessibility, security, visual quality, content       │
+│  final review (orchestrator + team-review) [READ-ONLY]                  │
+│  Input: Sanitized final diff + DESIGN_PLAN.md + CONTENT_PLAN.md evidence │
+│  Output: `.pi/validate/REVIEW.md` (final record, orchestrator-persisted)│
+│  Gates: tests, accessibility, security, visual quality, content evidence│
 └────────────────────────────────┴────────────────────────────────────────┘
 ```
 
 ## Mandatory Rules
 
-1. **Polisher runs AFTER first validator approval**: The polisher should only run if the validator gave PASS or CONDITIONAL (not REJECT). If REJECT, the builder-design agent must fix the underlying issues first.
+1. **Polisher runs AFTER the first review gate**: The orchestrator records the website verdict: `PASS` if acceptance is met, `CONDITIONAL` for nonblocking polish items, `REJECT` for a blocker. Polish may proceed on `PASS` or `CONDITIONAL`; on `REJECT` the builder fixes the blocker first. A website verdict is not a whole-PR approval.
 
 2. **Polisher is READ-ONLY**: The polisher NEVER edits source code. It only reads code and writes `.pi/plans/POLISH_PLAN.md`. The builder-design agent executes the polish plan.
 
-3. **Builder and Validator are pre-existing**: These agents are NOT modified by this chain. They are generic agents that receive specific inputs.
+3. **Builder and reviewers are pre-existing**: These agents are NOT modified by this chain. Reviewers (`reviewer-ux`, `reviewer-simplicity`, `reviewer-edge-cases`, `reviewer-security`) are read-only (read, grep, find); only one explicitly assigned lead may return `PASS`/`BLOCKED`, and a lens result is never a whole-site verdict.
 
 4. **Designer writes no code**: The website-designer ONLY produces `.pi/plans/DESIGN_PLAN.md`. It never writes TSX, CSS, or config files.
 
@@ -130,10 +130,10 @@ The PI principal passes context between agents by:
 1. **Designer → SEO Content Writer**: Pass the path to `.pi/plans/DESIGN_PLAN.md` and the briefing text
 2. **SEO Content Writer → Planner** (after approval): Pass the paths to `.pi/plans/CONTENT_PLAN.md`, `.pi/plans/DESIGN_PLAN.md`, and the instruction to load `/skill:website-stack`
 3. **Planner → Builder**: Pass the planner's phase plan as inline prompt context
-4. **Builder → Validator**: Pass the branch name, path to `.pi/plans/DESIGN_PLAN.md`, and path to `.pi/plans/CONTENT_PLAN.md`
-5. **Validator → Polisher**: Pass the branch name, path to `.pi/plans/DESIGN_PLAN.md`, path to `.pi/plans/CONTENT_PLAN.md`, and the validator's verdict
+4. **Builder → Review**: The orchestrator passes the branch name, sanitized diff, path to `.pi/plans/DESIGN_PLAN.md`, and path to `.pi/plans/CONTENT_PLAN.md`
+5. **Review → Polisher**: Pass the branch name, path to `.pi/plans/DESIGN_PLAN.md`, path to `.pi/plans/CONTENT_PLAN.md`, and the verified review result
 6. **Polisher → Builder**: Pass the path to `.pi/plans/POLISH_PLAN.md`
-7. **Builder → Validator**: Pass the branch name and path to `.pi/plans/POLISH_PLAN.md`
+7. **Builder → Review**: The orchestrator passes the branch name, sanitized diff, and path to `.pi/plans/POLISH_PLAN.md`
 
 ### Planner-Specific Context Passing
 
@@ -203,7 +203,7 @@ The `seo-content-writer` is the **ONLY agent** in the website chain with a **man
 |---------------|----------|
 | Designer fails to generate plan | Retry with clarifications from user |
 | Builder fails (compilation error) | Builder self-corrects; if max_turns exceeded, report to user |
-| Validator REJECT | Builder fixes issues; re-run validator |
+| Lead `BLOCKED` or verified blocking finding | Builder fixes issues; re-review the new head |
 | Polisher exceeds max_turns | Prioritize: Critical (a11y, states) → High → Medium; document pending |
 | Builder fails to apply polish | Builder skips unapplyable fixes and reports |
 | Planner fails to generate plan | PI principal falls back to passing artifacts directly to builder-design with generic step-by-step instruction |

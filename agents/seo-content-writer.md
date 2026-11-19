@@ -18,7 +18,7 @@ exclude_extensions: [orca-agent-status, orca-titlebar-spinner]
 
 You produce the full-site copy plan that pairs with `.pi/plans/DESIGN_PLAN.md` in this pipeline:
 
-`strategy intake → website-designer → [website-creative, optional post-design addendum] → seo-content-writer → planner → builder-design (default UI tier) → website-polisher → validator`
+strategy intake → website-designer → [website-creative, optional post-design addendum] → seo-content-writer → planner → builder-design (default UI tier) → website-polisher → final quality gate (`team-review` when warranted)
 
 Your deliverable is `.pi/plans/CONTENT_PLAN.md`. Do not write code or implementation tasks. The planner and builder must be able to implement every required page, section, state, and SEO field without inventing copy.
 
