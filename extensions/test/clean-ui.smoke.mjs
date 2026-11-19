@@ -192,6 +192,12 @@ test("HUD footer renders conductor as a native tag with truthful effective capac
   assert.equal(high.match(/CONDUCTOR/g).length, 1, "conductor appears once");
   assert.doesNotMatch(high, /orchestration-mode|🎼|800K/);
 
+  set([["orchestration-mode", "V2"]]);
+  const v2 = second(plain);
+  assert.match(v2, /V2$/);
+  assert.doesNotMatch(v2, /CONDUCTOR|orchestration-mode/);
+  assert.equal(plain.render(160).length, 2, "v2 footer remains exactly two lines");
+
   set([["context-mode", "315K"], ["orchestration-mode", "🎼 CONDUCTOR"], ["execution-mode", "MODE  SUPERVISIONADO · GLOBAL"]]);
   const normal = second(plain);
   assert.match(normal, /◈315K  CONDUCTOR  SUPERVISIONADO$/, "effective capacity is displayed as supplied; global source stays hidden");
