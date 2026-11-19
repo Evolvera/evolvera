@@ -16,9 +16,12 @@ import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agen
  * their own effort.
  */
 
-export const ORCHESTRATION_MODES = ["standard", "conductor"] as const;
+export const ORCHESTRATION_MODES = ["standard", "conductor", "v2"] as const;
 export type OrchestrationMode = (typeof ORCHESTRATION_MODES)[number];
 export const SESSION_ENTRY_TYPE = "orchestration-mode";
+const V2_DELIVERY_TYPE = "orchestration-v2-delivery";
+const V2_MARKER = "<v2-guidance id=";
+const ORCA_RUN_ID = /^run_[A-Za-z0-9]+$/;
 export const MODE_CHANGED_EVENT = "orchestration-mode:changed";
 const PRIMARY_PROMPT = "# PI Coding Agent";
 const STATUS_KEY = "orchestration-mode";
@@ -195,28 +198,86 @@ export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: 
   }
 }
 
-export function readSessionMode(branch: Iterable<unknown>): OrchestrationMode {
+export function readSessionMode(branch: Iterable<unknown>, sessionId?: string): OrchestrationMode {
   let mode: OrchestrationMode = "standard";
   for (const raw of branch) {
-    const entry = raw as { type?: unknown; customType?: unknown; data?: { mode?: unknown } };
+    const entry = raw as { type?: unknown; customType?: unknown; data?: { mode?: unknown; sessionId?: unknown } };
     if (entry?.type === "custom" && entry.customType === SESSION_ENTRY_TYPE
-      && ORCHESTRATION_MODES.includes(entry.data?.mode as OrchestrationMode)) mode = entry.data!.mode as OrchestrationMode;
+      && ORCHESTRATION_MODES.includes(entry.data?.mode as OrchestrationMode)
+      && (sessionId === undefined || entry.data?.sessionId === sessionId || entry.data?.mode !== "v2")) mode = entry.data!.mode as OrchestrationMode;
   }
   return mode;
 }
 
 type Ctx = {
-  sessionManager?: { getBranch(): Iterable<unknown> };
+  sessionManager?: { getSessionId?(): string; getBranch(): Iterable<unknown> };
+  modelRegistry?: V2GuidanceRegistry;
+  model?: { provider?: string; id?: string };
+  getSystemPrompt?(): string;
   ui?: { setStatus?(key: string, text: string | undefined): void; notify?(message: string, type?: "info" | "warning" | "error"): void };
 };
 
 export function currentMode(ctx: Ctx): OrchestrationMode {
-  try { return ctx.sessionManager ? readSessionMode(ctx.sessionManager.getBranch()) : "standard"; }
+  try { return ctx.sessionManager ? readSessionMode(ctx.sessionManager.getBranch(), ctx.sessionManager.getSessionId?.()) : "standard"; }
   catch { return "standard"; }
 }
 
 function showStatus(ctx: Ctx, mode: OrchestrationMode): void {
-  ctx.ui?.setStatus?.(STATUS_KEY, mode === "conductor" ? "🎼 CONDUCTOR" : undefined);
+  ctx.ui?.setStatus?.(STATUS_KEY, mode === "conductor" ? "🎼 CONDUCTOR" : mode === "v2" ? "V2" : undefined);
+}
+
+export function v2SkillPointer(skill: string): string {
+  return `Load and follow the ${skill} skill now: read its SKILL.md from the available skills list before continuing.`;
+}
+
+function buildV2Prompt(systemMd: string): string | undefined {
+  const core = ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
+    .map((heading) => extractSection(systemMd, heading));
+  const guides = V2_GUIDANCE.catalog.map((entry) => entry.source.section
+    ? extractSection(systemMd, entry.source.section)
+    : entry.source.skill && fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
+      ? `Load the ${entry.source.skill} skill with /skill:${entry.source.skill} when applicable.`
+      : undefined);
+  if (core.some((section) => !section) || guides.some((guide) => !guide)) return undefined;
+  return `${core.join("\n\n")}\n\n${V2_GUIDANCE.preamble}`;
+}
+
+function applyV2(systemPrompt: string, customPrompt: string): string | undefined {
+  const replacement = buildV2Prompt(customPrompt);
+  const at = systemPrompt.indexOf(customPrompt);
+  if (!replacement || at < 0) return undefined;
+  return systemPrompt.slice(0, at) + replacement + systemPrompt.slice(at + customPrompt.length);
+}
+
+type Delivery = { ids: string[]; usage?: V2GuidanceUsage; at: number };
+
+function activeDeliveries(ctx: Ctx): Delivery[] {
+  const manager = ctx.sessionManager;
+  if (!manager) return [];
+  const entries = [...manager.getBranch()] as any[];
+  const sessionId = manager.getSessionId?.();
+  let start = 0;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    if (entries[index]?.type === "compaction") { start = index + 1; break; }
+  }
+  return entries.slice(start).filter((entry) => entry?.type === "custom" && entry.customType === V2_DELIVERY_TYPE
+    && entry.data?.sessionId === sessionId && Array.isArray(entry.data.ids))
+    .map((entry) => ({ ids: entry.data.ids.filter((id: unknown) => typeof id === "string"), usage: entry.data.usage, at: Date.parse(entry.timestamp) }));
+}
+
+function showV2Status(ctx: Ctx, diary: ReturnType<typeof observeV2Diary>): void {
+  const snapshot = diary.snapshot(ctx as V2DiaryContext);
+  const deliveries = activeDeliveries(ctx);
+  const ids = [...new Set(deliveries.flatMap((delivery) => delivery.ids))];
+  const sessionId = ctx.sessionManager?.getSessionId?.();
+  const usage = [...(ctx.sessionManager?.getBranch() ?? [])].flatMap((raw) => {
+    const entry = raw as { type?: unknown; customType?: unknown; data?: { sessionId?: unknown; usage?: V2GuidanceUsage } };
+    return entry.type === "custom" && entry.customType === V2_DELIVERY_TYPE && entry.data?.sessionId === sessionId && entry.data.usage
+      ? [entry.data.usage] : [];
+  });
+  const input = usage.reduce((sum, item) => sum + item.input, 0);
+  const output = usage.reduce((sum, item) => sum + item.output, 0);
+  ctx.ui?.notify?.(`Orchestration: V2 | diary ${snapshot?.lines ?? 0} lines / ${snapshot?.estimatedTokens ?? 0} tokens | guidance ${ids.length ? ids.join(", ") : "none"} | helper tokens ${input} in / ${output} out`, "info");
 }
 
 /**
@@ -381,14 +442,14 @@ export function observeV2Diary(pi: ExtensionAPI, isActive: (ctx: V2DiaryContext)
     if (name === "edit") append(ctx, diaryLine("edit", { path: input.path ?? "", bytes: (input.edits ?? []).reduce((total: number, edit: any) => total + Buffer.byteLength(String(edit.oldText ?? ""), "utf8") + Buffer.byteLength(String(edit.newText ?? ""), "utf8"), 0) }));
     if (name === "write") append(ctx, diaryLine("write", { path: input.path ?? "", bytes: Buffer.byteLength(String(input.content ?? ""), "utf8") }));
   });
-  for (const name of ["subagents:completed", "subagents:failed"]) pi.events.on(name, (event: any) => {
+  for (const name of ["subagents:completed", "subagents:failed"]) pi.events?.on?.(name, (event: any) => {
     if (!context || !activeState()) return;
     const metadata = subagents.get(event?.id);
     if (!metadata) return;
     subagents.delete(event.id);
     append(context, diaryLine("subagent", { ...metadata, status: name.endsWith("failed") ? "failed" : "completed" }));
   });
-  pi.events.on("subagents:started", (event: any) => {
+  pi.events?.on?.("subagents:started", (event: any) => {
     if (!context || !activeState() || typeof event?.id !== "string" || typeof event.type !== "string") return;
     subagents.set(event.id, { type: event.type, description: typeof event.description === "string" ? event.description : "" });
   });
@@ -407,31 +468,44 @@ export function observeV2Diary(pi: ExtensionAPI, isActive: (ctx: V2DiaryContext)
   };
 }
 
-export default function orchestrationMode(pi: ExtensionAPI): void {
+export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = selectV2Guidance): void {
   let warned = false;
+  let runEpoch = 0;
+  let eligibleSessionId: string | undefined;
+  let eligibleSystemMd: string | undefined;
+  const isEligible = (ctx: Ctx, prompt = ctx.getSystemPrompt?.()) => currentMode(ctx) === "v2"
+    && !(typeof process.env.PI_REPORT_RUN === "string" && ORCA_RUN_ID.test(process.env.PI_REPORT_RUN))
+    && (typeof prompt === "string" && prompt.trimStart().startsWith(PRIMARY_PROMPT)
+      || eligibleSessionId !== undefined && ctx.sessionManager?.getSessionId?.() === eligibleSessionId);
+  const diary = observeV2Diary(pi, (ctx) => isEligible(ctx as Ctx));
 
   pi.registerCommand("orchestration", {
-    description: "Orchestration mode for this session: /orchestration standard | conductor | status",
+    description: "Orchestration mode for this session: /orchestration standard | conductor | v2 | status",
     getArgumentCompletions: async (prefix) => [
       { value: "conductor", label: "conductor", description: "Coordinate sub-PIs only; engineering is delegated" },
       { value: "standard", label: "standard", description: "Default PI system prompt" },
+      { value: "v2", label: "v2", description: "Select request-scoped guidance for this session" },
       { value: "status", label: "status", description: "Show the current mode" },
     ].filter((o) => o.value.startsWith(prefix.trim().toLowerCase())),
     handler: async (rawArgs, ctx) => {
       const action = rawArgs.trim().toLowerCase() || "status";
       if (action !== "status") {
         if (!ORCHESTRATION_MODES.includes(action as OrchestrationMode)) {
-          ctx.ui.notify("Uso: /orchestration standard | conductor | status", "warning");
+          ctx.ui.notify("Uso: /orchestration standard | conductor | v2 | status", "warning");
           return;
         }
-        pi.appendEntry(SESSION_ENTRY_TYPE, { mode: action });
+        runEpoch++;
+        if (action !== "v2") { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
+        const data = action === "v2" ? { mode: action, sessionId: ctx.sessionManager.getSessionId() } : { mode: action };
+        pi.appendEntry(SESSION_ENTRY_TYPE, data);
         pi.events.emit(MODE_CHANGED_EVENT, { ctx });
         warned = false;
         pinThinking(pi, ctx);
       }
       const mode = currentMode(ctx);
       showStatus(ctx, mode);
-      ctx.ui.notify(mode === "conductor"
+      if (mode === "v2") showV2Status(ctx, diary);
+      else ctx.ui.notify(mode === "conductor"
         ? "Orchestration: CONDUCTOR nesta sessão. Este PI só coordena sub-PIs; o modelo e o effort continuam os que você escolher. Vale a partir da próxima mensagem."
         : "Orchestration: STANDARD (system prompt padrão do PI).", "info");
     },
@@ -439,6 +513,9 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, rawCtx) => {
     const ctx = rawCtx as Ctx;
+    runEpoch++;
+    eligibleSessionId = undefined;
+    eligibleSystemMd = undefined;
     warned = false;
     pinThinking(pi, ctx);
     showStatus(ctx, currentMode(ctx));
@@ -450,14 +527,67 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
     const customPrompt = event.systemPromptOptions?.customPrompt;
-    if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) return;
-    if (currentMode(ctx) !== "conductor") return;
-    const systemPrompt = applyConductor(event.systemPrompt ?? "", customPrompt);
+    const sessionId = ctx.sessionManager?.getSessionId?.();
+    if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) {
+      if (eligibleSessionId === sessionId) { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
+      return;
+    }
+    const mode = currentMode(ctx);
+    if (mode === "conductor") {
+      const systemPrompt = applyConductor(event.systemPrompt ?? "", customPrompt);
+      if (!systemPrompt) {
+        if (!warned) ctx.ui?.notify?.("Orchestration CONDUCTOR indisponível: SYSTEM.md mudou e uma seção obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
+        warned = true;
+        return;
+      }
+      return { systemPrompt };
+    }
+    if (mode !== "v2" || !isEligible(ctx, customPrompt)) return;
+    eligibleSessionId = undefined;
+    eligibleSystemMd = undefined;
+    const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt);
     if (!systemPrompt) {
-      if (!warned) ctx.ui?.notify?.("Orchestration CONDUCTOR indisponível: SYSTEM.md mudou e uma seção obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
+      if (!warned) ctx.ui?.notify?.("Orchestration V2 indisponível: SYSTEM.md ou uma fonte de guidance obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
       warned = true;
       return;
     }
+    warned = false;
+    eligibleSessionId = sessionId;
+    eligibleSystemMd = customPrompt;
+    const epoch = runEpoch;
+    if (event.messageType === "user") {
+      const snapshot = diary.snapshot(ctx as V2DiaryContext);
+      let decision: V2GuidanceSelection = { available: false, ids: [] };
+      if (ctx.modelRegistry) {
+        try { decision = await selectGuidance(ctx.modelRegistry, snapshot?.text ?? "", event.prompt); } catch {}
+      }
+      if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
+      const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
+      const ids = decision.available ? decision.ids.filter((id) => !existing.includes(id)) : [];
+      if (ids.length || decision.usage) {
+        pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });
+        if (ids.length) diary.recordGuidance(ctx as V2DiaryContext, ids);
+      }
+      ctx.ui?.notify?.(`V2 guidance: ${ids.length ? ids.join(", ") : decision.available ? "none" : "unavailable"}`, "info");
+    }
     return { systemPrompt };
+  });
+
+  pi.on("context", (event, rawCtx) => {
+    const ctx = rawCtx as Ctx;
+    if (!isEligible(ctx)) return;
+    for (const delivery of activeDeliveries(ctx)) {
+      for (const id of delivery.ids) {
+        const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
+        if (!entry) continue;
+        const text = entry.source.section ? extractSection(eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "", entry.source.section)
+          : entry.source.skill ? v2SkillPointer(entry.source.skill) : undefined;
+        if (!text) continue;
+        const marker = `${V2_MARKER}${id}>${text}</v2-guidance>`;
+        if (event.messages.some((message: any) => typeof message.content === "string" && message.content.includes(marker))) continue;
+        const after = Number.isFinite(delivery.at) ? event.messages.findIndex((message: any) => typeof message.timestamp === "number" && message.timestamp > delivery.at) : -1;
+        event.messages.splice(after < 0 ? event.messages.length : after, 0, { role: "user", content: marker, timestamp: delivery.at } as any);
+      }
+    }
   });
 }
