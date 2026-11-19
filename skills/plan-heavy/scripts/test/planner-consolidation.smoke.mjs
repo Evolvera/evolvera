@@ -33,7 +33,7 @@ assert.match(planner, /does not select reviewers, create validator task files or
 assert.doesNotMatch(planner, /TASKS\/task_NN_validator\.md|\*\*Agent\*\*: validator/);
 assert.match(plannerSkill, /Clear independent parallel lanes alone do not imply planner/i);
 assert.match(planHeavy, /Plan-heavy applies only to settled scope/i);
-assert.match(builderSkill, /legacy generic `validator` schedule gate[\s\S]*team-review specialist lead/i);
+assert.match(builderSkill, /legacy generic `validator` schedule gate at execution to `validator`/i);
 assert.match(builderSkill, /prompt authoring \(use `builder-design` with `prompt-engineering`\)/i);
 assert.match(planner, /HANDOFF\.md[\s\S]*brief_gpt\.md[\s\S]*brief_fable\.md[\s\S]*brief_gpt55\.md/);
 assert.match(planner, /reconcile their disagreements/i);

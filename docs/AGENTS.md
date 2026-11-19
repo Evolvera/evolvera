@@ -59,6 +59,7 @@ integration, diff review, or final verification.
 | `builder` | Need bounded implementation | Task description or task file | Changes and handover |
 | `qa` | Independent behavioral or integration proof is warranted | Acceptance and checkpoint | Validation report |
 | `validator` | Named escape risk or final PR gate | Focused diff and acceptance | Review report |
+| `reviewer-ux`, `reviewer-simplicity`, `reviewer-edge-cases`, `reviewer-security` | One narrow risk question after a real diff | Sanitized diff, acceptance, evidence | Lens findings |
 
 ---
 

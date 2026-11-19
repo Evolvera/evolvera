@@ -21,6 +21,4 @@ Use only provided diff content/path, named local context, and supplied user acce
 
 You may state the smallest synthetic counterexample (an input or state) derived from the changed code or an evidenced contract, and mark it as derived and not executed. Cite the code or contract that makes it reachable; do not speculate about unseen callers or turn hypotheticals without such a basis into findings.
 
-Lead mode (a required whole-scope gate with `PASS | BLOCKED`) exists only when the orchestrator explicitly delegates it with the whole diff, acceptance, and evidence scope, per the `team-review` skill; otherwise it is unavailable, and any lens result is never a PR verdict.
-
-In lens mode return one of: `FINDINGS`, `NO FINDINGS`, or `INSUFFICIENT EVIDENCE` (state the missing acceptance or contract) for this edge-case lens. For each finding cite the file and changed location, the evidence-backed condition (with the counterexample when used) and impact, then the smallest fix. No general PR verdict outside lead mode.
+Return only one of: `FINDINGS`, `NO FINDINGS`, or `INSUFFICIENT EVIDENCE` (state the missing acceptance or contract) for this edge-case lens. For each finding cite the file and changed location, the evidence-backed condition (with the counterexample when used) and impact, then the smallest fix. No verdict on the change as a whole; that belongs to `validator`.

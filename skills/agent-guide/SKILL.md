@@ -114,7 +114,7 @@ Read-only defect finder on GPT-6.2 Sol medium. Where `scout` explains how a syst
 - **Hinted:** a symptom, error, log, failing or flaky test, user report, or suspect commit range whose root cause is unknown. Pass the raw evidence verbatim; the hunter confirms or refutes the hint.
 - **Unhinted:** pre-merge or pre-release sweeps, auditing an unfamiliar or risky module, after an incident, or after a fix to look for sibling bugs with the same pattern.
 
-**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (orchestrator-selected team-review specialist); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
+**When not to use:** the cause is already known (fix it directly or with a builder); you need to understand behavior rather than find defects (`scout`); a final PR gate (`validator`); runtime proof (`testing` → `qa`); a formal audit report (`code-audit`).
 
 **Default to a parallel wave.** After bounded orientation, split the hunt into independent shards and launch them together in one message with `run_in_background: true`, up to free background capacity:
 - **By region:** one shard per independent subsystem or layer, such as client, API, domain/data, jobs/async, auth, or config/infra.
@@ -232,7 +232,7 @@ Agent({
 - Use `builder-heavy-design` directly for exceptional visual work or complex tasks dominated by state/relation semantics, policy/selector composition, grammar/template reconstruction, or declarative structure preservation. It does not require a prior GPT failure.
 - Use `builder-heavy` for evidenced exceptional local runtime/service/lifecycle coordination or bounded non-frontend work with concrete targets, a stated invariant/validation oracle, and demonstrated exceptional formal/numerical/scientific difficulty. The orchestrator performs host/external execution unless the user explicitly requests a subagent. Do not select it merely because code is backend, risky, multi-file, auth/payment, migration, config, API, or shared; vague scope or a generic retry goes to scout/planner.
 - For frontend work, route visual hierarchy/layout/motion/accessibility to design tiers; use `builder` for bounded local data/API/auth behavior; reserve `builder-heavy` for exceptional local integration boundaries. The orchestrator performs external operations unless the user explicitly requests a subagent. For non-visual work, choose by problem shape rather than filename: declarative relation/rule/structure → design tier; normal local procedural work → `builder`.
-- A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact may need independent team-review specialist review only when one named consequential ambiguity or escape risk could survive producer proof. The orchestrator selects a specialist lead after inspecting the actual diff. For a legacy schedule with a generic `validator` route, map execution to an orchestrator-selected independent specialist lead and preserve the original acceptance and gate. For a static locally-decidable artifact, focused orchestrator diff review closes it. Authority or importance alone selects neither review nor `builder-heavy`; `builder` may collect evidence.
+- A decision, verdict, classification, evidence index, feasibility stop-gate, or source-of-truth artifact may need independent review only when one named consequential ambiguity or escape risk could survive producer proof. The orchestrator selects it after inspecting the actual diff: `validator` for a whole-change verdict, a `team-review` specialist for one narrow risk. A legacy schedule with a generic `validator` route runs `validator`, preserving the original acceptance and gate. For a static locally-decidable artifact, focused orchestrator diff review closes it. Authority or importance alone selects neither review nor `builder-heavy`; `builder` may collect evidence.
 - Avoid `builder-light` for vague requests, new visual direction, final polish judgment, or brand/design decisions; use website pipeline, `builder-design`, or `builder-heavy-design`. Use `builder-heavy` for frontend only with a concrete non-visual correctness/integration hazard.
 - Delegated builders still need explicit instructions: files to **READ**, **TARGET FILES**, patterns to follow, and how to **VERIFY**.
 - Split into atomic tasks. Never stuff multiple concerns into one builder.
@@ -257,7 +257,8 @@ An explicitly authorized FULL harness-construction phase may write only an exact
 ```
 [direct/scout pre-plan evidence] → [planner if needed] → builder → focused validation
                                                           ├→ qa CORE/FULL only when materially required
-                                                          └→ orchestrator-selected team-review specialist only when warranted or formally required
+                                                          ├→ validator when a rule requires a whole-change verdict
+                                                          └→ team-review specialist only for one unanswered narrow risk
 ```
 
 1. **scout** only when bounded evidence is missing.

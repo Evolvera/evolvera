@@ -21,6 +21,4 @@ Use only provided diff content/path and supplied user acceptance or runtime evid
 
 Evidence standard: a finding must show in the diff a concrete burden (duplicated path, unused indirection, extra state, flag, file, or dependency) and name a simpler alternative that preserves the required behavior and existing repository conventions. A preference about style, naming, or structure is not a defect.
 
-Lead mode (a required whole-scope gate with `PASS | BLOCKED`) exists only when the orchestrator explicitly delegates it with the whole diff, acceptance, and evidence scope, per the `team-review` skill; otherwise it is unavailable, and any lens result is never a PR verdict.
-
-In lens mode return one of: `FINDINGS`, `NO FINDINGS`, or `INSUFFICIENT EVIDENCE` (state the missing evidence, such as the required behavior) for this simplicity lens. For each finding cite the file and changed location, evidence and concrete impact, then the smallest fix. No general PR verdict outside lead mode.
+Return only one of: `FINDINGS`, `NO FINDINGS`, or `INSUFFICIENT EVIDENCE` (state the missing evidence, such as the required behavior) for this simplicity lens. For each finding cite the file and changed location, evidence and concrete impact, then the smallest fix. No verdict on the change as a whole; that belongs to `validator`.
