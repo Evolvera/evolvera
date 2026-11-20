@@ -121,6 +121,7 @@ Output: only a JSON array of catalog ids, for example ["workflow","validation"],
     { id: "team-review", when: "The user asks for a focused review of a finished local diff through UX, simplicity, edge-case, or security lenses.", source: { skill: "team-review" } },
     { id: "todo", when: "The work has several asks or steps or crosses turns, the user adds, changes, or drops a request mid-work, a milestone (commit, merge, deploy, worker result) just landed, or the assistant is about to give a final answer or progress report, so the todo list must be created, updated, or pruned of stale items.", source: { skill: "todo" } },
     { id: "planner", when: "The user asks for a plan, or the new code still to be written spans several dependent commits and needs a durable plan.", source: { skill: "planner" } },
+    { id: "session-history", when: "The user refers to earlier work in this conversation (what was done, changed, decided, run, or said before, e.g. \"aquilo que fizemos\", \"o que você mudou antes\", \"aquele comando\", \"como estava\"), or the answer depends on an exact earlier command, output, diff, error, or decision that a compaction summary may have dropped.", source: { skill: "session-history" } },
   ],
 };
 
@@ -131,6 +132,13 @@ export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
   orca: ["todo"],
   planner: ["todo"],
 };
+
+/** Delivered on the first prompt after every compaction (deliveries reset at a compaction). */
+export const V2_AFTER_COMPACTION = "session-history";
+
+function sessionCompacted(ctx: Ctx): boolean {
+  try { return [...(ctx.sessionManager?.getBranch() ?? [])].some((entry: any) => entry?.type === "compaction"); } catch { return false; }
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -578,7 +586,9 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
       const chosen = decision.available ? decision.ids : V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
-      const withCompanions = [...new Set(chosen.flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
+      // The first prompt after a compaction always gets history recall: the summary just replaced the record.
+      const afterCompaction = sessionCompacted(ctx) ? [V2_AFTER_COMPACTION] : [];
+      const withCompanions = [...new Set([...chosen, ...afterCompaction].flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
       const ids = withCompanions.filter((id) => !existing.includes(id));
       if (ids.length || decision.usage) {
         pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });

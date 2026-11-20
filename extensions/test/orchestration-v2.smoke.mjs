@@ -41,6 +41,11 @@ try {
   assert.equal(module.readSessionMode([sourceModeEntry], "forked-session"), "standard", "a fork without its own v2 entry stays standard");
   const todoEntry = module.V2_GUIDANCE.catalog.find((entry) => entry.id === "todo");
   assert.deepEqual(todoEntry?.source, { skill: "todo" }, "todo hygiene is a selectable skill pointer");
+  const historyEntry = module.V2_GUIDANCE.catalog.find((entry) => entry.id === "session-history");
+  assert.deepEqual(historyEntry?.source, { skill: "session-history" }, "history recall is a selectable skill pointer");
+  assert.match(historyEntry.when, /aquilo que fizemos/, "it triggers on references to earlier work");
+  assert.equal(module.V2_AFTER_COMPACTION, "session-history");
+  assert.ok(fs.existsSync(path.join(repoRoot, "skills/session-history/SKILL.md")) && fs.existsSync(path.join(repoRoot, "skills/session-history/scripts/session-search.mjs")), "history skill and its helper ship with the harness");
   assert.ok(fs.existsSync(path.join(repoRoot, "skills/todo/SKILL.md")), "todo skill ships with the harness");
   assert.deepEqual(module.V2_COMPANIONS, { delegation: ["workflow", "todo"], workflow: ["todo"], orca: ["todo"], planner: ["todo"] }, "multi-part guidance pulls its companions");
   for (const ids of Object.values(module.V2_COMPANIONS)) assert.ok(ids.every((id) => module.V2_GUIDANCE.catalog.some((entry) => entry.id === id)), "companions are catalog ids");
@@ -237,6 +242,10 @@ try {
   const postCompactMessages = mainRequests().at(-1).messages;
   assert.equal(postCompactMessages.filter((message) => JSON.stringify(message).includes("<v2-guidance id=workflow>")).length, 1, "successful compaction permits redelivery of the same id");
   assert.ok(postCompactMessages.some((message) => message.content === `<v2-guidance id=prompt-engineering>${module.v2SkillPointer("prompt-engineering")}</v2-guidance>`), "skill guidance is a pointer, not loaded skill text");
+  const historyPointer = `<v2-guidance id=session-history>${module.v2SkillPointer("session-history")}</v2-guidance>`;
+  assert.ok(postCompactMessages.some((message) => message.content === historyPointer), "the first prompt after a compaction gets history recall");
+  const historyDeliveries = [...manager.getBranch()].filter((entry) => entry.customType === "orchestration-v2-delivery" && entry.data.ids.includes("session-history")).length;
+  assert.equal(historyDeliveries, 2, "history recall is delivered once per compaction window, not on every prompt");
   await command("status");
   assert.ok(uiMessages.some((message) => String(message).includes("guidance workflow, todo, prompt-engineering") && String(message).includes("helper tokens 33 in / 6 out")), "V2 status reports active ids and accumulated helper usage");
   const callsBeforeCustom = helperCalls;
