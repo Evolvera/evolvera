@@ -93,7 +93,11 @@ A prompt called "handoff" where you expect results, integration, or continuation
 
 On a progress request or an event that changes the picture, give one line per issue in the campaign (done, in review, running, ready but not started, blocked) with its PR and what it waits on, never only the issues you touched last. Work you or a sub-PI can do is never "blocked": show it as running or next and dispatch it in the same turn. Keep the maximum of twelve concurrent sub-PIs.`;
 
-export type GuidanceSource = { section: string } | { skill: string };
+const V2_DELEGATION_TEXT = "Delegate only work that is clearly large or multi-area, deep web research, or a named specialist capability; a small bug fix or a change you can make alone stays with you. When you delegate: use a scout only for an area you do not know yet, give it one narrow mission and max_turns around 15, and do not send one or wait for one when you already know where to change. Give any builder a self-contained handoff: goal, files, what is out of scope, and how to verify. For a named capability, load its skill.";
+
+const V2_VALIDATION_TEXT = "You run the relevant tests yourself after a change and report what ran and what you did not run. Add a separate QA or reviewer pass only when the change is large or high-risk. Before calling it done, find the sibling paths that share the same logic (other callers, variants, the same pattern elsewhere), verify them, and fix them too.";
+
+export type GuidanceSource = { section: string } | { skill: string } | { text: string };
 export type GuidanceEntry = { id: string; when: string; source: GuidanceSource };
 
 export const V2_GUIDANCE: { preamble: string; instructions: string; catalog: readonly GuidanceEntry[] } = {
@@ -110,12 +114,12 @@ Rules:
 
 Output: only a JSON array of catalog ids, for example ["workflow","validation"], or [] when nothing applies. No other text, no code fence, no explanation.`,
   catalog: [
-    { id: "workflow", when: "The request is large or has several parts, and the open question is how to organize the work: direct single-thread, one builder, parallel builders, a durable plan, competing attempts, or asking the user a decision question.", source: { section: "Workflow Selection" } },
-    { id: "delegation", when: "The work needs unfamiliar code investigation, bug hunting, deep web research, a builder or other subagent, a handoff prompt, or a named specialist capability such as harness self-update, PI extensions, websites, or the Goal feature.", source: { section: "Skills and Delegation" } },
+    { id: "workflow", when: "The request is clearly large or spans several areas, and the open question is how to organize the work: direct single-thread, one builder, parallel builders, a durable plan, competing attempts, or asking the user a decision question. A small bug fix or a change whose location is already known does not match.", source: { section: "Workflow Selection" } },
+    { id: "delegation", when: "The work is clearly large or multi-area, needs deep web research, or names a specialist capability such as harness self-update, PI extensions, websites, or the Goal feature. A small bug fix, or any change the assistant can make alone, does not match.", source: { text: V2_DELEGATION_TEXT } },
     { id: "orca", when: "The request involves Orca worktrees, terminals, or workers, launching or supervising child PI sessions, a worker's report, or GitHub issue or board campaigns.", source: { section: "Orca Workers" } },
     { id: "memory", when: "The task depends on or changes durable project memory (.pi/memory, memory recall or search, architecture records), or repeats a deploy, recovery, migration, or previously failed operation that may have a recorded lesson.", source: { section: "Project Memory" } },
     { id: "engineering", when: "The assistant will write or change code, configuration, or migrations and needs the engineering rules for structure, root-cause fixes, comments, scratch cleanup, parallel CPU use, or proving a launcher before scaling it.", source: { section: "Engineering and Architecture" } },
-    { id: "validation", when: "A change has been made or is about to be called done, and the question is what proof, tests, review, QA, or app validation is required before closing it or opening, reviewing, or merging a PR.", source: { section: "Validation and Completion" } },
+    { id: "validation", when: "A change has been made or is about to be called done, and the question is what proof, tests, review, QA, or app validation is required before closing it or opening, reviewing, or merging a PR.", source: { text: V2_VALIDATION_TEXT } },
     { id: "prompt-engineering", when: "The user wants to write, audit, debug, or optimize model-facing text such as a system prompt, agent instructions, a skill, a tool description, a structured-output contract, or an LLM-based classifier.", source: { skill: "prompt-engineering" } },
     { id: "deslop", when: "The user wants a screen or interface redesigned, polished, animated, or designed from scratch, or says a UI looks AI-generated, generic, or like a template.", source: { skill: "deslop" } },
     { id: "team-review", when: "The user asks for a focused review of a finished local diff through UX, simplicity, edge-case, or security lenses.", source: { skill: "team-review" } },
@@ -132,6 +136,9 @@ export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
   orca: ["todo"],
   planner: ["todo"],
 };
+
+/** Delivered when the helper is unavailable: the baseline for any change, nothing situational. */
+export const V2_BASELINE: readonly string[] = ["engineering", "validation"];
 
 /** Delivered on the first prompt after every compaction (deliveries reset at a compaction). */
 export const V2_AFTER_COMPACTION = "session-history";
@@ -253,11 +260,13 @@ export function v2SkillPointer(skill: string): string {
 function buildV2Prompt(systemMd: string): string | undefined {
   const core = ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
     .map((heading) => extractSection(systemMd, heading));
-  const guides = V2_GUIDANCE.catalog.map((entry) => entry.source.section
+  const guides = V2_GUIDANCE.catalog.map((entry) => "section" in entry.source
     ? extractSection(systemMd, entry.source.section)
-    : entry.source.skill && fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
-      ? `Load the ${entry.source.skill} skill with /skill:${entry.source.skill} when applicable.`
-      : undefined);
+    : "text" in entry.source
+      ? entry.source.text
+      : fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
+        ? `Load the ${entry.source.skill} skill with /skill:${entry.source.skill} when applicable.`
+        : undefined);
   if (core.some((section) => !section) || guides.some((guide) => !guide)) return undefined;
   return `${core.join("\n\n")}\n\n${V2_GUIDANCE.preamble}`;
 }
@@ -585,7 +594,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       }
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
-      const chosen = decision.available ? decision.ids : V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
+      const chosen = decision.available ? decision.ids : V2_BASELINE;
       // The first prompt after a compaction always gets history recall: the summary just replaced the record.
       const afterCompaction = sessionCompacted(ctx) ? [V2_AFTER_COMPACTION] : [];
       const withCompanions = [...new Set([...chosen, ...afterCompaction].flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
@@ -606,8 +615,8 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       for (const id of delivery.ids) {
         const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
         if (!entry) continue;
-        const text = entry.source.section ? extractSection(eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "", entry.source.section)
-          : entry.source.skill ? v2SkillPointer(entry.source.skill) : undefined;
+        const text = "section" in entry.source ? extractSection(eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "", entry.source.section)
+          : "skill" in entry.source ? v2SkillPointer(entry.source.skill) : entry.source.text;
         if (!text) continue;
         const marker = `${V2_MARKER}${id}>${text}</v2-guidance>`;
         if (event.messages.some((message: any) => typeof message.content === "string" && message.content.includes(marker))) continue;
