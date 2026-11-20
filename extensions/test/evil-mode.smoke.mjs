@@ -25,8 +25,11 @@ const { default: evilMode, EVIL_MODEL, EVIL_MODEL_REF, EVIL_MODE_LOCK_TYPE, BLOC
 // The one model, and that the harness ships it.
 assert.equal(EVIL_MODEL_REF, "refuseless/deepseek-v4.1-flash-abliterated-fast");
 for (const file of ["models.json", "config/models.json"]) {
-  const ids = JSON.parse(fs.readFileSync(path.join(root, file), "utf8")).providers.refuseless.models.map((model) => model.id);
-  assert.ok(ids.includes(EVIL_MODEL.id), `${file} lists the evil model`);
+  const entry = JSON.parse(fs.readFileSync(path.join(root, file), "utf8")).providers.refuseless.models.find((model) => model.id === EVIL_MODEL.id);
+  assert.ok(entry, `${file} lists the evil model`);
+  // Refuseless accepts only off/low/high/max; every Pi level must map onto one of them.
+  assert.deepEqual(Object.keys(entry.thinkingLevelMap).sort(), ["high", "low", "max", "medium", "minimal", "off", "xhigh"]);
+  assert.ok(Object.values(entry.thinkingLevelMap).every((value) => ["off", "low", "high", "max"].includes(value)), `${file} maps efforts onto what refuseless accepts`);
 }
 
 // Trigger regex: id or name, either spelling, any case.

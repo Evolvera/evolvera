@@ -33,6 +33,15 @@
           "id": "deepseek-v4.1-flash-abliterated-fast",
           "name": "DeepSeek V4.1 Flash 1017 Abliterated Fast",
           "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "off",
+            "minimal": "low",
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+            "max": "max"
+          },
           "contextWindow": 1048576,
           "maxTokens": 262144
         },
