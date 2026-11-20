@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { EVIL_MODEL, evilActive } from "./evil-mode";
 
 /**
  * Orchestration mode: `/orchestration conductor` turns the primary PI session into a pure
@@ -162,7 +163,9 @@ export type V2GuidanceSelection =
 
 type V2GuidanceRegistry = Pick<ModelRegistry, "find" | "streamSimple">;
 
-export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: string, newInput: string): Promise<V2GuidanceSelection> {
+export const V2_HELPER_MODEL = { provider: "openai", id: "gpt-6-luna" } as const;
+
+export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: string, newInput: string, target: { provider: string; id: string } = V2_HELPER_MODEL): Promise<V2GuidanceSelection> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
@@ -175,8 +178,8 @@ export async function selectV2Guidance(registry: V2GuidanceRegistry, diaryText: 
   });
   const request = (async (): Promise<V2GuidanceSelection | undefined> => {
     try {
-      const model = registry.find("openai", "gpt-6-luna");
-      if (!model || model.provider !== "openai" || model.id !== "gpt-6-luna" || model.api === "pi-virtual") return undefined;
+      const model = registry.find(target.provider, target.id);
+      if (!model || model.provider !== target.provider || model.id !== target.id || model.api === "pi-virtual") return undefined;
       const catalog = V2_GUIDANCE.catalog.map(({ id, when }) => ({ id, when }));
       const message = `${V2_GUIDANCE.instructions}\n\n${JSON.stringify(catalog)}\n\n<diary>\n${diaryText}\n</diary>\n\n<new_input>\n${newInput}\n</new_input>`;
       const response = await registry.streamSimple(model, { messages: [{ role: "user", content: [{ type: "text", text: message }] }] }, { reasoning: "low", signal: controller.signal, maxRetries: 0 }).result();
@@ -568,7 +571,9 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       const snapshot = diary.snapshot(ctx as V2DiaryContext);
       let decision: V2GuidanceSelection = { available: false, ids: [] };
       if (ctx.modelRegistry) {
-        try { decision = await selectGuidance(ctx.modelRegistry, snapshot?.text ?? "", event.prompt); } catch {}
+        // Evil mode: the helper runs on the abliterated model, like every other call of this session.
+        const helper = evilActive(ctx as any) ? EVIL_MODEL : V2_HELPER_MODEL;
+        try { decision = await selectGuidance(ctx.modelRegistry, snapshot?.text ?? "", event.prompt, helper); } catch {}
       }
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);

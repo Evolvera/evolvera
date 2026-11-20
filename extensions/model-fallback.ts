@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
 import { VIRTUAL_MODEL_STATE_ENTRY, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { resolveDeepFastChain } from "./deep-fast";
+import { EVIL_MODEL, EVIL_MODEL_REF, evilLocked, evilProcess } from "./evil-mode";
 
 type Level = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type Step = { provider: string; model: string; level: Level };
@@ -135,6 +136,17 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
             registry = lastKnownGoodRegistry;
           }
           if (!registry) throw new Error(`Fallback chain '${id}' cannot route: model registry is unavailable`);
+          // Evil mode serves every chain from the one abliterated model; only the effort varies.
+          let evil = evilProcess();
+          try { evil ||= evilLocked(ctx as any); } catch { /* no session: the process flag decides */ }
+          if (evil) {
+            const model = registry.find(EVIL_MODEL.provider, EVIL_MODEL.id);
+            if (!model || !registry.hasConfiguredAuth(model)) throw new Error(`Fallback chain '${id}' in evil mode: ${EVIL_MODEL_REF} is not available`);
+            try { pi.events?.emit?.(ROUTED_MODEL_EVENT, { provider: model.provider, modelId: model.id }); } catch { /* optional bridge */ }
+            const first = configuredChain[0];
+            const desired = !first || first.level === "inherit" ? request.thinkingLevel : first.level;
+            return { model, thinkingLevel: clampThinkingLevel(model, desired as any), state: request.state ?? { step: 0, runId: randomUUID() } };
+          }
           // Speed mode may serve a different chain for this id; the configured one is the default.
           const chain = resolveDeepFastChain(id, configuredChain, registry);
           const runId = request.reason === "user" ? randomUUID() : request.state?.runId ?? lastUserId(request.messages);

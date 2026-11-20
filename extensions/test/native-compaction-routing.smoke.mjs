@@ -1,6 +1,6 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -68,6 +68,9 @@ try {
     }
   `);
   cpSync(path.join(root, "extensions", "native-compaction-routing.ts"), extensionPath);
+  // Native type stripping needs explicit extensions; Pi's loader resolves the bare specifier itself.
+  writeFileSync(extensionPath, readFileSync(extensionPath, "utf8").replace('from "./evil-mode"', 'from "./evil-mode.ts"'));
+  cpSync(path.join(root, "extensions", "evil-mode.ts"), path.join(sandbox, "evil-mode.ts"));
 
   const mockSdk = await import(pathToFileURL(path.join(mockPackageDir, "index.js")).href);
   const mod = await import(`${pathToFileURL(extensionPath).href}?run=${Date.now()}`);

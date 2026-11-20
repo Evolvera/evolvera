@@ -30,6 +30,13 @@
           "maxTokens": 262144
         },
         {
+          "id": "deepseek-v4.1-flash-abliterated-fast",
+          "name": "DeepSeek V4.1 Flash 1017 Abliterated Fast",
+          "reasoning": true,
+          "contextWindow": 1048576,
+          "maxTokens": 262144
+        },
+        {
           "id": "minimax-m3.1-flash",
           "name": "Minimax M3.1 Flash",
           "contextWindow": 1048576,
