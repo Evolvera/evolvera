@@ -39,6 +39,11 @@ try {
   const sourceModeEntry = { type: "custom", customType: module.SESSION_ENTRY_TYPE, data: { mode: "v2", sessionId: "source-session" } };
   assert.equal(module.readSessionMode([sourceModeEntry], "source-session"), "v2");
   assert.equal(module.readSessionMode([sourceModeEntry], "forked-session"), "standard", "a fork without its own v2 entry stays standard");
+  const todoEntry = module.V2_GUIDANCE.catalog.find((entry) => entry.id === "todo");
+  assert.deepEqual(todoEntry?.source, { skill: "todo" }, "todo hygiene is a selectable skill pointer");
+  assert.ok(fs.existsSync(path.join(repoRoot, "skills/todo/SKILL.md")), "todo skill ships with the harness");
+  assert.deepEqual(module.V2_COMPANIONS, { delegation: ["workflow", "todo"], workflow: ["todo"], orca: ["todo"], planner: ["todo"] }, "multi-part guidance pulls its companions");
+  for (const ids of Object.values(module.V2_COMPANIONS)) assert.ok(ids.every((id) => module.V2_GUIDANCE.catalog.some((entry) => entry.id === id)), "companions are catalog ids");
   let calls = [];
   const registry = (response, model = { provider: "openai", id: "gpt-6-luna", api: "openai-responses" }) => ({
     find(provider, id) { calls.push({ find: [provider, id] }); return model; },
@@ -212,7 +217,8 @@ try {
   const guide = v2Request.filter((message) => JSON.stringify(message).includes("<v2-guidance id=workflow>"));
   assert.equal(guide.length, 1);
   assert.equal(guide[0].content, `<v2-guidance id=workflow>${module.extractSection(systemMd, "Workflow Selection")}</v2-guidance>`, "projects the exact section body through context");
-  assert.ok(uiMessages.some((message) => String(message).includes("V2 guidance: workflow")));
+  assert.ok(v2Request.some((message) => message.content === `<v2-guidance id=todo>${module.v2SkillPointer("todo")}</v2-guidance>`), "workflow delivers the todo skill pointer as its companion");
+  assert.ok(uiMessages.some((message) => String(message).includes("V2 guidance: workflow, todo")));
   assert.ok(!JSON.stringify(v2Request).includes("V2 guidance:"), "decision notice stays out of provider requests");
   assert.ok(!Array.from(manager.getBranch()).some((entry) => JSON.stringify(entry).includes("<v2-guidance")), "projected guidance is absent from raw session branch");
   await session.prompt("repeat same guidance input"); await session.waitForIdle();
@@ -232,7 +238,7 @@ try {
   assert.equal(postCompactMessages.filter((message) => JSON.stringify(message).includes("<v2-guidance id=workflow>")).length, 1, "successful compaction permits redelivery of the same id");
   assert.ok(postCompactMessages.some((message) => message.content === `<v2-guidance id=prompt-engineering>${module.v2SkillPointer("prompt-engineering")}</v2-guidance>`), "skill guidance is a pointer, not loaded skill text");
   await command("status");
-  assert.ok(uiMessages.some((message) => String(message).includes("guidance workflow, prompt-engineering") && String(message).includes("helper tokens 33 in / 6 out")), "V2 status reports active ids and accumulated helper usage");
+  assert.ok(uiMessages.some((message) => String(message).includes("guidance workflow, todo, prompt-engineering") && String(message).includes("helper tokens 33 in / 6 out")), "V2 status reports active ids and accumulated helper usage");
   const callsBeforeCustom = helperCalls;
   globalThis.__v2SendMessage({ customType: "synthetic-custom", content: "custom-started run", display: false });
   await session.waitForIdle();

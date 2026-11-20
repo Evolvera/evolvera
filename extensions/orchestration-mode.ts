@@ -118,8 +118,17 @@ Output: only a JSON array of catalog ids, for example ["workflow","validation"],
     { id: "prompt-engineering", when: "The user wants to write, audit, debug, or optimize model-facing text such as a system prompt, agent instructions, a skill, a tool description, a structured-output contract, or an LLM-based classifier.", source: { skill: "prompt-engineering" } },
     { id: "deslop", when: "The user wants a screen or interface redesigned, polished, animated, or designed from scratch, or says a UI looks AI-generated, generic, or like a template.", source: { skill: "deslop" } },
     { id: "team-review", when: "The user asks for a focused review of a finished local diff through UX, simplicity, edge-case, or security lenses.", source: { skill: "team-review" } },
+    { id: "todo", when: "The work has several asks or steps or crosses turns, the user adds, changes, or drops a request mid-work, a milestone (commit, merge, deploy, worker result) just landed, or the assistant is about to give a final answer or progress report, so the todo list must be created, updated, or pruned of stale items.", source: { skill: "todo" } },
     { id: "planner", when: "The user asks for a plan, or the new code still to be written spans several dependent commits and needs a durable plan.", source: { skill: "planner" } },
   ],
+};
+
+/** Ids delivered together: delegation's dispatch rule lives in workflow, and multi-part work keeps its todo list current. */
+export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
+  delegation: ["workflow", "todo"],
+  workflow: ["todo"],
+  orca: ["todo"],
+  planner: ["todo"],
 };
 
 function escapeRegExp(value: string): string {
@@ -564,7 +573,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
       const chosen = decision.available ? decision.ids : V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
-      const withCompanions = chosen.includes("delegation") && !chosen.includes("workflow") ? [...chosen, "workflow"] : chosen;
+      const withCompanions = [...new Set(chosen.flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
       const ids = withCompanions.filter((id) => !existing.includes(id));
       if (ids.length || decision.usage) {
         pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });
