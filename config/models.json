@@ -46,6 +46,38 @@
           "maxTokens": 262144
         },
         {
+          "id": "kimi-k3.1-pro",
+          "name": "Kimi K3.1 Pro",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "off",
+            "minimal": "low",
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+            "max": "max"
+          },
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        },
+        {
+          "id": "kimi-k3.1-pro-abliterated",
+          "name": "Kimi K3.1 Pro Abliterated",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "off",
+            "minimal": "low",
+            "low": "low",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "max",
+            "max": "max"
+          },
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        },
+        {
           "id": "minimax-m3.1-flash",
           "name": "Minimax M3.1 Flash",
           "contextWindow": 1048576,

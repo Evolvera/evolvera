@@ -296,6 +296,135 @@ try {
   assert.equal(systemText(mainRequests().at(-1).messages.find((message) => message.role === "system")), standardSystem, "standard system prompt exactly matches its baseline");
   assert.equal(mainRequests().at(-1).messages.some((message) => JSON.stringify(message).includes("<v2-guidance")), false, "standard request contains no v2 guidance");
   assert.ok(uiMessages.some((message) => String(message).includes("helper tokens 33 in / 6 out")), "status reports accumulated helper usage");
+  for (const [id, profile] of [["deepseek-v4.1-flash-fast", "deepseek"], ["deepseek-v4.1-flash-abliterated-fast", "deepseek"], ["gpt-6.1-terra", "terra"], ["kimi-k3.1-pro", "kimi"], ["kimi-k3.1-pro-abliterated", "kimi"], ["gpt-6-luna", undefined], ["gpt-6.1", undefined]]) assert.equal(module.v2ProfileFor({ id }), profile, `profile of ${id}`);
+  assert.equal(module.v2ProfileFor(undefined), undefined);
+  assert.deepEqual(Object.keys(module.V2_PROFILES), ["deepseek", "terra", "kimi"]);
+  {
+    const handlers = new Map();
+    const profileManager = sdk.SessionManager.inMemory(root);
+    const notices = [];
+    let selectorCalls = 0;
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => profileManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {} };
+    module.default(fakePi, async () => { selectorCalls++; return { available: false, ids: [] }; });
+    const setMode = (mode) => profileManager.appendCustomEntry("orchestration-mode", mode === "v2" ? { mode, sessionId: profileManager.getSessionId() } : { mode });
+    const ctxFor = (id) => ({ sessionManager: profileManager, model: { provider: "refuseless", id }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify: (message) => notices.push(message), setStatus() {} } });
+    const send = async (id, prompt) => {
+      const result = await handlers.get("before_agent_start")({ systemPromptOptions: { customPrompt: systemMd }, systemPrompt: systemMd, messageType: "user", prompt }, ctxFor(id));
+      const event = { messages: [] };
+      handlers.get("context")(event, ctxFor(id));
+      return { result, projected: event.messages.map((message) => message.content).join("\n") };
+    };
+    const agentCall = (id, input) => { const event = { type: "tool_call", toolName: "Agent", toolCallId: "t", input }; return Promise.resolve(handlers.get("tool_call")(event, ctxFor(id))).then((result) => ({ result, input })); };
+    const previousRun = process.env.PI_REPORT_RUN;
+    const previousCwd = process.cwd();
+    const projectDir = owned("agent-project");
+    const agentFile = (dir, file, frontmatter) => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, file), `---\n${frontmatter}\n---\nbody\n`); };
+    const globalAgents = path.join(process.env.PI_CODING_AGENT_DIR, "agents");
+    agentFile(globalAgents, "bg-global.md", "name: bg-global\nrun_in_background: true");
+    agentFile(globalAgents, "fg-global.md", "name: fg-global\nrun_in_background: false");
+    agentFile(globalAgents, "plain.md", "name: plain");
+    agentFile(globalAgents, "alias-file.md", "name: declared-bg\nrun_in_background: true");
+    agentFile(globalAgents, "no-name-file.md", "run_in_background: true");
+    agentFile(globalAgents, "shadowed.md", "name: shadowed\nrun_in_background: true");
+    agentFile(globalAgents, "disabled-bg.md", "name: disabled-bg\nrun_in_background: true\nenabled: false");
+    agentFile(globalAgents, "quoted.md", "name: quoted\nrun_in_background: \"true\"");
+    agentFile(path.join(projectDir, ".agents", "agents"), "workspace-bg.md", "name: workspace-bg\nrun_in_background: true");
+    agentFile(path.join(projectDir, ".pi", "agents"), "shadowed.md", "name: shadowed\nrun_in_background: false");
+    agentFile(path.join(projectDir, ".pi", "agents"), "plain.md", "name: plain\nrun_in_background: true");
+    agentFile(path.join(projectDir, ".pi", "agents"), "Explore.md", "name: Explore\nrun_in_background: true");
+    delete process.env.PI_REPORT_RUN;
+    process.chdir(projectDir);
+    try {
+      setMode("v2");
+      const deepseek = await send("deepseek-v4.1-flash-abliterated-fast", "fix the bug");
+      assert.equal(selectorCalls, 0, "a profile never calls the helper");
+      assert.ok(deepseek.result?.systemPrompt, "the profile runs on the v2 prompt");
+      assert.ok(notices.at(-1).startsWith("V2 guidance [profile deepseek]: engineering, profile-deepseek"), notices.at(-1));
+      assert.ok(deepseek.projected.includes(`<v2-guidance id=profile-deepseek>${module.V2_PROFILES.deepseek.text}</v2-guidance>`));
+      assert.ok(deepseek.projected.includes(`<v2-guidance id=engineering>${module.extractSection(systemMd, "Engineering and Architecture")}</v2-guidance>`));
+      for (const phrase of ["Work solo", "sibling paths", "ONLY the test files", "Never run the whole suite", "locate, fix (including siblings), test the related files, commit/answer"]) assert.ok(deepseek.projected.includes(phrase), `deepseek text: ${phrase}`);
+      assert.ok(!deepseek.projected.includes("run it in the foreground") && !deepseek.projected.includes("Save turns"));
+      for (const id of ["deepseek-v4.1-flash-fast", "kimi-k3.1-pro"]) {
+        const blocked = await agentCall(id, { prompt: "p", description: "d" });
+        assert.equal(blocked.result?.block, true, `${id} blocks Agent`);
+        assert.match(blocked.result.reason, /^Profile (deepseek|kimi): do it yourself\.$/);
+      }
+      const bash = { type: "tool_call", toolName: "bash", toolCallId: "t", input: { command: "ls" } };
+      assert.equal(await handlers.get("tool_call")(bash, ctxFor("deepseek-v4.1-flash-fast")), undefined, "only Agent is guarded");
+
+      const terra = await send("gpt-6.1-terra", "next task");
+      assert.equal(selectorCalls, 0);
+      assert.ok(notices.at(-1).startsWith("V2 guidance [profile terra]: profile-terra"), notices.at(-1));
+      assert.ok(terra.projected.includes(module.V2_PROFILES.terra.text) && terra.projected.includes("wait for its result before ending the turn"));
+      assert.ok(!terra.projected.includes(module.V2_PROFILES.deepseek.text), "a model switch drops the previous profile text");
+      for (const input of [{ prompt: "p", description: "d", run_in_background: true }, { prompt: "p", description: "d" }]) {
+        const forced = await agentCall("gpt-6.1-terra", input);
+        assert.equal(forced.result, undefined, "terra is not blocked");
+        assert.strictEqual(forced.input.run_in_background, false, "terra Agent runs in the foreground");
+      }
+
+      const terraBlockReason = "perfil terra: subagente em background não permitido; faça você mesmo ou use um agente em primeiro plano";
+      const terraAgent = (input) => agentCall("gpt-6.1-terra", { prompt: "p", description: "d", ...input });
+      for (const input of [
+        { subagent_type: "bg-global" }, { subagent_type: "BG-Global" }, { subagent_type: "  bg-global  " }, { subagent_type: "declared-bg" }, { subagent_type: "no-name-file" },
+        { subagent_type: "workspace-bg" }, { subagent_type: "plain" }, { subagent_type: "Explore" }, { subagent_type: "fg-global", schedule: "+10m" }, { subagent_type: "bg-global", resume: "agent-1" },
+      ]) {
+        const blocked = await terraAgent({ ...input, run_in_background: false });
+        assert.deepEqual(blocked.result, { block: true, reason: terraBlockReason }, `terra blocks ${JSON.stringify(input)}`);
+      }
+      for (const input of [
+        { subagent_type: "fg-global" }, { subagent_type: "shadowed" }, { subagent_type: "alias-file" }, { subagent_type: "disabled-bg" }, { subagent_type: "quoted" },
+        { subagent_type: "general-purpose" }, { subagent_type: "does-not-exist" }, { subagent_type: "Plan" }, { subagent_type: "fg-global", resume: "agent-1" }, {},
+      ]) {
+        const allowed = await terraAgent(input);
+        assert.equal(allowed.result, undefined, `terra allows ${JSON.stringify(input)}`);
+        assert.strictEqual(allowed.input.run_in_background, false, `terra forces foreground for ${JSON.stringify(input)}`);
+      }
+      assert.deepEqual((await terraAgent({ subagent_type: "fg-global", schedule: "" })).result, undefined, "an empty schedule is no schedule");
+      fs.mkdirSync(path.join(projectDir, ".pi"), { recursive: true });
+      fs.writeFileSync(path.join(projectDir, ".pi", "subagents.json"), JSON.stringify({ fallbackSubagent: "bg-global" }));
+      assert.deepEqual((await terraAgent({ subagent_type: "does-not-exist" })).result, { block: true, reason: terraBlockReason }, "a fallback agent pinned to background blocks an unknown type");
+      assert.equal((await terraAgent({ subagent_type: "fg-global" })).result, undefined, "a known foreground agent ignores the fallback");
+      fs.writeFileSync(path.join(projectDir, ".pi", "subagents.json"), JSON.stringify({ fallbackSubagent: false }));
+      assert.equal((await terraAgent({ subagent_type: "does-not-exist" })).result, undefined, "no fallback refuses the spawn without a block");
+      fs.rmSync(path.join(projectDir, ".pi", "subagents.json"));
+      assert.equal((await agentCall("gpt-6.1-terra", { prompt: "p", description: "d", subagent_type: "bg-global", run_in_background: false })).result?.reason, terraBlockReason);
+      const bash2 = { type: "tool_call", toolName: "bash", toolCallId: "t", input: { command: "ls" } };
+      assert.equal(await handlers.get("tool_call")(bash2, ctxFor("gpt-6.1-terra")), undefined, "terra still only guards Agent");
+      for (const id of ["deepseek-v4.1-flash-fast", "kimi-k3.1-pro"]) assert.equal((await agentCall(id, { subagent_type: "fg-global" })).result?.block, true, `${id} still blocks every Agent call`);
+      assert.match((await agentCall("kimi-k3.1-pro", { subagent_type: "fg-global" })).result.reason, /^Profile kimi: do it yourself\.$/);
+
+      const kimi = await send("kimi-k3.1-pro-abliterated", "another task");
+      assert.ok(notices.at(-1).startsWith("V2 guidance [profile kimi]: profile-kimi"), notices.at(-1));
+      assert.ok(kimi.projected.includes("read several relevant files at once") && !kimi.projected.includes(module.V2_PROFILES.terra.text));
+      assert.equal((await agentCall("kimi-k3.1-pro-abliterated", { prompt: "p", description: "d" })).result?.block, true);
+
+      const unknown = await send("gpt-6-luna-other", "unprofiled task");
+      assert.equal(selectorCalls, 1, "an unknown model keeps the helper path");
+      assert.ok(notices.at(-1).startsWith("V2 guidance (helper unavailable, baseline sections): validation"), notices.at(-1));
+      assert.ok(!unknown.projected.includes("Work solo"), "an unknown model gets no profile text");
+      const kept = await agentCall("gpt-6-luna-other", { prompt: "p", description: "d", subagent_type: "bg-global", run_in_background: true });
+      assert.equal(kept.result, undefined);
+      assert.strictEqual(kept.input.run_in_background, true, "an unknown model keeps its Agent input");
+
+      process.env.PI_REPORT_RUN = "run_A1";
+      assert.equal((await send("deepseek-v4.1-flash-fast", "worker task")).result, undefined, "Orca workers keep the standard prompt");
+      assert.equal((await agentCall("deepseek-v4.1-flash-fast", { prompt: "p", description: "d" })).result, undefined, "Orca workers are not guarded");
+      delete process.env.PI_REPORT_RUN;
+
+      setMode("standard");
+      const standard = await send("deepseek-v4.1-flash-fast", "standard task");
+      assert.equal(standard.result, undefined);
+      assert.equal(standard.projected, "", "standard projects no guidance");
+      assert.equal(selectorCalls, 1, "standard never calls the helper");
+      const standardAgent = await agentCall("gpt-6.1-terra", { prompt: "p", description: "d", subagent_type: "bg-global", run_in_background: true });
+      assert.equal(standardAgent.result, undefined, "standard does not guard Agent");
+      assert.strictEqual(standardAgent.input.run_in_background, true);
+    } finally {
+      process.chdir(previousCwd);
+      if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun;
+    }
+  }
   assert.equal(networkAttempts, 0);
   console.log(JSON.stringify({ result: "PASS", selectorCases: "valid, empty, unknown, malformed, partial, lookup/provider errors, timeout, late resolution", sdkRequests: captured.length, helperCalls, firstV2Request: "seven core sections and one exact projected guide", standardAfterV2: "system prompt byte-identical to baseline; no guidance", networkAttempts, resources: "DISPOSABLE_VERIFIED" }));
 } finally {

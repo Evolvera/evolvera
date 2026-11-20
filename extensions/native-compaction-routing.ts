@@ -5,7 +5,7 @@ import type {
   ExtensionContext,
   SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
-import { EVIL_MODEL, evilActive } from "./evil-mode";
+import { evilActive, getEvilModel } from "./evil-mode";
 
 export const NATIVE_COMPACTION_PROVIDER = "openai";
 export const NATIVE_COMPACTION_MODEL = "gpt-6-luna";
@@ -134,7 +134,8 @@ async function routeNativeCompaction(event: SessionBeforeCompactEvent, ctx: Exte
     };
     // Evil mode: the summary is written by the abliterated model only; no other candidate is tried.
     if (evilActive(ctx)) {
-      const compaction = await attempt(ctx.modelRegistry.find(EVIL_MODEL.provider, EVIL_MODEL.id), "low");
+      const target = getEvilModel(ctx as any);
+      const compaction = await attempt(ctx.modelRegistry.find(target.provider, target.id), "low");
       if (compaction) return { compaction };
       notifyFailure(ctx);
       return { cancel: true };

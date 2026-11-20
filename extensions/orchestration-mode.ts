@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { EVIL_MODEL, evilActive } from "./evil-mode";
+import { getAgentDir, parseFrontmatter, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { getEvilModel, evilActive } from "./evil-mode";
 
 /**
  * Orchestration mode: `/orchestration conductor` turns the primary PI session into a pure
@@ -139,6 +139,83 @@ export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
 
 /** Delivered when the helper is unavailable: the baseline for any change, nothing situational. */
 export const V2_BASELINE: readonly string[] = ["engineering", "validation"];
+
+const V2_PROFILE_COMMON = "Work solo. Before concluding, find the sibling paths that share the same logic (other callers, variants, the same pattern elsewhere) and fix them too. Run ONLY the test files tied to the change (e.g. `npx jest path/to/test`) and say what you ran. Never run the whole suite (no `npm test` or `jest` without a path) unless the user asks or the change is truly broad.";
+
+export type V2Profile = { match: RegExp; text: string; agent: "block" | "foreground" };
+
+export const V2_PROFILES: Readonly<Record<string, V2Profile>> = {
+  deepseek: { match: /deepseek/i, agent: "block", text: `${V2_PROFILE_COMMON} Never run the whole suite. Few steps: locate, fix (including siblings), test the related files, commit/answer.` },
+  terra: { match: /gpt-6\.1-terra/i, agent: "foreground", text: `${V2_PROFILE_COMMON} No subagents for a small task; if you use a subagent, run it in the foreground only and wait for its result before ending the turn.` },
+  kimi: { match: /kimi/i, agent: "block", text: `${V2_PROFILE_COMMON} Save turns: read several relevant files at once, edit directly, do not reopen files already read, run one round of focused tests, give a short final answer.` },
+};
+
+const V2_PROFILE_ID_PREFIX = "profile-";
+
+export function v2ProfileFor(model: { id?: string } | undefined): string | undefined {
+  return typeof model?.id === "string" ? Object.keys(V2_PROFILES).find((name) => V2_PROFILES[name].match.test(model.id!)) : undefined;
+}
+
+type AgentFile = { enabled: boolean; background?: boolean };
+
+const SUBAGENT_DEFAULT_TYPES = ["general-purpose", "Explore", "Plan"];
+
+function loadAgentFiles(cwd: string): Map<string, AgentFile> {
+  const agents = new Map<string, AgentFile>(SUBAGENT_DEFAULT_TYPES.map((type) => [type, { enabled: true }]));
+  for (const dir of [path.join(getAgentDir(), "agents"), path.join(cwd, ".agents", "agents"), path.join(cwd, ".pi", "agents")]) {
+    let files: string[];
+    try { files = fs.readdirSync(dir).filter((file) => file.endsWith(".md")); } catch { continue; }
+    for (const file of files) {
+      try {
+        const { frontmatter } = parseFrontmatter(fs.readFileSync(path.join(dir, file), "utf8"));
+        const declared = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
+        if (declared.includes(":")) continue;
+        agents.set(declared || path.basename(file, ".md"), {
+          enabled: frontmatter.enabled !== false,
+          background: frontmatter.run_in_background != null ? frontmatter.run_in_background === true : undefined,
+        });
+      } catch {}
+    }
+  }
+  return agents;
+}
+
+function subagentFallback(cwd: string): string | undefined {
+  let fallback: string | undefined;
+  for (const file of [path.join(getAgentDir(), "subagents.json"), path.join(cwd, ".pi", "subagents.json")]) {
+    try {
+      const value = JSON.parse(fs.readFileSync(file, "utf8"))?.fallbackSubagent;
+      if (value === false) fallback = "none";
+      else if (typeof value === "string" && value.trim()) fallback = value.trim();
+    } catch {}
+  }
+  return fallback;
+}
+
+function agentNamed(agents: Map<string, AgentFile>, name: string): AgentFile | undefined {
+  const exact = agents.get(name);
+  const matches = exact ? [exact] : [...agents].filter(([type]) => type.toLowerCase() === name.toLowerCase()).map(([, agent]) => agent);
+  return matches.length === 1 && matches[0].enabled ? matches[0] : undefined;
+}
+
+function agentRunsInBackground(input: { subagent_type?: unknown; schedule?: unknown; resume?: unknown }, cwd: string): boolean {
+  if (input.schedule) return true;
+  const agents = loadAgentFiles(cwd);
+  const requested = typeof input.subagent_type === "string" ? input.subagent_type.trim() : "";
+  const fallback = subagentFallback(cwd);
+  const spawned = (requested ? agentNamed(agents, requested) : undefined)
+    ?? (fallback?.toLowerCase() === "none" ? undefined : agentNamed(agents, fallback ?? "general-purpose"));
+  const resumed = input.resume ? [...agents].find(([type]) => type.toLowerCase() === requested.toLowerCase())?.[1] : undefined;
+  return spawned?.background === true || resumed?.background === true;
+}
+
+function guidanceText(id: string, systemMd: string): string | undefined {
+  if (id.startsWith(V2_PROFILE_ID_PREFIX)) return V2_PROFILES[id.slice(V2_PROFILE_ID_PREFIX.length)]?.text;
+  const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
+  if (!entry) return undefined;
+  return "section" in entry.source ? extractSection(systemMd, entry.source.section)
+    : "skill" in entry.source ? v2SkillPointer(entry.source.skill) : entry.source.text;
+}
 
 /** Delivered on the first prompt after every compaction (deliveries reset at a compaction). */
 export const V2_AFTER_COMPACTION = "session-history";
@@ -586,15 +663,16 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     const epoch = runEpoch;
     if (event.messageType === "user") {
       const snapshot = diary.snapshot(ctx as V2DiaryContext);
+      const profile = v2ProfileFor(ctx.model);
       let decision: V2GuidanceSelection = { available: false, ids: [] };
-      if (ctx.modelRegistry) {
+      if (!profile && ctx.modelRegistry) {
         // Evil mode: the helper runs on the abliterated model, like every other call of this session.
-        const helper = evilActive(ctx as any) ? EVIL_MODEL : V2_HELPER_MODEL;
+        const helper = evilActive(ctx as any) ? getEvilModel(ctx as any) : V2_HELPER_MODEL;
         try { decision = await selectGuidance(ctx.modelRegistry, snapshot?.text ?? "", event.prompt, helper); } catch {}
       }
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
-      const chosen = decision.available ? decision.ids : V2_BASELINE;
+      const chosen = profile ? ["engineering", `${V2_PROFILE_ID_PREFIX}${profile}`] : decision.available ? decision.ids : V2_BASELINE;
       // The first prompt after a compaction always gets history recall: the summary just replaced the record.
       const afterCompaction = sessionCompacted(ctx) ? [V2_AFTER_COMPACTION] : [];
       const withCompanions = [...new Set([...chosen, ...afterCompaction].flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
@@ -603,20 +681,31 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
         pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });
         if (ids.length) diary.recordGuidance(ctx as V2DiaryContext, ids);
       }
-      ctx.ui?.notify?.(`V2 guidance${decision.available ? "" : " (helper unavailable, baseline sections)"}: ${ids.length ? ids.join(", ") : "none"}`, decision.available ? "info" : "warning");
+      const label = profile ? ` [profile ${profile}]` : decision.available ? "" : " (helper unavailable, baseline sections)";
+      ctx.ui?.notify?.(`V2 guidance${label}: ${ids.length ? ids.join(", ") : "none"}`, profile || decision.available ? "info" : "warning");
     }
     return { systemPrompt };
+  });
+
+  pi.on("tool_call", async (event, rawCtx) => {
+    const ctx = rawCtx as Ctx;
+    if (event.toolName !== "Agent" || !isEligible(ctx)) return;
+    const profile = v2ProfileFor(ctx.model);
+    if (!profile) return;
+    const input = event.input as Record<string, unknown>;
+    if (V2_PROFILES[profile].agent === "block") return { block: true, reason: `Profile ${profile}: do it yourself.` };
+    if (agentRunsInBackground(input, process.cwd())) return { block: true, reason: `perfil ${profile}: subagente em background não permitido; faça você mesmo ou use um agente em primeiro plano` };
+    input.run_in_background = false;
   });
 
   pi.on("context", (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
     if (!isEligible(ctx)) return;
+    const profile = v2ProfileFor(ctx.model);
     for (const delivery of activeDeliveries(ctx)) {
       for (const id of delivery.ids) {
-        const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
-        if (!entry) continue;
-        const text = "section" in entry.source ? extractSection(eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "", entry.source.section)
-          : "skill" in entry.source ? v2SkillPointer(entry.source.skill) : entry.source.text;
+        if (id.startsWith(V2_PROFILE_ID_PREFIX) && id !== `${V2_PROFILE_ID_PREFIX}${profile}`) continue;
+        const text = guidanceText(id, eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "");
         if (!text) continue;
         const marker = `${V2_MARKER}${id}>${text}</v2-guidance>`;
         if (event.messages.some((message: any) => typeof message.content === "string" && message.content.includes(marker))) continue;
