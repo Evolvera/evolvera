@@ -4,7 +4,7 @@
 // All files and processes created here live under one owned mkdtemp, removed in `finally`.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -269,6 +269,21 @@ print(json.dumps({"errors": errors, "init_count": torch.cuda.init_count, "init_m
     assert.equal(out.env, UUID_5070);
   }
 
+  // 1.12b Review fix: cuda-pin on PYTHONPATH twice under different spellings (nested run-job via a
+  // short 8.3 path and a long path, or another case) must still start normally, chain the next
+  // sitecustomize exactly once, and never recurse into itself.
+  {
+    const other = path.join(scratch, "other-site-count");
+    write(path.join(other, "sitecustomize.py"), "import os\nos.environ['OTHER_SITE_RUNS'] = str(int(os.environ.get('OTHER_SITE_RUNS', '0')) + 1)\n");
+    const spellings = [cudaPinDir, process.platform === "win32" ? cudaPinDir.toUpperCase() : cudaPinDir, stubs, other];
+    const childEnv = { ...process.env, ...pinned, PYTHONPATH: spellings.join(path.delimiter) };
+    const r = spawnSync(py, ["-c", "import os, sys; print(os.environ.get('OTHER_SITE_RUNS'), sum(type(f).__name__ == '_PatchFinder' for f in sys.meta_path))"],
+      { encoding: "utf8", env: childEnv, timeout: 60_000 });
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, /Recursion|Error in sitecustomize/);
+    assert.equal(r.stdout.trim(), "1 1");
+  }
+
   // 1.13 Benchmark: startup cost of the guard when active but unused (median of 7 runs). It runs
   // in every Python process of a pinned job, so it must stay small (no torch import at start).
   {
@@ -529,6 +544,75 @@ pump();
     assert.equal(listDir(logDir).some((f) => f.endsWith(".claim")), false, "the claim is released");
   }
 
+  // 2.13 Review fix: a stale status whose supervisor PID now belongs to another process (PID reuse
+  // after a crash) must never make stop-job kill that process tree. The supervisor's start time is
+  // recorded and checked; a mismatch marks the job "lost" and touches nothing.
+  {
+    const { spawn } = await import("node:child_process");
+    const stranger = spawn(node, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    try {
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(path.join(logDir, "reuse.status.json"), JSON.stringify({
+        name: "reuse", state: "running", supervisor_pid: stranger.pid, supervisor_start_ticks: 1, child_pid: stranger.pid,
+      }));
+      const r = ps(stopJob, ["-Name", "reuse", "-LogDir", logDir]);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      await sleep(500);
+      assert.ok(alive(stranger.pid), "a reused PID must not be killed");
+      assert.equal(readStatus(logDir, "reuse").state, "lost");
+      // run-job treats the same stale status as free, not as "still running".
+      assert.equal(ps(runJob, base("reuse", ["--", node, path.join(kids, "echo.js")])).status, 0);
+      await waitFor(finished(logDir, "reuse"), 30_000, "reuse rerun");
+    } finally {
+      stranger.kill();
+    }
+  }
+
+  // 2.14 Review fix: a reader holding the status file without FileShare.Delete (Get-Content -Wait)
+  // for longer than the write retries must not end the supervisor, which would kill the job through
+  // KILL_ON_JOB_CLOSE. The job keeps running and the status is updated once the reader lets go.
+  {
+    const pidFile = path.join(scratch, "held.pid");
+    assert.equal(ps(runJob, base("held", ["--", node, path.join(kids, "tree.js"), pidFile])).status, 0);
+    const s = await waitFor(running(logDir, "held"), 30_000, "held running");
+    const statusFile = path.join(logDir, "held.status.json");
+    const hold = spawnSync("powershell.exe", ["-NoProfile", "-Command",
+      `$f = [IO.File]::Open('${statusFile}', 'Open', 'Read', 'ReadWrite'); Start-Sleep -Seconds 8; $f.Dispose()`], { encoding: "utf8", timeout: 60_000 });
+    assert.equal(hold.status, 0, hold.stderr);
+    await sleep(6000);
+    assert.ok(alive(s.supervisor_pid), "supervisor survives a blocked status write");
+    assert.ok(alive(s.child_pid), "job survives a blocked status write");
+    assert.equal(ps(stopJob, ["-Name", "held", "-LogDir", logDir]).status, 0);
+  }
+
+  // 2.15 Review fix: a program path with [ ] is a literal path, not a wildcard pattern.
+  {
+    const binDir = path.join(scratch, "bin[x]");
+    mkdirSync(binDir, { recursive: true });
+    const linked = path.join(binDir, "node.exe");
+    try { linkSync(node, linked); } catch { copyFileSync(node, linked); }
+    assert.equal(ps(runJob, base("brackets", ["--", linked, path.join(kids, "echo.js")])).status, 0);
+    assert.equal((await waitFor(finished(logDir, "brackets"), 30_000, "brackets")).exit_code, 0);
+  }
+
+  // 2.16 Review fix: a corrupt status file is reported as bad input (exit 2), not a raw crash.
+  {
+    writeFileSync(path.join(logDir, "corrupt.status.json"), "{not json");
+    const r1 = ps(runJob, base("corrupt", ["--", node, path.join(kids, "echo.js")]));
+    assert.equal(r1.status, 2, r1.stdout + r1.stderr);
+    assert.match(r1.stderr, /windows-jobs:/);
+    assert.equal(ps(stopJob, ["-Name", "corrupt", "-LogDir", logDir]).status, 2);
+  }
+
+  // 2.17 Review fix: back-to-back runs of one name keep separate logs (no same-second overwrite).
+  {
+    for (let i = 0; i < 2; i++) {
+      assert.equal(ps(runJob, base("rerun", ["--", node, path.join(kids, "echo.js")])).status, 0);
+      await waitFor(finished(logDir, "rerun"), 30_000, "rerun");
+    }
+    assert.equal(listDir(logDir).filter((f) => f.startsWith("rerun.") && f.endsWith(".log")).length, 2);
+  }
+
   // 2.11 Prova de fogo: 6 jobs launched at once stay distinct and all finish, and a job writing
   // 20 MiB of output gets every byte into its log (no pipe stall, no truncation).
   {
@@ -703,7 +787,34 @@ async function detachGuardSection() {
     ["powershell", `Get-CimInstance Win32_Process | Select ProcessId, CommandLine`],
     ["bash", `grep -rn "Win32_Process" scripts/`],
     ["bash", `powershell -NoProfile -Command "Get-Process python"`],
+    // Review fix: "&" only as part of &&, redirections or inside quotes is not a background job,
+    // and a background job that the same command waits for does not outlive it.
+    ["bash", `python a.py && python b.py`],
+    ["bash", `python a.py > out.log 2>&1`],
+    ["bash", `python a.py &> out.log`],
+    ["bash", `echo "a & b" | grep a`],
+    ["bash", `python a.py & python b.py; wait`],
+    ["powershell", `& "C:/tools/python.exe" train.py`],
   ];
+
+  // 4.2b Review fix: Git Bash backgrounding outlives the call. When bash exits the job's parent PID
+  // points to a dead process, so process-reaper's walk from the Pi never reaches it. nohup / setsid /
+  // disown / a trailing "&" with no wait are refused in the bash tool; -Wait:$false or "-Wait" given
+  // as an -ArgumentList value is not a wait.
+  const blockedMore = [
+    ["bash", `nohup python train.py > t.log 2>&1 &`],
+    ["bash", `python train.py > t.log 2>&1 &`],
+    ["bash", `python train.py &`],
+    ["bash", `setsid python train.py`],
+    ["bash", `python train.py & disown`],
+    ["bash", `(python train.py &)`],
+    ["powershell", `Start-Process python -Wait:$false`],
+    ["powershell", `Start-Process python -ArgumentList '-Wait'`],
+  ];
+  for (const [tool, command] of blockedMore) assert.ok(guard.detachReason(command, tool), `${tool}: must refuse ${command}`);
+
+  // 4.2c The refusal gives a path that works from both tools: PowerShell does not expand "~" for -File.
+  assert.match(guard.DETACH_REASON, /\$HOME\\\.pi\\agent\\skills\\windows-jobs\\scripts\\run-job\.ps1/);
   for (const [tool, command] of allowed) {
     assert.equal(guard.detachReason(command, tool), null, `${tool}: must allow ${command}`);
   }

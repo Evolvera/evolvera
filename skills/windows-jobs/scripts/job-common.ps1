@@ -46,8 +46,8 @@ function Read-JobStatus([string]$Path) {
         try {
             $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]'ReadWrite, Delete')
             try { $text = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8).ReadToEnd() } finally { $stream.Dispose() }
-            return $text | ConvertFrom-Json
-        } catch [IO.IOException] { Start-Sleep -Milliseconds 25 }
+        } catch [IO.IOException] { Start-Sleep -Milliseconds 25; continue }
+        try { return $text | ConvertFrom-Json } catch { Stop-WithUsage "status file is corrupt: $Path" }
     }
     throw "could not read $Path"
 }
@@ -66,6 +66,19 @@ function Write-JobStatus([string]$Path, [hashtable]$Status) {
 function Test-ProcessAlive($ProcessId) {
     if (-not $ProcessId) { return $false }
     return $null -ne (Get-Process -Id ([int]$ProcessId) -ErrorAction SilentlyContinue)
+}
+
+function Get-ProcessStartTicks($ProcessId) {
+    $process = Get-Process -Id ([int]$ProcessId) -ErrorAction SilentlyContinue
+    if (-not $process) { return $null }
+    try { return $process.StartTime.ToUniversalTime().Ticks } catch { return $null }
+}
+
+# The supervisor of this status is alive only if its PID exists AND started at the recorded time:
+# after a crash Windows can give the PID to an unrelated process, which must never be touched.
+function Test-SupervisorAlive($Status) {
+    if (-not $Status.supervisor_pid -or -not $Status.supervisor_start_ticks) { return $false }
+    return (Get-ProcessStartTicks $Status.supervisor_pid) -eq [int64]$Status.supervisor_start_ticks
 }
 
 function ConvertTo-StatusTable($Status) {

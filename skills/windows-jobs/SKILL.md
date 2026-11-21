@@ -18,7 +18,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ~/.pi/agent/skills/windows-j
 - Everything after `--` is passed to the program untouched. The program must be an `.exe` (`python.exe`, `node.exe`): run scripts through their interpreter.
 - `-CommitLimitGB` caps committed memory for the whole job tree. On Windows/WDDM, GPU allocations count too: size it as host + GPU memory + about 4 GB for CUDA libraries.
 - Prints one JSON line (`supervisor_pid`, `child_pid`, `status`, `log`) and returns. Exit codes: `0` started, `2` bad input or the name is already running, `3` failed to start.
-- `<LogDir>/<name>.status.json` (default `%TEMP%\pi-jobs`) holds `state` (`running`, `exited`, `stopped`, `failed`), `exit_code`, `peak_job_commit_bytes` and `memory_limit_reached`. Poll it with short commands. Output goes to `log`.
+- `<LogDir>/<name>.status.json` (default `%TEMP%\pi-jobs`) holds `state` (`running`, `exited`, `stopped`, `failed`, or `lost` when the supervisor is gone without a final status), `exit_code`, `peak_job_commit_bytes` and `memory_limit_reached`. Poll it with short commands. Output goes to `log`.
 - stdin is closed. When the root process exits, anything it left running is killed.
 - Stop: `stop-job.ps1 -Name <name> [-LogDir <dir>]` ends the whole tree.
 

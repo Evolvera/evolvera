@@ -50,10 +50,15 @@ if ($o.CpuOnly) {
     $environment.Remove('PI_CUDA_PIN_NAME')
 }
 
-$program = Get-Command -Name $parsed.Command[0] -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $program) { Stop-WithUsage "program not found: $($parsed.Command[0])" }
-if ([IO.Path]::GetExtension($program.Source) -notin @('.exe', '.com')) {
-    Stop-WithUsage "program must be an .exe (got $($program.Source)); run scripts through their interpreter, e.g. node cli.js"
+# An existing path is taken literally (Get-Command would read [ ] as wildcards); bare names use PATH.
+$programPath = if (Test-Path -LiteralPath $parsed.Command[0] -PathType Leaf) {
+    (Get-Item -LiteralPath $parsed.Command[0]).FullName
+} else {
+    (Get-Command -Name $parsed.Command[0] -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+}
+if (-not $programPath) { Stop-WithUsage "program not found: $($parsed.Command[0])" }
+if ([IO.Path]::GetExtension($programPath) -notin @('.exe', '.com')) {
+    Stop-WithUsage "program must be an .exe (got $programPath); run scripts through their interpreter, e.g. node cli.js"
 }
 
 $logDir = if ($o.LogDir) { $o.LogDir } else { Join-Path $env:TEMP 'pi-jobs' }
@@ -73,23 +78,23 @@ try {
     Stop-WithUsage "job '$($o.Name)' is being started by another run-job right now"
 }
 $previous = Read-JobStatus $statusPath
-if ($previous -and $script:ActiveStates -contains $previous.state -and (Test-ProcessAlive $previous.supervisor_pid)) {
+if ($previous -and $script:ActiveStates -contains $previous.state -and (Test-SupervisorAlive $previous)) {
     Stop-WithUsage "job '$($o.Name)' is still running (supervisor $($previous.supervisor_pid)); stop it with stop-job.ps1 or use another name"
 }
 
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $logPath = Join-Path $logDir "$($o.Name).$stamp.log"
 $specPath = Join-Path $logDir "$($o.Name).spec.json"
 $status = @{
     name = $o.Name; state = 'starting'; supervisor_pid = $null; child_pid = $null
-    command = @($program.Source) + @($parsed.Command | Select-Object -Skip 1)
+    command = @($programPath) + @($parsed.Command | Select-Object -Skip 1)
     work_dir = $workDir; log = $logPath; commit_limit_bytes = $limitBytes
     peak_job_commit_bytes = 0; memory_limit_reached = $false; exit_code = $null
     started_at = (Get-Date).ToString('o'); ended_at = $null; error = $null
 }
 Write-JobStatus $statusPath $status
 $spec = @{
-    status_path = $statusPath; status = $status; exe = $program.Source
+    status_path = $statusPath; status = $status; exe = $programPath
     args = @($parsed.Command | Select-Object -Skip 1)
     environment = @($environment.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
 }
