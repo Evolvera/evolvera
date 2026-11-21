@@ -417,17 +417,25 @@ function buildV2Prompt(systemMd: string): string | undefined {
 export type V2Skill = { name: string; description: string; filePath: string; disableModelInvocation?: boolean };
 
 function shortText(text: string, max: number): string {
-  const sentence = (/^.*?[.!?](?=\s|$)/s.exec(text)?.[0] ?? text).replace(/\s+/g, " ").trim();
-  return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
+  const sentences = text.replace(/\s+/g, " ").trim().match(/.*?[.!?](?=\s|$)|.+$/g) ?? [];
+  let line = "";
+  for (const sentence of sentences.map((part) => part.trim())) {
+    const next = line ? `${line} ${sentence}` : sentence;
+    if (next.length > max) break;
+    line = next;
+  }
+  if (line || !sentences.length) return line;
+  const cut = sentences[0].trim().slice(0, max - 1);
+  return `${(cut.includes(" ") ? cut.slice(0, cut.lastIndexOf(" ")) : cut).trimEnd()}…`;
 }
 
-/** The compact v2 skills list: one line per model-invocable skill; skills outside skillsDir keep their path. */
+/** The compact v2 skills list: one line per model-invocable skill (whole sentences up to 120 chars); skills outside skillsDir keep their path. */
 export function v2SkillsList(skills: readonly V2Skill[], skillsDir = path.join(getAgentDir(), "skills")): string | undefined {
   const visible = skills.filter((skill) => !skill.disableModelInvocation);
   if (!visible.length) return undefined;
   const lines = visible.map((skill) => {
     const standard = path.resolve(skill.filePath) === path.resolve(skillsDir, skill.name, "SKILL.md");
-    return `- ${skill.name}: ${shortText(skill.description, 80)}${standard ? "" : ` (${skill.filePath})`}`;
+    return `- ${skill.name}: ${shortText(skill.description, 120)}${standard ? "" : ` (${skill.filePath})`}`;
   });
   return [`Each skill below is at ${path.join(skillsDir, "<name>", "SKILL.md")} unless its line gives a path. Read that file when the task matches the skill, and resolve its relative paths against the skill's directory.`, ...lines].join("\n");
 }

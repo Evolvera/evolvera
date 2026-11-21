@@ -472,7 +472,7 @@ try {
     const { buildSystemPrompt } = await import(sdkUrl("dist/core/system-prompt.js"));
     const longSentence = `Beta ${"word ".repeat(30)}ends here. Second sentence stays out.`;
     const skills = [
-      { name: "alpha", description: "Alpha does one thing. Details that the compact list drops.", filePath: path.join(agentDir, "skills", "alpha", "SKILL.md"), baseDir: path.join(agentDir, "skills", "alpha") },
+      { name: "alpha", description: `Alpha does one thing. It also triggers on a second condition. Details that the compact list drops ${"because the line is full ".repeat(3)}here.`, filePath: path.join(agentDir, "skills", "alpha", "SKILL.md"), baseDir: path.join(agentDir, "skills", "alpha") },
       { name: "beta", description: longSentence, filePath: owned("extra-skills/beta/SKILL.md"), baseDir: owned("extra-skills/beta") },
       { name: "gamma", description: "Hidden from the model.", filePath: path.join(agentDir, "skills", "gamma", "SKILL.md"), baseDir: path.join(agentDir, "skills", "gamma"), disableModelInvocation: true },
     ];
@@ -484,9 +484,20 @@ try {
     assert.ok(!lean.systemPrompt.includes("<available_skills>") && !lean.systemPrompt.includes("Details that the compact list drops"), "v2 drops the full skills block");
     const skillLines = skillsBlock.split("\n");
     assert.equal(skillLines[0], `Each skill below is at ${path.join(agentDir, "skills", "<name>", "SKILL.md")} unless its line gives a path. Read that file when the task matches the skill, and resolve its relative paths against the skill's directory.`);
-    assert.equal(skillLines[1], "- alpha: Alpha does one thing.");
-    assert.match(skillLines[2], new RegExp(`^- beta: Beta word .{60,80}… \\(${owned("extra-skills/beta/SKILL.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)$`), "long first sentences are cut and outside skills keep their path");
+    assert.equal(skillLines[1], "- alpha: Alpha does one thing. It also triggers on a second condition.", "whole sentences are kept while the line fits 120 chars");
+    assert.match(skillLines[2], new RegExp(`^- beta: Beta (word )+word… \\(${owned("extra-skills/beta/SKILL.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)$`), "long first sentences are cut and outside skills keep their path");
     assert.equal(skillLines.length, 3, "disable-model-invocation skills stay excluded");
+    assert.ok(/^- beta: (.*)… /.exec(skillLines[2])[1].length <= 119, "a long first sentence is cut to the limit");
+    const { loadSkillsFromDir } = await import(sdkUrl("dist/core/skills.js"));
+    const realSkills = ["agent-guide", "teach-me"].flatMap((name) => loadSkillsFromDir({ dir: path.join(repoRoot, "skills", name), source: "path" }).skills);
+    assert.equal(realSkills.length, 2);
+    const teachMe = realSkills.find((skill) => skill.name === "teach-me");
+    assert.ok(teachMe.disableModelInvocation && teachMe.description.startsWith("User-invoked adaptive tutor for software engineering and system architecture, from absolute"), "the SDK hands over the parsed folded YAML text");
+    assert.equal(module.v2SkillsList(realSkills, path.join(repoRoot, "skills")).split("\n").length, 2, "teach-me stays excluded as disable-model-invocation");
+    const realLines = module.v2SkillsList(realSkills.map((skill) => ({ ...skill, disableModelInvocation: false })), path.join(repoRoot, "skills")).split("\n").slice(1);
+    assert.equal(realLines[0], "- agent-guide: Mandatory pre-flight skill. Load BEFORE using scout, bug-hunt, planner, builder, or qa.", "the trigger condition survives");
+    assert.match(realLines[1], /^- teach-me: User-invoked adaptive tutor for software engineering and system architecture, from absolute/, "folded YAML descriptions arrive as their real text");
+    assert.ok(!realLines[1].includes(">-") && realLines[1].length <= "- teach-me: ".length + 120);
     assert.ok(lean.systemPrompt.endsWith(`</skills>\n\n<cwd>\n${root.replace(/\\/g, "/")}\n</cwd>`), "the sections after skills are untouched");
   }
   {
