@@ -647,7 +647,117 @@ print(json.dumps({"device": str(device), "name": torch.cuda.get_device_name(0),
   console.log("ok real-cuda");
 }
 
+// ---------------------------------------------------------------------------------------------
+// Section 4 — detach-guard (#89 #90) and the bash-timeout guidance (#90).
+// In non-interactive runs on Windows, a process started through WMI, Start-Process, cmd start or
+// schtasks is not a descendant of the Pi: process-reaper cannot clean it and nobody tracks it (the
+// 467 R6 waiter ran an old test 2 h after its Pi was killed). Encoded commands hide what runs.
+// Those are refused there, with run-job.ps1 as the tracked way out; everything else passes.
+// ---------------------------------------------------------------------------------------------
+async function detachGuardSection() {
+  const sdkRoot = resolvePiSdkRoot(import.meta.url);
+  const require = createRequire(import.meta.url);
+  const { createJiti } = require(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cjs"));
+  const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
+  const guard = await jiti.import(path.join(root, "extensions/detach-guard.ts"));
+  const timeout = await jiti.import(path.join(root, "extensions/bash-timeout.ts"));
+
+  // 4.1 Untracked detaches are refused (bash and powershell tools), whatever the spelling: the 467
+  // R6 waiter (Invoke-CimMethod Win32_Process Create + EncodedCommand), wmic, [wmiclass], Start-Process
+  // and its aliases without -Wait, cmd start without /wait, schtasks /create, nested shells.
+  const blocked = [
+    ["bash", `powershell -NoProfile -Command "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='python wait.py'}"`],
+    ["powershell", `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='python wait.py'}`],
+    ["powershell", `Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'python wait.py'`],
+    ["powershell", `([wmiclass]'Win32_Process').Create('python wait.py')`],
+    ["bash", `wmic process call create "python wait.py"`],
+    ["bash", `powershell.exe -NoProfile -EncodedCommand ZQBjAGgAbwAgAGgAaQA=`],
+    ["bash", `pwsh -enc ZQBjAGgAbwA=`],
+    ["powershell", `Start-Process python -ArgumentList train.py`],
+    ["powershell", `saps python train.py`],
+    ["powershell", `start python train.py`],
+    ["bash", `powershell -Command "Start-Process -FilePath python -ArgumentList 'train.py' -WindowStyle Hidden"`],
+    ["bash", `cmd /c start "" python train.py`],
+    ["bash", `cmd.exe /C START /B python train.py`],
+    ["bash", `schtasks /create /tn wait /tr "python wait.py" /sc once /st 23:00`],
+    ["bash", `bash -c 'cmd /c start python train.py'`],
+    ["bash", `cd D:/x && powershell -c "Start-Process python"`],
+  ];
+  for (const [tool, command] of blocked) {
+    const reason = guard.detachReason(command, tool);
+    assert.ok(reason, `${tool}: must refuse ${command}`);
+    assert.match(reason, /run-job\.ps1/, "the refusal points to the tracked launcher");
+  }
+
+  // 4.2 Ordinary and sanctioned commands pass: run-job/stop-job, waiting variants (-Wait, /wait),
+  // plain python/node/git, a word "start" that is not a command, PowerShell reading processes.
+  const allowed = [
+    ["bash", `powershell -NoProfile -ExecutionPolicy Bypass -File "C:/Users/x/.pi/agent/skills/windows-jobs/scripts/run-job.ps1" -Name t1 -CommitLimitGB 8 -- python train.py`],
+    ["bash", `powershell -File ~/.pi/agent/skills/windows-jobs/scripts/stop-job.ps1 -Name t1`],
+    ["powershell", `Start-Process python -ArgumentList train.py -Wait -NoNewWindow`],
+    ["bash", `cmd /c start /wait python train.py`],
+    ["bash", `python train.py --epochs 3 > run.log 2>&1`],
+    ["bash", `npm start`],
+    ["bash", `git log --oneline | head -5`],
+    ["bash", `echo "use Start-Process later"`],
+    ["powershell", `Get-CimInstance Win32_Process | Select ProcessId, CommandLine`],
+    ["bash", `grep -rn "Win32_Process" scripts/`],
+    ["bash", `powershell -NoProfile -Command "Get-Process python"`],
+  ];
+  for (const [tool, command] of allowed) {
+    assert.equal(guard.detachReason(command, tool), null, `${tool}: must allow ${command}`);
+  }
+
+  // 4.3 Non-string or empty input never throws (the tool_call payload comes from the model).
+  for (const bad of [undefined, null, 42, {}, "", "   "]) assert.equal(guard.detachReason(bad, "bash"), null);
+
+  // 4.4 Registration: refuses only in non-interactive Windows runs on bash/powershell tools. The TUI
+  // (a human may start a dev server on purpose), other platforms and other tools are untouched.
+  const handlers = new Map();
+  guard.registerDetachGuard({ on: (name, handler) => handlers.set(name, handler) }, "win32");
+  const onCall = handlers.get("tool_call");
+  const call = (toolName, command, mode) => onCall({ toolName, toolCallId: "t", input: { command } }, { mode });
+  const detach = `cmd /c start python train.py`;
+  assert.equal((await call("bash", detach, "print"))?.block, true);
+  assert.match((await call("bash", detach, "json")).reason, /run-job\.ps1/);
+  assert.equal((await call("powershell", "Start-Process python", "rpc"))?.block, true);
+  assert.equal(await call("bash", detach, "tui"), undefined);
+  assert.equal(await call("read", detach, "print"), undefined);
+  assert.equal(await call("bash", "python train.py", "print"), undefined);
+  const linux = new Map();
+  guard.registerDetachGuard({ on: (name, handler) => linux.set(name, handler) }, "linux");
+  assert.equal(linux.size, 0, "nothing is registered off Windows");
+
+  // 4.5 Prova de fogo: 5,000 generated commands (random mixes of the patterns above, quotes,
+  // separators and noise) never throw, and a 1 MiB command is analysed in well under a second.
+  {
+    const parts = ["cmd /c start x", "echo ok", "Start-Process y -Wait", "git status", "wmic process call create z",
+      "'unterminated", "\"q\"", ";", "&&", "|", "(", ")", "`", "$(", "powershell -c \"saps q\"", "\\\\server\\share"];
+    let seed = 7;
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    for (let i = 0; i < 5000; i++) {
+      const command = Array.from({ length: 1 + Math.floor(rand() * 8) }, () => parts[Math.floor(rand() * parts.length)]).join(" ");
+      guard.detachReason(command, rand() < 0.5 ? "bash" : "powershell");
+    }
+    const big = `echo ${"a ".repeat(512 * 1024)}; cmd /c start x`;
+    const t0 = process.hrtime.bigint();
+    assert.ok(guard.detachReason(big, "bash"));
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    console.log(`bench detach-guard 1 MiB command: ${ms.toFixed(0)} ms`);
+    assert.ok(ms < 1000);
+  }
+
+  // 4.6 bash-timeout guidance on Windows sends long jobs to run-job.ps1, not Start-Process (which
+  // process-reaper kills at exit, and which dies with the run); other platforms keep nohup advice.
+  assert.match(timeout.guidanceNote(undefined, "win32"), /run-job\.ps1/);
+  assert.doesNotMatch(timeout.guidanceNote(undefined, "win32"), /Start-Process/);
+  assert.match(timeout.guidanceNote(undefined, "linux"), /nohup/);
+  assert.match(timeout.guidanceNote(undefined, "linux"), /background.*log file.*poll the log/);
+  console.log("ok detach-guard");
+}
+
 try {
+  await detachGuardSection();
   await cudaPinSection();
   await runJobSection();
   await realCudaSection();

@@ -169,8 +169,12 @@ export function resolveBashTimeout(requested: unknown, command: unknown, limits:
   return needsFloor(command) ? Math.max(value, limits.floorS) : value;
 }
 
-export function guidanceNote(limits: Limits = timeoutLimits()): string {
-  return `Bash timeouts: calls without a timeout get ${limits.defaultS}s (max ${limits.maxS}s). For work that may exceed ~10 minutes (training, long runners, big builds or suites), start it in the background with output to a log file (e.g. nohup cmd > run.log 2>&1 &; on Windows Start-Process with redirected output) and poll the log with short commands, instead of one blocking call that dies with its timeout.`;
+export function guidanceNote(limits: Limits = timeoutLimits(), platform: string = process.platform): string {
+  // On Windows a Start-Process child is untracked and process-reaper ends it with the run: use run-job.
+  const background = platform === "win32"
+    ? "with the windows-jobs skill (run-job.ps1: outlives the run, commit-capped, output to a log file, stopped with stop-job.ps1)"
+    : "with output to a log file (e.g. nohup cmd > run.log 2>&1 &)";
+  return `Bash timeouts: calls without a timeout get ${limits.defaultS}s (max ${limits.maxS}s). For work that may exceed ~10 minutes (training, long runners, big builds or suites), start it in the background ${background} and poll the log with short commands, instead of one blocking call that dies with its timeout.`;
 }
 
 export function timeoutHint(seconds: string): string {
