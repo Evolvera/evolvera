@@ -41,7 +41,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ~/.pi/agent/skills/windows-j
 It prints one JSON line (`supervisor_pid`, `child_pid`, `status`, `log`) and returns. The job runs
 inside a Job Object: one commit cap for the whole tree, stdin closed, output in the log, and every
 leftover process killed when the root exits. `<name>.status.json` in the log directory
-(default `%TEMP%\pi-jobs`) holds the state (`running`, `exited`, `stopped`, `failed`), exit code,
+(default `%TEMP%\pi-jobs`) holds the state (`running`, `exited`, `stopped`, `failed`, `lost`), exit code,
 peak commit and `memory_limit_reached`. Stop it with `stop-job.ps1 -Name <name>`.
 
 In headless runs on Windows the `detach-guard` extension refuses the untracked ways to detach
