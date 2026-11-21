@@ -48,6 +48,12 @@ const tmpdirProprioPadrao = new Set([
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
   // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
   "todo-reconciliation.smoke.mjs",
+  // Real AgentSession with faux provider runs sleep/echo in its owned mkdtemp root, removed in finally.
+  "bash-timeout.smoke.mjs",
+  // Spawns only sleep children owned by the test and kills them.
+  "process-reaper.smoke.mjs",
+  // Pure in-memory checks plus child node processes that only exit.
+  "quota-exit.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);

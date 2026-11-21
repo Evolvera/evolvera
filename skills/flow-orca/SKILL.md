@@ -1,6 +1,6 @@
 ---
 name: flow-orca
-description: "Use automatically for GitHub issue/board delivery, branch-per-issue campaigns, or coordinated PI issue workers in Orca worktrees; the user need not name this skill. GitHub owns the campaign grant, acceptance, dependencies and Status; Orca owns one workspace, real branch and PI session per issue. Supports autonomous campaign re-entry, event-driven worker completion without polling, and safely authorized cleanup after verified merge/Done. Scouts new backlogs first; approved campaigns dispatch directly under the per-repository bases, campaign mode and twelve-worker ceiling. Not for simple worktree creation, unsupervised ownership handoffs, or standalone explanations."
+description: "Use ONLY when the user explicitly asks for the Orca issues/Projects board flow: a campaign, \"flow orca\", the GitHub Project board, or many issues delivered in parallel through Orca workspaces. Do NOT trigger automatically for a multi-task list, a single GitHub issue, simple worktree creation, or any request that does not name this flow. Requires the Orca CLI and an authenticated gh; if either is missing, stop at once and do the work normally. GitHub owns the campaign grant, acceptance, dependencies and Status; Orca owns one workspace, real branch and PI session per issue."
 ---
 
 # Flow Orca — Backlog → Issues → Campaign → Ship
@@ -142,6 +142,8 @@ Partial OK: run scouts → propose a backlog draft from the code + outcome → *
 ---
 
 ## Phase 0 — Repo + Permission Gate + Orca preflight
+
+**Step 0 (first, cheap, before anything else):** check the CLI exists: `command -v orca || command -v orca-ide` (Windows: `where orca`). If none is found, stop this skill immediately with one short message ("Orca CLI not installed on this machine; continuing the task without the flow") and do the work normally, without this flow. Never wait, retry, or install. Same if `gh auth status` fails: say so in one line and fall back to normal work. **No-hang rule:** every external command in this skill runs with a timeout (e.g. `timeout 30` / the tool timeout; `--timeout-ms` on every `check --wait`); a timeout or failure is reported and falls back, never waited on indefinitely.
 
 ```bash
 git rev-parse --show-toplevel
