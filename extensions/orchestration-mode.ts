@@ -137,6 +137,20 @@ export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
   planner: ["todo"],
 };
 
+/** Guidance that turns the todo tool on for the rest of a v2 session. */
+export const V2_TODO_UNLOCKS: readonly string[] = ["todo", "workflow", "planner", "orca"];
+
+const V2_CORE_TOOLS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "goal_complete", "goal_blocked"]);
+const V2_BACKGROUND_AGENT_TOOLS = new Set(["get_subagent_result", "steer_subagent"]);
+
+/** The lean v2 tool set, in the order of `active`; only tools already active can stay. */
+export function v2ToolSet(active: readonly string[], options: { agent: "allow" | V2Profile["agent"]; todo: boolean }): string[] {
+  return active.filter((name) => V2_CORE_TOOLS.has(name)
+    || name === "todo" && options.todo
+    || name === "Agent" && options.agent !== "block"
+    || V2_BACKGROUND_AGENT_TOOLS.has(name) && options.agent === "allow");
+}
+
 /** Delivered when the helper is unavailable: the baseline for any change, nothing situational. */
 export const V2_BASELINE: readonly string[] = ["engineering", "validation"];
 
@@ -627,6 +641,28 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     && (typeof prompt === "string" && prompt.trimStart().startsWith(PRIMARY_PROMPT)
       || eligibleSessionId !== undefined && ctx.sessionManager?.getSessionId?.() === eligibleSessionId);
   const diary = observeV2Diary(pi, (ctx) => isEligible(ctx as Ctx));
+  let toolsBeforeV2: string[] | undefined;
+  const union = (first: readonly string[], second: readonly string[]) => [...new Set([...first, ...second])];
+  const sameTools = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((name, index) => name === b[index]);
+  const restoreTools = () => {
+    if (!toolsBeforeV2) return;
+    const restored = union(toolsBeforeV2, pi.getActiveTools());
+    toolsBeforeV2 = undefined;
+    if (!sameTools(restored, pi.getActiveTools())) pi.setActiveTools(restored);
+  };
+  const applyLeanTools = (ctx: Ctx) => {
+    const current = pi.getActiveTools();
+    toolsBeforeV2 = union(toolsBeforeV2 ?? [], current);
+    const profile = v2ProfileFor(ctx.model);
+    const sessionId = ctx.sessionManager?.getSessionId?.();
+    const todo = [...(ctx.sessionManager?.getBranch() ?? [])].some((raw) => {
+      const entry = raw as { type?: unknown; customType?: unknown; data?: { sessionId?: unknown; ids?: unknown } };
+      return entry.type === "custom" && entry.customType === V2_DELIVERY_TYPE && entry.data?.sessionId === sessionId
+        && Array.isArray(entry.data.ids) && entry.data.ids.some((id) => V2_TODO_UNLOCKS.includes(id as string));
+    });
+    const lean = v2ToolSet(toolsBeforeV2, { agent: profile ? V2_PROFILES[profile].agent : "allow", todo });
+    if (!sameTools(lean, current)) pi.setActiveTools(lean);
+  };
 
   pi.registerCommand("orchestration", {
     description: "Orchestration mode for this session: /orchestration standard | conductor | v2 | status",
@@ -644,7 +680,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
           return;
         }
         runEpoch++;
-        if (action !== "v2") { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
+        if (action !== "v2") { eligibleSessionId = undefined; eligibleSystemMd = undefined; restoreTools(); }
         const data = action === "v2" ? { mode: action, sessionId: ctx.sessionManager.getSessionId() } : { mode: action };
         pi.appendEntry(SESSION_ENTRY_TYPE, data);
         pi.events.emit(MODE_CHANGED_EVENT, { ctx });
@@ -665,6 +701,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     runEpoch++;
     eligibleSessionId = undefined;
     eligibleSystemMd = undefined;
+    toolsBeforeV2 = undefined;
     warned = false;
     pinThinking(pi, ctx);
     showStatus(ctx, currentMode(ctx));
@@ -679,9 +716,11 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     const sessionId = ctx.sessionManager?.getSessionId?.();
     if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) {
       if (eligibleSessionId === sessionId) { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
+      restoreTools();
       return;
     }
     const mode = currentMode(ctx);
+    if (mode !== "v2" || !isEligible(ctx, customPrompt)) restoreTools();
     if (mode === "conductor") {
       const systemPrompt = applyConductor(event.systemPrompt ?? "", customPrompt);
       if (!systemPrompt) {
@@ -696,6 +735,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     eligibleSystemMd = undefined;
     const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt, event.systemPromptOptions?.skills ?? []);
     if (!systemPrompt) {
+      restoreTools();
       if (!warned) ctx.ui?.notify?.("Orchestration V2 indisponível: SYSTEM.md ou uma fonte de guidance obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
       warned = true;
       return;
@@ -727,6 +767,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
       const label = profile ? ` [profile ${profile}]` : decision.available ? "" : " (helper unavailable, baseline sections)";
       ctx.ui?.notify?.(`V2 guidance${label}: ${ids.length ? ids.join(", ") : "none"}`, profile || decision.available ? "info" : "warning");
     }
+    applyLeanTools(ctx);
     return { systemPrompt };
   });
 

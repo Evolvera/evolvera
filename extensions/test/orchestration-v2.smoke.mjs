@@ -207,7 +207,7 @@ try {
   fs.writeFileSync(owned("synthetic-auth.json"), JSON.stringify({ synthetic: true }));
   globalThis.__v2Selector = async (_registry, _diary, newInput) => { helperCalls++; return { available: true, ids: newInput.includes("skill pointer") ? ["workflow", "prompt-engineering"] : ["workflow"], usage: helperUsage }; };
   const fixture = owned("orchestration-fixture.ts");
-  fs.writeFileSync(fixture, `import orchestrationMode from ${JSON.stringify(path.join(repoRoot, "extensions/orchestration-mode.ts"))};\nexport default (pi) => { globalThis.__v2SendMessage = (message) => pi.sendMessage(message, { triggerTurn: true }); orchestrationMode(pi, (...args) => globalThis.__v2Selector(...args)); };\n`);
+  fs.writeFileSync(fixture, `import orchestrationMode from ${JSON.stringify(path.join(repoRoot, "extensions/orchestration-mode.ts"))};\nexport default (pi) => { for (const name of ["read", "Agent", "get_subagent_result", "mcp", "jina_read", "todo"]) pi.registerTool({ name, label: name, description: \`synthetic \${name}\`, parameters: { type: "object", properties: {} }, execute: async () => ({ content: [{ type: "text", text: "ok" }] }) }); globalThis.__v2SendMessage = (message) => pi.sendMessage(message, { triggerTurn: true }); orchestrationMode(pi, (...args) => globalThis.__v2Selector(...args)); };\n`);
   const extensions = await loadExtensions([fixture], process.env.PI_CODING_AGENT_DIR);
   assert.equal(extensions.diagnostics?.length ?? 0, 0);
   const systemMd = fs.readFileSync(path.join(repoRoot, "SYSTEM.md"), "utf8");
@@ -216,17 +216,28 @@ try {
   const statuses = new Map();
   const ui = { notify: (message) => uiMessages.push(message), setStatus: (key, value) => value === undefined ? statuses.delete(key) : statuses.set(key, value), select: async () => undefined, confirm: async () => false, input: async () => undefined, onTerminalInput: () => () => {}, setWorkingMessage() {}, setWorkingVisible() {}, setWorkingIndicator() {}, setHiddenThinkingLabel() {}, setWidget() {}, setFooter() {}, setHeader() {}, setTitle() {}, pasteToEditor() {}, setEditorText() {}, getEditorText: () => "", addAutocompleteProvider() {}, setEditorComponent() {}, getEditorComponent: () => undefined, getAllThemes: () => [], getTheme: () => undefined, setTheme: () => ({ success: false }), getToolsExpanded: () => false, setToolsExpanded() {}, custom: async () => undefined, editor: async () => undefined };
   const manager = sdk.SessionManager.inMemory(root);
-  const created = await sdk.createAgentSession({ cwd: root, agentDir: process.env.PI_CODING_AGENT_DIR, model: core.models[0], thinkingLevel: "off", modelRuntime, resourceLoader, sessionManager: manager, tools: [], customTools: [], settingsManager: sdk.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: true, reserveTokens: 1_024, keepRecentTokens: 1 } }) });
+  const created = await sdk.createAgentSession({ cwd: root, agentDir: process.env.PI_CODING_AGENT_DIR, model: core.models[0], thinkingLevel: "off", modelRuntime, resourceLoader, sessionManager: manager, tools: ["read", "Agent", "get_subagent_result", "mcp", "jina_read", "todo"], customTools: [], settingsManager: sdk.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: true, reserveTokens: 1_024, keepRecentTokens: 1 } }) });
   const session = created.session; sessions.push(session); session.extensionRunner.setUIContext(ui, "tui");
   const command = (args) => session.extensionRunner.getCommand("orchestration").handler(args, session.extensionRunner.createCommandContext());
   await session.prompt("standard baseline input"); await session.waitForIdle();
   const systemText = (message) => typeof message.sections?.preamble === "string" ? Object.values(message.sections).filter((value) => typeof value === "string").join("\n") : typeof message.content === "string" ? message.content : JSON.stringify(message.content);
   const mainRequests = () => captured.filter((request) => request.messages.some((message) => message.role === "system" && /^(?:# PI Coding Agent|## Role)/.test(systemText(message))));
   const standardSystem = systemText(mainRequests()[0].messages.find((message) => message.role === "system"));
+  const allTools = ["read", "Agent", "get_subagent_result", "mcp", "jina_read", "todo"];
+  const requestTools = (request) => {
+    const declared = new Set();
+    for (const message of request.messages) {
+      for (const tool of message.toolsRemoved ?? []) declared.delete(tool?.name ?? tool);
+      for (const tool of message.toolsAdded ?? []) declared.add(tool?.name ?? tool);
+    }
+    return allTools.filter((name) => declared.has(name));
+  };
+  assert.deepEqual(requestTools(mainRequests()[0]), allTools, "standard requests declare every active tool");
   await command("v2");
   assert.equal(statuses.get("orchestration-mode"), "V2");
   await session.prompt("first synthetic input"); await session.waitForIdle();
   assert.equal(helperCalls, 1);
+  assert.deepEqual(requestTools(mainRequests().at(-1)), ["read", "Agent", "get_subagent_result", "todo"], "the first v2 request declares only the lean tool set; workflow guidance turns todo on");
   const v2Request = mainRequests().at(-1).messages;
   const v2System = systemText(v2Request.find((message) => message.role === "system"));
   for (const heading of ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]) assert.ok(v2System.includes(`## ${heading}`), `keeps ${heading}`);
@@ -295,6 +306,7 @@ try {
   assert.equal(helperCalls, 4, "standard never calls the helper");
   assert.equal(systemText(mainRequests().at(-1).messages.find((message) => message.role === "system")), standardSystem, "standard system prompt exactly matches its baseline");
   assert.equal(mainRequests().at(-1).messages.some((message) => JSON.stringify(message).includes("<v2-guidance")), false, "standard request contains no v2 guidance");
+  assert.deepEqual(requestTools(mainRequests().at(-1)), allTools, "leaving v2 restores every tool");
   assert.ok(uiMessages.some((message) => String(message).includes("helper tokens 33 in / 6 out")), "status reports accumulated helper usage");
   for (const [id, profile] of [["deepseek-v4.1-flash-fast", "deepseek"], ["deepseek-v4.1-flash-abliterated-fast", "deepseek"], ["gpt-6.1-terra", "terra"], ["kimi-k3.1-pro", "kimi"], ["kimi-k3.1-pro-abliterated", "kimi"], ["claude-sonnet-5-5", "sonnet"], ["claude-opus-5-5", undefined], ["gpt-6-luna", undefined], ["gpt-6.1", undefined]]) assert.equal(module.v2ProfileFor({ id }), profile, `profile of ${id}`);
   assert.equal(module.v2ProfileFor(undefined), undefined);
@@ -304,7 +316,7 @@ try {
     const profileManager = sdk.SessionManager.inMemory(root);
     const notices = [];
     let selectorCalls = 0;
-    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => profileManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {} };
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => profileManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {}, getActiveTools: () => [], setActiveTools() {} };
     module.default(fakePi, async () => { selectorCalls++; return { available: false, ids: [] }; });
     const setMode = (mode) => profileManager.appendCustomEntry("orchestration-mode", mode === "v2" ? { mode, sessionId: profileManager.getSessionId() } : { mode });
     const ctxFor = (id) => ({ sessionManager: profileManager, model: { provider: "refuseless", id }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify: (message) => notices.push(message), setStatus() {} } });
@@ -428,7 +440,7 @@ try {
   {
     const handlers = new Map();
     const leanManager = sdk.SessionManager.inMemory(root);
-    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => leanManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {} };
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => leanManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {}, getActiveTools: () => [], setActiveTools() {} };
     module.default(fakePi, async () => ({ available: false, ids: [] }));
     const ctxFor = (id) => ({ sessionManager: leanManager, model: { provider: "synthetic", id }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify() {}, setStatus() {} } });
     const start = async (id, options = {}) => {
@@ -476,6 +488,60 @@ try {
     assert.match(skillLines[2], new RegExp(`^- beta: Beta word .{60,80}… \\(${owned("extra-skills/beta/SKILL.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)$`), "long first sentences are cut and outside skills keep their path");
     assert.equal(skillLines.length, 3, "disable-model-invocation skills stay excluded");
     assert.ok(lean.systemPrompt.endsWith(`</skills>\n\n<cwd>\n${root.replace(/\\/g, "/")}\n</cwd>`), "the sections after skills are untouched");
+  }
+  {
+    const handlers = new Map();
+    let commandHandler;
+    const toolManager = sdk.SessionManager.inMemory(root);
+    const original = ["read", "bash", "edit", "write", "grep", "Agent", "get_subagent_result", "steer_subagent", "mcp", "mcp__blender", "generate_image", "jina_read", "pi_env_inspect", "pi_validate_skill", "goal_complete", "goal_blocked", "todo", "memory_recall"];
+    let active = [...original];
+    let setCalls = 0;
+    let helperIds = [];
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand: (_name, options) => { commandHandler = options.handler; }, appendEntry: (type, data) => toolManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {}, getActiveTools: () => [...active], setActiveTools: (names) => { setCalls++; active = [...names]; } };
+    module.default(fakePi, async () => ({ available: true, ids: helperIds, usage: validUsage }));
+    const ctxFor = (id) => ({ sessionManager: toolManager, model: { provider: "synthetic", id }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify() {}, setStatus() {} } });
+    const start = (id, prompt = "task") => handlers.get("before_agent_start")({ systemPromptOptions: { customPrompt: systemMd, skills: [] }, systemPrompt: systemMd, messageType: "user", prompt }, ctxFor(id));
+    const setMode = (mode) => toolManager.appendCustomEntry("orchestration-mode", mode === "v2" ? { mode, sessionId: toolManager.getSessionId() } : { mode });
+    const previousRun = process.env.PI_REPORT_RUN;
+    delete process.env.PI_REPORT_RUN;
+    try {
+      setMode("standard");
+      await start("claude-sonnet-5-5");
+      assert.deepEqual(active, original, "standard mode leaves the tool set alone");
+      assert.equal(setCalls, 0);
+      setMode("v2");
+      await start("claude-sonnet-5-5");
+      assert.deepEqual(active, ["read", "bash", "edit", "write", "grep", "Agent", "goal_complete", "goal_blocked"], "foreground profile: lean set with Agent, no background agent tools, no todo yet");
+      const callsAfterFirst = setCalls;
+      await start("claude-sonnet-5-5");
+      assert.equal(setCalls, callsAfterFirst, "an unchanged lean set is not set again");
+      await start("deepseek-v4.1-flash-fast");
+      assert.deepEqual(active, ["read", "bash", "edit", "write", "grep", "goal_complete", "goal_blocked"], "a blocking profile drops Agent");
+      helperIds = ["validation"];
+      await start("gpt-6-luna-other");
+      assert.deepEqual(active, ["read", "bash", "edit", "write", "grep", "Agent", "get_subagent_result", "steer_subagent", "goal_complete", "goal_blocked"], "an unprofiled model keeps background agent tools");
+      helperIds = ["planner"];
+      await start("gpt-6-luna-other", "plan the migration");
+      assert.ok(active.includes("todo"), "planner guidance turns todo on");
+      await start("claude-sonnet-5-5");
+      assert.deepEqual(active, ["read", "bash", "edit", "write", "grep", "Agent", "goal_complete", "goal_blocked", "todo"], "todo stays on for the rest of the session");
+      for (const dropped of ["mcp", "mcp__blender", "generate_image", "jina_read", "pi_env_inspect", "pi_validate_skill", "memory_recall"]) assert.ok(!active.includes(dropped), `v2 drops ${dropped}`);
+      await commandHandler("standard", { ...ctxFor("claude-sonnet-5-5"), ui: { notify() {}, setStatus() {} } });
+      assert.deepEqual(active, original, "leaving v2 through the command restores the previous tool set");
+      setMode("v2");
+      await start("claude-sonnet-5-5");
+      assert.notDeepEqual(active, original);
+      setMode("standard");
+      await start("claude-sonnet-5-5");
+      assert.deepEqual(active, original, "a standard run after v2 restores the previous tool set");
+      setMode("v2");
+      await start("claude-sonnet-5-5");
+      process.env.PI_REPORT_RUN = "run_A1";
+      await start("claude-sonnet-5-5");
+      assert.deepEqual(active, original, "Orca workers keep the full tool set");
+    } finally {
+      if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun;
+    }
   }
   assert.equal(networkAttempts, 0);
   console.log(JSON.stringify({ result: "PASS", selectorCases: "valid, empty, unknown, malformed, partial, lookup/provider errors, timeout, late resolution", sdkRequests: captured.length, helperCalls, firstV2Request: "seven core sections and one exact projected guide", standardAfterV2: "system prompt byte-identical to baseline; no guidance", networkAttempts, resources: "DISPOSABLE_VERIFIED" }));
