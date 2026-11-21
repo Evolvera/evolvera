@@ -1,9 +1,26 @@
 ---
 name: windows-jobs
-description: Use on Windows when a Python/CUDA job must run on one specific GPU of a multi-GPU machine (pin by UUID, safe with Ultralytics). Not needed for short commands or single-GPU work.
+description: Use on Windows when a Python/CUDA job must run on one specific GPU of a multi-GPU machine (pin by UUID, safe with Ultralytics), or when a long job (training, runner, benchmark) must outlive this Pi run with a memory cap. Not needed for short commands or single-GPU work.
 ---
 
 # Windows jobs
+
+## Run a long job that outlives this Pi run (run-job)
+
+A job started inside a bash call dies with that call's timeout, and in headless runs `process-reaper` ends Pi's descendants at exit. `Start-Process`, WMI or `cmd start` escape both but are untracked (the `detach-guard` extension refuses them in headless runs). Use:
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File ~/.pi/agent/skills/windows-jobs/scripts/run-job.ps1 \
+  -Name <name> -CommitLimitGB <gb> [-LogDir <dir>] [-WorkDir <dir>] \
+  [-GpuUuid GPU-xxxx [-GpuName 5070] | -CpuOnly] [-SetEnv KEY=VALUE] -- <program.exe> [args...]
+```
+
+- Everything after `--` is passed to the program untouched. The program must be an `.exe` (`python.exe`, `node.exe`): run scripts through their interpreter.
+- `-CommitLimitGB` caps committed memory for the whole job tree. On Windows/WDDM, GPU allocations count too: size it as host + GPU memory + about 4 GB for CUDA libraries.
+- Prints one JSON line (`supervisor_pid`, `child_pid`, `status`, `log`) and returns. Exit codes: `0` started, `2` bad input or the name is already running, `3` failed to start.
+- `<LogDir>/<name>.status.json` (default `%TEMP%\pi-jobs`) holds `state` (`running`, `exited`, `stopped`, `failed`), `exit_code`, `peak_job_commit_bytes` and `memory_limit_reached`. Poll it with short commands. Output goes to `log`.
+- stdin is closed. When the root process exits, anything it left running is killed.
+- Stop: `stop-job.ps1 -Name <name> [-LogDir <dir>]` ends the whole tree.
 
 ## Pin a job to one GPU (cuda-pin)
 
