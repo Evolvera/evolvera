@@ -52,6 +52,8 @@ const tmpdirProprioPadrao = new Set([
   "bash-timeout.smoke.mjs",
   // Spawns only sleep children owned by the test and kills them.
   "process-reaper.smoke.mjs",
+  // Pure in-memory checks plus child node processes that only exit.
+  "quota-exit.smoke.mjs",
   // Interface smoke owns agent/project tmpdirs, fake PI, and ephemeral port.
   "npm test (interface)",
 ]);
