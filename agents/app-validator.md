@@ -8,7 +8,7 @@ thinking: high
 max_turns: 120
 prompt_mode: replace
 inherit_context: false
-extensions: [codex-fast-mode]
+extensions: [codex-fast-mode, bash-timeout]
 skills: false
 ---
 
