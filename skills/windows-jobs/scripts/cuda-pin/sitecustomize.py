@@ -96,13 +96,20 @@ class _PatchFinder(importlib.abc.MetaPathFinder):
         return spec
 
 
+def _same_path(a, b):
+    # realpath + normcase: the cuda-pin directory can be on sys.path twice under different spellings
+    # (8.3 short name, other case); comparing raw strings would chain into ourselves forever.
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
 def _chain_next_sitecustomize():
     """Run the next sitecustomize on sys.path (venv/conda ones), which ours shadows."""
     here = os.path.dirname(os.path.abspath(__file__))
-    rest = [p for p in sys.path if os.path.abspath(p or os.getcwd()) != here]
+    rest = [p for p in sys.path if not _same_path(p or os.getcwd(), here)]
     spec = importlib.machinery.PathFinder.find_spec("sitecustomize", rest)
-    if spec is not None and spec.loader is not None:
-        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    if spec is None or spec.loader is None or (spec.origin and _same_path(spec.origin, __file__)):
+        return
+    spec.loader.exec_module(importlib.util.module_from_spec(spec))
 
 
 def _install():
