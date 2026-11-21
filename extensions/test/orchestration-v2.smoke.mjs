@@ -425,6 +425,32 @@ try {
       if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun;
     }
   }
+  {
+    const handlers = new Map();
+    const leanManager = sdk.SessionManager.inMemory(root);
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => leanManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {} };
+    module.default(fakePi, async () => ({ available: false, ids: [] }));
+    const ctxFor = (id) => ({ sessionManager: leanManager, model: { provider: "synthetic", id }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify() {}, setStatus() {} } });
+    const start = async (id, options = {}) => {
+      const systemPrompt = options.systemPrompt ?? systemMd;
+      const result = await handlers.get("before_agent_start")({ systemPromptOptions: { customPrompt: systemMd, skills: options.skills ?? [] }, systemPrompt, messageType: "user", prompt: options.prompt ?? "task" }, ctxFor(id));
+      const event = { messages: [] };
+      handlers.get("context")(event, ctxFor(id));
+      return { systemPrompt: result?.systemPrompt, projected: event.messages.map((message) => message.content).join("\n") };
+    };
+    leanManager.appendCustomEntry("orchestration-mode", { mode: "v2", sessionId: leanManager.getSessionId() });
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    const extracted = await start("claude-sonnet-5-5");
+    assert.ok(extracted.systemPrompt.includes("## Operating Contract"), "without SYSTEM-v2.md the core is extracted from SYSTEM.md");
+    assert.ok(extracted.projected.includes(`<v2-guidance id=engineering>${module.extractSection(systemMd, "Engineering and Architecture")}</v2-guidance>`), "without v2-engineering.md engineering is the SYSTEM.md section");
+    fs.writeFileSync(path.join(agentDir, "SYSTEM-v2.md"), "# Compact core placeholder\n");
+    fs.writeFileSync(path.join(agentDir, "v2-engineering.md"), "Engineering placeholder\n");
+    const compact = await start("claude-sonnet-5-5");
+    assert.equal(compact.systemPrompt, `# Compact core placeholder\n\n${module.V2_GUIDANCE.preamble}`, "SYSTEM-v2.md replaces the extracted core and keeps the guidance preamble");
+    assert.ok(compact.projected.includes("<v2-guidance id=engineering>Engineering placeholder</v2-guidance>"), "v2-engineering.md replaces the engineering section");
+    fs.rmSync(path.join(agentDir, "SYSTEM-v2.md"));
+    fs.rmSync(path.join(agentDir, "v2-engineering.md"));
+  }
   assert.equal(networkAttempts, 0);
   console.log(JSON.stringify({ result: "PASS", selectorCases: "valid, empty, unknown, malformed, partial, lookup/provider errors, timeout, late resolution", sdkRequests: captured.length, helperCalls, firstV2Request: "seven core sections and one exact projected guide", standardAfterV2: "system prompt byte-identical to baseline; no guidance", networkAttempts, resources: "DISPOSABLE_VERIFIED" }));
 } finally {

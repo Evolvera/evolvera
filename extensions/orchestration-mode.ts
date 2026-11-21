@@ -97,7 +97,7 @@ const V2_DELEGATION_TEXT = "Delegate only work that is clearly large or multi-ar
 
 const V2_VALIDATION_TEXT = "You run the relevant tests yourself after a change and report what ran and what you did not run. Add a separate QA or reviewer pass only when the change is large or high-risk. Before calling it done, find the sibling paths that share the same logic (other callers, variants, the same pattern elsewhere), verify them, and fix them too.";
 
-export type GuidanceSource = { section: string } | { skill: string } | { text: string };
+export type GuidanceSource = { section: string; file?: string } | { skill: string } | { text: string };
 export type GuidanceEntry = { id: string; when: string; source: GuidanceSource };
 
 export const V2_GUIDANCE: { preamble: string; instructions: string; catalog: readonly GuidanceEntry[] } = {
@@ -118,7 +118,7 @@ Output: only a JSON array of catalog ids, for example ["workflow","validation"],
     { id: "delegation", when: "The work is clearly large or multi-area, needs deep web research, or names a specialist capability such as harness self-update, PI extensions, websites, or the Goal feature. A small bug fix, or any change the assistant can make alone, does not match.", source: { text: V2_DELEGATION_TEXT } },
     { id: "orca", when: "The request involves Orca worktrees, terminals, or workers, launching or supervising child PI sessions, a worker's report, or GitHub issue or board campaigns.", source: { section: "Orca Workers" } },
     { id: "memory", when: "The task depends on or changes durable project memory (.pi/memory, memory recall or search, architecture records), or repeats a deploy, recovery, migration, or previously failed operation that may have a recorded lesson.", source: { section: "Project Memory" } },
-    { id: "engineering", when: "The assistant will write or change code, configuration, or migrations and needs the engineering rules for structure, root-cause fixes, comments, scratch cleanup, parallel CPU use, or proving a launcher before scaling it.", source: { section: "Engineering and Architecture" } },
+    { id: "engineering", when: "The assistant will write or change code, configuration, or migrations and needs the engineering rules for structure, root-cause fixes, comments, scratch cleanup, parallel CPU use, or proving a launcher before scaling it.", source: { section: "Engineering and Architecture", file: "v2-engineering.md" } },
     { id: "validation", when: "A change has been made or is about to be called done, and the question is what proof, tests, review, QA, or app validation is required before closing it or opening, reviewing, or merging a PR.", source: { text: V2_VALIDATION_TEXT } },
     { id: "prompt-engineering", when: "The user wants to write, audit, debug, or optimize model-facing text such as a system prompt, agent instructions, a skill, a tool description, a structured-output contract, or an LLM-based classifier.", source: { skill: "prompt-engineering" } },
     { id: "deslop", when: "The user wants a screen or interface redesigned, polished, animated, or designed from scratch, or says a UI looks AI-generated, generic, or like a template.", source: { skill: "deslop" } },
@@ -218,7 +218,7 @@ function guidanceText(id: string, systemMd: string): string | undefined {
   if (id.startsWith(V2_PROFILE_ID_PREFIX)) return V2_PROFILES[id.slice(V2_PROFILE_ID_PREFIX.length)]?.text;
   const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
   if (!entry) return undefined;
-  return "section" in entry.source ? extractSection(systemMd, entry.source.section)
+  return "section" in entry.source ? sectionText(systemMd, entry.source)
     : "skill" in entry.source ? v2SkillPointer(entry.source.skill) : entry.source.text;
 }
 
@@ -231,6 +231,16 @@ function sessionCompacted(ctx: Ctx): boolean {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export const V2_CORE_FILE = "SYSTEM-v2.md";
+
+function agentDirText(file: string): string | undefined {
+  try { return fs.readFileSync(path.join(getAgentDir(), file), "utf8").trim() || undefined; } catch { return undefined; }
+}
+
+function sectionText(systemMd: string, source: { section: string; file?: string }): string | undefined {
+  return (source.file ? agentDirText(source.file) : undefined) ?? extractSection(systemMd, source.section);
 }
 
 export function extractSection(prompt: string, heading: string): string | undefined {
@@ -340,10 +350,11 @@ export function v2SkillPointer(skill: string): string {
 }
 
 function buildV2Prompt(systemMd: string): string | undefined {
-  const core = ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
+  const compact = agentDirText(V2_CORE_FILE);
+  const core = compact ? [compact] : ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
     .map((heading) => extractSection(systemMd, heading));
   const guides = V2_GUIDANCE.catalog.map((entry) => "section" in entry.source
-    ? extractSection(systemMd, entry.source.section)
+    ? sectionText(systemMd, entry.source)
     : "text" in entry.source
       ? entry.source.text
       : fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
