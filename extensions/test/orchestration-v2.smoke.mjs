@@ -296,9 +296,9 @@ try {
   assert.equal(systemText(mainRequests().at(-1).messages.find((message) => message.role === "system")), standardSystem, "standard system prompt exactly matches its baseline");
   assert.equal(mainRequests().at(-1).messages.some((message) => JSON.stringify(message).includes("<v2-guidance")), false, "standard request contains no v2 guidance");
   assert.ok(uiMessages.some((message) => String(message).includes("helper tokens 33 in / 6 out")), "status reports accumulated helper usage");
-  for (const [id, profile] of [["deepseek-v4.1-flash-fast", "deepseek"], ["deepseek-v4.1-flash-abliterated-fast", "deepseek"], ["gpt-6.1-terra", "terra"], ["kimi-k3.1-pro", "kimi"], ["kimi-k3.1-pro-abliterated", "kimi"], ["gpt-6-luna", undefined], ["gpt-6.1", undefined]]) assert.equal(module.v2ProfileFor({ id }), profile, `profile of ${id}`);
+  for (const [id, profile] of [["deepseek-v4.1-flash-fast", "deepseek"], ["deepseek-v4.1-flash-abliterated-fast", "deepseek"], ["gpt-6.1-terra", "terra"], ["kimi-k3.1-pro", "kimi"], ["kimi-k3.1-pro-abliterated", "kimi"], ["claude-sonnet-5-5", "sonnet"], ["claude-opus-5-5", undefined], ["gpt-6-luna", undefined], ["gpt-6.1", undefined]]) assert.equal(module.v2ProfileFor({ id }), profile, `profile of ${id}`);
   assert.equal(module.v2ProfileFor(undefined), undefined);
-  assert.deepEqual(Object.keys(module.V2_PROFILES), ["deepseek", "terra", "kimi"]);
+  assert.deepEqual(Object.keys(module.V2_PROFILES), ["deepseek", "terra", "kimi", "sonnet"]);
   {
     const handlers = new Map();
     const profileManager = sdk.SessionManager.inMemory(root);
