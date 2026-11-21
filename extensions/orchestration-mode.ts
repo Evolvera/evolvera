@@ -151,6 +151,42 @@ export function v2ToolSet(active: readonly string[], options: { agent: "allow" |
     || V2_BACKGROUND_AGENT_TOOLS.has(name) && options.agent === "allow");
 }
 
+const AGENT_TYPES_HEADER = "Available agent types and the tools they have access to:\n";
+
+function firstClause(text: string, max: number): string {
+  const clause = text.replace(/\s+/g, " ").trim().split(/[.;:!?](?=\s|$)| — | \(/)[0].trim();
+  return clause.length > max ? `${clause.slice(0, max - 1).trimEnd()}…` : clause;
+}
+
+/** The pi-subagents Agent description with one short line per agent type and no tool lists. */
+export function compactAgentDescription(description: string): string {
+  const start = description.indexOf(AGENT_TYPES_HEADER);
+  const listStart = start + AGENT_TYPES_HEADER.length;
+  const end = start < 0 ? -1 : description.indexOf("\n\n", listStart);
+  if (end < 0) return description;
+  const lines = description.slice(listStart, end).split(/\n(?=- )/).map((entry) => {
+    const match = /^- ([^:\n]+): ([\s\S]*)$/.exec(entry);
+    return match ? `- ${match[1]}: ${firstClause(match[2].replace(/\s*\(Tools: [^)]*\)\s*$/, ""), 70)}` : entry;
+  });
+  return `${description.slice(0, start)}Agent types:\n${lines.join("\n")}${description.slice(end)}`;
+}
+
+/** Rewrite only the Agent tool description in an anthropic-messages, openai-completions, or openai-responses payload. */
+export function compactAgentToolPayload(payload: unknown): unknown {
+  const tools = (payload as { tools?: unknown })?.tools;
+  if (!Array.isArray(tools)) return undefined;
+  let changed = false;
+  const next = tools.map((tool) => {
+    const holder = tool?.function?.name === "Agent" ? tool.function : tool?.name === "Agent" ? tool : undefined;
+    if (typeof holder?.description !== "string") return tool;
+    const description = compactAgentDescription(holder.description);
+    if (description === holder.description) return tool;
+    changed = true;
+    return holder === tool ? { ...tool, description } : { ...tool, function: { ...tool.function, description } };
+  });
+  return changed ? { ...(payload as object), tools: next } : undefined;
+}
+
 /** Delivered when the helper is unavailable: the baseline for any change, nothing situational. */
 export const V2_BASELINE: readonly string[] = ["engineering", "validation"];
 
@@ -770,6 +806,8 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     applyLeanTools(ctx);
     return { systemPrompt };
   });
+
+  pi.on("before_provider_request", (event, rawCtx) => isEligible(rawCtx as Ctx) ? compactAgentToolPayload(event.payload) : undefined);
 
   pi.on("tool_call", async (event, rawCtx) => {
     const ctx = rawCtx as Ctx;

@@ -543,6 +543,51 @@ try {
       if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun;
     }
   }
+  {
+    const handlers = new Map();
+    const descManager = sdk.SessionManager.inMemory(root);
+    const fakePi = { on: (name, handler) => handlers.set(name, handler), registerCommand() {}, appendEntry: (type, data) => descManager.appendCustomEntry(type, data), events: { emit() {}, on() {} }, getThinkingLevel: () => "medium", setThinkingLevel() {}, getActiveTools: () => [], setActiveTools() {} };
+    module.default(fakePi, async () => ({ available: false, ids: [] }));
+    const ctx = { sessionManager: descManager, model: { provider: "synthetic", id: "claude-sonnet-5-5" }, modelRegistry: {}, getSystemPrompt: () => systemMd, ui: { notify() {}, setStatus() {} } };
+    const header = "Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.\n\nAvailable agent types and the tools they have access to:\n";
+    const list = [
+      "- general-purpose: General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. Model: openai/gpt-6-luna high. (luna) (Tools: *)",
+      "- builder-light: Light general implementation agent for routine bounded work whose correctness is locally decidable: mechanical edits. (luna) (Tools: *)",
+      "- scout: Guided read-only codebase exploration with evidence-based reports. Model: openai/gpt-6-luna medium. (luna) (Tools: read, grep, find, ls)",
+    ].join("\n");
+    const rest = "\n\nCustom agents can be defined in .pi/agents/<name>.md.\n\n## Usage notes\n\n- Always include a short description.";
+    const full = header + list + rest;
+    const expected = `${header.replace("Available agent types and the tools they have access to:\n", "Agent types:\n")}- general-purpose: General-purpose agent for researching complex questions, searching fo…\n- builder-light: Light general implementation agent for routine bounded work whose cor…\n- scout: Guided read-only codebase exploration with evidence-based reports${rest}`;
+    assert.equal(module.compactAgentDescription(full), expected, "one short line per agent type, header and usage rules kept, no tool lists");
+    assert.equal(module.compactAgentDescription("no type list"), "no type list");
+    const schema = { type: "object", properties: { prompt: { type: "string", description: "Available agent types and the tools they have access to:\n- x: y (Tools: *)" } } };
+    const other = { name: "read", description: full, input_schema: schema };
+    const payloads = {
+      anthropic: { model: "m", tools: [other, { name: "Agent", description: full, input_schema: schema }] },
+      completions: { model: "m", tools: [{ type: "function", function: { name: "read", description: full, parameters: schema } }, { type: "function", function: { name: "Agent", description: full, parameters: schema } }] },
+      responses: { model: "m", tools: [{ type: "function", name: "read", description: full, parameters: schema }, { type: "function", name: "Agent", description: full, parameters: schema }] },
+    };
+    const request = (payload) => handlers.get("before_provider_request")({ type: "before_provider_request", payload }, ctx);
+    descManager.appendCustomEntry("orchestration-mode", { mode: "standard" });
+    for (const payload of Object.values(payloads)) assert.equal(request(payload), undefined, "standard mode never rewrites the payload");
+    descManager.appendCustomEntry("orchestration-mode", { mode: "v2", sessionId: descManager.getSessionId() });
+    for (const [shape, payload] of Object.entries(payloads)) {
+      const before = JSON.stringify(payload);
+      const result = request(payload);
+      assert.equal(JSON.stringify(payload), before, `${shape}: the original payload is not mutated`);
+      const agent = result.tools[1].function ?? result.tools[1];
+      const read = result.tools[0].function ?? result.tools[0];
+      assert.equal(agent.description, expected, `${shape}: Agent description is compact`);
+      assert.equal(read.description, full, `${shape}: other tools keep their description`);
+      assert.deepEqual(agent.input_schema ?? agent.parameters, schema, `${shape}: the schema is untouched`);
+      assert.equal(result.model, "m");
+    }
+    assert.equal(request({ messages: [] }), undefined, "payloads without tools pass through");
+    const previousRun = process.env.PI_REPORT_RUN;
+    process.env.PI_REPORT_RUN = "run_A1";
+    try { assert.equal(request(payloads.anthropic), undefined, "Orca workers keep the full Agent description"); }
+    finally { if (previousRun === undefined) delete process.env.PI_REPORT_RUN; else process.env.PI_REPORT_RUN = previousRun; }
+  }
   assert.equal(networkAttempts, 0);
   console.log(JSON.stringify({ result: "PASS", selectorCases: "valid, empty, unknown, malformed, partial, lookup/provider errors, timeout, late resolution", sdkRequests: captured.length, helperCalls, firstV2Request: "seven core sections and one exact projected guide", standardAfterV2: "system prompt byte-identical to baseline; no guidance", networkAttempts, resources: "DISPOSABLE_VERIFIED" }));
 } finally {
