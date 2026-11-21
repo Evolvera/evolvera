@@ -450,6 +450,26 @@ try {
     assert.ok(compact.projected.includes("<v2-guidance id=engineering>Engineering placeholder</v2-guidance>"), "v2-engineering.md replaces the engineering section");
     fs.rmSync(path.join(agentDir, "SYSTEM-v2.md"));
     fs.rmSync(path.join(agentDir, "v2-engineering.md"));
+
+    const { buildSystemPrompt } = await import(sdkUrl("dist/core/system-prompt.js"));
+    const longSentence = `Beta ${"word ".repeat(30)}ends here. Second sentence stays out.`;
+    const skills = [
+      { name: "alpha", description: "Alpha does one thing. Details that the compact list drops.", filePath: path.join(agentDir, "skills", "alpha", "SKILL.md"), baseDir: path.join(agentDir, "skills", "alpha") },
+      { name: "beta", description: longSentence, filePath: owned("extra-skills/beta/SKILL.md"), baseDir: owned("extra-skills/beta") },
+      { name: "gamma", description: "Hidden from the model.", filePath: path.join(agentDir, "skills", "gamma", "SKILL.md"), baseDir: path.join(agentDir, "skills", "gamma"), disableModelInvocation: true },
+    ];
+    const assembled = buildSystemPrompt({ customPrompt: systemMd, selectedTools: ["read", "bash"], skills, cwd: root });
+    assert.ok(assembled.includes("<available_skills>") && assembled.includes("Details that the compact list drops"), "the SDK prompt carries the full skills block");
+    const lean = await start("claude-sonnet-5-5", { systemPrompt: assembled, skills });
+    const skillsBlock = /<skills>\n([\s\S]*?)\n<\/skills>/.exec(lean.systemPrompt)?.[1];
+    assert.ok(skillsBlock, "v2 keeps a skills section");
+    assert.ok(!lean.systemPrompt.includes("<available_skills>") && !lean.systemPrompt.includes("Details that the compact list drops"), "v2 drops the full skills block");
+    const skillLines = skillsBlock.split("\n");
+    assert.equal(skillLines[0], `Each skill below is at ${path.join(agentDir, "skills", "<name>", "SKILL.md")} unless its line gives a path. Read that file when the task matches the skill, and resolve its relative paths against the skill's directory.`);
+    assert.equal(skillLines[1], "- alpha: Alpha does one thing.");
+    assert.match(skillLines[2], new RegExp(`^- beta: Beta word .{60,80}… \\(${owned("extra-skills/beta/SKILL.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)$`), "long first sentences are cut and outside skills keep their path");
+    assert.equal(skillLines.length, 3, "disable-model-invocation skills stay excluded");
+    assert.ok(lean.systemPrompt.endsWith(`</skills>\n\n<cwd>\n${root.replace(/\\/g, "/")}\n</cwd>`), "the sections after skills are untouched");
   }
   assert.equal(networkAttempts, 0);
   console.log(JSON.stringify({ result: "PASS", selectorCases: "valid, empty, unknown, malformed, partial, lookup/provider errors, timeout, late resolution", sdkRequests: captured.length, helperCalls, firstV2Request: "seven core sections and one exact projected guide", standardAfterV2: "system prompt byte-identical to baseline; no guidance", networkAttempts, resources: "DISPOSABLE_VERIFIED" }));

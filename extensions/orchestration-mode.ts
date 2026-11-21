@@ -364,11 +364,38 @@ function buildV2Prompt(systemMd: string): string | undefined {
   return `${core.join("\n\n")}\n\n${V2_GUIDANCE.preamble}`;
 }
 
-function applyV2(systemPrompt: string, customPrompt: string): string | undefined {
+export type V2Skill = { name: string; description: string; filePath: string; disableModelInvocation?: boolean };
+
+function shortText(text: string, max: number): string {
+  const sentence = (/^.*?[.!?](?=\s|$)/s.exec(text)?.[0] ?? text).replace(/\s+/g, " ").trim();
+  return sentence.length > max ? `${sentence.slice(0, max - 1).trimEnd()}…` : sentence;
+}
+
+/** The compact v2 skills list: one line per model-invocable skill; skills outside skillsDir keep their path. */
+export function v2SkillsList(skills: readonly V2Skill[], skillsDir = path.join(getAgentDir(), "skills")): string | undefined {
+  const visible = skills.filter((skill) => !skill.disableModelInvocation);
+  if (!visible.length) return undefined;
+  const lines = visible.map((skill) => {
+    const standard = path.resolve(skill.filePath) === path.resolve(skillsDir, skill.name, "SKILL.md");
+    return `- ${skill.name}: ${shortText(skill.description, 80)}${standard ? "" : ` (${skill.filePath})`}`;
+  });
+  return [`Each skill below is at ${path.join(skillsDir, "<name>", "SKILL.md")} unless its line gives a path. Read that file when the task matches the skill, and resolve its relative paths against the skill's directory.`, ...lines].join("\n");
+}
+
+function compactSkills(tail: string, skills: readonly V2Skill[]): string {
+  const open = "<skills>\n";
+  const start = tail.indexOf(open);
+  const end = start < 0 ? -1 : tail.indexOf("\n</skills>", start);
+  const list = v2SkillsList(skills);
+  if (end < 0 || !list) return tail;
+  return tail.slice(0, start + open.length) + list + tail.slice(end);
+}
+
+function applyV2(systemPrompt: string, customPrompt: string, skills: readonly V2Skill[] = []): string | undefined {
   const replacement = buildV2Prompt(customPrompt);
   const at = systemPrompt.indexOf(customPrompt);
   if (!replacement || at < 0) return undefined;
-  return systemPrompt.slice(0, at) + replacement + systemPrompt.slice(at + customPrompt.length);
+  return systemPrompt.slice(0, at) + replacement + compactSkills(systemPrompt.slice(at + customPrompt.length), skills);
 }
 
 type Delivery = { ids: string[]; usage?: V2GuidanceUsage; at: number };
@@ -667,7 +694,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     if (mode !== "v2" || !isEligible(ctx, customPrompt)) return;
     eligibleSessionId = undefined;
     eligibleSystemMd = undefined;
-    const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt);
+    const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt, event.systemPromptOptions?.skills ?? []);
     if (!systemPrompt) {
       if (!warned) ctx.ui?.notify?.("Orchestration V2 indisponível: SYSTEM.md ou uma fonte de guidance obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
       warned = true;
