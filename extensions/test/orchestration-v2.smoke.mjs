@@ -443,6 +443,12 @@ try {
     const extracted = await start("claude-sonnet-5-5");
     assert.ok(extracted.systemPrompt.includes("## Operating Contract"), "without SYSTEM-v2.md the core is extracted from SYSTEM.md");
     assert.ok(extracted.projected.includes(`<v2-guidance id=engineering>${module.extractSection(systemMd, "Engineering and Architecture")}</v2-guidance>`), "without v2-engineering.md engineering is the SYSTEM.md section");
+    const anchorEvent = { messages: [{ role: "user", content: "earlier prompt", timestamp: 1 }, { role: "assistant", content: [{ type: "text", text: "earlier answer" }], timestamp: 2 }, { role: "user", content: "task", timestamp: Date.now() + 5_000 }] };
+    handlers.get("context")(anchorEvent, ctxFor("claude-sonnet-5-5"));
+    assert.deepEqual(anchorEvent.messages.slice(0, 3).map((message) => message.timestamp), [1, 2, anchorEvent.messages[2].timestamp]);
+    assert.equal(anchorEvent.messages[2].content, "task");
+    assert.ok(anchorEvent.messages.slice(3).every((message) => message.content.startsWith("<v2-guidance id=")) && anchorEvent.messages.length > 3, "guidance follows the prompt that selected it even when the prompt is timestamped later than the delivery");
+    assert.deepEqual(anchorEvent.messages.slice(3).map((message) => /^<v2-guidance id=([^>]+)>/.exec(message.content)[1]), ["engineering", "profile-sonnet"], "guides keep their delivery order");
     fs.writeFileSync(path.join(agentDir, "SYSTEM-v2.md"), "# Compact core placeholder\n");
     fs.writeFileSync(path.join(agentDir, "v2-engineering.md"), "Engineering placeholder\n");
     const compact = await start("claude-sonnet-5-5");

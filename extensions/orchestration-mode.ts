@@ -752,8 +752,11 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
         if (!text) continue;
         const marker = `${V2_MARKER}${id}>${text}</v2-guidance>`;
         if (event.messages.some((message: any) => typeof message.content === "string" && message.content.includes(marker))) continue;
-        const after = Number.isFinite(delivery.at) ? event.messages.findIndex((message: any) => typeof message.timestamp === "number" && message.timestamp > delivery.at) : -1;
-        event.messages.splice(after < 0 ? event.messages.length : after, 0, { role: "user", content: marker, timestamp: delivery.at } as any);
+        const isGuide = (message: any) => typeof message.content === "string" && message.content.startsWith(V2_MARKER);
+        const prompt = Number.isFinite(delivery.at) ? event.messages.findIndex((message: any) => message.role === "user" && typeof message.timestamp === "number" && message.timestamp >= delivery.at && !isGuide(message)) : -1;
+        let at = prompt < 0 ? event.messages.length : prompt + 1;
+        while (at < event.messages.length && isGuide(event.messages[at])) at++;
+        event.messages.splice(at, 0, { role: "user", content: marker, timestamp: delivery.at } as any);
       }
     }
   });
