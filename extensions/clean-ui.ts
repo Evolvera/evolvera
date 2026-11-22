@@ -657,9 +657,7 @@ export function fastTag(status: string | undefined): Segment | undefined {
 /** Orchestration is a first-class tag: bold accent text only, so the raw key and music emoji never reach the HUD. */
 export function conductorTag(status: string | undefined): Segment | undefined {
   if (status === undefined) return undefined;
-  const normalized = oneLine(status);
-  if (normalized === "V2") return { text: "V2", color: "accent", bold: true };
-  const words = normalized.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+  const words = oneLine(status).replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
   if (!words.length || (words.length === 1 && /^(OFF|OFFLINE)$/i.test(words[0]!))) return undefined;
   const extra = words.filter((word) => !/^CONDUCTOR$/i.test(word));
   return { text: ["CONDUCTOR", ...extra].join("·"), color: "accent", bold: true };

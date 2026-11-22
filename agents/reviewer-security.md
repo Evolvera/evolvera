@@ -9,7 +9,7 @@ max_turns: 12
 lifecycle: lazy
 prompt_mode: replace
 inherit_context: false
-extensions: [evil-mode]
+extensions: false
 skills: false
 ---
 

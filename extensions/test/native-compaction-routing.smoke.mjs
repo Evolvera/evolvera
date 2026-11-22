@@ -1,6 +1,6 @@
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -33,7 +33,7 @@ function makeContext(state, model) {
     modelRegistry: {
       find(provider, modelId) {
         state.findCalls.push([provider, modelId]);
-        return provider === "openai" && modelId === "gpt-6-luna" ? state.findResult : state.fallbacks?.[`${provider}/${modelId}`];
+        return state.findResult;
       },
       async getApiKeyAndHeaders(foundModel) {
         state.authCalls.push(foundModel);
@@ -68,9 +68,6 @@ try {
     }
   `);
   cpSync(path.join(root, "extensions", "native-compaction-routing.ts"), extensionPath);
-  // Native type stripping needs explicit extensions; Pi's loader resolves the bare specifier itself.
-  writeFileSync(extensionPath, readFileSync(extensionPath, "utf8").replace('from "./evil-mode"', 'from "./evil-mode.ts"'));
-  cpSync(path.join(root, "extensions", "evil-mode.ts"), path.join(sandbox, "evil-mode.ts"));
 
   const mockSdk = await import(pathToFileURL(path.join(mockPackageDir, "index.js")).href);
   const mod = await import(`${pathToFileURL(extensionPath).href}?run=${Date.now()}`);
@@ -164,34 +161,19 @@ try {
   assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: conversationModel }, deepseekRoute), true, "physical selection ignores routed metadata");
   assert.equal(mod.isStaleCrossProviderThreshold(guardEvent("threshold", 350_000), { model: virtual }), false, "missing route preserves virtual selection decision");
 
-  // Fallback chain: Luna -> Haiku -> DeepSeek flash -> conversation model, all silent.
+  // Fallback: Luna unavailable or failing -> the conversation model summarizes.
   const opusMain = { provider: "anthropic", id: "claude-opus-5-5" };
-  const haikuModel = { provider: "anthropic", id: "claude-haiku-5-5" };
-  const deepseekModel = { provider: "refuseless", id: "deepseek-v4.1-flash-fast" };
   const plainEvent = () => ({ preparation: preparation(), signal: new AbortController().signal });
-  state.fallbacks = { "anthropic/claude-haiku-5-5": haikuModel, "refuseless/deepseek-v4.1-flash-fast": deepseekModel };
   state.findResult = undefined;
   let context = makeContext(state, opusMain);
-  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "missing Luna -> Haiku");
-  assert.deepEqual(mockSdk.state.calls.at(-1).slice(1, 2).concat(mockSdk.state.calls.at(-1)[6]), [haikuModel, "low"]);
-  assert.equal(context.notices.length, 0, "fallback is silent");
+  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "missing Luna -> main model");
+  assert.equal(mockSdk.state.calls.at(-1)[1], opusMain);
+  assert.match(context.notices.at(-1).message, /Luna indisponível; compactação feita com claude-opus-5-5/);
   state.findResult = lunaModel;
-  mockSdk.state.failNext = 2;
+  mockSdk.state.failNext = 1;
   context = makeContext(state, opusMain);
-  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "Luna and Haiku outage -> DeepSeek");
-  assert.deepEqual(mockSdk.state.calls.slice(-3).map((c) => c[1]), [lunaModel, haikuModel, deepseekModel]);
-  assert.equal(context.notices.length, 0);
-  mockSdk.state.failNext = 3;
-  context = makeContext(state, opusMain);
-  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "whole chain down -> main model last");
-  assert.deepEqual(mockSdk.state.calls.slice(-4).map((c) => c[1]), [lunaModel, haikuModel, deepseekModel, opusMain]);
-  assert.equal(context.notices.length, 0);
-  mockSdk.state.failNext = 3;
-  const callsBeforeDedup = mockSdk.state.calls.length;
-  context = makeContext(state, haikuModel);
-  assertSafeCancel(await handler(plainEvent(), context), context);
-  assert.equal(mockSdk.state.calls.length - callsBeforeDedup, 3, "main already in chain is not retried");
-  state.fallbacks = {};
+  assert.deepEqual(await handler(plainEvent(), context), { compaction: result }, "Luna outage -> main model");
+  assert.deepEqual(mockSdk.state.calls.slice(-2).map((c) => c[1]), [lunaModel, opusMain], "Luna first, then main");
   mockSdk.state.failNext = 1;
   context = makeContext(state, lunaModel);
   assertSafeCancel(await handler(plainEvent(), context), context);
@@ -200,6 +182,7 @@ try {
   state.findResult = undefined;
   context = makeContext(state, undefined);
   assertSafeCancel(await handler(plainEvent(), context), context);
+  state.findResult = lunaModel;
 
   state.findResult = lunaModel;
   state.authResult = { ok: false, error: "provider secret response must not leak" };
