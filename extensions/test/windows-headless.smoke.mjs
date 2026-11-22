@@ -682,16 +682,20 @@ print(json.dumps({"device": str(device), "name": torch.cuda.get_device_name(0),
   delete env.PI_CUDA_PIN_NAME;
 
   // 3.1 Control on real Ultralytics 8.4.x without cuda-pin: the launcher pins the GPU by UUID and
-  // select_device("0") leaves CUDA_VISIBLE_DEVICES="0" in the process and in every child. On a
-  // single-GPU machine "0" is the same card, so the jump itself is only visible on a multi-GPU box
-  // (dense: ITEM446_stage1.stdout.log shows CUDA:0 = RTX 3060); the rewrite is what we prove here.
+  // select_device("0") leaves CUDA_VISIBLE_DEVICES="0" in the process and in every child (dense:
+  // ITEM446_stage1.stdout.log shows CUDA:0 = RTX 3060 with PCI_BUS_ID). Expected: the rewrite to "0".
+  // Why the default (fastest-first) order here: with PCI_BUS_ID the control would open a CUDA context
+  // on another card of a shared machine (the dense 3060). Fastest-first "0" is the pinned card when it
+  // is the fastest one, so set PI_TEST_REAL_CUDA_UUID to the fastest GPU; the name check enforces it.
   {
-    const r = spawnSync(py, [probe], { encoding: "utf8", timeout: 180_000,
-      env: { ...env, CUDA_DEVICE_ORDER: "PCI_BUS_ID", CUDA_VISIBLE_DEVICES: uuid } });
+    const controlEnv = { ...env, CUDA_VISIBLE_DEVICES: uuid };
+    delete controlEnv.CUDA_DEVICE_ORDER;
+    const r = spawnSync(py, [probe], { encoding: "utf8", timeout: 180_000, env: controlEnv });
     assert.equal(r.status, 0, r.stderr);
     const out = lastJson(r.stdout);
     assert.equal(out.env_after, "0");
     assert.equal(out.child_env, "0");
+    assert.ok(out.name.includes(name), `control ran on "${out.name}": use the fastest GPU as PI_TEST_REAL_CUDA_UUID`);
     console.log(`real-cuda control: launcher pinned ${uuid.slice(0, 12)}..., Ultralytics left CUDA_VISIBLE_DEVICES="0" (child too)`);
   }
 
@@ -722,11 +726,11 @@ print(json.dumps({"device": str(device), "name": torch.cuda.get_device_name(0),
 
   // 3.4 Wrong expected name for the real GPU: stops with a cuda-pin error before any model work.
   {
-    assert.equal(ps(runJob, ["-Name", "real-name", "-CommitLimitGB", "12", "-LogDir", logDir, "-GpuUuid", uuid, "-GpuName", "5070",
+    assert.equal(ps(runJob, ["-Name", "real-name", "-CommitLimitGB", "12", "-LogDir", logDir, "-GpuUuid", uuid, "-GpuName", "NO-SUCH-GPU",
       "-SetEnv", `YOLO_CONFIG_DIR=${yoloDir}`, "--", py, probe]).status, 0);
     const s = await waitFor(finished(logDir, "real-name"), 180_000, "real-name");
     assert.notEqual(s.exit_code, 0);
-    assert.match(readFileSync(s.log, "utf8"), /cuda-pin.*expected a name containing '5070'/);
+    assert.match(readFileSync(s.log, "utf8"), /cuda-pin.*expected a name containing 'NO-SUCH-GPU'/);
   }
   console.log("ok real-cuda");
 }
@@ -868,9 +872,13 @@ async function detachGuardSection() {
 }
 
 try {
-  await detachGuardSection();
-  await cudaPinSection();
-  await runJobSection();
+  // PI_TEST_REAL_CUDA_ONLY=1 runs only Section 3: on a shared GPU server the memory stress of
+  // Section 2 would compete with production jobs, and Section 4 needs the Pi SDK.
+  if (process.env.PI_TEST_REAL_CUDA_ONLY !== "1") {
+    await detachGuardSection();
+    await cudaPinSection();
+    await runJobSection();
+  }
   await realCudaSection();
 } finally {
   // Cleanup of only what this test created: stop every job it left running (a failed assertion can
