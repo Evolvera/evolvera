@@ -153,7 +153,7 @@ Info ($dirs.Count.ToString() + " diretorios")
 Step "Instalando configuracao"
 
 if (-not $sameRoot) {
-    $configs = @("models.json", "SYSTEM.md", "SYSTEM-v2.md", "v2-engineering.md", "AGENTS.md", "pi-goal.json")
+    $configs = @("models.json", "SYSTEM.md", "AGENTS.md", "pi-goal.json")
     foreach ($f in $configs) {
         $src = Join-Path $SCRIPT_DIR "config\$f"
         $dst = Join-Path $PI_DIR $f

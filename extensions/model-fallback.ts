@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { clampThinkingLevel } from "@earendil-works/pi-ai/models";
 import { VIRTUAL_MODEL_STATE_ENTRY, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { resolveDeepFastChain } from "./deep-fast";
-import { evilLocked, evilProcess, getEvilModel } from "./evil-mode";
+import { EVIL_MODEL, EVIL_MODEL_REF, evilLocked, evilProcess } from "./evil-mode";
 
 type Level = "inherit" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type Step = { provider: string; model: string; level: Level };
@@ -140,10 +140,8 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
           let evil = evilProcess();
           try { evil ||= evilLocked(ctx as any); } catch { /* no session: the process flag decides */ }
           if (evil) {
-            const target = getEvilModel(ctx as any);
-            const ref = `${target.provider}/${target.id}`;
-            const model = registry.find(target.provider, target.id);
-            if (!model || !registry.hasConfiguredAuth(model)) throw new Error(`Fallback chain '${id}' in evil mode: ${ref} is not available`);
+            const model = registry.find(EVIL_MODEL.provider, EVIL_MODEL.id);
+            if (!model || !registry.hasConfiguredAuth(model)) throw new Error(`Fallback chain '${id}' in evil mode: ${EVIL_MODEL_REF} is not available`);
             try { pi.events?.emit?.(ROUTED_MODEL_EVENT, { provider: model.provider, modelId: model.id }); } catch { /* optional bridge */ }
             const first = configuredChain[0];
             const desired = !first || first.level === "inherit" ? request.thinkingLevel : first.level;

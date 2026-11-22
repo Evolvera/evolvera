@@ -18,12 +18,9 @@ const sdkAlias = {
 };
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: sdkAlias });
 delete process.env.PI_EVIL_MODE;
-delete process.env.PI_EVIL_MODEL;
 
 const evil = await jiti.import(path.join(root, "extensions/evil-mode.ts"));
-const { default: evilMode, EVIL_MODEL, EVIL_MODEL_REF, EVIL_MODE_LOCK_TYPE, BLOCKED_BASE_URL, EVIL_MODEL_ENV } = evil;
-const KIMI_EVIL_REF = "refuseless/kimi-k3.1-pro-abliterated";
-const KIMI_EVIL = { provider: "refuseless", id: "kimi-k3.1-pro-abliterated", name: "Kimi K3.1 Pro Abliterated" };
+const { default: evilMode, EVIL_MODEL, EVIL_MODEL_REF, EVIL_MODE_LOCK_TYPE, BLOCKED_BASE_URL } = evil;
 
 // The one model, and that the harness ships it.
 assert.equal(EVIL_MODEL_REF, "refuseless/deepseek-v4.1-flash-abliterated-fast");
@@ -40,8 +37,7 @@ assert.ok(evil.isAbliteratedModel({ provider: "refuseless", id: "glm-5.3-abliter
 assert.ok(evil.isAbliteratedModel({ provider: "x", id: "m", name: "Some OBLITERATED build" }));
 assert.ok(!evil.isAbliteratedModel({ provider: "refuseless", id: "deepseek-v4.1-flash-fast" }));
 assert.ok(evil.isEvilModel({ provider: "refuseless", id: "deepseek-v4.1-flash-abliterated-fast" }));
-assert.ok(!evil.isEvilModel({ provider: "refuseless", id: "deepseek-v4.1-flash-abliterated" }), "another abliterated model is not the default evil model");
-assert.deepEqual(evil.getEvilModel({ model: KIMI_EVIL, modelRegistry: { find: (provider, id) => provider === KIMI_EVIL.provider && id === KIMI_EVIL.id ? KIMI_EVIL : undefined } }), { provider: KIMI_EVIL.provider, id: KIMI_EVIL.id });
+assert.ok(!evil.isEvilModel({ provider: "refuseless", id: "deepseek-v4.1-flash-abliterated" }), "another abliterated model is not the evil model");
 
 // Orca launches are forced onto the evil model; terminals that start pi must inherit the flag.
 assert.equal(evil.forceOrcaAgentModel("orca-ide agent launch --agent pi --model openai/gpt-6.2-sol --effort high"), `orca-ide agent launch --agent pi --model ${EVIL_MODEL_REF} --effort high`);
@@ -51,14 +47,14 @@ assert.equal(evil.forceOrcaAgentModel("cd a && orca-ide orchestration worker-sta
 assert.equal(evil.forceOrcaAgentModel("orca-ide worktree create --name x"), undefined, "a worktree without an agent is left alone");
 assert.equal(evil.forceOrcaAgentModel("git status"), undefined);
 assert.ok(evil.orcaTerminalPiWithoutEvil(`orca-ide terminal create --command "pi -c"`));
-assert.ok(!evil.orcaTerminalPiWithoutEvil(`orca-ide terminal create --command "PI_EVIL_MODE=1 PI_EVIL_MODEL=${EVIL_MODEL_REF} pi -c"`));
+assert.ok(!evil.orcaTerminalPiWithoutEvil(`orca-ide terminal create --command "PI_EVIL_MODE=1 pi -c"`));
 assert.ok(!evil.orcaTerminalPiWithoutEvil(`orca-ide terminal create --command "npm test"`));
 
 // Backstop scrub empties every conversation field.
 assert.deepEqual(evil.scrubPayload({ model: "gpt-6-luna", messages: [{ role: "user" }], input: [1], instructions: "secret", stream: true }), { model: "gpt-6-luna", messages: [], input: [], instructions: "", stream: true });
 
 // Lock detection: a lock entry, or an abliterated reply from before the extension existed.
-const lockEntry = { type: "custom", customType: EVIL_MODE_LOCK_TYPE, data: {} };
+const lockEntry = { type: "custom", customType: EVIL_MODE_LOCK_TYPE, data: { model: EVIL_MODEL_REF } };
 const session = (list) => ({ getEntries: () => list });
 assert.ok(evil.evilLocked({ sessionManager: session([lockEntry]) }));
 assert.ok(evil.evilLocked({ sessionManager: session([{ type: "message", message: { role: "assistant", model: "glm-5.3-abliterated" } }]) }));
@@ -71,7 +67,6 @@ const all = new Map();
 const add = (provider, id) => all.set(`${provider}/${id}`, { provider, id, name: id, reasoning: true, api: "openai-completions", thinkingLevelMap: levels });
 for (const chain of Object.values(fallback.FALLBACK_CHAINS)) for (const step of chain) add(step.provider, step.model);
 add(EVIL_MODEL.provider, EVIL_MODEL.id);
-add(KIMI_EVIL.provider, KIMI_EVIL.id);
 add("refuseless", "glm-5.3-abliterated");
 add("openai", "gpt-6-luna");
 const registry = {
@@ -87,11 +82,7 @@ assert.notEqual(route("sol").model.id, EVIL_MODEL.id, "outside evil mode the cha
 
 // A locked session routes every chain to the evil model even before the process is marked.
 const lockedRoute = route("sol", { modelRegistry: registry, sessionManager: session([lockEntry]) });
-assert.equal(`${lockedRoute.model.provider}/${lockedRoute.model.id}`, EVIL_MODEL_REF, "a legacy locked session falls back to the default evil model");
-const kimiLock = { type: "custom", customType: EVIL_MODE_LOCK_TYPE, data: { model: KIMI_EVIL_REF } };
-const kimiLockedRoute = route("sol", { modelRegistry: registry, sessionManager: session([kimiLock]) });
-assert.equal(`${kimiLockedRoute.model.provider}/${kimiLockedRoute.model.id}`, KIMI_EVIL_REF, "the fallback router serves the model recorded in the lock");
-assert.deepEqual(evil.getEvilModel({ sessionManager: session([kimiLock]), modelRegistry: { find: (provider, id) => provider === EVIL_MODEL.provider && id === EVIL_MODEL.id ? all.get(`${provider}/${id}`) : undefined } }), EVIL_MODEL, "an unavailable locked model falls back to DeepSeek");
+assert.equal(`${lockedRoute.model.provider}/${lockedRoute.model.id}`, EVIL_MODEL_REF, "a locked session's chain is served by the evil model");
 
 // v2 helper targets the model it is given.
 const orchestration = await jiti.import(path.join(root, "extensions/orchestration-mode.ts"));
@@ -104,7 +95,7 @@ const helped = await orchestration.selectV2Guidance(helperRegistry, "", "do it",
 assert.equal(helped.available, true);
 assert.deepEqual(helperCalls, [EVIL_MODEL_REF, `stream:${EVIL_MODEL_REF}`], "the helper calls only the evil model");
 assert.deepEqual(orchestration.V2_HELPER_MODEL, { provider: "openai", id: "gpt-6-luna" }, "outside evil mode the helper keeps luna");
-assert.equal(typeof evil.getEvilModel, "function", "the helper can resolve the effective model from its context");
+assert.match(fs.readFileSync(path.join(root, "extensions/orchestration-mode.ts"), "utf8"), /evilActive\(ctx as any\) \? EVIL_MODEL : V2_HELPER_MODEL/);
 
 // Compaction in an evil session tries the evil model and nothing else.
 const mockDir = fs.mkdtempSync(path.join(os.tmpdir(), "evil-compaction-"));
@@ -125,18 +116,9 @@ mockSdk.setFail(true);
 assert.deepEqual(await compactHandler(compactEvent(), evilCtx()), { cancel: true }, "a failed evil compaction cancels instead of trying luna, haiku or flash");
 assert.deepEqual(mockSdk.calls.map((call) => call.model), [EVIL_MODEL_REF]);
 mockSdk.setFail(false);
-mockSdk.calls.length = 0;
-const kimiCompacted = await compactHandler(compactEvent(), evilCtx({ model: KIMI_EVIL, sessionManager: session([kimiLock]) }));
-assert.ok(kimiCompacted.compaction, "Kimi compaction succeeds on the model locked in the session");
-assert.deepEqual(mockSdk.calls.map((call) => call.model), [KIMI_EVIL_REF]);
 
 // Extension handlers, driven through a mock pi.
-function harness({ inherited = false } = {}) {
-  delete globalThis[Symbol.for("evolvera.evil-mode")];
-  if (!inherited) {
-    delete process.env.PI_EVIL_MODE;
-    delete process.env[EVIL_MODEL_ENV];
-  }
+function harness() {
   const handlers = new Map();
   const state = { entries: [], model: undefined, setModels: [], providers: [], status: undefined, notices: [] };
   const pi = {
@@ -160,12 +142,8 @@ function harness({ inherited = false } = {}) {
   const { state, fire, select } = harness();
   await select("openai", "gpt-6-luna");
   assert.equal(state.status, undefined, "no status outside evil mode");
-  await select(KIMI_EVIL.provider, KIMI_EVIL.id);
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "an unlocked Kimi selection stays on Kimi");
-  await select(EVIL_MODEL.provider, EVIL_MODEL.id);
-  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "an unlocked selection may switch to default DeepSeek");
   await select("refuseless", "glm-5.3-abliterated");
-  assert.equal(`${state.model.provider}/${state.model.id}`, "refuseless/glm-5.3-abliterated", "an unlocked abliterated selection stays on the selected model");
+  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "any abliterated selection lands on the evil model");
   assert.equal(state.status, "😈 EVIL");
   await select("openai", "gpt-6-luna");
   assert.equal(state.model.id, "gpt-6-luna", "before the first prompt, switching away leaves evil mode");
@@ -175,41 +153,32 @@ function harness({ inherited = false } = {}) {
 
 {
   const { state, fire, select } = harness();
-  await select(KIMI_EVIL.provider, KIMI_EVIL.id);
+  await select("refuseless", EVIL_MODEL.id);
   assert.equal(await fire("input", { text: "hi" }), undefined, "the evil model may prompt");
   await fire("before_agent_start", { prompt: "hi" });
   assert.equal(state.entries.filter((entry) => entry.customType === EVIL_MODE_LOCK_TYPE).length, 1, "the first run writes the lock");
-  assert.equal(state.entries.find((entry) => entry.customType === EVIL_MODE_LOCK_TYPE).data.model, KIMI_EVIL_REF, "the lock stores the selected model ref");
   assert.equal(state.status, "😈 EVIL 🔒");
   assert.equal(process.env.PI_EVIL_MODE, "1", "child PIs inherit evil mode");
-  assert.equal(process.env[EVIL_MODEL_ENV], KIMI_EVIL_REF, "child PIs inherit the selected model ref");
   const cut = new Set(state.providers.map(([name]) => name));
   assert.ok(cut.has("openai") && cut.has("anthropic"), "other providers are cut");
   assert.ok(!cut.has("refuseless") && !cut.has("fallback"), "the evil provider and the router stay");
   assert.ok(state.providers.every(([, url]) => url === BLOCKED_BASE_URL));
-  await select(EVIL_MODEL.provider, EVIL_MODEL.id);
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "a Kimi lock reverts selection of default DeepSeek");
   await select("openai", "gpt-6-luna");
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "a locked chat reverts any other selection to its selected model");
-  state.model = all.get(`${EVIL_MODEL.provider}/${EVIL_MODEL.id}`);
+  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "a locked chat reverts any other selection");
   await fire("before_agent_start", { prompt: "again" });
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "before_agent_start restores Kimi if the current model has drifted to default DeepSeek");
   assert.equal(state.entries.filter((entry) => entry.customType === EVIL_MODE_LOCK_TYPE).length, 1, "the lock is written once");
 
   const launch = { toolName: "bash", input: { command: "orca-ide agent launch --agent pi --model openai/gpt-6.2-sol" } };
   assert.equal(await fire("tool_call", launch), undefined);
-  assert.equal(launch.input.command, `orca-ide agent launch --agent pi --model ${KIMI_EVIL_REF}`, "orca launches are rewritten in place");
+  assert.equal(launch.input.command, `orca-ide agent launch --agent pi --model ${EVIL_MODEL_REF}`, "orca launches are rewritten in place");
   assert.equal((await fire("tool_call", { toolName: "bash", input: { command: "unset PI_EVIL_MODE; pi -p x" } }))?.block, true);
   assert.equal((await fire("tool_call", { toolName: "bash", input: { command: "PI_EVIL_MODE=0 pi -p x" } }))?.block, true);
-  assert.equal((await fire("tool_call", { toolName: "bash", input: { command: "PI_EVIL_MODEL=refuseless/other pi -p x" } }))?.block, true);
-  assert.equal((await fire("tool_call", { toolName: "bash", input: { command: `orca-ide terminal create --command \"PI_EVIL_MODE=1 PI_EVIL_MODEL=${KIMI_EVIL_REF} pi\"` } }))?.block, undefined);
   assert.equal((await fire("tool_call", { toolName: "bash", input: { command: `orca-ide terminal create --command "pi"` } }))?.block, true);
   assert.equal(await fire("tool_call", { toolName: "bash", input: { command: "pi -p 'child'" } }), undefined, "a shell child pi inherits the env and runs");
 
   const scrubbed = await fire("before_provider_request", { payload: { model: "gpt-6-luna", messages: [{ role: "user", content: "secret" }] } });
   assert.deepEqual(scrubbed.messages, [], "a stray request carries no conversation");
-  assert.equal(await fire("before_provider_request", { payload: { model: KIMI_EVIL.id, messages: [1] } }), undefined, "requests to the locked evil model pass untouched");
-  assert.deepEqual(await fire("before_provider_request", { payload: { model: EVIL_MODEL.id, messages: [1] } }), { model: EVIL_MODEL.id, messages: [] }, "stray requests to the fallback model are scrubbed");
+  assert.equal(await fire("before_provider_request", { payload: { model: EVIL_MODEL.id, messages: [1] } }), undefined, "evil requests pass untouched");
 }
 
 // Reload / resume of a locked chat, and a new in-process session (subagent) in an evil process.
@@ -218,33 +187,24 @@ function harness({ inherited = false } = {}) {
   state.entries.push(lockEntry);
   state.model = all.get("openai/gpt-6-luna");
   await fire("session_start", { reason: "resume" });
-  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "an old lock without a model ref resumes on DeepSeek");
+  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "resume puts a locked chat back on the evil model");
 }
 {
   const { state, fire } = harness();
-  state.entries.push(kimiLock);
-  state.model = all.get("openai/gpt-6-luna");
-  await fire("session_start", { reason: "resume" });
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "a locked Kimi session restores its recorded model");
-}
-{
-  process.env.PI_EVIL_MODE = "1";
-  process.env[EVIL_MODEL_ENV] = KIMI_EVIL_REF;
-  const { state, fire } = harness({ inherited: true });
   state.model = all.get("anthropic/claude-opus-5-5") ?? all.get("openai/gpt-6-luna");
   await fire("session_start", { reason: "startup" });
-  assert.equal(`${state.model.provider}/${state.model.id}`, KIMI_EVIL_REF, "a child PI uses the inherited evil model");
+  assert.equal(`${state.model.provider}/${state.model.id}`, EVIL_MODEL_REF, "a subagent session in an evil process starts on the evil model");
 }
 
 // The router honours the process flag even without a session.
 const evilRoute = route("terra", { modelRegistry: registry });
-assert.equal(`${evilRoute.model.provider}/${evilRoute.model.id}`, KIMI_EVIL_REF, "fallback/* pins (isolated subagents) route to the inherited evil model");
-for (const chain of Object.keys(fallback.FALLBACK_CHAINS)) assert.equal(route(chain).model.id, KIMI_EVIL.id, `${chain} is served by the inherited evil model`);
+assert.equal(`${evilRoute.model.provider}/${evilRoute.model.id}`, EVIL_MODEL_REF, "fallback/* pins (isolated subagents) route to the evil model");
+for (const chain of Object.keys(fallback.FALLBACK_CHAINS)) assert.equal(route(chain).model.id, EVIL_MODEL.id, `${chain} is served by the evil model`);
 assert.throws(() => route("sol", { modelRegistry: { ...registry, hasConfiguredAuth: () => false } }), /evil mode/, "no silent fallback when the evil model has no key");
 // Compaction honours the flag for a session that has no lock yet (a subagent).
 mockSdk.calls.length = 0;
 await compactHandler(compactEvent(), evilCtx({ sessionManager: session([]), model: all.get("openai/gpt-6-luna") }));
-assert.deepEqual(mockSdk.calls.map((call) => call.model), [KIMI_EVIL_REF]);
+assert.deepEqual(mockSdk.calls.map((call) => call.model), [EVIL_MODEL_REF]);
 
 // Unblocked reviewers load evil mode so their physical pins are overridden.
 for (const agent of ["reviewer-security", "reviewer-simplicity"]) {

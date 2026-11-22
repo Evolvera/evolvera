@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getAgentDir, parseFrontmatter, type ExtensionAPI, type ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { getEvilModel, evilActive } from "./evil-mode";
+import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { EVIL_MODEL, evilActive } from "./evil-mode";
 
 /**
  * Orchestration mode: `/orchestration conductor` turns the primary PI session into a pure
@@ -93,11 +93,7 @@ A prompt called "handoff" where you expect results, integration, or continuation
 
 On a progress request or an event that changes the picture, give one line per issue in the campaign (done, in review, running, ready but not started, blocked) with its PR and what it waits on, never only the issues you touched last. Work you or a sub-PI can do is never "blocked": show it as running or next and dispatch it in the same turn. Keep the maximum of twelve concurrent sub-PIs.`;
 
-const V2_DELEGATION_TEXT = "Delegate only work that is clearly large or multi-area, deep web research, or a named specialist capability; a small bug fix or a change you can make alone stays with you. When you delegate: use a scout only for an area you do not know yet, give it one narrow mission and max_turns around 15, and do not send one or wait for one when you already know where to change. Give any builder a self-contained handoff: goal, files, what is out of scope, and how to verify. For a named capability, load its skill.";
-
-const V2_VALIDATION_TEXT = "You run the relevant tests yourself after a change and report what ran and what you did not run. Add a separate QA or reviewer pass only when the change is large or high-risk. Before calling it done, find the sibling paths that share the same logic (other callers, variants, the same pattern elsewhere), verify them, and fix them too.";
-
-export type GuidanceSource = { section: string; file?: string } | { skill: string } | { text: string };
+export type GuidanceSource = { section: string } | { skill: string };
 export type GuidanceEntry = { id: string; when: string; source: GuidanceSource };
 
 export const V2_GUIDANCE: { preamble: string; instructions: string; catalog: readonly GuidanceEntry[] } = {
@@ -114,12 +110,12 @@ Rules:
 
 Output: only a JSON array of catalog ids, for example ["workflow","validation"], or [] when nothing applies. No other text, no code fence, no explanation.`,
   catalog: [
-    { id: "workflow", when: "The request is clearly large or spans several areas, and the open question is how to organize the work: direct single-thread, one builder, parallel builders, a durable plan, competing attempts, or asking the user a decision question. A small bug fix or a change whose location is already known does not match.", source: { section: "Workflow Selection" } },
-    { id: "delegation", when: "The work is clearly large or multi-area, needs deep web research, or names a specialist capability such as harness self-update, PI extensions, websites, or the Goal feature. A small bug fix, or any change the assistant can make alone, does not match.", source: { text: V2_DELEGATION_TEXT } },
+    { id: "workflow", when: "The request is large or has several parts, and the open question is how to organize the work: direct single-thread, one builder, parallel builders, a durable plan, competing attempts, or asking the user a decision question.", source: { section: "Workflow Selection" } },
+    { id: "delegation", when: "The work needs unfamiliar code investigation, bug hunting, deep web research, a builder or other subagent, a handoff prompt, or a named specialist capability such as harness self-update, PI extensions, websites, or the Goal feature.", source: { section: "Skills and Delegation" } },
     { id: "orca", when: "The request involves Orca worktrees, terminals, or workers, launching or supervising child PI sessions, a worker's report, or GitHub issue or board campaigns.", source: { section: "Orca Workers" } },
     { id: "memory", when: "The task depends on or changes durable project memory (.pi/memory, memory recall or search, architecture records), or repeats a deploy, recovery, migration, or previously failed operation that may have a recorded lesson.", source: { section: "Project Memory" } },
-    { id: "engineering", when: "The assistant will write or change code, configuration, or migrations and needs the engineering rules for structure, root-cause fixes, comments, scratch cleanup, parallel CPU use, or proving a launcher before scaling it.", source: { section: "Engineering and Architecture", file: "v2-engineering.md" } },
-    { id: "validation", when: "A change has been made or is about to be called done, and the question is what proof, tests, review, QA, or app validation is required before closing it or opening, reviewing, or merging a PR.", source: { text: V2_VALIDATION_TEXT } },
+    { id: "engineering", when: "The assistant will write or change code, configuration, or migrations and needs the engineering rules for structure, root-cause fixes, comments, scratch cleanup, parallel CPU use, or proving a launcher before scaling it.", source: { section: "Engineering and Architecture" } },
+    { id: "validation", when: "A change has been made or is about to be called done, and the question is what proof, tests, review, QA, or app validation is required before closing it or opening, reviewing, or merging a PR.", source: { section: "Validation and Completion" } },
     { id: "prompt-engineering", when: "The user wants to write, audit, debug, or optimize model-facing text such as a system prompt, agent instructions, a skill, a tool description, a structured-output contract, or an LLM-based classifier.", source: { skill: "prompt-engineering" } },
     { id: "deslop", when: "The user wants a screen or interface redesigned, polished, animated, or designed from scratch, or says a UI looks AI-generated, generic, or like a template.", source: { skill: "deslop" } },
     { id: "team-review", when: "The user asks for a focused review of a finished local diff through UX, simplicity, edge-case, or security lenses.", source: { skill: "team-review" } },
@@ -137,141 +133,6 @@ export const V2_COMPANIONS: Readonly<Record<string, readonly string[]>> = {
   planner: ["todo"],
 };
 
-/** Guidance that turns the todo tool on for the rest of a v2 session. */
-export const V2_TODO_UNLOCKS: readonly string[] = ["todo", "workflow", "planner", "orca"];
-
-const V2_CORE_TOOLS = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "goal_complete", "goal_blocked"]);
-const V2_BACKGROUND_AGENT_TOOLS = new Set(["get_subagent_result", "steer_subagent"]);
-
-/** The lean v2 tool set, in the order of `active`; only tools already active can stay. */
-export function v2ToolSet(active: readonly string[], options: { agent: "allow" | V2Profile["agent"]; todo: boolean }): string[] {
-  return active.filter((name) => V2_CORE_TOOLS.has(name)
-    || name === "todo" && options.todo
-    || name === "Agent" && options.agent !== "block"
-    || V2_BACKGROUND_AGENT_TOOLS.has(name) && options.agent === "allow");
-}
-
-const AGENT_TYPES_HEADER = "Available agent types and the tools they have access to:\n";
-
-function firstClause(text: string, max: number): string {
-  const clause = text.replace(/\s+/g, " ").trim().split(/[.;:!?](?=\s|$)| — | \(/)[0].trim();
-  return clause.length > max ? `${clause.slice(0, max - 1).trimEnd()}…` : clause;
-}
-
-/** The pi-subagents Agent description with one short line per agent type and no tool lists. */
-export function compactAgentDescription(description: string): string {
-  const start = description.indexOf(AGENT_TYPES_HEADER);
-  const listStart = start + AGENT_TYPES_HEADER.length;
-  const end = start < 0 ? -1 : description.indexOf("\n\n", listStart);
-  if (end < 0) return description;
-  const lines = description.slice(listStart, end).split(/\n(?=- )/).map((entry) => {
-    const match = /^- ([^:\n]+): ([\s\S]*)$/.exec(entry);
-    return match ? `- ${match[1]}: ${firstClause(match[2].replace(/\s*\(Tools: [^)]*\)\s*$/, ""), 70)}` : entry;
-  });
-  return `${description.slice(0, start)}Agent types:\n${lines.join("\n")}${description.slice(end)}`;
-}
-
-/** Rewrite only the Agent tool description in an anthropic-messages, openai-completions, or openai-responses payload. */
-export function compactAgentToolPayload(payload: unknown): unknown {
-  const tools = (payload as { tools?: unknown })?.tools;
-  if (!Array.isArray(tools)) return undefined;
-  let changed = false;
-  const next = tools.map((tool) => {
-    const holder = tool?.function?.name === "Agent" ? tool.function : tool?.name === "Agent" ? tool : undefined;
-    if (typeof holder?.description !== "string") return tool;
-    const description = compactAgentDescription(holder.description);
-    if (description === holder.description) return tool;
-    changed = true;
-    return holder === tool ? { ...tool, description } : { ...tool, function: { ...tool.function, description } };
-  });
-  return changed ? { ...(payload as object), tools: next } : undefined;
-}
-
-/** Delivered when the helper is unavailable: the baseline for any change, nothing situational. */
-export const V2_BASELINE: readonly string[] = ["engineering", "validation"];
-
-const V2_PROFILE_COMMON = "Work solo. Before concluding, find the sibling paths that share the same logic (other callers, variants, the same pattern elsewhere) and fix them too. Run ONLY the test files tied to the change (e.g. `npx jest path/to/test`) and say what you ran. Never run the whole suite (no `npm test` or `jest` without a path) unless the user asks or the change is truly broad.";
-
-const V2_CASES_RULE = "When the change classifies cases (e.g. retry or not, allow or deny), list every input class the code can receive (error codes, HTTP statuses, wrapped causes, empty or missing values) and decide and test each one explicitly.";
-
-const V2_RETRY_RULE = "For retry or resend decisions, sort each class by what it proves: a failure that provably happened before the request left (it never reached the remote side) is safe to retry; a failure after the request may have reached the remote side leaves the outcome unknown and must not be retried blindly.";
-
-export type V2Profile = { match: RegExp; text: string; agent: "block" | "foreground" };
-
-export const V2_PROFILES: Readonly<Record<string, V2Profile>> = {
-  deepseek: { match: /deepseek/i, agent: "block", text: `${V2_PROFILE_COMMON} Never run the whole suite. Before the first edit, list in one message every entry point and sibling path you will change; after that, do not open new areas. Few steps: locate, fix (including siblings), test the related files, commit/answer. ${V2_CASES_RULE} ${V2_RETRY_RULE} Explore in bulk: one combined grep for all the symbols, then \`read\` each relevant file once instead of many \`sed -n\` slices. Edit with the edit tool, not ad-hoc python scripts. Check a suspected pre-existing failure at most once (one \`git stash -u\` run). Once the related tests pass and \`git diff\` looks right, commit and give the final answer; no further exploration.` },
-  terra: { match: /gpt-6\.1-terra/i, agent: "foreground", text: `${V2_PROFILE_COMMON} No subagents for a small task; if you use a subagent, run it in the foreground only and wait for its result before ending the turn. Do not prefix commands with \`time\` or \`/usr/bin/time\`; just run them. ${V2_CASES_RULE} ${V2_RETRY_RULE}` },
-  kimi: { match: /kimi/i, agent: "block", text: `${V2_PROFILE_COMMON} Save turns: read several relevant files at once, edit directly, do not reopen files already read, run one round of focused tests, give a short final answer.` },
-  sonnet: { match: /sonnet/i, agent: "foreground", text: `${V2_PROFILE_COMMON} Before the first edit, list every entry point with the same failure (single and bulk/batch variants, sibling routes, other callers) and fix each one. Prove each new test fails on the old code once (e.g. \`git stash\`, run that test file, \`git stash pop\`). Commit from the repository root.` },
-};
-
-const V2_PROFILE_ID_PREFIX = "profile-";
-
-export function v2ProfileFor(model: { id?: string } | undefined): string | undefined {
-  return typeof model?.id === "string" ? Object.keys(V2_PROFILES).find((name) => V2_PROFILES[name].match.test(model.id!)) : undefined;
-}
-
-type AgentFile = { enabled: boolean; background?: boolean };
-
-const SUBAGENT_DEFAULT_TYPES = ["general-purpose", "Explore", "Plan"];
-
-function loadAgentFiles(cwd: string): Map<string, AgentFile> {
-  const agents = new Map<string, AgentFile>(SUBAGENT_DEFAULT_TYPES.map((type) => [type, { enabled: true }]));
-  for (const dir of [path.join(getAgentDir(), "agents"), path.join(cwd, ".agents", "agents"), path.join(cwd, ".pi", "agents")]) {
-    let files: string[];
-    try { files = fs.readdirSync(dir).filter((file) => file.endsWith(".md")); } catch { continue; }
-    for (const file of files) {
-      try {
-        const { frontmatter } = parseFrontmatter(fs.readFileSync(path.join(dir, file), "utf8"));
-        const declared = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
-        if (declared.includes(":")) continue;
-        agents.set(declared || path.basename(file, ".md"), {
-          enabled: frontmatter.enabled !== false,
-          background: frontmatter.run_in_background != null ? frontmatter.run_in_background === true : undefined,
-        });
-      } catch {}
-    }
-  }
-  return agents;
-}
-
-function subagentFallback(cwd: string): string | undefined {
-  let fallback: string | undefined;
-  for (const file of [path.join(getAgentDir(), "subagents.json"), path.join(cwd, ".pi", "subagents.json")]) {
-    try {
-      const value = JSON.parse(fs.readFileSync(file, "utf8"))?.fallbackSubagent;
-      if (value === false) fallback = "none";
-      else if (typeof value === "string" && value.trim()) fallback = value.trim();
-    } catch {}
-  }
-  return fallback;
-}
-
-function agentNamed(agents: Map<string, AgentFile>, name: string): AgentFile | undefined {
-  const exact = agents.get(name);
-  const matches = exact ? [exact] : [...agents].filter(([type]) => type.toLowerCase() === name.toLowerCase()).map(([, agent]) => agent);
-  return matches.length === 1 && matches[0].enabled ? matches[0] : undefined;
-}
-
-function agentRunsInBackground(input: { subagent_type?: unknown; schedule?: unknown; resume?: unknown }, cwd: string): boolean {
-  if (input.schedule) return true;
-  const agents = loadAgentFiles(cwd);
-  const requested = typeof input.subagent_type === "string" ? input.subagent_type.trim() : "";
-  const fallback = subagentFallback(cwd);
-  const spawned = (requested ? agentNamed(agents, requested) : undefined)
-    ?? (fallback?.toLowerCase() === "none" ? undefined : agentNamed(agents, fallback ?? "general-purpose"));
-  const resumed = input.resume ? [...agents].find(([type]) => type.toLowerCase() === requested.toLowerCase())?.[1] : undefined;
-  return spawned?.background === true || resumed?.background === true;
-}
-
-function guidanceText(id: string, systemMd: string): string | undefined {
-  if (id.startsWith(V2_PROFILE_ID_PREFIX)) return V2_PROFILES[id.slice(V2_PROFILE_ID_PREFIX.length)]?.text;
-  const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
-  if (!entry) return undefined;
-  return "section" in entry.source ? sectionText(systemMd, entry.source)
-    : "skill" in entry.source ? v2SkillPointer(entry.source.skill) : entry.source.text;
-}
-
 /** Delivered on the first prompt after every compaction (deliveries reset at a compaction). */
 export const V2_AFTER_COMPACTION = "session-history";
 
@@ -281,16 +142,6 @@ function sessionCompacted(ctx: Ctx): boolean {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export const V2_CORE_FILE = "SYSTEM-v2.md";
-
-function agentDirText(file: string): string | undefined {
-  try { return fs.readFileSync(path.join(getAgentDir(), file), "utf8").trim() || undefined; } catch { return undefined; }
-}
-
-function sectionText(systemMd: string, source: { section: string; file?: string }): string | undefined {
-  return (source.file ? agentDirText(source.file) : undefined) ?? extractSection(systemMd, source.section);
 }
 
 export function extractSection(prompt: string, heading: string): string | undefined {
@@ -400,60 +251,22 @@ export function v2SkillPointer(skill: string): string {
 }
 
 function buildV2Prompt(systemMd: string): string | undefined {
-  const compact = agentDirText(V2_CORE_FILE);
-  const core = compact ? [compact] : ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
+  const core = ["Role", "Communication and Explanation", "Operating Contract", "Retrieval and Evidence", "Authorization Modes and Continuation", "Safety", "Stop Rules"]
     .map((heading) => extractSection(systemMd, heading));
-  const guides = V2_GUIDANCE.catalog.map((entry) => "section" in entry.source
-    ? sectionText(systemMd, entry.source)
-    : "text" in entry.source
-      ? entry.source.text
-      : fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
-        ? `Load the ${entry.source.skill} skill with /skill:${entry.source.skill} when applicable.`
-        : undefined);
+  const guides = V2_GUIDANCE.catalog.map((entry) => entry.source.section
+    ? extractSection(systemMd, entry.source.section)
+    : entry.source.skill && fs.existsSync(new URL(`../skills/${entry.source.skill}/SKILL.md`, import.meta.url))
+      ? `Load the ${entry.source.skill} skill with /skill:${entry.source.skill} when applicable.`
+      : undefined);
   if (core.some((section) => !section) || guides.some((guide) => !guide)) return undefined;
   return `${core.join("\n\n")}\n\n${V2_GUIDANCE.preamble}`;
 }
 
-export type V2Skill = { name: string; description: string; filePath: string; disableModelInvocation?: boolean };
-
-function shortText(text: string, max: number): string {
-  const sentences = text.replace(/\s+/g, " ").trim().match(/.*?[.!?](?=\s|$)|.+$/g) ?? [];
-  let line = "";
-  for (const sentence of sentences.map((part) => part.trim())) {
-    const next = line ? `${line} ${sentence}` : sentence;
-    if (next.length > max) break;
-    line = next;
-  }
-  if (line || !sentences.length) return line;
-  const cut = sentences[0].trim().slice(0, max - 1);
-  return `${(cut.includes(" ") ? cut.slice(0, cut.lastIndexOf(" ")) : cut).trimEnd()}…`;
-}
-
-/** The compact v2 skills list: one line per model-invocable skill (whole sentences up to 120 chars); skills outside skillsDir keep their path. */
-export function v2SkillsList(skills: readonly V2Skill[], skillsDir = path.join(getAgentDir(), "skills")): string | undefined {
-  const visible = skills.filter((skill) => !skill.disableModelInvocation);
-  if (!visible.length) return undefined;
-  const lines = visible.map((skill) => {
-    const standard = path.resolve(skill.filePath) === path.resolve(skillsDir, skill.name, "SKILL.md");
-    return `- ${skill.name}: ${shortText(skill.description, 120)}${standard ? "" : ` (${skill.filePath})`}`;
-  });
-  return [`Each skill below is at ${path.join(skillsDir, "<name>", "SKILL.md")} unless its line gives a path. Read that file when the task matches the skill, and resolve its relative paths against the skill's directory.`, ...lines].join("\n");
-}
-
-function compactSkills(tail: string, skills: readonly V2Skill[]): string {
-  const open = "<skills>\n";
-  const start = tail.indexOf(open);
-  const end = start < 0 ? -1 : tail.indexOf("\n</skills>", start);
-  const list = v2SkillsList(skills);
-  if (end < 0 || !list) return tail;
-  return tail.slice(0, start + open.length) + list + tail.slice(end);
-}
-
-function applyV2(systemPrompt: string, customPrompt: string, skills: readonly V2Skill[] = []): string | undefined {
+function applyV2(systemPrompt: string, customPrompt: string): string | undefined {
   const replacement = buildV2Prompt(customPrompt);
   const at = systemPrompt.indexOf(customPrompt);
   if (!replacement || at < 0) return undefined;
-  return systemPrompt.slice(0, at) + replacement + compactSkills(systemPrompt.slice(at + customPrompt.length), skills);
+  return systemPrompt.slice(0, at) + replacement + systemPrompt.slice(at + customPrompt.length);
 }
 
 type Delivery = { ids: string[]; usage?: V2GuidanceUsage; at: number };
@@ -685,28 +498,6 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     && (typeof prompt === "string" && prompt.trimStart().startsWith(PRIMARY_PROMPT)
       || eligibleSessionId !== undefined && ctx.sessionManager?.getSessionId?.() === eligibleSessionId);
   const diary = observeV2Diary(pi, (ctx) => isEligible(ctx as Ctx));
-  let toolsBeforeV2: string[] | undefined;
-  const union = (first: readonly string[], second: readonly string[]) => [...new Set([...first, ...second])];
-  const sameTools = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((name, index) => name === b[index]);
-  const restoreTools = () => {
-    if (!toolsBeforeV2) return;
-    const restored = union(toolsBeforeV2, pi.getActiveTools());
-    toolsBeforeV2 = undefined;
-    if (!sameTools(restored, pi.getActiveTools())) pi.setActiveTools(restored);
-  };
-  const applyLeanTools = (ctx: Ctx) => {
-    const current = pi.getActiveTools();
-    toolsBeforeV2 = union(toolsBeforeV2 ?? [], current);
-    const profile = v2ProfileFor(ctx.model);
-    const sessionId = ctx.sessionManager?.getSessionId?.();
-    const todo = [...(ctx.sessionManager?.getBranch() ?? [])].some((raw) => {
-      const entry = raw as { type?: unknown; customType?: unknown; data?: { sessionId?: unknown; ids?: unknown } };
-      return entry.type === "custom" && entry.customType === V2_DELIVERY_TYPE && entry.data?.sessionId === sessionId
-        && Array.isArray(entry.data.ids) && entry.data.ids.some((id) => V2_TODO_UNLOCKS.includes(id as string));
-    });
-    const lean = v2ToolSet(toolsBeforeV2, { agent: profile ? V2_PROFILES[profile].agent : "allow", todo });
-    if (!sameTools(lean, current)) pi.setActiveTools(lean);
-  };
 
   pi.registerCommand("orchestration", {
     description: "Orchestration mode for this session: /orchestration standard | conductor | v2 | status",
@@ -724,7 +515,7 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
           return;
         }
         runEpoch++;
-        if (action !== "v2") { eligibleSessionId = undefined; eligibleSystemMd = undefined; restoreTools(); }
+        if (action !== "v2") { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
         const data = action === "v2" ? { mode: action, sessionId: ctx.sessionManager.getSessionId() } : { mode: action };
         pi.appendEntry(SESSION_ENTRY_TYPE, data);
         pi.events.emit(MODE_CHANGED_EVENT, { ctx });
@@ -745,7 +536,6 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     runEpoch++;
     eligibleSessionId = undefined;
     eligibleSystemMd = undefined;
-    toolsBeforeV2 = undefined;
     warned = false;
     pinThinking(pi, ctx);
     showStatus(ctx, currentMode(ctx));
@@ -760,11 +550,9 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     const sessionId = ctx.sessionManager?.getSessionId?.();
     if (typeof customPrompt !== "string" || !customPrompt.trimStart().startsWith(PRIMARY_PROMPT)) {
       if (eligibleSessionId === sessionId) { eligibleSessionId = undefined; eligibleSystemMd = undefined; }
-      restoreTools();
       return;
     }
     const mode = currentMode(ctx);
-    if (mode !== "v2" || !isEligible(ctx, customPrompt)) restoreTools();
     if (mode === "conductor") {
       const systemPrompt = applyConductor(event.systemPrompt ?? "", customPrompt);
       if (!systemPrompt) {
@@ -777,9 +565,8 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     if (mode !== "v2" || !isEligible(ctx, customPrompt)) return;
     eligibleSessionId = undefined;
     eligibleSystemMd = undefined;
-    const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt, event.systemPromptOptions?.skills ?? []);
+    const systemPrompt = applyV2(event.systemPrompt ?? "", customPrompt);
     if (!systemPrompt) {
-      restoreTools();
       if (!warned) ctx.ui?.notify?.("Orchestration V2 indisponível: SYSTEM.md ou uma fonte de guidance obrigatória não foi encontrada. Usando o prompt padrão.", "warning");
       warned = true;
       return;
@@ -790,16 +577,15 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
     const epoch = runEpoch;
     if (event.messageType === "user") {
       const snapshot = diary.snapshot(ctx as V2DiaryContext);
-      const profile = v2ProfileFor(ctx.model);
       let decision: V2GuidanceSelection = { available: false, ids: [] };
-      if (!profile && ctx.modelRegistry) {
+      if (ctx.modelRegistry) {
         // Evil mode: the helper runs on the abliterated model, like every other call of this session.
-        const helper = evilActive(ctx as any) ? getEvilModel(ctx as any) : V2_HELPER_MODEL;
+        const helper = evilActive(ctx as any) ? EVIL_MODEL : V2_HELPER_MODEL;
         try { decision = await selectGuidance(ctx.modelRegistry, snapshot?.text ?? "", event.prompt, helper); } catch {}
       }
       if (runEpoch !== epoch || currentMode(ctx) !== "v2" || ctx.sessionManager?.getSessionId?.() !== sessionId || !isEligible(ctx, customPrompt)) return;
       const existing = activeDeliveries(ctx).flatMap((delivery) => delivery.ids);
-      const chosen = profile ? ["engineering", `${V2_PROFILE_ID_PREFIX}${profile}`] : decision.available ? decision.ids : V2_BASELINE;
+      const chosen = decision.available ? decision.ids : V2_GUIDANCE.catalog.filter((entry) => "section" in entry.source).map((entry) => entry.id);
       // The first prompt after a compaction always gets history recall: the summary just replaced the record.
       const afterCompaction = sessionCompacted(ctx) ? [V2_AFTER_COMPACTION] : [];
       const withCompanions = [...new Set([...chosen, ...afterCompaction].flatMap((id) => [id, ...(V2_COMPANIONS[id] ?? [])]))];
@@ -808,42 +594,25 @@ export default function orchestrationMode(pi: ExtensionAPI, selectGuidance = sel
         pi.appendEntry(V2_DELIVERY_TYPE, { sessionId, ids, usage: decision.usage });
         if (ids.length) diary.recordGuidance(ctx as V2DiaryContext, ids);
       }
-      const label = profile ? ` [profile ${profile}]` : decision.available ? "" : " (helper unavailable, baseline sections)";
-      ctx.ui?.notify?.(`V2 guidance${label}: ${ids.length ? ids.join(", ") : "none"}`, profile || decision.available ? "info" : "warning");
+      ctx.ui?.notify?.(`V2 guidance${decision.available ? "" : " (helper unavailable, baseline sections)"}: ${ids.length ? ids.join(", ") : "none"}`, decision.available ? "info" : "warning");
     }
-    applyLeanTools(ctx);
     return { systemPrompt };
-  });
-
-  pi.on("before_provider_request", (event, rawCtx) => isEligible(rawCtx as Ctx) ? compactAgentToolPayload(event.payload) : undefined);
-
-  pi.on("tool_call", async (event, rawCtx) => {
-    const ctx = rawCtx as Ctx;
-    if (event.toolName !== "Agent" || !isEligible(ctx)) return;
-    const profile = v2ProfileFor(ctx.model);
-    if (!profile) return;
-    const input = event.input as Record<string, unknown>;
-    if (V2_PROFILES[profile].agent === "block") return { block: true, reason: `Profile ${profile}: do it yourself.` };
-    if (agentRunsInBackground(input, process.cwd())) return { block: true, reason: `perfil ${profile}: subagente em background não permitido; faça você mesmo ou use um agente em primeiro plano` };
-    input.run_in_background = false;
   });
 
   pi.on("context", (event, rawCtx) => {
     const ctx = rawCtx as Ctx;
     if (!isEligible(ctx)) return;
-    const profile = v2ProfileFor(ctx.model);
     for (const delivery of activeDeliveries(ctx)) {
       for (const id of delivery.ids) {
-        if (id.startsWith(V2_PROFILE_ID_PREFIX) && id !== `${V2_PROFILE_ID_PREFIX}${profile}`) continue;
-        const text = guidanceText(id, eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "");
+        const entry = V2_GUIDANCE.catalog.find((candidate) => candidate.id === id);
+        if (!entry) continue;
+        const text = entry.source.section ? extractSection(eligibleSystemMd ?? ctx.getSystemPrompt?.() ?? "", entry.source.section)
+          : entry.source.skill ? v2SkillPointer(entry.source.skill) : undefined;
         if (!text) continue;
         const marker = `${V2_MARKER}${id}>${text}</v2-guidance>`;
         if (event.messages.some((message: any) => typeof message.content === "string" && message.content.includes(marker))) continue;
-        const isGuide = (message: any) => typeof message.content === "string" && message.content.startsWith(V2_MARKER);
-        const prompt = Number.isFinite(delivery.at) ? event.messages.findIndex((message: any) => message.role === "user" && typeof message.timestamp === "number" && message.timestamp >= delivery.at && !isGuide(message)) : -1;
-        let at = prompt < 0 ? event.messages.length : prompt + 1;
-        while (at < event.messages.length && isGuide(event.messages[at])) at++;
-        event.messages.splice(at, 0, { role: "user", content: marker, timestamp: delivery.at } as any);
+        const after = Number.isFinite(delivery.at) ? event.messages.findIndex((message: any) => typeof message.timestamp === "number" && message.timestamp > delivery.at) : -1;
+        event.messages.splice(after < 0 ? event.messages.length : after, 0, { role: "user", content: marker, timestamp: delivery.at } as any);
       }
     }
   });

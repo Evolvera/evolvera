@@ -106,7 +106,7 @@ fi
 step "Instalando configuração"
 
 if [ "$same_root" = false ]; then
-    for f in models.json SYSTEM.md SYSTEM-v2.md v2-engineering.md pi-goal.json; do
+    for f in models.json SYSTEM.md pi-goal.json; do
         [ -f "$SCRIPT_DIR/config/$f" ] && cp "$SCRIPT_DIR/config/$f" "$PI_DIR/$f" && info "$f"
     done
 
