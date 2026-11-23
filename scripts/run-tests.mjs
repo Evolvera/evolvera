@@ -83,6 +83,7 @@ const semEstadoPadrao = new Set([
   // Só valida raízes de busca; o carregador consulta arquivos, sem gravar estado.
   "plastic-memory-search-root.smoke.mjs",
   "user-attention-notifier.smoke.mjs", "working-time.smoke.mjs",
+  "claude-accounts.smoke.mjs",
 ]);
 let tmpdirProprio = tmpdirProprioPadrao;
 let semEstado = semEstadoPadrao;
