@@ -1,6 +1,7 @@
 ---
 name: deslop
-description: Takes the "AI slop" out of an existing interface, or builds a new one without it. Use when the request is to redesign, refine, polish, de-slop, animate, create variations of, or design a screen, or when the user says a UI "looks AI-generated", "looks like a template" or "looks generic" (in Portuguese: "cara de IA", "des-ai-slopar", "parece template"). Works by asking before deciding, proposing a gray wireframe, implementing, and re-auditing its own result. Not for bugs, copy-only edits or product decisions without a screen.
+description: >-
+  Takes the "AI slop" out of an existing interface, or builds a new one without it. Use when the request is to redesign, refine, polish, de-slop, animate, create variations of, or design a screen, or when the user says a UI "looks AI-generated", "looks like a template" or "looks generic" (in Portuguese: "cara de IA", "des-ai-slopar", "parece template"). Works by asking before deciding, proposing a gray wireframe, implementing, and re-auditing its own result. Not for bugs, copy-only edits or product decisions without a screen.
 ---
 
 # De-slop an interface
