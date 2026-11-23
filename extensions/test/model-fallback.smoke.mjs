@@ -169,9 +169,10 @@ for (const chainId of ["luna"]) {
   assert.deepEqual(chain.map(({ provider, model, level }) => ({ provider, model, level })), [
     { provider: "openai", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
+    { provider: "anthropic", model: "claude-haiku-5-5", level: "high" },
   ]);
   assert.equal(nextFallbackStep(chain, 0), 1);
-  assert.equal(nextFallbackStep(chain, 1), 1, `${chainId} clamps at its final step`);
+  assert.equal(nextFallbackStep(chain, 2), 2, `${chainId} clamps at its final step`);
   const primaryRoute = virtualModels.get(`fallback/${chainId}`).route({
     ...baseRequest, model: { provider: "fallback", id: chainId }, reason: "user",
   }, { modelRegistry: registry });
@@ -185,7 +186,14 @@ for (const chainId of ["luna"]) {
   assert.equal(fallbackRoute.thinkingLevel, "high", "inherit uses the requested level on fallback");
 }
 
-const settle = handlers.get("agent_before_settle");
+const settleHandler = handlers.get("agent_before_settle");
+const settle = (event, ctx) => {
+  const result = settleHandler(event, ctx);
+  if (!result) return result;
+  assert.equal(result.entries.at(-1).type, "custom_message", "the continuation ends in a message the SDK can run");
+  for (const { customType, data } of result.entries.filter((entry) => entry.type === "custom")) appended.push({ type: "custom", customType, data });
+  return { continue: result.continue };
+};
 const activeModel = { provider: "fallback", id: "builder" };
 const activeStateEntry = { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: "builder", state } };
 const quotaBranch = [
@@ -218,8 +226,8 @@ for (const chainId of ["luna"]) {
     sessionManager: { getBranch: () => [...branch, ...appended] },
   }), undefined, `${chainId} settle advances only once from its primary`);
   const finalBranch = [
-    { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: chainId, state: { step: 1, runId: `${chainId}-run` } } },
-    { type: "message", message: { role: "assistant", provider: chain[1].provider, model: chain[1].model, stopReason: "error", errorMessage: "insufficient_quota" } },
+    { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: chainId, state: { step: chain.length - 1, runId: `${chainId}-run` } } },
+    { type: "message", message: { role: "assistant", provider: chain.at(-1).provider, model: chain.at(-1).model, stopReason: "error", errorMessage: "insufficient_quota" } },
   ];
   assert.equal(settle({ outcome: "error", context: {} }, {
     model: { provider: "fallback", id: chainId },
@@ -252,16 +260,16 @@ const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "model-fallback-deepfast-
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 try {
-  const fastId = "deepseek/deepseek-v4.1-flash-ultrafast";
-  models.set(`opengateway/${fastId}`, {
-    provider: "opengateway", id: fastId, reasoning: true,
+  const fastId = "deepseek-v4.1-flash-fast";
+  models.set(`refuseless/${fastId}`, {
+    provider: "refuseless", id: fastId, reasoning: true,
     thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high" },
   });
   const fastRegistry = (providers) => ({
     find(provider, id) { return models.get(`${provider}/${id}`); },
     hasConfiguredAuth(model) { return providers.has(model.provider); },
   });
-  const everyone = new Set(["openai", "refuseless", "anthropic", "opengateway"]);
+  const everyone = new Set(["openai", "refuseless", "anthropic"]);
   const lunaRequest = { ...baseRequest, model: { provider: "fallback", id: "luna" }, thinkingLevel: "high", reason: "user" };
   const route = (chainId, request, providers = everyone) =>
     virtualModels.get(`fallback/${chainId}`).route({ ...request, model: { provider: "fallback", id: chainId } }, { modelRegistry: fastRegistry(providers) });
@@ -272,22 +280,22 @@ try {
 
   setDeepFast(true);
   const fastScout = route("luna", lunaRequest);
-  assert.equal(fastScout.model.provider, "opengateway", "on routes the scout chain to the fast model");
+  assert.equal(fastScout.model.provider, "refuseless", "on routes the scout chain to the fast model");
   assert.equal(fastScout.thinkingLevel, "low", "scouts run at low effort");
-  assert.equal(route("builder", lunaRequest).model.provider, "opengateway", "the builder chain is accelerated");
-  assert.equal(route("heavy", lunaRequest).model.provider, "opengateway", "the heavy chain is accelerated");
+  assert.equal(route("builder", lunaRequest).model.provider, "refuseless", "the builder chain is accelerated");
+  assert.equal(route("heavy", lunaRequest).model.provider, "refuseless", "the heavy chain is accelerated");
   assert.equal(route("builder", lunaRequest).thinkingLevel, "high", "builders keep the effort requested");
   assert.equal(route("sol", lunaRequest).model.provider, "openai", "the sol chain is never swapped");
   assert.equal(route("conductor", lunaRequest).model.provider, "refuseless", "the conductor chain is never swapped");
 
   // No router credential: the configured chain serves the request instead of failing it.
-  assert.equal(route("luna", lunaRequest, new Set(["openai", "refuseless", "anthropic"])).model.provider, "openai", "an unusable router is skipped");
+  assert.equal(route("luna", lunaRequest, new Set(["openai", "anthropic"])).model.provider, "openai", "an unusable router is skipped");
 
   // A fast-model failure advances to the configured primary: settle must index the deep-fast chain.
   const fastBranch = [
     { type: "message", message: { role: "user", id: "u1" } },
     { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: "luna", state: { step: 0, runId: "u1" } } },
-    { type: "message", message: { role: "assistant", provider: "opengateway", model: fastId, stopReason: "error", errorMessage: "insufficient_quota" } },
+    { type: "message", message: { role: "assistant", provider: "refuseless", model: fastId, stopReason: "error", errorMessage: "insufficient_quota" } },
   ];
   const before = appended.length;
   const settleResult = settle(

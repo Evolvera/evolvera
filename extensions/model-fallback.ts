@@ -48,6 +48,7 @@ export const FALLBACK_CHAINS: Readonly<Record<string, FallbackChain>> = {
   luna: [
     { provider: "openai", model: "gpt-6-luna", level: "inherit" },
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
+    { provider: "anthropic", model: "claude-haiku-5-5", level: "high" },
   ],
   conductor: [
     { provider: "refuseless", model: "deepseek-v4.1-flash-fast", level: "high" },
@@ -202,12 +203,16 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
     if (count > 0) return;
 
     const advanced = { step: nextFallbackStep(chain, state.step), runId: state.runId };
-    try {
-      pi.appendEntry("fallback.advance", { chainId, runId: state.runId, fromStep: state.step });
-      pi.appendEntry(VIRTUAL_MODEL_STATE_ENTRY, { provider: "fallback", modelId: chainId, state: advanced });
-    } catch {
-      return;
-    }
-    return { continue: true };
+    // SDK 1.5 rejects a continuation whose projected context ends in an assistant message, so the
+    // advance carries one custom message for the next model to answer.
+    return {
+      entries: [
+        ...(event.entries ?? []),
+        { type: "custom", customType: "fallback.advance", data: { chainId, runId: state.runId, fromStep: state.step } },
+        { type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: chainId, state: advanced } },
+        { type: "custom_message", customType: "fallback.continue", display: true, content: "The previous model became unavailable and another one is taking over. Continue from where it stopped without repeating finished work." },
+      ],
+      continue: true,
+    };
   });
 }

@@ -48,7 +48,7 @@ assert.equal(DEEP_FAST_CHAINS.heavy.thinking, "inherit");
 // The configured setup is untouched by the policy itself.
 assert.deepEqual(
   FALLBACK_CHAINS.luna.map(({ provider, model }) => ({ provider, model })),
-  [{ provider: "openai", model: "gpt-6-luna" }, { provider: "refuseless", model: "deepseek-v4.1-flash-fast" }],
+  [{ provider: "openai", model: "gpt-6-luna" }, { provider: "refuseless", model: "deepseek-v4.1-flash-fast" }, { provider: "anthropic", model: "claude-haiku-5-5" }],
   "the configured luna chain still starts on its primary",
 );
 
