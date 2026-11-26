@@ -20,7 +20,10 @@ const tmpdirProprioPadrao = new Set([
   // Context-mode persistence exercises only a synthetic settings.json in its own mkdtemp.
   "anthropic-model-policy.smoke.mjs",
   "context-orchestration.integration.smoke.mjs", // real AgentSession with synthetic provider and exact-root disposable state
+  "child-events.smoke.mjs", "child-events-relay.smoke.mjs", "conductor-events.smoke.mjs",
+  "orchestration-mode.smoke.mjs",
   "disk-hygiene.smoke.mjs", // git repo, fake /tmp tree and stamp only inside its owned mkdtemp, removed in finally
+  "worker-report.smoke.mjs",
   "worker-report.integration.smoke.mjs", // real Goal tool/session with faux provider and exact-root disposable state
   "codex-fast-mode.smoke.mjs", "communication-style.smoke.mjs",
   "execution-mode.smoke.mjs", "native-compaction-routing.smoke.mjs",

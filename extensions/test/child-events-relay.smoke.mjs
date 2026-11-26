@@ -87,7 +87,7 @@ print(json.dumps({'ok': True, 'accepted': True}))
   await enqueue('group-two', 'goal_finished', '[child smoke-child] goal finished | second event');
   await waitForSendCount(1);
   let sent = (await calls()).filter(call => call.command === 'send');
-  assert.match(sent[0].args[sent[0].args.indexOf('--text') + 1], /^AVISO DE FILHOS:/);
+  assert.match(sent[0].args[sent[0].args.indexOf('--text') + 1], /^AVISO DE FILHOS \(evento automático\):/);
   assert.match(sent[0].args.join(' '), /first event/);
   assert.match(sent[0].args.join(' '), /\[child smoke-child\] goal finished \| second event/);
   await eventually(async () => (await readdir(queue)).length === 0, 'successful batch was not removed');

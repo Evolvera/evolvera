@@ -3,10 +3,18 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
+
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "orchestration-mode-"));
+for (const key of Object.keys(process.env)) if (/^(ORCA|PI)_/.test(key)) delete process.env[key];
+process.env.HOME = sandboxHome;
+process.env.USERPROFILE = sandboxHome;
+process.env.PI_CODING_AGENT_DIR = path.join(sandboxHome, ".pi", "agent");
+process.on("exit", () => fs.rmSync(sandboxHome, { recursive: true, force: true }));
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cjs"));
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
@@ -64,6 +72,18 @@ assert.match(waiting, /prompt called "handoff"[^\n]*supervision[^\n]*Task\/Dispa
 assert.match(waiting, /genuine standalone full transfer[^\n]*ends after proven delivery/, "true full transfer still needs no monitoring");
 assert.match(systemMd, /Proven delivery completes this full ownership handoff/, "full transfer rule preserved");
 
+// Event-driven waiting: no polling or no-change updates, notices wake the conductor, every notice refills slots.
+assert.match(waiting, /never run a `\/goal` polling loop or `watch`; never write "sem mudança"/, "no polling loop or no-change update");
+assert.match(waiting, /pause your own `\/goal` and leave it paused\. End the turn while workers run and stay idle/, "goal stays paused while idle");
+assert.match(waiting, /AVISO DE FILHOS \(evento automático\): \[child <worktree>\] <kind>/, "notice format");
+for (const kind of ["goal_finished", "goal_blocked", "idle", "prompt", "quit", "died", "job"]) assert.ok(waiting.includes(`\`${kind}\``) || waiting.includes(`/\`${kind}\``), `notice kind ${kind}`);
+assert.match(waiting, /explicitly check both the active slot count and the free RAM; \(3\) re-read the live board; \(4\) open a sub-PI for every granted ready issue that has none, up to the twelve-slot ceiling and the memory limit/, "every notice refills slots within RAM");
+assert.match(waiting, /report evidence only, never settlement, release, GitHub `Done`, merge authorization/, "notice is not settlement");
+assert.match(waiting, /notify-conductor "<job> finished: status \$status" "\$run_id"; exit "\$status"/, "background job example passes the Run and keeps status");
+assert.doesNotMatch(waiting, /run_[A-Za-z0-9]{6,}/, "no hardcoded Run id");
+assert.match(waiting, /worker-report extension types the one-line goal report directly/, "direct fallback documented");
+assert.match(waiting, /no monitoring; this event model never turns such a transfer into supervision/, "standalone transfer is not monitored");
+
 // Replacement touches only the SYSTEM.md block; skills and other injections survive.
 const replaced = m.applyConductor(assembled, systemMd);
 assert.equal(replaced, conductor + tail);
@@ -91,6 +111,7 @@ assert.equal(m.applyConductor(broken + tail, broken), undefined);
 const handlers = new Map(); const commands = new Map(); const entries = []; const notices = []; const statuses = []; const emitted = [];
 let thinkingLevel = "high"; const thinkingCalls = [];
 const ctx = {
+  cwd: sandboxHome,
   sessionManager: { getBranch: () => entries },
   ui: { notify: (message, type) => notices.push({ message, type }), setStatus: (key, text) => statuses.push({ key, text }) },
 };
@@ -107,6 +128,8 @@ m.default({
     handlers.get("thinking_level_select")?.({ type: "thinking_level_select", level, previousLevel }, ctx);
   },
 });
+assert.ok(handlers.has("tool_result"), "bash results are observed for conductor job notices");
+assert.equal(await handlers.get("tool_result")({ type: "tool_result", toolName: "bash", isError: false, input: { command: "true" } }, ctx), undefined, "standard sessions ignore bash results");
 const start = (customPrompt, systemPrompt) => handlers.get("before_agent_start")({ systemPrompt, systemPromptOptions: { customPrompt } }, ctx);
 const nextTurn = async () => start(systemMd, assembled);
 
@@ -161,7 +184,7 @@ assert.equal(await start(systemMd, assembled), undefined, "standard keeps the st
 assert.equal(thinkingLevel, "high");
 // A worker or new session with an empty branch inherits neither the prompt nor the pin.
 const workerEntries = []; const workerStatuses = [];
-const workerCtx = { sessionManager: { getBranch: () => workerEntries }, ui: { notify: () => {}, setStatus: (key, text) => workerStatuses.push({ key, text }) } };
+const workerCtx = { cwd: sandboxHome, sessionManager: { getBranch: () => workerEntries }, ui: { notify: () => {}, setStatus: (key, text) => workerStatuses.push({ key, text }) } };
 thinkingLevel = "xhigh";
 const workerCalls = thinkingCalls.length;
 await handlers.get("session_start")({ type: "session_start", reason: "startup" }, workerCtx);

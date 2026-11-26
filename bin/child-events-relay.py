@@ -205,7 +205,7 @@ class Relay:
                 lines.append(text)
             else:
                 lines.append(f"[child {child}] {event['kind']}: {text}")
-        message = "AVISO DE FILHOS: " + " || ".join(lines)
+        message = "AVISO DE FILHOS (evento automático): " + " || ".join(lines)
         return message if len(message) <= MAX_NOTICE else None
 
     def send(self, terminal, events):
