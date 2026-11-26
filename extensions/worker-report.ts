@@ -1,12 +1,12 @@
 import { execFile as nodeExecFile } from "node:child_process";
 import path from "node:path";
+import { isChildEventRelayRunning, readReportRoute, RUN_ID_PATTERN, spoolChildEvent, TERMINAL_HANDLE_PATTERN, writeReportRoute } from "./child-events.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type Runner = (file: string, args: string[], options: { cwd?: string; timeout: number; encoding: "utf8" }) => Promise<{ stdout: string }>;
 type GoalArgs = { goal_id?: unknown; summary?: unknown; reason?: unknown; evidence?: unknown };
 type SessionEntry = { type?: unknown; customType?: unknown; data?: unknown };
 
-const RUN_ID_PATTERN = /^run_[A-Za-z0-9]+$/;
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
 const WORKER_DONE_RECEIPT_TYPE = "worker-report-native-done";
 
@@ -115,26 +115,32 @@ export function createWorkerReportExtension(run: Runner = execFile) {
     const inFlight = new Set<string>();
 
     const send = async (report: { goalId: string; outcome: string; body: string; cwd: string }) => {
+      let branch = "";
       try {
-        let branch = "";
-        try {
-          branch = (await run("git", ["-C", report.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { cwd: report.cwd, timeout: 10_000, encoding: "utf8" })).stdout.trim();
-        } catch {
-          // Branch information is optional; report even outside a Git worktree.
-        }
-        // The Run records the conductor terminal that launched this worker; type the
-        // report there so the conductor wakes like on a user prompt (Orca's mailbox wake is unreliable).
+        branch = (await run("git", ["-C", report.cwd, "rev-parse", "--abbrev-ref", "HEAD"], { cwd: report.cwd, timeout: 10_000, encoding: "utf8" })).stdout.trim();
+      } catch {}
+      const line = [`[child ${path.basename(report.cwd)}] goal ${report.outcome}`, `goal_id=${report.goalId}`, ...(branch ? [`branch=${branch}`] : []), report.body]
+        .join(" | ").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
+      let handle = readReportRoute(runId);
+      try {
         const shown: unknown = JSON.parse((await run("orca", ["orchestration", "run-show", "--id", runId, "--json"], { timeout: 10_000, encoding: "utf8" })).stdout);
-        const handle = (shown as { result?: { run?: { coordinator_handle?: unknown } } })?.result?.run?.coordinator_handle;
-        if (typeof handle !== "string" || !handle.startsWith("term_")) return false;
-        const line = [`[child ${path.basename(report.cwd)}] goal ${report.outcome}`, `goal_id=${report.goalId}`, ...(branch ? [`branch=${branch}`] : []), report.body]
-          .join(" | ").replace(/\s+/g, " ").trim().slice(0, 1500);
-        const result = await run("orca", ["terminal", "send", "--terminal", handle, "--text", line, "--enter", "--json"], { timeout: 10_000, encoding: "utf8" });
-        const receipt: unknown = JSON.parse(result.stdout);
-        return Boolean(receipt && typeof receipt === "object" && !Array.isArray(receipt) && (receipt as { ok?: unknown }).ok === true);
-      } catch {
-        return false;
+        const resolved = (shown as { result?: { run?: { coordinator_handle?: unknown } } })?.result?.run?.coordinator_handle;
+        if (typeof resolved === "string" && TERMINAL_HANDLE_PATTERN.test(resolved)) {
+          handle = resolved;
+          writeReportRoute(runId, resolved);
+        }
+      } catch {}
+
+      const event = { runId, kind: `goal_${report.outcome}`, cwd: report.cwd, text: line };
+      if (isChildEventRelayRunning()) return spoolChildEvent(event);
+      if (handle) {
+        try {
+          const result = await run("orca", ["terminal", "send", "--terminal", handle, "--text", line, "--enter", "--json"], { timeout: 10_000, encoding: "utf8" });
+          const receipt: unknown = JSON.parse(result.stdout);
+          if (receipt && typeof receipt === "object" && !Array.isArray(receipt) && (receipt as { ok?: unknown }).ok === true) return true;
+        } catch {}
       }
+      return process.platform === "linux" ? spoolChildEvent(event) : false;
     };
 
     const warn = (ctx: { ui?: { notify?: (message: string, type: string) => void } }, key: string, goalId: string) => {
