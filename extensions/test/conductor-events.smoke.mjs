@@ -12,7 +12,15 @@ const sdkRoot = resolvePiSdkRoot(import.meta.url);
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cjs"));
 const jiti = createJiti(import.meta.url, { fsCache: false, alias: { "@earendil-works/pi-coding-agent": path.join(sdkRoot, "dist/index.js") } });
-const { createConductorEvents } = await jiti.import(path.join(root, "extensions/conductor-events.ts"));
+const conductorEventsModule = await jiti.import(path.join(root, "extensions/conductor-events.ts"));
+const { createConductorEvents } = conductorEventsModule;
+// install.sh copies every top-level extensions/*.ts into ~/.pi/agent/extensions; Pi refuses to start if one lacks a default factory.
+assert.equal(typeof conductorEventsModule.default, "function", "conductor-events.ts must export a default extension factory");
+const { readdir } = await import("node:fs/promises");
+for (const name of (await readdir(path.join(root, "extensions"))).filter((entry) => entry.endsWith(".ts"))) {
+  const source = await readFile(path.join(root, "extensions", name), "utf8");
+  assert.match(source, /export\s+default\b/, `extensions/${name} is auto-loaded by Pi and must export a default factory`);
+}
 const scratch = await mkdtemp(path.join(os.tmpdir(), "conductor-events-"));
 const agentDirectory = path.join(scratch, "agent");
 const relayPath = path.join(agentDirectory, "bin", "child-events-relay.py");

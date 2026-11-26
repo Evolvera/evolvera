@@ -91,3 +91,7 @@ export function createConductorEvents(options: ConductorEventsOptions = {}) {
 
   return { sync, syncAfterRunCommand };
 }
+
+/** Library module: orchestration-mode.ts wires createConductorEvents(). Pi auto-loads every top-level
+ * extensions/*.ts, so export an inert factory to keep this file loadable as an extension. */
+export default function conductorEventsLibrary(): void {}
