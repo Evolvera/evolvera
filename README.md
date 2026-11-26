@@ -96,7 +96,7 @@ Configuration is explicit. Explore [the agents](agents/), [the skills](skills/),
 ## Beyond the terminal
 
 - **VS Code:** selection, open files, and diagnostics through the extension bridge. [Setup and compatibility →](docs/setup.md#use-with-vs-code)
-- **Conductor:** coordination of workers in Orca worktrees. [Flow Orca workflow →](skills/flow-orca/SKILL.md)
+- **Conductor:** coordinates workers in Orca worktrees. On Linux, child events wake the conductor without polling worker terminals. [Setup →](docs/setup.md#conductor-child-events) · [Flow Orca workflow →](skills/flow-orca/SKILL.md)
 
 Optional Orca integrations remain part of the harness. **The publication scope is only the terminal Coding Agent harness—not PI Studio or the Orca application.**
 

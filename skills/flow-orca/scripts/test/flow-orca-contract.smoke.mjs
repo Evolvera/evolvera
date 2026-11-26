@@ -465,8 +465,11 @@ for (const path of [SYSTEM, SYSTEM_MIRROR]) {
 // Report-back: full handoffs launch PI workers bound to the coordinator's Run.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /prefix the launch with that id, e\.g\. `PI_REPORT_RUN=<run-id> pi --provider [a-z-]+ --model [\w.-]+ --thinking (?:low|medium|high|xhigh)`/, "worker launch must pin the configured child model and effort");
-  has(path, /types one line `\[child <worktree>\] goal finished\|blocked/, "worker report is typed into the coordinator terminal");
+  has(path, /`AVISO DE FILHOS \(evento automático\): \[child <worktree>\] <kind>: …`[^\n]*types the one-line `\[child <worktree>\] goal finished\|blocked/, "child events and the direct goal report reach the coordinator terminal");
 }
+// Child-event notices: one more wake; every notice closes out workers and refills slots within RAM, without new authority.
+has(SKILL, /\*\*Child-event notices[^\n]*AVISO DE FILHOS[^\n]*pauses any own `\/goal` and leaves it paused[^\n]*explicitly check both the slot count and the free RAM, re-read the live board \(6\.6\), and open a worker per 7\.0 for every grant-covered ready issue that has none, up to the twelve-slot ceiling and the memory limit[^\n]*never `Done`, release, merge authorization, or a free slot/, "skill: notices refill slots within RAM and never settle");
+has(REFERENCE, /`AVISO DE FILHOS[^\n]*additional wake[^\n]*check both slot count and free RAM, re-read the live board[^\n]*report evidence only, never settlement, release, `Done`, or a free slot/, "reference: notices refill slots and never settle");
 // Proportion: reuse proven head evidence, ask gates up front, don't repair Orca bookkeeping.
 for (const path of [SYSTEM, SYSTEM_MIRROR]) {
   has(path, /never a re-run of its suites or a new QA or review of the same head/, "integration reuses proven head evidence");

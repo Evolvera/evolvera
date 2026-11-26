@@ -227,6 +227,8 @@ ORCA orchestration check --run <verified run-id> --ack <delivery-id> --json
 4. Acknowledge the exact Delivery with the second command once the **whole** FIFO batch is processed and every release/retention decision is resolved; a recorded retention counts as resolved, so an unproven Goal never freezes the entire inbox indefinitely. The ack never frees a slot and never implies Goal completion.
 5. Drain further returned bounded batches only while messages are actually pending — never on a timer. Then the coordinator may go idle or end its turn while workers keep running; Orca wakes it.
 
+An `AVISO DE FILHOS (evento automático): [child <worktree>] <kind>: …` line from a `PI_REPORT_RUN` child is an additional wake handled like the pointer: close out every worker with the settlement rules here, then check both slot count and free RAM, re-read the live board, and dispatch every grant-covered ready issue without a worker up to the twelve-slot ceiling and the memory limit. It is report evidence only, never settlement, release, `Done`, or a free slot.
+
 A timeout, empty `check`, or idle terminal is neither failure, nor completion, nor a free slot. Do not sleep, poll, or repeatedly read terminals merely to observe. The manual form is a fallback only on explicit user request or when runtime push is genuinely unavailable or unverified for this Run, including a lost wake confirmed by the user's report plus runtime/transcript evidence of queued reports without a wake (report the capability gap once and arm it rather than ending supervised work; never silently substitute active monitoring). Choose the waiter from the actual launch/report contract. Task/Dispatch workers:
 
 ```text

@@ -18,9 +18,6 @@ for (const [key, value] of Object.entries({ HOME: owned("home"), USERPROFILE: ow
   fs.mkdirSync(value, { recursive: true }); process.env[key] = value;
 }
 process.env.PI_OFFLINE = "1"; process.env.JITI_FS_CACHE = "0"; process.env.PI_REPORT_RUN = "run_integration123";
-// The native Goal extension is installed into the agent runtime, never into the checkout, and the
-// sandbox below replaces PI_CODING_AGENT_DIR. Resolve it from the caller's real agent directory so the
-// test exercises the installed package instead of silently loading nothing.
 function nativeGoalExtension() {
   const agentDir = previousEnv.PI_CODING_AGENT_DIR || path.join(previousEnv.HOME ?? os.homedir(), ".pi", "agent");
   const extension = path.join(agentDir, "npm", "node_modules", "@narumitw", "pi-goal", "src", "goal.ts");
@@ -57,20 +54,24 @@ try {
   const command = session.extensionRunner.getCommand("goal");
   assert.ok(command, "native /goal command is registered");
   const start = command.handler("exercise the native goal completion tool", session.extensionRunner.createCommandContext());
-  // The native command persists a canonical active state before scheduling its owned prompt.
   const activeState = Array.from(manager.getBranch()).filter((entry) => entry.customType === "goal-state").at(-1);
   const goalId = activeState?.data?.goal?.id;
   assert.equal(typeof goalId, "string", "native command created canonical Goal state");
-  // Replace the placeholder args in the in-process faux provider response using its documented response queue.
   modelCore.setResponses([faux.fauxAssistantMessage(faux.fauxToolCall("goal_complete", { goal_id: goalId, summary: "Synthetic goal completed through native tool pipeline." }))]);
   await start;
   await session.waitForIdle();
   const entries = Array.from(manager.getBranch());
   assert.ok(entries.some((entry) => entry.type === "message" && entry.message?.role === "assistant" && entry.message.content?.some((part) => part.type === "toolCall" && part.name === "goal_complete")), "real AgentSession dispatched native goal_complete tool");
   assert.ok(entries.some((entry) => entry.type === "custom" && entry.customType === "goal-state" && entry.data?.goal?.id === goalId && entry.data?.goal?.status === "complete"), "native tool persisted accepted terminal canonical state");
-  assert.equal(sends.length, 2, "first accepted Goal send failed once and agent_end performed one successful retry");
+  assert.equal(sends.length, process.platform === "linux" ? 1 : 2, "Linux accepts the durable spool after the direct send fails; other platforms retry at agent_end");
   assert.match(sends[0].join(" "), new RegExp(goalId));
-  assert.deepEqual(sends[1], sends[0], "stable goal/outcome identity makes retry evidence recognizable");
+  if (process.platform === "linux") {
+    const queue = path.join(process.env.PI_CODING_AGENT_DIR, "child-events", "queue");
+    const events = fs.readdirSync(queue).filter((name) => name.endsWith(".json")).map((name) => JSON.parse(fs.readFileSync(path.join(queue, name), "utf8")));
+    assert.equal(events.filter((event) => event.kind === "goal_finished" && event.runId === process.env.PI_REPORT_RUN).length, 1, "failed direct delivery was durably queued once");
+  } else {
+    assert.deepEqual(sends[1], sends[0], "stable goal/outcome identity makes retry evidence recognizable");
+  }
 
   const blockedStart = command.handler("exercise the native blocked-goal tool", session.extensionRunner.createCommandContext());
   const secondState = Array.from(manager.getBranch()).filter((entry) => entry.customType === "goal-state").at(-1);
@@ -81,8 +82,8 @@ try {
   await session.waitForIdle();
   const blockedEntries = Array.from(manager.getBranch());
   assert.ok(blockedEntries.some((entry) => entry.type === "custom" && entry.customType === "goal-state" && entry.data?.goal?.id === blockedGoalId && entry.data?.goal?.status === "blocked"), "native blocked tool persisted terminal canonical state");
-  assert.equal(sends.length, 3, "accepted native blocked Goal produced one additional status report");
-  assert.match(sends[2].join(" "), new RegExp(blockedGoalId));
+  assert.equal(sends.length, process.platform === "linux" ? 2 : 3, "accepted native blocked Goal produced one additional status report");
+  assert.match(sends.at(-1).join(" "), new RegExp(blockedGoalId));
 
   const staleStart = command.handler("resume", session.extensionRunner.createCommandContext());
   const thirdState = Array.from(manager.getBranch()).filter((entry) => entry.customType === "goal-state").at(-1);
@@ -93,10 +94,10 @@ try {
   await session.waitForIdle();
   const rejectedEntries = Array.from(manager.getBranch());
   assert.ok(rejectedEntries.some((entry) => entry.type === "message" && entry.message?.role === "toolResult" && entry.message.content?.some((part) => /Goal completion rejected/.test(part.text ?? ""))), `native Goal tool returned a stale-ID rejection through the actual pipeline: ${JSON.stringify(rejectedEntries.map((entry) => ({ type: entry.type, role: entry.message?.role, content: entry.message?.content })))}`);
-  assert.equal(sends.length, 3, "rejected stale Goal call never generated a report");
+  assert.equal(sends.length, process.platform === "linux" ? 2 : 3, "rejected stale Goal call never generated a report");
   assert.equal(providerRequests >= 3, true, "faux provider served local synthetic responses for terminal and rejected calls");
   assert.equal(networkAttempts, 0, "fetch/http guards observed zero external requests");
-  console.log(JSON.stringify({ result: "PASS", providerRequests, networkAttempts, sends: sends.length, resources: "DISPOSABLE_VERIFIED", scope: "real goal_complete and goal_blocked pipelines; synthetic first-send failure retried at agent_end" }));
+  console.log(JSON.stringify({ result: "PASS", providerRequests, networkAttempts, sends: sends.length, resources: "DISPOSABLE_VERIFIED", scope: "real native Goal tool pipelines and direct delivery fallback" }));
 } finally {
   session?.dispose();
   delete globalThis.__workerReportCalls;

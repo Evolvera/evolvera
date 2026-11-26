@@ -9,7 +9,9 @@ import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 // DISPOSABLE_VERIFIED: synthetic in-memory credentials; each scenario creates its
 // own mkdtemp, in-memory session/settings, empty resource loader and faux provider.
 // The SDK is read-only. No user settings, credentials, sessions or network access.
-const sdkRoot = resolvePiSdkRoot(import.meta.url);
+const sdkRoot = process.env.SDK_140_ROOT
+  ? path.resolve(process.env.SDK_140_ROOT)
+  : resolvePiSdkRoot(import.meta.url);
 // Recovery anchors below are pinned to these SDK releases; name the precondition instead of asserting bare.
 const sdkVersion = JSON.parse(fs.readFileSync(path.join(sdkRoot, 'package.json'), 'utf8')).version;
 assert.ok(['1.3.0', '1.4.0'].includes(sdkVersion),

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createConductorEvents } from "./conductor-events.ts";
 
 /**
  * Orchestration mode: `/orchestration conductor` turns the primary PI session into a pure
@@ -79,9 +80,22 @@ Each handoff stands alone: goal and why, worktree and branch, proven facts, what
 
 ## Waiting
 
-Never \`sleep\`, poll, or tail a worker's terminal. Launch every PI worker with \`PI_REPORT_RUN\` set to this terminal's Run: when its \`/goal\` completes or blocks, the harness types a one-line \`[child <worktree>] goal finished|blocked\` report into this terminal, which starts your next turn. End the turn while workers run; act on such a line, a worker question, or the user saying workers finished or stopped, then settle every child as the Settling bullet says. The line is report evidence only, never settlement, release, GitHub \`Done\`, merge authorization, or runtime success. Answer the user immediately at any time, even while workers run.
+Work by events, never by polling. Never \`sleep\`, poll, or tail a worker's terminal; never run a \`/goal\` polling loop or \`watch\`; never write "sem mudança" or any other no-change update. When nothing is actionable, pause your own \`/goal\` and leave it paused. End the turn while workers run and stay idle. You wake on an \`AVISO DE FILHOS\` notice, a native Orca lifecycle event (\`worker_done\`, question), or the user saying workers finished or stopped.
 
-A prompt called "handoff" where you expect results, integration, or continuation is supervision, routed through the \`flow-orca\` Task/Dispatch path for issue workers; only a genuine standalone full transfer ends after proven delivery with no monitoring.
+Launch and resume every PI worker with \`PI_REPORT_RUN\` set to this terminal's Run. The harness then types notices into this terminal: \`AVISO DE FILHOS (evento automático): [child <worktree>] <kind>: …\`, where kind is \`goal_finished\`/\`goal_blocked\` (the child's goal closed or blocked; shown as \`[child <worktree>] goal finished|blocked\`), \`idle\` (turn ended without an active goal, with an error, or aborted), \`prompt\` (a selection prompt open over 15 s: answer it through Orca), \`quit\`, \`died\` (no \`/quit\`: resume with \`PI_REPORT_RUN=<Run> pi -c\` in the same worktree), or \`job\` (your own background job). Without the event relay, the worker-report extension types the one-line goal report directly; it is report evidence too.
+
+On every notice, in the same turn: (1) reconcile and settle every child as the Settling bullet says, integrating what is ready, validating it, and sending corrections to the owning sub-PI, all under the existing grants and gates; (2) explicitly check both the active slot count and the free RAM; (3) re-read the live board; (4) open a sub-PI for every granted ready issue that has none, up to the twelve-slot ceiling and the memory limit; (5) end the turn. A notice, like a \`[child …]\` line, is report evidence only, never settlement, release, GitHub \`Done\`, merge authorization, or runtime success. Answer the user immediately at any time, even while workers run.
+
+To wait for a background job you already own and are authorized to run (server, tsc, lint), run it in the background and chain the notice after it, passing this terminal's actual Run explicitly (read it from \`run-current\`) so you wake on success and on failure and the job's own status is kept:
+
+\`\`\`bash
+run_id=<this terminal's Run id>
+( <authorized job>; status=$?; ~/.pi/agent/bin/notify-conductor "<job> finished: status $status" "$run_id"; exit "$status" ) > <log file> 2>&1 &
+\`\`\`
+
+This waits for that job only; it authorizes no new job, merge, or release.
+
+A prompt called "handoff" where you expect results, integration, or continuation is supervision, routed through the \`flow-orca\` Task/Dispatch path for issue workers; only a genuine standalone full transfer ends after proven delivery with no monitoring; this event model never turns such a transfer into supervision.
 
 ## Status board
 
@@ -122,6 +136,7 @@ export function readSessionMode(branch: Iterable<unknown>): OrchestrationMode {
 }
 
 type Ctx = {
+  cwd: string;
   sessionManager?: { getBranch(): Iterable<unknown> };
   ui?: { setStatus?(key: string, text: string | undefined): void; notify?(message: string, type?: "info" | "warning" | "error"): void };
 };
@@ -147,6 +162,7 @@ function pinThinking(pi: ExtensionAPI, ctx: Ctx): void {
 }
 
 export default function orchestrationMode(pi: ExtensionAPI): void {
+  const conductorEvents = createConductorEvents();
   let warned = false;
 
   pi.registerCommand("orchestration", {
@@ -167,6 +183,7 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
         pi.events.emit(MODE_CHANGED_EVENT, { ctx });
         warned = false;
         pinThinking(pi, ctx);
+        if (currentMode(ctx) === "conductor") await conductorEvents.sync(ctx.cwd);
       }
       const mode = currentMode(ctx);
       showStatus(ctx, mode);
@@ -181,6 +198,13 @@ export default function orchestrationMode(pi: ExtensionAPI): void {
     warned = false;
     pinThinking(pi, ctx);
     showStatus(ctx, currentMode(ctx));
+    if (currentMode(ctx) === "conductor") await conductorEvents.sync(ctx.cwd);
+  });
+
+  pi.on("tool_result", async (event, rawCtx) => {
+    const ctx = rawCtx as Ctx;
+    if (event.toolName !== "bash" || event.isError || currentMode(ctx) !== "conductor") return;
+    await conductorEvents.syncAfterRunCommand(event.input?.command, ctx.cwd);
   });
 
   pi.on("model_select", async (_event, rawCtx) => { pinThinking(pi, rawCtx as Ctx); });

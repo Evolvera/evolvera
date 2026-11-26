@@ -25,6 +25,10 @@ function fixtureSource(root) {
   mkdirSync(path.join(root, "skills", "fixture"), { recursive: true });
   mkdirSync(path.join(root, "skills", "project-memory", "scripts"), { recursive: true });
   mkdirSync(path.join(root, "themes"), { recursive: true });
+  mkdirSync(path.join(root, "bin"), { recursive: true });
+  for (const tool of ["child-events-relay.py", "notify-conductor"]) {
+    cpSync(path.join(repositoryRoot, "bin", tool), path.join(root, "bin", tool));
+  }
   cpSync(path.join(repositoryRoot, "install.sh"), path.join(root, "install.sh"));
   cpSync(path.join(repositoryRoot, "install.ps1"), path.join(root, "install.ps1"));
   cpSync(path.join(repositoryRoot, "config/settings.json"), path.join(root, "config/settings.json"));

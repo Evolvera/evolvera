@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolvePiSdkRoot } from "./lib/pi-sdk.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const sandbox = mkdtempSync(path.join(os.tmpdir(), "worker-report-smoke-"));
+process.env.HOME = path.join(sandbox, "home");
+process.env.PI_CODING_AGENT_DIR = path.join(sandbox, "agent");
+process.env.TMPDIR = sandbox;
+mkdirSync(process.env.HOME, { recursive: true });
 const sdkRoot = resolvePiSdkRoot(import.meta.url);
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(sdkRoot, "node_modules/jiti/lib/jiti.cjs"));
@@ -13,13 +20,13 @@ const { createWorkerReportExtension } = await jiti.import(path.join(root, "exten
 
 const goalState = (id, status = "active") => ({ type: "custom", customType: "goal-state", data: { goal: { id, status } } });
 
-function setup(env, runner = async () => ({ stdout: '{"ok":true}' }), entries = []) {
+function setup(env, runner = async () => ({ stdout: '{"ok":true}' }), entries = [], runShow) {
   if (env === undefined) delete process.env.PI_REPORT_RUN;
   else process.env.PI_REPORT_RUN = env;
   const handlers = new Map();
   const notices = [];
-  const coordinator = JSON.stringify({ ok: true, result: { run: { coordinator_handle: "term_conductor" } } });
-  const withRun = async (file, args, options) => file === "orca" && args[1] === "run-show" ? { stdout: coordinator } : runner(file, args, options);
+  const coordinator = JSON.stringify({ ok: true, result: { run: { coordinator_handle: "term_123e4567-e89b-12d3-a456-426614174000" } } });
+  const withRun = async (file, args, options) => file === "orca" && args[1] === "run-show" ? { stdout: runShow ?? coordinator } : runner(file, args, options);
   createWorkerReportExtension(withRun)({
     on: (name, handler) => handlers.set(name, handler),
     appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
@@ -53,13 +60,63 @@ active.handlers.get("tool_call")({ toolCallId: "c1", toolName: "goal_complete", 
 const complete = { toolCallId: "c1", toolName: "goal_complete", isError: false };
 await active.finishGoal(complete, "complete");
 await active.handlers.get("tool_execution_end")(complete, active.ctx);
-assert.equal(calls.filter(({ file }) => file === "orca").length, 1, "duplicate completion does not resend");
-assert.deepEqual(calls.find(({ file }) => file === "orca").args, [
-  "terminal", "send", "--terminal", "term_conductor",
+assert.equal(calls.filter(({ file, args }) => file === "orca" && args[1] === "send").length, 1, "duplicate completion does not resend");
+assert.deepEqual(calls.find(({ file, args }) => file === "orca" && args[1] === "send").args, [
+  "terminal", "send", "--terminal", "term_123e4567-e89b-12d3-a456-426614174000",
   "--text", "[child worker-project] goal finished | goal_id=goal-1 | branch=feature/worker | Summary: Implemented and tested.",
   "--enter", "--json",
 ]);
 assert.equal(calls.every(({ options }) => options.timeout === 10_000), true);
+
+{
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  const childEvents = path.join(agentDir, "child-events");
+  mkdirSync(childEvents, { recursive: true });
+  const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+  const startTime = stat.slice(stat.lastIndexOf(") ") + 2).trim().split(/\s+/)[19];
+  writeFileSync(path.join(childEvents, "relay.pid.json"), JSON.stringify({ pid: process.pid, startTime }));
+  const queuedCalls = [];
+  const queued = setup("run_cached-route", async (file, args) => {
+    queuedCalls.push({ file, args });
+    return { stdout: '{"ok":true}' };
+  }, [], "invalid run-show response");
+  const routesFile = path.join(agentDir, "report-routes.json");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(routesFile, JSON.stringify({ "run_cached-route": "term_123e4567-e89b-12d3-a456-426614174000", "run_other": "term_other" }));
+  queued.handlers.get("tool_call")({ toolCallId: "relay-goal", toolName: "goal_complete", input: { goal_id: "goal-relay", summary: "queued once" } });
+  await queued.finishGoal({ toolCallId: "relay-goal", toolName: "goal_complete", isError: false }, "complete");
+  assert.equal(queuedCalls.some(({ file, args }) => file === "orca" && args[1] === "send"), false, "ready relay owns delivery; no direct terminal send");
+  const files = readdirSync(path.join(childEvents, "queue")).filter((name) => name.endsWith(".json"));
+  assert.equal(files.length, 1, "accepted Goal is atomically queued once");
+  const event = JSON.parse(readFileSync(path.join(childEvents, "queue", files[0]), "utf8"));
+  assert.equal(event.kind, "goal_finished");
+  assert.equal(event.runId, "run_cached-route");
+  assert.deepEqual(JSON.parse(readFileSync(routesFile, "utf8")), { "run_cached-route": "term_123e4567-e89b-12d3-a456-426614174000", "run_other": "term_other" }, "route updates preserve unrelated entries and cached route survives invalid run-show");
+  assert.equal(queued.notices.length, 0);
+  unlinkSync(path.join(childEvents, "relay.pid.json"));
+}
+
+{
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  const childEvents = path.join(agentDir, "child-events");
+  const queue = path.join(childEvents, "queue");
+  mkdirSync(queue, { recursive: true });
+  const queuedBeforeDirect = readdirSync(queue).filter((name) => name.endsWith(".json")).length;
+  const runId = "run_direct-race";
+  const sent = setup(runId, async (file, args) => {
+    if (file === "orca" && args[1] === "send") {
+      const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+      const startTime = stat.slice(stat.lastIndexOf(") ") + 2).trim().split(/\s+/)[19];
+      writeFileSync(path.join(childEvents, "relay.pid.json"), JSON.stringify({ pid: process.pid, startTime }));
+      return { stdout: '{"ok":true}' };
+    }
+    return { stdout: file === "git" ? "" : "" };
+  });
+  sent.handlers.get("tool_call")({ toolCallId: "direct-race", toolName: "goal_complete", input: { goal_id: "goal-direct-race", summary: "sent directly" } });
+  await sent.finishGoal({ toolCallId: "direct-race", toolName: "goal_complete", isError: false }, "complete");
+  assert.equal(readdirSync(queue).filter((name) => name.endsWith(".json")).length, queuedBeforeDirect, "successful direct delivery does not spool even when relay readiness appears before its receipt resolves");
+  unlinkSync(path.join(childEvents, "relay.pid.json"));
+}
 
 const blockedCalls = [];
 const blocked = setup("run_3419a9bd44e8", async (file, args) => {
@@ -90,7 +147,7 @@ for (const receipt of ["", "not-json", '{"ok":false}']) {
   candidate.handlers.get("tool_call")({ toolCallId: `receipt-${sends}`, toolName: "goal_complete", input: { goal_id: "receipt-goal", summary: "done" } });
   await candidate.finishGoal({ toolCallId: `receipt-${sends}`, toolName: "goal_complete", isError: false }, "complete");
   await candidate.handlers.get("agent_end")({}, candidate.ctx);
-  assert.equal(sends, 2, `receipt ${JSON.stringify(receipt)} is not positive acknowledgment and gets one retry`);
+  assert.equal(sends, process.platform === "linux" ? 1 : 2, `receipt ${JSON.stringify(receipt)} uses Linux spool acceptance or one non-Linux retry`);
 }
 
 let mismatchedSends = 0;
@@ -206,10 +263,16 @@ await failed.handlers.get("tool_execution_end")({ toolCallId: "e1", toolName: "g
 assert.equal(failed.notices.length, 0, "tool execution errors are not reported");
 assert.equal(failedSendAttempts, 0, "tool execution errors do not send");
 failed.handlers.get("tool_call")({ toolCallId: "f1", toolName: "goal_complete", input: { goal_id: "goal-4", summary: "done" } });
+const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const unavailableSpool = path.join(sandbox, "unavailable-agent");
+mkdirSync(path.join(unavailableSpool, "child-events"), { recursive: true });
+writeFileSync(path.join(unavailableSpool, "child-events", "queue"), "not a directory");
+process.env.PI_CODING_AGENT_DIR = unavailableSpool;
 await failed.finishGoal({ toolCallId: "f1", toolName: "goal_complete", isError: false }, "complete");
 await failed.handlers.get("agent_end")({}, failed.ctx);
-assert.equal(failedSendAttempts, 2, "failed immediate send gets exactly one lifecycle retry");
-assert.equal(failed.notices.length, 1, "persistent failure warns once after the bounded retry");
+process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+assert.equal(failedSendAttempts, 2, "failed direct delivery and unavailable spool gets exactly one lifecycle retry");
+assert.equal(failed.notices.length, 1, "persistent total transport failure warns once after the bounded retry");
 assert.equal(failed.notices[0].type, "warning");
 await failed.handlers.get("agent_end")({}, failed.ctx);
 assert.equal(failedSendAttempts, 2, "no retry loop after the lifecycle checkpoint");
@@ -220,8 +283,14 @@ const recovered = setup("run_3419a9bd44e8", async (file) => {
   return { stdout: "" };
 });
 recovered.handlers.get("tool_call")({ toolCallId: "recover", toolName: "goal_complete", input: { goal_id: "goal-recover", summary: "done" } });
+const recoveryAgentDir = path.join(sandbox, "recovery-agent");
+mkdirSync(path.join(recoveryAgentDir, "child-events"), { recursive: true });
+writeFileSync(path.join(recoveryAgentDir, "child-events", "queue"), "not a directory");
+const reportAgentDir = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = recoveryAgentDir;
 await recovered.finishGoal({ toolCallId: "recover", toolName: "goal_complete", isError: false }, "complete");
 await recovered.handlers.get("agent_end")({}, recovered.ctx);
+process.env.PI_CODING_AGENT_DIR = reportAgentDir;
 await recovered.handlers.get("tool_execution_end")({ toolCallId: "recover", toolName: "goal_complete", isError: false }, recovered.ctx);
 assert.equal(recoveryAttempts, 2, "positive retry acknowledgment marks the goal/outcome reported and prevents later duplicates");
 
@@ -243,4 +312,5 @@ assert.equal(recoveryAttempts, 2, "positive retry acknowledgment marks the goal/
 }
 
 delete process.env.PI_REPORT_RUN;
+rmSync(sandbox, { recursive: true, force: true });
 console.log("worker-report smoke: PASS");
