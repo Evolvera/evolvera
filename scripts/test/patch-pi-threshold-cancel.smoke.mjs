@@ -9,8 +9,10 @@ import { resolvePiSdkRoot } from '../../extensions/test/lib/pi-sdk.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const patcher = path.join(root, 'scripts/patch-pi-threshold-cancel.mjs');
-// PI_SDK_ROOT wins when set; otherwise the installed SDK is resolved. Only read from it.
-const sdkRoot = resolvePiSdkRoot(import.meta.url);
+// SDK_140_ROOT selects the pinned compatibility fixture; otherwise resolve the installed SDK.
+const sdkRoot = process.env.SDK_140_ROOT
+  ? path.resolve(process.env.SDK_140_ROOT)
+  : resolvePiSdkRoot(import.meta.url);
 const packageJson = path.join(sdkRoot, 'package.json');
 const metadata = JSON.parse(fs.readFileSync(packageJson, 'utf8'));
 assert.equal(metadata.name, '@earendil-works/pi-coding-agent');
