@@ -147,6 +147,12 @@ foreach ($dir in $dirs) {
 $sameRoot = [StringComparer]::OrdinalIgnoreCase.Equals(
     [IO.Path]::GetFullPath($SCRIPT_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar),
     [IO.Path]::GetFullPath($PI_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar))
+if (-not $sameRoot) {
+    foreach ($tool in @("child-events-relay.py", "notify-conductor")) {
+        Copy-Item (Join-Path $SCRIPT_DIR "bin\$tool") (Join-Path $PI_DIR "bin\$tool") -Force
+        Info "bin\$tool"
+    }
+}
 Info ($dirs.Count.ToString() + " diretorios")
 
 # -- Configs ----------------------------------------------

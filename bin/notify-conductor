@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || -z ${1//[[:space:]]/} ]]; then
+  printf '%s\n' 'usage: notify-conductor MESSAGE [RUN_ID]' >&2
+  exit 2
+fi
+message=$1
+run_id=${2:-${PI_REPORT_RUN:-}}
+if [[ ! $run_id =~ ^run_[A-Za-z0-9_-]+$ ]]; then
+  printf '%s\n' 'notify-conductor: a valid run id is required' >&2
+  exit 2
+fi
+agent_dir=${PI_CODING_AGENT_DIR:-"$HOME/.pi/agent"}
+queue="$agent_dir/child-events/queue"
+mkdir -p -- "$queue"
+python3 - "$queue" "$run_id" "$message" <<'PY'
+import json
+import os
+import sys
+import tempfile
+import time
+
+queue, run_id, text = sys.argv[1:]
+if len(text) > 1200:
+    print("notify-conductor: message exceeds 1200 characters", file=sys.stderr)
+    raise SystemExit(2)
+now = time.time()
+event_id = f"{time.time_ns()}-{os.getpid()}"
+event = {
+    "id": event_id,
+    "pid": os.getpid(),
+    "ts": now,
+    "runId": run_id,
+    "cwd": os.getcwd(),
+    "child": os.path.basename(os.getcwd()) or "root",
+    "kind": "job",
+    "text": text,
+}
+fd, temporary = tempfile.mkstemp(prefix=f".{event_id}.", suffix=".tmp", dir=queue)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(event, stream, ensure_ascii=True, separators=(",", ":"))
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, os.path.join(queue, f"{event_id}.json"))
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except OSError:
+        pass
+    raise
+PY

@@ -129,7 +129,15 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   const fakeTodo = path.join(parent, 'fixtures', 'rpiv-todo');
   const fakeCursor = path.join(parent, 'fixtures', 'pi-cursor');
   const fakeBin = path.join(parent, 'bin');
+  const stagedBins = path.join(parent, 'staged-repo', 'bin');
   fs.mkdirSync(fakeBin, { recursive: true });
+  fs.mkdirSync(stagedBins, { recursive: true });
+  for (const name of ['child-events-relay.py', 'notify-conductor']) {
+    const source = path.join(root, 'bin', name);
+    const staged = path.join(stagedBins, name);
+    fs.copyFileSync(source, staged);
+    fs.chmodSync(staged, fs.statSync(source).mode & 0o777);
+  }
   copyPackage(sdkSource, fakeSdk, sdkFiles);
   copyPackage(subagentsSource, fakeSubagents, subagentsFiles);
   copyPackage(authSource, fakeAuth, authFiles);
@@ -185,7 +193,7 @@ function makeCase(label, { space = false, failPackage = '' } = {}) {
   delete env.WSL_INTEROP;
   if (failPackage) env.FAKE_PI_FAIL = failPackage;
   else delete env.FAKE_PI_FAIL;
-  return { label, parent, home, env, log, fakeBin, fakeGlobalModules };
+  return { label, parent, home, env, log, fakeBin, fakeGlobalModules, stagedBins };
 }
 function runInstall(testCase) {
   const child = spawnSync(bash, [path.join(root, 'install.sh')], {
@@ -201,6 +209,12 @@ function assertInstalled(testCase, mcpExpected) {
   assert.ok(fs.existsSync(path.join(agent, 'agents', 'scout.md')), `${testCase.label}: agents/scout.md`);
   assert.ok(fs.existsSync(path.join(agent, 'skills', 'self-update', 'SKILL.md')), `${testCase.label}: skills/self-update/SKILL.md`);
   assert.ok(fs.existsSync(path.join(agent, 'extensions', 'execution-mode.ts')), `${testCase.label}: extensions/execution-mode.ts`);
+  for (const name of ['child-events-relay.py', 'notify-conductor']) {
+    const installed = path.join(agent, 'bin', name);
+    assert.ok(fs.statSync(installed).isFile(), `${testCase.label}: bin/${name}`);
+    assert.deepEqual(fs.readFileSync(installed), fs.readFileSync(path.join(testCase.stagedBins, name)), `${testCase.label}: bin/${name} bytes`);
+    if (process.platform !== 'win32') assert.notEqual(fs.statSync(installed).mode & 0o111, 0, `${testCase.label}: bin/${name} must be executable`);
+  }
   const settingsPath = path.join(agent, 'settings.json');
   assert.ok(fs.statSync(settingsPath).isFile(), `${testCase.label}: settings.json`);
   assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).compaction.reserveTokens,

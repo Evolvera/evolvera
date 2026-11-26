@@ -100,6 +100,11 @@ step "Preparando diretórios"
 mkdir -p "$PI_DIR"/{agents,skills,extensions,sessions,research,helpers,bin,themes}
 if [ "$SCRIPT_DIR" -ef "$PI_DIR" ]; then
     same_root=true
+else
+    for tool in child-events-relay.py notify-conductor; do
+        install -m 0755 "$SCRIPT_DIR/bin/$tool" "$PI_DIR/bin/$tool"
+        info "bin/$tool"
+    done
 fi
 
 # ── Configs ───────────────────────────────────
