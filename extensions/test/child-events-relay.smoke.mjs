@@ -160,10 +160,18 @@ print(json.dumps({'ok': True, 'accepted': True}))
     'notifier must reject calls without run id');
   assert.notEqual(spawnSync(path.join(repo, 'bin/notify-conductor'), ['x'.repeat(1201), runId], { env }).status, 0,
     'notifier must reject rather than truncate an oversized event');
-  console.log('PASS child-events relay smoke: grouped delivery, retry, selection guard, pidfd died, notifier');
+  const relayClosed = new Promise(resolve => relay.once('exit', resolve));
+  relay.kill('SIGTERM');
+  await eventually(() => relay.exitCode !== null, 'idle relay did not stop after SIGTERM');
+  assert.equal(await relayClosed, 0);
+  await assert.rejects(readFile(path.join(agentDir, 'child-events', 'relay.pid.json')), { code: 'ENOENT' });
+  console.log('PASS child-events relay smoke: grouped delivery, retry, selection guard, pidfd died, notifier, clean shutdown');
 } finally {
   if (child && child.exitCode === null) child.kill('SIGKILL');
-  if (relay && relay.exitCode === null) relay.kill('SIGTERM');
-  if (relay) await Promise.race([new Promise(resolve => relay.once('exit', resolve)), delay(2000)]);
+  if (relay && relay.exitCode === null && relay.signalCode === null) {
+    const relayClosed = new Promise(resolve => relay.once('exit', resolve));
+    relay.kill('SIGKILL');
+    await relayClosed;
+  }
   await rm(scratch, { recursive: true, force: true });
 }

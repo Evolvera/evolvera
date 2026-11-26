@@ -63,8 +63,6 @@ class Relay:
         self.routes_path = self.agent_dir / "report-routes.json"
         self.marker = self.root / "relay.pid.json"
         self.timing = timing
-        self.stop = False
-        self.watchfds = {}
         self.pidfds = {}
         self.backoff = {}
         self.first_seen = {}
@@ -101,7 +99,6 @@ class Relay:
         wd = self.libc.inotify_add_watch(self.inotify_fd, os.fsencode(path), mask)
         if wd < 0:
             raise OSError(ctypes.get_errno(), f"inotify_add_watch failed for {path}")
-        self.watchfds[wd] = Path(path)
 
     def enqueue(self, info, kind, text):
         event_id = (f"died-{info['pid']}-{info['startTime']}" if kind == "died" else
@@ -304,10 +301,13 @@ class Relay:
     def run(self):
         if not self.prepare():
             return 0
+        def stop(_signal, _frame):
+            raise SystemExit(0)
+
         for sig in (signal.SIGTERM, signal.SIGINT):
-            signal.signal(sig, lambda *_: setattr(self, "stop", True))
+            signal.signal(sig, stop)
         try:
-            while not self.stop:
+            while True:
                 self.rescan_children()
                 wait = self.deliver(time.monotonic())
                 timeout_ms = -1 if wait is None else max(1, int(wait * 1000))
