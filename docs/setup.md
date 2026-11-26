@@ -249,6 +249,8 @@ $env:PI_CODING_AGENT_VERSION = "1.5.0"
 .\install.ps1
 ```
 
+Running `pi -p` unattended on Windows (launch, exit codes, long jobs, memory, GPU selection) is covered in [Headless PI on Windows](windows-headless.md).
+
 ## Use with VS Code
 
 Install [PI for VS Code](https://marketplace.visualstudio.com/items?itemName=pi0.pi-vscode) from the Marketplace.

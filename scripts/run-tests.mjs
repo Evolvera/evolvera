@@ -48,6 +48,8 @@ const tmpdirProprioPadrao = new Set([
   // HUD patches: read the installed packages, patch and render only copies under their own mkdtemp (HOME redirected there).
   "patch-rpiv-todo-hud.smoke.mjs", "patch-pi-subagents-hud.smoke.mjs",
   "run-tests.smoke.mjs", "pi-sdk-resolution.smoke.mjs",
+  // GPU-pin stubs, Job Object runs and guard fixtures live only in its own mkdtemp, removed in finally.
+  "windows-headless.smoke.mjs",
   // Real AgentSession uses a faux provider and confines writes to its owned mkdtemp root.
   "todo-reconciliation.smoke.mjs",
   // Real AgentSession with faux provider runs sleep/echo in its owned mkdtemp root, removed in finally.
